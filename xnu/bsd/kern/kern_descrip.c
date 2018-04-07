@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2001 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -58,6 +58,14 @@
  * SUCH DAMAGE.
  *
  *	@(#)kern_descrip.c	8.8 (Berkeley) 2/14/95
+ *
+ *     History:
+ *		CHW	8/5/98	  Added F_SETSIZE command to truncate without
+ *			         	zero filling space 
+ *  		CHW	7/6/98    Updated Preallocate command to take a structure
+ * 				  and return output.
+ *		CHW  	6/25/98   Fixed a bug in the lock call in fcntl 
+ *				  Preallocate command
  */
 
 #include <sys/param.h>
@@ -95,6 +103,7 @@ getdtablesize(p, uap, retval)
 	void *uap;
 	register_t *retval;
 {
+
 	*retval = min((int)p->p_rlimit[RLIMIT_NOFILE].rlim_cur, maxfiles);
 	return (0);
 }
@@ -106,6 +115,7 @@ ogetdtablesize(p, uap, retval)
 	void *uap;
 	register_t *retval;
 {
+
 	*retval = min((int)p->p_rlimit[RLIMIT_NOFILE].rlim_cur, NOFILE);
 	return (0);
 }
@@ -190,7 +200,8 @@ dup2(p, uap, retval)
 			_fdrelse(fdp, i);
 			goto closeit;
 		}
-	} else {
+	}
+	else {
 		struct file **fpp;
 		char flags;
 closeit:
@@ -203,8 +214,7 @@ closeit:
 		if (*(fpp = &fdp->fd_ofiles[new])) {
 			struct file *fp = *fpp;
 
-			*fpp = NULL;
-			(void) closef(fp, p);
+			*fpp = NULL; (void) closef(fp, p);
 		}
 	}
 	return (finishdup(fdp, old, new, retval));
@@ -962,9 +972,9 @@ ffree(fp)
 		fp->f_cred = NOCRED;
 		crfree(cred);
 	}
-
+#if 1 || DIAGNOSTIC
 	fp->f_count = 0;
-
+#endif
 	nfiles--;
 	FREE_ZONE(fp, sizeof *fp, M_FILE);
 }
@@ -1052,7 +1062,8 @@ fdcopy(p)
 				*fpp = NULL;
 				*flags = 0;
 			}
-	} else
+	}
+	else
 		(void) memset(newfdp->fd_ofiles, 0, i * OFILESIZE);
 
 	return (newfdp);
@@ -1065,10 +1076,9 @@ void
 fdfree(p)
 	struct proc *p;
 {
-	struct filedesc *fdp;
-	struct file **fpp;
-	int i;
-	struct vnode *tvp;
+	register struct filedesc *fdp;
+	register struct file **fpp;
+	register int i;
 
 	if ((fdp = p->p_fd) == NULL)
 		return;
@@ -1083,14 +1093,9 @@ fdfree(p)
 		FREE_ZONE(fdp->fd_ofiles,
 				fdp->fd_nfiles * OFILESIZE, M_OFILETABL);
 	}
-	tvp = fdp->fd_cdir;
-	fdp->fd_cdir = NULL;
-	vrele(tvp);
-	if (fdp->fd_rdir) {
-		tvp = fdp->fd_rdir;
-		fdp->fd_rdir = NULL;
-		vrele(tvp);
-	}
+	vrele(fdp->fd_cdir);
+	if (fdp->fd_rdir)
+		vrele(fdp->fd_rdir);
 	FREE_ZONE(fdp, sizeof *fdp, M_FILEDESC);
 }
 

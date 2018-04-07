@@ -181,7 +181,7 @@ extern OSStatus ReleaseBTreeBlock(FileReference vp, BlockDescPtr blockPtr, Relea
 //*******************************************************************************
 
 OSErr hfs_MountHFSVolume(struct hfsmount *hfsmp, HFSMasterDirectoryBlock *mdb,
-		struct proc *p)
+		u_long sectors, struct proc *p)
 {
     ExtendedVCB 			*vcb = HFSTOVCB(hfsmp);
     struct vnode 			*tmpvnode;
@@ -244,6 +244,8 @@ OSErr hfs_MountHFSVolume(struct hfsmount *hfsmp, HFSMasterDirectoryBlock *mdb,
 	 */
 	if (err || (utf8chars == 0))
 		(void) mac_roman_to_utf8(mdb->drVN, NAME_MAX, &utf8chars, vcb->vcbVN);
+
+	vcb->altIDSector = sectors - 2;
 
     //	Initialize our dirID/nodePtr cache associated with this volume.
     err = InitMRUCache( sizeof(UInt32), kDefaultNumMRUCacheBlocks, &(vcb->hintCachePtr) );
@@ -329,7 +331,7 @@ CmdDone:;
 //*******************************************************************************
 
 OSErr hfs_MountHFSPlusVolume(struct hfsmount *hfsmp, HFSPlusVolumeHeader *vhp,
-	off_t embeddedOffset, off_t disksize, struct proc *p)
+	u_long embBlkOffset, u_long sectors, struct proc *p)
 {
     register ExtendedVCB	*vcb;
     HFSPlusForkData			*fdp;
@@ -351,14 +353,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount *hfsmp, HFSPlusVolumeHeader *vhp,
 	/* don't mount a writable volume if its dirty, it must be cleaned by fsck_hfs */
 	if (hfsmp->hfs_fs_ronly == 0 && (SWAP_BE32 (vhp->attributes) & kHFSVolumeUnmountedMask) == 0)
 		return (EINVAL);
-
-	/* Make sure we can live with the physical block size. */
-	if ((disksize & (hfsmp->hfs_phys_block_size - 1)) ||
-	    (embeddedOffset & (hfsmp->hfs_phys_block_size - 1)) ||
-	    (SWAP_BE32(vhp->blockSize) < hfsmp->hfs_phys_block_size)) {
-		return (ENXIO);
-	}
-
 	/*
 	 * The VolumeHeader seems OK: transfer info from it into VCB
 	 * Note - the VCB starts out clear (all zeros)
@@ -393,7 +387,9 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount *hfsmp, HFSPlusVolumeHeader *vhp,
 	vcb->checkedDate			=	SWAP_BE32 (vhp->checkedDate);
 	vcb->encodingsBitmap		=	SWAP_BE64 (vhp->encodingsBitmap);
 	
-	vcb->hfsPlusIOPosOffset		=	embeddedOffset;
+	vcb->hfsPlusIOPosOffset		=	embBlkOffset * 512;
+
+	vcb->altIDSector = embBlkOffset + sectors - 2;
 
 	vcb->localCreateDate		=	SWAP_BE32 (vhp->createDate); /* in local time, not GMT! */
 
@@ -816,6 +812,28 @@ short hfs_vcreate(ExtendedVCB *vcb, hfsCatalogInfo *catInfo, UInt8 forkType, str
 	dev_t				dev;
 	short				retval;
 
+#if HFS_DIAGNOSTIC
+	DBG_ASSERT(vcb != NULL);
+	DBG_ASSERT(catInfo != NULL);
+	DBG_ASSERT(vpp != NULL);
+	DBG_ASSERT((forkType == kDirectory) || (forkType == kDataFork) || (forkType == kRsrcFork));
+	if (catInfo->nodeData.cnd_type == kCatalogFolderNode) {
+			DBG_ASSERT(forkType == kDirectory);
+	} else {
+			DBG_ASSERT(forkType != kDirectory);
+	}
+#endif
+
+    if ( ! ((forkType == kDirectory) || (forkType == kDataFork) || (forkType == kRsrcFork)))
+        panic("Bad fork type");
+	if (catInfo->nodeData.cnd_type == kCatalogFolderNode) {
+			if (forkType != kDirectory)
+			    panic("non directory type");
+	} else {
+			if (forkType != kDataFork && forkType != kRsrcFork)
+			    panic("non fork type");
+	}
+        
 	hfsmp	= VCBTOHFS(vcb);
 	mp		= HFSTOVFS(hfsmp);
 	dev		= hfsmp->hfs_raw_dev;
@@ -845,57 +863,46 @@ short hfs_vcreate(ExtendedVCB *vcb, hfsCatalogInfo *catInfo, UInt8 forkType, str
 		}
 	}
 
+	/* Must malloc() here, since getnewvnode() can sleep */
 	MALLOC_ZONE(hp, struct hfsnode *, sizeof(struct hfsnode), M_HFSNODE, M_WAITOK);
 	bzero((caddr_t)hp, sizeof(struct hfsnode));
-	hp->h_nodeflags |= IN_ALLOCATING;
+	
+	/*
+	 * Set that this node is in the process of being allocated
+	 * Set it as soon as possible, so context switches well always hit upon it.
+	 * if this is set then wakeup() MUST be called on hp after the flag is cleared
+	 * DO NOT exit without clearing and waking up !!!!
+	 */
+	hp->h_nodeflags |= IN_ALLOCATING;				/* Mark this as being allocating */
 	lockinit(&hp->h_lock, PINOD, "hfsnode", 0, 0);
+
+
+	/* getnewvnode() does a VREF() on the vnode */
+	/* Allocate a new vnode. If unsuccesful, leave after freeing memory */
+	if ((retval = getnewvnode(VT_HFS, mp, hfs_vnodeop_p, &vp))) {
+		wakeup(hp);				/* Shouldnt happen, but just to make sure */
+		FREE_ZONE(hp, sizeof(struct hfsnode), M_HFSNODE);
+		*vpp = NULL;
+		return (retval);
+	};
+
+	/*
+	 * Set the essentials before locking it down
+	 */
+	hp->h_vp = vp;									/* Make HFSTOV work */
+	vp->v_data = hp;								/* Make VTOH work */
 	H_FORKTYPE(hp) = forkType;
 	rl_init(&hp->h_invalidranges);
-
+	fm = NULL;
+	
 	/*
-	 * There were several blocking points since we first
-	 * checked the hash. Now that we're through blocking,
-	 * check the hash again in case we're racing for the
-	 * same hnode.
-	 */
-	vp = hfs_vhashget(dev, catInfo->nodeData.cnd_nodeID, forkType);
-	if (vp != NULL) {
-		/* We lost the race, use the winner's vnode */
-		FREE_ZONE(hp, sizeof(struct hfsnode), M_HFSNODE);
-		*vpp = vp;
-		UBCINFOCHECK("hfs_vcreate", vp);
-		return (0);
-	}
-
-	/*
-	 * Insert the hfsnode into the hash queue, also if meta exists
+	 * Lock the hfsnode and insert the hfsnode into the hash queue, also if meta exists
 	 * add to sibling list and return the meta address
 	 */
-	fm = NULL;
 	if  (SIBLING_FORKTYPE(forkType))
 		hfs_vhashins_sibling(dev, catInfo->nodeData.cnd_nodeID, hp, &fm);
 	else
 		hfs_vhashins(dev, catInfo->nodeData.cnd_nodeID, hp);
-
-	/* Allocate a new vnode. If unsuccesful, leave after freeing memory */
-	if ((retval = getnewvnode(VT_HFS, mp, hfs_vnodeop_p, &vp))) {
-		hfs_vhashrem(hp);
-		if (hp->h_nodeflags & IN_WANT) {
-			hp->h_nodeflags &= ~IN_WANT;
-			wakeup(hp);
-		}
-		FREE_ZONE(hp, sizeof(struct hfsnode), M_HFSNODE);
-		*vpp = NULL;
-		return (retval);
-	}
-	hp->h_vp = vp;
-	vp->v_data = hp;
-
-	hp->h_nodeflags &= ~IN_ALLOCATING;
-	if (hp->h_nodeflags & IN_WANT) {
-		hp->h_nodeflags &= ~IN_WANT;
-		wakeup((caddr_t)hp);
-	}
 
 	/*
 	 * If needed allocate and init the object meta data:
@@ -930,6 +937,7 @@ short hfs_vcreate(ExtendedVCB *vcb, hfsCatalogInfo *catInfo, UInt8 forkType, str
 	};
 	fm->h_usecount++;
 
+
 	/*
 	 * Init the File Control Block.
 	 */
@@ -949,24 +957,48 @@ short hfs_vcreate(ExtendedVCB *vcb, hfsCatalogInfo *catInfo, UInt8 forkType, str
 		ubc_info_init(vp);
 	}
 
-	/*
+    /*
 	 * Initialize the vnode from the inode, check for aliases, sets the VROOT flag.
 	 * Note that the underlying vnode may have changed.
 	 */
 	if ((retval = hfs_vinit(mp, hfs_specop_p, hfs_fifoop_p, &vp))) {
+		wakeup((caddr_t)hp);
 		vput(vp);
 		*vpp = NULL;
 		return (retval);
 	}
 
-	/*
-	 * Finish inode initialization now that aliasing has been resolved.
-	 */
-	hp->h_meta->h_devvp = hfsmp->hfs_devvp;
-	VREF(hp->h_meta->h_devvp);
+    /*
+     * Finish inode initialization now that aliasing has been resolved.
+     */
+    hp->h_meta->h_devvp = hfsmp->hfs_devvp;
+    VREF(hp->h_meta->h_devvp);
     
+#if HFS_DIAGNOSTIC
+	hp->h_valid = HFS_VNODE_MAGIC;
+#endif
+	hp->h_nodeflags &= ~IN_ALLOCATING;				/* vnode is completely initialized */
+
+	/* Wake up anybody waiting for us to finish..see hfs_vhash.c */
+	wakeup((caddr_t)hp);
+
+#if HFS_DIAGNOSTIC
+
+	/* Lets do some testing here */
+	DBG_ASSERT(hp->h_meta);
+	DBG_ASSERT(VTOH(vp)==hp);
+	DBG_ASSERT(HTOV(hp)==vp);
+	DBG_ASSERT(hp->h_meta->h_usecount>=1 && hp->h_meta->h_usecount<=2);
+	if (catInfo->nodeData.cnd_type == kCatalogFolderNode) {
+		DBG_ASSERT(vp->v_type == VDIR);
+		DBG_ASSERT(H_FORKTYPE(VTOH(vp)) == kDirectory);
+	}
+#endif // HFS_DIAGNOSTIC
+
+
 	*vpp = vp;
 	return 0;
+
 }
 
 void CopyCatalogToObjectMeta(struct hfsCatalogInfo *catalogInfo, struct vnode *vp, struct hfsfilemeta *fm)
@@ -3363,8 +3395,6 @@ short MacToVFSError(OSErr err)
 	  case fileBoundsErr:						/* -1309 */
 		return EINVAL;							/*   +22 */
 
-	  case fsBTBadNodeSize:
-		return ENXIO;
 	  default:
 		DBG_UTILS(("Unmapped MacOS error: %d\n", err));
 		return EIO;								/*   +5 */

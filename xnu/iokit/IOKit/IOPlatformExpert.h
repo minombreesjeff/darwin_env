@@ -196,7 +196,6 @@ public:
 
     /* virtual */ IOReturn readXPRAM(IOByteCount offset, UInt8 * buffer,
 				     IOByteCount length);
-
     /* virtual */ IOReturn writeXPRAM(IOByteCount offset, UInt8 * buffer,
 				      IOByteCount length);
 
@@ -208,18 +207,6 @@ public:
 	IORegistryEntry * entry,
 	const OSSymbol * name, OSData * value );
 
-    // This returns a dictionary describing all the NVRAM partitions.
-    // The keys will be the partitionIDs of the form "0x52,nvram".
-    // The values will be OSNumbers of the partition's byte count.
-    /* virtual */ OSDictionary *getNVRAMPartitions(void);
-
-    /* virtual */ IOReturn readNVRAMPartition(const OSSymbol * partitionID,
-					      IOByteCount offset, UInt8 * buffer,
-					      IOByteCount length);
-
-    /* virtual */ IOReturn writeNVRAMPartition(const OSSymbol * partitionID,
-					       IOByteCount offset, UInt8 * buffer,
-					       IOByteCount length);
 
     OSMetaClassDeclareReservedUnused(IODTPlatformExpert,  0);
     OSMetaClassDeclareReservedUnused(IODTPlatformExpert,  1);

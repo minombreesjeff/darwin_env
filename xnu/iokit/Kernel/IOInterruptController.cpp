@@ -556,26 +556,23 @@ IOReturn IOSharedInterruptController::enableInterrupt(IOService *nub,
   long              vectorNumber;
   IOInterruptVector *vector;
   OSData            *vectorData;
-  IOInterruptState  interruptState;
+  IOInterruptState  interruptState;;
   
   interruptSources = nub->_interruptSources;
   vectorData = interruptSources[source].vectorData;
   vectorNumber = *(long *)vectorData->getBytesNoCopy();
   vector = &vectors[vectorNumber];
   
-  interruptState = IOSimpleLockLockDisableInterrupt(controllerLock);
-  if (!vector->interruptDisabledSoft) {
+  if (vector->interruptDisabledSoft) {
+    interruptState = IOSimpleLockLockDisableInterrupt(controllerLock);
+    vector->interruptDisabledSoft = 0;
+    vectorsEnabled++;
     IOSimpleLockUnlockEnableInterrupt(controllerLock, interruptState);
-    return kIOReturnSuccess;
-  }
-  
-  vector->interruptDisabledSoft = 0;
-  vectorsEnabled++;
-  IOSimpleLockUnlockEnableInterrupt(controllerLock, interruptState);
-  
-  if (controllerDisabled && (vectorsEnabled == vectorsRegistered)) {
-    controllerDisabled = 0;
-    provider->enableInterrupt(0);
+    
+    if (controllerDisabled && (vectorsEnabled == vectorsRegistered)) {
+      controllerDisabled = 0;
+      provider->enableInterrupt(0);
+    }
   }
   
   return kIOReturnSuccess;
@@ -588,23 +585,23 @@ IOReturn IOSharedInterruptController::disableInterrupt(IOService *nub,
   long              vectorNumber;
   IOInterruptVector *vector;
   OSData            *vectorData;
-  IOInterruptState  interruptState;
+  IOInterruptState  interruptState;;
   
   interruptSources = nub->_interruptSources;
   vectorData = interruptSources[source].vectorData;
   vectorNumber = *(long *)vectorData->getBytesNoCopy();
   vector = &vectors[vectorNumber];
   
-  interruptState = IOSimpleLockLockDisableInterrupt(controllerLock); 
   if (!vector->interruptDisabledSoft) {
+    interruptState = IOSimpleLockLockDisableInterrupt(controllerLock); 
     vector->interruptDisabledSoft = 1;
 #if __ppc__
     sync();
     isync();
 #endif
     vectorsEnabled--;
+    IOSimpleLockUnlockEnableInterrupt(controllerLock, interruptState);
   }
-  IOSimpleLockUnlockEnableInterrupt(controllerLock, interruptState);
   
   if (!getPlatform()->atInterruptLevel()) {
     while (vector->interruptActive);

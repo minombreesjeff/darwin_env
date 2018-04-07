@@ -530,10 +530,9 @@ again:
 		 * root set it.
 		 */
 		if (p->p_tracep && !(p->p_traceflag & KTRFAC_ROOT)) {
-			struct vnode *tvp = p->p_tracep;
+			vrele(p->p_tracep);
 			p->p_tracep = NULL;
 			p->p_traceflag = 0;
-			vrele(tvp);
 		}
 #endif
 		if (origvattr.va_mode & VSUID)

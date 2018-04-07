@@ -24,18 +24,19 @@
 #include <IOKit/IOTimerEventSource.h>
 #include <IOKit/IOPlatformExpert.h>
 #include <IOKit/pwr_mgt/RootDomain.h>
-#include <IOKit/pwr_mgt/IOPMPrivate.h>
+#include <IOKit/pwr_mgt/IOPM.h>
 #include <IOKit/IOMessage.h>
 #include "RootDomainUserClient.h"
 #include "IOKit/pwr_mgt/IOPowerConnection.h"
 
-extern "C" void kprintf(const char *, ...);
+extern "C" {
+extern void kprintf(const char *, ...);
+}
 
 extern const IORegistryPlane * gIOPowerPlane;
 
 void PMreceiveCmd ( OSObject *,  void *, void *, void *, void * );
 static void sleepTimerExpired(thread_call_param_t);
-static void wakeupClamshellTimerExpired ( thread_call_param_t us);
 
 
 #define number_of_power_states 5
@@ -185,8 +186,6 @@ static void disk_sync_callout(thread_call_param_t p0, thread_call_param_t p1)
 
 bool IOPMrootDomain::start ( IOService * nub )
 {
-    OSDictionary *tmpDict;
-
     super::start(nub);
 
     gRootDomain = this;
@@ -202,12 +201,7 @@ bool IOPMrootDomain::start ( IOService * nub )
     canSleep = true;
     wrangler = NULL;
     sleepASAP = false;
-    ignoringClamshellDuringWakeup = false;
     
-    tmpDict = OSDictionary::withCapacity(1);
-    setProperty(kRootDomainSupportedFeatures, tmpDict);
-    tmpDict->release();
-
     pm_vars->PMworkloop = IOWorkLoop::workLoop();				// make the workloop
     pm_vars->commandQueue = IOCommandQueue::commandQueue(this, PMreceiveCmd);	// make a command queue
     if (! pm_vars->commandQueue ||
@@ -215,7 +209,7 @@ bool IOPMrootDomain::start ( IOService * nub )
         return IOPMNoErr;
     }
     extraSleepTimer = thread_call_allocate((thread_call_func_t)sleepTimerExpired, (thread_call_param_t) this);
-    clamshellWakeupIgnore = thread_call_allocate((thread_call_func_t)wakeupClamshellTimerExpired, (thread_call_param_t) this);
+
     diskSyncCalloutEntry = thread_call_allocate(&disk_sync_callout, (thread_call_param_t) this);
 
     patriarch = new IORootParent;                               // create our parent
@@ -311,12 +305,6 @@ static void sleepTimerExpired ( thread_call_param_t us)
     ((IOPMrootDomain *)us)->handleSleepTimerExpiration();
     }
     
-   
-static void wakeupClamshellTimerExpired ( thread_call_param_t us)
-{
-    ((IOPMrootDomain *)us)->stopIgnoringClamshellEventsDuringWakeup();
-}
-
     
 // **********************************************************************************
 // handleSleepTimerExpiration
@@ -335,17 +323,6 @@ void IOPMrootDomain::handleSleepTimerExpiration ( void )
 }
 
 
-void IOPMrootDomain::stopIgnoringClamshellEventsDuringWakeup(void)
-{
-    OSObject *  state;
-
-    // Allow clamshell-induced sleep now
-    ignoringClamshellDuringWakeup = false;
-
-    if ((state = getProperty(kAppleClamshellStateKey)))
-        publishResource(kAppleClamshellStateKey, state);
-}
-
 //*********************************************************************************
 // setAggressiveness
 //
@@ -358,7 +335,6 @@ void IOPMrootDomain::stopIgnoringClamshellEventsDuringWakeup(void)
 
 IOReturn IOPMrootDomain::setAggressiveness ( unsigned long type, unsigned long newLevel )
 {
-
     if ( systemBooting && (type == kPMMinutesToDim) ) {
         systemBooting = false;  // when the login window launches, this method gets called -- system booting is done.
         IOLog("Root power domain receiving initial preferences\n");
@@ -441,26 +417,12 @@ void IOPMrootDomain::powerChangeDone ( unsigned long previousState )
                 clock_interval_to_deadline(30, kSecondScale, &deadline);	// stay awake for at least 30 seconds
                 thread_call_enter_delayed(extraSleepTimer, deadline);
                 idleSleepPending = true;			// this gets turned off when we sleep again
-                
-                // Ignore closed clamshell during wakeup and for a few seconds
-                // after wakeup is complete
-                ignoringClamshellDuringWakeup = true;
-
                 gSleepOrShutdownPending = 0;        // sleep transition complete
                 patriarch->wakeSystem();			// get us some power
                 
                 IOLog("System Wake\n");
                 systemWake();					// tell the tree we're waking 
-                
-                // Allow drivers to request extra processing time before clamshell
-                // sleep if kIOREMSleepEnabledKey is present.
-                // Ignore clamshell events for at least 5 seconds 
-                if(getProperty(kIOREMSleepEnabledKey)) {
-                    // clamshellWakeupIgnore callout clears ignoreClamshellDuringWakeup bit   
-                    clock_interval_to_deadline(5, kSecondScale, &deadline);
-                    if(clamshellWakeupIgnore) thread_call_enter_delayed(clamshellWakeupIgnore, deadline);
-                } else ignoringClamshellDuringWakeup = false;
-                            
+
                 propertyPtr = OSDynamicCast(OSNumber,getProperty("WakeEvent"));
                 if ( propertyPtr ) {				// find out what woke us
                     theProperty = propertyPtr->unsigned16BitValue();
@@ -525,21 +487,6 @@ void IOPMrootDomain::wakeFromDoze( void )
 
 
 // **********************************************************************************
-// publishFeature
-//
-// Adds a new feature to the supported features dictionary
-// 
-// 
-// **********************************************************************************
-void IOPMrootDomain::publishFeature( const char * feature )
-{
-  OSDictionary *features = (OSDictionary *)getProperty(kRootDomainSupportedFeatures);
-  
-  features->setObject(feature, kOSBooleanTrue);
-}
-
-
-// **********************************************************************************
 // newUserClient
 //
 // **********************************************************************************
@@ -573,28 +520,6 @@ IOReturn IOPMrootDomain::newUserClient(  task_t owningTask,  void * /* security_
 
 IOReturn IOPMrootDomain::receivePowerNotification (UInt32 msg)
 {
-    if (msg & kIOPMSetDesktopMode) {
-        desktopMode = (0 != (msg & kIOPMSetValue));
-        msg &= ~(kIOPMSetDesktopMode | kIOPMSetValue);
-    }
-    if (msg & kIOPMSetACAdaptorConnected) {
-        acAdaptorConnect = (0 != (msg & kIOPMSetValue));
-        msg &= ~(kIOPMSetACAdaptorConnected | kIOPMSetValue);
-    }
-    if (msg & kIOPMEnableClamshell) {
-        ignoringClamshell = false;
-    }
-    if (msg & kIOPMDisableClamshell) {
-        ignoringClamshell = true;
-    }
-
-    if (msg & kIOPMProcessorSpeedChange) {
-	IOService *pmu = waitForService(serviceMatching("ApplePMU"));
-	pmu->callPlatformFunction("prepareForSleep", false, 0, 0, 0, 0);
-        pm_vars->thePlatform->sleepKernel();
-	pmu->callPlatformFunction("recoverFromSleep", false, 0, 0, 0, 0);
-    }
-
     if (msg & kIOPMSleepNow) {
       (void) sleepSystem ();
     }
@@ -603,17 +528,17 @@ IOReturn IOPMrootDomain::receivePowerNotification (UInt32 msg)
       (void) sleepSystem ();
     }
 
-    if (msg & kIOPMOverTemp) {
-        IOLog("Power Management received emergency overtemp signal. Going to sleep.");
-        (void) sleepSystem ();
+    if (msg & kIOPMClamshellClosed) {
+        if ( ! ignoringClamshell ) {
+            (void) sleepSystem ();
+        }
     }
 
-    if (msg & kIOPMClamshellClosed) {
-        if ( !ignoringClamshell && !ignoringClamshellDuringWakeup 
-                    && (!desktopMode || !acAdaptorConnect) ) {
-
-             (void) sleepSystem ();
-        }
+    if (msg & kIOPMEnableClamshell) {
+        ignoringClamshell = false;
+    }
+    if (msg & kIOPMDisableClamshell) {
+        ignoringClamshell = true;
     }
 
     if (msg & kIOPMPowerButton) {				// toggle state of sleep/wake
@@ -808,11 +733,9 @@ void IOPMrootDomain::tellNoChangeDown ( unsigned long )
 // type to the client or application being notified.
 //*********************************************************************************
 
-void IOPMrootDomain::tellChangeUp ( unsigned long stateNum)
+void IOPMrootDomain::tellChangeUp ( unsigned long )
 {
-    if ( stateNum == ON_STATE ) {
-        return tellClients(kIOMessageSystemHasPoweredOn);
-    }
+    return tellClients(kIOMessageSystemHasPoweredOn);
 }
 
 //*********************************************************************************
@@ -854,6 +777,11 @@ void IOPMrootDomain::setQuickSpinDownTimeout ( void )
 
 void IOPMrootDomain::restoreUserSpinDownTimeout ( void )
 {
+    if(systemBooting) {
+        IOLog("!!!!! WARNING !!!!! restoreUserSpinDownTimeout called too early\n");
+    }
+    //IOLog("restoreUserSpinDownTimeout, user_spindown = %u\n", user_spindown);
+
     super::setAggressiveness((unsigned long)kPMMinutesToSpinDown,(unsigned long)user_spindown);
 }
 
@@ -883,6 +811,8 @@ IOReturn IOPMrootDomain::sysPowerDownHandler( void * target, void * refCon,
         case kIOMessageSystemWillSleep:
             rootDomain->powerOverrideOnPriv();		// start ignoring children's requests
                                                         // (fall through to other cases)
+        case kIOMessageSystemWillPowerOff:
+        case kIOMessageSystemWillRestart:
 
             // Interested applications have been notified of an impending power
             // change and have acked (when applicable).
@@ -909,12 +839,6 @@ IOReturn IOPMrootDomain::sysPowerDownHandler( void * target, void * refCon,
                 thread_call_enter1(rootDomain->diskSyncCalloutEntry, (thread_call_param_t)params->powerRef);
             ret = kIOReturnSuccess;
             break;
-
-        case kIOMessageSystemWillPowerOff:
-        case kIOMessageSystemWillRestart:
-            ret = kIOReturnUnsupported;
-            break;
-
         default:
             ret = kIOReturnUnsupported;
             break;

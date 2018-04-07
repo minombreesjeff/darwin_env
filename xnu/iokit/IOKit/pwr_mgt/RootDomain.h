@@ -27,8 +27,6 @@
 
 class RootDomainUserClient;
 
-#define kRootDomainSupportedFeatures "Supported Features"
-
 enum {
     kRootDomainSleepNotSupported	= 0x00000000,
     kRootDomainSleepSupported 		= 0x00000001,
@@ -46,7 +44,6 @@ extern "C"
         IOReturn rootDomainShutdown ( void );
 }
 
-#define IOPM_ROOTDOMAIN_REV		2
 
 class IOPMrootDomain: public IOService
 {
@@ -69,9 +66,7 @@ public:
     virtual IOOptionBits getSleepSupported();
     virtual IOReturn requestPowerDomainState ( IOPMPowerFlags, IOPowerConnection *, unsigned long );
     virtual void handleSleepTimerExpiration ( void );
-    void stopIgnoringClamshellEventsDuringWakeup ( void );
     void wakeFromDoze( void );
-    void publishFeature( const char *feature );
 
 private:
 
@@ -80,8 +75,7 @@ private:
     long		longestNonSleepSlider;		// pref: longest of other idle times
     long		extraSleepDelay;		// sleepSlider - longestNonSleepSlider
     thread_call_t	extraSleepTimer;		// used to wait between say display idle and system idle
-    thread_call_t   clamshellWakeupIgnore;   // Used to ignore clamshell close events while we're waking from sleep
-    
+
     virtual void powerChangeDone ( unsigned long );
     virtual void command_received ( void *, void * , void * , void *);
     virtual bool tellChangeDown ( unsigned long stateNum);
@@ -104,7 +98,6 @@ private:
     void adjustPowerState( void );
     void restoreUserSpinDownTimeout ( void );
 
-    
     unsigned int user_spindown;       // User's selected disk spindown value
 
     unsigned int systemBooting:1;
@@ -114,13 +107,8 @@ private:
     unsigned int canSleep:1;
     unsigned int idleSleepPending:1;
     unsigned int sleepASAP:1;
-    unsigned int desktopMode:1;
-
-    unsigned int acAdaptorConnect:1;
-    unsigned int ignoringClamshellDuringWakeup:1;
-    unsigned int reservedA:6;
-    unsigned char reservedB[3];
-
+    unsigned int reservedA:1;
+    unsigned int reservedB[2];
     thread_call_t diskSyncCalloutEntry;
     IOOptionBits platformSleepSupport;
 };

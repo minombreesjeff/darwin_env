@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -64,7 +64,6 @@
  *	@(#)vfs_bio.c	8.6 (Berkeley) 1/11/94
  */
 
-
 /*
  * Some references:
  *	Bach: The Design of the UNIX Operating System (Prentice Hall, 1986)
@@ -100,12 +99,8 @@ extern void bufq_balance_thread_init();
 extern void reassignbuf(struct buf *, struct vnode *);
 static struct buf *getnewbuf(int slpflag, int slptimeo, int *queue);
 
-extern int niobuf;	/* The number of IO buffer headers for cluster IO */
+extern int niobuf;		/* The number of IO buffer headers for cluster IO */
 int blaundrycnt;
-
-/* zone allocated buffer headers */
-static zone_t buf_hdr_zone;
-static int buf_hdr_count;
 
 #if TRACE
 struct	proc *traceproc;
@@ -125,9 +120,6 @@ u_long	bufhash;
 /* Definitions for the buffer stats. */
 struct bufstats bufstats;
 
-/* Number of delayed write buffers */
-int nbdwrite = 0;
-
 /*
  * Insq/Remq for the buffer hash lists.
  */
@@ -139,8 +131,8 @@ int nbdwrite = 0;
 
 TAILQ_HEAD(ioqueue, buf) iobufqueue;
 TAILQ_HEAD(bqueues, buf) bufqueues[BQUEUES];
-static int needbuffer;
-static int need_iobuffer;
+int needbuffer;
+int need_iobuffer;
 
 /*
  * Insq/Remq for the buffer free lists.
@@ -168,9 +160,6 @@ static int need_iobuffer;
 	(bp)->b_hash.le_prev = (struct buf **)0xdeadbeef;
 
 simple_lock_data_t bufhashlist_slock;		/* lock on buffer hash list */
-
-/* number of per vnode, "in flight" buffer writes */
-#define	BUFWRITE_THROTTLE	9
 
 /*
  * Time in seconds before a buffer on a list is 
@@ -513,8 +502,6 @@ bwrite(bp)
 	sync = !ISSET(bp->b_flags, B_ASYNC);
 	wasdelayed = ISSET(bp->b_flags, B_DELWRI);
 	CLR(bp->b_flags, (B_READ | B_DONE | B_ERROR | B_DELWRI));
-	if (wasdelayed)
-		nbdwrite--;
 
 	if (!sync) {
 		/*
@@ -530,7 +517,7 @@ bwrite(bp)
 			p->p_stats->p_ru.ru_oublock++;		/* XXX */
 	}
 
-	trace(TR_BUFWRITE, pack(vp, bp->b_bcount), bp->b_lblkno);
+	trace(TR_BWRITE, pack(vp, bp->b_bcount), bp->b_lblkno);
 
 	/* Initiate disk write.  Make sure the appropriate party is charged. */
 	SET(bp->b_flags, B_WRITEINPROG);
@@ -583,19 +570,15 @@ vn_bwrite(ap)
  * written in the order that the writes are requested.
  *
  * Described in Leffler, et al. (pp. 208-213).
- *
- * Note: With the abilitty to allocate additional buffer
- * headers, we can get in to the situation where "too" many 
- * bdwrite()s can create situation where the kernel can create
- * buffers faster than the disks can service. Doing a bawrite() in
- * cases were we have "too many" outstanding bdwrite()s avoids that.
  */
 void
 bdwrite(bp)
 	struct buf *bp;
 {
 	struct proc *p = current_proc();
-	struct vnode *vp = bp->b_vp;
+	kern_return_t kret;
+	upl_t upl;
+	upl_page_info_t *pl;
 
 	/*
 	 * If the block hasn't been seen before:
@@ -607,8 +590,8 @@ bdwrite(bp)
 		SET(bp->b_flags, B_DELWRI);
 		if (p && p->p_stats) 
 			p->p_stats->p_ru.ru_oublock++;		/* XXX */
-		nbdwrite ++;
-		reassignbuf(bp, vp);
+
+		reassignbuf(bp, bp->b_vp);
 	}
 
 
@@ -619,28 +602,6 @@ bdwrite(bp)
 		return;
 	}
 
-	/*
-	 * If the vnode has "too many" write operations in progress
-	 * wait for them to finish the IO
-	 */
-	while (vp->v_numoutput >= BUFWRITE_THROTTLE) {
-		vp->v_flag |= VTHROTTLED;
-		(void)tsleep((caddr_t)&vp->v_numoutput, PRIBIO + 1, "bdwrite", 0);
-	}
-
-	/*
-	 * If we have too many delayed write buffers, 
-	 * more than we can "safely" handle, just fall back to
-	 * doing the async write
-	 */
-	if (nbdwrite < 0)
-		panic("bdwrite: Negative nbdwrite");
-
-	if (nbdwrite > ((nbuf/4)*3)) {
-		bawrite(bp);
-		return;
-	}
-	 
 	/* Otherwise, the "write" is done, so mark and release the buffer. */
 	SET(bp->b_flags, B_DONE);
 	brelse(bp);
@@ -648,30 +609,11 @@ bdwrite(bp)
 
 /*
  * Asynchronous block write; just an asynchronous bwrite().
- *
- * Note: With the abilitty to allocate additional buffer
- * headers, we can get in to the situation where "too" many 
- * bawrite()s can create situation where the kernel can create
- * buffers faster than the disks can service.
- * We limit the number of "in flight" writes a vnode can have to
- * avoid this.
  */
 void
 bawrite(bp)
 	struct buf *bp;
 {
-	struct vnode *vp = bp->b_vp;
-
-	if (vp) {
-		/*
-		 * If the vnode has "too many" write operations in progress
-		 * wait for them to finish the IO
-		 */
-		while (vp->v_numoutput >= BUFWRITE_THROTTLE) {
-			vp->v_flag |= VTHROTTLED;
-			(void)tsleep((caddr_t)&vp->v_numoutput, PRIBIO + 1, "bawrite", 0);
-		}
-	}
 
 	SET(bp->b_flags, B_ASYNC);
 	VOP_BWRITE(bp);
@@ -690,8 +632,7 @@ brelse(bp)
 	long whichq;
 
 	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 388)) | DBG_FUNC_START,
-		     bp->b_lblkno * PAGE_SIZE, (int)bp, (int)bp->b_data,
-		     bp->b_flags, 0);
+		     bp->b_lblkno * PAGE_SIZE, bp, bp->b_data, bp->b_flags, 0);
 
 	trace(TR_BRELSE, pack(bp->b_vp, bp->b_bufsize), bp->b_lblkno);
 
@@ -733,9 +674,7 @@ brelse(bp)
 				        upl_flags = 0;
 				ubc_upl_abort(upl, upl_flags);
 			} else {
-			    if (ISSET(bp->b_flags, B_NEEDCOMMIT))
-				    upl_flags = UPL_COMMIT_CLEAR_DIRTY ;
-			    else if (ISSET(bp->b_flags, B_DELWRI | B_WASDIRTY))
+			    if (ISSET(bp->b_flags, (B_DELWRI | B_WASDIRTY)))
 					upl_flags = UPL_COMMIT_SET_DIRTY ;
 				else
 				    upl_flags = UPL_COMMIT_CLEAR_DIRTY ;
@@ -786,10 +725,7 @@ brelse(bp)
 		 */
 		if (bp->b_vp)
 			brelvp(bp);
-		if (ISSET(bp->b_flags, B_DELWRI)) {
-			CLR(bp->b_flags, B_DELWRI);
-			nbdwrite--;
-		}
+		CLR(bp->b_flags, B_DELWRI);
 		if (bp->b_bufsize <= 0)
 			whichq = BQ_EMPTY;	/* no data */
 		else
@@ -822,7 +758,7 @@ brelse(bp)
 	splx(s);
 
 	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 388)) | DBG_FUNC_END,
-		     (int)bp, (int)bp->b_data, bp->b_flags, 0, 0);
+		     bp, bp->b_data, bp->b_flags, 0, 0);
 }
 
 /*
@@ -855,8 +791,7 @@ incore(vp, blkno)
 	return (0);
 }
 
-
-/* XXX FIXME -- Update the comment to reflect the UBC changes (please) -- */
+/* XXX FIXME -- Update the comment to reflect the UBC changes -- */
 /*
  * Get a block of requested size that is associated with
  * a given vnode and block offset. If it is found in the
@@ -954,11 +889,8 @@ start:
 					SET(bp->b_flags, B_PAGELIST);
 					bp->b_pagelist = upl;
 
-					if (!upl_valid_page(pl, 0)) {
-						if (vp->v_tag != VT_NFS)
-					        	panic("getblk: incore buffer without valid page");
-						CLR(bp->b_flags, B_CACHE);
-					}
+					if ( !upl_valid_page(pl, 0))
+					        panic("getblk: incore buffer without valid page");
 
 					if (upl_dirty_page(pl, 0))
 					        SET(bp->b_flags, B_WASDIRTY);
@@ -1180,7 +1112,7 @@ start:
 	}
 
 	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 386)) | DBG_FUNC_END,
-		     (int)bp, (int)bp->b_data, bp->b_flags, 3, 0);
+		     bp, bp->b_data, bp->b_flags, 3, 0);
 
 	return (bp);
 }
@@ -1256,6 +1188,9 @@ struct meta_zone_entry meta_zones[] = {
 	{NULL, 0, 0, "" } /* End */
 };
 #endif /* ZALLOC_METADATA */
+
+zone_t buf_hdr_zone;
+int buf_hdr_count;
 
 /*
  * Initialize the meta data zones
@@ -1557,7 +1492,6 @@ bcleanbuf(struct buf *bp)
 {
 	int s;
 	struct ucred *cred;
-	int	hdralloc = 0;
 
 	s = splbio();
 
@@ -1566,10 +1500,6 @@ bcleanbuf(struct buf *bp)
 
 	/* Buffer is no longer on free lists. */
 	SET(bp->b_flags, B_BUSY);
-
-	/* Check whether the buffer header was "allocated" */
-	if (ISSET(bp->b_flags, B_HDRALLOC))
-		hdralloc = 1;
 
 	if (bp->b_hash.le_prev == (struct buf **)0xdeadbeef) 
 		panic("bcleanbuf: le_prev is deadbeef");
@@ -1630,8 +1560,6 @@ bcleanbuf(struct buf *bp)
 	bp->b_bufsize = 0;
 	bp->b_data = 0;
 	bp->b_flags = B_BUSY;
-	if (hdralloc)
-		SET(bp->b_flags, B_HDRALLOC);
 	bp->b_dev = NODEV;
 	bp->b_blkno = bp->b_lblkno = 0;
 	bp->b_iodone = 0;
@@ -1706,12 +1634,12 @@ biodone(bp)
 	struct buf *bp;
 {
 	boolean_t 	funnel_state;
-	struct vnode *vp;
+	int s;
 
 	funnel_state = thread_funnel_set(kernel_flock, TRUE);
 
 	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 387)) | DBG_FUNC_START,
-		     (int)bp, (int)bp->b_data, bp->b_flags, 0, 0);
+		     bp, bp->b_data, bp->b_flags, 0, 0);
 
 	if (ISSET(bp->b_flags, B_DONE))
 		panic("biodone already");
@@ -1725,15 +1653,6 @@ biodone(bp)
 	if (!ISSET(bp->b_flags, B_READ) && !ISSET(bp->b_flags, B_RAW))
 		vwakeup(bp);	 /* wake up reader */
 
-	/* Wakeup the throttled write operations as needed */
-	vp = bp->b_vp;
-	if (vp
-		&& (vp->v_flag & VTHROTTLED)
-		&& (vp->v_numoutput <= (BUFWRITE_THROTTLE / 3))) {
-		vp->v_flag &= ~VTHROTTLED;
-		wakeup((caddr_t)&vp->v_numoutput);
-	}
-
 	if (ISSET(bp->b_flags, B_CALL)) {	/* if necessary, call out */
 		CLR(bp->b_flags, B_CALL);	/* but note callout done */
 		(*bp->b_iodone)(bp);
@@ -1745,7 +1664,7 @@ biodone(bp)
 	}
 
 	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 387)) | DBG_FUNC_END,
-		     (int)bp, (int)bp->b_data, bp->b_flags, 0, 0);
+		     bp, bp->b_data, bp->b_flags, 0, 0);
 
 	thread_funnel_set(kernel_flock, funnel_state);
 }

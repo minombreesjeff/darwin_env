@@ -721,12 +721,6 @@ findpcb:
 		goto dropwithreset;
 	if (tp->t_state == TCPS_CLOSED)
 		goto drop;
-        /* 
-         * Bogus state when listening port owned by SharedIP with loopback as the 
-         * only configured interface: BlueBox does not filters loopback
-         */ 
-	if (tp->t_state == TCP_NSTATES)
-		goto drop;
 
 	/* Unscale the window into a 32-bit value. */
 	if ((thflags & TH_SYN) == 0)
@@ -1176,20 +1170,13 @@ findpcb:
 		}
 		else {
 #endif /* INET6 */
-		/*
-		 * RFC1122 4.2.3.10, p. 104: discard bcast/mcast SYN
-		 * in_broadcast() should never return true on a received
-		 * packet with M_BCAST not set.
- 		 *
- 		 * Packets with a multicast source address should also
- 		 * be discarded.
-		 */
-		if (m->m_flags & (M_BCAST|M_MCAST))
-			goto drop;
-		if (IN_MULTICAST(ntohl(ip->ip_dst.s_addr)) ||
-		    IN_MULTICAST(ntohl(ip->ip_src.s_addr)) ||
-		    ip->ip_src.s_addr == htonl(INADDR_BROADCAST) ||
-		    in_broadcast(ip->ip_dst, m->m_pkthdr.rcvif))
+			/*
+			 * RFC1122 4.2.3.10, p. 104: discard bcast/mcast SYN
+			 * in_broadcast() should never return true on a received
+			 * packet with M_BCAST not set.
+			 */
+			if (m->m_flags & (M_BCAST|M_MCAST) ||
+			    IN_MULTICAST(ntohl(ip->ip_dst.s_addr)))
 				goto drop;
 			MALLOC(sin, struct sockaddr_in *, sizeof *sin, M_SONAME,
 			       M_NOWAIT);
@@ -2405,10 +2392,7 @@ dropwithreset:
 			goto drop; /* anycast check is done at the top */
 	} else
 #endif /* INET6 */
-	if (IN_MULTICAST(ntohl(ip->ip_dst.s_addr)) ||
-	    IN_MULTICAST(ntohl(ip->ip_src.s_addr)) ||
-	    ip->ip_src.s_addr == htonl(INADDR_BROADCAST) ||
-	    in_broadcast(ip->ip_dst, m->m_pkthdr.rcvif))
+	if (IN_MULTICAST(ntohl(ip->ip_dst.s_addr)))
 		goto drop;
 #if TCPDEBUG
 	if (tp == 0 || (tp->t_inpcb->inp_socket->so_options & SO_DEBUG)) {

@@ -100,14 +100,6 @@ void ml_cause_interrupt(void)
 	panic("ml_cause_interrupt not defined yet on Intel");
 }
 
-void ml_thread_policy(
-	thread_t thread,
-	unsigned policy_id,
-	unsigned policy_info)
-{
-	return;
-}
-
 /* Initialize Interrupts */
 void ml_install_interrupt_handler(
 	void *nub,

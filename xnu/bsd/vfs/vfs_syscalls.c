@@ -115,7 +115,7 @@ mount(p, uap, retval)
 	struct vnode *vp;
 	struct mount *mp;
 	struct vfsconf *vfsp;
-	int error, flag, err2;
+	int error, flag;
 	struct vattr va;
 	u_long fstypenum;
 	struct nameidata nd;
@@ -305,15 +305,11 @@ update:
 		vfs_unbusy(mp, p);
 		return (error);
 	}
-
-	/* get the vnode lock */
-	err2 = vn_lock(vp,  LK_EXCLUSIVE|LK_RETRY, p);
-
 	/*
 	 * Put the new filesystem on the mount list after root.
 	 */
 	cache_purge(vp);
-	if (!error && !err2) {
+	if (!error) {
 		simple_lock(&vp->v_interlock);
 		CLR(vp->v_flag, VMOUNT);
 		vp->v_mountedhere =mp;
@@ -337,10 +333,7 @@ update:
 		mp->mnt_vfc->vfc_refcount--;
 		vfs_unbusy(mp, p);
 		_FREE_ZONE((caddr_t)mp, sizeof (struct mount), M_MOUNT);
-		if (err2)
-			vrele(vp);
-		else
-			vput(vp);
+		vput(vp);
 	}
 	return (error);
 }
@@ -357,7 +350,6 @@ checkdirs(olddp)
 	struct filedesc *fdp;
 	struct vnode *newdp;
 	struct proc *p;
-	struct vnode *tvp;
 
 	if (olddp->v_usecount == 1)
 		return;
@@ -366,23 +358,20 @@ checkdirs(olddp)
 	for (p = allproc.lh_first; p != 0; p = p->p_list.le_next) {
 		fdp = p->p_fd;
 		if (fdp->fd_cdir == olddp) {
+			vrele(fdp->fd_cdir);
 			VREF(newdp);
-			tvp = fdp->fd_cdir;
 			fdp->fd_cdir = newdp;
-			vrele(tvp);
 		}
 		if (fdp->fd_rdir == olddp) {
+			vrele(fdp->fd_rdir);
 			VREF(newdp);
-			tvp = fdp->fd_rdir;
 			fdp->fd_rdir = newdp;
-			vrele(tvp);
 		}
 	}
 	if (rootvnode == olddp) {
+		vrele(rootvnode);
 		VREF(newdp);
-		tvp = rootvnode;
 		rootvnode = newdp;
-		vrele(tvp);
 	}
 	vput(newdp);
 }
@@ -779,7 +768,7 @@ fchdir(p, uap, retval)
 	register_t *retval;
 {
 	register struct filedesc *fdp = p->p_fd;
-	struct vnode *vp, *tdp, *tvp;
+	struct vnode *vp, *tdp;
 	struct mount *mp;
 	struct file *fp;
 	int error;
@@ -808,9 +797,8 @@ fchdir(p, uap, retval)
 		return (error);
 	}
 	VOP_UNLOCK(vp, 0, p);
-	tvp = fdp->fd_cdir;
+	vrele(fdp->fd_cdir);
 	fdp->fd_cdir = vp;
-	vrele(tvp);
 	return (0);
 }
 
@@ -830,15 +818,13 @@ chdir(p, uap, retval)
 	register struct filedesc *fdp = p->p_fd;
 	int error;
 	struct nameidata nd;
-	struct vnode *tvp;
 
 	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF, UIO_USERSPACE,
 	    uap->path, p);
 	if (error = change_dir(&nd, p))
 		return (error);
-	tvp = fdp->fd_cdir;
+	vrele(fdp->fd_cdir);
 	fdp->fd_cdir = nd.ni_vp;
-	vrele(tvp);
 	return (0);
 }
 
@@ -858,7 +844,6 @@ chroot(p, uap, retval)
 	register struct filedesc *fdp = p->p_fd;
 	int error;
 	struct nameidata nd;
-	struct vnode *tvp;
 
 	if (error = suser(p->p_ucred, &p->p_acflag))
 		return (error);
@@ -873,10 +858,9 @@ chroot(p, uap, retval)
 		return (error);
 	}
 
-	tvp = fdp->fd_rdir;
+	if (fdp->fd_rdir != NULL)
+		vrele(fdp->fd_rdir);
 	fdp->fd_rdir = nd.ni_vp;
-	if (tvp != NULL)
-		vrele(tvp);
 	return (0);
 }
 

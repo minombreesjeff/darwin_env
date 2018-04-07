@@ -204,6 +204,7 @@ proc_prepareexit(struct proc *p)
 	thread_t self = current_thread();
 	thread_act_t th_act_self = current_act();
 
+
 	/*
 	 * Remove proc from allproc queue and from pidhash chain.
 	 * Need to do this before we do anything that can block.
@@ -226,6 +227,7 @@ proc_prepareexit(struct proc *p)
 	ut = get_bsdthread_info(th_act_self);
 	ut->uu_sig = 0;
 	untimeout(realitexpire, (caddr_t)p);
+
 }
 
 void 
@@ -236,6 +238,7 @@ proc_exit(struct proc *p)
 	thread_act_t th_act_self = current_act();
 	struct task *task = p->task;
 	register int i,s;
+	struct uthread *ut;
 	boolean_t funnel_state;
 
 	/* This can happen if thread_terminate of the single thread
@@ -267,8 +270,6 @@ proc_exit(struct proc *p)
 		register struct session *sp = p->p_session;
 
 		if (sp->s_ttyvp) {
-			struct vnode *ttyvp;
-
 			/*
 			 * Controlling process.
 			 * Signal foreground pgrp,
@@ -286,10 +287,9 @@ proc_exit(struct proc *p)
 				if (sp->s_ttyvp)
 					VOP_REVOKE(sp->s_ttyvp, REVOKEALL);
 			}
-			ttyvp = sp->s_ttyvp;
+			if (sp->s_ttyvp)
+				vrele(sp->s_ttyvp);
 			sp->s_ttyvp = NULL;
-			if (ttyvp)
-				vrele(ttyvp);
 			/*
 			 * s_ttyp is not zero'd; we use this to indicate
 			 * that the session once had a controlling terminal.
@@ -306,11 +306,8 @@ proc_exit(struct proc *p)
 	 * release trace file
 	 */
 	p->p_traceflag = 0;	/* don't trace the vrele() */
-	if (p->p_tracep) {
-		struct vnode *tvp = p->p_tracep;
-		p->p_tracep = NULL;
-		vrele(tvp);
-	}
+	if (p->p_tracep)
+		vrele(p->p_tracep);
 #endif
 
 
@@ -342,6 +339,7 @@ proc_exit(struct proc *p)
 			psignal(q, SIGKILL);
 		}
 	}
+
 
 	/*
 	 * Save exit status and final rusage info, adding in child rusage
@@ -377,6 +375,7 @@ proc_exit(struct proc *p)
 		timeradd(&ut,&p->p_ru->ru_utime,&p->p_ru->ru_utime);
 		timeradd(&st,&p->p_ru->ru_stime,&p->p_ru->ru_stime);
 	}
+
 
 	ruadd(p->p_ru, &p->p_stats->p_cru);
 
@@ -465,6 +464,7 @@ wait4(p, uap, retval)
 	struct wait4_args *uap;
 	int *retval;
 {
+
 	return (wait1(p, uap, retval, 0));
 }
 
@@ -499,16 +499,21 @@ owait3(p, uap, retval)
 int
 wait1continue(result)
 {
-	void *vt;
-	thread_act_t thread;
-	int *retval;
-	struct proc *p;
-
-	if (result)
-		return(result);
+  void *vt;
+  thread_act_t thread;
+  struct uthread *ut;
+  int *retval;
+  struct proc *p;
 
 	p = current_proc();
-	thread = current_act();
+	p->p_flag &= ~P_WAITING;
+
+      if (result != 0) {
+	  return(result);
+	}
+
+    thread = current_act();
+	ut = get_bsdthread_info(thread);
 	vt = get_bsduthreadarg(thread);
 	retval = get_bsduthreadrval(thread);
 	wait1((struct proc *)p, (struct wait4_args *)vt, retval, 0);
@@ -526,9 +531,16 @@ wait1(q, uap, retval, compat)
 	register int nfound;
 	register struct proc *p, *t;
 	int status, error;
-	struct vnode *tvp;
 
-retry:
+
+#if 0
+	/* since we are funneled we don't need to do this atomically, yet */
+	if (q->p_flag & P_WAITING) {
+	  return(EINVAL);
+	}
+	q->p_flag |= P_WAITING;   /* only allow single thread to wait() */
+#endif
+
 	if (uap->pid == 0)
 		uap->pid = -q->p_pgid;
 
@@ -540,12 +552,6 @@ loop:
 		    p->p_pgid != -(uap->pid))
 			continue;
 		nfound++;
-		if (p->p_flag & P_WAITING) {
-			(void)tsleep(&p->p_stat, PWAIT, "waitcoll", 0);
-			goto loop;
-		}
-		p->p_flag |= P_WAITING;   /* only allow single thread to wait() */
-
 		if (p->p_stat == SZOMB) {
 			retval[0] = p->p_pid;
 #if COMPAT_43
@@ -558,8 +564,7 @@ loop:
 				if (error = copyout((caddr_t)&status,
 				    (caddr_t)uap->status,
 						    sizeof(status))) {
-					p->p_flag &= ~P_WAITING;
-					wakeup(&p->p_stat);
+				        q->p_flag &= ~P_WAITING;
 					return (error);
 				}
 			}
@@ -567,8 +572,7 @@ loop:
 			    (error = copyout((caddr_t)p->p_ru,
 			    (caddr_t)uap->rusage,
 					     sizeof (struct rusage)))) {
-				p->p_flag &= ~P_WAITING;
-				wakeup(&p->p_stat);
+				        q->p_flag &= ~P_WAITING;
 				return (error);
 			}
 			/*
@@ -580,8 +584,7 @@ loop:
 				proc_reparent(p, t);
 				psignal(t, SIGCHLD);
 				wakeup((caddr_t)t);
-				p->p_flag &= ~P_WAITING;
-				wakeup(&p->p_stat);
+				        q->p_flag &= ~P_WAITING;
 				return (0);
 			}
 			p->p_xstat = 0;
@@ -617,10 +620,8 @@ loop:
 			/*
 			 * Release reference to text vnode
 			 */
-			tvp = p->p_textvp;
-			p->p_textvp = NULL;
-			if (tvp)
-				vrele(tvp);
+			if (p->p_textvp)
+				vrele(p->p_textvp);
 
 			/*
 			 * Finally finished with old proc entry.
@@ -629,10 +630,9 @@ loop:
 			leavepgrp(p);
 			LIST_REMOVE(p, p_list);	/* off zombproc */
 			LIST_REMOVE(p, p_sibling);
-			p->p_flag &= ~P_WAITING;
 			FREE_ZONE(p, sizeof *p, M_PROC);
 			nprocs--;
-			wakeup(&p->p_stat);
+				        q->p_flag &= ~P_WAITING;
 			return (0);
 		}
 		if (p->p_stat == SSTOP && (p->p_flag & P_WAITED) == 0 &&
@@ -652,24 +652,24 @@ loop:
 				    sizeof(status));
 			} else
 				error = 0;
-			p->p_flag &= ~P_WAITING;
-			wakeup(&p->p_stat);
+				        q->p_flag &= ~P_WAITING;
 			return (error);
 		}
-		p->p_flag &= ~P_WAITING;
-		wakeup(&p->p_stat);
 	}
-	if (nfound == 0)
+	if (nfound == 0) {
+				        q->p_flag &= ~P_WAITING;
 		return (ECHILD);
-
+	}
 	if (uap->options & WNOHANG) {
 		retval[0] = 0;
+				        q->p_flag &= ~P_WAITING;
 		return (0);
 	}
 
-	if (error = tsleep0((caddr_t)q, PWAIT | PCATCH, "wait", 0, wait1continue))
+	if (error = tsleep0((caddr_t)q, PWAIT | PCATCH, "wait", 0, wait1continue)) {
+				        q->p_flag &= ~P_WAITING;
 		return (error);
-
+	}
 	goto loop;
 }
 
@@ -690,13 +690,13 @@ proc_reparent(child, parent)
 	child->p_pptr = parent;
 }
 
+kern_return_t
+init_process(void)
 /*
  *	Make the current process an "init" process, meaning
  *	that it doesn't have a parent, and that it won't be
  *	gunned down by kill(-1, 0).
  */
-kern_return_t
-init_process(void)
 {
 	register struct proc *p = current_proc();
 
@@ -729,7 +729,6 @@ process_terminate_self(void)
 		/*NOTREACHED*/
 	}
 }
-
 /*
  * Exit: deallocate address space and other resources, change proc state
  * to zombie, and unlink proc from allproc and parent's lists.  Save exit
@@ -806,6 +805,7 @@ panic("init died\nState at Last Exception:\n\n%s", init_task_failure_data);
 	vproc_exit(p);
 }
 
+
 void 
 vproc_exit(struct proc *p)
 {
@@ -814,6 +814,7 @@ vproc_exit(struct proc *p)
 	thread_act_t th_act_self = current_act();
 	struct task *task = p->task;
 	register int i,s;
+	struct uthread *ut;
 	boolean_t funnel_state;
 
 	MALLOC_ZONE(p->p_ru, struct rusage *,
@@ -833,8 +834,6 @@ vproc_exit(struct proc *p)
 		register struct session *sp = p->p_session;
 
 		if (sp->s_ttyvp) {
-			struct vnode *ttyvp;
-
 			/*
 			 * Controlling process.
 			 * Signal foreground pgrp,
@@ -852,10 +851,9 @@ vproc_exit(struct proc *p)
 				if (sp->s_ttyvp)
 					VOP_REVOKE(sp->s_ttyvp, REVOKEALL);
 			}
-			ttyvp = sp->s_ttyvp;
+			if (sp->s_ttyvp)
+				vrele(sp->s_ttyvp);
 			sp->s_ttyvp = NULL;
-			if (ttyvp)
-				vrele(ttyvp);
 			/*
 			 * s_ttyp is not zero'd; we use this to indicate
 			 * that the session once had a controlling terminal.
@@ -872,12 +870,10 @@ vproc_exit(struct proc *p)
 	 * release trace file
 	 */
 	p->p_traceflag = 0;	/* don't trace the vrele() */
-	if (p->p_tracep) {
-		struct vnode *tvp = p->p_tracep;
-		p->p_tracep = NULL;
-		vrele(tvp);
-	}
+	if (p->p_tracep)
+		vrele(p->p_tracep);
 #endif
+
 
 	q = p->p_children.lh_first;
 	if (q)		/* only need this if any child is S_ZOMB */
@@ -907,6 +903,7 @@ vproc_exit(struct proc *p)
 			psignal(q, SIGKILL);
 		}
 	}
+
 
 	/*
 	 * Save exit status and final rusage info, adding in child rusage
@@ -994,4 +991,6 @@ vproc_exit(struct proc *p)
 
 	/* and now wakeup the parent */
 	wakeup((caddr_t)p->p_pptr);
+
 }
+

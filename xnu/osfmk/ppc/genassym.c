@@ -67,7 +67,6 @@
 #include <mach/machine.h>
 #include <ppc/vmachmon.h>
 #include <ppc/PPCcalls.h>
-#include <ppc/mem.h>
 
 #define offsetof(TYPE, MEMBER) ((size_t) &((TYPE)0)->MEMBER)
 
@@ -238,18 +237,14 @@ int main(int argc, char *argv[])
 	DECLARE("pfThermalb",			pfThermalb);
 	DECLARE("pfThermInt",			pfThermInt);
 	DECLARE("pfThermIntb",			pfThermIntb);
+	DECLARE("pfLClck",				pfLClck);
+	DECLARE("pfLClckb",				pfLClckb);
 	DECLARE("pfWillNap",			pfWillNap);
 	DECLARE("pfWillNapb",			pfWillNapb);
 	DECLARE("pfNoMSRir",			pfNoMSRir);
 	DECLARE("pfNoMSRirb",			pfNoMSRirb);
-	DECLARE("pfSlowNap",				pfSlowNap);
-	DECLARE("pfSlowNapb",				pfSlowNapb);
-	DECLARE("pfNoMuMMCK",				pfNoMuMMCK);
-	DECLARE("pfNoMuMMCKb",				pfNoMuMMCKb);
-	DECLARE("pfLClck",				pfLClck);
-	DECLARE("pfLClckb",				pfLClckb);
-	DECLARE("pfL3pdet",				pfL3pdet);
-	DECLARE("pfL3pdetb",				pfL3pdetb);
+	DECLARE("pfL1nnc",				pfL1nnc);
+	DECLARE("pfL1nncb",				pfL1nncb);
 	DECLARE("pfL1i",				pfL1i);
 	DECLARE("pfL1ib",				pfL1ib);
 	DECLARE("pfL1d",				pfL1d);
@@ -285,9 +280,6 @@ int main(int argc, char *argv[])
 	DECLARE("pfICTRL", 			offsetof(struct per_proc_info *, pf.pfICTRL));
 	DECLARE("pfLDSTCR", 			offsetof(struct per_proc_info *, pf.pfLDSTCR));
 	DECLARE("pfLDSTDB", 			offsetof(struct per_proc_info *, pf.pfLDSTDB));
-	DECLARE("pfl2crOriginal", 		offsetof(struct per_proc_info *, pf.l2crOriginal));
-	DECLARE("pfl3crOriginal", 		offsetof(struct per_proc_info *, pf.l3crOriginal));
-	DECLARE("pfBootConfig", 		offsetof(struct per_proc_info *, pf.pfBootConfig));
 	DECLARE("pfSize", 				sizeof(procFeatures));
 	
 	DECLARE("thrmmaxTemp", 			offsetof(struct per_proc_info *, thrm.maxTemp));
@@ -962,8 +954,6 @@ int main(int argc, char *argv[])
 	DECLARE("CPU_SUBTYPE_POWERPC_7400",		CPU_SUBTYPE_POWERPC_7400);
 	DECLARE("CPU_SUBTYPE_POWERPC_7450",		CPU_SUBTYPE_POWERPC_7450);
 
-	DECLARE("shdIBAT",	offsetof(struct shadowBAT *, IBATs));	
-	DECLARE("shdDBAT",	offsetof(struct shadowBAT *, DBATs));	
 	
 	return(0);  /* For ANSI C :-) */
 

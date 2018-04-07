@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2001 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -110,7 +110,7 @@ ufs_inactive(ap)
 		 * marking inode in transit so that one can get this 
 		 * inode from inodecache
 		 */
-		SET(ip->i_flag, IN_TRANSIT);
+		ip->i_flag |= IN_TRANSIT;
 		error = VOP_TRUNCATE(vp, (off_t)0, 0, NOCRED, p);
 		ip->i_rdev = 0;
 		mode = ip->i_mode;
@@ -157,9 +157,8 @@ ufs_reclaim(vp, p)
 	 */
 	cache_purge(vp);
 	if (ip->i_devvp) {
-		struct vnode *tvp = ip->i_devvp;
-		ip->i_devvp = NULL;
-		vrele(tvp);
+		vrele(ip->i_devvp);
+		ip->i_devvp = 0;
 	}
 #if QUOTA
 	for (i = 0; i < MAXQUOTAS; i++) {
@@ -169,9 +168,5 @@ ufs_reclaim(vp, p)
 		}
 	}
 #endif
-	CLR(ip->i_flag, (IN_ALLOC|IN_TRANSIT));
-	if (ISSET(ip->i_flag, IN_WALLOC)|| ISSET(ip->i_flag, IN_WTRANSIT))
-		wakeup(ip);
-
 	return (0);
 }

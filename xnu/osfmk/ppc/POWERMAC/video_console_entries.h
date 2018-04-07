@@ -76,6 +76,8 @@
  */
 #include <device/device_types.h>
 
+extern void		vc_putchar(
+				char			ch);
 extern int		vcputc(
 				int			l,
 				int			u,

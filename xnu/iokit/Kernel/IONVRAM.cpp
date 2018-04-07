@@ -42,13 +42,7 @@ bool IODTNVRAM::init(IORegistryEntry *old, const IORegistryPlane *plane)
   
   _nvramImage = IONew(UInt8, kIODTNVRAMImageSize);
   if (_nvramImage == 0) return false;
-  
-  _nvramPartitionOffsets = OSDictionary::withCapacity(1);
-  if (_nvramPartitionOffsets == 0) return false;
-  
-  _nvramPartitionLengths = OSDictionary::withCapacity(1);
-  if (_nvramPartitionLengths == 0) return false;
-  
+
   _registryPropertiesKey = OSSymbol::withCStringNoCopy("aapl,pci");
   if (_registryPropertiesKey == 0) return false;
   
@@ -57,11 +51,7 @@ bool IODTNVRAM::init(IORegistryEntry *old, const IORegistryPlane *plane)
 
 void IODTNVRAM::registerNVRAMController(IONVRAMController *nvram)
 {
-  char   partitionID[18];
-  UInt32 partitionOffset, partitionLength;
-  UInt32 freePartitionOffset, freePartitionSize;
-  UInt32 currentLength, currentOffset = 0;
-  OSNumber *partitionOffsetNumber, *partitionLengthNumber;
+  UInt32 currentOffset = 0;
   
   if (_nvramController != 0) return;
   
@@ -69,53 +59,26 @@ void IODTNVRAM::registerNVRAMController(IONVRAMController *nvram)
   
   _nvramController->read(0, _nvramImage, kIODTNVRAMImageSize);
   
-  // Find the offsets for the OF, XPRAM, and NameRegistry partitions.
+  // Find the offsets for the OF, XPRAM and NameRegistry partitions in NVRAM.
   _ofPartitionOffset = 0xFFFFFFFF;
   _xpramPartitionOffset = 0xFFFFFFFF;
   _nrPartitionOffset = 0xFFFFFFFF;
-  freePartitionOffset = 0xFFFFFFFF;
-  freePartitionSize = 0;
   if (getPlatform()->getBootROMType()) {
     // Look through the partitions to find the OF, MacOS partitions.
     while (currentOffset < kIODTNVRAMImageSize) {
-      currentLength = ((UInt16 *)(_nvramImage + currentOffset))[1] * 16;
-      
-      partitionOffset = currentOffset + 16;
-      partitionLength = currentLength - 16;
-      
-      if (strncmp((const char *)_nvramImage + currentOffset + 4,
-		  kIODTNVRAMOFPartitionName, 12) == 0) {
-	_ofPartitionOffset = partitionOffset;
-	_ofPartitionSize = partitionLength;
-      } else if (strncmp((const char *)_nvramImage + currentOffset + 4,
-			 kIODTNVRAMXPRAMPartitionName, 12) == 0) {
-	_xpramPartitionOffset = partitionOffset;
+      if (strcmp((const char *)_nvramImage + currentOffset + 4, "common") == 0) {
+	_ofPartitionOffset = currentOffset + 16;
+	_ofPartitionSize =
+	  (((UInt16 *)(_nvramImage + currentOffset))[1] - 1) * 0x10;
+      } else if (strcmp((const char *)_nvramImage + currentOffset + 4, "APL,MacOS75") == 0) {
+	_xpramPartitionOffset = currentOffset + 16;
 	_xpramPartitionSize = kIODTNVRAMXPRAMSize;
 	_nrPartitionOffset = _xpramPartitionOffset + _xpramPartitionSize;
-	_nrPartitionSize = partitionLength - _xpramPartitionSize;
-      } else if (strncmp((const char *)_nvramImage + currentOffset + 4,
-			 kIODTNVRAMFreePartitionName, 12) == 0) {
-	freePartitionOffset = currentOffset;
-	freePartitionSize = currentLength;
-      } else {
-	// Construct the partition ID from the signature and name.
-	sprintf(partitionID, "0x%02x,",
-		*(UInt8 *)(_nvramImage + currentOffset));
-	strncpy(partitionID + 5,
-		(const char *)(_nvramImage + currentOffset + 4), 12);
-	partitionID[17] = '\0';
-	
-	partitionOffsetNumber = OSNumber::withNumber(partitionOffset, 32);
-	partitionLengthNumber = OSNumber::withNumber(partitionLength, 32);
-	
-	// Save the partition offset and length
-	_nvramPartitionOffsets->setObject(partitionID, partitionOffsetNumber);
-	_nvramPartitionLengths->setObject(partitionID, partitionLengthNumber);
-	
-	partitionOffsetNumber->release();
-	partitionLengthNumber->release();
+	_nrPartitionSize =
+	  (((UInt16 *)(_nvramImage + currentOffset))[1] - 1) * 0x10 -
+	  _xpramPartitionSize;
       }
-      currentOffset += currentLength;
+      currentOffset += ((short *)(_nvramImage + currentOffset))[1] * 16;
     }
   } else {
     // Use the fixed address for old world machines.
@@ -317,7 +280,8 @@ IOReturn IODTNVRAM::setProperties(OSObject *properties)
 IOReturn IODTNVRAM::readXPRAM(IOByteCount offset, UInt8 *buffer,
 			      IOByteCount length)
 {
-  if (_xpramImage == 0) return kIOReturnUnsupported;
+  if ((_nvramImage == 0) || (_xpramPartitionOffset == 0))
+    return kIOReturnNotReady;
   
   if ((buffer == 0) || (length <= 0) || (offset < 0) ||
       (offset + length > kIODTNVRAMXPRAMSize))
@@ -331,7 +295,8 @@ IOReturn IODTNVRAM::readXPRAM(IOByteCount offset, UInt8 *buffer,
 IOReturn IODTNVRAM::writeXPRAM(IOByteCount offset, UInt8 *buffer,
 			       IOByteCount length)
 {
-  if (_xpramImage == 0) return kIOReturnUnsupported;
+  if ((_nvramImage == 0) || (_xpramPartitionOffset == 0))
+    return kIOReturnNotReady;
   
   if ((buffer == 0) || (length <= 0) || (offset < 0) ||
       (offset + length > kIODTNVRAMXPRAMSize))
@@ -372,66 +337,7 @@ IOReturn IODTNVRAM::writeNVRAMProperty(IORegistryEntry *entry,
   return err;
 }
 
-OSDictionary *IODTNVRAM::getNVRAMPartitions(void)
-{
-  return _nvramPartitionLengths;
-}
 
-IOReturn IODTNVRAM::readNVRAMPartition(const OSSymbol *partitionID,
-				       IOByteCount offset, UInt8 *buffer,
-				       IOByteCount length)
-{
-  OSNumber *partitionOffsetNumber, *partitionLengthNumber;
-  UInt32   partitionOffset, partitionLength;
-  
-  partitionOffsetNumber =
-    (OSNumber *)_nvramPartitionOffsets->getObject(partitionID);
-  partitionLengthNumber =
-    (OSNumber *)_nvramPartitionLengths->getObject(partitionID);
-  
-  if ((partitionOffsetNumber == 0) || (partitionLengthNumber == 0))
-    return kIOReturnNotFound;
-  
-  partitionOffset = partitionOffsetNumber->unsigned32BitValue();
-  partitionLength = partitionLengthNumber->unsigned32BitValue();
-  
-  if ((buffer == 0) || (length <= 0) || (offset < 0) ||
-      (offset + length > partitionLength))
-    return kIOReturnBadArgument;
-  
-  bcopy(_nvramImage + partitionOffset + offset, buffer, length);
-  
-  return kIOReturnSuccess;
-}
-
-IOReturn IODTNVRAM::writeNVRAMPartition(const OSSymbol *partitionID,
-					IOByteCount offset, UInt8 *buffer,
-					IOByteCount length)
-{
-  OSNumber *partitionOffsetNumber, *partitionLengthNumber;
-  UInt32   partitionOffset, partitionLength;
-  
-  partitionOffsetNumber =
-    (OSNumber *)_nvramPartitionOffsets->getObject(partitionID);
-  partitionLengthNumber =
-    (OSNumber *)_nvramPartitionLengths->getObject(partitionID);
-  
-  if ((partitionOffsetNumber == 0) || (partitionLengthNumber == 0))
-    return kIOReturnNotFound;
-  
-  partitionOffset = partitionOffsetNumber->unsigned32BitValue();
-  partitionLength = partitionLengthNumber->unsigned32BitValue();
-  
-  if ((buffer == 0) || (length <= 0) || (offset < 0) ||
-      (offset + length > partitionLength))
-    return kIOReturnBadArgument;
-  
-  bcopy(buffer, _nvramImage + partitionOffset + offset, length);
-  
-  _nvramImageDirty = true;
-  
-  return kIOReturnSuccess;
-}
 
 // Private methods for Open Firmware variable access.
 

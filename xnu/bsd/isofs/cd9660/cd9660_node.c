@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2001 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -306,9 +306,8 @@ cd9660_reclaim(ap)
 	 */
 	cache_purge(vp);
 	if (ip->i_devvp) {
-		struct vnode *tvp = ip->i_devvp;
-		ip->i_devvp = NULL;
-		vrele(tvp);
+		vrele(ip->i_devvp);
+		ip->i_devvp = 0;
 	}
 	if (ip->i_namep != isonullname)
 		FREE(ip->i_namep, M_TEMP);

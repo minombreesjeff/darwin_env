@@ -339,12 +339,7 @@ int adsp_wput(gref, mp)
 	int s;
 	gbuf_t *xm;
 	ioc_t *iocbp;
-	CCBPtr sp;
-	
-	if (gref->info)
-		sp = (CCBPtr)gbuf_rptr(((gbuf_t *)gref->info));
-	else
-		sp = 0;
+	CCBPtr sp = (CCBPtr)gbuf_rptr(((gbuf_t *)gref->info));
 
 	if (gbuf_type(mp) == MSG_IOCTL) {
 		iocbp = (ioc_t *)gbuf_rptr(mp);
@@ -540,7 +535,7 @@ adspAssignSocket(gref, flag)
 	int s;
 
 	sMax = flag ? DDP_SOCKET_LAST-46 : DDP_SOCKET_LAST-6;
-	sMin = DDP_SOCKET_1st_DYNAMIC;
+	sMin = DDP_SOCKET_1st_DYNAMIC-64;
 
 	ATDISABLE(s, adspall_lock);
 	for (inputC=255, sVal=sMax; sVal >= sMin; sVal--) {

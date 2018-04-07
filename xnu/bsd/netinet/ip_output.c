@@ -351,10 +351,8 @@ ip_output(m0, opt, ro, flags, imo)
 		 */
 		if (imo != NULL) {
 			ip->ip_ttl = imo->imo_multicast_ttl;
-			if (imo->imo_multicast_ifp != NULL) {
+			if (imo->imo_multicast_ifp != NULL)
 				ifp = imo->imo_multicast_ifp;
-				dl_tag = ifp->if_data.default_proto;
-			}
 			if (imo->imo_multicast_vif != -1)
 				ip->ip_src.s_addr =
 				    ip_mcast_src(imo->imo_multicast_vif);
@@ -1045,7 +1043,7 @@ in_delayed_cksum(struct mbuf *m)
 
         csum = in_cksum_skip(m, ip->ip_len, offset);
 
-	if ((m->m_pkthdr.csum_flags & CSUM_UDP) && csum == 0)
+	if (csum == 0)
 		csum = 0xffff;
 
         offset += m->m_pkthdr.csum_data & 0xFFFF;        /* checksum offset */
