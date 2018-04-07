@@ -622,6 +622,7 @@ void hfs_resolvelink(ExtendedVCB *vcb, CatalogNodeData *cndp)
 	char iNodeName[32];
 	UInt32 hint;
 	UInt32 indlinkno;
+	UInt32 linkparid, linkcnid;
 	OSErr result;
 
 	fip = (struct FInfo *) &cndp->cnd_finderInfo;
@@ -641,7 +642,10 @@ void hfs_resolvelink(ExtendedVCB *vcb, CatalogNodeData *cndp)
 		/*
 		 * Get nodeData from the data node file. 
 		 * Flag the node data to NOT copy the name (ie preserve the original)
+		 * Also preserve the parent directory ID.
 		 */
+		linkparid = cndp->cnm_parID;
+		linkcnid = cndp->cnd_nodeID;
 		cndp->cnm_flags |= kCatNameNoCopyName;
 		result = GetCatalogNode(vcb, VCBTOHFS(vcb)->hfs_private_metadata_dir,
 		                iNodeName, 0, 0, cndp, &hint);
@@ -653,6 +657,8 @@ void hfs_resolvelink(ExtendedVCB *vcb, CatalogNodeData *cndp)
 			
 			/* Keep a copy of iNodeNum to put into h_indnodeno */
 			cndp->cnd_iNodeNumCopy = indlinkno;
+			cndp->cnm_parID = linkparid;
+			cndp->cnd_linkCNID = linkcnid;
 		}
 	}
 }
@@ -806,28 +812,6 @@ short hfs_vcreate(ExtendedVCB *vcb, hfsCatalogInfo *catInfo, UInt8 forkType, str
 	dev_t				dev;
 	short				retval;
 
-#if HFS_DIAGNOSTIC
-	DBG_ASSERT(vcb != NULL);
-	DBG_ASSERT(catInfo != NULL);
-	DBG_ASSERT(vpp != NULL);
-	DBG_ASSERT((forkType == kDirectory) || (forkType == kDataFork) || (forkType == kRsrcFork));
-	if (catInfo->nodeData.cnd_type == kCatalogFolderNode) {
-			DBG_ASSERT(forkType == kDirectory);
-	} else {
-			DBG_ASSERT(forkType != kDirectory);
-	}
-#endif
-
-    if ( ! ((forkType == kDirectory) || (forkType == kDataFork) || (forkType == kRsrcFork)))
-        panic("Bad fork type");
-	if (catInfo->nodeData.cnd_type == kCatalogFolderNode) {
-			if (forkType != kDirectory)
-			    panic("non directory type");
-	} else {
-			if (forkType != kDataFork && forkType != kRsrcFork)
-			    panic("non fork type");
-	}
-        
 	hfsmp	= VCBTOHFS(vcb);
 	mp		= HFSTOVFS(hfsmp);
 	dev		= hfsmp->hfs_raw_dev;
@@ -837,48 +821,77 @@ short hfs_vcreate(ExtendedVCB *vcb, hfsCatalogInfo *catInfo, UInt8 forkType, str
 		*vpp = NULL;
 		return (EPERM);
 	}
-	DBG_UTILS(("\thfs_vcreate: On '%s' with forktype of %d, nodeType of 0x%08lX\n", catInfo->nodeData.cnm_nameptr, forkType, (unsigned long)catInfo->nodeData.cnd_type));
-	
-	/* Must malloc() here, since getnewvnode() can sleep */
+
+	/*
+	 * If this is a hard link then check if the
+	 * data node already exists in our hash.
+	 */
+	if ((forkType == kDataFork)
+		&& (catInfo->nodeData.cnd_type == kCatalogFileNode)
+		&& ((catInfo->nodeData.cnd_mode & IFMT) == IFREG)
+		&& (catInfo->nodeData.cnd_linkCount > 0)) {
+		vp = hfs_vhashget(dev, catInfo->nodeData.cnd_nodeID, kDataFork);
+		if (vp != NULL) {
+			/* Use the name of the link and it's parent ID. */
+			hp = VTOH(vp);
+			H_DIRID(hp) = catInfo->nodeData.cnm_parID;
+			hfs_set_metaname(catInfo->nodeData.cnm_nameptr, hp->h_meta, hfsmp);
+			*vpp = vp;
+			return (0);
+		}
+	}
+
 	MALLOC_ZONE(hp, struct hfsnode *, sizeof(struct hfsnode), M_HFSNODE, M_WAITOK);
 	bzero((caddr_t)hp, sizeof(struct hfsnode));
-	
-	/*
-	 * Set that this node is in the process of being allocated
-	 * Set it as soon as possible, so context switches well always hit upon it.
-	 * if this is set then wakeup() MUST be called on hp after the flag is cleared
-	 * DO NOT exit without clearing and waking up !!!!
-	 */
-	hp->h_nodeflags |= IN_ALLOCATING;				/* Mark this as being allocating */
+	hp->h_nodeflags |= IN_ALLOCATING;
 	lockinit(&hp->h_lock, PINOD, "hfsnode", 0, 0);
-
-
-	/* getnewvnode() does a VREF() on the vnode */
-	/* Allocate a new vnode. If unsuccesful, leave after freeing memory */
-	if ((retval = getnewvnode(VT_HFS, mp, hfs_vnodeop_p, &vp))) {
-		wakeup(hp);				/* Shouldnt happen, but just to make sure */
-		FREE_ZONE(hp, sizeof(struct hfsnode), M_HFSNODE);
-		*vpp = NULL;
-		return (retval);
-	};
-
-	/*
-	 * Set the essentials before locking it down
-	 */
-	hp->h_vp = vp;									/* Make HFSTOV work */
-	vp->v_data = hp;								/* Make VTOH work */
 	H_FORKTYPE(hp) = forkType;
 	rl_init(&hp->h_invalidranges);
-	fm = NULL;
-	
+
 	/*
-	 * Lock the hfsnode and insert the hfsnode into the hash queue, also if meta exists
+	 * There were several blocking points since we first
+	 * checked the hash. Now that we're through blocking,
+	 * check the hash again in case we're racing for the
+	 * same hnode.
+	 */
+	vp = hfs_vhashget(dev, catInfo->nodeData.cnd_nodeID, forkType);
+	if (vp != NULL) {
+		/* We lost the race, use the winner's vnode */
+		FREE_ZONE(hp, sizeof(struct hfsnode), M_HFSNODE);
+		*vpp = vp;
+		UBCINFOCHECK("hfs_vcreate", vp);
+		return (0);
+	}
+
+	/*
+	 * Insert the hfsnode into the hash queue, also if meta exists
 	 * add to sibling list and return the meta address
 	 */
+	fm = NULL;
 	if  (SIBLING_FORKTYPE(forkType))
 		hfs_vhashins_sibling(dev, catInfo->nodeData.cnd_nodeID, hp, &fm);
 	else
 		hfs_vhashins(dev, catInfo->nodeData.cnd_nodeID, hp);
+
+	/* Allocate a new vnode. If unsuccesful, leave after freeing memory */
+	if ((retval = getnewvnode(VT_HFS, mp, hfs_vnodeop_p, &vp))) {
+		hfs_vhashrem(hp);
+		if (hp->h_nodeflags & IN_WANT) {
+			hp->h_nodeflags &= ~IN_WANT;
+			wakeup(hp);
+		}
+		FREE_ZONE(hp, sizeof(struct hfsnode), M_HFSNODE);
+		*vpp = NULL;
+		return (retval);
+	}
+	hp->h_vp = vp;
+	vp->v_data = hp;
+
+	hp->h_nodeflags &= ~IN_ALLOCATING;
+	if (hp->h_nodeflags & IN_WANT) {
+		hp->h_nodeflags &= ~IN_WANT;
+		wakeup((caddr_t)hp);
+	}
 
 	/*
 	 * If needed allocate and init the object meta data:
@@ -913,7 +926,6 @@ short hfs_vcreate(ExtendedVCB *vcb, hfsCatalogInfo *catInfo, UInt8 forkType, str
 	};
 	fm->h_usecount++;
 
-
 	/*
 	 * Init the File Control Block.
 	 */
@@ -933,48 +945,24 @@ short hfs_vcreate(ExtendedVCB *vcb, hfsCatalogInfo *catInfo, UInt8 forkType, str
 		ubc_info_init(vp);
 	}
 
-    /*
+	/*
 	 * Initialize the vnode from the inode, check for aliases, sets the VROOT flag.
 	 * Note that the underlying vnode may have changed.
 	 */
 	if ((retval = hfs_vinit(mp, hfs_specop_p, hfs_fifoop_p, &vp))) {
-		wakeup((caddr_t)hp);
 		vput(vp);
 		*vpp = NULL;
 		return (retval);
 	}
 
-    /*
-     * Finish inode initialization now that aliasing has been resolved.
-     */
-    hp->h_meta->h_devvp = hfsmp->hfs_devvp;
-    VREF(hp->h_meta->h_devvp);
+	/*
+	 * Finish inode initialization now that aliasing has been resolved.
+	 */
+	hp->h_meta->h_devvp = hfsmp->hfs_devvp;
+	VREF(hp->h_meta->h_devvp);
     
-#if HFS_DIAGNOSTIC
-	hp->h_valid = HFS_VNODE_MAGIC;
-#endif
-	hp->h_nodeflags &= ~IN_ALLOCATING;				/* vnode is completely initialized */
-
-	/* Wake up anybody waiting for us to finish..see hfs_vhash.c */
-	wakeup((caddr_t)hp);
-
-#if HFS_DIAGNOSTIC
-
-	/* Lets do some testing here */
-	DBG_ASSERT(hp->h_meta);
-	DBG_ASSERT(VTOH(vp)==hp);
-	DBG_ASSERT(HTOV(hp)==vp);
-	DBG_ASSERT(hp->h_meta->h_usecount>=1 && hp->h_meta->h_usecount<=2);
-	if (catInfo->nodeData.cnd_type == kCatalogFolderNode) {
-		DBG_ASSERT(vp->v_type == VDIR);
-		DBG_ASSERT(H_FORKTYPE(VTOH(vp)) == kDirectory);
-	}
-#endif // HFS_DIAGNOSTIC
-
-
 	*vpp = vp;
 	return 0;
-
 }
 
 void CopyCatalogToObjectMeta(struct hfsCatalogInfo *catalogInfo, struct vnode *vp, struct hfsfilemeta *fm)
@@ -2095,15 +2083,27 @@ void PackCommonCatalogInfoAttributeBlock(struct attrlist		*alist,
 			};
 		}
 		if (a & ATTR_CMN_OBJTAG) *((fsobj_tag_t *)attrbufptr)++ = root_vp->v_tag;
-        if (a & ATTR_CMN_OBJID)
-        {
-            ((fsobj_id_t *)attrbufptr)->fid_objno = catalogInfo->nodeData.cnd_nodeID;
+        if (a & ATTR_CMN_OBJID) {
+            u_int32_t cnid;
+ 
+            /* For hard links use the link's cnid */
+            if (catalogInfo->nodeData.cnd_iNodeNumCopy != 0)
+			  	cnid = catalogInfo->nodeData.cnd_linkCNID;
+            else
+			  	cnid = catalogInfo->nodeData.cnd_nodeID;
+            ((fsobj_id_t *)attrbufptr)->fid_objno = cnid;
             ((fsobj_id_t *)attrbufptr)->fid_generation = 0;
             ++((fsobj_id_t *)attrbufptr);
         };
-        if (a & ATTR_CMN_OBJPERMANENTID)
-        {
-            ((fsobj_id_t *)attrbufptr)->fid_objno = catalogInfo->nodeData.cnd_nodeID;
+        if (a & ATTR_CMN_OBJPERMANENTID) {
+            u_int32_t cnid;
+ 
+            /* For hard links use the link's cnid */
+            if (catalogInfo->nodeData.cnd_iNodeNumCopy != 0)
+			  	cnid = catalogInfo->nodeData.cnd_linkCNID;
+			else
+			  	cnid = catalogInfo->nodeData.cnd_nodeID;
+            ((fsobj_id_t *)attrbufptr)->fid_objno = cnid;
             ((fsobj_id_t *)attrbufptr)->fid_generation = 0;
             ++((fsobj_id_t *)attrbufptr);
         };
@@ -2210,24 +2210,23 @@ void PackCommonCatalogInfoAttributeBlock(struct attrlist		*alist,
 			(char *)varbufptr += attrlength + ((4 - (attrlength & 3)) & 3);
 			++((struct attrreference *)attrbufptr);
 		};
-        if (a & ATTR_CMN_FLAGS) {
-        	if (catalogInfo->nodeData.cnd_mode & IFMT) {
-        		if (catalogInfo->nodeData.cnd_flags & kHFSFileLockedMask) {
-        			*((u_long *)attrbufptr)++ =
-        				(u_long) (catalogInfo->nodeData.cnd_ownerFlags |
-        						  (catalogInfo->nodeData.cnd_adminFlags << 16)) |
-        						  UF_IMMUTABLE;
-        		} else {
-        			*((u_long *)attrbufptr)++ =
-        				(u_long) (catalogInfo->nodeData.cnd_ownerFlags |
-        						  (catalogInfo->nodeData.cnd_adminFlags << 16)) & ~UF_IMMUTABLE;
-        		}
-        	} else {
-        		/* The information in the node flag fields is not valid: */
-        		*((u_long *)attrbufptr)++ =
-        			(catalogInfo->nodeData.cnd_flags & kHFSFileLockedMask) ? UF_IMMUTABLE : 0;
-        	};
-        };
+		if (a & ATTR_CMN_FLAGS) {
+			u_long flags;
+
+			if (catalogInfo->nodeData.cnd_mode & IFMT)
+				flags = catalogInfo->nodeData.cnd_ownerFlags |
+				        catalogInfo->nodeData.cnd_adminFlags << 16;
+			else
+				flags = 0;
+
+			if (catalogInfo->nodeData.cnd_type == kCatalogFileNode) {
+				if (catalogInfo->nodeData.cnd_flags & kHFSFileLockedMask)
+					flags |= UF_IMMUTABLE;
+				else
+					flags &= ~UF_IMMUTABLE;
+			};
+			*((u_long *)attrbufptr)++ = flags;
+		};
 		if (a & ATTR_CMN_USERACCESS) {
 			if ((VTOVFS(root_vp)->mnt_flag & MNT_UNKNOWNPERMISSIONS) ||
 				((catalogInfo->nodeData.cnd_mode & IFMT) == 0)) {
@@ -2291,12 +2290,26 @@ void PackCommonAttributeBlock(struct attrlist *alist,
 		if (a & ATTR_CMN_OBJTYPE) *((fsobj_type_t *)attrbufptr)++ = vp->v_type;
 		if (a & ATTR_CMN_OBJTAG) *((fsobj_tag_t *)attrbufptr)++ = vp->v_tag;
         if (a & ATTR_CMN_OBJID)	{
-            ((fsobj_id_t *)attrbufptr)->fid_objno = H_FILEID(hp);
+            u_int32_t cnid;
+
+            /* For hard links use the link's cnid */
+            if (hp->h_meta->h_metaflags & IN_DATANODE)
+                cnid = catInfo->nodeData.cnd_linkCNID;
+            else
+                cnid = H_FILEID(hp);
+            ((fsobj_id_t *)attrbufptr)->fid_objno = cnid;
 			((fsobj_id_t *)attrbufptr)->fid_generation = 0;
 			++((fsobj_id_t *)attrbufptr);
 		};
         if (a & ATTR_CMN_OBJPERMANENTID)	{
-            ((fsobj_id_t *)attrbufptr)->fid_objno = H_FILEID(hp);
+            u_int32_t cnid;
+
+            /* For hard links use the link's cnid */
+            if (hp->h_meta->h_metaflags & IN_DATANODE)
+                cnid = catInfo->nodeData.cnd_linkCNID;
+            else
+                cnid = H_FILEID(hp);
+            ((fsobj_id_t *)attrbufptr)->fid_objno = cnid;
             ((fsobj_id_t *)attrbufptr)->fid_generation = 0;
             ++((fsobj_id_t *)attrbufptr);
         };

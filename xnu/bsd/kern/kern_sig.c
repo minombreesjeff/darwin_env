@@ -117,6 +117,7 @@ ram_printf(int x)
 int
 signal_lock(struct proc *p)
 {
+int error = 0;
 #if SIGNAL_DEBUG
 #ifdef __ppc__
         {
@@ -135,7 +136,11 @@ signal_lock(struct proc *p)
 #endif /* __ppc__ */       
 #endif /* SIGNAL_DEBUG */
 
-	return(lockmgr(&p->signal_lock, LK_EXCLUSIVE, 0, (struct proc *)0));
+siglock_retry:
+	error = lockmgr(&p->signal_lock, LK_EXCLUSIVE, 0, (struct proc *)0);
+	if (error == EINTR)
+		goto siglock_retry;
+	return(error);
 }
 
 int
@@ -1021,6 +1026,7 @@ psignal_lock(p, signum, withlock, pend)
 	thread_act_t	*cur_act;
 	int mask;
 	kern_return_t kret;
+	int sw_funnel = 0;
 
 	if ((u_int)signum >= NSIG || signum == 0)
 		panic("psignal signal number");
@@ -1032,21 +1038,32 @@ psignal_lock(p, signum, withlock, pend)
                 ram_printf(3);
         }
 #endif /* SIGNAL_DEBUG */
+
+	if (thread_funnel_get() == (funnel_t *)network_flock) {
+		sw_funnel = 1;
+		thread_funnel_switch(NETWORK_FUNNEL, KERNEL_FUNNEL);
+	}
 	/*
 	 *	We will need the task pointer later.  Grab it now to
 	 *	check for a zombie process.  Also don't send signals
 	 *	to kernel internal tasks.
 	 */
-	if (((sig_task = p->task) == TASK_NULL)  || is_kerneltask(sig_task))
+	if (((sig_task = p->task) == TASK_NULL)  || is_kerneltask(sig_task)) {
+		if (sw_funnel)
+			thread_funnel_switch(KERNEL_FUNNEL, NETWORK_FUNNEL);
 		return;
+	}
 
 	/*
 	 * do not send signals to the process that has the thread
 	 * doing a reboot(). Not doing so will mark that thread aborted
 	 * and can cause IO failures wich will cause data loss.
 	 */
-	if (ISSET(p->p_flag, P_REBOOT))
+	if (ISSET(p->p_flag, P_REBOOT)) {
+		if (sw_funnel)
+			thread_funnel_switch(KERNEL_FUNNEL, NETWORK_FUNNEL);
 		return;
+	}
 
 	/* 
 	 * if the traced process is blocked waiting for
@@ -1061,6 +1078,8 @@ psignal_lock(p, signum, withlock, pend)
 			thread_call_func((thread_call_func_t)psignal_pend, p,
 			 FALSE);
 		}
+		if (sw_funnel)
+			thread_funnel_switch(KERNEL_FUNNEL, NETWORK_FUNNEL);
 		return;
 	}
 
@@ -1331,6 +1350,8 @@ run:
 psigout:
 	if (withlock) 
 		signal_unlock(p);
+	if (sw_funnel)
+		thread_funnel_switch(KERNEL_FUNNEL, NETWORK_FUNNEL);
 }
 
 __inline__ void
