@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007-2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2007-2011 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -22,10 +22,10 @@
  */
 
 /*
- * Directory Services helper routines.
+ * Open Directory helper routines.
  */
 
 /*
- * Get the root-level node for a search.
+ * Get a C string corresponding to a CFErrorRef.
  */
-int ds_get_root_level_node(tDirReference, tDirNodeReference *);
+extern char *od_get_error_string(CFErrorRef err);

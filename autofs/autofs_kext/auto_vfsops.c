@@ -24,7 +24,7 @@
  */
 
 /*
- * Portions Copyright 2007-2009 Apple Inc.
+ * Portions Copyright 2007-2011 Apple Inc.
  */
 
 #pragma ident	"@(#)auto_vfsops.c	1.58	06/03/24 SMI"
@@ -52,6 +52,8 @@
 #include <IOKit/IOLib.h>
 
 #include "autofs.h"
+#include "triggers.h"
+#include "triggers_priv.h"
 #include "autofs_kern.h"
 
 lck_grp_t *autofs_lck_grp;
@@ -69,7 +71,6 @@ __private_extern__ int auto_module_stop(kmod_info_t *, void *);
 static int auto_mount(mount_t, vnode_t, user_addr_t, vfs_context_t);
 static int auto_start(mount_t, int, vfs_context_t);
 static int auto_unmount(mount_t, int, vfs_context_t);
-static int auto_root(mount_t, vnode_t *, vfs_context_t);
 static int auto_vfs_getattr(mount_t, struct vfs_attr *, vfs_context_t);
 static int auto_sync(mount_t, int, vfs_context_t);
 static int auto_vget(mount_t, ino64_t, vnode_t *, vfs_context_t);
@@ -142,7 +143,6 @@ autofs_zone_init(void)
 	fnnode_t *fnp = NULL;
 	static const char fnnode_name[] = "root_fnnode";
 	struct timeval now;
-	kern_return_t ret;
 
 	MALLOC(fngp, struct autofs_globals *, sizeof (*fngp), M_AUTOFS,
 	    M_WAITOK);
@@ -171,7 +171,6 @@ autofs_zone_init(void)
 	fnp->fn_mode = AUTOFS_MODE;
 	microtime(&now);
 	fnp->fn_crtime = fnp->fn_atime = fnp->fn_mtime = fnp->fn_ctime = now;
-	fnp->fn_ref_time = now.tv_sec;
 	fnp->fn_nodeid = 1;	/* XXX - could just be zero? */
 	fnp->fn_globals = fngp;
 	fnp->fn_lock = lck_mtx_alloc_init(autofs_lck_grp, NULL);
@@ -188,29 +187,10 @@ autofs_zone_init(void)
 	fngp->fng_rootfnnodep = fnp;
 	fngp->fng_fnnode_count = 1;
 	fngp->fng_printed_not_running_msg = 0;
-	fngp->fng_unmount_threads_lock = lck_mtx_alloc_init(autofs_lck_grp,
-	    LCK_ATTR_NULL);
-	if (fngp->fng_unmount_threads_lock == NULL) {
-		IOLog("autofs_zone_init: Couldn't create autofs global unmount threads lock\n");
-		goto fail;
-	}
-	fngp->fng_unmount_threads = 0;
-	fngp->fng_terminate_do_unmount_thread = 0;
-	fngp->fng_do_unmount_thread_terminated = 0;
 	fngp->fng_flush_notification_lock = lck_mtx_alloc_init(autofs_lck_grp,
 	    LCK_ATTR_NULL);
 	if (fngp->fng_flush_notification_lock == NULL) {
 		IOLog("autofs_zone_init: Couldn't create autofs global flush notification lock\n");
-		goto fail;
-	}
-
-	/*
-	 * Start the unmounter thread.
-	 * XXX - priority?  minclsyspri?
-	 */
-	ret = auto_new_thread(auto_do_unmount, fngp);
-	if (ret != KERN_SUCCESS) {
-		IOLog("autofs_zone_init: Couldn't create unmounter thread, status 0x%08x", ret);
 		goto fail;
 	}
 	return (fngp);
@@ -228,9 +208,6 @@ fail:
 	if (fngp != NULL) {
 		if (fngp->fng_flush_notification_lock != NULL)
 			lck_mtx_free(fngp->fng_flush_notification_lock,
-			    autofs_lck_grp);
-		if (fngp->fng_unmount_threads_lock != NULL)
-			lck_mtx_free(fngp->fng_unmount_threads_lock,
 			    autofs_lck_grp);
 		FREE(fngp, M_AUTOFS);
 	}
@@ -351,6 +328,8 @@ auto_mount(mount_t mp, __unused vnode_t devvp, user_addr_t data,
 	lck_attr_t *lckattr;
 #endif
 	struct autofs_globals *fngp;
+	int node_type;
+	boolean_t lu_verbose;
 
 	AUTOFS_DPRINT((4, "auto_mount: mp %p devvp %p\n", mp, devvp));
 
@@ -375,7 +354,7 @@ auto_mount(mount_t mp, __unused vnode_t devvp, user_addr_t data,
 	 */
 	switch (argsvers) {
 
-	case 1:
+	case 2:
 		if (vfs_context_is64bit(context))
 			error = copyin(data, &args, sizeof (args));
 		else {
@@ -389,10 +368,9 @@ auto_mount(mount_t mp, __unused vnode_t devvp, user_addr_t data,
 				args.subdir = CAST_USER_ADDR_T(args32.subdir);
 				args.key = CAST_USER_ADDR_T(args32.key);
 				args.mntflags = args32.mntflags;
-				args.mount_to = args32.mount_to;
-				args.mach_to = args32.mach_to;
 				args.direct = args32.direct;
-				args.trigger = args32.trigger;
+				args.mount_type = args32.mount_type;
+				args.node_type = args32.node_type;
 			}
 		}
 		if (error)
@@ -418,10 +396,6 @@ auto_mount(mount_t mp, __unused vnode_t devvp, user_addr_t data,
 	if (fnip == NULL)
 		return (ENOMEM);
 	bzero(fnip, sizeof(*fnip));
-	fnip->fi_flags |= MF_MOUNTING;	/* mount isn't finished yet */
-
-	fnip->fi_mount_to = args.mount_to;
-	fnip->fi_mach_to = args.mach_to;
 
 	/*
 	 * Assign a unique fsid to the mount
@@ -479,18 +453,47 @@ auto_mount(mount_t mp, __unused vnode_t devvp, user_addr_t data,
 	fnip->fi_maplen = (int)len;
 	bcopy(strbuff, fnip->fi_map, len);
 
-	if (args.trigger) {
+	switch (args.mount_type) {
+
+	case MOUNT_TYPE_MAP:
 		/*
-		 * Mark this as a trigger, both to let users know
-		 * that it's a trigger and to let the automount
-		 * command know that it's a trigger.
+		 * Top-level mount of a map, done by automount.
+		 * Show it as "map XXX".
 		 */
-		strncpy(vfs_statfs(mp)->f_mntfromname, "trigger",
-		    sizeof(vfs_statfs(mp)->f_mntfromname)-1);
-		vfs_statfs(mp)->f_mntfromname[sizeof(vfs_statfs(mp)->f_mntfromname)-1] = (char)0;
-	} else {
 		snprintf(vfs_statfs(mp)->f_mntfromname, sizeof(vfs_statfs(mp)->f_mntfromname),
 		    "map %.*s", fnip->fi_maplen, fnip->fi_map);
+		break;
+
+	case MOUNT_TYPE_TRIGGERED_MAP:
+		/*
+		 * Map mounted as a result of an automounter map
+		 * entry that said "do an autofs mount here".
+		 * Show it as "triggered map XXX", to let
+		 * the automount command know it's not a top-level
+		 * map and that it shouldn't unmount it if auto_master
+		 * doesn't mention it.
+		 */
+		snprintf(vfs_statfs(mp)->f_mntfromname, sizeof(vfs_statfs(mp)->f_mntfromname),
+		    "triggered map %.*s", fnip->fi_maplen, fnip->fi_map);
+		break;
+
+	case MOUNT_TYPE_SUBTRIGGER:
+		/*
+		 * Mark this in the from name as a subtrigger, both
+		 * to let users know that it's a subtrigger and to
+		 * let the automount command know that it's a subtrigger
+		 * and that it shouldn't unmount it if auto_master
+		 * doesn't mention it.
+		 */
+		strncpy(vfs_statfs(mp)->f_mntfromname, "subtrigger",
+		    sizeof(vfs_statfs(mp)->f_mntfromname)-1);
+		vfs_statfs(mp)->f_mntfromname[sizeof(vfs_statfs(mp)->f_mntfromname)-1] = (char)0;
+
+		/*
+		 * Flag it as a (sub)trigger for our purposes as well.
+		 */
+		fnip->fi_flags |= MF_SUBTRIGGER;
+		break;
 	}
 
 	/*
@@ -544,11 +547,53 @@ auto_mount(mount_t mp, __unused vnode_t devvp, user_addr_t data,
 	fnip->fi_rwlock = lck_rw_alloc_init(autofs_lck_grp, NULL);
 #endif
 
+	if (args.direct == 1) {
+		/*
+		 * For subtriggers, mark this not just as a trigger,
+		 * but as a "real" trigger, rather than a "just mounts
+		 * autofs" trigger, so that the higher-level frameworks
+		 * will see it as ultimately having a real file system
+		 * mounted on it, regardless of whether the autofs
+		 * trigger is mounted atop it.
+		 *
+		 * Otherwise, do a lookup on the root node, to determine
+		 * whether anything is supposed to be mounted on it or not,
+		 * i.e. whether it's a trigger.
+		 *
+		 * XXX - this means that, if the map entry changes,
+		 * the vnode type can't change from trigger to
+		 * non-trigger or vice versa.  It also means that
+		 * if a map changes from direct to indirect, or
+		 * vice versa, the vnode type can't change.
+		 */
+		if (args.mount_type == MOUNT_TYPE_SUBTRIGGER)
+			node_type = NT_TRIGGER;
+		else {
+			error = auto_lookup_request(fnip, fnip->fi_key,
+			    fnip->fi_keylen, fnip->fi_subdir,
+			    context, &node_type, &lu_verbose);
+			if (error) {
+				/*
+				 * Well, this will get an error when we
+				 * try to refer to it, so let's call it
+				 * a trigger, so the error will show up.
+				 */
+				node_type = NT_TRIGGER;
+			}
+		}
+	} else {
+		/*
+		 * The root directory of an indirect map is never a
+		 * trigger.
+		 */
+		node_type = 0;
+	}
+
 	/*
-	 * Make the root vnode
+	 * Make the root vnode.
 	 */
-	error = auto_makefnnode(&rootfnp, VDIR, mp, NULL, fnip->fi_path,
-	    NULL, 1, vfs_context_ucred(context), fngp);
+	error = auto_makefnnode(&rootfnp, node_type, mp, NULL, "", NULL,
+	    1, fngp);
 	if (error)
 		goto errout;
 	myrootvp = fntovn(rootfnp);
@@ -566,10 +611,10 @@ auto_mount(mount_t mp, __unused vnode_t devvp, user_addr_t data,
 	fnip->fi_rootvp = myrootvp;
 
 	/*
-	 * Add to list of top level AUTOFS's if this isn't a trigger
+	 * Add to list of top level AUTOFS's if this is a top-level
 	 * mount.
 	 */
-	if (!args.trigger) {
+	if (args.mount_type == MOUNT_TYPE_MAP) {
 		lck_rw_lock_exclusive(fngp->fng_rootfnnodep->fn_rwlock);
 		rootfnp->fn_parent = fngp->fng_rootfnnodep;
 		rootfnp->fn_next = fngp->fng_rootfnnodep->fn_dirents;
@@ -615,7 +660,7 @@ errout:
 }
 
 static int
-auto_update_options(struct autofs_update_args_64 *update_argsp, int pid)
+auto_update_options(struct autofs_update_args_64 *update_argsp)
 {
 	mount_t mp;
 	fninfo_t *fnip;
@@ -648,6 +693,8 @@ auto_update_options(struct autofs_update_args_64 *update_argsp, int pid)
 	/*
 	 * We can't change the map type if the top-level directory has
 	 * subdirectories (i.e., if stuff has happened under it).
+	 *
+	 * XXX - change whether it's a trigger or not?
 	 */
 	if ((update_argsp->direct == 1 && !(fnip->fi_flags & MF_DIRECT)) ||
 	    (update_argsp->direct != 1 && (fnip->fi_flags & MF_DIRECT))) {
@@ -698,10 +745,8 @@ auto_update_options(struct autofs_update_args_64 *update_argsp, int pid)
 		fnip->fi_flags |= MF_DIRECT;
 	else
 		fnip->fi_flags &= ~MF_DIRECT;
-	fnip->fi_flags &= ~(MF_MOUNTING|MF_UNMOUNTING);
+	fnip->fi_flags &= ~MF_UNMOUNTING;
 	fnip->fi_mntflags = update_argsp->mntflags;
-	fnip->fi_mount_to = update_argsp->mount_to;
-	fnip->fi_mach_to = update_argsp->mach_to;
 
 	snprintf(vfs_statfs(mp)->f_mntfromname, sizeof(vfs_statfs(mp)->f_mntfromname),
 	    "map %.*s", fnip->fi_maplen, fnip->fi_map);
@@ -725,33 +770,16 @@ auto_update_options(struct autofs_update_args_64 *update_argsp, int pid)
 		struct vnode_attr vattr;
 
 		vfs_get_notify_attributes(&vattr);
-		auto_get_attributes(fnip->fi_rootvp, &vattr, pid);
+		auto_get_attributes(fnip->fi_rootvp, &vattr);
 		vnode_notify(fnip->fi_rootvp, VNODE_EVENT_WRITE, &vattr);
 	}
 	return (0);
 }
 
-/*
- * This is called during a mount when the file system is "ready".
- * We refuse to trigger in auto_root() until that has happened.
- * Otherwise, we are called when the mount system call has a writer
- * lock on mp, which means no lookups can proceed past mp - including
- * the lookup necessary to mount on top of the trigger point!  That
- * means that if a mount is triggered in the process of mounting an
- * autofs file system, and the autofs mount can't complete until the
- * triggered mount completes, we deadlock, as the triggered mount
- * can't complete until the writer lock is released, and that doesn't
- * happen until the autofs mount completes.
- */
 int
-auto_start(mount_t mp, __unused int flags, __unused vfs_context_t context)
+auto_start(__unused mount_t mp, __unused int flags,
+    __unused vfs_context_t context)
 {
-	fninfo_t *fnip;
-
-	fnip = vfstofni(mp);
-	lck_rw_lock_exclusive(fnip->fi_rwlock);
-	fnip->fi_flags &= ~MF_MOUNTING;
-	lck_rw_unlock_exclusive(fnip->fi_rwlock);
 	return (0);
 }
 
@@ -779,18 +807,93 @@ auto_unmount(mount_t mp, int mntflags, __unused vfs_context_t context)
 	if (mntflags & MNT_FORCE)
 		return (ENOTSUP);
 
-#if 0
-	assert(vn_vfswlock_held(mp->mnt_vnodecovered));
-#endif
 	rvp = fnip->fi_rootvp;
 	rfnp = vntofn(rvp);
 
-	error = vflush(mp, rvp, 0);
-	if (error)
-		return (error);
+	/*
+	 * At this point, the VFS layer is holding a write lock on
+	 * mp, preventing threads from crossing through that mount
+	 * point on a lookup; there might, however, be threads that
+	 * have already crossed through that mount point and are
+	 * in the process of a lookup in this file system.
+	 *
+	 * The VFS layer has already done a vflush() that checked
+	 * all non-root, non-swap, non-system vnodes and, if any
+	 * had a zero usecount or a usecount equal to the kusecount,
+	 * waited for the iocount to drop to 0 and then reclaimed
+	 * them (and, if it's a forced unmount, for vnodes with a
+	 * a non-zero usecount, waited for the iocount to drop to
+	 * 0 and then deadfs'ed them), so, except for the root
+	 * vnode, there should be no vnodes left.
+	 *
+	 * Unfortunately, if somebody's holding onto the root
+	 * vnode, e.g. in a lookup, they could end up getting
+	 * some vnode on this file system, whether it's the
+	 * root vnode or some other vnode, and possibly getting
+	 * a usecount on it, so the vflush() didn't give us a
+	 * particularly useful guarantee.
+	 *
+	 * Holding the write lock will block any mount atop
+	 * a vnode in this file system from crossing into
+	 * this file system on a lookup.  A triggered mount
+	 * will hold a usecount on the mount point, so, if
+	 * that vnode is *not* the root vnode, a vflush()
+	 * should fail - but, again, there's no guarantee
+	 * that the mount won't be triggered *after* the
+	 * vflush() is done.  Furthermore, if it *is* being
+	 * done on the root vnode, the vflush() won't help.
+	 *
+	 * So:
+	 *
+	 *	nobody should be crossing *into* this file
+	 *	system and triggering a mount, and, if they
+	 *	do, they'll block (modulo 3424361, alas, but
+	 *	that just means they'll fail);
+	 *
+	 *	there might, however, be lookups that have
+	 *	already crossed into this file system and
+	 *	that will trigger mounts;
+	 *
+	 *	the only way to wait for all of them to
+	 *	finish would be to release the root vnode
+	 *	and then do a vflush() waiting for everything
+	 *	to drain - but if that fails we'd have to
+	 *	recreate the root vnode, and we'd have to
+	 *	make sure that the temporary lack of a
+	 *	root vnode doesn't break anything;
+	 *
+	 *	if we don't wait for anll of them to finish,
+	 *	we run the risk of dismantling this mount
+	 *	while operations are in progress on it (see
+	 *	8960014);
+	 *
+	 * Lock the fninfo, so that no mounts get started until we
+	 * release it.
+	 */
+	lck_rw_lock_exclusive(fnip->fi_rwlock);
 
-	if (vnode_isinuse(rvp, 1) || rfnp->fn_dirents != NULL)
+	/*
+	 * Wait for in-progress operations to finish on vnodes other than
+	 * the root vnode, and fail if any usecounts are held on any of
+	 * those vnodes.
+	 */
+	error = vflush(mp, rvp, 0);
+	if (error) {
+		lck_rw_unlock_exclusive(fnip->fi_rwlock);
+		return (error);
+	}
+
+	/*
+	 * OK, do we have any usecounts on the root vnode, other than
+	 * our own, or does it have any live subdirectories?
+	 */
+	if (vnode_isinuse(rvp, 1) || rfnp->fn_dirents != NULL) {
+		/*
+		 * Yes - drop the lock and fail.
+		 */
+		lck_rw_unlock_exclusive(fnip->fi_rwlock);
 		return (EBUSY);
+	}
 
 	/*
 	 * The root vnode is on the linked list of root fnnodes only if
@@ -810,6 +913,7 @@ auto_unmount(mount_t mp, int mntflags, __unused vfs_context_t context)
 			 */
 			if (vnode_isinuse(rvp, 1) || rfnp->fn_dirents != NULL) {
 				lck_rw_unlock_exclusive(myrootfnnodep->fn_rwlock);
+				lck_rw_unlock_exclusive(fnip->fi_rwlock);
 				return (EBUSY);
 			}
 			if (pfnp)
@@ -823,6 +927,18 @@ auto_unmount(mount_t mp, int mntflags, __unused vfs_context_t context)
 		fnp = fnp->fn_next;
 	}
 	lck_rw_unlock_exclusive(myrootfnnodep->fn_rwlock);
+
+	/*
+	 * OK, we're committed to the unmount.  Mark the file system
+	 * as being unmounted, so that any triggered mounts done on
+	 * it will fail rather than trying to refer to the fninfo_t
+	 * for it, as we're going to release that fninfo_t.  Then drop
+	 * the write lock on the fninfo_t, so that any triggered mounts
+	 * waiting for us to release the lock can proceed, see that
+	 * MF_UNMOUNTING is set, and fail.
+	 */
+	fnip->fi_flags |= MF_UNMOUNTING;
+	lck_rw_unlock_exclusive(fnip->fi_rwlock);
 
 	assert(vnode_isinuse(rvp, 0) && !vnode_isinuse(rvp, 1));
 	assert(rfnp->fn_direntcnt == 0);
@@ -874,111 +990,19 @@ auto_unmount(mount_t mp, int mntflags, __unused vfs_context_t context)
 	return (0);
 }
 
-extern int thread_notrigger(void);
-
 /*
  * find root of autofs
  */
-static int
-auto_root(mount_t mp, vnode_t *vpp, vfs_context_t context)
+int
+auto_root(mount_t mp, vnode_t *vpp, __unused vfs_context_t context)
 {
 	int error;
-	int pid;
 	fninfo_t *fnip;
-	fnnode_t *fnp;
-	struct timeval now;
 
 	fnip = vfstofni(mp);
 	*vpp = fnip->fi_rootvp;
 	error = vnode_get(*vpp);
-	if (error)
-		goto done;
 
-	/*
-	 * If this is a direct map, and the mount of this file system
-	 * (not the mount *on* it, the mount *of* it; see auto_start()
-	 * for an explanation) is complete, and we're not trying to unmount
-	 * it, and we should trigger a mount for this vnode, do so, so that
-	 * our caller gets a vnode with something mounted on it if the mount
-	 * can be done.
-	 */
-	pid = vfs_context_pid(context);
-	auto_fninfo_lock_shared(fnip, pid);
-	if ((fnip->fi_flags & (MF_DIRECT|MF_MOUNTING|MF_UNMOUNTING)) == MF_DIRECT &&
-	    !thread_notrigger()) {
-		fnp = vntofn(*vpp);
-	retry:
-		lck_mtx_lock(fnp->fn_lock);
-		if (auto_dont_trigger(*vpp, context)) {
-			/*
-			 * Don't trigger the mount.
-			 */
-			lck_mtx_unlock(fnp->fn_lock);
-			error = 0;
-			goto unlock;
-		}
-		if (fnp->fn_flags & (MF_LOOKUP | MF_INPROG)) {
-			/*
-			 * Mount or lookup in progress,
-			 * wait for it before proceeding.
-			 */
-			lck_mtx_unlock(fnp->fn_lock);
-			error = auto_wait4mount(fnp, context);
-			if (error && error != EAGAIN) {
-				vnode_put(*vpp);
-				goto unlock;
-			}
-			error = 0;
-			/*
-			 * Check again whether we should trigger the
-			 * mount - an in-progress mount might have
-			 * succeeded.
-			 */
-			goto retry;
-		}
-
-		if ((fnp->fn_flags & MF_MOUNTPOINT) &&
-		    fnp->fn_trigger != NULL) {
-			assert(fnp->fn_dirents == NULL);
-			/*
-			 * The filesystem that used to sit here
-			 * has been forcibly unmounted.
-			 */
-			lck_mtx_unlock(fnp->fn_lock);
-			error = EIO;
-			vnode_put(*vpp);
-			goto unlock;
-		}
-
-		if (fnp->fn_dirents == NULL) {
-			/*
-			 * Trigger mount, because this is a direct
-			 * mountpoint with no subdirs.
-			 */
-			AUTOFS_BLOCK_OTHERS(fnp, MF_INPROG);
-			fnp->fn_error = 0;
-			lck_mtx_unlock(fnp->fn_lock);
-			microtime(&now);
-			fnp->fn_ref_time = now.tv_sec;
-			error = auto_do_mount(fnp, ".", 1, context);
-			if (error) {
-				if (error == EAGAIN)
-					goto retry;
-				vnode_put(*vpp);
-				goto unlock;
-			}
-		} else {
-			/*
-			 * Nothing to trigger, just unlock.
-			 */
-			lck_mtx_unlock(fnp->fn_lock);
-			error = 0;
-		}
-	}
-unlock:
-	auto_fninfo_unlock_shared(fnip, pid);
-
-done:
 	AUTOFS_DPRINT((5, "auto_root: mp %p, *vpp %p, error %d\n",
 	    mp, *vpp, error));
 	return (error);
@@ -1241,6 +1265,11 @@ autofs_ioctl(__unused dev_t dev, u_long cmd, __unused caddr_t data,
     __unused int flag, __unused struct proc *p)
 {
 	struct autofs_globals *fngp;
+	fnnode_t *fnp;
+	vnode_t vp;
+	fninfo_t *fnip;
+	struct timeval now;
+	struct vnode_attr vattr;
 	int error;
 
 	lck_mtx_lock(autofs_global_lock);
@@ -1264,6 +1293,34 @@ autofs_ioctl(__unused dev_t dev, u_long cmd, __unused caddr_t data,
 			fngp->fng_flush_notification_pending = 1;
 			wakeup(&fngp->fng_flush_notification_pending);
 			lck_mtx_unlock(fngp->fng_flush_notification_lock);
+
+			/*
+			 * Now update the mod times of the root directories
+			 * of all indirect map mounts, and deliver change
+			 * notifications for them if their contents can
+			 * reflect information from Open Directory (i.e.,
+			 * they're not nobrowse), as the information
+			 * we're getting from Open Directory might now
+			 * be different.
+			 */
+			microtime(&now);
+			lck_rw_lock_shared(fngp->fng_rootfnnodep->fn_rwlock);
+			for (fnp = fngp->fng_rootfnnodep->fn_dirents;
+			    fnp != NULL; fnp = fnp->fn_next) {
+				vp = fntovn(fnp);
+			    	fnip = vfstofni(vnode_mount(vp));
+			    	if (fnip->fi_flags & MF_DIRECT)
+			    		continue;	/* direct map */
+				fnp->fn_mtime = now;
+				if (vnode_ismonitored(vp) &&
+				    !auto_nobrowse(vp)) {
+					vfs_get_notify_attributes(&vattr);
+					auto_get_attributes(vp, &vattr);
+					vnode_notify(vp, VNODE_EVENT_WRITE,
+					    &vattr);
+				}
+			}
+			lck_rw_unlock_shared(fngp->fng_rootfnnodep->fn_rwlock);
 		}
 		error = 0;
 		break;
@@ -1297,6 +1354,21 @@ autofs_ioctl(__unused dev_t dev, u_long cmd, __unused caddr_t data,
 	}
 
 	return (error);
+}
+
+/*
+ * Check whether this process is a automounter or an inferior of a automounter.
+ */
+int
+auto_is_automounter(int pid)
+{
+	int is_automounter;
+
+	lck_rw_lock_shared(autofs_automounter_pid_rwlock);
+	is_automounter = (automounter_pid != 0 &&
+	    (pid == automounter_pid || proc_isinferior(pid, automounter_pid)));
+	lck_rw_unlock_shared(autofs_automounter_pid_rwlock);
+	return (is_automounter);
 }
 
 /*
@@ -1470,6 +1542,516 @@ autofs_nowait_dev_close(dev_t dev, __unused int flag, __unused int fmt,
 }
 
 /*
+ * Check whether this process is a nowait process.
+ */
+int
+auto_is_nowait_process(int pid)
+{
+	struct nowait_process *nowait_process;
+
+	lck_rw_lock_shared(autofs_nowait_processes_rwlock);
+	LIST_FOREACH(nowait_process, &nowait_processes, entries) {
+		if (pid == nowait_process->pid) {
+			lck_rw_unlock_shared(autofs_nowait_processes_rwlock);
+			return (1);
+		}
+	}
+	lck_rw_unlock_shared(autofs_nowait_processes_rwlock);
+	return (0);
+}
+
+/*
+ * Opening /dev/autofs_notrigger makes you (but not your children) a
+ * notrigger process; those do not trigger mounts.  This is used
+ * by srvsvc.
+ *
+ * Closing /dev/autofs_notrigger makes you no longer a notrigger process;
+ * it's closed on exit, so if you exit, you cease to be a notrigger process.
+ */
+static d_open_t	 autofs_notrigger_dev_open;
+static d_close_t autofs_notrigger_dev_close;
+
+static struct cdevsw autofs_notrigger_cdevsw = {
+	autofs_notrigger_dev_open,
+	autofs_notrigger_dev_close,
+	eno_rdwrt,	/* d_read */
+	eno_rdwrt,	/* d_write */
+	eno_ioctl,
+	eno_stop,
+	eno_reset,
+	0,		/* struct tty ** d_ttys */
+	eno_select,
+	eno_mmap,
+	eno_strat,
+	eno_getc,
+	eno_putc,
+	0		/* d_type */
+};
+
+static int	autofs_notrigger_major = -1;
+static void	*autofs_notrigger_devfs;
+
+/*
+ * Structure representing a process that has registered itself as an
+ * notrigger process by opening a cloning autofs device.
+ */
+struct notrigger_process {
+	LIST_ENTRY(notrigger_process) entries;
+	int	pid;			/* PID of the notrigger process */
+	int	minor;			/* minor device they opened */
+};
+
+static LIST_HEAD(notriggerproclist, notrigger_process) notrigger_processes;
+static lck_rw_t *autofs_notrigger_processes_rwlock;
+
+/*
+ * Given the dev entry that's being opened, we clone the device.  This driver
+ * doesn't actually use the dev entry, since we alreaqdy know who we are by
+ * being called from this code.  This routine is a callback registered from
+ * devfs_make_node_clone() in autofs_init(); its purpose is to provide a new
+ * minor number, or to return -1, if one can't be provided.
+ *
+ * Parameters:	dev			The device we are cloning from
+ *
+ * Returns:	>= 0			A new minor device number
+ *		-1			Error: ENOMEM ("Can't alloc device")
+ *
+ * NOTE:	Called with DEVFS_LOCK() held
+ */
+static int
+autofs_notrigger_dev_clone(__unused dev_t dev, int action)
+{
+	int minor;
+	struct notrigger_process *notrigger_process;
+
+	if (action == DEVFS_CLONE_ALLOC) {
+		minor = 0;	/* tentative choice of minor */
+		lck_rw_lock_exclusive(autofs_notrigger_processes_rwlock);
+		LIST_FOREACH(notrigger_process, &notrigger_processes, entries) {
+			if (minor < notrigger_process->minor) {
+				/*
+				 * None of the notrigger processes we've looked
+				 * at so far have this minor, and this
+				 * minor is less than all of the minors
+				 * later in the list (which is always
+				 * sorted in increasing order by minor
+				 * device number).
+				 *
+				 * Therefore, it's not in use.
+				 */
+				break;
+			}
+
+			/*
+			 * All minors <= notrigger_process->minor are in use.
+			 * Try the next one after notrigger_process->minor.
+			 */
+			minor = notrigger_process->minor + 1;
+		}
+		lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
+		return (minor);
+	}
+
+	return (-1);
+}
+
+static int
+autofs_notrigger_dev_open(dev_t dev, __unused int oflags, __unused int devtype,
+    struct proc *p)
+{
+	struct notrigger_process *newnotrigger_process, *notrigger_process, *lastnotrigger_process;
+
+	MALLOC(newnotrigger_process, struct notrigger_process *, sizeof(*newnotrigger_process),
+	    M_AUTOFS, M_WAITOK);
+	if (newnotrigger_process == NULL)
+		return (ENOMEM);
+	newnotrigger_process->pid = proc_pid(p);
+	newnotrigger_process->minor = minor(dev);
+	/*
+	 * Insert the structure in the list of notrigger processes in order by
+	 * minor device number.
+	 */
+	lck_rw_lock_exclusive(autofs_notrigger_processes_rwlock);
+	if (LIST_EMPTY(&notrigger_processes)) {
+		/*
+		 * List is empty, insert at the head.
+		 */
+		LIST_INSERT_HEAD(&notrigger_processes, newnotrigger_process, entries);
+	} else {
+		/*
+		 * List isn't empty, insert in front of the first entry
+		 * with a larger minor device number.
+		 */
+		LIST_FOREACH(notrigger_process, &notrigger_processes, entries) {
+			if (newnotrigger_process->minor < notrigger_process->minor) {
+				/*
+				 * This entry is the first one with a larger
+				 * minor device number.
+				 */
+				LIST_INSERT_BEFORE(notrigger_process,
+				    newnotrigger_process, entries);
+				goto done;
+			}
+			lastnotrigger_process = notrigger_process;
+		}
+		/*
+		 * lastnotrigger_process is the last entry in the list, and it
+		 * doesn't have a larger minor device number than the new
+		 * entry; insert the new entry after it.
+		 */
+		LIST_INSERT_AFTER(lastnotrigger_process, newnotrigger_process,
+		    entries);
+	}
+done:
+	lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
+	return (0);
+}
+
+static int
+autofs_notrigger_dev_close(dev_t dev, __unused int flag, __unused int fmt,
+    __unused struct proc *p)
+{
+	struct notrigger_process *notrigger_process;
+
+	/*
+	 * Remove the notrigger_process structure for this device from the
+	 * list of notrigger processes.
+	 */
+	lck_rw_lock_exclusive(autofs_notrigger_processes_rwlock);
+	LIST_FOREACH(notrigger_process, &notrigger_processes, entries) {
+		if (minor(dev) == notrigger_process->minor) {
+			LIST_REMOVE(notrigger_process, entries);
+			FREE(notrigger_process, M_AUTOFS);
+			break;
+		}
+	}
+	lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
+	return (0);
+}
+
+/*
+ * Check whether this process is a notrigger process.
+ */
+int
+auto_is_notrigger_process(int pid)
+{
+	struct notrigger_process *notrigger_process;
+
+	/*
+	 * automountd, and anything it runs, is a notrigger process.
+	 */
+	if (auto_is_automounter(pid))
+		return (1);
+
+	lck_rw_lock_shared(autofs_notrigger_processes_rwlock);
+	LIST_FOREACH(notrigger_process, &notrigger_processes, entries) {
+		if (pid == notrigger_process->pid) {
+			lck_rw_unlock_shared(autofs_notrigger_processes_rwlock);
+			return (1);
+		}
+	}
+	lck_rw_unlock_shared(autofs_notrigger_processes_rwlock);
+	return (0);
+}
+
+/*
+ * Opening /dev/autofs_homedirmounter makes you (but not your children) a
+ * homedirmounter process; those processes can perform an fcntl() to arrange
+ * that a given autofs vnode not trigger a mount.  This is used by code
+ * that remounts home directories, so that nobody does any automounts
+ * while they're in the process of doing a remount.
+ *
+ * Closing /dev/autofs_homedirmounter makes you no longer a homedirmounter
+ * process, which means that whatever vnode you set not to trigger a mount
+ * reverts to triggering mounts; it's closed on exit, so if you exit, you
+ * cease to be a homedirmounter process.
+ */
+static d_open_t	 autofs_homedirmounter_dev_open;
+static d_close_t autofs_homedirmounter_dev_close;
+
+static struct cdevsw autofs_homedirmounter_cdevsw = {
+	autofs_homedirmounter_dev_open,
+	autofs_homedirmounter_dev_close,
+	eno_rdwrt,	/* d_read */
+	eno_rdwrt,	/* d_write */
+	eno_ioctl,
+	eno_stop,
+	eno_reset,
+	0,		/* struct tty ** d_ttys */
+	eno_select,
+	eno_mmap,
+	eno_strat,
+	eno_getc,
+	eno_putc,
+	0		/* d_type */
+};
+
+static int	autofs_homedirmounter_major = -1;
+static void	*autofs_homedirmounter_devfs;
+
+/*
+ * Structure representing a process that has registered itself as an
+ * homedirmounter process by opening a cloning autofs device.
+ */
+struct homedirmounter_process {
+	LIST_ENTRY(homedirmounter_process) entries;
+	int	pid;		/* PID of the homedirmounter process */
+	int	minor;		/* minor device they opened */
+	vnode_t	mount_point;	/* autofs vnode on which they're doing a mount, if any */
+};
+
+static LIST_HEAD(homedirmounterproclist, homedirmounter_process) homedirmounter_processes;
+static lck_rw_t *autofs_homedirmounter_processes_rwlock;
+
+/*
+ * Given the dev entry that's being opened, we clone the device.  This driver
+ * doesn't actually use the dev entry, since we alreaqdy know who we are by
+ * being called from this code.  This routine is a callback registered from
+ * devfs_make_node_clone() in autofs_init(); its purpose is to provide a new
+ * minor number, or to return -1, if one can't be provided.
+ *
+ * Parameters:	dev			The device we are cloning from
+ *
+ * Returns:	>= 0			A new minor device number
+ *		-1			Error: ENOMEM ("Can't alloc device")
+ *
+ * NOTE:	Called with DEVFS_LOCK() held
+ */
+static int
+autofs_homedirmounter_dev_clone(__unused dev_t dev, int action)
+{
+	int minor;
+	struct homedirmounter_process *homedirmounter_process;
+
+	if (action == DEVFS_CLONE_ALLOC) {
+		minor = 0;	/* tentative choice of minor */
+		lck_rw_lock_exclusive(autofs_homedirmounter_processes_rwlock);
+		LIST_FOREACH(homedirmounter_process, &homedirmounter_processes,
+		    entries) {
+			if (minor < homedirmounter_process->minor) {
+				/*
+				 * None of the homedirmounter processes
+				 * we've looked at so far have this minor,
+				 * and this minor is less than all of the
+				 * minors later in the list (which is always
+				 * sorted in increasing order by minor
+				 * device number).
+				 *
+				 * Therefore, it's not in use.
+				 */
+				break;
+			}
+
+			/*
+			 * All minors <= homedirmounter_process->minor are
+			 * in use.  Try the next one after
+			 * homedirmounter_process->minor.
+			 */
+			minor = homedirmounter_process->minor + 1;
+		}
+		lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+		return (minor);
+	}
+
+	return (-1);
+}
+
+static int
+autofs_homedirmounter_dev_open(dev_t dev, __unused int oflags, __unused int devtype,
+    struct proc *p)
+{
+	struct homedirmounter_process *newhomedirmounter_process, *homedirmounter_process, *lasthomedirmounter_process;
+
+	MALLOC(newhomedirmounter_process, struct homedirmounter_process *,
+	    sizeof(*newhomedirmounter_process), M_AUTOFS, M_WAITOK);
+	if (newhomedirmounter_process == NULL)
+		return (ENOMEM);
+	newhomedirmounter_process->pid = proc_pid(p);
+	newhomedirmounter_process->minor = minor(dev);
+	newhomedirmounter_process->mount_point = NULL;
+	/*
+	 * Insert the structure in the list of homedirmounter processes in
+	 * order by minor device number.
+	 */
+	lck_rw_lock_exclusive(autofs_homedirmounter_processes_rwlock);
+	if (LIST_EMPTY(&homedirmounter_processes)) {
+		/*
+		 * List is empty, insert at the head.
+		 */
+		LIST_INSERT_HEAD(&homedirmounter_processes,
+		    newhomedirmounter_process, entries);
+	} else {
+		/*
+		 * List isn't empty, insert in front of the first entry
+		 * with a larger minor device number.
+		 */
+		LIST_FOREACH(homedirmounter_process, &homedirmounter_processes,
+		    entries) {
+			if (newhomedirmounter_process->minor < homedirmounter_process->minor) {
+				/*
+				 * This entry is the first one with a larger
+				 * minor device number.
+				 */
+				LIST_INSERT_BEFORE(homedirmounter_process,
+				    newhomedirmounter_process, entries);
+				goto done;
+			}
+			lasthomedirmounter_process = homedirmounter_process;
+		}
+		/*
+		 * lasthomedirmounter_process is the last entry in the list,
+		 * and it doesn't have a larger minor device number than the
+		 * new entry; insert the new entry after it.
+		 */
+		LIST_INSERT_AFTER(lasthomedirmounter_process,
+		    newhomedirmounter_process, entries);
+	}
+done:
+	lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+	return (0);
+}
+
+static int
+autofs_homedirmounter_dev_close(dev_t dev, __unused int flag, __unused int fmt,
+    __unused struct proc *p)
+{
+	struct homedirmounter_process *homedirmounter_process;
+	vnode_t vp;
+	fnnode_t *fnp;
+
+	/*
+	 * Remove the homedirmounter_process structure for this device from the
+	 * list of homedirmounter processes.
+	 *
+	 * If it's holding onto a mount point fnnode, mark it as no
+	 * longer having a home directory mount in progress on it,
+	 * and release it.
+	 */
+	lck_rw_lock_exclusive(autofs_homedirmounter_processes_rwlock);
+	LIST_FOREACH(homedirmounter_process, &homedirmounter_processes,
+	    entries) {
+		if (minor(dev) == homedirmounter_process->minor) {
+			LIST_REMOVE(homedirmounter_process, entries);
+			vp = homedirmounter_process->mount_point;
+			if (vp != NULL) {
+				fnp = vntofn(vp);
+				lck_mtx_lock(fnp->fn_lock);
+				fnp->fn_flags &= ~MF_HOMEDIRMOUNT;
+				lck_mtx_unlock(fnp->fn_lock);
+				vnode_rele(vp);
+			}
+			FREE(homedirmounter_process, M_AUTOFS);
+			break;
+		}
+	}
+	lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+	return (0);
+}
+
+/*
+ * Check whether this process is a homedirmounter process and, if we are,
+ * and we were passed a vnode_t, also check whether we're the homedirmounter
+ * for that vnode.
+ */
+int
+auto_is_homedirmounter_process(vnode_t vp, int pid)
+{
+	struct homedirmounter_process *homedirmounter_process;
+	int ret;
+
+	lck_rw_lock_shared(autofs_homedirmounter_processes_rwlock);
+	LIST_FOREACH(homedirmounter_process, &homedirmounter_processes,
+	    entries) {
+		if (pid == homedirmounter_process->pid) {
+			ret = (vp == NULL) || (vp == homedirmounter_process->mount_point);
+			lck_rw_unlock_shared(autofs_homedirmounter_processes_rwlock);
+			return (ret);
+		}
+	}
+	lck_rw_unlock_shared(autofs_homedirmounter_processes_rwlock);
+	return (0);
+}
+
+/*
+ * If this is a home directory mounter process:
+ *
+ *	if we haven't already marked a vnode as having a home directory
+ *	mount in progress, mark the specified vnode and remember it, and
+ *	return 0 (unless we couldn't grab a reference to it, in which
+ *	case we return the error);
+ *
+ *	if we've already marked this vnode as having a home directory
+ *	mount in progress, return 0;
+ *
+ *	if we have already marked some other vnode as having a home
+ *	directory mount in progress, return EBUSY.
+ *
+ * Otherwise, return EINVAL.
+ */
+int
+auto_mark_vnode_homedirmount(vnode_t vp, int pid)
+{
+	struct homedirmounter_process *homedirmounter_process;
+	int error;
+	fnnode_t *fnp;
+
+	lck_rw_lock_shared(autofs_homedirmounter_processes_rwlock);
+	LIST_FOREACH(homedirmounter_process, &homedirmounter_processes,
+	    entries) {
+		if (pid == homedirmounter_process->pid) {
+			if (homedirmounter_process->mount_point != NULL) {
+				/*
+				 * We're already a home directory mounter
+				 * for some mount point.  Is this that
+				 * mount point?
+				 */
+				if (homedirmounter_process->mount_point == vp) {
+					/*
+					 * Yes - not an error.  (That means
+					 * we don't have to avoid doing the
+					 * "make me the home directory
+					 * mounter" fsctl if we already
+					 * became the home directory mounter
+					 * as a result of doing an unmount.)
+					 */
+					error = 0;
+				} else {
+					/*
+					 * No - that's an error, as we can
+					 * only be the home directory mounter
+					 * for one vnode at a time.
+					 */
+					error = EBUSY;
+				}
+			} else {
+				/*
+				 * We're not a home directory mounter for
+				 * a mount point.  Make us the home
+				 * directory mounter for this vnode.
+				 * Attempt to grab a reference to it,
+				 * as we'll be storing a pointer to it.
+				 */
+				error = vnode_ref(vp);
+				if (error == 0) {
+					/*
+					 * We succeeded.
+					 */
+					fnp = vntofn(vp);
+					lck_mtx_lock(fnp->fn_lock);
+					fnp->fn_flags |= MF_HOMEDIRMOUNT;
+					lck_mtx_unlock(fnp->fn_lock);
+					homedirmounter_process->mount_point = vp;
+				}
+			}
+			lck_rw_unlock_shared(autofs_homedirmounter_processes_rwlock);
+			return (error);
+		}
+	}
+	lck_rw_unlock_shared(autofs_homedirmounter_processes_rwlock);
+	return (EINVAL);
+}
+
+/*
  * Opening /dev/autofs_control when nobody else has it open lets you perform
  * various ioctls to control autofs.
  *
@@ -1530,7 +2112,7 @@ auto_control_dev_close(__unused dev_t dev, __unused int flag,
 
 static int
 auto_control_ioctl(__unused dev_t dev, u_long cmd, caddr_t data,
-    __unused int flag, proc_t p)
+    __unused int flag, __unused proc_t p)
 {
 	struct autofs_globals *fngp;
 	int error;
@@ -1550,21 +2132,24 @@ auto_control_ioctl(__unused dev_t dev, u_long cmd, caddr_t data,
 
 	switch (cmd) {
 
+	case AUTOFS_SET_MOUNT_TO:
+		trigger_set_mount_to(*(int *)data);
+		error = 0;
+		break;
+
 	case AUTOFS_UPDATE_OPTIONS_32:
 		update_argsp_32 = (struct autofs_update_args_32 *)data;
 		update_args.fsid = update_argsp_32->fsid;
 		update_args.opts = CAST_USER_ADDR_T(update_argsp_32->opts);
 		update_args.map = CAST_USER_ADDR_T(update_argsp_32->map);
 		update_args.mntflags = update_argsp_32->mntflags;
-		update_args.mount_to = update_argsp_32->mount_to;
-		update_args.mach_to = update_argsp_32->mach_to;
 		update_args.direct = update_argsp_32->direct;
-		error = auto_update_options(&update_args, proc_pid(p));
+		update_args.node_type = update_argsp_32->node_type;
+		error = auto_update_options(&update_args);
 		break;
 		
 	case AUTOFS_UPDATE_OPTIONS_64:
-		error = auto_update_options((struct autofs_update_args_64 *)data,
-		    proc_pid(p));
+		error = auto_update_options((struct autofs_update_args_64 *)data);
 		break;
 
 	case AUTOFS_NOTIFYCHANGE:
@@ -1582,21 +2167,26 @@ auto_control_ioctl(__unused dev_t dev, u_long cmd, caddr_t data,
 		break;
 
 	case AUTOFS_UNMOUNT:
+		/*
+		 * Mark this as being unmounted, so that we return ENOENT
+		 * for any lookups under it (for an indirect map), and
+		 * then try to unmount it.
+		 *
+		 * We fail lookups under it so that nobody creates
+		 * triggers under us while we're being unmounted,
+		 * as that can cause the root vnode of the indirect
+		 * map to have links to it while it's being removed
+		 * from the list of autofs mounts, causing 6491044.
+		 * and to prevent the deadlock described below.
+		 *
+		 * Given that this trigger isn't supposed to be
+		 * there in the first place, lookups under it
+		 * should fail in any case.
+		 *
+		 * XXX - does that still apply?
+		 */
 		error = 0;
 		if (fngp != NULL) {
-			/*
-			 * Try to unmount the specified autofs subtree
-			 * immediately, so that we can unmount the trigger
-			 * that mounted it.
-			 */
-			unmount_tree(fngp, (fsid_t *)data,
-			    UNMOUNT_TREE_IMMEDIATE);
-
-			/*
-			 * This trigger is being unmounted because automount
-			 * didn't find any fstab or automounter map entry
-			 * for it.  Don't trigger any mounts on it.
-			 */
 			mp = vfs_getvfs((fsid_t *)data);
 			if (mp == NULL) {
 				error = ENOENT;
@@ -1609,53 +2199,16 @@ auto_control_ioctl(__unused dev_t dev, u_long cmd, caddr_t data,
 			fnip = vfstofni(mp);
 
 			/*
-			 * Mark this as being unmounted, so that we
-			 * don't trigger any mounts on top of it (for
-			 * a direct map) and return ENOENT for any
-			 * lookups under it (for an indirect map).
-			 *
-			 * We block mounts on top of it for reasons
-			 * described below; we fail lookups under it
-			 * so that nobody creates triggers under us
-			 * while we're being unmounted, as that can
-			 * cause the root vnode of the indirect map
-			 * to have links to it while it's being
-			 * removed from the list of autofs mounts,
-			 * causing 6491044.
+			 * Mark this as being unmounted.
 			 */
 			lck_rw_lock_exclusive(fnip->fi_rwlock);
 			fnip->fi_flags |= MF_UNMOUNTING;
 			lck_rw_unlock_exclusive(fnip->fi_rwlock);
 			
 			/*
-			 * Wait for any in-progress mounts on the root vnode
-			 * of the mount; to complete; otherwise, we can get
-			 * a deadlock if:
-			 *
-			 *    a thread calls VFS_ROOT() on a direct map
-			 *    trigger, triggering a mount - at this point,
-			 *    that thread has done a vfs_busy() on the
-			 *    mount_t for the direct map autofs mount, so
-			 *    it's holding a shared lock on the mount_t;
-			 *
-			 *    automount then tries to unmount that autofs
-			 *    mount, which means it tries to grab an
-			 *    exclusive lock on the mount_t and blocks;
-			 *
-			 *    the automounter does a lookup while trying to
-			 *    do the mount requested by the thread above,
-			 *    and does a vfs_busy(), which blocks because
-			 *    it tries to get a shared lock but somebody
-			 *    wants an exclusive lock.
-			 *
-			 * Once this finishes, we know there won't be any
-			 * more automounts on it, as we set MF_UNMOUNTING.
-			 */
-			auto_wait4mount(vntofn(fnip->fi_rootvp),
-			    vfs_context_current());
-
-			/*
-			 * Now unmount the trigger.
+			 * Unmount the file system with the specified
+			 * fsid; that will provoke an unmount of
+			 * all triggered mounts below it.
 			 */
 			error = vfs_unmountbyfsid((fsid_t *)data, 0,
 			    vfs_context_current());
@@ -1664,7 +2217,7 @@ auto_control_ioctl(__unused dev_t dev, u_long cmd, caddr_t data,
 			 * If that failed, we're no longer in the middle
 			 * of unmounting it.  (If it succeeded, it no
 			 * longer exists, so we can't unmark it as being
-			 * in the middle of being unmounted.
+			 * in the middle of being unmounted.)
 			 */
 			if (error != 0) {
 				lck_rw_lock_exclusive(fnip->fi_rwlock);
@@ -1674,46 +2227,17 @@ auto_control_ioctl(__unused dev_t dev, u_long cmd, caddr_t data,
 		}
 		break;
 
+	case AUTOFS_UNMOUNT_TRIGGERED:
+		unmount_triggered_mounts(1);
+		error = 0;
+		break;
+
 	default:
 		error = EINVAL;
 		break;
 	}
 
 	return (error);
-}
-
-/*
- * Check whether this process is a automounter or an inferior of a automounter.
- */
-int
-auto_is_automounter(int pid)
-{
-	int is_automounter;
-
-	lck_rw_lock_shared(autofs_automounter_pid_rwlock);
-	is_automounter = (automounter_pid != 0 &&
-	    (pid == automounter_pid || proc_isinferior(pid, automounter_pid)));
-	lck_rw_unlock_shared(autofs_automounter_pid_rwlock);
-	return (is_automounter);
-}
-
-/*
- * Check whether this process is a nowait process.
- */
-int
-auto_is_nowait_process(int pid)
-{
-	struct nowait_process *nowait_process;
-
-	lck_rw_lock_shared(autofs_nowait_processes_rwlock);
-	LIST_FOREACH(nowait_process, &nowait_processes, entries) {
-		if (pid == nowait_process->pid) {
-			lck_rw_unlock_shared(autofs_nowait_processes_rwlock);
-			return (1);
-		}
-	}
-	lck_rw_unlock_shared(autofs_nowait_processes_rwlock);
-	return (0);
 }
 
 /*
@@ -1752,6 +2276,16 @@ auto_module_start(__unused kmod_info_t *ki, __unused void *data)
 		IOLog("auto_module_start: Couldn't create autofs nowait_processes list lock\n");
 		goto fail;
 	}
+	autofs_notrigger_processes_rwlock = lck_rw_alloc_init(autofs_lck_grp, NULL);
+	if (autofs_notrigger_processes_rwlock == NULL) {
+		IOLog("auto_module_start: Couldn't create autofs notrigger_processes list lock\n");
+		goto fail;
+	}
+	autofs_homedirmounter_processes_rwlock = lck_rw_alloc_init(autofs_lck_grp, NULL);
+	if (autofs_homedirmounter_processes_rwlock == NULL) {
+		IOLog("auto_module_start: Couldn't create autofs homedirmounter_processes list lock\n");
+		goto fail;
+	}
 	autofs_control_isopen_lock = lck_mtx_alloc_init(autofs_lck_grp, LCK_ATTR_NULL);
 	if (autofs_control_isopen_lock == NULL) {
 		IOLog("auto_module_start: Couldn't create autofs control device lock\n");
@@ -1772,7 +2306,7 @@ auto_module_start(__unused kmod_info_t *ki, __unused void *data)
 		IOLog("auto_module_start: devfs_make_node failed on autofs device\n");
 		goto fail;
 	}
-	
+
 	/*
 	 * Add the autofs nowait device.  Everybody's allowed to open it.
 	 */
@@ -1786,6 +2320,38 @@ auto_module_start(__unused kmod_info_t *ki, __unused void *data)
 	    AUTOFS_NOWAIT_DEVICE);
 	if (autofs_nowait_devfs == NULL) {
 		IOLog("auto_module_start: devfs_make_node failed on autofs nowait device\n");
+		goto fail;
+	}
+
+	/*
+	 * Add the autofs notrigger device.  Everybody's allowed to open it.
+	 */
+	autofs_notrigger_major = cdevsw_add(-1, &autofs_notrigger_cdevsw);
+	if (autofs_notrigger_major == -1) {
+		IOLog("auto_module_start: cdevsw_add failed on autofs_notrigger device\n");
+		goto fail;
+	}
+	autofs_notrigger_devfs = devfs_make_node_clone(makedev(autofs_notrigger_major, 0),
+	    DEVFS_CHAR, UID_ROOT, GID_WHEEL, 0666, autofs_notrigger_dev_clone,
+	    AUTOFS_NOTRIGGER_DEVICE);
+	if (autofs_notrigger_devfs == NULL) {
+		IOLog("auto_module_start: devfs_make_node failed on autofs notrigger device\n");
+		goto fail;
+	}
+
+	/*
+	 * Add the autofs homedirmounter device.
+	 */
+	autofs_homedirmounter_major = cdevsw_add(-1, &autofs_homedirmounter_cdevsw);
+	if (autofs_homedirmounter_major == -1) {
+		IOLog("auto_module_start: cdevsw_add failed on autofs_homedirmounter device\n");
+		goto fail;
+	}
+	autofs_homedirmounter_devfs = devfs_make_node_clone(makedev(autofs_homedirmounter_major, 0),
+	    DEVFS_CHAR, UID_ROOT, GID_WHEEL, 0666, autofs_homedirmounter_dev_clone,
+	    AUTOFS_HOMEDIRMOUNTER_DEVICE);
+	if (autofs_homedirmounter_devfs == NULL) {
+		IOLog("auto_module_start: devfs_make_node failed on autofs homedirmounter device\n");
 		goto fail;
 	}
 
@@ -1829,6 +2395,18 @@ fail:
 		if (cdevsw_remove(autofs_nowait_major, &autofs_nowait_cdevsw) == -1)
 			panic("auto_module_start: can't remove autofs nowait device from cdevsw");
 	}
+	if (autofs_notrigger_devfs != NULL)
+		devfs_remove(autofs_notrigger_devfs);
+	if (autofs_notrigger_major != -1) {
+		if (cdevsw_remove(autofs_notrigger_major, &autofs_notrigger_cdevsw) == -1)
+			panic("auto_module_start: can't remove autofs notrigger device from cdevsw");
+	}
+	if (autofs_homedirmounter_devfs != NULL)
+		devfs_remove(autofs_homedirmounter_devfs);
+	if (autofs_homedirmounter_major != -1) {
+		if (cdevsw_remove(autofs_homedirmounter_major, &autofs_homedirmounter_cdevsw) == -1)
+			panic("auto_module_start: can't remove autofs homedirmounter device from cdevsw");
+	}
 	if (autofs_devfs != NULL)
 		devfs_remove(autofs_devfs);
 	if (autofs_major != -1) {
@@ -1839,6 +2417,10 @@ fail:
 		lck_mtx_free(autofs_control_isopen_lock, autofs_lck_grp);
 	if (autofs_nowait_processes_rwlock != NULL)
 		lck_rw_free(autofs_nowait_processes_rwlock, autofs_lck_grp);
+	if (autofs_notrigger_processes_rwlock != NULL)
+		lck_rw_free(autofs_notrigger_processes_rwlock, autofs_lck_grp);
+	if (autofs_homedirmounter_processes_rwlock != NULL)
+		lck_rw_free(autofs_homedirmounter_processes_rwlock, autofs_lck_grp);
 	if (autofs_automounter_pid_rwlock != NULL)
 		lck_rw_free(autofs_automounter_pid_rwlock, autofs_lck_grp);
 	if (autofs_nodeid_lock != NULL)
@@ -1857,38 +2439,75 @@ auto_module_stop(__unused kmod_info_t *ki, __unused void *data)
 	int error;
 	
 	lck_mtx_lock(autofs_global_lock);
+	lck_mtx_lock(autofs_nodeid_lock);
 	lck_rw_lock_exclusive(autofs_automounter_pid_rwlock);
 	lck_rw_lock_exclusive(autofs_nowait_processes_rwlock);
+	lck_rw_lock_exclusive(autofs_notrigger_processes_rwlock);
+	lck_rw_lock_exclusive(autofs_homedirmounter_processes_rwlock);
 	lck_mtx_lock(autofs_control_isopen_lock);
 	if (autofs_mounts != 0) {
 		AUTOFS_DPRINT((2, "auto_module_stop: Can't remove, still %u mounts active\n", autofs_mounts));
 		lck_mtx_unlock(autofs_control_isopen_lock);
+		lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
 		lck_rw_unlock_exclusive(autofs_nowait_processes_rwlock);
 		lck_rw_unlock_exclusive(autofs_automounter_pid_rwlock);
+		lck_mtx_unlock(autofs_nodeid_lock);
 		lck_mtx_unlock(autofs_global_lock);
 		return (KERN_NO_ACCESS);
 	}
 	if (automounter_pid != 0) {
 		AUTOFS_DPRINT((2, "auto_module_stop: Can't remove, automounter still running\n"));
 		lck_mtx_unlock(autofs_control_isopen_lock);
+		lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
 		lck_rw_unlock_exclusive(autofs_nowait_processes_rwlock);
 		lck_rw_unlock_exclusive(autofs_automounter_pid_rwlock);
+		lck_mtx_unlock(autofs_nodeid_lock);
 		lck_mtx_unlock(autofs_global_lock);
 		return (KERN_NO_ACCESS);
 	}
 	if (!LIST_EMPTY(&nowait_processes)) {
 		AUTOFS_DPRINT((2, "auto_module_stop: Can't remove, still nowait processes running\n"));
 		lck_mtx_unlock(autofs_control_isopen_lock);
+		lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
 		lck_rw_unlock_exclusive(autofs_nowait_processes_rwlock);
 		lck_rw_unlock_exclusive(autofs_automounter_pid_rwlock);
+		lck_mtx_unlock(autofs_nodeid_lock);
+		lck_mtx_unlock(autofs_global_lock);
+		return (KERN_NO_ACCESS);
+	}
+	if (!LIST_EMPTY(&notrigger_processes)) {
+		AUTOFS_DPRINT((2, "auto_module_stop: Can't remove, still notrigger processes running\n"));
+		lck_mtx_unlock(autofs_control_isopen_lock);
+		lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_nowait_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_automounter_pid_rwlock);
+		lck_mtx_unlock(autofs_nodeid_lock);
+		lck_mtx_unlock(autofs_global_lock);
+		return (KERN_NO_ACCESS);
+	}
+	if (!LIST_EMPTY(&homedirmounter_processes)) {
+		AUTOFS_DPRINT((2, "auto_module_stop: Can't remove, still homedirmounter processes running\n"));
+		lck_mtx_unlock(autofs_control_isopen_lock);
+		lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_nowait_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_automounter_pid_rwlock);
+		lck_mtx_unlock(autofs_nodeid_lock);
 		lck_mtx_unlock(autofs_global_lock);
 		return (KERN_NO_ACCESS);
 	}
 	if (autofs_control_isopen) {
 		AUTOFS_DPRINT((2, "auto_module_stop: Can't remove, automount command is running\n"));
 		lck_mtx_unlock(autofs_control_isopen_lock);
+		lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+		lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
 		lck_rw_unlock_exclusive(autofs_nowait_processes_rwlock);
 		lck_rw_unlock_exclusive(autofs_automounter_pid_rwlock);
+		lck_mtx_unlock(autofs_nodeid_lock);
 		lck_mtx_unlock(autofs_global_lock);
 		return (KERN_NO_ACCESS);
 	}
@@ -1897,7 +2516,6 @@ auto_module_stop(__unused kmod_info_t *ki, __unused void *data)
 	fngp = autofs_zone_get_globals();
 	if (fngp) {
 		assert(fngp->fng_fnnode_count == 1);
-		assert(fngp->fng_unmount_threads == 0);
 	}
 
 	error = vfs_fsremove(auto_vfsconf);
@@ -1917,6 +2535,16 @@ auto_module_stop(__unused kmod_info_t *ki, __unused void *data)
 	if (cdevsw_remove(autofs_nowait_major, &autofs_nowait_cdevsw) == -1)
 		panic("auto_module_stop: can't remove autofs nowait device from cdevsw");
 	autofs_nowait_major = -1;
+	devfs_remove(autofs_notrigger_devfs);
+	autofs_notrigger_devfs = NULL;
+	if (cdevsw_remove(autofs_notrigger_major, &autofs_notrigger_cdevsw) == -1)
+		panic("auto_module_stop: can't remove autofs notrigger device from cdevsw");
+	autofs_notrigger_major = -1;
+	devfs_remove(autofs_homedirmounter_devfs);
+	autofs_homedirmounter_devfs = NULL;
+	if (cdevsw_remove(autofs_homedirmounter_major, &autofs_homedirmounter_cdevsw) == -1)
+		panic("auto_module_stop: can't remove autofs homedirmounter device from cdevsw");
+	autofs_homedirmounter_major = -1;
 	devfs_remove(autofs_control_devfs);
 	autofs_control_devfs = NULL;
 	if (cdevsw_remove(autofs_control_major, &autofs_control_cdevsw) == -1)
@@ -1924,29 +2552,11 @@ auto_module_stop(__unused kmod_info_t *ki, __unused void *data)
 
 	if (fngp) {
 		/*
-		 * Tell the unmounter thread to go away.
-		 */
-		lck_mtx_lock(fngp->fng_unmount_threads_lock);
-		fngp->fng_terminate_do_unmount_thread = 1;
-		wakeup(&fngp->fng_terminate_do_unmount_thread);
-
-		/*
-		 * Wait for it to go away.
-		 */
-		while (!fngp->fng_do_unmount_thread_terminated) {
-			msleep(&fngp->fng_do_unmount_thread_terminated,
-			    fngp->fng_unmount_threads_lock, PWAIT,
-			    "unmount thread terminated", NULL);
-		}
-		lck_mtx_unlock(fngp->fng_unmount_threads_lock);
-
-		/*
 		 * Free up the root fnnode.
 		 */
 		FREE(fngp->fng_rootfnnodep->fn_name, M_AUTOFS);
 		FREE(fngp->fng_rootfnnodep, M_AUTOFS);
 
-		lck_mtx_free(fngp->fng_unmount_threads_lock, autofs_lck_grp);
 		lck_mtx_free(fngp->fng_flush_notification_lock, autofs_lck_grp);
 		FREE(fngp, M_AUTOFS);
 	}
@@ -1959,6 +2569,10 @@ auto_module_stop(__unused kmod_info_t *ki, __unused void *data)
 	lck_rw_free(autofs_automounter_pid_rwlock, autofs_lck_grp);
 	lck_rw_unlock_exclusive(autofs_nowait_processes_rwlock);
 	lck_rw_free(autofs_nowait_processes_rwlock, autofs_lck_grp);
+	lck_rw_unlock_exclusive(autofs_notrigger_processes_rwlock);
+	lck_rw_free(autofs_notrigger_processes_rwlock, autofs_lck_grp);
+	lck_rw_unlock_exclusive(autofs_homedirmounter_processes_rwlock);
+	lck_rw_free(autofs_homedirmounter_processes_rwlock, autofs_lck_grp);
 	lck_mtx_unlock(autofs_control_isopen_lock);
 	lck_mtx_free(autofs_control_isopen_lock, autofs_lck_grp);
 	lck_grp_free(autofs_lck_grp);

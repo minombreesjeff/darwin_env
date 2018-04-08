@@ -25,7 +25,7 @@
  */
 
 /*
- * Portions Copyright 2007-2009 Apple Inc.
+ * Portions Copyright 2007-2011 Apple Inc.
  */
 
 #ifndef __AUTOFS_KERN_H__
@@ -85,8 +85,6 @@ typedef struct fninfo {
 	int		fi_keylen;
 	int		fi_optslen;		/* default mount options len */
 	int		fi_flags;
-	int		fi_mount_to;
-	int		fi_mach_to;
 } fninfo_t;
 
 /*
@@ -95,20 +93,17 @@ typedef struct fninfo {
  *	MF_DIRECT:
  *		- Direct mountpoint if set, indirect otherwise.
  *
- *	MF_MOUNTING
- *		- We're in the process of mounting this, so we should
- *		  not trigger mounts in VFS_ROOT() if set  (see auto_start()
- *		  for a reason why this is done).
- *
  *	MF_UNMOUNTING
  *		- We're in the process of unmounting this, so we should
- *		  should not trigger mounts in VFS_ROOT() if set and should
  *		  return ENOENT for lookups in the root directory (see
  *		  auto_control_ioctl() for a reason why this is done)
+ *
+ *	MF_SUBTRIGGER
+ *		- This is a subtrigger mount.
  */
 #define	MF_DIRECT	0x001
-#define	MF_MOUNTING	0x002
-#define	MF_UNMOUNTING	0x004
+#define	MF_UNMOUNTING	0x002
+#define	MF_SUBTRIGGER	0x004
 
 /*
  * We handle both directories and symlinks in autofs.
@@ -136,19 +131,6 @@ struct autofs_symlink_node {
 #define fn_symlink	fn_u.s.s_symlinktarget
 #define fn_symlinklen	fn_u.s.s_length
 
-/* xattr values for network.category */
-#define XATTR_CATEGORY_MAXSIZE	sizeof(uint32_t)
-
-#ifndef XATTR_CATEGORYNAME
-#define XATTR_CATEGORYNAME		"network.category"
-#define XATTR_CATEGORYNAMELEN	17
-#endif /* XATTR_CATEGORYNAME */
-
-struct autofs_xattr_data {
-	/* category value for /Network.  If zero, xattr is not set */
-	uint32_t xattr_category;
-};
-
 /*
  * The AUTOFS locking scheme:
  *
@@ -172,38 +154,9 @@ struct autofs_xattr_data {
  *
  *
  * The flags:
- *	MF_INPROG:
- *		- Indicates a mount request has been sent to the daemon.
- *		- If this flag is set, the thread sets MF_WAITING on the
- *                fnnode and sleeps.
- *
- *	MF_WAITING:
- *		- Set by a thread when it puts itself to sleep waiting for
- *		  the ongoing operation on this fnnode to be done.
- *
- * 	MF_LOOKUP:
- * 		- Indicates a lookup request has been sent to the daemon.
- *		- If this flag is set, the thread sets MF_WAITING on the
- *                fnnode and sleeps.
- *
- *	MF_TRIGGER:
- *		- This is a trigger node.
- *
- * 	MF_MOUNTPOINT:
- * 		- At some point automountd mounted a filesystem on this node.
- * 		If fn_trigger is non-NULL, v_vfsmountedhere is NULL and this
- * 		flag is set then the filesystem must have been forcibly
- * 		unmounted.
+ * 	MF_HOMEDIRMOUNT:
+ * 		- A home directory mount is in progress on this node.
  */
-
-/*
- * What we know about whether an autofs directory is a trigger.
- */
-typedef enum {
-	FN_TRIGGER_UNKNOWN,	/* we don't know whether it's a trigger */
-	FN_IS_TRIGGER,		/* yes, it's a trigger */
-	FN_ISNT_TRIGGER		/* no, it's not a trigger */
-} fn_istrigger_t;
 
 /*
  * The inode of AUTOFS
@@ -214,37 +167,25 @@ typedef struct fnnode {
 	nlink_t		fn_linkcnt;		/* link count */
 	mode_t		fn_mode;		/* file mode bits */
 	uid_t		fn_uid;			/* owner's uid */
-	gid_t		fn_gid;			/* group's uid */
 	int		fn_error;		/* mount/lookup error */
 	ino_t		fn_nodeid;
 	off_t		fn_offset;		/* offset into directory */
 	int		fn_flags;
-	fn_istrigger_t	fn_istrigger;		/* is this a trigger? */
-	struct autofs_xattr_data xattr_data;
+	trigger_info_t	*fn_trigger_info;	/* if this is a trigger, here's the trigger info */
 	union {
 		struct autofs_dir_node d;
 		struct autofs_symlink_node s;
 	}		fn_u;
 	vnode_t		fn_vnode;
+	uint32_t	fn_vid;			/* vid of the vnode */
 	struct fnnode	*fn_parent;
 	struct fnnode	*fn_next;		/* sibling */
-	struct fnnode	*fn_trigger; 		/* pointer to next level */
-						/* AUTOFS trigger nodes */
-	struct action_list *fn_alp;		/* Pointer to mount info */
-						/* used for remounting */
-						/* trigger nodes */
 	lck_rw_t	*fn_rwlock;		/* protects list traversal */
 	lck_mtx_t	*fn_lock;		/* protects the fnnode */
 	struct timeval	fn_crtime;
 	struct timeval	fn_atime;
 	struct timeval	fn_mtime;
 	struct timeval	fn_ctime;
-	time_t		fn_ref_time;		/* time last referenced */
-	time_t		fn_unmount_ref_time;	/* last time unmount was done */
-	fsid_t		fn_fsid_mounted;	/* fsid of filesystem mounted */
-	vnode_t		fn_seen;		/* vnode already traversed */
-	thread_t	fn_thread;		/* thread that has currently */
-						/* modified fn_seen */
 	struct autofs_globals *fn_globals;	/* global variables */
 } fnnode_t;
 
@@ -252,11 +193,7 @@ typedef struct fnnode {
 #define	fntovn(fnp)	(((fnp)->fn_vnode))
 #define	vfstofni(mp)	((fninfo_t *)(vfs_fsprivate(mp)))
 
-#define	MF_INPROG	0x002		/* Mount in progress */
-#define	MF_WAITING	0x004
-#define	MF_LOOKUP	0x008		/* Lookup in progress */
-#define	MF_TRIGGER	0x080
-#define	MF_MOUNTPOINT	0x200		/* Node is/was a mount point */
+#define	MF_HOMEDIRMOUNT	0x001		/* Home directory mount in progress */
 
 #define	AUTOFS_MODE		0555
 #define	AUTOFS_BLOCKSIZE	1024
@@ -265,76 +202,49 @@ struct autofs_globals {
 	fnnode_t		*fng_rootfnnodep;
 	int			fng_fnnode_count;
 	int			fng_printed_not_running_msg;
-	lck_mtx_t		*fng_unmount_threads_lock;
-	int			fng_unmount_threads;
-	int			fng_terminate_do_unmount_thread;
-	int			fng_do_unmount_thread_terminated;
 	int			fng_verbose;
 	lck_mtx_t		*fng_flush_notification_lock;
 	int			fng_flush_notification_pending;
 };
 
-/*
- * Sets the MF_INPROG flag on this fnnode.
- * fnp->fn_lock should be held before this macro is called,
- * operation is either MF_INPROG or MF_LOOKUP.
- */
-#define	AUTOFS_BLOCK_OTHERS(fnp, operation)	{ \
-	lck_mtx_assert((fnp)->fn_lock, LCK_MTX_ASSERT_OWNED); \
-	assert(!((fnp)->fn_flags & operation)); \
-	(fnp)->fn_flags |= (operation); \
-}
-
-#define	AUTOFS_UNBLOCK_OTHERS(fnp, operation)	{ \
-	auto_unblock_others((fnp), (operation)); \
-}
-
 extern struct vnodeops *auto_vnodeops;
+
+/*
+ * We can't call VFS_ROOT(), so, instead, we directly call our VFS_ROOT()
+ * routine.
+ */
+extern int auto_root(mount_t, vnode_t *, vfs_context_t);
 
 /*
  * Utility routines
  */
 extern fnnode_t *auto_search(fnnode_t *, char *, int);
-extern int auto_enter(fnnode_t *, struct componentname *, const char *,
-	fnnode_t **);
-extern void auto_unblock_others(fnnode_t *, u_int);
-extern int auto_wait4mount(fnnode_t *, vfs_context_t);
-extern int auto_makefnnode(fnnode_t **, enum vtype, mount_t,
-	struct componentname *, const char *, vnode_t, int, kauth_cred_t,
+extern int auto_enter(fnnode_t *, struct componentname *, fnnode_t **);
+extern int auto_wait4unmount_tree(fnnode_t *, vfs_context_t);
+extern int auto_makefnnode(fnnode_t **, int, mount_t,
+	struct componentname *, const char *, vnode_t, int,
 	struct autofs_globals *);
 extern void auto_freefnnode(fnnode_t *);
 extern void auto_disconnect(fnnode_t *, fnnode_t *);
-extern void auto_do_unmount(void *);
 /*PRINTFLIKE2*/
 extern void auto_dprint(int level, const char *fmt, ...)
 	__printflike(2, 3);
 extern void auto_debug_set(int level);
-extern int auto_lookup_aux(fnnode_t *, char *, int, vfs_context_t);
-extern int auto_do_mount(fnnode_t *, char *, int, vfs_context_t);
-extern int auto_check_trigger_request(fninfo_t *, char *, int, boolean_t *);
-extern int auto_get_automountd_port(mach_port_t *);
-extern void auto_release_port(mach_port_t);
-extern int auto_dont_trigger(vnode_t, vfs_context_t);
-extern kern_return_t auto_new_thread(void (*)(void *), void *);
+extern int auto_lookup_aux(struct fninfo *, fnnode_t *, char *, int,
+    vfs_context_t, int *);
+extern int auto_readdir_aux(struct fninfo *, fnnode_t *, off_t, u_int,
+    int64_t *, boolean_t *, byte_buffer *, mach_msg_type_number_t *);
 extern int auto_is_automounter(int);
 extern int auto_is_nowait_process(int);
+extern int auto_is_notrigger_process(int);
+extern int auto_is_homedirmounter_process(vnode_t, int);
+extern int auto_mark_vnode_homedirmount(vnode_t, int);
 extern int auto_is_autofs(mount_t);
 extern int auto_nobrowse(vnode_t);
-extern void auto_get_attributes(vnode_t, struct vnode_attr *, int);
+extern void auto_get_attributes(vnode_t, struct vnode_attr *);
+extern int auto_lookup_request(fninfo_t *, char *, int, char *,
+    vfs_context_t, int *, boolean_t *);
 
-/*
- * Flags for unmount_tree.
- *
- * If UNMOUNT_TREE_IMMEDIATE is set, unmount items even if they haven't
- * timed out yet.
- *
- * If UNMOUNT_TREE_NONOTIFY is set, do unmounts of non-autofs file
- * systems in the kernel, rather in automountd.
- */
-#define UNMOUNT_TREE_IMMEDIATE		0x00000001
-#define UNMOUNT_TREE_NONOTIFY		0x00000002
-
-extern void unmount_tree(struct autofs_globals *, fsid_t *, int);
 extern void autofs_free_globals(struct autofs_globals *);
 	
 extern void auto_fninfo_lock_shared(fninfo_t *fnip, int pid);
