@@ -1,8 +1,8 @@
 #
-# Makefile for nfsstat
+# Makefile for nfsiod
 #
 
-Project = nfsstat
+Project = nfsiod
 
 inplace:
 	@$(MAKE) all SRCROOT=. OBJROOT=. SYMROOT=. DSTROOT=/
@@ -27,21 +27,21 @@ MAN_DIR = $(DSTROOT)/usr/share/man/man1
 #
 # Standard B&I targets
 #
-all: $(SYMROOT)/nfsstat
+all: $(SYMROOT)/ncdestroy
 
 install:: all
 	install -d -o root -g wheel -m 755 $(DST_DIR)
-	install -c -o root -g wheel -m 555 -s $(SYMROOT)/nfsstat $(DST_DIR)
+	install -c -o root -g wheel -m 555 -s $(SYMROOT)/ncdestroy $(DST_DIR)
 	install -d -o root -g wheel -m 755 $(MAN_DIR)
-	install -c -o root -g wheel -m 444 $(SRCROOT)/nfsstat.1 $(MAN_DIR)
+	install -c -o root -g wheel -m 444 $(SRCROOT)/ncdestroy.1 $(MAN_DIR)
 
 clean::
-	-rm -f *.o nfsstat
+	-rm -f *.o ncdestroy
 
 #
 # Build
 #
-CFILES = nfsstat.c
+CFILES = ncdestroy.c
 OFILES = $(CFILES:.c=.o)
 
 $(OFILES): $(HFILES)
@@ -49,6 +49,6 @@ $(OFILES): $(HFILES)
 $(OBJROOT)/%.o: $(SRCROOT)/%.c
 	$(CC) -c $(CFLAGS) -o $@ $<
 
-$(SYMROOT)/nfsstat: $(addprefix $(OBJROOT)/, $(OFILES))
+$(SYMROOT)/ncdestroy: $(addprefix $(OBJROOT)/, $(OFILES))
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
