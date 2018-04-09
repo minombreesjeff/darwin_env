@@ -1,25 +1,21 @@
 /*
  * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
  *
- * @APPLE_LICENSE_HEADER_START@
+ * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
- * Reserved.  This file contains Original Code and/or Modifications of
- * Original Code as defined in and that are subject to the Apple Public
- * Source License Version 1.0 (the 'License').  You may not use this file
- * except in compliance with the License.  Please obtain a copy of the
- * License at http://www.apple.com/publicsource and read it before using
- * this file.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
- * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License."
+ *     http://www.apache.org/licenses/LICENSE-2.0
  * 
- * @APPLE_LICENSE_HEADER_END@
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * 
+ * @APPLE_APACHE_LICENSE_HEADER_END@
  */
 /*-
  * Copyright (c) 1991, 1993
@@ -57,15 +53,16 @@
  * SUCH DAMAGE.
  */
 
+static const char *const __rcs_file_version__ = "$Revision: 1.38 $";
+
 #include <Security/Authorization.h>
 #include <Security/AuthorizationTags.h>
 #include <Security/AuthSession.h>
 
-#include <mach/port.h>
-
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/param.h>
+#include <sys/mount.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 #include <sys/time.h>
@@ -90,7 +87,6 @@
 #include <termios.h>
 
 #include "launchd.h"
-#include "bootstrap_internal.h"
 
 #define _PATH_RUNCOM            "/etc/rc"
 
@@ -113,9 +109,7 @@ static kq_callback kqruncom_callback = runcom_callback;
 static void single_user(void);
 static void runcom(void);
 
-static bool runcom_verbose = false;
 static bool runcom_safe = false;
-static bool runcom_fsck = true;
 static bool runcom_netboot = false;
 static bool single_user_mode = false;
 static bool run_runcom = true;
@@ -176,37 +170,28 @@ static char **construct_argv(char *);
 static void setsecuritylevel(int);
 static int getsecuritylevel(void);
 static int setupargv(session_t, struct ttyent *);
+static bool should_fsck(void);
 
 void
-init_boot(bool sflag, bool vflag, bool xflag)
+init_boot(bool sflag)
 {
 	int nbmib[2] = { CTL_KERN, KERN_NETBOOT };
-	uint64_t nb = 0;
-	size_t nbsz = sizeof(nb);
+	int sbmib[2] = { CTL_KERN, KERN_SAFEBOOT };
+	uint32_t v = 0;
+	size_t vsz = sizeof(v);
 
 	if (sflag) {
 		single_user_mode = true;
 		run_runcom = false;
 	}
-	if (vflag)
-		runcom_verbose = true;
-	if (xflag)
-		runcom_safe = true;
 
-	if (sysctl(nbmib, 2, &nb, &nbsz, NULL, 0) == 0) {
-		/* The following assignment of nb to itself if the size of data
-		 * returned is 32 bits instead of 64 is a clever C trick to
-		 * move the 32 bits on big endian systems to the least
-		 * significant bytes of the 64 mem variable.
-		 *
-		 * On little endian systems, this is effectively a no-op.
-		 */
-		if (nbsz == 4)
-			nb = *(uint32_t *)&nb;
-		if (nb != 0)
+	if (launchd_assumes(sysctl(nbmib, 2, &v, &vsz, NULL, 0) != -1)) {
+		if (v != 0)
 			runcom_netboot = true;
-	} else {
-		syslog(LOG_WARNING, "sysctl(\"kern.netboot\") %m");
+	}
+	if (launchd_assumes(sysctl(sbmib, 2, &v, &vsz, NULL, 0) != -1)) {
+		if (v != 0)
+			runcom_safe = true;
 	}
 
 }
@@ -216,26 +201,27 @@ init_pre_kevent(void)
 {
 	session_t s;
 
-	if (single_user_mode && single_user_pid == 0)
-		single_user();
+	if (single_user_pid || runcom_pid)
+		return;
+
+	if (single_user_mode)
+		return single_user();
 
 	if (run_runcom)
-		runcom();
+		return runcom();
 		
-	if (!single_user_mode && !run_runcom && runcom_pid == 0) {
-		/*
-		 * If the administrator has not set the security level to -1
-		 * to indicate that the kernel should not run multiuser in secure
-		 * mode, and the run script has not set a higher level of security 
-		 * than level 1, then put the kernel into secure mode.
-		 */
-		if (getsecuritylevel() == 0)
-			setsecuritylevel(1);
+	/*
+	 * If the administrator has not set the security level to -1
+	 * to indicate that the kernel should not run multiuser in secure
+	 * mode, and the run script has not set a higher level of security 
+	 * than level 1, then put the kernel into secure mode.
+	 */
+	if (getsecuritylevel() == 0)
+		setsecuritylevel(1);
 
-		TAILQ_FOREACH(s, &sessions, tqe) {
-			if (s->se_process == 0)
-				session_launch(s);
-		}
+	TAILQ_FOREACH(s, &sessions, tqe) {
+		if (s->se_process == 0)
+			session_launch(s);
 	}
 }
 
@@ -308,12 +294,13 @@ setctty(const char *name, int flags)
 static void
 single_user(void)
 {
+	bool runcom_fsck = should_fsck();
 	char *argv[2];
 
 	if (getsecuritylevel() > 0)
 		setsecuritylevel(0);
 
-	if ((single_user_pid = fork_with_bootstrap_port(launchd_bootstrap_port)) == -1) {
+	if ((single_user_pid = launchd_fork()) == -1) {
 		syslog(LOG_ERR, "can't fork single-user shell, trying again: %m");
 		return;
 	} else if (single_user_pid == 0) {
@@ -330,20 +317,18 @@ single_user(void)
 			fprintf(stdout, "Root device is mounted read-only\n\n");
 			fprintf(stdout, "If you want to make modifications to files:\n");
 			fprintf(stdout, "\t/sbin/fsck -fy\n\t/sbin/mount -uw /\n\n");
-			fprintf(stdout, "If you wish to boot the system, but stay in single user mode:\n");
-			fprintf(stdout, "\tsh /etc/rc\n");
+			fprintf(stdout, "If you wish to boot the system:\n");
+			fprintf(stdout, "\texit\n\n");
 			fflush(stdout);
 		}
 
 		argv[0] = "-sh";
 		argv[1] = NULL;
-		setpriority(PRIO_PROCESS, 0, 0);
 		execv(_PATH_BSHELL, argv);
 		syslog(LOG_ERR, "can't exec %s for single user: %m", _PATH_BSHELL);
 		sleep(STALL_TIMEOUT);
 		exit(EXIT_FAILURE);
 	} else {
-		runcom_fsck = false;
 		if (kevent_mod(single_user_pid, EVFILT_PROC, EV_ADD, 
 					NOTE_EXIT, 0, &kqsingle_user_callback) == -1)
 			single_user_callback(NULL, NULL);
@@ -353,21 +338,10 @@ single_user(void)
 static void
 single_user_callback(void *obj __attribute__((unused)), struct kevent *kev __attribute__((unused)))
 {
-	int status, r = single_user_pid;
+	int status;
 
-#ifdef PID1_REAP_ADOPTED_CHILDREN
-	status = pid1_child_exit_status;
-#else
-	r = waitpid(single_user_pid, &status, 0);
-#endif
-
-	if (r != single_user_pid) {
-		if (r == -1)
-			syslog(LOG_ERR, "single_user_callback(): waitpid(): %m");
-		if (r == 0)
-			syslog(LOG_ERR, "single_user_callback(): waitpid() returned 0");
+	if (!launchd_assumes(waitpid(single_user_pid, &status, 0) == single_user_pid))
 		return;
-	}
 
 	if (WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS) {
 		syslog(LOG_INFO, "single user shell terminated, restarting");
@@ -390,13 +364,14 @@ static struct timeval runcom_start_tv = { 0, 0 };
 static void
 runcom(void)
 {
-	char *argv[3];
+	bool runcom_fsck = should_fsck();
+	char *argv[] = { "/bin/launchctl", "bootstrap", NULL };
 	struct termios term;
 	int vdisable;
 
 	gettimeofday(&runcom_start_tv, NULL);
 
-	if ((runcom_pid = fork_with_bootstrap_port(launchd_bootstrap_port)) == -1) {
+	if ((runcom_pid = launchd_fork()) == -1) {
 		syslog(LOG_ERR, "can't fork for %s on %s: %m", _PATH_BSHELL, _PATH_RUNCOM);
 		sleep(STALL_TIMEOUT);
 		runcom_pid = 0;
@@ -404,7 +379,6 @@ runcom(void)
 		return;
 	} else if (runcom_pid > 0) {
 		run_runcom = false;
-		runcom_fsck = false;
 		if (kevent_mod(runcom_pid, EVFILT_PROC, EV_ADD, 
 					NOTE_EXIT, 0, &kqruncom_callback) == -1) {
 			runcom_callback(NULL, NULL);
@@ -431,17 +405,11 @@ runcom(void)
 			syslog(LOG_WARNING, "tcsetattr(\"%s\") %m", _PATH_CONSOLE);
 	}
 
-	argv[0] = "sh";
-	argv[1] = _PATH_RUNCOM;
-	argv[2] = NULL;
-
 	setenv("SafeBoot", runcom_safe ? "-x" : "", 1);
-	setenv("VerboseFlag", runcom_verbose ? "-v" : "", 1);
 	setenv("FsckSlash", runcom_fsck ? "-F" : "", 1);
 	setenv("NetBoot", runcom_netboot ? "-N" : "", 1);
 
-	setpriority(PRIO_PROCESS, 0, 0);
-	execv(_PATH_BSHELL, argv);
+	execv(argv[0], argv);
 	stall("can't exec %s for %s: %m", _PATH_BSHELL, _PATH_RUNCOM);
 	exit(EXIT_FAILURE);
 }
@@ -452,7 +420,6 @@ runcom_callback(void *obj __attribute__((unused)), struct kevent *kev __attribut
 	int status;
 	struct timeval runcom_end_tv, runcom_total_tv;
 	double sec;
-	pid_t r = runcom_pid;
 
 	gettimeofday(&runcom_end_tv, NULL);
 	timersub(&runcom_end_tv, &runcom_start_tv, &runcom_total_tv);
@@ -460,19 +427,9 @@ runcom_callback(void *obj __attribute__((unused)), struct kevent *kev __attribut
 	sec += (double)runcom_total_tv.tv_usec / (double)1000000;
 	syslog(LOG_INFO, "%s finished in: %.3f seconds", _PATH_RUNCOM, sec);
 
-#ifdef PID1_REAP_ADOPTED_CHILDREN
-	status = pid1_child_exit_status;
-#else
-	r = waitpid(runcom_pid, &status, 0);
-#endif
-
-	if (r == runcom_pid) {
+	if (launchd_assumes(waitpid(runcom_pid, &status, 0) == runcom_pid)) {
 		runcom_pid = 0;
 	} else {
-		if (r == -1)
-			syslog(LOG_ERR, "waitpid() for '%s %s' failed: %m", _PATH_BSHELL, _PATH_RUNCOM);
-		if (r == 0)
-			syslog(LOG_ERR, "waitpid() for '%s %s' returned 0", _PATH_BSHELL, _PATH_RUNCOM);
 		syslog(LOG_ERR, "going to single user mode");
 		single_user_mode = true;
 		return;
@@ -480,7 +437,6 @@ runcom_callback(void *obj __attribute__((unused)), struct kevent *kev __attribut
 
 	if (WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS) {
 		logwtmp("~", "reboot", "");
-		update_ttys();
 		return;
 	} else if (WIFSIGNALED(status) && (WTERMSIG(status) == SIGTERM || WTERMSIG(status) == SIGKILL)) {
 		return;
@@ -632,6 +588,7 @@ session_launch(session_t s)
 	se_cmd_t *se_cmd;
 	const char *session_type = NULL;
 	time_t current_time      = time(NULL);
+	bool is_loginwindow = false;
 
 	// Setup the default values;
 	switch (s->se_flags & SE_GETTY_LAUNCH) {
@@ -656,11 +613,14 @@ session_launch(session_t s)
 		break;
 	}
 
-	/* fork(), not vfork() -- we can't afford to block. */
-	if ((pid = fork_with_bootstrap_port(launchd_bootstrap_port)) == -1) {
+	if (strcmp(se_cmd->argv[0], "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow") == 0)
+		is_loginwindow = true;
+
+	pid = launchd_fork();
+
+	if (pid == -1) {
 		syslog(LOG_ERR, "can't fork for %s on port %s: %m",
 				session_type, s->se_device);
-		update_ttys();
 		return;
 	}
 
@@ -683,10 +643,9 @@ session_launch(session_t s)
 	sigemptyset(&mask);
 	sigprocmask(SIG_SETMASK, &mask, NULL);
 
-	setpriority(PRIO_PROCESS, 0, 0);
 
-	if (strcmp(se_cmd->argv[0], "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow"))
-		launchd_SessionCreate(se_cmd->argv[0]);
+	if (!is_loginwindow)
+		launchd_SessionCreate();
 
 	execv(se_cmd->argv[0], se_cmd->argv);
 	stall("can't exec %s '%s' for port %s: %m", session_type,
@@ -710,40 +669,28 @@ session_callback(void *obj, struct kevent *kev __attribute__((unused)))
 static void
 session_reap(session_t s)
 {
-	pid_t pr = s->se_process;
 	char *line;
 	int status;
 
-#ifdef PID1_REAP_ADOPTED_CHILDREN
-	status = pid1_child_exit_status;
-#else
-	pr = waitpid(s->se_process, &status, 0);
-#endif
+	if (!launchd_assumes(waitpid(s->se_process, &status, 0) == s->se_process))
+		return;
 
-	switch (pr) {
-	case -1:
-		syslog(LOG_ERR, "waitpid(): %m");
-		return;
-	case 0:
-		syslog(LOG_ERR, "waitpid() == 0");
-		return;
-	default:
-		if (WIFSIGNALED(status)) {
-			syslog(LOG_WARNING, "%s port %s exited abnormally: %s",
-					s->se_getty.path, s->se_device, strsignal(WTERMSIG(status)));
-			s->se_flags |= SE_ONERROR; 
-		} else if (WEXITSTATUS(status) == REALLY_EXIT_TO_CONSOLE) {
-			/* WIFEXITED(status) assumed */
-			s->se_flags |= SE_ONOPTION;
-		} else {
-			s->se_flags |= SE_ONERROR;
-		}       
-		s->se_process = 0;
-		line = s->se_device + sizeof(_PATH_DEV) - 1;
-		if (logout(line))
-			logwtmp(line, "", "");
-		break;
+	if (WIFSIGNALED(status)) {
+		syslog(LOG_WARNING, "%s port %s exited abnormally: %s",
+				s->se_getty.path, s->se_device, strsignal(WTERMSIG(status)));
+		s->se_flags |= SE_ONERROR; 
+	} else if (WEXITSTATUS(status) == REALLY_EXIT_TO_CONSOLE) {
+		/* WIFEXITED(status) assumed */
+		s->se_flags |= SE_ONOPTION;
+	} else {
+		s->se_flags |= SE_ONERROR;
 	}
+
+	s->se_process = 0;
+	line = s->se_device + sizeof(_PATH_DEV) - 1;
+
+	if (logout(line))
+		logwtmp(line, "", "");
 }
 
 /*
@@ -808,53 +755,35 @@ catatonia(void)
 		s->se_flags |= SE_SHUTDOWN;
 }
 
-/*
- * Bring the system down to single user.
- */
-void
-death(void)
+bool init_check_pid(pid_t p)
 {
-	int i;
-	static const int death_sigs[3] = { SIGHUP, SIGTERM, SIGKILL };
-
-	catatonia();
-
-	single_user_mode = true;
-
-	/* NB: should send a message to the session logger to avoid blocking. */
-	logwtmp("~", "shutdown", "");
-
-	for (i = 0; i < 3; ++i) {
-		if (kill(-1, death_sigs[i]) == -1 && errno == ESRCH)
-			return;
-		syslog(LOG_ERR, "we should be trying to detect a valid clean-up");
-		sleep(DEATH_WATCH);
-	}
-
-	syslog(LOG_WARNING, "some processes would not die; ps axl advised");
-}
-
-#ifdef PID1_REAP_ADOPTED_CHILDREN
-__private_extern__ bool init_check_pid(pid_t p)
-{
-	struct kevent kev;
 	session_t s;
 
 	TAILQ_FOREACH(s, &sessions, tqe) {
-		if (s->se_process == p) {
-			EV_SET(&kev, p, EVFILT_PROC, 0, 0, 0, s);
-			s->se_callback(s, &kev);
+		if (s->se_process == p)
 			return true;
-		}
 	}
-	if (single_user_pid == p) {
-		single_user_callback(NULL, NULL);
+
+	if (single_user_pid == p)
 		return true;
-	}
-	if (runcom_pid == p) {
-		runcom_callback(NULL, NULL);
+
+	if (runcom_pid == p)
 		return true;
-	}
+
 	return false;
 }
-#endif
+
+bool
+should_fsck(void)
+{
+	struct statfs sfs;
+	bool r = true;
+
+	if (launchd_assumes(statfs("/", &sfs) != -1)) {
+		if (!(sfs.f_flags & MNT_RDONLY)) {
+			r = false;
+		}
+	}
+	
+	return r;
+}

@@ -1,42 +1,42 @@
 /*
  * Copyright (c) 2005 Apple Computer, Inc. All rights reserved.
  *
- * @APPLE_LICENSE_HEADER_START@
+ * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
- * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
  * limitations under the License.
  * 
- * @APPLE_LICENSE_HEADER_END@
+ * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+#include <mach/mach.h>
 #include <libkern/OSByteOrder.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/fcntl.h>
 #include <sys/un.h>
 #include <sys/uio.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <string.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <math.h>
 #include <errno.h>
+#include <pwd.h>
 
 #include "launch.h"
 #include "launch_priv.h"
+#include "bootstrap_public.h"
+#include "bootstrap_private.h"
 
 /* __OSBogusByteSwap__() must not really exist in the symbol namespace
  * in order for the following to generate an error at build time.
@@ -91,28 +91,29 @@ extern void __OSBogusByteSwap__(void);
 
 struct launch_msg_header {
 	uint64_t magic;
-	uint64_t fdcnt;
 	uint64_t len;
 };
 
 #define LAUNCH_MSG_HEADER_MAGIC 0xD2FEA02366B39A41ull
 
 struct _launch_data {
-	int type;
+	uint64_t type;
 	union {
 		struct {
-			launch_data_t *_array;
-			size_t _array_cnt;
-		};
-		struct {
-			char *string;
-			size_t string_len;
-		};
-		struct {
-			void *opaque;
-			size_t opaque_size;
+			union {
+				launch_data_t *_array;
+				char *string;
+				void *opaque;
+				int64_t __junk;
+			};
+			union {
+				uint64_t _array_cnt;
+				uint64_t string_len;
+				uint64_t opaque_size;
+			};
 		};
 		int fd;
+		mach_port_t mp;
 		int err;
 		long long number;
 		bool boolean;
@@ -122,33 +123,26 @@ struct _launch_data {
 
 struct _launch {
 	void	*sendbuf;
-	int	*sendfds;   
+	int	*sendfds;
 	void	*recvbuf;
-	int	*recvfds;   
-	size_t	sendlen;                
-	size_t	sendfdcnt;                    
-	size_t	recvlen;                                
-	size_t	recvfdcnt;                                    
-	int	fd;                                                     
+	int	*recvfds;
+	size_t	sendlen;
+	size_t	sendfdcnt;
+	size_t	recvlen;
+	size_t	recvfdcnt;
+	int	fd;
 };
 
 static void make_msg_and_cmsg(launch_data_t, void **, size_t *, int **, size_t *);
 static launch_data_t make_data(launch_t, size_t *, size_t *);
+static launch_data_t launch_data_array_pop_first(launch_data_t where);
 static int _fd(int fd);
+static void launch_client_init(void);
+static void launch_msg_getmsgs(launch_data_t m, void *context);
+static launch_data_t launch_msg_internal(launch_data_t d);
+static void launch_mach_checkin_service(launch_data_t obj, const char *key, void *context);
 
 static pthread_once_t _lc_once = PTHREAD_ONCE_INIT;
-
-void (*__log_liblaunch_bug)(const char *path, unsigned int line, const char *test) = NULL;
-
-static void
-_log_liblaunch_bug(const char *path, unsigned int line, const char *test)
-{
-	if (__log_liblaunch_bug)
-		__log_liblaunch_bug(path, line, test);
-}
-
-#define assumes(e)      \
-        (__builtin_expect(!(e), 0) ? _log_liblaunch_bug(__FILE__, __LINE__, #e), false : true)
 
 static struct _launch_client {
 	pthread_mutex_t mtx;
@@ -156,12 +150,13 @@ static struct _launch_client {
 	launch_data_t	async_resp;
 } *_lc = NULL;
 
-static void launch_client_init(void)
+void
+launch_client_init(void)
 {
 	struct sockaddr_un sun;
 	char *where = getenv(LAUNCHD_SOCKET_ENV);
 	char *_launchd_fd = getenv(LAUNCHD_TRUSTED_FD_ENV);
-	int r, dfd, lfd = -1, tries;
+	int dfd, lfd = -1;
 	
 	_lc = calloc(1, sizeof(struct _launch_client));
 
@@ -173,7 +168,7 @@ static void launch_client_init(void)
 	if (_launchd_fd) {
 		lfd = strtol(_launchd_fd, NULL, 10);
 		if ((dfd = dup(lfd)) >= 0) {
-			assumes(close(dfd) != -1);
+			close(dfd);
 			_fd(lfd);
 		} else {
 			lfd = -1;
@@ -184,33 +179,21 @@ static void launch_client_init(void)
 		memset(&sun, 0, sizeof(sun));
 		sun.sun_family = AF_UNIX;
 		
-		if (where)
+		if (where && where[0] != '\0') {
 			strncpy(sun.sun_path, where, sizeof(sun.sun_path));
-		else
-			snprintf(sun.sun_path, sizeof(sun.sun_path), "%s/%u/sock", LAUNCHD_SOCK_PREFIX, getuid());
-
-		if (!assumes((lfd = _fd(socket(AF_UNIX, SOCK_STREAM, 0))) != -1))
-			goto out_bad;
-
-		for (tries = 0; tries < 10; tries++) {
-			r = connect(lfd, (struct sockaddr *)&sun, sizeof(sun));
-			if (r == -1) {
-				if (getuid() != 0 && fork() == 0)
-					execl("/sbin/launchd", "/sbin/launchd", NULL);
-				sleep(1);
-			} else {
-				break;
-			}
-		}
-		if (r == -1) {
-			assumes(close(lfd) != -1);
+		} else if (getuid() == 0) {
+			strncpy(sun.sun_path, LAUNCHD_SOCK_PREFIX "/sock", sizeof(sun.sun_path));
+		} else {
 			goto out_bad;
 		}
+
+		if ((lfd = _fd(socket(AF_UNIX, SOCK_STREAM, 0))) == -1)
+			goto out_bad;
+		if (-1 == connect(lfd, (struct sockaddr *)&sun, sizeof(sun)))
+			goto out_bad;
 	}
-	if (!(_lc->l = launchd_fdopen(lfd))) {
-		close(lfd);
+	if (!(_lc->l = launchd_fdopen(lfd)))
 		goto out_bad;
-	}
 	if (!(_lc->async_resp = launch_data_alloc(LAUNCH_DATA_ARRAY)))
 		goto out_bad;
 
@@ -218,12 +201,15 @@ static void launch_client_init(void)
 out_bad:
 	if (_lc->l)
 		launchd_close(_lc->l);
+	else if (lfd != -1)
+		close(lfd);
 	if (_lc)
 		free(_lc);
 	_lc = NULL;
 }
 
-launch_data_t launch_data_alloc(launch_data_type_t t)
+launch_data_t
+launch_data_alloc(launch_data_type_t t)
 {
 	launch_data_t d = calloc(1, sizeof(struct _launch));
 
@@ -242,12 +228,14 @@ launch_data_t launch_data_alloc(launch_data_type_t t)
 	return d;
 }
 
-launch_data_type_t launch_data_get_type(launch_data_t d)
+launch_data_type_t
+launch_data_get_type(launch_data_t d)
 {
 	return d->type;
 }
 
-void launch_data_free(launch_data_t d)
+void
+launch_data_free(launch_data_t d)
 {
 	size_t i;
 
@@ -272,46 +260,39 @@ void launch_data_free(launch_data_t d)
 	free(d);
 }
 
-size_t launch_data_dict_get_count(launch_data_t dict)
+size_t
+launch_data_dict_get_count(launch_data_t dict)
 {
-	if (!assumes(dict->type == LAUNCH_DATA_DICTIONARY))
-		return 0;
-
 	return dict->_array_cnt / 2;
 }
 
 
-bool launch_data_dict_insert(launch_data_t dict, launch_data_t what, const char *key)
+bool
+launch_data_dict_insert(launch_data_t dict, launch_data_t what, const char *key)
 {
-	launch_data_t thekey;
 	size_t i;
+	launch_data_t thekey = launch_data_alloc(LAUNCH_DATA_STRING);
 
-	if (!assumes(dict->type == LAUNCH_DATA_DICTIONARY))
-		return false;
-
-	thekey = launch_data_new_string(key);
+	launch_data_set_string(thekey, key);
 
 	for (i = 0; i < dict->_array_cnt; i += 2) {
 		if (!strcasecmp(key, dict->_array[i]->string)) {
-			dict->type = LAUNCH_DATA_ARRAY;
 			launch_data_array_set_index(dict, thekey, i);
 			launch_data_array_set_index(dict, what, i + 1);
-			dict->type = LAUNCH_DATA_DICTIONARY;
 			return true;
 		}
 	}
-	dict->type = LAUNCH_DATA_ARRAY;
 	launch_data_array_set_index(dict, thekey, i);
 	launch_data_array_set_index(dict, what, i + 1);
-	dict->type = LAUNCH_DATA_DICTIONARY;
 	return true;
 }
 
-launch_data_t launch_data_dict_lookup(launch_data_t dict, const char *key)
+launch_data_t
+launch_data_dict_lookup(launch_data_t dict, const char *key)
 {
 	size_t i;
 
-	if (!assumes(dict->type == LAUNCH_DATA_DICTIONARY))
+	if (LAUNCH_DATA_DICTIONARY != dict->type)
 		return NULL;
 
 	for (i = 0; i < dict->_array_cnt; i += 2) {
@@ -322,12 +303,10 @@ launch_data_t launch_data_dict_lookup(launch_data_t dict, const char *key)
 	return NULL;
 }
 
-bool launch_data_dict_remove(launch_data_t dict, const char *key)
+bool
+launch_data_dict_remove(launch_data_t dict, const char *key)
 {
 	size_t i;
-
-	if (!assumes(dict->type == LAUNCH_DATA_DICTIONARY))
-		return false;
 
 	for (i = 0; i < dict->_array_cnt; i += 2) {
 		if (!strcasecmp(key, dict->_array[i]->string))
@@ -342,22 +321,21 @@ bool launch_data_dict_remove(launch_data_t dict, const char *key)
 	return true;
 }
 
-void launch_data_dict_iterate(launch_data_t dict, void (*cb)(launch_data_t, const char *, void *), void *context)
+void
+launch_data_dict_iterate(launch_data_t dict, void (*cb)(launch_data_t, const char *, void *), void *context)
 {
 	size_t i;
 
-	if (!assumes(dict->type == LAUNCH_DATA_DICTIONARY))
+	if (LAUNCH_DATA_DICTIONARY != dict->type)
 		return;
 
 	for (i = 0; i < dict->_array_cnt; i += 2)
 		cb(dict->_array[i + 1], dict->_array[i]->string, context);
 }
 
-bool launch_data_array_set_index(launch_data_t where, launch_data_t what, size_t ind)
+bool
+launch_data_array_set_index(launch_data_t where, launch_data_t what, size_t ind)
 {
-	if (!assumes(where->type == LAUNCH_DATA_ARRAY))
-		return false;
-
 	if ((ind + 1) >= where->_array_cnt) {
 		where->_array = realloc(where->_array, (ind + 1) * sizeof(launch_data_t));
 		memset(where->_array + where->_array_cnt, 0, (ind + 1 - where->_array_cnt) * sizeof(launch_data_t));
@@ -370,22 +348,20 @@ bool launch_data_array_set_index(launch_data_t where, launch_data_t what, size_t
 	return true;
 }
 
-launch_data_t launch_data_array_get_index(launch_data_t where, size_t ind)
+launch_data_t
+launch_data_array_get_index(launch_data_t where, size_t ind)
 {
-	if (!assumes(where->type == LAUNCH_DATA_ARRAY))
+	if (LAUNCH_DATA_ARRAY != where->type)
 		return NULL;
-
 	if (ind < where->_array_cnt)
 		return where->_array[ind];
 	return NULL;
 }
 
-launch_data_t launch_data_array_pop_first(launch_data_t where)
+launch_data_t
+launch_data_array_pop_first(launch_data_t where)
 {
 	launch_data_t r = NULL;
-
-	if (!assumes(where->type == LAUNCH_DATA_ARRAY))
-		return NULL;
        
 	if (where->_array_cnt > 0) {
 		r = where->_array[0];
@@ -395,57 +371,59 @@ launch_data_t launch_data_array_pop_first(launch_data_t where)
 	return r;
 }
 
-size_t launch_data_array_get_count(launch_data_t where)
+size_t
+launch_data_array_get_count(launch_data_t where)
 {
-	if (!assumes(where->type == LAUNCH_DATA_ARRAY))
+	if (LAUNCH_DATA_ARRAY != where->type)
 		return 0;
 	return where->_array_cnt;
 }
 
-bool launch_data_set_errno(launch_data_t d, int e)
+bool
+launch_data_set_errno(launch_data_t d, int e)
 {
-	if (!assumes(d->type == LAUNCH_DATA_ERRNO))
-		return false;
 	d->err = e;
 	return true;
 }
 
-bool launch_data_set_fd(launch_data_t d, int fd)
+bool
+launch_data_set_fd(launch_data_t d, int fd)
 {
-	if (!assumes(d->type == LAUNCH_DATA_FD))
-		return false;
 	d->fd = fd;
 	return true;
 }
 
-bool launch_data_set_integer(launch_data_t d, long long n)
+bool
+launch_data_set_machport(launch_data_t d, mach_port_t p)
 {
-	if (!assumes(d->type == LAUNCH_DATA_INTEGER))
-		return false;
+	d->mp = p;
+	return true;
+}
+
+bool
+launch_data_set_integer(launch_data_t d, long long n)
+{
 	d->number = n;
 	return true;
 }
 
-bool launch_data_set_bool(launch_data_t d, bool b)
+bool
+launch_data_set_bool(launch_data_t d, bool b)
 {
-	if (!assumes(d->type == LAUNCH_DATA_BOOL))
-		return false;
 	d->boolean = b;
 	return true;
 }
 
-bool launch_data_set_real(launch_data_t d, double n)
+bool
+launch_data_set_real(launch_data_t d, double n)
 {
-	if (!assumes(d->type == LAUNCH_DATA_REAL))
-		return false;
 	d->float_num = n;
 	return true;
 }
 
-bool launch_data_set_string(launch_data_t d, const char *s)
+bool
+launch_data_set_string(launch_data_t d, const char *s)
 {
-	if (!assumes(d->type == LAUNCH_DATA_STRING))
-		return false;
 	if (d->string)
 		free(d->string);
 	d->string = strdup(s);
@@ -456,10 +434,9 @@ bool launch_data_set_string(launch_data_t d, const char *s)
 	return false;
 }
 
-bool launch_data_set_opaque(launch_data_t d, const void *o, size_t os)
+bool
+launch_data_set_opaque(launch_data_t d, const void *o, size_t os)
 {
-	if (!assumes(d->type == LAUNCH_DATA_OPAQUE))
-		return false;
 	d->opaque_size = os;
 	if (d->opaque)
 		free(d->opaque);
@@ -471,68 +448,72 @@ bool launch_data_set_opaque(launch_data_t d, const void *o, size_t os)
 	return false;
 }
 
-int launch_data_get_errno(launch_data_t d)
+int
+launch_data_get_errno(launch_data_t d)
 {
-	if (!assumes(d->type == LAUNCH_DATA_ERRNO))
-		return 0;
 	return d->err;
 }
 
-int launch_data_get_fd(launch_data_t d)
+int
+launch_data_get_fd(launch_data_t d)
 {
-	if (!assumes(d->type == LAUNCH_DATA_FD))
-		return -1;
 	return d->fd;
 }
 
-long long launch_data_get_integer(launch_data_t d)
+mach_port_t
+launch_data_get_machport(launch_data_t d)
 {
-	if (!assumes(d->type == LAUNCH_DATA_INTEGER))
-		return 0;
+	return d->mp;
+}
+
+long long
+launch_data_get_integer(launch_data_t d)
+{
 	return d->number;
 }
 
-bool launch_data_get_bool(launch_data_t d)
+bool
+launch_data_get_bool(launch_data_t d)
 {
-	if (!assumes(d->type == LAUNCH_DATA_BOOL))
-		return false;
 	return d->boolean;
 }
 
-double launch_data_get_real(launch_data_t d)
+double
+launch_data_get_real(launch_data_t d)
 {
-	if (!assumes(d->type == LAUNCH_DATA_REAL))
-		return NAN;
 	return d->float_num;
 }
 
-const char *launch_data_get_string(launch_data_t d)
+const char *
+launch_data_get_string(launch_data_t d)
 {
-	if (!assumes(d->type == LAUNCH_DATA_STRING))
+	if (LAUNCH_DATA_STRING != d->type)
 		return NULL;
 	return d->string;
 }
 
-void *launch_data_get_opaque(launch_data_t d)
+void *
+launch_data_get_opaque(launch_data_t d)
 {
-	if (!assumes(d->type == LAUNCH_DATA_OPAQUE))
+	if (LAUNCH_DATA_OPAQUE != d->type)
 		return NULL;
 	return d->opaque;
 }
 
-size_t launch_data_get_opaque_size(launch_data_t d)
+size_t
+launch_data_get_opaque_size(launch_data_t d)
 {
-	if (!assumes(d->type == LAUNCH_DATA_OPAQUE))
-		return 0;
 	return d->opaque_size;
 }
 
-int launchd_getfd(launch_t l)
+int
+launchd_getfd(launch_t l)
 {
 	return l->fd;
 }
 
-launch_t launchd_fdopen(int fd)
+launch_t
+launchd_fdopen(int fd)
 {
         launch_t c;
 
@@ -542,7 +523,7 @@ launch_t launchd_fdopen(int fd)
 
         c->fd = fd;
 
-	assumes(fcntl(fd, F_SETFL, O_NONBLOCK) != -1);
+	fcntl(fd, F_SETFL, O_NONBLOCK);
 
         if ((c->sendbuf = malloc(0)) == NULL)
 		goto out_bad;
@@ -568,7 +549,8 @@ out_bad:
 	return NULL;
 }
 
-void launchd_close(launch_t lh)
+void
+launchd_close(launch_t lh)
 {
 	if (lh->sendbuf)
 		free(lh->sendbuf);
@@ -578,11 +560,12 @@ void launchd_close(launch_t lh)
 		free(lh->recvbuf);
 	if (lh->recvfds)
 		free(lh->recvfds);
-	assumes(close(lh->fd) != -1);
+	close(lh->fd);
 	free(lh);
 }
 
-static void make_msg_and_cmsg(launch_data_t d, void **where, size_t *len, int **fd_where, size_t *fdcnt)
+void
+make_msg_and_cmsg(launch_data_t d, void **where, size_t *len, int **fd_where, size_t *fdcnt)
 {
 	launch_data_t o_in_w;
 	size_t i;
@@ -706,6 +689,7 @@ static launch_data_t make_data(launch_t conn, size_t *data_offset, size_t *fdoff
 		break;
 	case LAUNCH_DATA_ERRNO:
 		r->err = big2host(r->err);
+	case LAUNCH_DATA_MACHPORT:
 		break;
 	default:
 		errno = EINVAL;
@@ -736,7 +720,6 @@ int launchd_msg_send(launch_t lh, launch_data_t d)
 
 		msglen = (lh->sendlen - msglen) + sizeof(struct launch_msg_header);
 		lmh.len = host2big(msglen);
-		lmh.fdcnt = 0;
 		lmh.magic = host2big(LAUNCH_MSG_HEADER_MAGIC);
 
 		iov[0].iov_base = &lmh;
@@ -753,7 +736,6 @@ int launchd_msg_send(launch_t lh, launch_data_t d)
 
 
 	if (lh->sendfdcnt > 0) {
-		lmh.fdcnt = host2big((uint64_t)lh->sendfdcnt);
 		sentctrllen = mh.msg_controllen = CMSG_SPACE(lh->sendfdcnt * sizeof(int));
 		cm = alloca(mh.msg_controllen);
 		mh.msg_control = cm;
@@ -765,10 +747,9 @@ int launchd_msg_send(launch_t lh, launch_data_t d)
 		cm->cmsg_type = SCM_RIGHTS;
 
 		memcpy(CMSG_DATA(cm), lh->sendfds, lh->sendfdcnt * sizeof(int));
-
 	}
 
-	if (!assumes((r = sendmsg(lh->fd, &mh, 0)) != -1)) {
+	if ((r = sendmsg(lh->fd, &mh, 0)) == -1) {
 		return -1;
 	} else if (r == 0) {
 		errno = ECONNRESET;
@@ -803,7 +784,8 @@ int launchd_msg_send(launch_t lh, launch_data_t d)
 }
 
 
-int launch_get_fd(void)
+int
+launch_get_fd(void)
 {
 	pthread_once(&_lc_once, launch_client_init);
 
@@ -815,7 +797,8 @@ int launch_get_fd(void)
 	return _lc->l->fd;
 }
 
-static void launch_msg_getmsgs(launch_data_t m, void *context)
+void
+launch_msg_getmsgs(launch_data_t m, void *context)
 {
 	launch_data_t async_resp, *sync_resp = context;
 	
@@ -826,7 +809,44 @@ static void launch_msg_getmsgs(launch_data_t m, void *context)
 	}
 }
 
-launch_data_t launch_msg(launch_data_t d)
+void
+launch_mach_checkin_service(launch_data_t obj, const char *key, void *context __attribute__((unused)))
+{
+	kern_return_t result;
+	mach_port_t p;
+	name_t srvnm;
+
+	strlcpy(srvnm, key, sizeof(srvnm));
+
+	result = bootstrap_check_in(bootstrap_port, srvnm, &p);
+
+	if (result == BOOTSTRAP_SUCCESS)
+		launch_data_set_machport(obj, p);
+}
+
+launch_data_t
+launch_msg(launch_data_t d)
+{
+	launch_data_t mps, r = launch_msg_internal(d);
+
+	if (launch_data_get_type(d) == LAUNCH_DATA_STRING) {
+		if (strcmp(launch_data_get_string(d), LAUNCH_KEY_CHECKIN) != 0)
+			return r;
+		if (r == NULL)
+			return r;
+		if (launch_data_get_type(r) != LAUNCH_DATA_DICTIONARY)
+			return r;
+		mps = launch_data_dict_lookup(r, LAUNCH_JOBKEY_MACHSERVICES);
+		if (mps == NULL)
+			return r;
+		launch_data_dict_iterate(mps, launch_mach_checkin_service, NULL);
+	}
+
+	return r;
+}
+
+launch_data_t
+launch_msg_internal(launch_data_t d)
 {
 	launch_data_t resp = NULL;
 
@@ -841,7 +861,7 @@ launch_data_t launch_msg(launch_data_t d)
 
 	if (d && launchd_msg_send(_lc->l, d) == -1) {
 		do {
-			if (!assumes(errno == EAGAIN))
+			if (errno != EAGAIN)
 				goto out;
 		} while (launchd_msg_send(_lc->l, NULL) == -1);
 	}
@@ -852,7 +872,7 @@ launch_data_t launch_msg(launch_data_t d)
 			goto out;
 		}
 		if (launchd_msg_recv(_lc->l, launch_msg_getmsgs, &resp) == -1) {
-			if (!assumes(errno == EAGAIN)) {
+			if (errno != EAGAIN) {
 				goto out;
 			} else if (d == NULL) {
 				errno = 0;
@@ -863,7 +883,7 @@ launch_data_t launch_msg(launch_data_t d)
 				FD_ZERO(&rfds);
 				FD_SET(_lc->l->fd, &rfds);
 			
-				assumes(select(_lc->l->fd + 1, &rfds, NULL, NULL, NULL) == 1);
+				select(_lc->l->fd + 1, &rfds, NULL, NULL, NULL);
 			}
 		}
 	}
@@ -894,22 +914,18 @@ int launchd_msg_recv(launch_t lh, void (*cb)(launch_data_t, void *), void *conte
 	mh.msg_control = cm;
 	mh.msg_controllen = 4096;
 
-	if (!assumes((r = recvmsg(lh->fd, &mh, 0)) != -1))
+	if ((r = recvmsg(lh->fd, &mh, 0)) == -1)
 		return -1;
 	if (r == 0) {
 		errno = ECONNRESET;
 		return -1;
 	}
-	if (!assumes(!(mh.msg_flags & MSG_CTRUNC))) {
+	if (mh.msg_flags & MSG_CTRUNC) {
 		errno = ECONNABORTED;
 		return -1;
 	}
 	lh->recvlen += r;
 	if (mh.msg_controllen > 0) {
-		if (!assumes(cm->cmsg_len == mh.msg_controllen)) {
-			errno = ESPIPE;
-			return -1;
-		}
 		lh->recvfds = realloc(lh->recvfds, lh->recvfdcnt * sizeof(int) + mh.msg_controllen - sizeof(struct cmsghdr));
 		memcpy(lh->recvfds + lh->recvfdcnt, CMSG_DATA(cm), mh.msg_controllen - sizeof(struct cmsghdr));
 		lh->recvfdcnt += (mh.msg_controllen - sizeof(struct cmsghdr)) / sizeof(int);
@@ -928,15 +944,9 @@ int launchd_msg_recv(launch_t lh, void (*cb)(launch_data_t, void *), void *conte
 
 		tmplen = big2host(lmhp->len);
 
-		if (!assumes(big2host(lmhp->magic) == LAUNCH_MSG_HEADER_MAGIC) ||
-				!assumes(tmplen > sizeof(struct launch_msg_header))) {
+		if (big2host(lmhp->magic) != LAUNCH_MSG_HEADER_MAGIC || tmplen <= sizeof(struct launch_msg_header)) {
 			errno = EBADRPC;
 			goto out_bad;
-		}
-
-		if (!assumes(big2host(lmhp->fdcnt) == lh->recvfdcnt)) {
-			errno = ERANGE;
-			return -1;
 		}
 
 		if (lh->recvlen < tmplen) {
@@ -965,9 +975,6 @@ int launchd_msg_recv(launch_t lh, void (*cb)(launch_data_t, void *), void *conte
 			free(lh->recvfds);
 			lh->recvfds = malloc(0);
 		}
-
-		if (lh->recvlen == 0)
-			assumes(lh->recvfdcnt == 0);
 	}
 
 	return r;
@@ -1049,7 +1056,7 @@ bool launchd_batch_query(void)
 static int _fd(int fd)
 {
 	if (fd >= 0)
-		assumes(fcntl(fd, F_SETFD, 1) != -1);
+		fcntl(fd, F_SETFD, 1);
 	return fd;
 }
 
@@ -1069,6 +1076,16 @@ launch_data_t launch_data_new_fd(int fd)
 
 	if (r)
 	       launch_data_set_fd(r, fd);
+
+	return r;
+}
+
+launch_data_t launch_data_new_machport(mach_port_t p)
+{
+	launch_data_t r = launch_data_alloc(LAUNCH_DATA_MACHPORT);
+
+	if (r)
+	       launch_data_set_machport(r, p);
 
 	return r;
 }
@@ -1131,4 +1148,89 @@ launch_data_t launch_data_new_opaque(const void *o, size_t os)
 	}
 
 	return r;
+}
+
+static pid_t
+fexecv_as_user(const char *login, uid_t u, gid_t g, char *const argv[])
+{
+	int i, dtsz;
+	pid_t p;
+
+	if ((p = fork()) != 0)
+		return p;
+
+	chdir("/");
+
+	seteuid(0);
+	setegid(0);
+	initgroups(login, g);
+	setgid(g);
+	setuid(u);
+
+	dtsz = getdtablesize();
+
+	for (i = STDERR_FILENO + 1; i < dtsz; i++)
+		close(i);
+
+	execv(argv[0], argv);
+	_exit(EXIT_FAILURE);
+}
+
+pid_t
+create_and_switch_to_per_session_launchd(const char *login, int flags, ...)
+{
+	static char *const ldargv[] = { "/sbin/launchd", "-S", "Aqua", NULL };
+	char *largv[] = { "/bin/launchctl", "load", "-S", "Aqua", "-D", "all", "/etc/mach_init_per_user.d", NULL };
+	mach_port_t bezel_ui_server;
+	struct passwd *pwe;
+	struct stat sb;
+	int wstatus;
+	name_t sp;
+	pid_t p, ldp;
+	uid_t u;
+	gid_t g;
+
+	if ((pwe = getpwnam(login)) == NULL)
+		return -1;
+
+	u = pwe->pw_uid;
+	g = pwe->pw_gid;
+
+	if ((ldp = fexecv_as_user(login, u, g, ldargv)) == -1)
+		return -1;
+
+	while (bootstrap_getsocket(bootstrap_port, sp) != BOOTSTRAP_SUCCESS)
+		usleep(20000);
+
+	setenv(LAUNCHD_SOCKET_ENV, sp, 1);
+
+	if (flags & LOAD_ONLY_SAFEMODE_LAUNCHAGENTS)
+		largv[5] = "system";
+
+	if ((p = fexecv_as_user(login, u, g, largv)) == -1)
+		return -1;
+
+	if (waitpid(p, &wstatus, 0) != p)
+		return -1;
+
+	if (!(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0))
+		return -1;
+
+#define BEZEL_UI_PATH "/System/Library/LoginPlugins/BezelServices.loginPlugin/Contents/Resources/BezelUI/BezelUIServer"
+#define BEZEL_UI_PLIST "/System/Library/LaunchAgents/com.apple.BezelUIServer.plist"
+#define BEZEL_UI_SERVICE "BezelUI"
+
+	if (!(stat(BEZEL_UI_PLIST, &sb) == 0 && S_ISREG(sb.st_mode))) {
+		if (bootstrap_create_server(bootstrap_port, BEZEL_UI_PATH, u, true, &bezel_ui_server) == BOOTSTRAP_SUCCESS) {
+			mach_port_t srv;
+
+			if (bootstrap_create_service(bezel_ui_server, BEZEL_UI_SERVICE, &srv) == BOOTSTRAP_SUCCESS) {
+				mach_port_deallocate(mach_task_self(), srv);
+			}
+
+			mach_port_deallocate(mach_task_self(), bezel_ui_server);
+		}
+	}
+
+	return ldp;
 }

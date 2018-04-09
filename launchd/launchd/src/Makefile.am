@@ -1,51 +1,69 @@
-AM_CFLAGS = -no-cpp-precomp -F/System/Library/PrivateFrameworks -Wall -W -Wshadow -Wpadded -Werror -fconstant-cfstrings
+AM_CFLAGS = -no-cpp-precomp -F/System/Library/PrivateFrameworks -Wall -W -Wshadow -Wmissing-prototypes -Wmissing-declarations -Werror -D__MigTypeCheck=1
 
-sbin_SCRIPTS = service
+CLEANFILES = bootstrap.h bootstrapServer.c bootstrapUser.c bootstrapServer.h notifyServer.c notifyServer.h mpm_replyUser.c mpm_reply.h
+
+bootstrap.h bootstrapServer.c bootstrapUser.c bootstrapServer.h: $(srcdir)/bootstrap.defs
+	mig $(MIGFLAGS) -sheader bootstrapServer.h $(srcdir)/bootstrap.defs
+
+if LIBS_ONLY
 
 noinst_LIBRARIES = liblaunch.a liblaunch_profile.a
 
-bin_PROGRAMS = launchctl wait4path
-sbin_PROGRAMS = launchd SystemStarter launchd_debugd
-libexec_PROGRAMS = ConsoleMessage register_mach_bootstrap_servers StartupItemContext launchproxy
-
-sysconf_DATA = hostconfig rc rc.common rc.netboot rc.shutdown
-
-ConsoleMessage_LDFLAGS = -framework CoreFoundation
-
-launchctl_LDFLAGS = -framework CoreFoundation -weak_library /usr/lib/libedit.dylib
-
-register_mach_bootstrap_servers_LDFLAGS = -framework CoreFoundation
-
-launchd_debugd_CFLAGS = -mdynamic-no-pic $(AM_CFLAGS)
-launchd_debugd_SOURCES = launchdebugd.c
-
-liblaunch_a_SOURCES = liblaunch.c
+liblaunch_a_SOURCES = liblaunch.c bootstrap_public.c
 
 liblaunch_profile_a_CFLAGS = -pg $(AM_CFLAGS)
-liblaunch_profile_a_SOURCES = liblaunch.c
+liblaunch_profile_a_SOURCES = liblaunch.c bootstrap_public.c
 
-SystemStarter_CFLAGS = -mdynamic-no-pic $(AM_CFLAGS)
+bootstrap_public.c:: bootstrap.h
+
+install-data-hook:
+	mkdir -p $(DESTDIR)/usr/local/lib/system
+	cp liblaunch.a $(DESTDIR)/usr/local/lib/system
+	cp liblaunch.a $(DESTDIR)/usr/local/lib/system/liblaunch_debug.a
+	cp liblaunch_profile.a $(DESTDIR)/usr/local/lib/system/liblaunch_profile.a
+
+else
+
+sbin_SCRIPTS = service
+
+bin_PROGRAMS = launchctl wait4path
+sbin_PROGRAMS = launchd SystemStarter
+libexec_PROGRAMS = launchproxy
+
+sysconf_DATA = hostconfig rc.common rc.netboot rc.shutdown
+
+launchctl_CFLAGS = $(AM_CFLAGS) -fvisibility=hidden
+launchctl_LDFLAGS = -framework CoreFoundation -weak_library /usr/lib/libedit.dylib
+
+SystemStarter_CFLAGS = -mdynamic-no-pic $(AM_CFLAGS) -fvisibility=hidden
 SystemStarter_LDFLAGS = -framework CoreFoundation
 SystemStarter_SOURCES = StartupItems.c IPC.c SystemStarter.c
 
-launchd_CFLAGS = -DPID1_REAP_ADOPTED_CHILDREN -mdynamic-no-pic $(AM_CFLAGS) -Wno-unused-parameter
+launchd_CFLAGS = -mdynamic-no-pic $(AM_CFLAGS) -Wno-unused-parameter -fvisibility=hidden
 launchd_LDFLAGS = -lbsm
-launchd_SOURCES = launchd.c init.c bootstrap.c lists.c rpc_services.c bootstrapServer.c
+launchd_SOURCES = launchd.c launchd_core_logic.c launchd_unix_ipc.c launchd_mach_ipc.c init.c bootstrapServer.c notifyServer.c launchd_internalUser.c launchd_internalServer.c mpm_replyUser.c
+
+launchd_mach_ipc.c:: bootstrap.h bootstrapServer.h notifyServer.h launchd_internal.h
+launchd_core_logic.c:: bootstrap.h mpm_reply.h
+launchd.c:: bootstrap.h launchd_internalServer.h launchd_internal.h notifyServer.h bootstrapServer.h
 
 launchproxy_LDFLAGS = -weak_framework Security
 
-CLEANFILES = bootstrap.h bootstrapServer.c bootstrapUser.c
+notifyServer.c notifyServer.h: /usr/include/mach/notify.defs
+	mig $(MIGFLAGS) -header /dev/null -user /dev/null -sheader notifyServer.h /usr/include/mach/notify.defs
 
-bootstrap.c:: bootstrap.h
+mpm_replyUser.c mpm_reply.h: $(srcdir)/mpm_reply.defs
+	mig $(MIGFLAGS) -sheader /dev/null -server /dev/null $(srcdir)/mpm_reply.defs
 
-bootstrap.h bootstrapServer.c bootstrapUser.c: $(srcdir)/bootstrap.defs
-	mig $(MIGFLAGS) $(srcdir)/bootstrap.defs
+launchd_internal.h launchd_internalServer.c launchd_internalUser.c launchd_internalServer.h: $(srcdir)/launchd_internal.defs
+	mig $(MIGFLAGS) -sheader launchd_internalServer.h $(srcdir)/launchd_internal.defs
+
 
 man1_MANS = wait4path.1 launchctl.1
 
 man5_MANS = launchd.plist.5 launchd.conf.5
 
-man8_MANS = ConsoleMessage.8 StartupItemContext.8 SystemStarter.8 init.8 rc.8 launchd.8 service.8 launchproxy.8 launchd_debugd.8
+man8_MANS = StartupItemContext.8 SystemStarter.8 rc.8 launchd.8 service.8 launchproxy.8
 
 STARTUPITEMS = $(basename $(notdir $(wildcard $(srcdir)/StartupItems/*.plist)))
 
@@ -58,12 +76,12 @@ $(addprefix $(DESTDIR)/System/Library/StartupItems/, $(STARTUPITEMS)):
 install-startupitems: $(addprefix $(DESTDIR)/System/Library/StartupItems/, $(STARTUPITEMS))
 
 install-data-hook: install-startupitems
-	mkdir -p $(DESTDIR)/usr/local/lib/system
-	cp liblaunch.a $(DESTDIR)/usr/local/lib/system
-	cp liblaunch.a $(DESTDIR)/usr/local/lib/system/liblaunch_debug.a
-	cp liblaunch_profile.a $(DESTDIR)/usr/local/lib/system/liblaunch_profile.a
-	mkdir -p $(DESTDIR)/usr/include
+	mkdir -p $(DESTDIR)/usr/libexec
+	cp $(srcdir)/StartupItemContext $(DESTDIR)/usr/libexec
+	mkdir -p $(DESTDIR)/usr/include/servers
 	cp $(srcdir)/launch.h $(DESTDIR)/usr/include
+	cp $(srcdir)/bootstrap_public.h $(DESTDIR)/usr/include/servers/bootstrap.h
+	cp $(srcdir)/bootstrap_public.h $(DESTDIR)/usr/include/servers/bootstrap_defs.h
 	mkdir -p $(DESTDIR)/usr/local/include
 	cp $(srcdir)/launch_priv.h $(DESTDIR)/usr/local/include
 	mkdir -p $(DESTDIR)/$(sysconfdir)/mach_init.d
@@ -73,5 +91,4 @@ install-data-hook: install-startupitems
 	mkdir -p $(DESTDIR)/System/Library/LaunchDaemons
 	mkdir -p $(DESTDIR)/System/Library/LaunchAgents
 
-install-exec-hook:
-	chmod u+s $(DESTDIR)/$(sbindir)/launchd
+endif

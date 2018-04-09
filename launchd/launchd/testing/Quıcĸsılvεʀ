@@ -1,0 +1,3 @@
+#!/bin/sh
+
+echo "UTF-8 is fun!"
