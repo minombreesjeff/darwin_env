@@ -32,7 +32,7 @@ typedef  unsigned long  int  ub4;   /* unsigned 4-byte quantities */
 typedef  unsigned       char ub1;   /* unsigned 1-byte quantities */
 
 /* how many powers of 2's worth of buckets we use */
-static unsigned int hashpower = 16;
+static unsigned int hashpower = HASHPOWER_DEFAULT;
 
 #define hashsize(n) ((ub4)1<<(n))
 #define hashmask(n) (hashsize(n)-1)
@@ -58,16 +58,22 @@ static bool expanding = false;
  */
 static unsigned int expand_bucket = 0;
 
-void assoc_init(void) {
+void assoc_init(const int hashtable_init) {
+    if (hashtable_init) {
+        hashpower = hashtable_init;
+    }
     primary_hashtable = calloc(hashsize(hashpower), sizeof(void *));
     if (! primary_hashtable) {
         fprintf(stderr, "Failed to init hashtable.\n");
         exit(EXIT_FAILURE);
     }
+    STATS_LOCK();
+    stats.hash_power_level = hashpower;
+    stats.hash_bytes = hashsize(hashpower) * sizeof(void *);
+    STATS_UNLOCK();
 }
 
-item *assoc_find(const char *key, const size_t nkey) {
-    uint32_t hv = hash(key, nkey, 0);
+item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
     item *it;
     unsigned int oldbucket;
 
@@ -96,8 +102,7 @@ item *assoc_find(const char *key, const size_t nkey) {
 /* returns the address of the item pointer before the key.  if *item == 0,
    the item wasn't found */
 
-static item** _hashitem_before (const char *key, const size_t nkey) {
-    uint32_t hv = hash(key, nkey, 0);
+static item** _hashitem_before (const char *key, const size_t nkey, const uint32_t hv) {
     item **pos;
     unsigned int oldbucket;
 
@@ -126,6 +131,11 @@ static void assoc_expand(void) {
         hashpower++;
         expanding = true;
         expand_bucket = 0;
+        STATS_LOCK();
+        stats.hash_power_level = hashpower;
+        stats.hash_bytes += hashsize(hashpower) * sizeof(void *);
+        stats.hash_is_expanding = 1;
+        STATS_UNLOCK();
         pthread_cond_signal(&maintenance_cond);
     } else {
         primary_hashtable = old_hashtable;
@@ -134,13 +144,11 @@ static void assoc_expand(void) {
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
-int assoc_insert(item *it) {
-    uint32_t hv;
+int assoc_insert(item *it, const uint32_t hv) {
     unsigned int oldbucket;
 
-    assert(assoc_find(ITEM_key(it), it->nkey) == 0);  /* shouldn't have duplicately named things defined */
+//    assert(assoc_find(ITEM_key(it), it->nkey) == 0);  /* shouldn't have duplicately named things defined */
 
-    hv = hash(ITEM_key(it), it->nkey, 0);
     if (expanding &&
         (oldbucket = (hv & hashmask(hashpower - 1))) >= expand_bucket)
     {
@@ -160,8 +168,8 @@ int assoc_insert(item *it) {
     return 1;
 }
 
-void assoc_delete(const char *key, const size_t nkey) {
-    item **before = _hashitem_before(key, nkey);
+void assoc_delete(const char *key, const size_t nkey, const uint32_t hv) {
+    item **before = _hashitem_before(key, nkey, hv);
 
     if (*before) {
         item *nxt;
@@ -193,7 +201,7 @@ static void *assoc_maintenance_thread(void *arg) {
 
         /* Lock the cache, and bulk move multiple buckets to the new
          * hash table. */
-        pthread_mutex_lock(&cache_lock);
+        mutex_lock(&cache_lock);
 
         for (ii = 0; ii < hash_bulk_move && expanding; ++ii) {
             item *it, *next;
@@ -213,6 +221,10 @@ static void *assoc_maintenance_thread(void *arg) {
             if (expand_bucket == hashsize(hashpower - 1)) {
                 expanding = false;
                 free(old_hashtable);
+                STATS_LOCK();
+                stats.hash_bytes -= hashsize(hashpower - 1) * sizeof(void *);
+                stats.hash_is_expanding = 0;
+                STATS_UNLOCK();
                 if (settings.verbose > 1)
                     fprintf(stderr, "Hash table expansion done\n");
             }
@@ -248,7 +260,7 @@ int start_assoc_maintenance_thread() {
 }
 
 void stop_assoc_maintenance_thread() {
-    pthread_mutex_lock(&cache_lock);
+    mutex_lock(&cache_lock);
     do_run_maintenance_thread = 0;
     pthread_cond_signal(&maintenance_cond);
     pthread_mutex_unlock(&cache_lock);

@@ -1,12 +1,12 @@
 Name:           memcached
-Version:        1.4.5
+Version:        1.4.13
 Release:        1%{?dist}
 Summary:        High Performance, Distributed Memory Object Cache
 
 Group:          System Environment/Daemons
 License:        BSD
 URL:            http://www.danga.com/memcached/
-Source0:        http://memcached.googlecode.com/files/%{name}-1.4.5.tar.gz
+Source0:        http://memcached.googlecode.com/files/%{name}-1.4.13.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildRequires:  libevent-devel
@@ -23,7 +23,7 @@ system, generic in nature, but intended for use in speeding up dynamic
 web applications by alleviating database load.
 
 %prep
-%setup -q -n %{name}-1.4.5
+%setup -q -n %{name}-1.4.13
 
 
 %build

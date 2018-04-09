@@ -60,6 +60,9 @@
 #define MIN_BIN_PKT_LENGTH 16
 #define BIN_PKT_HDR_WORDS (MIN_BIN_PKT_LENGTH/sizeof(uint32_t))
 
+/* Initial power multiplier for the hash table */
+#define HASHPOWER_DEFAULT 16
+
 /* unistd.h is here */
 #if HAVE_UNISTD_H
 # include <unistd.h>
@@ -77,18 +80,22 @@
 #define TAIL_REPAIR_TIME (3 * 3600)
 
 /* warning: don't use these macros with a function, as it evals its arg twice */
-#define ITEM_get_cas(i) ((uint64_t)(((i)->it_flags & ITEM_CAS) ? \
-                                    *(uint64_t*)&((i)->end[0]) : 0x0))
-#define ITEM_set_cas(i,v) { if ((i)->it_flags & ITEM_CAS) { \
-                          *(uint64_t*)&((i)->end[0]) = v; } }
+#define ITEM_get_cas(i) (((i)->it_flags & ITEM_CAS) ? \
+        (i)->data->cas : (uint64_t)0)
 
-#define ITEM_key(item) (((char*)&((item)->end[0])) \
+#define ITEM_set_cas(i,v) { \
+    if ((i)->it_flags & ITEM_CAS) { \
+        (i)->data->cas = v; \
+    } \
+}
+
+#define ITEM_key(item) (((char*)&((item)->data)) \
          + (((item)->it_flags & ITEM_CAS) ? sizeof(uint64_t) : 0))
 
-#define ITEM_suffix(item) ((char*) &((item)->end[0]) + (item)->nkey + 1 \
+#define ITEM_suffix(item) ((char*) &((item)->data) + (item)->nkey + 1 \
          + (((item)->it_flags & ITEM_CAS) ? sizeof(uint64_t) : 0))
 
-#define ITEM_data(item) ((char*) &((item)->end[0]) + (item)->nkey + 1 \
+#define ITEM_data(item) ((char*) &((item)->data) + (item)->nkey + 1 \
          + (item)->nsuffix \
          + (((item)->it_flags & ITEM_CAS) ? sizeof(uint64_t) : 0))
 
@@ -158,7 +165,8 @@ enum bin_substates {
     bin_reading_incr_header,
     bin_read_flush_exptime,
     bin_reading_sasl_auth,
-    bin_reading_sasl_auth_data
+    bin_reading_sasl_auth_data,
+    bin_reading_touch_key,
 };
 
 enum protocol {
@@ -187,7 +195,7 @@ enum store_item_type {
 };
 
 enum delta_result_type {
-    OK, NON_NUMERIC, EOM
+    OK, NON_NUMERIC, EOM, DELTA_ITEM_NOT_FOUND, DELTA_ITEM_CAS_MISMATCH
 };
 
 /** Time relative to server start. Smaller than time_t on 64-bit systems. */
@@ -197,6 +205,7 @@ typedef unsigned int rel_time_t;
 struct slab_stats {
     uint64_t  set_cmds;
     uint64_t  get_hits;
+    uint64_t  touch_hits;
     uint64_t  delete_hits;
     uint64_t  cas_hits;
     uint64_t  cas_badval;
@@ -211,6 +220,8 @@ struct thread_stats {
     pthread_mutex_t   mutex;
     uint64_t          get_cmds;
     uint64_t          get_misses;
+    uint64_t          touch_cmds;
+    uint64_t          touch_misses;
     uint64_t          delete_misses;
     uint64_t          incr_misses;
     uint64_t          decr_misses;
@@ -234,16 +245,28 @@ struct stats {
     uint64_t      curr_bytes;
     unsigned int  curr_conns;
     unsigned int  total_conns;
+    uint64_t      rejected_conns;
+    unsigned int  reserved_fds;
     unsigned int  conn_structs;
     uint64_t      get_cmds;
     uint64_t      set_cmds;
+    uint64_t      touch_cmds;
     uint64_t      get_hits;
     uint64_t      get_misses;
+    uint64_t      touch_hits;
+    uint64_t      touch_misses;
     uint64_t      evictions;
     uint64_t      reclaimed;
     time_t        started;          /* when the process was started */
     bool          accepting_conns;  /* whether we are currently accepting */
     uint64_t      listen_disabled_num;
+    unsigned int  hash_power_level; /* Better hope it's not over 9000 */
+    uint64_t      hash_bytes;       /* size used for hash tables */
+    bool          hash_is_expanding; /* If the hash table is being expanded */
+    uint64_t      expired_unfetched; /* items reclaimed but never touched */
+    uint64_t      evicted_unfetched; /* items evicted but never touched */
+    bool          slab_reassign_running; /* slab reassign in progress */
+    uint64_t      slabs_moved;       /* times slabs were moved around */
 };
 
 #define MAX_VERBOSITY_LEVEL 2
@@ -266,6 +289,7 @@ struct settings {
     double factor;          /* chunk size growth factor */
     int chunk_size;
     int num_threads;        /* number of worker (without dispatcher) libevent threads to run */
+    int num_threads_per_udp; /* number of worker threads serving each udp socket */
     char prefix_delimiter;  /* character that marks a key prefix (for stats) */
     int detail_enabled;     /* nonzero if we're collecting detailed stats */
     int reqs_per_event;     /* Maximum number of io to process on each
@@ -275,6 +299,10 @@ struct settings {
     int backlog;
     int item_size_max;        /* Maximum item size, and upper end for slabs */
     bool sasl;              /* SASL on/off */
+    bool maxconns_fast;     /* Whether or not to early close connections */
+    bool slab_reassign;     /* Whether or not slab reassignment is allowed */
+    bool slab_automove;     /* Whether or not to automatically move slabs */
+    int hashpower_init;     /* Starting hash power level */
 };
 
 extern struct stats stats;
@@ -286,6 +314,8 @@ extern struct settings settings;
 
 /* temp */
 #define ITEM_SLABBED 4
+
+#define ITEM_FETCHED 8
 
 /**
  * Structure for storing items within memcached.
@@ -302,7 +332,12 @@ typedef struct _stritem {
     uint8_t         it_flags;   /* ITEM_* above */
     uint8_t         slabs_clsid;/* which slab class we're in */
     uint8_t         nkey;       /* key length, w/terminating null and padding */
-    void * end[];
+    /* this odd type prevents type-punning issues when we do
+     * the little shuffle to save space when not using CAS. */
+    union {
+        uint64_t cas;
+        char end;
+    } data[];
     /* if it_flags & ITEM_CAS we have 8 bytes CAS */
     /* then null-terminated key */
     /* then " flags length\r\n" (no terminating null) */
@@ -421,16 +456,40 @@ struct conn {
 /* current time of day (updated periodically) */
 extern volatile rel_time_t current_time;
 
+/* TODO: Move to slabs.h? */
+extern volatile int slab_rebalance_signal;
+
+struct slab_rebalance {
+    void *slab_start;
+    void *slab_end;
+    void *slab_pos;
+    int s_clsid;
+    int d_clsid;
+    int busy_items;
+    uint8_t done;
+};
+
+extern struct slab_rebalance slab_rebal;
+
 /*
  * Functions
  */
 void do_accept_new_conns(const bool do_accept);
-enum delta_result_type do_add_delta(conn *c, item *item, const bool incr,
-                                    const int64_t delta, char *buf);
-enum store_item_type do_store_item(item *item, int comm, conn* c);
+enum delta_result_type do_add_delta(conn *c, const char *key,
+                                    const size_t nkey, const bool incr,
+                                    const int64_t delta, char *buf,
+                                    uint64_t *cas, const uint32_t hv);
+enum store_item_type do_store_item(item *item, int comm, conn* c, const uint32_t hv);
 conn *conn_new(const int sfd, const enum conn_states init_state, const int event_flags, const int read_buffer_size, enum network_transport transport, struct event_base *base);
 extern int daemonize(int nochdir, int noclose);
 
+static inline int mutex_lock(pthread_mutex_t *mutex)
+{
+    while (pthread_mutex_trylock(mutex));
+    return 0;
+}
+
+#define mutex_unlock(x) pthread_mutex_unlock(x)
 
 #include "stats.h"
 #include "slabs.h"
@@ -452,8 +511,10 @@ int  dispatch_event_add(int thread, conn *c);
 void dispatch_conn_new(int sfd, enum conn_states init_state, int event_flags, int read_buffer_size, enum network_transport transport);
 
 /* Lock wrappers for cache functions that are called from main loop. */
-enum delta_result_type add_delta(conn *c, item *item, const int incr,
-                                 const int64_t delta, char *buf);
+enum delta_result_type add_delta(conn *c, const char *key,
+                                 const size_t nkey, const int incr,
+                                 const int64_t delta, char *buf,
+                                 uint64_t *cas);
 void accept_new_conns(const bool do_accept);
 conn *conn_from_freelist(void);
 bool  conn_add_to_freelist(conn *c);
@@ -462,14 +523,19 @@ item *item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbyt
 char *item_cachedump(const unsigned int slabs_clsid, const unsigned int limit, unsigned int *bytes);
 void  item_flush_expired(void);
 item *item_get(const char *key, const size_t nkey);
+item *item_touch(const char *key, const size_t nkey, uint32_t exptime);
 int   item_link(item *it);
 void  item_remove(item *it);
-int   item_replace(item *it, item *new_it);
+int   item_replace(item *it, item *new_it, const uint32_t hv);
 void  item_stats(ADD_STAT add_stats, void *c);
 void  item_stats_sizes(ADD_STAT add_stats, void *c);
 void  item_unlink(item *it);
 void  item_update(item *it);
 
+void item_lock(uint32_t hv);
+void item_unlock(uint32_t hv);
+unsigned short refcount_incr(unsigned short *refcount);
+unsigned short refcount_decr(unsigned short *refcount);
 void STATS_LOCK(void);
 void STATS_UNLOCK(void);
 void threadlocal_stats_reset(void);

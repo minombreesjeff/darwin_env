@@ -15,8 +15,14 @@
 /* machine is littleendian */
 #undef ENDIAN_LITTLE
 
+/* Define to 1 if you have the `clock_gettime' function. */
+#undef HAVE_CLOCK_GETTIME
+
 /* Define this if you have an implementation of drop_privileges() */
 #undef HAVE_DROP_PRIVILEGES
+
+/* GCC Atomics available */
+#undef HAVE_GCC_ATOMICS
 
 /* Define to 1 if you have the `getpagesizes' function. */
 #undef HAVE_GETPAGESIZES
@@ -35,6 +41,9 @@
 
 /* Define to 1 if you have the `mlockall' function. */
 #undef HAVE_MLOCKALL
+
+/* we have sasl_callback_ft */
+#undef HAVE_SASL_CALLBACK_FT
 
 /* Set to nonzero if your SASL implementation supports SASL_CB_GETCONF */
 #undef HAVE_SASL_CB_GETCONF
@@ -98,6 +107,9 @@
 
 /* Define to the one symbol short name of this package. */
 #undef PACKAGE_TARNAME
+
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
 
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION

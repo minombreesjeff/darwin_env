@@ -2,7 +2,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 3361;
+use Test::More tests => 3539;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -41,6 +41,11 @@ use constant CMD_QUITQ      => 0x17;
 use constant CMD_FLUSHQ     => 0x18;
 use constant CMD_APPENDQ    => 0x19;
 use constant CMD_PREPENDQ   => 0x1A;
+use constant CMD_TOUCH      => 0x1C;
+use constant CMD_GAT        => 0x1D;
+use constant CMD_GATQ       => 0x1E;
+use constant CMD_GATK       => 0x23;
+use constant CMD_GATKQ      => 0x24;
 
 # REQ and RES formats are divided even though they currently share
 # the same format, since they _could_ differ in the future.
@@ -195,6 +200,22 @@ is($mc->decr("x"), 4, "Decrease by one");
 is($mc->decr("x", 211), 0, "Floor is zero");
 
 {
+    # diag "bug220
+    my ($rv, $cas) = $mc->set("bug220", "100", 0, 0);
+    my ($irv, $icas) = $mc->incr_cas("bug220", 999);
+    ok($icas != $cas);
+    is($irv, 1099, "Incr amount failed");
+    my ($flags, $val, $gcas) = $mc->get("bug220");
+    is($gcas, $icas, "CAS didn't match after incr/gets");
+
+    ($irv, $icas) = $mc->incr_cas("bug220", 999);
+    ok($icas != $cas);
+    is($irv, 2098, "Incr amount failed");
+    ($flags, $val, $gcas) = $mc->get("bug220");
+    is($gcas, $icas, "CAS didn't match after incr/gets");
+}
+
+{
     # diag "bug21";
     $mc->add("bug21", "9223372036854775807", 0, 0);
     is($mc->incr("bug21"), 9223372036854775808, "First incr for bug21.");
@@ -235,6 +256,23 @@ is($mc->decr("x", 211), 0, "Floor is zero");
         is($rv, 0, "Empty return on expected failure (2)");
         ok($@->exists, "Expected error state of 'exists' (2)");
     }
+}
+
+# diag "Touch commands";
+{
+    $mc->flush;
+    $mc->set("totouch", "toast", 0, 1);
+    my $res = $mc->touch("totouch", 10);
+    sleep 2;
+    $check->("totouch", 0, "toast");
+
+    $mc->set("totouch", "toast2", 0, 1);
+    my ($flags, $val, $i) = $mc->gat("totouch", 10);
+    is($val, "toast2", "GAT returned correct value");
+    sleep 2;
+    $check->("totouch", 0, "toast2");
+
+    # Test miss as well
 }
 
 # diag "Silent set.";
@@ -535,11 +573,15 @@ sub _handle_single_response {
     my $self = shift;
     my $myopaque = shift;
 
-    $self->{socket}->recv(my $response, ::MIN_RECV_BYTES);
-    Test::More::is(length($response), ::MIN_RECV_BYTES, "Expected read length");
+    my $hdr = "";
+    while(::MIN_RECV_BYTES - length($hdr) > 0) {
+        $self->{socket}->recv(my $response, ::MIN_RECV_BYTES - length($hdr));
+        $hdr .= $response;
+    }
+    Test::More::is(length($hdr), ::MIN_RECV_BYTES, "Expected read length");
 
     my ($magic, $cmd, $keylen, $extralen, $datatype, $status, $remaining,
-        $opaque, $ident_hi, $ident_lo) = unpack(::RES_PKT_FMT, $response);
+        $opaque, $ident_hi, $ident_lo) = unpack(::RES_PKT_FMT, $hdr);
     Test::More::is($magic, ::RES_MAGIC, "Got proper response magic");
 
     my $cas = ($ident_hi * 2 ** 32) + $ident_lo;
@@ -598,18 +640,24 @@ sub _incrdecr_header {
     return $extra_header;
 }
 
-sub _incrdecr {
+sub _incrdecr_cas {
     my $self = shift;
     my ($cmd, $key, $amt, $init, $exp) = @_;
 
-    my ($data, undef) = $self->_do_command($cmd, $key, '',
+    my ($data, $rcas) = $self->_do_command($cmd, $key, '',
                                            $self->_incrdecr_header($amt, $init, $exp));
 
     my $header = substr $data, 0, 8, '';
     my ($resp_hi, $resp_lo) = unpack "NN", $header;
     my $resp = ($resp_hi * 2 ** 32) + $resp_lo;
 
-    return $resp;
+    return $resp, $rcas;
+}
+
+sub _incrdecr {
+    my $self = shift;
+    my ($v, $c) = $self->_incrdecr_cas(@_);
+    return $v
 }
 
 sub silent_incrdecr {
@@ -681,6 +729,27 @@ sub get_multi {
     return \%return;
 }
 
+sub touch {
+    my $self = shift;
+    my ($key, $expire) = @_;
+    my $extra_header = pack "N", $expire;
+    my $cas = 0;
+    return $self->_do_command(::CMD_TOUCH, $key, '', $extra_header, $cas);
+}
+
+sub gat {
+    my $self   = shift;
+    my $key    = shift;
+    my $expire = shift;
+    my $extra_header = pack "N", $expire;
+    my ($rv, $cas) = $self->_do_command(::CMD_GAT, $key, '', $extra_header);
+
+    my $header = substr $rv, 0, 4, '';
+    my $flags  = unpack("N", $header);
+
+    return ($flags, $rv, $cas);
+}
+
 sub version {
     my $self = shift;
     return $self->_do_command(::CMD_VERSION, '', '');
@@ -734,6 +803,16 @@ sub incr {
     $exp = 0 unless defined $exp;
 
     return $self->_incrdecr(::CMD_INCR, $key, $amt, $init, $exp);
+}
+
+sub incr_cas {
+    my $self = shift;
+    my ($key, $amt, $init, $exp) = @_;
+    $amt = 1 unless defined $amt;
+    $init = 0 unless defined $init;
+    $exp = 0 unless defined $exp;
+
+    return $self->_incrdecr_cas(::CMD_INCR, $key, $amt, $init, $exp);
 }
 
 sub decr {

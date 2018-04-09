@@ -95,17 +95,15 @@ static int add_iov(conn *c, const void *buf, int len);
 static int add_msghdr(conn *c);
 
 
-/* time handling */
-static void set_current_time(void);  /* update the global variable holding
-                              global 32-bit seconds-since-start time
-                              (to avoid 64 bit time_t) */
-
 static void conn_free(conn *c);
 
 /** exported globals **/
 struct stats stats;
 struct settings settings;
 time_t process_started;     /* when the process was started */
+
+struct slab_rebalance slab_rebal;
+volatile int slab_rebalance_signal;
 
 /** file scope variables **/
 static conn *listen_conn = NULL;
@@ -119,6 +117,27 @@ enum transmit_result {
 };
 
 static enum transmit_result transmit(conn *c);
+
+/* This reduces the latency without adding lots of extra wiring to be able to
+ * notify the listener thread of when to listen again.
+ * Also, the clock timer could be broken out into its own thread and we
+ * can block the listener via a condition.
+ */
+static volatile bool allow_new_conns = true;
+static struct event maxconnsevent;
+static void maxconns_handler(const int fd, const short which, void *arg) {
+    struct timeval t = {.tv_sec = 0, .tv_usec = 10000};
+
+    if (fd == -42 || allow_new_conns == false) {
+        /* reschedule in 10ms if we need to keep polling */
+        evtimer_set(&maxconnsevent, maxconns_handler, 0);
+        event_base_set(main_base, &maxconnsevent);
+        evtimer_add(&maxconnsevent, &t);
+    } else {
+        evtimer_del(&maxconnsevent);
+        accept_new_conns(true);
+    }
+}
 
 #define REALTIME_MAXDELTA 60*60*24*30
 
@@ -150,8 +169,13 @@ static rel_time_t realtime(const time_t exptime) {
 static void stats_init(void) {
     stats.curr_items = stats.total_items = stats.curr_conns = stats.total_conns = stats.conn_structs = 0;
     stats.get_cmds = stats.set_cmds = stats.get_hits = stats.get_misses = stats.evictions = stats.reclaimed = 0;
+    stats.touch_cmds = stats.touch_misses = stats.touch_hits = stats.rejected_conns = 0;
     stats.curr_bytes = stats.listen_disabled_num = 0;
+    stats.hash_power_level = stats.hash_bytes = stats.hash_is_expanding = 0;
+    stats.expired_unfetched = stats.evicted_unfetched = 0;
+    stats.slabs_moved = 0;
     stats.accepting_conns = true; /* assuming we start in this state. */
+    stats.slab_reassign_running = false;
 
     /* make the time we started always be 2 seconds before we really
        did, so time(0) - time.started is never zero.  if so, things
@@ -164,6 +188,7 @@ static void stats_init(void) {
 static void stats_reset(void) {
     STATS_LOCK();
     stats.total_items = stats.total_conns = 0;
+    stats.rejected_conns = 0;
     stats.evictions = 0;
     stats.reclaimed = 0;
     stats.listen_disabled_num = 0;
@@ -189,12 +214,17 @@ static void settings_init(void) {
     settings.factor = 1.25;
     settings.chunk_size = 48;         /* space for a modest key and value */
     settings.num_threads = 4;         /* N workers */
+    settings.num_threads_per_udp = 0;
     settings.prefix_delimiter = ':';
     settings.detail_enabled = 0;
     settings.reqs_per_event = 20;
     settings.backlog = 1024;
     settings.binding_protocol = negotiating_prot;
     settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
+    settings.maxconns_fast = false;
+    settings.hashpower_init = 0;
+    settings.slab_reassign = false;
+    settings.slab_automove = false;
 }
 
 /*
@@ -471,6 +501,10 @@ static void conn_cleanup(conn *c) {
         sasl_dispose(&c->sasl_conn);
         c->sasl_conn = NULL;
     }
+
+    if (IS_UDP(c->transport)) {
+        conn_set_state(c, conn_read);
+    }
 }
 
 /*
@@ -508,7 +542,9 @@ static void conn_close(conn *c) {
 
     MEMCACHED_CONN_RELEASE(c->sfd);
     close(c->sfd);
-    accept_new_conns(true);
+    pthread_mutex_lock(&conn_lock);
+    allow_new_conns = true;
+    pthread_mutex_unlock(&conn_lock);
     conn_cleanup(c);
 
     /* if the connection has big buffers, just free it */
@@ -614,11 +650,10 @@ static void conn_set_state(conn *c, enum conn_states state) {
                     state_text(state));
         }
 
-        c->state = state;
-
         if (state == conn_write || state == conn_mwrite) {
             MEMCACHED_PROCESS_COMMAND_END(c->sfd, c->wbuf, c->wbytes);
         }
+        c->state = state;
     }
 }
 
@@ -763,6 +798,12 @@ static void out_string(conn *c, const char *str) {
 
     if (settings.verbose > 1)
         fprintf(stderr, ">%d %s\n", c->sfd, str);
+
+    /* Nuke a partial output... */
+    c->msgcurr = 0;
+    c->msgused = 0;
+    c->iovused = 0;
+    add_msghdr(c);
 
     len = strlen(str);
     if ((len + 2) > c->wsize) {
@@ -991,6 +1032,9 @@ static void complete_incr_bin(conn *c) {
     item *it;
     char *key;
     size_t nkey;
+    /* Weird magic in add_delta forces me to pad here */
+    char tmpbuf[INCR_MAX_STORAGE_LEN];
+    uint64_t cas = 0;
 
     protocol_binary_response_incr* rsp = (protocol_binary_response_incr*)c->wbuf;
     protocol_binary_request_incr* req = binary_get_request(c);
@@ -1018,70 +1062,62 @@ static void complete_incr_bin(conn *c) {
                 req->message.body.expiration);
     }
 
-    it = item_get(key, nkey);
-    if (it && (c->binary_header.request.cas == 0 ||
-               c->binary_header.request.cas == ITEM_get_cas(it))) {
-        /* Weird magic in add_delta forces me to pad here */
-        char tmpbuf[INCR_MAX_STORAGE_LEN];
-        protocol_binary_response_status st = PROTOCOL_BINARY_RESPONSE_SUCCESS;
-
-        switch(add_delta(c, it, c->cmd == PROTOCOL_BINARY_CMD_INCREMENT,
-                         req->message.body.delta, tmpbuf)) {
-        case OK:
-            break;
-        case NON_NUMERIC:
-            st = PROTOCOL_BINARY_RESPONSE_DELTA_BADVAL;
-            break;
-        case EOM:
-            st = PROTOCOL_BINARY_RESPONSE_ENOMEM;
-            break;
+    if (c->binary_header.request.cas != 0) {
+        cas = c->binary_header.request.cas;
+    }
+    switch(add_delta(c, key, nkey, c->cmd == PROTOCOL_BINARY_CMD_INCREMENT,
+                     req->message.body.delta, tmpbuf,
+                     &cas)) {
+    case OK:
+        rsp->message.body.value = htonll(strtoull(tmpbuf, NULL, 10));
+        if (cas) {
+            c->cas = cas;
         }
+        write_bin_response(c, &rsp->message.body, 0, 0,
+                           sizeof(rsp->message.body.value));
+        break;
+    case NON_NUMERIC:
+        write_bin_error(c, PROTOCOL_BINARY_RESPONSE_DELTA_BADVAL, 0);
+        break;
+    case EOM:
+        write_bin_error(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        break;
+    case DELTA_ITEM_NOT_FOUND:
+        if (req->message.body.expiration != 0xffffffff) {
+            /* Save some room for the response */
+            rsp->message.body.value = htonll(req->message.body.initial);
+            it = item_alloc(key, nkey, 0, realtime(req->message.body.expiration),
+                            INCR_MAX_STORAGE_LEN);
 
-        if (st != PROTOCOL_BINARY_RESPONSE_SUCCESS) {
-            write_bin_error(c, st, 0);
-        } else {
-            rsp->message.body.value = htonll(strtoull(tmpbuf, NULL, 10));
-            c->cas = ITEM_get_cas(it);
-            write_bin_response(c, &rsp->message.body, 0, 0,
-                               sizeof(rsp->message.body.value));
-        }
+            if (it != NULL) {
+                snprintf(ITEM_data(it), INCR_MAX_STORAGE_LEN, "%llu",
+                         (unsigned long long)req->message.body.initial);
 
-        item_remove(it);         /* release our reference */
-    } else if (!it && req->message.body.expiration != 0xffffffff) {
-        /* Save some room for the response */
-        rsp->message.body.value = htonll(req->message.body.initial);
-        it = item_alloc(key, nkey, 0, realtime(req->message.body.expiration),
-                        INCR_MAX_STORAGE_LEN);
-
-        if (it != NULL) {
-            snprintf(ITEM_data(it), INCR_MAX_STORAGE_LEN, "%llu",
-                     (unsigned long long)req->message.body.initial);
-
-            if (store_item(it, NREAD_SET, c)) {
-                c->cas = ITEM_get_cas(it);
-                write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body.value));
+                if (store_item(it, NREAD_ADD, c)) {
+                    c->cas = ITEM_get_cas(it);
+                    write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body.value));
+                } else {
+                    write_bin_error(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
+                }
+                item_remove(it);         /* release our reference */
             } else {
-                write_bin_error(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
+                write_bin_error(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
             }
-            item_remove(it);         /* release our reference */
         } else {
-            write_bin_error(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+            pthread_mutex_lock(&c->thread->stats.mutex);
+            if (c->cmd == PROTOCOL_BINARY_CMD_INCREMENT) {
+                c->thread->stats.incr_misses++;
+            } else {
+                c->thread->stats.decr_misses++;
+            }
+            pthread_mutex_unlock(&c->thread->stats.mutex);
+
+            write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         }
-    } else if (it) {
-        /* incorrect CAS */
-        item_remove(it);         /* release our reference */
+        break;
+    case DELTA_ITEM_CAS_MISMATCH:
         write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
-    } else {
-
-        pthread_mutex_lock(&c->thread->stats.mutex);
-        if (c->cmd == PROTOCOL_BINARY_CMD_INCREMENT) {
-            c->thread->stats.incr_misses++;
-        } else {
-            c->thread->stats.decr_misses++;
-        }
-        pthread_mutex_unlock(&c->thread->stats.mutex);
-
-        write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+        break;
     }
 }
 
@@ -1155,6 +1191,98 @@ static void complete_update_bin(conn *c) {
     c->item = 0;
 }
 
+static void process_bin_touch(conn *c) {
+    item *it;
+
+    protocol_binary_response_get* rsp = (protocol_binary_response_get*)c->wbuf;
+    char* key = binary_get_key(c);
+    size_t nkey = c->binary_header.request.keylen;
+    protocol_binary_request_touch *t = (void *)&c->binary_header;
+    uint32_t exptime = ntohl(t->message.body.expiration);
+
+    if (settings.verbose > 1) {
+        int ii;
+        /* May be GAT/GATQ/etc */
+        fprintf(stderr, "<%d TOUCH ", c->sfd);
+        for (ii = 0; ii < nkey; ++ii) {
+            fprintf(stderr, "%c", key[ii]);
+        }
+        fprintf(stderr, "\n");
+    }
+
+    it = item_touch(key, nkey, realtime(exptime));
+
+    if (it) {
+        /* the length has two unnecessary bytes ("\r\n") */
+        uint16_t keylen = 0;
+        uint32_t bodylen = sizeof(rsp->message.body) + (it->nbytes - 2);
+
+        item_update(it);
+        pthread_mutex_lock(&c->thread->stats.mutex);
+        c->thread->stats.touch_cmds++;
+        c->thread->stats.slab_stats[it->slabs_clsid].touch_hits++;
+        pthread_mutex_unlock(&c->thread->stats.mutex);
+
+        MEMCACHED_COMMAND_TOUCH(c->sfd, ITEM_key(it), it->nkey,
+                                it->nbytes, ITEM_get_cas(it));
+
+        if (c->cmd == PROTOCOL_BINARY_CMD_TOUCH) {
+            bodylen -= it->nbytes - 2;
+        } else if (c->cmd == PROTOCOL_BINARY_CMD_GATK) {
+            bodylen += nkey;
+            keylen = nkey;
+        }
+
+        add_bin_header(c, 0, sizeof(rsp->message.body), keylen, bodylen);
+        rsp->message.header.response.cas = htonll(ITEM_get_cas(it));
+
+        // add the flags
+        rsp->message.body.flags = htonl(strtoul(ITEM_suffix(it), NULL, 10));
+        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+
+        if (c->cmd == PROTOCOL_BINARY_CMD_GATK) {
+            add_iov(c, ITEM_key(it), nkey);
+        }
+
+        /* Add the data minus the CRLF */
+        if (c->cmd != PROTOCOL_BINARY_CMD_TOUCH) {
+            add_iov(c, ITEM_data(it), it->nbytes - 2);
+        }
+
+        conn_set_state(c, conn_mwrite);
+        c->write_and_go = conn_new_cmd;
+        /* Remember this command so we can garbage collect it later */
+        c->item = it;
+    } else {
+        pthread_mutex_lock(&c->thread->stats.mutex);
+        c->thread->stats.touch_cmds++;
+        c->thread->stats.touch_misses++;
+        pthread_mutex_unlock(&c->thread->stats.mutex);
+
+        MEMCACHED_COMMAND_TOUCH(c->sfd, key, nkey, -1, 0);
+
+        if (c->noreply) {
+            conn_set_state(c, conn_new_cmd);
+        } else {
+            if (c->cmd == PROTOCOL_BINARY_CMD_GATK) {
+                char *ofs = c->wbuf + sizeof(protocol_binary_response_header);
+                add_bin_header(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT,
+                        0, nkey, nkey);
+                memcpy(ofs, key, nkey);
+                add_iov(c, ofs, nkey);
+                conn_set_state(c, conn_mwrite);
+                c->write_and_go = conn_new_cmd;
+            } else {
+                write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+            }
+        }
+    }
+
+    if (settings.detail_enabled) {
+        stats_prefix_record_get(key, nkey, NULL != it);
+    }
+}
+
 static void process_bin_get(conn *c) {
     item *it;
 
@@ -1177,6 +1305,7 @@ static void process_bin_get(conn *c) {
         uint16_t keylen = 0;
         uint32_t bodylen = sizeof(rsp->message.body) + (it->nbytes - 2);
 
+        item_update(it);
         pthread_mutex_lock(&c->thread->stats.mutex);
         c->thread->stats.get_cmds++;
         c->thread->stats.slab_stats[it->slabs_clsid].get_hits++;
@@ -1203,6 +1332,7 @@ static void process_bin_get(conn *c) {
         /* Add the data minus the CRLF */
         add_iov(c, ITEM_data(it), it->nbytes - 2);
         conn_set_state(c, conn_mwrite);
+        c->write_and_go = conn_new_cmd;
         /* Remember this command so we can garbage collect it later */
         c->item = it;
     } else {
@@ -1223,6 +1353,7 @@ static void process_bin_get(conn *c) {
                 memcpy(ofs, key, nkey);
                 add_iov(c, ofs, nkey);
                 conn_set_state(c, conn_mwrite);
+                c->write_and_go = conn_new_cmd;
             } else {
                 write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
             }
@@ -1473,7 +1604,9 @@ static void init_sasl_conn(conn *c) {
 
     if (!c->sasl_conn) {
         int result=sasl_server_new("memcached",
-                                   NULL, NULL, NULL, NULL,
+                                   NULL,
+                                   my_sasl_hostname[0] ? my_sasl_hostname : NULL,
+                                   NULL, NULL,
                                    NULL, 0, &c->sasl_conn);
         if (result != SASL_OK) {
             if (settings.verbose) {
@@ -1713,6 +1846,12 @@ static void dispatch_bin_command(conn *c) {
     case PROTOCOL_BINARY_CMD_GETKQ:
         c->cmd = PROTOCOL_BINARY_CMD_GETK;
         break;
+    case PROTOCOL_BINARY_CMD_GATQ:
+        c->cmd = PROTOCOL_BINARY_CMD_GAT;
+        break;
+    case PROTOCOL_BINARY_CMD_GATKQ:
+        c->cmd = PROTOCOL_BINARY_CMD_GAT;
+        break;
     default:
         c->noreply = false;
     }
@@ -1810,6 +1949,17 @@ static void dispatch_bin_command(conn *c) {
         case PROTOCOL_BINARY_CMD_SASL_STEP:
             if (extlen == 0 && keylen != 0) {
                 bin_read_key(c, bin_reading_sasl_auth, 0);
+            } else {
+                protocol_error = 1;
+            }
+            break;
+        case PROTOCOL_BINARY_CMD_TOUCH:
+        case PROTOCOL_BINARY_CMD_GAT:
+        case PROTOCOL_BINARY_CMD_GATQ:
+        case PROTOCOL_BINARY_CMD_GATK:
+        case PROTOCOL_BINARY_CMD_GATKQ:
+            if (extlen == 4 && keylen != 0) {
+                bin_read_key(c, bin_reading_touch_key, 4);
             } else {
                 protocol_error = 1;
             }
@@ -1974,8 +2124,6 @@ static void process_bin_flush(conn *c) {
         exptime = ntohl(req->message.body.expiration);
     }
 
-    set_current_time();
-
     if (exptime > 0) {
         settings.oldest_live = realtime(exptime) - 1;
     } else {
@@ -2013,6 +2161,9 @@ static void process_bin_delete(conn *c) {
         uint64_t cas = ntohll(req->message.header.request.cas);
         if (cas == 0 || cas == ITEM_get_cas(it)) {
             MEMCACHED_COMMAND_DELETE(c->sfd, ITEM_key(it), it->nkey);
+            pthread_mutex_lock(&c->thread->stats.mutex);
+            c->thread->stats.slab_stats[it->slabs_clsid].delete_hits++;
+            pthread_mutex_unlock(&c->thread->stats.mutex);
             item_unlink(it);
             write_bin_response(c, NULL, 0, 0, 0);
         } else {
@@ -2021,6 +2172,9 @@ static void process_bin_delete(conn *c) {
         item_remove(it);      /* release our reference */
     } else {
         write_bin_error(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+        pthread_mutex_lock(&c->thread->stats.mutex);
+        c->thread->stats.delete_misses++;
+        pthread_mutex_unlock(&c->thread->stats.mutex);
     }
 }
 
@@ -2042,6 +2196,9 @@ static void complete_nread_binary(conn *c) {
         break;
     case bin_reading_get_key:
         process_bin_get(c);
+        break;
+    case bin_reading_touch_key:
+        process_bin_touch(c);
         break;
     case bin_reading_stat:
         process_bin_stat(c);
@@ -2100,9 +2257,9 @@ static void complete_nread(conn *c) {
  *
  * Returns the state of storage.
  */
-enum store_item_type do_store_item(item *it, int comm, conn *c) {
+enum store_item_type do_store_item(item *it, int comm, conn *c, const uint32_t hv) {
     char *key = ITEM_key(it);
-    item *old_it = do_item_get(key, it->nkey);
+    item *old_it = do_item_get(key, it->nkey, hv);
     enum store_item_type stored = NOT_STORED;
 
     item *new_it = NULL;
@@ -2132,7 +2289,7 @@ enum store_item_type do_store_item(item *it, int comm, conn *c) {
             c->thread->stats.slab_stats[old_it->slabs_clsid].cas_hits++;
             pthread_mutex_unlock(&c->thread->stats.mutex);
 
-            item_replace(old_it, it);
+            item_replace(old_it, it, hv);
             stored = STORED;
         } else {
             pthread_mutex_lock(&c->thread->stats.mutex);
@@ -2168,7 +2325,7 @@ enum store_item_type do_store_item(item *it, int comm, conn *c) {
 
                 flags = (int) strtol(ITEM_suffix(old_it), (char **) NULL, 10);
 
-                new_it = do_item_alloc(key, it->nkey, flags, old_it->exptime, it->nbytes + old_it->nbytes - 2 /* CRLF */);
+                new_it = item_alloc(key, it->nkey, flags, old_it->exptime, it->nbytes + old_it->nbytes - 2 /* CRLF */);
 
                 if (new_it == NULL) {
                     /* SERVER_ERROR out of memory */
@@ -2195,9 +2352,9 @@ enum store_item_type do_store_item(item *it, int comm, conn *c) {
 
         if (stored == NOT_STORED) {
             if (old_it != NULL)
-                item_replace(old_it, it);
+                item_replace(old_it, it, hv);
             else
-                do_item_link(it);
+                do_item_link(it, hv);
 
             c->cas = ITEM_get_cas(it);
 
@@ -2248,28 +2405,34 @@ typedef struct token_s {
 static size_t tokenize_command(char *command, token_t *tokens, const size_t max_tokens) {
     char *s, *e;
     size_t ntokens = 0;
+    size_t len = strlen(command);
+    unsigned int i = 0;
 
     assert(command != NULL && tokens != NULL && max_tokens > 1);
 
-    for (s = e = command; ntokens < max_tokens - 1; ++e) {
+    s = e = command;
+    for (i = 0; i < len; i++) {
         if (*e == ' ') {
             if (s != e) {
                 tokens[ntokens].value = s;
                 tokens[ntokens].length = e - s;
                 ntokens++;
                 *e = '\0';
+                if (ntokens == max_tokens - 1) {
+                    e++;
+                    s = e; /* so we don't add an extra token */
+                    break;
+                }
             }
             s = e + 1;
         }
-        else if (*e == '\0') {
-            if (s != e) {
-                tokens[ntokens].value = s;
-                tokens[ntokens].length = e - s;
-                ntokens++;
-            }
+        e++;
+    }
 
-            break; /* string end */
-        }
+    if (s != e) {
+        tokens[ntokens].value = s;
+        tokens[ntokens].length = e - s;
+        ntokens++;
     }
 
     /*
@@ -2374,6 +2537,7 @@ static void server_stats(ADD_STAT add_stats, conn *c) {
     APPEND_STAT("uptime", "%u", now);
     APPEND_STAT("time", "%ld", now + (long)process_started);
     APPEND_STAT("version", "%s", VERSION);
+    APPEND_STAT("libevent", "%s", event_get_version());
     APPEND_STAT("pointer_size", "%d", (int)(8 * sizeof(void *)));
 
 #ifndef WIN32
@@ -2387,10 +2551,15 @@ static void server_stats(ADD_STAT add_stats, conn *c) {
 
     APPEND_STAT("curr_connections", "%u", stats.curr_conns - 1);
     APPEND_STAT("total_connections", "%u", stats.total_conns);
+    if (settings.maxconns_fast) {
+        APPEND_STAT("rejected_connections", "%llu", (unsigned long long)stats.rejected_conns);
+    }
     APPEND_STAT("connection_structures", "%u", stats.conn_structs);
+    APPEND_STAT("reserved_fds", "%u", stats.reserved_fds);
     APPEND_STAT("cmd_get", "%llu", (unsigned long long)thread_stats.get_cmds);
     APPEND_STAT("cmd_set", "%llu", (unsigned long long)slab_stats.set_cmds);
     APPEND_STAT("cmd_flush", "%llu", (unsigned long long)thread_stats.flush_cmds);
+    APPEND_STAT("cmd_touch", "%llu", (unsigned long long)thread_stats.touch_cmds);
     APPEND_STAT("get_hits", "%llu", (unsigned long long)slab_stats.get_hits);
     APPEND_STAT("get_misses", "%llu", (unsigned long long)thread_stats.get_misses);
     APPEND_STAT("delete_misses", "%llu", (unsigned long long)thread_stats.delete_misses);
@@ -2402,6 +2571,8 @@ static void server_stats(ADD_STAT add_stats, conn *c) {
     APPEND_STAT("cas_misses", "%llu", (unsigned long long)thread_stats.cas_misses);
     APPEND_STAT("cas_hits", "%llu", (unsigned long long)slab_stats.cas_hits);
     APPEND_STAT("cas_badval", "%llu", (unsigned long long)slab_stats.cas_badval);
+    APPEND_STAT("touch_hits", "%llu", (unsigned long long)slab_stats.touch_hits);
+    APPEND_STAT("touch_misses", "%llu", (unsigned long long)thread_stats.touch_misses);
     APPEND_STAT("auth_cmds", "%llu", (unsigned long long)thread_stats.auth_cmds);
     APPEND_STAT("auth_errors", "%llu", (unsigned long long)thread_stats.auth_errors);
     APPEND_STAT("bytes_read", "%llu", (unsigned long long)thread_stats.bytes_read);
@@ -2411,6 +2582,15 @@ static void server_stats(ADD_STAT add_stats, conn *c) {
     APPEND_STAT("listen_disabled_num", "%llu", (unsigned long long)stats.listen_disabled_num);
     APPEND_STAT("threads", "%d", settings.num_threads);
     APPEND_STAT("conn_yields", "%llu", (unsigned long long)thread_stats.conn_yields);
+    APPEND_STAT("hash_power_level", "%u", stats.hash_power_level);
+    APPEND_STAT("hash_bytes", "%llu", (unsigned long long)stats.hash_bytes);
+    APPEND_STAT("hash_is_expanding", "%u", stats.hash_is_expanding);
+    APPEND_STAT("expired_unfetched", "%llu", stats.expired_unfetched);
+    APPEND_STAT("evicted_unfetched", "%llu", stats.evicted_unfetched);
+    if (settings.slab_reassign) {
+        APPEND_STAT("slab_reassign_running", "%u", stats.slab_reassign_running);
+        APPEND_STAT("slabs_moved", "%llu", stats.slabs_moved);
+    }
     STATS_UNLOCK();
 }
 
@@ -2430,6 +2610,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
     APPEND_STAT("growth_factor", "%.2f", settings.factor);
     APPEND_STAT("chunk_size", "%d", settings.chunk_size);
     APPEND_STAT("num_threads", "%d", settings.num_threads);
+    APPEND_STAT("num_threads_per_udp", "%d", settings.num_threads_per_udp);
     APPEND_STAT("stat_key_prefix", "%c", settings.prefix_delimiter);
     APPEND_STAT("detail_enabled", "%s",
                 settings.detail_enabled ? "yes" : "no");
@@ -2440,6 +2621,10 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
                 prot_text(settings.binding_protocol));
     APPEND_STAT("auth_enabled_sasl", "%s", settings.sasl ? "yes" : "no");
     APPEND_STAT("item_size_max", "%d", settings.item_size_max);
+    APPEND_STAT("maxconns_fast", "%s", settings.maxconns_fast ? "yes" : "no");
+    APPEND_STAT("hashpower_init", "%d", settings.hashpower_init);
+    APPEND_STAT("slab_reassign", "%s", settings.slab_reassign ? "yes" : "no");
+    APPEND_STAT("slab_automove", "%s", settings.slab_automove ? "yes" : "no");
 }
 
 static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
@@ -2707,6 +2892,12 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     /* Ubuntu 8.04 breaks when I pass exptime to safe_strtol */
     exptime = exptime_int;
 
+    /* Negative exptimes can underflow and end up immortal. realtime() will
+       immediately expire values that are greater than REALTIME_MAXDELTA, but less
+       than process_started, so lets aim for that. */
+    if (exptime < 0)
+        exptime = REALTIME_MAXDELTA + 1;
+
     // does cas value exist?
     if (handle_cas) {
         if (!safe_strtoull(tokens[5].value, &req_cas_id)) {
@@ -2757,9 +2948,51 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     conn_set_state(c, conn_nread);
 }
 
+static void process_touch_command(conn *c, token_t *tokens, const size_t ntokens) {
+    char *key;
+    size_t nkey;
+    int32_t exptime_int = 0;
+    item *it;
+
+    assert(c != NULL);
+
+    set_noreply_maybe(c, tokens, ntokens);
+
+    if (tokens[KEY_TOKEN].length > KEY_MAX_LENGTH) {
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    key = tokens[KEY_TOKEN].value;
+    nkey = tokens[KEY_TOKEN].length;
+
+    if (!safe_strtol(tokens[2].value, &exptime_int)) {
+        out_string(c, "CLIENT_ERROR invalid exptime argument");
+        return;
+    }
+
+    it = item_touch(key, nkey, realtime(exptime_int));
+    if (it) {
+        item_update(it);
+        pthread_mutex_lock(&c->thread->stats.mutex);
+        c->thread->stats.touch_cmds++;
+        c->thread->stats.slab_stats[it->slabs_clsid].touch_hits++;
+        pthread_mutex_unlock(&c->thread->stats.mutex);
+
+        out_string(c, "TOUCHED");
+        item_remove(it);
+    } else {
+        pthread_mutex_lock(&c->thread->stats.mutex);
+        c->thread->stats.touch_cmds++;
+        c->thread->stats.touch_misses++;
+        pthread_mutex_unlock(&c->thread->stats.mutex);
+
+        out_string(c, "NOT_FOUND");
+    }
+}
+
 static void process_arithmetic_command(conn *c, token_t *tokens, const size_t ntokens, const bool incr) {
     char temp[INCR_MAX_STORAGE_LEN];
-    item *it;
     uint64_t delta;
     char *key;
     size_t nkey;
@@ -2781,21 +3014,7 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         return;
     }
 
-    it = item_get(key, nkey);
-    if (!it) {
-        pthread_mutex_lock(&c->thread->stats.mutex);
-        if (incr) {
-            c->thread->stats.incr_misses++;
-        } else {
-            c->thread->stats.decr_misses++;
-        }
-        pthread_mutex_unlock(&c->thread->stats.mutex);
-
-        out_string(c, "NOT_FOUND");
-        return;
-    }
-
-    switch(add_delta(c, it, incr, delta, temp)) {
+    switch(add_delta(c, key, nkey, incr, delta, temp, NULL)) {
     case OK:
         out_string(c, temp);
         break;
@@ -2805,8 +3024,20 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     case EOM:
         out_string(c, "SERVER_ERROR out of memory");
         break;
+    case DELTA_ITEM_NOT_FOUND:
+        pthread_mutex_lock(&c->thread->stats.mutex);
+        if (incr) {
+            c->thread->stats.incr_misses++;
+        } else {
+            c->thread->stats.decr_misses++;
+        }
+        pthread_mutex_unlock(&c->thread->stats.mutex);
+
+        out_string(c, "NOT_FOUND");
+        break;
+    case DELTA_ITEM_CAS_MISMATCH:
+        break; /* Should never get here */
     }
-    item_remove(it);         /* release our reference */
 }
 
 /*
@@ -2820,15 +3051,29 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
  *
  * returns a response string to send back to the client.
  */
-enum delta_result_type do_add_delta(conn *c, item *it, const bool incr,
-                                    const int64_t delta, char *buf) {
+enum delta_result_type do_add_delta(conn *c, const char *key, const size_t nkey,
+                                    const bool incr, const int64_t delta,
+                                    char *buf, uint64_t *cas,
+                                    const uint32_t hv) {
     char *ptr;
     uint64_t value;
     int res;
+    item *it;
+
+    it = do_item_get(key, nkey, hv);
+    if (!it) {
+        return DELTA_ITEM_NOT_FOUND;
+    }
+
+    if (cas != NULL && *cas != 0 && ITEM_get_cas(it) != *cas) {
+        do_item_remove(it);
+        return DELTA_ITEM_CAS_MISMATCH;
+    }
 
     ptr = ITEM_data(it);
 
     if (!safe_strtoull(ptr, &value)) {
+        do_item_remove(it);
         return NON_NUMERIC;
     }
 
@@ -2854,25 +3099,36 @@ enum delta_result_type do_add_delta(conn *c, item *it, const bool incr,
 
     snprintf(buf, INCR_MAX_STORAGE_LEN, "%llu", (unsigned long long)value);
     res = strlen(buf);
-    if (res + 2 > it->nbytes) { /* need to realloc */
+    if (res + 2 > it->nbytes || it->refcount != 1) { /* need to realloc */
         item *new_it;
-        new_it = do_item_alloc(ITEM_key(it), it->nkey, atoi(ITEM_suffix(it) + 1), it->exptime, res + 2 );
+        new_it = item_alloc(ITEM_key(it), it->nkey, atoi(ITEM_suffix(it) + 1), it->exptime, res + 2 );
         if (new_it == 0) {
+            do_item_remove(it);
             return EOM;
         }
         memcpy(ITEM_data(new_it), buf, res);
         memcpy(ITEM_data(new_it) + res, "\r\n", 2);
-        item_replace(it, new_it);
+        item_replace(it, new_it, hv);
+        // Overwrite the older item's CAS with our new CAS since we're
+        // returning the CAS of the old item below.
+        ITEM_set_cas(it, (settings.use_cas) ? ITEM_get_cas(new_it) : 0);
         do_item_remove(new_it);       /* release our reference */
     } else { /* replace in-place */
         /* When changing the value without replacing the item, we
            need to update the CAS on the existing item. */
+        mutex_lock(&cache_lock); /* FIXME */
         ITEM_set_cas(it, (settings.use_cas) ? get_cas_id() : 0);
+        pthread_mutex_unlock(&cache_lock);
 
         memcpy(ITEM_data(it), buf, res);
         memset(ITEM_data(it) + res, ' ', it->nbytes - res - 2);
+        do_item_update(it);
     }
 
+    if (cas) {
+        *cas = ITEM_get_cas(it);    /* swap the incoming CAS value */
+    }
+    do_item_remove(it);         /* release our reference */
     return OK;
 }
 
@@ -2941,6 +3197,26 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
     return;
 }
 
+static void process_slabs_automove_command(conn *c, token_t *tokens, const size_t ntokens) {
+    unsigned int level;
+
+    assert(c != NULL);
+
+    set_noreply_maybe(c, tokens, ntokens);
+
+    level = strtoul(tokens[2].value, NULL, 10);
+    if (level == 0) {
+        settings.slab_automove = false;
+    } else if (level == 1) {
+        settings.slab_automove = true;
+    } else {
+        out_string(c, "ERROR");
+        return;
+    }
+    out_string(c, "OK");
+    return;
+}
+
 static void process_command(conn *c, char *command) {
 
     token_t tokens[MAX_TOKENS];
@@ -3003,13 +3279,16 @@ static void process_command(conn *c, char *command) {
 
         process_delete_command(c, tokens, ntokens);
 
+    } else if ((ntokens == 4 || ntokens == 5) && (strcmp(tokens[COMMAND_TOKEN].value, "touch") == 0)) {
+
+        process_touch_command(c, tokens, ntokens);
+
     } else if (ntokens >= 2 && (strcmp(tokens[COMMAND_TOKEN].value, "stats") == 0)) {
 
         process_stat(c, tokens, ntokens);
 
     } else if (ntokens >= 2 && ntokens <= 4 && (strcmp(tokens[COMMAND_TOKEN].value, "flush_all") == 0)) {
         time_t exptime = 0;
-        set_current_time();
 
         set_noreply_maybe(c, tokens, ntokens);
 
@@ -3052,6 +3331,54 @@ static void process_command(conn *c, char *command) {
 
         conn_set_state(c, conn_closing);
 
+    } else if (ntokens > 1 && strcmp(tokens[COMMAND_TOKEN].value, "slabs") == 0) {
+        if (ntokens == 5 && strcmp(tokens[COMMAND_TOKEN + 1].value, "reassign") == 0) {
+            int src, dst, rv;
+
+            if (settings.slab_reassign == false) {
+                out_string(c, "CLIENT_ERROR slab reassignment disabled");
+                return;
+            }
+
+            src = strtol(tokens[2].value, NULL, 10);
+            dst = strtol(tokens[3].value, NULL, 10);
+
+            if (errno == ERANGE) {
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+
+            rv = slabs_reassign(src, dst);
+            switch (rv) {
+            case REASSIGN_OK:
+                out_string(c, "OK");
+                break;
+            case REASSIGN_RUNNING:
+                out_string(c, "BUSY currently processing reassign request");
+                break;
+            case REASSIGN_BADCLASS:
+                out_string(c, "BADCLASS invalid src or dst class id");
+                break;
+            case REASSIGN_NOSPARE:
+                out_string(c, "NOSPARE source class has no spare pages");
+                break;
+            case REASSIGN_DEST_NOT_FULL:
+                out_string(c, "NOTFULL dest class has spare memory");
+                break;
+            case REASSIGN_SRC_NOT_SAFE:
+                out_string(c, "UNSAFE src class is in an unsafe state");
+                break;
+            case REASSIGN_SRC_DST_SAME:
+                out_string(c, "SAME src and dst class are identical");
+                break;
+            }
+            return;
+        } else if (ntokens == 4 &&
+            (strcmp(tokens[COMMAND_TOKEN + 1].value, "automove") == 0)) {
+            process_slabs_automove_command(c, tokens, ntokens);
+        } else {
+            out_string(c, "ERROR");
+        }
     } else if ((ntokens == 3 || ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "verbosity") == 0)) {
         process_verbosity_command(c, tokens, ntokens);
     } else {
@@ -3223,7 +3550,7 @@ static enum try_read_result try_read_udp(conn *c) {
         res -= 8;
         memmove(c->rbuf, c->rbuf + 8, res);
 
-        c->rbytes += res;
+        c->rbytes = res;
         c->rcurr = c->rbuf;
         return READ_DATA_RECEIVED;
     }
@@ -3344,6 +3671,8 @@ void do_accept_new_conns(const bool do_accept) {
         stats.accepting_conns = false;
         stats.listen_disabled_num++;
         STATS_UNLOCK();
+        allow_new_conns = false;
+        maxconns_handler(-42, 0, 0);
     }
 }
 
@@ -3421,6 +3750,7 @@ static void drive_machine(conn *c) {
     struct sockaddr_storage addr;
     int nreqs = settings.reqs_per_event;
     int res;
+    const char *str;
 
     assert(c != NULL);
 
@@ -3451,8 +3781,19 @@ static void drive_machine(conn *c) {
                 break;
             }
 
-            dispatch_conn_new(sfd, conn_new_cmd, EV_READ | EV_PERSIST,
+            if (settings.maxconns_fast &&
+                stats.curr_conns + stats.reserved_fds >= settings.maxconns - 1) {
+                str = "ERROR Too many open connections\r\n";
+                res = write(sfd, str, strlen(str));
+                close(sfd);
+                STATS_LOCK();
+                stats.rejected_conns++;
+                STATS_UNLOCK();
+            } else {
+                dispatch_conn_new(sfd, conn_new_cmd, EV_READ | EV_PERSIST,
                                      DATA_BUFFER_SIZE, tcp_transport);
+            }
+
             stop = true;
             break;
 
@@ -3789,13 +4130,16 @@ static void maximize_sndbuf(const int sfd) {
 
 /**
  * Create a socket and bind it to a specific port number
+ * @param interface the interface to bind to
  * @param port the port number to bind to
  * @param transport the transport protocol (TCP / UDP)
  * @param portnumber_file A filepointer to write the port numbers to
  *        when they are successfully added to the list of ports we
  *        listen on.
  */
-static int server_socket(int port, enum network_transport transport,
+static int server_socket(const char *interface,
+                         int port,
+                         enum network_transport transport,
                          FILE *portnumber_file) {
     int sfd;
     struct linger ling = {0, 0};
@@ -3814,7 +4158,7 @@ static int server_socket(int port, enum network_transport transport,
         port = 0;
     }
     snprintf(port_buf, sizeof(port_buf), "%d", port);
-    error= getaddrinfo(settings.inter, port_buf, &hints, &ai);
+    error= getaddrinfo(interface, port_buf, &hints, &ai);
     if (error != 0) {
         if (error != EAI_SYSTEM)
           fprintf(stderr, "getaddrinfo(): %s\n", gai_strerror(error));
@@ -3829,6 +4173,11 @@ static int server_socket(int port, enum network_transport transport,
             /* getaddrinfo can return "junk" addresses,
              * we make sure at least one works before erroring.
              */
+            if (errno == EMFILE) {
+                /* ...unless we're out of fds */
+                perror("server_socket");
+                exit(EX_OSERR);
+            }
             continue;
         }
 
@@ -3902,7 +4251,7 @@ static int server_socket(int port, enum network_transport transport,
         if (IS_UDP(transport)) {
             int c;
 
-            for (c = 0; c < settings.num_threads; c++) {
+            for (c = 0; c < settings.num_threads_per_udp; c++) {
                 /* this is guaranteed to hit all threads because we round-robin */
                 dispatch_conn_new(sfd, conn_read, EV_READ | EV_PERSIST,
                                   UDP_READ_BUFFER_SIZE, transport);
@@ -3923,6 +4272,43 @@ static int server_socket(int port, enum network_transport transport,
 
     /* Return zero iff we detected no errors in starting up connections */
     return success == 0;
+}
+
+static int server_sockets(int port, enum network_transport transport,
+                          FILE *portnumber_file) {
+    if (settings.inter == NULL) {
+        return server_socket(settings.inter, port, transport, portnumber_file);
+    } else {
+        // tokenize them and bind to each one of them..
+        char *b;
+        int ret = 0;
+        char *list = strdup(settings.inter);
+
+        if (list == NULL) {
+            fprintf(stderr, "Failed to allocate memory for parsing server interface string\n");
+            return 1;
+        }
+        for (char *p = strtok_r(list, ";,", &b);
+             p != NULL;
+             p = strtok_r(NULL, ";,", &b)) {
+            int the_port = port;
+            char *s = strchr(p, ':');
+            if (s != NULL) {
+                *s = '\0';
+                ++s;
+                if (!safe_strtol(s, &the_port)) {
+                    fprintf(stderr, "Invalid port number: \"%s\"", s);
+                    return 1;
+                }
+            }
+            if (strcmp(p, "*") == 0) {
+                p = NULL;
+            }
+            ret |= server_socket(p, the_port, transport, portnumber_file);
+        }
+        free(list);
+        return ret;
+    }
 }
 
 static int new_socket_unix(void) {
@@ -4014,30 +4400,52 @@ static int server_socket_unix(const char *path, int access_mask) {
 volatile rel_time_t current_time;
 static struct event clockevent;
 
-/* time-sensitive callers can call it by hand with this, outside the normal ever-1-second timer */
-static void set_current_time(void) {
-    struct timeval timer;
-
-    gettimeofday(&timer, NULL);
-    current_time = (rel_time_t) (timer.tv_sec - process_started);
-}
-
+/* libevent uses a monotonic clock when available for event scheduling. Aside
+ * from jitter, simply ticking our internal timer here is accurate enough.
+ * Note that users who are setting explicit dates for expiration times *must*
+ * ensure their clocks are correct before starting memcached. */
 static void clock_handler(const int fd, const short which, void *arg) {
     struct timeval t = {.tv_sec = 1, .tv_usec = 0};
     static bool initialized = false;
+#if defined(HAVE_CLOCK_GETTIME) && defined(CLOCK_MONOTONIC)
+    static bool monotonic = false;
+    static time_t monotonic_start;
+#endif
 
     if (initialized) {
         /* only delete the event if it's actually there. */
         evtimer_del(&clockevent);
     } else {
         initialized = true;
+        /* process_started is initialized to time() - 2. We initialize to 1 so
+         * flush_all won't underflow during tests. */
+#if defined(HAVE_CLOCK_GETTIME) && defined(CLOCK_MONOTONIC)
+        struct timespec ts;
+        if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+            monotonic = true;
+            monotonic_start = ts.tv_sec - 2;
+        }
+#endif
     }
 
     evtimer_set(&clockevent, clock_handler, 0);
     event_base_set(main_base, &clockevent);
     evtimer_add(&clockevent, &t);
 
-    set_current_time();
+#if defined(HAVE_CLOCK_GETTIME) && defined(CLOCK_MONOTONIC)
+    if (monotonic) {
+        struct timespec ts;
+        if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1)
+            return;
+        current_time = (rel_time_t) (ts.tv_sec - monotonic_start);
+        return;
+    }
+#endif
+    {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        current_time = (rel_time_t) (tv.tv_sec - process_started);
+    }
 }
 
 static void usage(void) {
@@ -4046,7 +4454,12 @@ static void usage(void) {
            "-U <num>      UDP port number to listen on (default: 11211, 0 is off)\n"
            "-s <file>     UNIX socket path to listen on (disables network support)\n"
            "-a <mask>     access mask for UNIX socket, in octal (default: 0700)\n"
-           "-l <ip_addr>  interface to listen on (default: INADDR_ANY, all addresses)\n"
+           "-l <addr>     interface to listen on (default: INADDR_ANY, all addresses)\n"
+           "              <addr> may be specified as host:port. If you don't specify\n"
+           "              a port number, the value you specified with -p or -U is\n"
+           "              used. You may specify multiple addresses separated by comma\n"
+           "              or by using -l multiple times\n"
+
            "-d            run as a daemon\n"
            "-r            maximize core file limit\n"
            "-u <username> assume identity of <username> (only when run as root)\n"
@@ -4089,6 +4502,14 @@ static void usage(void) {
 #ifdef ENABLE_SASL
     printf("-S            Turn on Sasl authentication\n");
 #endif
+    printf("-o            Comma separated list of extended or experimental options\n"
+           "              - (EXPERIMENTAL) maxconns_fast: immediately close new\n"
+           "                connections if over maxconns limit\n"
+           "              - hashpower: An integer multiplier for how large the hash\n"
+           "                table should be. Can be grown at runtime if not big enough.\n"
+           "                Set this based on \"STAT hash_power_level\" before a \n"
+           "                restart.\n"
+           );
     return;
 }
 
@@ -4163,20 +4584,29 @@ static void usage_license(void) {
     return;
 }
 
-static void save_pid(const pid_t pid, const char *pid_file) {
+static void save_pid(const char *pid_file) {
     FILE *fp;
-    if (pid_file == NULL)
-        return;
+    if (access(pid_file, F_OK) == 0) {
+        if ((fp = fopen(pid_file, "r")) != NULL) {
+            char buffer[1024];
+            if (fgets(buffer, sizeof(buffer), fp) != NULL) {
+                unsigned int pid;
+                if (safe_strtoul(buffer, &pid) && kill((pid_t)pid, 0) == 0) {
+                    fprintf(stderr, "WARNING: The pid file contained the following (running) pid: %u\n", pid);
+                }
+            }
+            fclose(fp);
+        }
+    }
 
     if ((fp = fopen(pid_file, "w")) == NULL) {
         vperror("Could not open the pid file %s for writing", pid_file);
         return;
     }
 
-    fprintf(fp,"%ld\n", (long)pid);
+    fprintf(fp,"%ld\n", (long)getpid());
     if (fclose(fp) == -1) {
         vperror("Could not close the pid file %s", pid_file);
-        return;
     }
 }
 
@@ -4250,6 +4680,28 @@ static int enable_large_pages(void) {
 #endif
 }
 
+/**
+ * Do basic sanity check of the runtime environment
+ * @return true if no errors found, false if we can't use this env
+ */
+static bool sanitycheck(void) {
+    /* One of our biggest problems is old and bogus libevents */
+    const char *ever = event_get_version();
+    if (ever != NULL) {
+        if (strncmp(ever, "1.", 2) == 0) {
+            /* Require at least 1.3 (that's still a couple of years old) */
+            if ((ever[2] == '1' || ever[2] == '2') && !isdigit(ever[3])) {
+                fprintf(stderr, "You are using libevent %s.\nPlease upgrade to"
+                        " a more recent version (1.3 or newer)\n",
+                        event_get_version());
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 int main (int argc, char **argv) {
     int c;
     bool lock_memory = false;
@@ -4262,6 +4714,7 @@ int main (int argc, char **argv) {
     struct rlimit rlim;
     char unit = '\0';
     int size_max = 0;
+    int retval = EXIT_SUCCESS;
     /* listening sockets */
     static int *l_socket = NULL;
 
@@ -4270,6 +4723,26 @@ int main (int argc, char **argv) {
     bool protocol_specified = false;
     bool tcp_specified = false;
     bool udp_specified = false;
+
+    char *subopts;
+    char *subopts_value;
+    enum {
+        MAXCONNS_FAST = 0,
+        HASHPOWER_INIT,
+        SLAB_REASSIGN,
+        SLAB_AUTOMOVE
+    };
+    char *const subopts_tokens[] = {
+        [MAXCONNS_FAST] = "maxconns_fast",
+        [HASHPOWER_INIT] = "hashpower",
+        [SLAB_REASSIGN] = "slab_reassign",
+        [SLAB_AUTOMOVE] = "slab_automove",
+        NULL
+    };
+
+    if (!sanitycheck()) {
+        return EX_OSERR;
+    }
 
     /* handle SIGINT */
     signal(SIGINT, sig_handler);
@@ -4308,6 +4781,7 @@ int main (int argc, char **argv) {
           "B:"  /* Binding protocol */
           "I:"  /* Max item size */
           "S"   /* Sasl ON */
+          "o:"  /* Extended generic options */
         ))) {
         switch (c) {
         case 'a':
@@ -4348,7 +4822,19 @@ int main (int argc, char **argv) {
             settings.verbose++;
             break;
         case 'l':
-            settings.inter= strdup(optarg);
+            if (settings.inter != NULL) {
+                size_t len = strlen(settings.inter) + strlen(optarg) + 2;
+                char *p = malloc(len);
+                if (p == NULL) {
+                    fprintf(stderr, "Failed to allocate memory\n");
+                    return 1;
+                }
+                snprintf(p, len, "%s,%s", settings.inter, optarg);
+                free(settings.inter);
+                settings.inter = p;
+            } else {
+                settings.inter= strdup(optarg);
+            }
             break;
         case 'd':
             do_daemonize = true;
@@ -4470,10 +4956,59 @@ int main (int argc, char **argv) {
 #endif
             settings.sasl = true;
             break;
+        case 'o': /* It's sub-opts time! */
+            subopts = optarg;
+
+            while (*subopts != '\0') {
+
+            switch (getsubopt(&subopts, subopts_tokens, &subopts_value)) {
+            case MAXCONNS_FAST:
+                settings.maxconns_fast = true;
+                break;
+            case HASHPOWER_INIT:
+                if (subopts_value == NULL) {
+                    fprintf(stderr, "Missing numeric argument for hashpower\n");
+                    return 1;
+                }
+                settings.hashpower_init = atoi(subopts_value);
+                if (settings.hashpower_init < 12) {
+                    fprintf(stderr, "Initial hashtable multiplier of %d is too low\n",
+                        settings.hashpower_init);
+                    return 1;
+                } else if (settings.hashpower_init > 64) {
+                    fprintf(stderr, "Initial hashtable multiplier of %d is too high\n"
+                        "Choose a value based on \"STAT hash_power_level\" from a running instance\n",
+                        settings.hashpower_init);
+                    return 1;
+                }
+                break;
+            case SLAB_REASSIGN:
+                settings.slab_reassign = true;
+                break;
+            case SLAB_AUTOMOVE:
+                settings.slab_automove = true;
+                break;
+            default:
+                printf("Illegal suboption \"%s\"\n", subopts_value);
+                return 1;
+            }
+
+            }
+            break;
         default:
             fprintf(stderr, "Illegal argument \"%c\"\n", c);
             return 1;
         }
+    }
+
+    /*
+     * Use one workerthread to serve each UDP port if the user specified
+     * multiple ports
+     */
+    if (settings.inter != NULL && strchr(settings.inter, ',')) {
+        settings.num_threads_per_udp = 1;
+    } else {
+        settings.num_threads_per_udp = settings.num_threads;
     }
 
     if (settings.sasl) {
@@ -4528,13 +5063,10 @@ int main (int argc, char **argv) {
         fprintf(stderr, "failed to getrlimit number of files\n");
         exit(EX_OSERR);
     } else {
-        int maxfiles = settings.maxconns;
-        if (rlim.rlim_cur < maxfiles)
-            rlim.rlim_cur = maxfiles;
-        if (rlim.rlim_max < rlim.rlim_cur)
-            rlim.rlim_max = rlim.rlim_cur;
+        rlim.rlim_cur = settings.maxconns;
+        rlim.rlim_max = settings.maxconns;
         if (setrlimit(RLIMIT_NOFILE, &rlim) != 0) {
-            fprintf(stderr, "failed to set rlimit for open files. Try running as root or requesting smaller maxconns value.\n");
+            fprintf(stderr, "failed to set rlimit for open files. Try starting as root or requesting smaller maxconns value.\n");
             exit(EX_OSERR);
         }
     }
@@ -4590,7 +5122,7 @@ int main (int argc, char **argv) {
 
     /* initialize other stuff */
     stats_init();
-    assoc_init();
+    assoc_init(settings.hashpower_init);
     conn_init();
     slabs_init(settings.maxbytes, settings.factor, preallocate);
 
@@ -4604,15 +5136,16 @@ int main (int argc, char **argv) {
     }
     /* start up worker threads if MT mode */
     thread_init(settings.num_threads, main_base);
-    /* save the PID in if we're a daemon, do this after thread_init due to
-       a file descriptor handling bug somewhere in libevent */
 
     if (start_assoc_maintenance_thread() == -1) {
         exit(EXIT_FAILURE);
     }
 
-    if (do_daemonize)
-        save_pid(getpid(), pid_file);
+    if (settings.slab_reassign &&
+        start_slab_maintenance_thread() == -1) {
+        exit(EXIT_FAILURE);
+    }
+
     /* initialise clock event */
     clock_handler(0, 0, 0);
 
@@ -4627,8 +5160,6 @@ int main (int argc, char **argv) {
 
     /* create the listening socket, bind it, and init */
     if (settings.socketpath == NULL) {
-        int udp_port;
-
         const char *portnumber_filename = getenv("MEMCACHED_PORT_FILENAME");
         char temp_portnumber_filename[PATH_MAX];
         FILE *portnumber_file = NULL;
@@ -4646,7 +5177,7 @@ int main (int argc, char **argv) {
         }
 
         errno = 0;
-        if (settings.port && server_socket(settings.port, tcp_transport,
+        if (settings.port && server_sockets(settings.port, tcp_transport,
                                            portnumber_file)) {
             vperror("failed to listen on TCP port %d", settings.port);
             exit(EX_OSERR);
@@ -4658,11 +5189,10 @@ int main (int argc, char **argv) {
          * then daemonise if needed, then init libevent (in some cases
          * descriptors created by libevent wouldn't survive forking).
          */
-        udp_port = settings.udpport ? settings.udpport : settings.port;
 
         /* create the UDP listening socket and bind it */
         errno = 0;
-        if (settings.udpport && server_socket(settings.udpport, udp_transport,
+        if (settings.udpport && server_sockets(settings.udpport, udp_transport,
                                               portnumber_file)) {
             vperror("failed to listen on UDP port %d", settings.udpport);
             exit(EX_OSERR);
@@ -4674,11 +5204,26 @@ int main (int argc, char **argv) {
         }
     }
 
+    /* Give the sockets a moment to open. I know this is dumb, but the error
+     * is only an advisory.
+     */
+    usleep(1000);
+    if (stats.curr_conns + stats.reserved_fds >= settings.maxconns - 1) {
+        fprintf(stderr, "Maxconns setting is too low, use -c to increase.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (pid_file != NULL) {
+        save_pid(pid_file);
+    }
+
     /* Drop privileges no longer needed */
     drop_privileges();
 
     /* enter the event loop */
-    event_base_loop(main_base, 0);
+    if (event_base_loop(main_base, 0) != 0) {
+        retval = EXIT_FAILURE;
+    }
 
     stop_assoc_maintenance_thread();
 
@@ -4693,5 +5238,5 @@ int main (int argc, char **argv) {
     if (u_socket)
       free(u_socket);
 
-    return EXIT_SUCCESS;
+    return retval;
 }
