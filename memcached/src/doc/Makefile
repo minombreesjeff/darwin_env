@@ -32,10 +32,12 @@ POST_UNINSTALL = :
 build_triplet = x86_64-unknown-linux-gnu
 host_triplet = x86_64-unknown-linux-gnu
 target_triplet = x86_64-unknown-linux-gnu
+#am__append_1 = protocol-binary.txt protocol-binary-range.txt
 subdir = doc
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/configure.ac
+am__aclocal_m4_deps = $(top_srcdir)/version.m4 \
+	$(top_srcdir)/m4/c99-backport.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
@@ -48,29 +50,27 @@ am__installdirs = "$(DESTDIR)$(man1dir)"
 NROFF = nroff
 MANS = $(man_MANS)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
-ACLOCAL = ${SHELL} /home/dormando/p/danga/memcached_new/missing --run aclocal-1.10
-AMTAR = ${SHELL} /home/dormando/p/danga/memcached_new/missing --run tar
-AUTOCONF = ${SHELL} /home/dormando/p/danga/memcached_new/missing --run autoconf
-AUTOHEADER = ${SHELL} /home/dormando/p/danga/memcached_new/missing --run autoheader
-AUTOMAKE = ${SHELL} /home/dormando/p/danga/memcached_new/missing --run automake-1.10
+ACLOCAL = ${SHELL} /home/dormando/p/danga/memcached_github_new/missing --run aclocal-1.10
+AMTAR = ${SHELL} /home/dormando/p/danga/memcached_github_new/missing --run tar
+AUTOCONF = ${SHELL} /home/dormando/p/danga/memcached_github_new/missing --run autoconf
+AUTOHEADER = ${SHELL} /home/dormando/p/danga/memcached_github_new/missing --run autoheader
+AUTOMAKE = ${SHELL} /home/dormando/p/danga/memcached_github_new/missing --run automake-1.10
 AWK = gawk
-CC = gcc
+CC = gcc -std=gnu99
 CCDEPMODE = depmode=gcc3
-CFLAGS = -g -O2
+CFLAGS = -g -O2 -pthread -Wall -Werror -pedantic -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls
 CPP = gcc -E
 CPPFLAGS = 
 CYGPATH_W = echo
-DAEMON_OBJ = 
 DEFS = -DHAVE_CONFIG_H
 DEPDIR = .deps
 DTRACE = 
 DTRACEFLAGS = 
-DTRACE_DEBUG_OBJ = 
-DTRACE_OBJ = 
 ECHO_C = 
 ECHO_N = -n
 ECHO_T = 
 EGREP = /bin/grep -E
+ENABLE_SASL = 
 EXEEXT = 
 GREP = /bin/grep
 INSTALL = /usr/bin/install -c
@@ -82,24 +82,29 @@ LDFLAGS =
 LIBOBJS = 
 LIBS =  -levent
 LTLIBOBJS = 
-MAKEINFO = ${SHELL} /home/dormando/p/danga/memcached_new/missing --run makeinfo
+MAKEINFO = ${SHELL} /home/dormando/p/danga/memcached_github_new/missing --run makeinfo
 MKDIR_P = /usr/bin/mkdir -p
 OBJEXT = o
 PACKAGE = memcached
-PACKAGE_BUGREPORT = brad@danga.com
+PACKAGE_BUGREPORT = memcached@googlegroups.com
 PACKAGE_NAME = memcached
-PACKAGE_STRING = memcached 1.2.8
+PACKAGE_STRING = memcached 1.4.5
 PACKAGE_TARNAME = memcached
-PACKAGE_VERSION = 1.2.8
+PACKAGE_VERSION = 1.4.5
 PATH_SEPARATOR = :
+PROFILER = /usr/bin/gcov
+PROFILER_FLAGS = -fprofile-arcs -ftest-coverage
+PROFILER_LDFLAGS = -lgcov
 SET_MAKE = 
 SHELL = /bin/sh
 STRIP = 
-VERSION = 1.2.8
-abs_builddir = /home/dormando/p/danga/memcached_new/doc
-abs_srcdir = /home/dormando/p/danga/memcached_new/doc
-abs_top_builddir = /home/dormando/p/danga/memcached_new
-abs_top_srcdir = /home/dormando/p/danga/memcached_new
+VERSION = 1.4.5
+XML2RFC = no
+XSLTPROC = /usr/bin/xsltproc
+abs_builddir = /home/dormando/p/danga/memcached_github_new/doc
+abs_srcdir = /home/dormando/p/danga/memcached_github_new/doc
+abs_top_builddir = /home/dormando/p/danga/memcached_github_new
+abs_top_srcdir = /home/dormando/p/danga/memcached_github_new
 ac_ct_CC = gcc
 am__include = include
 am__leading_dot = .
@@ -126,7 +131,7 @@ host_vendor = unknown
 htmldir = ${docdir}
 includedir = ${prefix}/include
 infodir = ${datarootdir}/info
-install_sh = $(SHELL) /home/dormando/p/danga/memcached_new/install-sh
+install_sh = $(SHELL) /home/dormando/p/danga/memcached_github_new/install-sh
 libdir = ${exec_prefix}/lib
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
@@ -152,7 +157,10 @@ top_builddir = ..
 top_srcdir = ..
 man_MANS = memcached.1
 EXTRA_DIST = *.txt
-all: all-am
+BUILT_SOURCES = $(am__append_1)
+#MOSTLYCLEANFILES = protocol-binary.txt protocol-binary-range.txt
+all: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) all-am
 
 .SUFFIXES:
 $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
@@ -263,13 +271,15 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 check-am: all-am
-check: check-am
+check: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) check-am
 all-am: Makefile $(MANS)
 installdirs:
 	for dir in "$(DESTDIR)$(man1dir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
-install: install-am
+install: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) install-am
 install-exec: install-exec-am
 install-data: install-data-am
 uninstall: uninstall-am
@@ -284,6 +294,7 @@ install-strip:
 	  `test -z '$(STRIP)' || \
 	    echo "INSTALL_PROGRAM_ENV=STRIPPROG='$(STRIP)'"` install
 mostlyclean-generic:
+	-test -z "$(MOSTLYCLEANFILES)" || rm -f $(MOSTLYCLEANFILES)
 
 clean-generic:
 
@@ -293,6 +304,7 @@ distclean-generic:
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
+	-test -z "$(BUILT_SOURCES)" || rm -f $(BUILT_SOURCES)
 clean: clean-am
 
 clean-am: clean-generic mostlyclean-am
@@ -362,6 +374,15 @@ uninstall-man: uninstall-man1
 	mostlyclean mostlyclean-generic pdf pdf-am ps ps-am uninstall \
 	uninstall-am uninstall-man uninstall-man1
 
+
+%.txt: %.full
+	no $< $@
+
+%.chk: %.xml xml2rfc/rfc2629-refchk.xsl
+	/usr/bin/xsltproc xml2rfc/rfc2629-refchk.xsl $< >$@
+
+%.full: %.xml xml2rfc/rfc2629-noinc.xsl
+	/usr/bin/xsltproc xml2rfc/rfc2629-noinc.xsl $< >$@
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
 .NOEXPORT:

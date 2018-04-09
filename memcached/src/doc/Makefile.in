@@ -32,10 +32,12 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
+@BUILD_SPECIFICATIONS_TRUE@am__append_1 = protocol-binary.txt protocol-binary-range.txt
 subdir = doc
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/configure.ac
+am__aclocal_m4_deps = $(top_srcdir)/version.m4 \
+	$(top_srcdir)/m4/c99-backport.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
@@ -60,17 +62,15 @@ CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CYGPATH_W = @CYGPATH_W@
-DAEMON_OBJ = @DAEMON_OBJ@
 DEFS = @DEFS@
 DEPDIR = @DEPDIR@
 DTRACE = @DTRACE@
 DTRACEFLAGS = @DTRACEFLAGS@
-DTRACE_DEBUG_OBJ = @DTRACE_DEBUG_OBJ@
-DTRACE_OBJ = @DTRACE_OBJ@
 ECHO_C = @ECHO_C@
 ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
+ENABLE_SASL = @ENABLE_SASL@
 EXEEXT = @EXEEXT@
 GREP = @GREP@
 INSTALL = @INSTALL@
@@ -92,10 +92,15 @@ PACKAGE_STRING = @PACKAGE_STRING@
 PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_VERSION = @PACKAGE_VERSION@
 PATH_SEPARATOR = @PATH_SEPARATOR@
+PROFILER = @PROFILER@
+PROFILER_FLAGS = @PROFILER_FLAGS@
+PROFILER_LDFLAGS = @PROFILER_LDFLAGS@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
 STRIP = @STRIP@
 VERSION = @VERSION@
+XML2RFC = @XML2RFC@
+XSLTPROC = @XSLTPROC@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -152,7 +157,10 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 man_MANS = memcached.1
 EXTRA_DIST = *.txt
-all: all-am
+BUILT_SOURCES = $(am__append_1)
+@BUILD_SPECIFICATIONS_TRUE@MOSTLYCLEANFILES = protocol-binary.txt protocol-binary-range.txt
+all: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) all-am
 
 .SUFFIXES:
 $(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
@@ -263,13 +271,15 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 check-am: all-am
-check: check-am
+check: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) check-am
 all-am: Makefile $(MANS)
 installdirs:
 	for dir in "$(DESTDIR)$(man1dir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
-install: install-am
+install: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) install-am
 install-exec: install-exec-am
 install-data: install-data-am
 uninstall: uninstall-am
@@ -284,6 +294,7 @@ install-strip:
 	  `test -z '$(STRIP)' || \
 	    echo "INSTALL_PROGRAM_ENV=STRIPPROG='$(STRIP)'"` install
 mostlyclean-generic:
+	-test -z "$(MOSTLYCLEANFILES)" || rm -f $(MOSTLYCLEANFILES)
 
 clean-generic:
 
@@ -293,6 +304,7 @@ distclean-generic:
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
 	@echo "it deletes files that may require special tools to rebuild."
+	-test -z "$(BUILT_SOURCES)" || rm -f $(BUILT_SOURCES)
 clean: clean-am
 
 clean-am: clean-generic mostlyclean-am
@@ -362,6 +374,15 @@ uninstall-man: uninstall-man1
 	mostlyclean mostlyclean-generic pdf pdf-am ps ps-am uninstall \
 	uninstall-am uninstall-man uninstall-man1
 
+
+%.txt: %.full
+	@XML2RFC@ $< $@
+
+%.chk: %.xml xml2rfc/rfc2629-refchk.xsl
+	@XSLTPROC@ xml2rfc/rfc2629-refchk.xsl $< >$@
+
+%.full: %.xml xml2rfc/rfc2629-noinc.xsl
+	@XSLTPROC@ xml2rfc/rfc2629-noinc.xsl $< >$@
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
 .NOEXPORT:
