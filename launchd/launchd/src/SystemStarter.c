@@ -22,10 +22,16 @@
  * @APPLE_APACHE_LICENSE_HEADER_END@
  **/
 
+#include <IOKit/IOKitLib.h>
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/stat.h>
+#include <paths.h>
 #include <unistd.h>
 #include <crt_externs.h>
 #include <fcntl.h>
 #include <syslog.h>
+#include <assert.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <NSSystemDirectories.h>
 #include "IPC.h"
@@ -40,14 +46,24 @@ bool gNoRunFlag = false;
 static void     usage(void) __attribute__((noreturn));
 static int      system_starter(Action anAction, const char *aService);
 static void	displayErrorMessages(StartupContext aStartupContext);
-static void	doCFnote(void);
+static pid_t	fwexec(const char *cmd, ...) __attribute__((sentinel));
+static void	dummy_sig(int signo __attribute__((unused)))
+{
+}
 
 int 
 main(int argc, char *argv[])
 {
+	struct kevent	kev;
 	Action          anAction = kActionStart;
-	char           *aService = NULL;
-	int             ch;
+	int             ch, r, kq = kqueue();
+
+	assert(kq  != -1);
+
+	EV_SET(&kev, SIGTERM, EVFILT_SIGNAL, EV_ADD, 0, 0, 0);
+	r = kevent(kq, &kev, 1, NULL, 0, NULL);
+	assert(r != -1);
+	signal(SIGTERM, dummy_sig);
 
 	while ((ch = getopt(argc, argv, "gvxirdDqn?")) != -1) {
 		switch (ch) {
@@ -75,15 +91,18 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (argc > 2)
+	if (argc > 2) {
 		usage();
+	}
 
 	openlog(getprogname(), LOG_PID|LOG_CONS|(gDebugFlag ? LOG_PERROR : 0), LOG_DAEMON);
-	setlogmask(LOG_UPTO(LOG_NOTICE));
-	if (gVerboseFlag)
-		setlogmask(LOG_UPTO(LOG_INFO));
-	if (gDebugFlag)
+	if (gDebugFlag) {
 		setlogmask(LOG_UPTO(LOG_DEBUG));
+	} else if (gVerboseFlag) {
+		setlogmask(LOG_UPTO(LOG_INFO));
+	} else {
+		setlogmask(LOG_UPTO(LOG_NOTICE));
+	}
 
 	if (!gNoRunFlag && (getuid() != 0)) {
 		syslog(LOG_ERR, "must be root to run");
@@ -102,52 +121,54 @@ main(int argc, char *argv[])
 		}
 	}
 
-	atexit(doCFnote);
+	if (argc == 2) {
+		exit(system_starter(anAction, argv[1]));
+	}
 
 	unlink(kFixerPath);
 
-	if (argc == 2) {
-		aService = argv[1];
-	} else if (!gDebugFlag && anAction != kActionStop) {
-		pid_t ipwa;
-		int status;
+	mach_timespec_t w = { 600, 0 };
+	kern_return_t kr;
+	struct stat sb;
 
-		setpriority(PRIO_PROCESS, 0, 20);
+	/*
+	 * Too many old StartupItems had implicit dependancies on "Network" via
+	 * other StartupItems that are now no-ops.
+	 *
+	 * SystemStarter is not on the critical path for boot up, so we'll
+	 * stall here to deal with this legacy dependancy problem.
+	 */
 
-		/* Too many old StartupItems had implicit dependancies on
-		 * "Network" via other StartupItems that are now no-ops.
-		 *
-		 * SystemStarter is not on the critical path for boot up,
-		 * so we'll stall here to deal with this legacy dependancy
-		 * problem.
-		 */
-		switch ((ipwa = fork())) {
-		case -1:
-			syslog(LOG_WARNING, "fork(): %m");
-			break;
-		case 0:
-			execl("/usr/sbin/ipconfig", "ipconfig", "waitall", NULL);
-			syslog(LOG_WARNING, "execl(): %m");
-			exit(EXIT_FAILURE);
-		default:
-			if (waitpid(ipwa, &status, 0) == -1) {
-				syslog(LOG_WARNING, "waitpid(): %m");
-				break;
-			} else if (WIFEXITED(status)) {
-				if (WEXITSTATUS(status) == 0) {
-					break;
-				} else {
-					syslog(LOG_WARNING, "ipconfig waitall exit status: %d", WEXITSTATUS(status));
-				}
-			} else {
-				/* must have died due to signal */
-				syslog(LOG_WARNING, "ipconfig waitall: %s", strsignal(WTERMSIG(status)));
-			}
-			break;
-		}
+	if ((kr = IOKitWaitQuiet(kIOMasterPortDefault, &w)) != kIOReturnSuccess) {
+		syslog(LOG_NOTICE, "IOKitWaitQuiet: %d\n", kr);
 	}
 
-	exit(system_starter(anAction, aService));
+	fwexec("/usr/sbin/ipconfig", "waitall", NULL);
+	fwexec("/sbin/autodiskmount", "-va", NULL);
+
+	system_starter(kActionStart, NULL);
+
+	if (stat("/etc/rc.local", &sb) != -1) {
+		fwexec(_PATH_BSHELL, "/etc/rc.local", NULL);
+	}
+
+	CFNotificationCenterPostNotificationWithOptions(
+			CFNotificationCenterGetDistributedCenter(),
+			CFSTR("com.apple.startupitems.completed"),
+			NULL, NULL,
+			kCFNotificationDeliverImmediately | kCFNotificationPostToAllSessions);
+
+	r = kevent(kq, NULL, 0, &kev, 1, NULL);
+	assert(r != -1);
+	assert(kev.filter == EVFILT_SIGNAL && kev.ident == SIGTERM);
+
+	if (stat("/etc/rc.shutdown.local", &sb) != -1) {
+		fwexec(_PATH_BSHELL, "/etc/rc.shutdown.local", NULL);
+	}
+
+	system_starter(kActionStop, NULL);
+
+	exit(EXIT_SUCCESS);
 }
 
 
@@ -237,7 +258,6 @@ displayErrorMessages(StartupContext aStartupContext)
 static int 
 system_starter(Action anAction, const char *aService_cstr)
 {
-	CFRunLoopSourceRef anIPCSource = NULL;
 	CFStringRef     aService = NULL;
 	NSSearchPathDomainMask aMask;
 
@@ -251,18 +271,6 @@ system_starter(Action anAction, const char *aService_cstr)
 	}
 	if (gDebugFlag && gNoRunFlag)
 		sleep(1);
-
-	/**
-         * Create the IPC port
-         **/
-	anIPCSource = CreateIPCRunLoopSource(CFSTR(kSystemStarterMessagePort), aStartupContext);
-	if (anIPCSource) {
-		CFRunLoopAddSource(CFRunLoopGetCurrent(), anIPCSource, kCFRunLoopCommonModes);
-		CFRelease(anIPCSource);
-	} else {
-		syslog(LOG_ERR, "Could not create IPC bootstrap port: %s", kSystemStarterMessagePort);
-		return (1);
-	}
 
 	/**
          * Get a list of Startup Items which are in /Local and /System.
@@ -388,11 +396,42 @@ usage(void)
 	exit(EXIT_FAILURE);
 }
 
-static void doCFnote(void)
+pid_t
+fwexec(const char *cmd, ...)
 {
-	CFNotificationCenterPostNotificationWithOptions(
-			CFNotificationCenterGetDistributedCenter(),
-			CFSTR("com.apple.startupitems.completed"),
-			NULL, NULL,
-			kCFNotificationDeliverImmediately | kCFNotificationPostToAllSessions);
+	const char *argv[100] = { cmd };
+	va_list ap;
+	int wstatus, i = 1;
+	pid_t p;
+
+	va_start(ap, cmd);
+	do {
+		argv[i] = va_arg(ap, char *);
+	} while (argv[i++]);
+	va_end(ap);
+
+	switch ((p = fork())) {
+	case -1:
+		return -1;
+	case 0:
+		execvp(argv[0], (char *const *)argv);
+		_exit(EXIT_FAILURE);
+		break;
+	default:
+		if (waitpid(p, &wstatus, 0) == -1) {
+			return -1;
+		} else if (WIFEXITED(wstatus)) {
+			if (WEXITSTATUS(wstatus) == 0) {
+				return 0;
+			} else {
+				syslog(LOG_WARNING, "%s exit status: %d", argv[0], WEXITSTATUS(wstatus));
+			}
+		} else {
+			/* must have died due to signal */
+			syslog(LOG_WARNING, "%s died: %s", argv[0], strsignal(WTERMSIG(wstatus)));
+		}
+		break;
+	}
+
+	return -1;
 }

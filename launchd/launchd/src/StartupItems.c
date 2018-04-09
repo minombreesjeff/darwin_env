@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/mman.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -158,6 +159,8 @@ static void SpecialCasesStartupItemHandler(CFMutableDictionaryRef aConfig)
 		CFSTR("Core Services"),
 		CFSTR("Network"),
 		CFSTR("TIM"),
+		CFSTR("Disks"),
+		CFSTR("NIS"),
 		NULL
 	};
 	CFMutableArrayRef aList, aNewList;
@@ -215,8 +218,20 @@ CFIndex StartupItemListCountServices(CFArrayRef anItemList)
 
 static bool StartupItemSecurityCheck(const char *aPath)
 {
+	static struct timeval boot_time;
 	struct stat aStatBuf;
 	bool r = true;
+
+	if (boot_time.tv_sec == 0) {
+		int mib[] = { CTL_KERN, KERN_BOOTTIME };
+		size_t boot_time_sz = sizeof(boot_time);
+		int rv;
+
+		rv = sysctl(mib, sizeof(mib) / sizeof(mib[0]), &boot_time, &boot_time_sz, NULL, 0);
+
+		assert(rv != -1);
+		assert(boot_time_sz == sizeof(boot_time));
+	}
 
 	/* should use lstatx_np() on Tiger? */
 	if (lstat(aPath, &aStatBuf) == -1) {
@@ -224,12 +239,24 @@ static bool StartupItemSecurityCheck(const char *aPath)
 			syslog(LOG_ERR, "lstat(\"%s\"): %m", aPath);
 		return false;
 	}
+	/*
+	 * We check the boot time because of 5409386.
+	 * We ignore the boot time if PPID != 1 because of 5503536.
+	 */
+	if ((aStatBuf.st_ctimespec.tv_sec > boot_time.tv_sec) && (getppid() == 1)) {
+		syslog(LOG_WARNING, "\"%s\" failed sanity check: path was created after boot up", aPath);
+		return false;
+	}
 	if (!(S_ISREG(aStatBuf.st_mode) || S_ISDIR(aStatBuf.st_mode))) {
 		syslog(LOG_WARNING, "\"%s\" failed security check: not a directory or regular file", aPath);
 		r = false;
 	}
-	if ((aStatBuf.st_mode & ALLPERMS) & ~(S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
-		syslog(LOG_WARNING, "\"%s\" failed security check: permissions", aPath);
+	if (aStatBuf.st_mode & S_IWOTH) {
+		syslog(LOG_WARNING, "\"%s\" failed security check: world writable", aPath);
+		r = false;
+	}
+	if (aStatBuf.st_mode & S_IWGRP) {
+		syslog(LOG_WARNING, "\"%s\" failed security check: group writable", aPath);
 		r = false;
 	}
 	if (aStatBuf.st_uid != 0) {
@@ -261,6 +288,12 @@ CFMutableArrayRef StartupItemListCreateWithMask(NSSearchPathDomainMask aMask)
 
 		strcpy(aPath + strlen(aPath), kStartupItemsPath);
 		++aDomainIndex;
+
+		/* 5485016
+		 *
+		 * Just in case...
+		 */
+		mkdir(aPath, S_IRWXU|S_IRWXG|S_IROTH|S_IXOTH);
 
 		if (!StartupItemSecurityCheck(aPath))
 			continue;
@@ -959,7 +992,6 @@ int StartupItemRun(CFMutableDictionaryRef aStatusDict, CFMutableDictionaryRef an
 
 			case 0:	/* Child */
 				{
-					setpriority(PRIO_PROCESS, 0, 0);
 					if (setsid() == -1)
 						syslog(LOG_WARNING, "Unable to create session for item %s: %m", anExecutable);
 

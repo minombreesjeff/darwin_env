@@ -1,10 +1,5 @@
-/**
- * IPC.h - System Starter IPC routines
- * Wilfredo Sanchez  | wsanchez@opensource.apple.com
- * Kevin Van Vechten | kevinvv@uclink4.berkeley.edu
- * $Apple$
- **
- * Copyright (c) 1999-2001 Apple Computer, Inc. All rights reserved.
+/*
+ * Copyright (c) 2007 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -21,18 +16,29 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
- **/
+ */
 
-#ifndef _IPC_H_
-#define _IPC_H_
+#define _NONSTD_SOURCE 1
+#include <signal.h>
 
-#include "SystemStarter.h"
+#include "launchd_runtime_kill.h"
 
-/**
- * Monitor a startup item task.  Creates a mach port and uses the
- * invalidation callback to notify system starter when the process 
- * terminates.
- **/
-void MonitorStartupItem (StartupContext aStartupContext, CFMutableDictionaryRef anItem);
+/*
+ * POSIX defines consistency over correctness, and consequently kill/killpg now
+ * returns EPERM instead of ESRCH.
+ *
+ * I've filed 5487498 to get a non-portable kill() variant, but for now,
+ * defining _NONSTD_SOURCE gets us the old behavior.
+ */
 
-#endif /* _IPC_H_ */
+int
+runtime_kill(pid_t pid, int sig)
+{
+	return kill(pid, sig);
+}
+
+int
+runtime_killpg(pid_t pgrp, int sig)
+{
+	return killpg(pgrp, sig);
+}

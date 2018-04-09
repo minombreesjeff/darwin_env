@@ -86,6 +86,8 @@
 
 __BEGIN_DECLS
 
+#pragma GCC visibility push(default)
+
 #define	BOOTSTRAP_MAX_NAME_LEN			128
 #define	BOOTSTRAP_MAX_CMD_LEN			512
 
@@ -196,7 +198,8 @@ kern_return_t bootstrap_subset(
  */
 kern_return_t bootstrap_unprivileged(
 		mach_port_t bp,
-		mach_port_t *unpriv_port);
+		mach_port_t *unpriv_port)
+		AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_5;
 
 /*
  * bootstrap_parent()
@@ -228,6 +231,30 @@ kern_return_t bootstrap_parent(
  * do so.  (Registering MACH_PORT_NULL is especially useful for shutting
  * down declared services).
  *
+ * This API is deprecated. Old scenarios and recommendations:
+ *
+ * 1) If the code was registering a well known name, please switch to launchd.
+ *
+ * 2) If the code was registering a dynamically generated string and passing
+ *    the string to other applications, please rewrite the code to send a Mach
+ *    send-right directly.
+ *
+ * 3) If the launchd job maintained an optional Mach service, please reserve
+ *    the name with launchd and control the presense of the service through
+ *    ownership of the Mach receive right like so.
+ *
+ *	<key>MachServices</key>
+ *	<dict>
+ *		<key>com.apple.windowserver</key>
+ *		<true/>
+ *		<key>com.apple.windowserver.active</key>
+ *		<dict>
+ *			<key>HideUntilCheckIn</key>
+ *			<true/>
+ *		</dict>
+ *	</dict>
+ *
+ *
  * Errors:	Returns appropriate kernel errors on rpc failure.
  *		Returns BOOTSTRAP_NOT_PRIVILEGED, if request directed to
  *			bootstrap port without privilege.
@@ -237,7 +264,8 @@ kern_return_t bootstrap_parent(
 kern_return_t bootstrap_register(
 		mach_port_t bp,
 		name_t service_name,
-		mach_port_t sp);
+		mach_port_t sp)
+		AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_5;
 
 /*
  * bootstrap_create_service()
@@ -315,6 +343,8 @@ kern_return_t bootstrap_status(
  * Translate a return value from the bootstrap_*() APIs to a string.
  */
 const char *bootstrap_strerror(kern_return_t r) __attribute__((__nothrow__, __pure__, __warn_unused_result__));
+
+#pragma GCC visibility pop
 
 __END_DECLS
 

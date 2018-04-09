@@ -1,10 +1,7 @@
-/**
- * IPC.h - System Starter IPC routines
- * Wilfredo Sanchez  | wsanchez@opensource.apple.com
- * Kevin Van Vechten | kevinvv@uclink4.berkeley.edu
- * $Apple$
- **
- * Copyright (c) 1999-2001 Apple Computer, Inc. All rights reserved.
+#ifndef _LAUNCH_INTERNAL_H_
+#define _LAUNCH_INTERNAL_H_
+/*
+ * Copyright (c) 2007 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -21,18 +18,13 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
- **/
+ */
 
-#ifndef _IPC_H_
-#define _IPC_H_
+#pragma GCC visibility push(default)
 
-#include "SystemStarter.h"
+size_t launch_data_pack(launch_data_t d, void *where, size_t len, int *fd_where, size_t *fdslotsleft);
+launch_data_t launch_data_unpack(void *data, size_t data_size, int *fds, size_t fd_cnt, size_t *data_offset, size_t *fdoffset);
 
-/**
- * Monitor a startup item task.  Creates a mach port and uses the
- * invalidation callback to notify system starter when the process 
- * terminates.
- **/
-void MonitorStartupItem (StartupContext aStartupContext, CFMutableDictionaryRef anItem);
+#pragma GCC visibility pop
 
-#endif /* _IPC_H_ */
+#endif

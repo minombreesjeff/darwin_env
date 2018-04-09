@@ -25,6 +25,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#pragma GCC visibility push(default)
+
 __BEGIN_DECLS
 
 #ifdef __GNUC__
@@ -47,7 +49,6 @@ __BEGIN_DECLS
 #define LAUNCH_KEY_STARTJOB			"StartJob"
 #define LAUNCH_KEY_STOPJOB			"StopJob"
 #define LAUNCH_KEY_GETJOB			"GetJob"
-#define LAUNCH_KEY_GETJOBWITHHANDLES		"GetJobWithHandles"
 #define LAUNCH_KEY_GETJOBS			"GetJobs"
 #define LAUNCH_KEY_CHECKIN			"CheckIn"
 
@@ -56,9 +57,11 @@ __BEGIN_DECLS
 #define LAUNCH_JOBKEY_USERNAME			"UserName"
 #define LAUNCH_JOBKEY_GROUPNAME			"GroupName"
 #define LAUNCH_JOBKEY_TIMEOUT			"TimeOut"
+#define LAUNCH_JOBKEY_EXITTIMEOUT		"ExitTimeOut"
 #define LAUNCH_JOBKEY_INITGROUPS		"InitGroups"
 #define LAUNCH_JOBKEY_SOCKETS			"Sockets"
 #define LAUNCH_JOBKEY_MACHSERVICES		"MachServices"
+#define LAUNCH_JOBKEY_MACHSERVICELOOKUPPOLICIES	"MachServiceLookupPolicies"
 #define LAUNCH_JOBKEY_INETDCOMPATIBILITY	"inetdCompatibility"
 #define LAUNCH_JOBKEY_ENABLEGLOBBING		"EnableGlobbing"
 #define LAUNCH_JOBKEY_PROGRAMARGUMENTS		"ProgramArguments"
@@ -71,14 +74,15 @@ __BEGIN_DECLS
 #define LAUNCH_JOBKEY_RUNATLOAD			"RunAtLoad"
 #define LAUNCH_JOBKEY_ROOTDIRECTORY		"RootDirectory"
 #define LAUNCH_JOBKEY_WORKINGDIRECTORY		"WorkingDirectory"
-#define LAUNCH_JOBKEY_SERVICEDESCRIPTION	"ServiceDescription"
 #define LAUNCH_JOBKEY_ENVIRONMENTVARIABLES	"EnvironmentVariables"
 #define LAUNCH_JOBKEY_USERENVIRONMENTVARIABLES	"UserEnvironmentVariables"
-#define LAUNCH_JOBKEY_FORCEPOWERPC		"ForcePowerPC"
 #define LAUNCH_JOBKEY_UMASK			"Umask"
 #define LAUNCH_JOBKEY_NICE			"Nice"
+#define LAUNCH_JOBKEY_HOPEFULLYEXITSFIRST	"HopefullyExitsFirst"
+#define LAUNCH_JOBKEY_HOPEFULLYEXITSLAST	"HopefullyExitsLast"
 #define LAUNCH_JOBKEY_LOWPRIORITYIO		"LowPriorityIO"
 #define LAUNCH_JOBKEY_SESSIONCREATE		"SessionCreate"
+#define LAUNCH_JOBKEY_STARTONMOUNT		"StartOnMount"
 #define LAUNCH_JOBKEY_SOFTRESOURCELIMITS	"SoftResourceLimits"
 #define LAUNCH_JOBKEY_HARDRESOURCELIMITS	"HardResourceLimits"
 #define LAUNCH_JOBKEY_STANDARDOUTPATH		"StandardOutPath"
@@ -92,7 +96,9 @@ __BEGIN_DECLS
 #define LAUNCH_JOBKEY_BONJOURFDS		"BonjourFDs"
 #define LAUNCH_JOBKEY_LASTEXITSTATUS		"LastExitStatus"
 #define LAUNCH_JOBKEY_PID			"PID"
-#define LAUNCH_JOBKEY_SUBJOBS			"SubJobs"
+#define LAUNCH_JOBKEY_THROTTLEINTERVAL		"ThrottleInterval"
+#define LAUNCH_JOBKEY_LAUNCHONLYONCE		"LaunchOnlyOnce"
+#define LAUNCH_JOBKEY_ABANDONPROCESSGROUP	"AbandonProcessGroup"
 
 #define LAUNCH_JOBINETDCOMPATIBILITY_WAIT	"Wait"
 
@@ -102,6 +108,8 @@ __BEGIN_DECLS
 #define LAUNCH_JOBKEY_KEEPALIVE_SUCCESSFULEXIT	"SuccessfulExit"
 #define LAUNCH_JOBKEY_KEEPALIVE_NETWORKSTATE	"NetworkState"
 #define LAUNCH_JOBKEY_KEEPALIVE_PATHSTATE	"PathState"
+#define LAUNCH_JOBKEY_KEEPALIVE_OTHERJOBACTIVE	"OtherJobActive"
+#define LAUNCH_JOBKEY_KEEPALIVE_OTHERJOBENABLED	"OtherJobEnabled"
 
 #define LAUNCH_JOBKEY_CAL_MINUTE		"Minute"
 #define LAUNCH_JOBKEY_CAL_HOUR			"Hour"
@@ -118,6 +126,9 @@ __BEGIN_DECLS
 #define LAUNCH_JOBKEY_RESOURCELIMIT_NPROC	"NumberOfProcesses"
 #define LAUNCH_JOBKEY_RESOURCELIMIT_RSS		"ResidentSetSize"
 #define LAUNCH_JOBKEY_RESOURCELIMIT_STACK	"Stack"
+
+#define LAUNCH_JOBKEY_DISABLED_MACHINETYPE	"MachineType"
+#define LAUNCH_JOBKEY_DISABLED_MODELNAME	"ModelName"
 
 #define LAUNCH_JOBSOCKETKEY_TYPE		"SockType"
 #define LAUNCH_JOBSOCKETKEY_PASSIVE		"SockPassive"
@@ -212,5 +223,7 @@ int launch_get_fd(void) __ld_normal;
 launch_data_t launch_msg(const launch_data_t) __ld_normal;
 
 __END_DECLS
+
+#pragma GCC visibility pop
 
 #endif

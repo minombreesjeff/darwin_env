@@ -1,10 +1,5 @@
-/**
- * IPC.h - System Starter IPC routines
- * Wilfredo Sanchez  | wsanchez@opensource.apple.com
- * Kevin Van Vechten | kevinvv@uclink4.berkeley.edu
- * $Apple$
- **
- * Copyright (c) 1999-2001 Apple Computer, Inc. All rights reserved.
+/*
+ * Copyright (c) 2007 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -21,18 +16,13 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
- **/
+ */
+#ifndef __LAUNCHD_RUNTIME_KILL_H__
+#define __LAUNCHD_RUNTIME_KILL_H__
 
-#ifndef _IPC_H_
-#define _IPC_H_
+#include <sys/types.h>
 
-#include "SystemStarter.h"
+int runtime_kill(pid_t pid, int sig);
+int runtime_killpg(pid_t pgrp, int sig);
 
-/**
- * Monitor a startup item task.  Creates a mach port and uses the
- * invalidation callback to notify system starter when the process 
- * terminates.
- **/
-void MonitorStartupItem (StartupContext aStartupContext, CFMutableDictionaryRef anItem);
-
-#endif /* _IPC_H_ */
+#endif

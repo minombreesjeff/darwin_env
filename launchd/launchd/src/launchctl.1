@@ -43,7 +43,7 @@ Some jobs only make sense in certain contexts. This flag instructs
 to look for jobs in a different location when using the -D flag, and allows
 .Nm launchctl
 to restrict which jobs are loaded into which session types. Currently known
-session types include: Aqua, X11 and tty.
+session types include: Aqua, LoginWindow, Background, StandardIO and System.
 .It Fl D Ar domain
 Look for
 .Xr plist 5 files ending in *.plist in the domain given. Valid domains include
@@ -53,6 +53,8 @@ domain is available for use called "user." For example, without a session type g
 With a session type passed, it would load from /System/Library/LaunchAgents.
 .El
 .It Xo Ar unload Op Fl w
+.Op Fl S Ar sessiontype
+.Op Fl D Ar domain
 .Ar paths ...
 .Xc
 Unload the specified configuration files or directories of configuration files.
@@ -60,6 +62,20 @@ This will also stop the job if it is running.
 .Bl -tag -width -indent
 .It Fl w
 Add the disabled key and write the configuration files back out to disk.
+.It Fl S Ar sessiontype
+Some jobs only make sense in certain contexts. This flag instructs
+.Nm launchctl
+to look for jobs in a different location when using the -D flag, and allows
+.Nm launchctl
+to restrict which jobs are loaded into which session types. Currently known
+session types include: Aqua, LoginWindow, Background, StandardIO and System.
+.It Fl D Ar domain
+Look for
+.Xr plist 5 files ending in *.plist in the domain given. Valid domains include
+"system," "local," "network" and "all." When providing a session type, an additional
+domain is available for use called "user." For example, without a session type given,
+"-D system" would load from property list files from /System/Library/LaunchDaemons.
+With a session type passed, it would load from /System/Library/LaunchAgents.
 .El
 .It Xo Ar submit Fl l Ar label
 .Op Fl p Ar executable
@@ -80,12 +96,12 @@ Where to send the stdout of the program.
 Where to send the stderr of the program.
 .El
 .It Ar remove Ar job_label
-Remove the jobs from launchd by label.
+Remove the job from launchd by label.
 .It Ar start Ar job_label
-Start the specified jobs by label. The expected use of this subcommand is for
+Start the specified job by label. The expected use of this subcommand is for
 debugging and testing so that one can manually kick-start an on-demand server.
 .It Ar stop Ar job_label
-Stop the specified jobs by label. If a job is on-demand, launchd may immediately
+Stop the specified job by label. If a job is on-demand, launchd may immediately
 restart the job if launchd finds any criteria that is satisfied.
 Non-demand based jobs will always be restarted. Use of this subcommand is discouraged.
 Jobs should ideally idle timeout by themselves.
@@ -130,20 +146,10 @@ With a third argument, it sets both the hard and soft limits to that value.
 With four arguments, the third and forth argument represent the soft and hard limits respectively.
 See
 .Xr setrlimit 2 .
-.It Ar stdout path
-Set the standard out file descriptor to the given path.
-.Nm launchd
-.It Ar stderr path
-Set the standard error file descriptor to the given path.
-.Nm launchd
 .It Ar shutdown
 Tell
 .Nm launchd
 to prepare for shutdown by removing all jobs.
-.It Ar reloadttys
-Tell
-.Nm launchd
-to reread /etc/ttys. This option may go away in a future release.
 .It Ar umask Op Ar newmask
 Get or optionally set the
 .Xr umask 2
@@ -153,7 +159,7 @@ of
 This prints out Mach bootstrap services and their respective states. While the
 namespace appears flat, it is in fact hierarchical, thus allowing for certain
 services to be only available to a subset of processes. The three states a
-service can be in are active ("A"), in-active ("I") and on-demand ("D").
+service can be in are active ("A"), inactive ("I") and on-demand ("D").
 .It Ar bsexec Ar PID command Op Ar args
 This executes the given command in the same Mach bootstrap namespace hierachy
 as the given PID.

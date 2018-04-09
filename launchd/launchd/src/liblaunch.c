@@ -17,6 +17,12 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+
+#include "config.h"
+#include "liblaunch_public.h"
+#include "liblaunch_private.h"
+#include "liblaunch_internal.h"
+
 #include <mach/mach.h>
 #include <libkern/OSByteOrder.h>
 #include <sys/types.h>
@@ -32,11 +38,12 @@
 #include <unistd.h>
 #include <errno.h>
 #include <pwd.h>
+#include <assert.h>
 
-#include "launch.h"
-#include "launch_priv.h"
-#include "bootstrap_public.h"
-#include "bootstrap_private.h"
+#include "libbootstrap_public.h"
+#include "libvproc_public.h"
+#include "libvproc_private.h"
+#include "libvproc_internal.h"
 
 /* __OSBogusByteSwap__() must not really exist in the symbol namespace
  * in order for the following to generate an error at build time.
@@ -116,7 +123,7 @@ struct _launch_data {
 		mach_port_t mp;
 		int err;
 		long long number;
-		bool boolean;
+		uint32_t boolean; /* We'd use 'bool' but this struct needs to be used under Rosetta, and sizeof(bool) is different between PowerPC and Intel */
 		double float_num;
 	};
 };
@@ -133,8 +140,6 @@ struct _launch {
 	int	fd;
 };
 
-static void make_msg_and_cmsg(launch_data_t, void **, size_t *, int **, size_t *);
-static launch_data_t make_data(launch_t, size_t *, size_t *);
 static launch_data_t launch_data_array_pop_first(launch_data_t where);
 static int _fd(int fd);
 static void launch_client_init(void);
@@ -157,6 +162,7 @@ launch_client_init(void)
 	char *where = getenv(LAUNCHD_SOCKET_ENV);
 	char *_launchd_fd = getenv(LAUNCHD_TRUSTED_FD_ENV);
 	int dfd, lfd = -1;
+	name_t spath;
 	
 	_lc = calloc(1, sizeof(struct _launch_client));
 
@@ -181,10 +187,14 @@ launch_client_init(void)
 		
 		if (where && where[0] != '\0') {
 			strncpy(sun.sun_path, where, sizeof(sun.sun_path));
-		} else if (getuid() == 0) {
-			strncpy(sun.sun_path, LAUNCHD_SOCK_PREFIX "/sock", sizeof(sun.sun_path));
+		} else if (!getenv("SUDO_COMMAND") && _vprocmgr_getsocket(spath) == 0) {
+			size_t min_len;
+
+			min_len = sizeof(sun.sun_path) < sizeof(spath) ? sizeof(sun.sun_path) : sizeof(spath);
+
+			strncpy(sun.sun_path, spath, min_len);
 		} else {
-			goto out_bad;
+			strncpy(sun.sun_path, LAUNCHD_SOCK_PREFIX "/sock", sizeof(sun.sun_path));
 		}
 
 		if ((lfd = _fd(socket(AF_UNIX, SOCK_STREAM, 0))) == -1)
@@ -200,7 +210,7 @@ launch_client_init(void)
 	return;
 out_bad:
 	if (_lc->l)
-		launchd_close(_lc->l);
+		launchd_close(_lc->l, close);
 	else if (lfd != -1)
 		close(lfd);
 	if (_lc)
@@ -337,7 +347,7 @@ bool
 launch_data_array_set_index(launch_data_t where, launch_data_t what, size_t ind)
 {
 	if ((ind + 1) >= where->_array_cnt) {
-		where->_array = realloc(where->_array, (ind + 1) * sizeof(launch_data_t));
+		where->_array = reallocf(where->_array, (ind + 1) * sizeof(launch_data_t));
 		memset(where->_array + where->_array_cnt, 0, (ind + 1 - where->_array_cnt) * sizeof(launch_data_t));
 		where->_array_cnt = ind + 1;
 	}
@@ -362,7 +372,7 @@ launch_data_t
 launch_data_array_pop_first(launch_data_t where)
 {
 	launch_data_t r = NULL;
-       
+
 	if (where->_array_cnt > 0) {
 		r = where->_array[0];
 		memmove(where->_array, where->_array + 1, (where->_array_cnt - 1) * sizeof(launch_data_t));
@@ -515,23 +525,23 @@ launchd_getfd(launch_t l)
 launch_t
 launchd_fdopen(int fd)
 {
-        launch_t c;
+	launch_t c;
 
-        c = calloc(1, sizeof(struct _launch));
+	c = calloc(1, sizeof(struct _launch));
 	if (!c)
 		return NULL;
 
-        c->fd = fd;
+	c->fd = fd;
 
 	fcntl(fd, F_SETFL, O_NONBLOCK);
 
-        if ((c->sendbuf = malloc(0)) == NULL)
+	if ((c->sendbuf = malloc(0)) == NULL)
 		goto out_bad;
-        if ((c->sendfds = malloc(0)) == NULL)
+	if ((c->sendfds = malloc(0)) == NULL)
 		goto out_bad;
-        if ((c->recvbuf = malloc(0)) == NULL)
+	if ((c->recvbuf = malloc(0)) == NULL)
 		goto out_bad;
-        if ((c->recvfds = malloc(0)) == NULL)
+	if ((c->recvfds = malloc(0)) == NULL)
 		goto out_bad;
 
 	return c;
@@ -550,7 +560,7 @@ out_bad:
 }
 
 void
-launchd_close(launch_t lh)
+launchd_close(launch_t lh, typeof(close) closefunc)
 {
 	if (lh->sendbuf)
 		free(lh->sendbuf);
@@ -560,21 +570,23 @@ launchd_close(launch_t lh)
 		free(lh->recvbuf);
 	if (lh->recvfds)
 		free(lh->recvfds);
-	close(lh->fd);
+	closefunc(lh->fd);
 	free(lh);
 }
 
-void
-make_msg_and_cmsg(launch_data_t d, void **where, size_t *len, int **fd_where, size_t *fdcnt)
+#define ROUND_TO_64BIT_WORD_SIZE(x)	((x + 7) & ~7)
+
+size_t
+launch_data_pack(launch_data_t d, void *where, size_t len, int *fd_where, size_t *fd_cnt)
 {
-	launch_data_t o_in_w;
-	size_t i;
+	launch_data_t o_in_w = where;
+	size_t i, rsz, total_data_len = sizeof(struct _launch_data);
 
-	*where = realloc(*where, *len + sizeof(struct _launch_data));
+	if (total_data_len > len) {
+		return 0;
+	}
 
-	o_in_w = *where + *len;
-	memset(o_in_w, 0, sizeof(struct _launch_data));
-	*len += sizeof(struct _launch_data);
+	where += total_data_len;
 
 	o_in_w->type = host2big(d->type);
 
@@ -593,45 +605,60 @@ make_msg_and_cmsg(launch_data_t d, void **where, size_t *len, int **fd_where, si
 		break;
 	case LAUNCH_DATA_FD:
 		o_in_w->fd = host2big(d->fd);
-		if (d->fd != -1) {
-			*fd_where = realloc(*fd_where, (*fdcnt + 1) * sizeof(int));
-			(*fd_where)[*fdcnt] = d->fd;
-			(*fdcnt)++;
+		if (fd_where && d->fd != -1) {
+			fd_where[*fd_cnt] = d->fd;
+			(*fd_cnt)++;
 		}
 		break;
 	case LAUNCH_DATA_STRING:
 		o_in_w->string_len = host2big(d->string_len);
-		*where = realloc(*where, *len + strlen(d->string) + 1);
-		memcpy(*where + *len, d->string, strlen(d->string) + 1);
-		*len += strlen(d->string) + 1;
+		total_data_len += ROUND_TO_64BIT_WORD_SIZE(strlen(d->string) + 1);
+		if (total_data_len > len) {
+			return 0;
+		}
+		memcpy(where, d->string, strlen(d->string) + 1);
 		break;
 	case LAUNCH_DATA_OPAQUE:
 		o_in_w->opaque_size = host2big(d->opaque_size);
-		*where = realloc(*where, *len + d->opaque_size);
-		memcpy(*where + *len, d->opaque, d->opaque_size);
-		*len += d->opaque_size;
+		total_data_len += ROUND_TO_64BIT_WORD_SIZE(d->opaque_size);
+		if (total_data_len > len) {
+			return 0;
+		}
+		memcpy(where, d->opaque, d->opaque_size);
 		break;
 	case LAUNCH_DATA_DICTIONARY:
 	case LAUNCH_DATA_ARRAY:
 		o_in_w->_array_cnt = host2big(d->_array_cnt);
-		*where = realloc(*where, *len + (d->_array_cnt * sizeof(launch_data_t)));
-		memcpy(*where + *len, d->_array, d->_array_cnt * sizeof(launch_data_t));
-		*len += d->_array_cnt * sizeof(launch_data_t);
+		total_data_len += d->_array_cnt * sizeof(uint64_t);
+		if (total_data_len > len) {
+			return 0;
+		}
 
-		for (i = 0; i < d->_array_cnt; i++)
-			make_msg_and_cmsg(d->_array[i], where, len, fd_where, fdcnt);
+		where += d->_array_cnt * sizeof(uint64_t);
+
+		for (i = 0; i < d->_array_cnt; i++) {
+			rsz = launch_data_pack(d->_array[i], where, len - total_data_len, fd_where, fd_cnt);
+			if (rsz == 0) {
+				return 0;
+			}
+			where += rsz;
+			total_data_len += rsz;
+		}
 		break;
 	default:
 		break;
 	}
+
+	return total_data_len;
 }
 
-static launch_data_t make_data(launch_t conn, size_t *data_offset, size_t *fdoffset)
+launch_data_t
+launch_data_unpack(void *data, size_t data_size, int *fds, size_t fd_cnt, size_t *data_offset, size_t *fdoffset)
 {
-	launch_data_t r = conn->recvbuf + *data_offset;
+	launch_data_t r = data + *data_offset;
 	size_t i, tmpcnt;
 
-	if ((conn->recvlen - *data_offset) < sizeof(struct _launch_data))
+	if ((data_size - *data_offset) < sizeof(struct _launch_data))
 		return NULL;
 	*data_offset += sizeof(struct _launch_data);
 
@@ -639,14 +666,14 @@ static launch_data_t make_data(launch_t conn, size_t *data_offset, size_t *fdoff
 	case LAUNCH_DATA_DICTIONARY:
 	case LAUNCH_DATA_ARRAY:
 		tmpcnt = big2host(r->_array_cnt);
-		if ((conn->recvlen - *data_offset) < (tmpcnt * sizeof(launch_data_t))) {
+		if ((data_size - *data_offset) < (tmpcnt * sizeof(uint64_t))) {
 			errno = EAGAIN;
 			return NULL;
 		}
-		r->_array = conn->recvbuf + *data_offset;
-		*data_offset += tmpcnt * sizeof(launch_data_t);
+		r->_array = data + *data_offset;
+		*data_offset += tmpcnt * sizeof(uint64_t);
 		for (i = 0; i < tmpcnt; i++) {
-			r->_array[i] = make_data(conn, data_offset, fdoffset);
+			r->_array[i] = launch_data_unpack(data, data_size, fds, fd_cnt, data_offset, fdoffset);
 			if (r->_array[i] == NULL)
 				return NULL;
 		}
@@ -654,27 +681,27 @@ static launch_data_t make_data(launch_t conn, size_t *data_offset, size_t *fdoff
 		break;
 	case LAUNCH_DATA_STRING:
 		tmpcnt = big2host(r->string_len);
-		if ((conn->recvlen - *data_offset) < (tmpcnt + 1)) {
+		if ((data_size - *data_offset) < (tmpcnt + 1)) {
 			errno = EAGAIN;
 			return NULL;
 		}
-		r->string = conn->recvbuf + *data_offset;
+		r->string = data + *data_offset;
 		r->string_len = tmpcnt;
-		*data_offset += tmpcnt + 1;
+		*data_offset += ROUND_TO_64BIT_WORD_SIZE(tmpcnt + 1);
 		break;
 	case LAUNCH_DATA_OPAQUE:
 		tmpcnt = big2host(r->opaque_size);
-		if ((conn->recvlen - *data_offset) < tmpcnt) {
+		if ((data_size - *data_offset) < tmpcnt) {
 			errno = EAGAIN;
 			return NULL;
 		}
-		r->opaque = conn->recvbuf + *data_offset;
+		r->opaque = data + *data_offset;
 		r->opaque_size = tmpcnt;
-		*data_offset += tmpcnt;
+		*data_offset += ROUND_TO_64BIT_WORD_SIZE(tmpcnt);
 		break;
 	case LAUNCH_DATA_FD:
-		if (r->fd != -1) {
-			r->fd = _fd(conn->recvfds[*fdoffset]);
+		if (r->fd != -1 && fd_cnt > *fdoffset) {
+			r->fd = _fd(fds[*fdoffset]);
 			*fdoffset += 1;
 		}
 		break;
@@ -713,22 +740,40 @@ int launchd_msg_send(launch_t lh, launch_data_t d)
 
 	memset(&mh, 0, sizeof(mh));
 
+	/* confirm that the next hack works */
+	assert((d && lh->sendlen == 0) || (!d && lh->sendlen));
+
 	if (d) {
-		uint64_t msglen = lh->sendlen;
+		size_t fd_slots_used = 0;
+		size_t good_enough_size = 10 * 1024 * 1024;
+		uint64_t msglen;
 
-		make_msg_and_cmsg(d, &lh->sendbuf, &lh->sendlen, &lh->sendfds, &lh->sendfdcnt);
+		/* hack, see the above assert to verify "correctness" */
+		free(lh->sendbuf);
+		lh->sendbuf = malloc(good_enough_size);
+		free(lh->sendfds);
+		lh->sendfds = malloc(4 * 1024);
 
-		msglen = (lh->sendlen - msglen) + sizeof(struct launch_msg_header);
+		lh->sendlen = launch_data_pack(d, lh->sendbuf, good_enough_size, lh->sendfds, &fd_slots_used);
+
+		if (lh->sendlen == 0) {
+			errno = ENOMEM;
+			return -1;
+		}
+
+		lh->sendfdcnt = fd_slots_used;
+
+		msglen = lh->sendlen + sizeof(struct launch_msg_header); /* type promotion to make the host2big() macro work right */
 		lmh.len = host2big(msglen);
 		lmh.magic = host2big(LAUNCH_MSG_HEADER_MAGIC);
 
 		iov[0].iov_base = &lmh;
 		iov[0].iov_len = sizeof(lmh);
 		mh.msg_iov = iov;
-        	mh.msg_iovlen = 2;
+		mh.msg_iovlen = 2;
 	} else {
 		mh.msg_iov = iov + 1;
-        	mh.msg_iovlen = 1;
+		mh.msg_iovlen = 1;
 	}
 
 	iov[1].iov_base = lh->sendbuf;
@@ -850,6 +895,12 @@ launch_msg_internal(launch_data_t d)
 {
 	launch_data_t resp = NULL;
 
+	if (d && (launch_data_get_type(d) == LAUNCH_DATA_STRING)
+			&& (strcmp(launch_data_get_string(d), LAUNCH_KEY_GETJOBS) == 0)
+			&& vproc_swap_complex(NULL, VPROC_GSK_ALLJOBS, NULL, &resp) == NULL) {
+		return resp;
+	}
+
 	pthread_once(&_lc_once, launch_client_init);
 
 	if (!_lc) {
@@ -865,7 +916,7 @@ launch_msg_internal(launch_data_t d)
 				goto out;
 		} while (launchd_msg_send(_lc->l, NULL) == -1);
 	}
-       
+
 	while (resp == NULL) {
 		if (d == NULL && launch_data_array_get_count(_lc->async_resp) > 0) {
 			resp = launch_data_array_pop_first(_lc->async_resp);
@@ -899,15 +950,15 @@ int launchd_msg_recv(launch_t lh, void (*cb)(launch_data_t, void *), void *conte
 	struct cmsghdr *cm = alloca(4096); 
 	launch_data_t rmsg = NULL;
 	size_t data_offset, fd_offset;
-        struct msghdr mh;
-        struct iovec iov;
+	struct msghdr mh;
+	struct iovec iov;
 	int r;
 
-        memset(&mh, 0, sizeof(mh));
-        mh.msg_iov = &iov;
-        mh.msg_iovlen = 1;
+	memset(&mh, 0, sizeof(mh));
+	mh.msg_iov = &iov;
+	mh.msg_iovlen = 1;
 
-	lh->recvbuf = realloc(lh->recvbuf, lh->recvlen + 8*1024);
+	lh->recvbuf = reallocf(lh->recvbuf, lh->recvlen + 8*1024);
 
 	iov.iov_base = lh->recvbuf + lh->recvlen;
 	iov.iov_len = 8*1024;
@@ -926,7 +977,7 @@ int launchd_msg_recv(launch_t lh, void (*cb)(launch_data_t, void *), void *conte
 	}
 	lh->recvlen += r;
 	if (mh.msg_controllen > 0) {
-		lh->recvfds = realloc(lh->recvfds, lh->recvfdcnt * sizeof(int) + mh.msg_controllen - sizeof(struct cmsghdr));
+		lh->recvfds = reallocf(lh->recvfds, lh->recvfdcnt * sizeof(int) + mh.msg_controllen - sizeof(struct cmsghdr));
 		memcpy(lh->recvfds + lh->recvfdcnt, CMSG_DATA(cm), mh.msg_controllen - sizeof(struct cmsghdr));
 		lh->recvfdcnt += (mh.msg_controllen - sizeof(struct cmsghdr)) / sizeof(int);
 	}
@@ -953,7 +1004,7 @@ int launchd_msg_recv(launch_t lh, void (*cb)(launch_data_t, void *), void *conte
 			goto need_more_data;
 		}
 
-		if ((rmsg = make_data(lh, &data_offset, &fd_offset)) == NULL) {
+		if ((rmsg = launch_data_unpack(lh->recvbuf, lh->recvlen, lh->recvfds, lh->recvfdcnt, &data_offset, &fd_offset)) == NULL) {
 			errno = EBADRPC;
 			goto out_bad;
 		}
@@ -1016,41 +1067,24 @@ launch_data_t launch_data_copy(launch_data_t o)
 	return r;
 }
 
-void launchd_batch_enable(bool val)
+void
+launchd_batch_enable(bool b)
 {
-	launch_data_t resp, tmp, msg;
+	int64_t val = b;
 
-	tmp = launch_data_alloc(LAUNCH_DATA_BOOL);
-	launch_data_set_bool(tmp, val);
-
-	msg = launch_data_alloc(LAUNCH_DATA_DICTIONARY);
-	launch_data_dict_insert(msg, tmp, LAUNCH_KEY_BATCHCONTROL);
-
-	resp = launch_msg(msg);
-
-	launch_data_free(msg);
-
-	if (resp)
-		launch_data_free(resp);
+	vproc_swap_integer(NULL, VPROC_GSK_GLOBAL_ON_DEMAND, &val, NULL);
 }
 
-bool launchd_batch_query(void)
+bool
+launchd_batch_query(void)
 {
-	launch_data_t resp, msg = launch_data_alloc(LAUNCH_DATA_STRING);
-	bool rval = true;
+	int64_t val;
 
-	launch_data_set_string(msg, LAUNCH_KEY_BATCHQUERY);
-
-	resp = launch_msg(msg);
-
-	launch_data_free(msg);
-
-	if (resp) {
-		if (launch_data_get_type(resp) == LAUNCH_DATA_BOOL)
-			rval = launch_data_get_bool(resp);
-		launch_data_free(resp);
+	if (vproc_swap_integer(NULL, VPROC_GSK_GLOBAL_ON_DEMAND, NULL, &val) == NULL) {
+		return (bool)val;
 	}
-	return rval;
+
+	return false;
 }
 
 static int _fd(int fd)
@@ -1065,7 +1099,7 @@ launch_data_t launch_data_new_errno(int e)
 	launch_data_t r = launch_data_alloc(LAUNCH_DATA_ERRNO);
 
 	if (r)
-	       launch_data_set_errno(r, e);
+		launch_data_set_errno(r, e);
 
 	return r;
 }
@@ -1075,7 +1109,7 @@ launch_data_t launch_data_new_fd(int fd)
 	launch_data_t r = launch_data_alloc(LAUNCH_DATA_FD);
 
 	if (r)
-	       launch_data_set_fd(r, fd);
+		launch_data_set_fd(r, fd);
 
 	return r;
 }
@@ -1085,7 +1119,7 @@ launch_data_t launch_data_new_machport(mach_port_t p)
 	launch_data_t r = launch_data_alloc(LAUNCH_DATA_MACHPORT);
 
 	if (r)
-	       launch_data_set_machport(r, p);
+		launch_data_set_machport(r, p);
 
 	return r;
 }
@@ -1150,78 +1184,29 @@ launch_data_t launch_data_new_opaque(const void *o, size_t os)
 	return r;
 }
 
-static pid_t
-fexecv_as_user(const char *login, uid_t u, gid_t g, char *const argv[])
+void
+load_launchd_jobs_at_loginwindow_prompt(int flags __attribute__((unused)), ...)
 {
-	int i, dtsz;
-	pid_t p;
-
-	if ((p = fork()) != 0)
-		return p;
-
-	chdir("/");
-
-	seteuid(0);
-	setegid(0);
-	initgroups(login, g);
-	setgid(g);
-	setuid(u);
-
-	dtsz = getdtablesize();
-
-	for (i = STDERR_FILENO + 1; i < dtsz; i++)
-		close(i);
-
-	execv(argv[0], argv);
-	_exit(EXIT_FAILURE);
+	_vprocmgr_init("LoginWindow");
 }
 
 pid_t
-create_and_switch_to_per_session_launchd(const char *login, int flags, ...)
+create_and_switch_to_per_session_launchd(const char *login __attribute__((unused)), int flags __attribute__((unused)), ...)
 {
-	static char *const ldargv[] = { "/sbin/launchd", "-S", "Aqua", NULL };
-	char *largv[] = { "/bin/launchctl", "load", "-S", "Aqua", "-D", "all", "/etc/mach_init_per_user.d", NULL };
 	mach_port_t bezel_ui_server;
-	struct passwd *pwe;
 	struct stat sb;
-	int wstatus;
-	name_t sp;
-	pid_t p, ldp;
-	uid_t u;
-	gid_t g;
+	uid_t target_user = geteuid() ? geteuid() : getuid();
 
-	if ((pwe = getpwnam(login)) == NULL)
+	if (_vprocmgr_move_subset_to_user(target_user, "Aqua")) {
 		return -1;
-
-	u = pwe->pw_uid;
-	g = pwe->pw_gid;
-
-	if ((ldp = fexecv_as_user(login, u, g, ldargv)) == -1)
-		return -1;
-
-	while (bootstrap_getsocket(bootstrap_port, sp) != BOOTSTRAP_SUCCESS)
-		usleep(20000);
-
-	setenv(LAUNCHD_SOCKET_ENV, sp, 1);
-
-	if (flags & LOAD_ONLY_SAFEMODE_LAUNCHAGENTS)
-		largv[5] = "system";
-
-	if ((p = fexecv_as_user(login, u, g, largv)) == -1)
-		return -1;
-
-	if (waitpid(p, &wstatus, 0) != p)
-		return -1;
-
-	if (!(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0))
-		return -1;
+	}
 
 #define BEZEL_UI_PATH "/System/Library/LoginPlugins/BezelServices.loginPlugin/Contents/Resources/BezelUI/BezelUIServer"
 #define BEZEL_UI_PLIST "/System/Library/LaunchAgents/com.apple.BezelUIServer.plist"
 #define BEZEL_UI_SERVICE "BezelUI"
 
 	if (!(stat(BEZEL_UI_PLIST, &sb) == 0 && S_ISREG(sb.st_mode))) {
-		if (bootstrap_create_server(bootstrap_port, BEZEL_UI_PATH, u, true, &bezel_ui_server) == BOOTSTRAP_SUCCESS) {
+		if (bootstrap_create_server(bootstrap_port, BEZEL_UI_PATH, target_user, true, &bezel_ui_server) == BOOTSTRAP_SUCCESS) {
 			mach_port_t srv;
 
 			if (bootstrap_create_service(bezel_ui_server, BEZEL_UI_SERVICE, &srv) == BOOTSTRAP_SUCCESS) {
@@ -1232,5 +1217,5 @@ create_and_switch_to_per_session_launchd(const char *login, int flags, ...)
 		}
 	}
 
-	return ldp;
+	return 1;
 }
