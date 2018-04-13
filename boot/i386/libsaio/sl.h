@@ -22,35 +22,41 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef __LIBSAIO_CACHE_H
-#define __LIBSAIO_CACHE_H
+#ifndef __LIBSAIO_SL_H
+#define __LIBSAIO_SL_H
 
-typedef struct cache_item {
-    unsigned int	referenced;
-    int			key1, key2;
-    char		storage[0];
-} item_t;
+#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/vnode.h>
+#include "libsaio.h"
 
-typedef struct cache {
-    int			nitems;
-    int			item_size;
-    char		storage[0];
-} cache_t;
+#define SWAP_BE16(x)  NXSwapBigShortToHost(x)
+#define SWAP_BE32(x)  NXSwapBigLongToHost(x)
+#define SWAP_BE64(x)  NXSwapBigLongLongToHost(x)
 
-extern cache_t *cacheInit(
-    int nitems,
-    int item_size
-);
+// File Permissions and Types
+enum {
+    kPermOtherExecute  = 1 << 0,
+    kPermOtherWrite    = 1 << 1,
+    kPermOtherRead     = 1 << 2,
+    kPermGroupExecute  = 1 << 3,
+    kPermGroupWrite    = 1 << 4,
+    kPermGroupRead     = 1 << 5,
+    kPermOwnerExecute  = 1 << 6,
+    kPermOwnerWrite    = 1 << 7,
+    kPermOwnerRead     = 1 << 8,
+    kPermMask          = 0x1FF,
+    kOwnerNotRoot      = 1 << 9,
+    kFileTypeUnknown   = 0x0 << 16,
+    kFileTypeFlat      = 0x1 << 16,
+    kFileTypeDirectory = 0x2 << 16,
+    kFileTypeLink      = 0x3 << 16,
+    kFileTypeMask      = 0x3 << 16
+};
 
-extern int cacheFind(
-    cache_t *cp,
-    int key1,
-    int key2,
-    char **ip
-);
+#define Seek(c, p)     diskSeek(c, p);
+#define Read(c, a, l)  diskRead(c, a, l);
 
-extern void cacheFlush(
-    cache_t *cp
-);
+extern void * gFSLoadAddress;
 
-#endif /* !__LIBSAIO_CACHE_H */
+#endif /* !__LIBSAIO_SL_H */
