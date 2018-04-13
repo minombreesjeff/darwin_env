@@ -54,6 +54,7 @@ static HFSMasterDirectoryBlock *gHFSMDB;
 static char                    *gHFSPlusHeader;
 static HFSPlusVolumeHeader     *gHFSPlus;
 static char                    *gLinkTemp;
+static long long               gVolID;
 static char                    *gTempStr;
 
 #else  /* !__i386__ */
@@ -71,10 +72,11 @@ static HFSMasterDirectoryBlock *gHFSMDB =(HFSMasterDirectoryBlock*)gHFSMdbVib;
 static char                    gHFSPlusHeader[kBlockSize];
 static HFSPlusVolumeHeader     *gHFSPlus =(HFSPlusVolumeHeader*)gHFSPlusHeader;
 static char                    gLinkTemp[64];
+static long long               gVolID;
 
 #endif /* !__i386__ */
 
-static long ReadFile(void *file, long *length, void *base, long offset);
+static long ReadFile(void *file, unsigned long *length, void *base, long offset);
 static long GetCatalogEntryInfo(void *entry, long *flags, long *time,
                                 FinderInfo *finderInfo, long *infoValid);
 static long ResolvePathToCatalogEntry(char *filePath, long *flags,
@@ -102,7 +104,7 @@ static long CompareHFSPlusCatalogKeys(void *key, void *testKey);
 static long CompareHFSExtentsKeys(void *key, void *testKey);
 static long CompareHFSPlusExtentsKeys(void *key, void *testKey);
 
-extern long FastRelString(char *str1, char *str2);
+extern long FastRelString(u_int8_t *str1, u_int8_t *str2);
 extern long FastUnicodeCompare(u_int16_t *uniStr1, u_int32_t len1,
                 u_int16_t *uniStr2, u_int32_t len2);
 extern long BinaryUnicodeCompare(u_int16_t *uniStr1, u_int32_t len1,
@@ -166,6 +168,9 @@ long HFSInitPartition(CICell ih)
             CacheInit(ih, gCacheBlockSize);
             gCurrentIH = ih;
 
+            // grab the 64 bit volume ID
+            bcopy(&gHFSMDB->drFndrInfo[6], &gVolID, 8);
+
             // Get the Catalog BTree node size.
             extent     = (HFSExtentDescriptor *)&gHFSMDB->drCTExtRec;
             extentSize = SWAP_BE32(gHFSMDB->drCTFlSize);
@@ -206,6 +211,9 @@ long HFSInitPartition(CICell ih)
     gCacheBlockSize = gBlockSize = SWAP_BE32(gHFSPlus->blockSize);
     CacheInit(ih, gCacheBlockSize);
     gCurrentIH = ih;
+
+    // grab the 64 bit volume ID
+    bcopy(&gHFSPlus->finderInfo[24], &gVolID, 8);
 
     // Get the Catalog BTree node size.
     extent     = &gHFSPlus->catalogFile.extents;
@@ -386,10 +394,17 @@ HFSGetFileBlock(CICell ih, char *filePath, unsigned long long *firstBlock)
     return 0;
 }
 
+long HFSGetUUID(CICell ih, char *uuidStr)
+{
+    if (HFSInitPartition(ih) == -1) return -1;
+    if (gVolID == 0LL)  return -1;
+
+    return CreateUUIDString((uint8_t*)(&gVolID), sizeof(gVolID), uuidStr);
+}
 
 // Private Functions
 
-static long ReadFile(void * file, long * length, void * base, long offset)
+static long ReadFile(void * file, unsigned long * length, void * base, long offset)
 {
     void               *extents;
     long               fileID;
@@ -399,7 +414,7 @@ static long ReadFile(void * file, long * length, void * base, long offset)
 
     if (gIsHFSPlus) {
         fileID  = SWAP_BE32(hfsPlusFile->fileID);
-        fileLength = SWAP_BE64(hfsPlusFile->dataFork.logicalSize);
+        fileLength = (long)SWAP_BE64(hfsPlusFile->dataFork.logicalSize);
         extents = &hfsPlusFile->dataFork.extents;
     } else {
         fileID  = SWAP_BE32(hfsFile->fileID);
@@ -412,17 +427,14 @@ static long ReadFile(void * file, long * length, void * base, long offset)
         return -1;
     }
 
-    if (*length == 0 || (offset + *length) > fileLength) {
+    if ((*length == 0) || ((offset + *length) > fileLength)) {
         *length = fileLength - offset;
     }
 
-    // XXX
-#if 0
     if (*length > kLoadSize) {
         printf("File is too large.\n");
         return -1;
     }
-#endif
 
     *length = ReadExtent((char *)extents, fileLength, fileID,
                          offset, *length, (char *)base, 0);
@@ -496,7 +508,7 @@ static long ResolvePathToCatalogEntry(char * filePath, long * flags,
                                       void * entry, long dirID, long * dirIndex)
 {
     char                 *restPath;
-    long                 result, cnt, subFolderID, tmpDirIndex;
+    long                 result, cnt, subFolderID = 0, tmpDirIndex;
     HFSPlusCatalogFile   *hfsPlusFile;
 
     // Copy the file name to gTempStr
@@ -523,10 +535,11 @@ static long ResolvePathToCatalogEntry(char * filePath, long * flags,
             subFolderID = SWAP_BE32(((HFSPlusCatalogFolder *)entry)->folderID);
         else
             subFolderID = SWAP_BE32(((HFSCatalogFolder *)entry)->folderID);
+    }
 
+    if ((*flags & kFileTypeMask) == kFileTypeDirectory)
         result = ResolvePathToCatalogEntry(restPath, flags, entry,
                                            subFolderID, dirIndex);
-    }
 
     if (gIsHFSPlus && ((*flags & kFileTypeMask) == kFileTypeFlat)) {
         hfsPlusFile = (HFSPlusCatalogFile *)entry;
@@ -577,10 +590,10 @@ static long GetCatalogEntry(long * dirIndex, char ** name,
     if (gIsHFSPlus) {
         utf_encodestr(((HFSPlusCatalogKey *)testKey)->nodeName.unicode,
                       SWAP_BE16(((HFSPlusCatalogKey *)testKey)->nodeName.length),
-                      gTempStr, 256, OSBigEndian);
+                      (u_int8_t *)gTempStr, 256, OSBigEndian);
     } else {
         strncpy(gTempStr,
-                &((HFSCatalogKey *)testKey)->nodeName[1],
+                (const char *)&((HFSCatalogKey *)testKey)->nodeName[1],
                  ((HFSCatalogKey *)testKey)->nodeName[0]);
     }
     *name = gTempStr;
@@ -612,14 +625,14 @@ static long ReadCatalogEntry(char * fileName, long dirID,
         hfsPlusKey->parentID = SWAP_BE32(dirID);
         length = strlen(fileName);
         if (length > 255) length = 255;
-        utf_decodestr(fileName, hfsPlusKey->nodeName.unicode,
+        utf_decodestr((u_int8_t *)fileName, hfsPlusKey->nodeName.unicode,
                       &(hfsPlusKey->nodeName.length), 512, OSBigEndian);
     } else {
         hfsKey->parentID = SWAP_BE32(dirID);
         length = strlen(fileName);
         if (length > 31) length = 31;
         hfsKey->nodeName[0] = length;
-        strncpy(hfsKey->nodeName + 1, fileName, length);
+        strncpy((char *)(hfsKey->nodeName + 1), fileName, length);
     }
 
     return ReadBTreeEntry(kBTreeCatalog, &key, entry, dirIndex);

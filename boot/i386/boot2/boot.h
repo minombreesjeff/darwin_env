@@ -45,8 +45,12 @@
 #define kBootDeviceKey      "Boot Device"
 #define kTimeoutKey         "Timeout"
 #define kRootDeviceKey      "rd"
+#define kBootUUIDKey        "boot-uuid"
 #define kPlatformKey        "platform"
 #define kACPIKey            "acpi"
+#define kCDROMPromptKey     "CD-ROM Prompt"
+#define kCDROMOptionKey     "CD-ROM Option Key"
+
 #define kDefaultKernel      "mach_kernel"
 
 /*
@@ -54,14 +58,16 @@
  *
  */
 #define kVerboseModeFlag     "-v"
-#define kSafeModeFlag        "-f"
+#define kSafeModeFlag        "-x"
+#define kOldSafeModeFlag     "-f"
 #define kIgnoreBootFileFlag  "-F"
 #define kSingleUserModeFlag  "-s"
 
 /*
  * Booter behavior control
  */
-#define kBootTimeout         8
+#define kBootTimeout         -1
+#define kCDBootTimeout       8
 
 /*
  * A global set by boot() to record the device that the booter
@@ -75,6 +81,7 @@ extern char bootPrompt[];
 extern BOOL gOverrideKernel;
 extern char *gPlatformName;
 extern char gMKextName[];
+extern char gRootDevice[];
 extern BVRef gBootVolume;
 
 // Boot Modes
@@ -111,6 +118,7 @@ convertImage( unsigned short width,
               unsigned char **newImageData );
 extern char * decodeRLE( const void * rleData, int rleBlocks, int outBytes );
 extern void drawBootGraphics(void);
+extern int getVideoMode(void);
 
 /*
  * drivers.c

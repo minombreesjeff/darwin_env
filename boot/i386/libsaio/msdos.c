@@ -129,7 +129,7 @@ MSDOSGetDescription(CICell ih, char *str, long strMaxLen)
     int 		rootDirSectors;
     int 		i, finished;
     char                *buf;
-    unsigned char	label[LABEL_LENGTH+1];
+    char	        label[LABEL_LENGTH+1];
 
     DLOG(0);
     buf = (char *)malloc(MAX_DOS_BLOCKSIZE);
@@ -197,7 +197,7 @@ MSDOSGetDescription(CICell ih, char *str, long strMaxLen)
         u_int8_t *rootDirBuffer;
         int j;
 
-        rootDirBuffer = (char *)malloc(MAX_DOS_BLOCKSIZE);
+        rootDirBuffer = (u_int8_t *)malloc(MAX_DOS_BLOCKSIZE);
     	
         DLOG(8);
         firstRootDirSecNum = OSSwapLittleToHostInt16(b33->bpbResSectors) +
@@ -216,7 +216,7 @@ MSDOSGetDescription(CICell ih, char *str, long strMaxLen)
                 else if (dirp->deAttributes == ATTR_WIN95)
                     continue;
                 else if (dirp->deAttributes & ATTR_VOLUME) {
-                    strncpy(label, dirp->deName, LABEL_LENGTH);
+                    strncpy(label, (char *)dirp->deName, LABEL_LENGTH);
                     finished = true;
                     break;
                 }
@@ -273,7 +273,7 @@ MSDOSGetDescription(CICell ih, char *str, long strMaxLen)
                     continue;
                 else if (dirp->deAttributes & ATTR_VOLUME) {
                     DLOG(0x31);
-                    strncpy(label, dirp->deName, LABEL_LENGTH);
+                    strncpy(label, (char *)dirp->deName, LABEL_LENGTH);
                     finished = true;
                     break;
                 }
@@ -310,10 +310,10 @@ MSDOSGetDescription(CICell ih, char *str, long strMaxLen)
     /* else look in the boot blocks */
     if (str[0] == '\0') {
         if (OSSwapLittleToHostInt16(b50->bpbRootDirEnts) == 0) { /* It's FAT32 */
-            strncpy(label, ((struct extboot *)bsp->bs710.bsExt)->exVolumeLabel, LABEL_LENGTH);
+            strncpy(label, (char *)((struct extboot *)bsp->bs710.bsExt)->exVolumeLabel, LABEL_LENGTH);
         }
         else if (((struct extboot *)bsp->bs50.bsExt)->exBootSignature == EXBOOTSIG) {
-            strncpy(label, ((struct extboot *)bsp->bs50.bsExt)->exVolumeLabel, LABEL_LENGTH);
+            strncpy(label, (char *)((struct extboot *)bsp->bs50.bsExt)->exVolumeLabel, LABEL_LENGTH);
         }
     }
 

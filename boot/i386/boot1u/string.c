@@ -27,7 +27,7 @@
 
 void * memset(void * dst, int val, size_t len)
 {
-    asm( "rep; stosb"
+    asm volatile ( "rep; stosb"
        : "=c" (len), "=D" (dst)
        : "0" (len), "1" (dst), "a" (val)
        : "memory" );
@@ -37,7 +37,7 @@ void * memset(void * dst, int val, size_t len)
 
 void * memcpy(void * dst, const void * src, size_t len)
 {
-    asm( "rep; movsb"
+    asm volatile ( "rep; movsb"
        : "=c" (len), "=D" (dst), "=S" (src)
        : "0" (len), "1" (dst), "2" (src)
        : "memory" );

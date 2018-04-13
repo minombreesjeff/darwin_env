@@ -10,7 +10,7 @@ MANINSTALLDIR = $(SYMROOT)
 INSTALLDIR = $(SYMROOT)
 
 OPTIM = -O2
-CFLAGS	= $(OPTIM) -g  -Wmost -Werror
+CFLAGS	= $(OPTIM) -g  -Wmost -Werror -fno-builtin
 DEFINES=
 INC = -I.
 ifneq "" "$(wildcard /bin/mkdirs)"

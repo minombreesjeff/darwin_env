@@ -78,4 +78,28 @@ typedef struct {
 
 #define BASE_HD_DRIVE 0x80
 
+#if 0
+/* 
+ * ACPI defined memory range types.
+ */
+enum {
+    kMemoryRangeUsable   = 1,    // RAM usable by the OS.
+    kMemoryRangeReserved = 2,    // Reserved. (Do not use)
+    kMemoryRangeACPI     = 3,    // ACPI tables. Can be reclaimed.
+    kMemoryRangeNVS      = 4,    // ACPI NVS memory. (Do not use)
+
+    /* Undefined types should be treated as kMemoryRangeReserved */
+}; 
+#endif
+
+/*
+ * Memory range descriptor.
+ */
+typedef struct MemoryRange {
+    unsigned long long base;     // 64-bit base address
+    unsigned long long length;   // 64-bit length in bytes
+    unsigned long      type;     // type of memory range
+    unsigned long      reserved;
+} MemoryRange;
+
 #endif /* !__LIBSAIO_BIOS_H */

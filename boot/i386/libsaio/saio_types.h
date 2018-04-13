@@ -57,6 +57,52 @@ struct driveParameters {
     int totalDrives;
 };
 
+
+/*
+ * BIOS drive information.
+ */
+struct boot_drive_info {
+    struct drive_params {
+	unsigned short buf_size;
+	unsigned short info_flags;
+	unsigned long  phys_cyls;
+	unsigned long  phys_heads;
+	unsigned long  phys_spt;
+	unsigned long long phys_sectors;
+	unsigned short phys_nbps;
+	unsigned short dpte_offset;
+	unsigned short dpte_segment;
+	unsigned short key;
+	unsigned char  path_len;
+	unsigned char  reserved1;
+	unsigned short reserved2;
+	unsigned char  bus_type[4];
+	unsigned char  interface_type[8];
+	unsigned char  interface_path[8];
+	unsigned char  dev_path[8];
+	unsigned char  reserved3;
+	unsigned char  checksum;
+    } params __attribute__((packed));
+    struct drive_dpte {
+	unsigned short io_port_base;
+	unsigned short control_port_base;
+	unsigned char  head_flags;
+	unsigned char  vendor_info;
+	unsigned char  irq         : 4;
+	unsigned char  irq_unused  : 4;
+	unsigned char  block_count;
+	unsigned char  dma_channel : 4;
+	unsigned char  dma_type    : 4;
+	unsigned char  pio_type    : 4;
+	unsigned char  pio_unused  : 4;
+	unsigned short option_flags;
+	unsigned short reserved;
+	unsigned char  revision;
+	unsigned char  checksum;
+    } dpte __attribute__((packed));
+} __attribute__((packed));
+typedef struct boot_drive_info boot_drive_info_t;
+
 struct driveInfo {
     boot_drive_info_t di;
     int uses_ebios;
@@ -80,6 +126,7 @@ typedef long (*FSGetFileBlock)(CICell ih, char *filePath, unsigned long long *fi
 typedef long (*FSGetDirEntry)(CICell ih, char * dirPath, long * dirIndex,
                               char ** name, long * flags, long * time,
                               FinderInfo * finderInfo, long * infoValid);
+typedef long (* FSGetUUID)(CICell ih, char *uuidStr);
 typedef void (*BVGetDescription)(CICell ih, char * str, long strMaxLen);
 
 struct iob {
@@ -115,10 +162,12 @@ struct BootVolume {
     unsigned int     part_boff;       /* partition block offset */
     unsigned int     part_type;       /* partition type */
     unsigned int     fs_boff;         /* 1st block # of next read */
+    unsigned int     fs_byteoff;      /* Byte offset for read within block */
     FSLoadFile       fs_loadfile;     /* FSLoadFile function */
     FSReadFile       fs_readfile;     /* FSReadFile function */
     FSGetDirEntry    fs_getdirentry;  /* FSGetDirEntry function */
     FSGetFileBlock   fs_getfileblock; /* FSGetFileBlock function */
+    FSGetUUID        fs_getuuid;      /* FSGetUUID function */
     unsigned int     bps;             /* bytes per sector for this device */
     char             name[BVSTRLEN];  /* (name of partition) */
     char             type_name[BVSTRLEN]; /* (type of partition, eg. Apple_HFS) */
@@ -139,6 +188,7 @@ enum {
     kBIOSDevTypeMask      = 0xF0,
     kBIOSDevMask          = 0xFF
 };
+
 
 //#define BIOS_DEV_TYPE(d)  ((d) & kBIOSDevTypeMask)
 #define BIOS_DEV_UNIT(bvr)  ((bvr)->biosdev - (bvr)->type)
@@ -167,5 +217,10 @@ enum {
     kNetworkDeviceType = kBIOSDevTypeNetwork,
     kBlockDeviceType   = kBIOSDevTypeHardDrive
 } gBootFileType_t;
+
+enum {
+    kCursorTypeHidden    = 0x0100,
+    kCursorTypeUnderline = 0x0607
+};
 
 #endif /* !__LIBSAIO_SAIO_TYPES_H */

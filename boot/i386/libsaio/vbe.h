@@ -242,7 +242,7 @@ typedef struct {
     unsigned char   Reserved[40];
 } VBECRTCInfoBlock;
 
-#pragma options align=reset
+#pragma pack()
 
 /*
  * Defined flags for 'Flags' field in VBECRTCInfoBlock.

@@ -159,7 +159,10 @@ long LoadDrivers( char * dirSpec )
 
     if ( gBootFileType == kNetworkDeviceType )
     {
-        NetLoadDrivers(dirSpec);
+        if (NetLoadDrivers(dirSpec) != 0) {
+            error("Could not load drivers from the network\n");
+            return -1;
+        }
     }
     else if ( gBootFileType == kBlockDeviceType )
     {
@@ -284,7 +287,7 @@ NetLoadDrivers( char * dirSpec )
 #endif
 
     // INTEL modification
-    sprintf(gDriverSpec, "%s%s.mkext", dirSpec, bootArgs->bootFile);
+    sprintf(gDriverSpec, "%s%s.mkext", dirSpec, bootInfo->bootFile);
     
     verbose("NetLoadDrivers: Loading from [%s]\n", gDriverSpec);
     
@@ -307,22 +310,20 @@ LoadDriverMKext( char * fileSpec )
     unsigned long    driversAddr, driversLength;
     long             length;
     char             segName[32];
-    DriversPackage * package = (DriversPackage *)kLoadAddr;
+    DriversPackage * package;
 
 #define GetPackageElement(e)     OSSwapBigToHostInt32(package->e)
 
     // Load the MKext.
-    length = LoadFile(fileSpec);
+    length = LoadThinFatFile(fileSpec, (void **)&package);
     if (length == -1) return -1;
-
-    ThinFatFile((void **)&package, &length);
 
     // Verify the MKext.
     if (( GetPackageElement(signature1) != kDriverPackageSignature1) ||
         ( GetPackageElement(signature2) != kDriverPackageSignature2) ||
         ( GetPackageElement(length)      > kLoadSize )               ||
         ( GetPackageElement(alder32)    !=
-          Alder32((char *)&package->version, GetPackageElement(length) - 0x10) ) )
+          Alder32((unsigned char *)&package->version, GetPackageElement(length) - 0x10) ) )
     {
         return -1;
     }
@@ -435,53 +436,6 @@ LoadDriverPList( char * dirSpec, char * name, long bundleType )
     return ret;
 }
 
-#if 0
-//==========================================================================
-// ThinFatFile
-// Checks the loaded file for a fat header; if present, updates
-// loadAddr and length to be the portion of the fat file relevant
-// to the current architecture; otherwise leaves them unchanged.
-
-static void
-ThinFatFile(void **loadAddrP, unsigned long *lengthP)
-{
-    // Check for fat files.
-    struct fat_header *fhp = (struct fat_header *)kLoadAddr;
-    struct fat_arch *fap = (struct fat_arch *)((void *)kLoadAddr +
-					       sizeof(struct fat_header));
-    int nfat, swapped;
-    void *loadAddr = 0;
-    unsigned long length = 0;
-
-    if (fhp->magic == FAT_MAGIC) {
-	nfat = fhp->nfat_arch;
-	swapped = 0;
-    } else if (fhp->magic == FAT_CIGAM) {
-	nfat = OSSwapInt32(fhp->nfat_arch);
-	swapped = 1;
-    } else {
-	nfat = 0;
-	swapped = 0;
-    }
-
-    for (; nfat > 0; nfat--, fap++) {
-	if (swapped) {
-	    fap->cputype = OSSwapInt32(fap->cputype);
-	    fap->offset = OSSwapInt32(fap->offset);
-	    fap->size = OSSwapInt32(fap->size);
-	}
-	if (fap->cputype == CPU_TYPE_I386) {
-	    loadAddr = (void *)kLoadAddr + fap->offset;
-	    length = fap->size;
-	    break;
-	}
-    }
-    if (loadAddr)
-	*loadAddrP = loadAddr;
-    if (length)
-	*lengthP = length;
-}
-#endif
 
 //==========================================================================
 // LoadMatchedModules
@@ -494,6 +448,8 @@ LoadMatchedModules( void )
     char          *fileName, segName[32];
     DriverInfoPtr driver;
     long          length, driverAddr, driverLength;
+    void          *driverModuleAddr = 0;
+
   
     module = gModuleHead;
 
@@ -507,18 +463,21 @@ LoadMatchedModules( void )
             {
                 fileName = prop->string;
                 sprintf(gFileSpec, "%s%s", module->driverPath, fileName);
-                length = LoadFile(gFileSpec);
+                length = LoadThinFatFile(gFileSpec, &driverModuleAddr);
+                //length = LoadFile(gFileSpec);
+                //driverModuleAddr = (void *)kLoadAddr;
+                //printf("%s length = %d addr = 0x%x\n", gFileSpec, length, driverModuleAddr); getc();
             }
             else
                 length = 0;
 
             if (length != -1)
             {
-		void *driverModuleAddr = (void *)kLoadAddr;
-                if (length != 0)
-                {
-		    ThinFatFile(&driverModuleAddr, &length);
-		}
+		//driverModuleAddr = (void *)kLoadAddr;
+                //if (length != 0)
+                //{
+		//    ThinFatFile(&driverModuleAddr, &length);
+		//}
 
                 // Make make in the image area.
                 driverLength = sizeof(DriverInfo) + module->plistLength + length;

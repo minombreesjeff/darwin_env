@@ -96,3 +96,47 @@ void enableA20()
     while (inb(PORT_B) & KB_INFULL);   /* wait until done */
 }
 
+static inline void
+do_cpuid(uint32_t selector, uint32_t *data)
+{
+	asm volatile ("cpuid"
+		: "=a" (data[0]),
+		  "=b" (data[1]),
+		  "=c" (data[2]),
+		  "=d" (data[3])
+		: "a"(selector));
+}
+
+
+//==========================================================================
+// Check to see that this is a supported hardware configuration.
+// If this hardware is supported, return 0.
+// If this hardware is not supported, return an error code.
+
+int
+checkForSupportedHardware()
+{
+    uint32_t cpuid_result[4];
+
+    do_cpuid(1, cpuid_result);
+    if ((cpuid_result[3] & 0x04000000) == 0) {
+        // Missing SSE2
+        return 2;
+    }
+    return 0;
+}
+
+#ifndef BOOT1
+
+//==========================================================================
+// Return the platform name for this hardware.
+//
+
+void
+getPlatformName(char *nameBuf)
+{
+    strcpy(nameBuf, "ACPI");
+}
+
+#endif
+

@@ -96,7 +96,7 @@ int getchar()
 int printf(const char * fmt, ...)
 {
     va_list ap;
-    if (bootArgs->graphicsMode != TEXT_MODE) return -1;
+    if (bootArgs->Video.v_display != VGA_TEXT_MODE) return -1;
     va_start(ap, fmt);
     prf(fmt, ap, putchar, 0);
     va_end(ap);
@@ -126,8 +126,14 @@ int error(const char * fmt, ...)
     return(0);
 }
 
-void stop(const char * msg)
+void stop(const char * fmt, ...)
 {
-    error("\n%s\n", msg);
+    va_list ap;
+
+    printf("\n");
+    va_start(ap, fmt);
+    prf(fmt, ap, putchar, 0);
+    va_end(ap);
+    printf("\n");
     halt();
 }

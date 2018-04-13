@@ -404,11 +404,18 @@ BOOL getIntForKey(
 {
     const char *val;
     int size, sum;
+    BOOL negative = NO;
     
     if (getValueForKey(key, &val, &size)) {
+        if (*val == '-') {
+            negative = YES;
+            val++;
+        }
 	for (sum = 0; size > 0; size--) {
+            if (*val < '0' || *val > '9') return NO;
 	    sum = (sum * 10) + (*val++ - '0');
 	}
+        if (negative) sum = -sum;
 	*value = sum;
 	return YES;
     }
@@ -421,9 +428,9 @@ BOOL getValueForKey(
     int *size
 )
 {
-    if (getValueForBootKey(bootArgs->bootString, key, val, size))
+    if (getValueForBootKey(bootArgs->CommandLine, key, val, size))
 	return YES;
-    else if (getValueForConfigTableKey(bootArgs->config, key, val, size))
+    else if (getValueForConfigTableKey(bootInfo->config, key, val, size))
 	return YES;
 
     return NO;
@@ -443,13 +450,13 @@ int sysConfigValid;
 int
 loadConfigFile(const char *configFile)
 {
-    char *configPtr = bootArgs->config;
+    char *configPtr = bootInfo->config;
     int fd, count;
     
     /* Read config file into memory */
     if ((fd = open(configFile, 0)) >= 0)
     {
-        if ((configPtr - bootArgs->config) > CONFIG_SIZE) {
+        if ((configPtr - bootInfo->config) > CONFIG_SIZE) {
             error("No room in memory for config files\n");
             close(fd);
             return -1;
@@ -463,7 +470,7 @@ loadConfigFile(const char *configFile)
 	*configPtr++ = 0;
 	*configPtr = 0;
 
-        bootArgs->configEnd = configPtr;
+        bootInfo->configEnd = configPtr;
 
 	return 0;
     } else {
@@ -484,7 +491,7 @@ loadConfigFile(const char *configFile)
 void
 printSystemConfig(void)
 {
-    char *p1 = bootArgs->config;
+    char *p1 = bootInfo->config;
     char *p2 = p1, tmp;
 
     while (*p1 != '\0') {
@@ -602,7 +609,7 @@ loadSystemConfig(
 	sysConfigValid = 1;
         // Check for XML file;
         // if not XML, gConfigDict will remain 0.
-        ParseXMLFile(bootArgs->config, &gConfigDict);
+        ParseXMLFile(bootInfo->config, &gConfigDict);
     }
     free(buf);
     return (ret < 0 ? ret : doDefault);

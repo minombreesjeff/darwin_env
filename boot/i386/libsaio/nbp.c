@@ -64,7 +64,7 @@ static long NBPLoadFile(CICell ih, char * filePath)
     nbpCommandTFTPReadFile_s  cmd;
 	UInt32                    ret;
 
-	strcpy(cmd.filename, filePath);
+	strcpy((char *)cmd.filename, filePath);
 	cmd.status     = nbpStatusFailed;
 	cmd.bufferSize = TFTP_LEN;
 	cmd.buffer     = TFTP_ADDR;

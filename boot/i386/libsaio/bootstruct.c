@@ -29,104 +29,76 @@
 #include "libsaio.h"
 #include "bootstruct.h"
 
-// CMOS access ports in I/O space.
-//
-#define CMOSADDR    0x70
-#define CMOSDATA    0x71
-#define HDTYPE      0x12
-
 /*==========================================================================
- * Returns the number of active ATA drives since these will increment the
- * bios device numbers of SCSI drives.
- */
-static int countIDEDisks()
-{
-    int            count = 0;
-    unsigned short hdtype;
-
-#if DEBUG
-    struct driveParameters param;
-
-    printf("Reading drive parameters...\n");
-    readDriveParameters(0x80, &param);
-    printf("%d fixed disk drive(s) installed\n", param.totalDrives);
-    for (count = 0; count < 256; count++)
-    {
-        if (readDriveParameters(count + 0x80, &param))
-            break;
-        else
-        {
-            printf("Drive %d: %d cyls, %d heads, %d sectors\n",
-                   count, param.cylinders, param.heads, param.sectors);
-        }
-    }
-    outb(CMOSADDR, 0x11);
-    printf("CMOS addr 0x11 = %x\n",inb(CMOSDATA));
-    outb(CMOSADDR, 0x12);
-    printf("CMOS addr 0x12 = %x\n",inb(CMOSDATA));
-    return count;
-#endif
-
-    outb( CMOSADDR, HDTYPE );
-    hdtype = (unsigned short) inb( CMOSDATA );
-
-    if (hdtype & 0xF0) count++;
-    if (hdtype & 0x0F) count++;
-    return count;
-}
-
-/*==========================================================================
- * Initialize the 'kernBootStruct'. A structure of parameters passed to
+ * Initialize the structure of parameters passed to
  * the kernel by the booter.
  */
 
-KernelBootArgs_t *bootArgs;
+boot_args         *bootArgs;
+PrivateBootInfo_t *bootInfo;
+Node              *gMemoryMapNode;
+
+static char platformName[64];
 
 void initKernBootStruct( int biosdev )
 {
+    Node *node;
+    int nameLen;
     static int init_done = 0;
-
-    bootArgs = (KernelBootArgs_t *)KERNSTRUCT_ADDR;
 
     if ( !init_done )
     {
-        bzero(bootArgs, sizeof(KernelBootArgs_t));
+        bootArgs = (boot_args *)malloc(sizeof(boot_args));
+        bootInfo = (PrivateBootInfo_t *)malloc(sizeof(PrivateBootInfo_t));
+        if (bootArgs == 0 || bootInfo == 0)
+            stop("Couldn't allocate boot info\n");
+
+        bzero(bootArgs, sizeof(boot_args));
+        bzero(bootInfo, sizeof(PrivateBootInfo_t));
 
         // Get system memory map. Also update the size of the
         // conventional/extended memory for backwards compatibility.
 
-        bootArgs->memoryMapCount =
-            getMemoryMap( bootArgs->memoryMap, kMemoryMapCountMax,
-                          (unsigned long *) &bootArgs->convmem,
-                          (unsigned long *) &bootArgs->extmem );
+        bootInfo->memoryMapCount =
+            getMemoryMap( bootInfo->memoryMap, kMemoryMapCountMax,
+                          (unsigned long *) &bootInfo->convmem,
+                          (unsigned long *) &bootInfo->extmem );
 
-        if ( bootArgs->memoryMapCount == 0 )
+        if ( bootInfo->memoryMapCount == 0 )
         {
             // BIOS did not provide a memory map, systems with
             // discontiguous memory or unusual memory hole locations
             // may have problems.
 
-            bootArgs->convmem = getConventionalMemorySize();
-            bootArgs->extmem  = getExtendedMemorySize();
+            bootInfo->convmem = getConventionalMemorySize();
+            bootInfo->extmem  = getExtendedMemorySize();
         }
 
-        bootArgs->magicCookie  = KERNBOOTMAGIC;
-        bootArgs->configEnd    = bootArgs->config;
-        bootArgs->graphicsMode = TEXT_MODE;
+        bootInfo->configEnd    = bootInfo->config;
+        bootArgs->Video.v_display = VGA_TEXT_MODE;
         
-	/* New style */
-	/* XXX initialize bootArgs here */
+        DT__Initialize();
+
+        node = DT__FindNode("/", true);
+        if (node == 0) {
+            stop("Couldn't create root node");
+        }
+        getPlatformName(platformName);
+        nameLen = strlen(platformName) + 1;
+        DT__AddProperty(node, "compatible", nameLen, platformName);
+        DT__AddProperty(node, "model", nameLen, platformName);
+
+        gMemoryMapNode = DT__FindNode("/chosen/memory-map", true);
+
+        bootArgs->Version  = kBootArgsVersion;
+        bootArgs->Revision = kBootArgsRevision;
 
         init_done = 1;
     }
 
-    // Get number of ATA devices.
-
-    bootArgs->numDrives = countIDEDisks();
-
     // Update kernDev from biosdev.
 
-    bootArgs->kernDev = biosdev;
+    bootInfo->kernDev = biosdev;
 }
 
 
@@ -136,7 +108,69 @@ void
 reserveKernBootStruct(void)
 {
     void *oldAddr = bootArgs;
-    bootArgs = (KernelBootArgs_t *)AllocateKernelMemory(sizeof(KERNBOOTSTRUCT));
-    bcopy(oldAddr, bootArgs, sizeof(KernelBootArgs_t));
+    bootArgs = (boot_args *)AllocateKernelMemory(sizeof(boot_args));
+    bcopy(oldAddr, bootArgs, sizeof(boot_args));
 }
 
+void
+finalizeBootStruct(void)
+{
+    uint32_t size;
+    void *addr;
+    int i;
+    EfiMemoryRange *memoryMap;
+    MemoryRange *range;
+    int memoryMapCount = bootInfo->memoryMapCount;
+
+    if (memoryMapCount == 0) {
+        // XXX could make a two-part map here
+        stop("Unable to convert memory map into proper format\n");
+    }
+
+    // convert memory map to boot_args memory map
+    memoryMap = (EfiMemoryRange *)AllocateKernelMemory(sizeof(EfiMemoryRange) * memoryMapCount);
+    bootArgs->MemoryMap = memoryMap;
+    bootArgs->MemoryMapSize = sizeof(EfiMemoryRange) * memoryMapCount;
+    bootArgs->MemoryMapDescriptorSize = sizeof(EfiMemoryRange);
+    bootArgs->MemoryMapDescriptorVersion = 0;
+
+    for (i=0; i<memoryMapCount; i++, memoryMap++) {
+        range = &bootInfo->memoryMap[i];
+        switch(range->type) {
+        case kMemoryRangeACPI:
+            memoryMap->Type = kEfiACPIReclaimMemory;
+            break;
+        case kMemoryRangeNVS:
+            memoryMap->Type = kEfiACPIMemoryNVS;
+            break;
+        case kMemoryRangeUsable:
+            memoryMap->Type = kEfiConventionalMemory;
+            break;
+        case kMemoryRangeReserved:
+        default:
+            memoryMap->Type = kEfiReservedMemoryType;
+            break;
+        }
+        memoryMap->PhysicalStart = range->base;
+        memoryMap->VirtualStart = range->base;
+        memoryMap->NumberOfPages = range->length >> I386_PGSHIFT;
+        memoryMap->Attribute = 0;
+    }
+
+    // copy bootFile into device tree
+    // XXX
+
+    // add PCI info somehow into device tree
+    // XXX
+
+    // Flatten device tree
+    DT__FlattenDeviceTree(0, &size);
+    addr = (void *)AllocateKernelMemory(size);
+    if (addr == 0) {
+        stop("Couldn't allocate device tree\n");
+    }
+    
+    DT__FlattenDeviceTree((void **)&addr, &size);
+    bootArgs->deviceTreeP = (void *)addr;
+    bootArgs->deviceTreeLength = size;
+}

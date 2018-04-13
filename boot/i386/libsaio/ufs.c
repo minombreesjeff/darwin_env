@@ -32,6 +32,10 @@
 #include "ufs.h"
 #include "ufs_byteorder.h"
 
+#if !defined(MAXNAMLEN) && defined(UFSMAXNAMLEN)
+#define MAXNAMLEN UFSMAXNAMLEN
+#endif
+
 typedef struct dinode Inode, *InodePtr;
 
 // Private function prototypes
@@ -47,7 +51,7 @@ static long FindFileInDir(char *fileName, long *flags,
                           InodePtr fileInode, InodePtr dirInode);
 static char *ReadFileBlock(InodePtr fileInode, long fragNum, long blockOffset,
                            long length, char *buffer, long cache);
-static long ReadFile(InodePtr fileInode, long *length, void *base, long offset);
+static long ReadFile(InodePtr fileInode, unsigned long *length, void *base, long offset);
 
 #define kDevBlockSize (0x200)    // Size of each disk block.
 #define kDiskLabelBlock (15)     // Block the DL is in.
@@ -59,6 +63,9 @@ static long long gPartitionBase;
 static char      *gULBuf;
 static char      *gFSBuf;
 static struct fs *gFS;
+#if !BOOT1
+static struct ufslabel  gUFSLabel;   // for UUID
+#endif
 static long      gBlockSize;
 static long      gFragSize;
 static long      gFragsPerBlock;
@@ -75,6 +82,9 @@ static long long gPartitionBase;
 static char      gDLBuf[8192];
 static char      gFSBuf[SBSIZE];
 static struct fs *gFS;
+#if !BOOT1
+static struct ufslabel  gUFSLabel;   // for UUID
+#endif
 static long      gBlockSize;
 static long      gFragSize;
 static long      gFragsPerBlock;
@@ -92,6 +102,10 @@ static InodePtr  gFileInodePtr = &_gFileInode;
 
 long UFSInitPartition( CICell ih )
 {
+#if !BOOT1
+    long ret;
+#endif
+
     if (ih == gCurrentIH) {
 #ifdef __i386__
         CacheInit(ih, gBlockSize);
@@ -119,6 +133,16 @@ long UFSInitPartition( CICell ih )
     // Assume there is no Disk Label
     gPartitionBase = 0;
 
+#if !BOOT1
+    // read the disk label to get the UUID
+    // (rumor has it that UFS headers can be either-endian on disk; hopefully
+    // that isn't true for this UUID field).
+    Seek(ih, gPartitionBase + UFS_LABEL_OFFSET);
+    ret = Read(ih, (long)&gUFSLabel, UFS_LABEL_SIZE);
+    if(ret != 0)
+        bzero(&gUFSLabel, UFS_LABEL_SIZE);
+#endif /* !BOOT1 */
+
     // Look for the Super Block
     Seek(ih, gPartitionBase + SBOFF);
     Read(ih, (long)gFSBuf, SBSIZE);
@@ -145,6 +169,20 @@ long UFSInitPartition( CICell ih )
 
     return 0;
 }
+
+#if !BOOT1
+
+long UFSGetUUID(CICell ih, char *uuidStr)
+{
+  long long uuid = gUFSLabel.ul_uuid;
+
+  if (UFSInitPartition(ih) == -1) return -1;
+  if (uuid == 0LL)  return -1;
+
+  return CreateUUIDString((uint8_t*)(&uuid), sizeof(uuid), uuidStr);
+}
+
+#endif /* !BOOT1 */
 
 long UFSLoadFile( CICell ih, char * filePath )
 {
@@ -224,7 +262,7 @@ UFSGetDescription(CICell ih, char *str, long strMaxLen)
         if (*p != magic_bytes[i])
             return;
     }
-    strncpy(str, ul->ul_name, strMaxLen);
+    strncpy(str, (const char *)ul->ul_name, strMaxLen);
 }
 
 long
@@ -443,7 +481,7 @@ static char * ReadFileBlock( InodePtr fileInode, long fragNum, long blockOffset,
     return buffer;
 }
 
-static long ReadFile( InodePtr fileInode, long * length, void * base, long offset )
+static long ReadFile( InodePtr fileInode, unsigned long * length, void * base, long offset )
 {
     long bytesLeft, curSize, curFrag;
     char *buffer, *curAddr = (char *)base;
@@ -471,7 +509,7 @@ static long ReadFile( InodePtr fileInode, long * length, void * base, long offse
     while (bytesLeft) {
         curSize = gBlockSize;
         if (curSize > bytesLeft) curSize = bytesLeft;
-        if (offset != 0) curSize -= offset;
+        if ((offset + curSize) > gBlockSize) curSize = (gBlockSize - offset);
 
         buffer = ReadFileBlock(fileInode, curFrag, offset, curSize, curAddr, 0);
         if (buffer == 0) break;

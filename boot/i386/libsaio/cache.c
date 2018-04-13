@@ -100,8 +100,8 @@ void CacheInit( CICell ih, long blockSize )
 long CacheRead( CICell ih, char * buffer, long long offset,
 	            long length, long cache )
 {
-	long       cnt, oldestEntry = 0, oldestTime, loadCache = 0;
-	CacheEntry *entry;
+    long       cnt, oldestEntry = 0, oldestTime, loadCache = 0;
+    CacheEntry *entry;
 
     // See if the data can be cached.
     if (cache && (gCacheIH == ih) && (length == gCacheBlockSize)) {

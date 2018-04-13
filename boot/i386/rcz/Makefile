@@ -6,7 +6,7 @@ UTILDIR = ../util
 LIBSADIR = ../libsa
 INSTALLDIR = $(DSTROOT)/System/Library/Frameworks/System.framework/Versions/B/PrivateHeaders/standalone
 
-OPTIM = -Os
+OPTIM = -Os -Oz
 CFLAGS	= $(RC_CFLAGS) $(OPTIM) $(MORECPP) -arch i386 -g -Wmost -Werror \
           -fno-builtin -static
 DEFINES=

@@ -74,7 +74,7 @@ InitCompareTables(void)
 //
 //_______________________________________________________________________
 
-int32_t	FastRelString(char * str1, char * str2)
+int32_t	FastRelString(u_int8_t * str1, u_int8_t * str2)
 {
 	int32_t  bestGuess;
 	u_int8_t length, length2;

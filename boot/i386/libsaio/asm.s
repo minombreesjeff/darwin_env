@@ -31,6 +31,9 @@
 /*
  * HISTORY
  * $Log: asm.s,v $
+ * Revision 1.8  2005/06/24 22:47:12  curtisg
+ * Merging changes for 4159531 to pass data to the kernel in EFI format.
+ *
  * Revision 1.7  2004/05/13 17:58:38  curtisg
  * Integrating:
  * <rdar://problem/3094680>: (Silent boot)
@@ -293,7 +296,7 @@ xreal:
 // halt()
 //
 LABEL(_halt)
-    hlt
+    call    _bgetc
     jmp     _halt
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

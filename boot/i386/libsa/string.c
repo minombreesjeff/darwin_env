@@ -27,7 +27,7 @@
 
 void * memset(void * dst, int val, size_t len)
 {
-    asm( "rep; stosb"
+    asm volatile ( "rep; stosb"
        : "=c" (len), "=D" (dst)
        : "0" (len), "1" (dst), "a" (val)
        : "memory" );
@@ -38,7 +38,7 @@ void * memset(void * dst, int val, size_t len)
 #if 0
 void * memcpy(void * dst, const void * src, size_t len)
 {
-    asm( "rep; movsb"
+    asm volatile ( "rep; movsb"
        : "=c" (len), "=D" (dst), "=S" (src)
        : "0" (len), "1" (dst), "2" (src)
        : "memory" );
@@ -59,7 +59,7 @@ void bzero(void * dst, size_t len)
 #else
 void * memcpy(void * dst, const void * src, size_t len)
 {
-    asm( "cld                  \n\t"
+    asm volatile ( "cld                  \n\t"
          "movl %%ecx, %%edx    \n\t"
          "shrl $2, %%ecx       \n\t"
          "rep; movsl           \n\t"
@@ -75,7 +75,7 @@ void * memcpy(void * dst, const void * src, size_t len)
 
 void bcopy(const void * src, void * dst, size_t len)
 {
-    asm( "cld                  \n\t"
+    asm volatile ( "cld                  \n\t"
          "movl %%ecx, %%edx    \n\t"
          "shrl $2, %%ecx       \n\t"
          "rep; movsl           \n\t"
@@ -89,7 +89,7 @@ void bcopy(const void * src, void * dst, size_t len)
 
 void bzero(void * dst, size_t len)
 {
-    asm( "xorl %%eax, %%eax    \n\t"
+    asm volatile ( "xorl %%eax, %%eax    \n\t"
          "cld                  \n\t"
          "movl %%ecx, %%edx    \n\t"
          "shrl $2, %%ecx       \n\t"

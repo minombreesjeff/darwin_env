@@ -6,7 +6,7 @@ DIR = testmodule
 include ../MakePaths.dir
 
 DEBUG = -g
-OPTIM = -Os
+OPTIM = -Os -Oz
 CFLAGS	= $(DEBUG) $(OPTIM) $(MORECPP) -arch i386 -Wmost -DTEST_INTERNAL_USER
 DEFINES=
 CONFIG = hd

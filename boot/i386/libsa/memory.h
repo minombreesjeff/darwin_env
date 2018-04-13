@@ -67,11 +67,11 @@
 #define KERNEL_ADDR       0x00100000   // 64M kernel + drivers
 #define KERNEL_LEN        0x04000000
 
-#define ZALLOC_ADDR       0x04100000   // 47M zalloc area
-#define ZALLOC_LEN        0x02F00000
+#define ZALLOC_ADDR       0x04100000   // 39M zalloc area
+#define ZALLOC_LEN        0x02700000
 
-#define LOAD_ADDR         0x07000000   // 16M File load buffer
-#define LOAD_LEN          0x01000000
+#define LOAD_ADDR         0x06800000   // 24M File load buffer
+#define LOAD_LEN          0x01800000
 
 #define TFTP_ADDR         LOAD_ADDR   // tftp download buffer
 #define TFTP_LEN          LOAD_LEN

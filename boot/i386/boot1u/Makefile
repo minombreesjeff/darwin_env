@@ -1,11 +1,11 @@
 DIR = boot1u
 include ../MakePaths.dir
 
-OPTIM = -Os
+OPTIM = -Os -Oz
 CFLAGS	= $(RC_CFLAGS) $(OPTIM) $(MORECPP) -arch i386 -g -Wmost -Werror \
           -fno-builtin -DSAIO_INTERNAL_USER -DBOOT1 -static \
 	  -fomit-frame-pointer -mpreferred-stack-boundary=2 \
-	  -fno-align-functions
+	  -fno-align-functions -mno-sse2 -mfpmath=387
 DEFINES=
 CONFIG = hd
 SYMDIR = $(SYMROOT)
@@ -19,7 +19,7 @@ else
   MKDIRS = /bin/mkdir -p
 endif
 AS = as
-LD = ld
+LD = gcc
 LIBS= -L$(SYMDIR) -lsa
 #LIBS= -L$(SYMDIR)
 
@@ -71,7 +71,7 @@ boot1u0: boot1u0.s Makefile $(NASM)
 	$(NASM) boot1u0.s -o $(SYMROOT)/$@
 
 boot1u: $(SYMROOT)/machOconv boot1u0 $(OBJS)
-	$(LD) -static -preload -segaddr __TEXT $(BOOT1UADDR) -segalign 20 \
+	$(LD) -arch i386 -fno-builtin -static -Wl,-preload -Wl,-segaddr,__TEXT,$(BOOT1UADDR) -nostdlib -Wl,-segalign,20 \
 		-o $(SYMROOT)/$(@F).sys $(filter %.o,$^) $(LIBS) -lcc_kext
 	size $(SYMROOT)/$(@F).sys
 	$(SYMROOT)/machOconv $(SYMROOT)/$(@F).sys $(SYMROOT)/$(@F).post

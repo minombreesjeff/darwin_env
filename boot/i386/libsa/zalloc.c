@@ -64,7 +64,7 @@ size_t zalloced_size;
 static void malloc_error(char *addr, size_t size)
 {
 #ifdef i386
-    asm("hlt");
+    asm volatile ("hlt");
 #endif
 }
 
@@ -177,7 +177,7 @@ void free(void * pointer)
 #if i386    
         // Get return address of our caller,
         // in case we have to report an error below.
-        asm("movl %%esp, %%eax\n\t"
+        asm volatile ("movl %%esp, %%eax\n\t"
             "subl $4, %%eax\n\t"
             "movl 0(%%eax), %%eax" : "=a" (rp) );
 #else

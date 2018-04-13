@@ -92,7 +92,7 @@ ntfs_fixup(
 			return (ERROR);
 		}
 		*cfxp = *fxp;
-		((caddr_t) cfxp) += bytesPerSector;
+                cfxp = (u_int16_t *)(((caddr_t)cfxp) + bytesPerSector);
 	}
 	return (0);
 }
@@ -141,7 +141,7 @@ ntfs_find_attr(
 }
 
 static int
-memcmp(char *p1, char *p2, int len)
+memcmp(const char *p1, const char *p2, int len)
 {
     while (len--) {
         if (*p1++ != *p2++)
@@ -199,7 +199,7 @@ NTFSGetDescription(CICell ih, char *str, long strMaxLen)
     /*
      * Check the "NTFS    " signature.
      */
-    if (memcmp(boot->bf_sysid, "NTFS    ", 8) != 0)
+    if (memcmp((const char *)boot->bf_sysid, "NTFS    ", 8) != 0)
     {
         goto error;
     }
@@ -295,7 +295,7 @@ NTFSGetDescription(CICell ih, char *str, long strMaxLen)
     
     str[0] = '\0';
 
-    utf_encodestr( nameAttr, nameSize / 2, str, strMaxLen, OSLittleEndian );
+    utf_encodestr( nameAttr, nameSize / 2, (u_int8_t *)str, strMaxLen, OSLittleEndian );
 
     free(buf);
     return;

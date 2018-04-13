@@ -7,12 +7,13 @@ LIBSADIR = ../libsa
 INSTALLDIR = $(DSTROOT)/System/Library/Frameworks/System.framework/Versions/B/PrivateHeaders/standalone
 #SYMROOT=
 
-OPTIM = -Os
-CFLAGS	= $(RC_CFLAGS) $(OPTIM) $(MORECPP) -arch i386 -g -Wmost -Werror \
+OPTIM = -Os -Oz
+CFLAGS	= $(RC_CFLAGS) $(OPTIM) $(MORECPP) -arch i386 -g -Wmost \
     -D__ARCHITECTURE__=\"i386\" -DSAIO_INTERNAL_USER \
     -DRCZ_COMPRESSED_FILE_SUPPORT \
     -fno-builtin -static -fomit-frame-pointer \
-    -mpreferred-stack-boundary=2 -fno-align-functions
+    -mpreferred-stack-boundary=2 -fno-align-functions \
+    -mno-sse2 -mfpmath=387
 DEFINES=
 CONFIG = hd
 INC = -I../rcz -I. -I$(SYMROOT) -I$(UTILDIR) -I$(LIBSADIR)
@@ -30,10 +31,11 @@ VPATH = $(OBJROOT):$(SYMROOT)
 
 SAIO_OBJS = table.o asm.o bios.o biosfn.o \
 	disk.o sys.o cache.o bootstruct.o \
-	ufs.o ufs_byteorder.o \
 	stringTable.o load.o memory.o misc.o \
+	ufs.o ufs_byteorder.o \
 	vbe.o nbp.o hfs.o hfs_compare.o \
-	xml.o ntfs.o msdos.o
+	xml.o ntfs.o msdos.o md5c.o device_tree.o
+
 
 SAIO_EXTERN_OBJS = console.o
 

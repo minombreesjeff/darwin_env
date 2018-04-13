@@ -13,7 +13,7 @@ all:
 
 install_i386:: $(INSTALLDIR)
 	cp $(FILES) $(INSTALLDIR)
-	chown -fR root.wheel $(INSTALLDIR)
+	chown -fR root:wheel $(INSTALLDIR)
 	chmod -R ugo-w  $(INSTALLDIR)
 
 include ../MakeInc.dir

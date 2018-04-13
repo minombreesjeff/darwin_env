@@ -42,7 +42,7 @@ DEBUG	EQU 0
 %define DebugPause(x)
 %endif
 
-kBoot2Sectors        EQU  112           ; sectors to load for boot2
+kBoot2Sectors        EQU  126           ; sectors to load for boot2
 kBoot2Address        EQU  0x0200        ; boot2 load address
 kBoot2Segment        EQU  0x2000        ; boot2 load segment
 	

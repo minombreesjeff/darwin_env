@@ -86,7 +86,7 @@ long DecodeMachO(void *binary, entry_t *rentry, char **raddr, int *rsize)
   unsigned int vmend = 0;
   unsigned long  cnt;
   long  ret = -1;
-  unsigned int entry;
+  unsigned int entry = 0;
   
   gBinaryAddress = (unsigned long)binary;
   

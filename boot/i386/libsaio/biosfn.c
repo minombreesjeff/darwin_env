@@ -87,14 +87,11 @@ unsigned long getMemoryMap( MemoryRange *   rangeArray,
     #define kMemoryMapSignature  'SMAP'
     #define kDescriptorSizeMin   20
 
-    MemoryRange *        range = rangeArray;
+    MemoryRange *        range = (MemoryRange *)BIOS_ADDR;
     unsigned long        count = 0;
     unsigned long long   conMemSize = 0;
     unsigned long long   extMemSize = 0;
 
-    // The memory pointed by the rangeArray must reside within the
-    // first megabyte.
-    //
     // Prepare for the INT15 E820h call. Each call returns a single
     // memory range. A continuation value is returned that must be
     // provided on a subsequent call to fetch the next range.
@@ -106,6 +103,10 @@ unsigned long getMemoryMap( MemoryRange *   rangeArray,
     // Some BIOSes will simply ignore the value of ECX on entry.
     // Probably best to keep its value at 20 to avoid surprises.
 
+    //printf("Get memory map 0x%x, %d\n", rangeArray);getc();
+    if (maxRangeCount > (BIOS_LEN / sizeof(MemoryRange))) {
+        maxRangeCount = (BIOS_LEN / sizeof(MemoryRange));
+    }
     bb.ebx.rx = 0;  // Initial continuation value must be zero.
 
     while ( count < maxRangeCount )
@@ -122,7 +123,11 @@ unsigned long getMemoryMap( MemoryRange *   rangeArray,
 
         if ( bb.flags.cf
         ||   bb.eax.rx != kMemoryMapSignature
-        ||   bb.ecx.rx != kDescriptorSizeMin ) break;
+        ||   bb.ecx.rx != kDescriptorSizeMin ) {
+            //printf("Got an error %x %x %x\n", bb.flags.cf,
+            //       bb.eax.rx, bb.ecx.rx);
+            break;
+        }
 
         // Tally up the conventional/extended memory sizes.
 
@@ -146,17 +151,24 @@ unsigned long getMemoryMap( MemoryRange *   rangeArray,
 
         // Is this the last address range?
 
-        if ( bb.ebx.rx == 0 ) break;
+        if ( bb.ebx.rx == 0 ) {
+            //printf("last range\n");
+            break;
+        }
     }
     *conMemSizePtr = conMemSize / 1024;  // size in KB
     *extMemSizePtr = extMemSize  / 1024;  // size in KB
 
+    // Copy out data
+    bcopy((char *)BIOS_ADDR, rangeArray, ((char *)range - (char *)BIOS_ADDR));
+
 #if DEBUG
     {
-        for (range = rangeArray; range->length != 0; range++) {
-        printf("range: type %d, base 0x%x, length 0x%x\n",
-               range->type, (unsigned int)range->base, (unsigned int)range->length); getc();
-
+        int i;
+        printf("%d total ranges\n", count);getc();
+        for (i=0, range = rangeArray; i<count; i++, range++) {
+            printf("range: type %d, base 0x%x, length 0x%x\n",
+                   range->type, (unsigned int)range->base, (unsigned int)range->length); getc();
         }
     }
 #endif
@@ -554,6 +566,7 @@ int get_drive_info(int drive, struct driveInfo *dp)
 #if DEBUG
     print_drive_info(di);
     printf("uses_ebios = 0x%x\n", dp->uses_ebios);
+    printf("result %d\n", ret);
     printf("press a key->\n");getc();
 #endif
 

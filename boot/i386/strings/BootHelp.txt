@@ -7,8 +7,8 @@ Example arguments include
  device: rd=<BSD device name>       (e.g. rd=disk0s2)
          rd=*<IODeviceTree path>    (e.g. rd=*/PCI0@0/CHN0@0/@0:1)
  kernel: kernel name                (e.g. "mach_kernel" - must be in "/" )
- flags: -v (verbose)  -s (single user), 
-        -f (safe)     -F (ignore boot file)
+ flags: -v (verbose)    -s (single user mode), 
+        -x (safe mode)  -F (ignore boot configuration file)
  "Graphics Mode"="WIDTHxHEIGHTxDEPTH" (e.g. "1024x768x32")
     For VESA 3.0 graphics, you may append a refresh rate
     after an "@" character (e.g. "1280x1024x32@75")
@@ -18,7 +18,7 @@ Example arguments include
 Example: mach_kernel rd=disk0s1 -v "Graphics Mode"="4096x4096x32@85"
 
 If the computer won't start up properly, you may be able to start it up using
-safe mode.  Type -f to start up in safe mode, which ignores all cached
+safe mode.  Type -x to start up in safe mode, which ignores all cached
 driver files.
 
 Special booter commands:

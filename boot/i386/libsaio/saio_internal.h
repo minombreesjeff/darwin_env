@@ -76,6 +76,7 @@ extern void   sleep(int n);
 extern void   initKernBootStruct(int biosdev);
 extern void   reserveKernBootStruct(void);
 extern void   copyKernBootStruct(void);
+extern void   finalizeBootStruct(void);
 
 /* cache.c */
 extern void   CacheInit(CICell ih, long blockSize);
@@ -90,12 +91,13 @@ extern int    getchar(void);
 extern int    printf(const char *format, ...);
 extern int    error(const char *format, ...);
 extern int    verbose(const char *format, ...);
-extern void   stop(const char *message);
+extern void   stop(const char *format, ...);
 
 /* disk.c */
 extern BVRef  diskScanBootVolumes(int biosdev, int *count);
 extern void   diskSeek(BVRef bvr, long long position);
 extern int    diskRead(BVRef bvr, long addr, long length);
+extern int    diskIsCDROM(BVRef bvr);
 extern int    rawDiskRead(BVRef bvr, unsigned int secno, void *buffer, unsigned int len);
 extern int    rawDiskWrite(BVRef bvr, unsigned int secno, void *buffer, unsigned int len);
 extern int    readBootSector(int biosdev, unsigned int secno, void *buffer);
@@ -118,6 +120,8 @@ long AllocateMemoryRange(char * rangeName, long start, long length, long type);
 
 /* misc.c */
 extern void   enableA20(void);
+extern int    checkForSupportedHardware();
+extern void   getPlatformName(char *nameBuf);
 
 /* nbp.c */
 extern UInt32 nbpUnloadBaseCode();
@@ -126,7 +130,7 @@ extern BVRef  nbpScanBootVolumes(int biosdev, int *count);
 /* stringTable.c */
 extern char * newStringFromList(char **list, int *size);
 extern int    stringLength(const char *table, int compress);
-extern BOOL   getValueForStringTableKey(const char *table, const char *key, const char **val, int *size);
+extern BOOL   getValueForConfigTableKey(const char *table, const char *key, const char **val, int *size);
 extern BOOL   removeKeyFromTable(const char *key, char *table);
 extern char * newStringForStringTableKey(char *table, char *key);
 extern char * newStringForKey(char *key);
@@ -149,6 +153,8 @@ extern long   GetDirEntry(const char *dirSpec, long *dirIndex, const char **name
 extern long   GetFileInfo(const char *dirSpec, const char *name,
                           long *flags, long *time);
 extern long   GetFileBlock(const char *fileSpec, unsigned long long *firstBlock);
+extern long   GetFSUUID(char *spec, char *uuidStr);
+extern long   CreateUUIDString(uint8_t uubytes[], int nbytes, char *uuidStr);
 extern int    openmem(char *buf, int len);
 extern int    open(const char *str, int how);
 extern int    close(int fdesc);

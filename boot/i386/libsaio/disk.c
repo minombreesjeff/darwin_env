@@ -44,10 +44,14 @@
  * All rights reserved.
  */
 
+#define UFS_SUPPORT 1
+
 #include "bootstruct.h"
 #include "libsaio.h"
 #include "fdisk.h"
+#if UFS_SUPPORT
 #include "ufs.h"
+#endif
 #include "hfs.h"
 #include "ntfs.h"
 #include "msdos.h"
@@ -101,6 +105,7 @@ static int getDriveInfo( int biosdev,  struct driveInfo *dip )
 	cc = get_drive_info(biosdev, &cached_di);
         if (cc < 0) {
 	    cached_di.valid = 0;
+            DEBUG_DISK(("get_drive_info returned error\n"));
 	    return (-1); // BIOS call error
 	}
     }
@@ -282,6 +287,7 @@ static int Biosread( int biosdev, unsigned int secno )
 //==========================================================================
 
 static int readBytes( int biosdev, unsigned int blkno,
+                      unsigned int byteoff,
                       unsigned int byteCount, void * buffer )
 {
 
@@ -292,7 +298,7 @@ static int readBytes( int biosdev, unsigned int blkno,
     DEBUG_DISK(("%s: dev %x block %x [%d] -> 0x%x...", __FUNCTION__,
                 biosdev, blkno, byteCount, (unsigned)cbuf));
 
-    for ( ; byteCount; cbuf += BPS, blkno++ )
+    for ( ; byteCount; cbuf += copy_len, blkno++ )
     {
         error = Biosread( biosdev, blkno );
         if ( error )
@@ -301,9 +307,10 @@ static int readBytes( int biosdev, unsigned int blkno,
             return (-1);
         }
 
-        copy_len = (byteCount > BPS) ? BPS : byteCount;
-        bcopy( biosbuf, cbuf, copy_len );
+        copy_len = ((byteCount + byteoff) > BPS) ? (BPS - byteoff) : byteCount;
+        bcopy( biosbuf + byteoff, cbuf, copy_len );
         byteCount -= copy_len;
+        byteoff = 0;
     }
 
     DEBUG_DISK(("done\n"));
@@ -427,6 +434,7 @@ static BVRef newFDiskBVRef( int biosdev, int partno, unsigned int blkoff,
                             FSReadFile readFunc,
                             FSGetDirEntry getdirFunc,
                             FSGetFileBlock getBlockFunc,
+                            FSGetUUID getUUIDFunc,
                             BVGetDescription getDescriptionFunc,
                             int probe, int type )
 {
@@ -443,6 +451,7 @@ static BVRef newFDiskBVRef( int biosdev, int partno, unsigned int blkoff,
         bvr->fs_readfile    = readFunc;
         bvr->fs_getdirentry = getdirFunc;
         bvr->fs_getfileblock= getBlockFunc;
+        bvr->fs_getuuid     = getUUIDFunc;
         bvr->description    = getDescriptionFunc ?
             getDescriptionFunc : getVolumeDescription;
 	bvr->type           = type;
@@ -488,6 +497,7 @@ BVRef newAPMBVRef( int biosdev, int partno, unsigned int blkoff,
                    FSReadFile readFunc,
                    FSGetDirEntry getdirFunc,
                    FSGetFileBlock getBlockFunc,
+                   FSGetUUID getUUIDFunc,
                    BVGetDescription getDescriptionFunc,
                    int probe, int type )
 {
@@ -503,6 +513,7 @@ BVRef newAPMBVRef( int biosdev, int partno, unsigned int blkoff,
         bvr->fs_readfile    = readFunc;
         bvr->fs_getdirentry = getdirFunc;
         bvr->fs_getfileblock= getBlockFunc;
+        bvr->fs_getuuid     = getUUIDFunc;
         bvr->description    = getDescriptionFunc ?
             getDescriptionFunc : getVolumeDescription;
 	bvr->type           = type;
@@ -561,7 +572,9 @@ static BVRef diskScanFDiskBootVolumes( int biosdev, int * countPtr )
     struct DiskBVMap *        map;
     int                       partno  = -1;
     BVRef                     bvr;
+#if UFS_SUPPORT
     BVRef                     booterUFS = NULL;
+#endif
     int                       spc;
     struct driveInfo          di;
     boot_drive_info_t         *dp;
@@ -599,6 +612,7 @@ static BVRef diskScanFDiskBootVolumes( int biosdev, int * countPtr )
 
                 switch ( part->systid )
                 {
+#if UFS_SUPPORT
                     case FDISK_UFS:
                        bvr = newFDiskBVRef(
                                       biosdev, partno,
@@ -609,10 +623,12 @@ static BVRef diskScanFDiskBootVolumes( int biosdev, int * countPtr )
                                       UFSReadFile,
                                       UFSGetDirEntry,
                                       UFSGetFileBlock,
+                                      UFSGetUUID,
                                       UFSGetDescription,
                                       0,
 				      kBIOSDevTypeHardDrive);
                         break;
+#endif
 
                     case FDISK_HFS:
                         bvr = newFDiskBVRef(
@@ -624,11 +640,13 @@ static BVRef diskScanFDiskBootVolumes( int biosdev, int * countPtr )
                                       HFSReadFile,
                                       HFSGetDirEntry,
                                       HFSGetFileBlock,
+                                      HFSGetUUID,
                                       HFSGetDescription,
                                       0,
 				      kBIOSDevTypeHardDrive);
                         break;
 
+#if UFS_SUPPORT
                     case FDISK_BOOTER:
                         booterUFS = newFDiskBVRef(
                                       biosdev, partno,
@@ -639,17 +657,19 @@ static BVRef diskScanFDiskBootVolumes( int biosdev, int * countPtr )
                                       UFSReadFile,
                                       UFSGetDirEntry,
                                       UFSGetFileBlock,
+                                      UFSGetUUID,
                                       UFSGetDescription,
                                       0,
 				      kBIOSDevTypeHardDrive);
                         break;
+#endif
 
                    case FDISK_NTFS:
                         bvr = newFDiskBVRef(
                                       biosdev, partno,
                                       part->relsect,
                                       part,
-                                      0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0,
                                       NTFSGetDescription,
                                       0,
 				      kBIOSDevTypeHardDrive);
@@ -660,7 +680,7 @@ static BVRef diskScanFDiskBootVolumes( int biosdev, int * countPtr )
                                       biosdev, partno,
                                       part->relsect,
                                       part,
-                                      0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0,
 				      kBIOSDevTypeHardDrive);
                         break;
                 }
@@ -673,6 +693,7 @@ static BVRef diskScanFDiskBootVolumes( int biosdev, int * countPtr )
                 }
             }
 
+#if UFS_SUPPORT
             // Booting from a CD with an UFS filesystem embedded
             // in a booter partition.
 
@@ -685,6 +706,7 @@ static BVRef diskScanFDiskBootVolumes( int biosdev, int * countPtr )
                 }
                 else free( booterUFS );
             }
+#endif
         }
     } while (0);
 
@@ -707,6 +729,7 @@ static BVRef diskScanFDiskBootVolumes( int biosdev, int * countPtr )
                             HFSReadFile,
 			    HFSGetDirEntry,
                             HFSGetFileBlock,
+                            HFSGetUUID,
 			    0,
 			    kBIOSDevTypeHardDrive);
 	bvr->next = map->bvr;
@@ -731,7 +754,7 @@ static BVRef diskScanAPMBootVolumes( int biosdev, int * countPtr )
     void *buffer = malloc(BPS);
 
     /* Check for alternate block size */
-    if (readBytes( biosdev, 0, BPS, buffer ) != 0) {
+    if (readBytes( biosdev, 0, 0, BPS, buffer ) != 0) {
         return NULL;
     }
     block0_p = buffer;
@@ -765,7 +788,7 @@ static BVRef diskScanAPMBootVolumes( int biosdev, int * countPtr )
             gDiskBVMap   = map;
 
             for (i=0; i<npart; i++) {
-                error = readBytes( biosdev, (kAPMSector + i) * factor, blksize, buffer );
+                error = readBytes( biosdev, (kAPMSector + i) * factor, 0, blksize, buffer );
 
                 if (error || OSSwapBigToHostInt16(dpme_p->dpme_signature) != DPME_SIGNATURE) {
                     break;
@@ -792,6 +815,7 @@ static BVRef diskScanAPMBootVolumes( int biosdev, int * countPtr )
                                       HFSReadFile,
                                       HFSGetDirEntry,
                                       HFSGetFileBlock,
+                                      HFSGetUUID,
                                       HFSGetDescription,
                                       0,
                                       kBIOSDevTypeHardDrive);
@@ -978,7 +1002,7 @@ int readBootSector( int biosdev, unsigned int secno, void * buffer )
         bootSector = gBootSector;
     }
 
-    error = readBytes( biosdev, secno, BPS, bootSector );
+    error = readBytes( biosdev, secno, 0, BPS, bootSector );
     if ( error || bootSector->signature != DISK_SIGNATURE )
         return -1;
 
@@ -991,6 +1015,7 @@ int readBootSector( int biosdev, unsigned int secno, void * buffer )
 void diskSeek( BVRef bvr, long long position )
 {
     bvr->fs_boff = position / BPS;
+    bvr->fs_byteoff = position % BPS;
 }
 
 //==========================================================================
@@ -1000,6 +1025,7 @@ int diskRead( BVRef bvr, long addr, long length )
 {
     return readBytes( bvr->biosdev,
                       bvr->fs_boff + bvr->part_boff,
+                      bvr->fs_byteoff,
                       length,
                       (void *) addr );
 }
@@ -1079,13 +1105,13 @@ int rawDiskWrite( BVRef bvr, unsigned int secno, void *buffer, unsigned int len 
     return 0;
 }
 
-void turnOffFloppy(void)
+
+int diskIsCDROM(BVRef bvr)
 {
-    /*
-     * Disable floppy:
-     * Hold controller in reset,
-     * disable DMA and IRQ,
-     * turn off floppy motors.
-     */
-    outb(0x3F2, 0x00);
+    struct driveInfo          di;
+
+    if (getDriveInfo(bvr->biosdev, &di) == 0 && di.no_emulation) {
+	return 1;
+    }
+    return 0;
 }

@@ -56,7 +56,9 @@
 
 #include "libsaio.h"
 #include "bootstruct.h"
-
+#include <sys/md5.h>
+#include <uuid/uuid.h>
+#include <Kernel/uuid/namespace.h>
 
 struct devsw {
     const char *  name;
@@ -144,7 +146,7 @@ long LoadThinFatFile(const char *fileSpec, void **binary)
     const char       *filePath;
     FSReadFile readFile;
     BVRef      bvr;
-    long       length, length2;
+    unsigned long    length, length2;
   
     // Resolve the boot volume from the file spec.
 
@@ -184,6 +186,73 @@ long LoadThinFatFile(const char *fileSpec, void **binary)
     }
   
     return length;
+}
+
+long GetFSUUID(char *spec, char *uuidStr)
+{
+    BVRef      bvr;
+    long       rval = -1;
+    const char *devSpec;
+
+    if ((bvr = getBootVolumeRef(spec, &devSpec)) == NULL)
+        return -1;
+
+    if(bvr->fs_getuuid)
+        rval = bvr->fs_getuuid(bvr, uuidStr);
+
+    return rval;
+}
+
+
+// filesystem-specific getUUID functions call this shared string generator
+long CreateUUIDString(uint8_t uubytes[], int nbytes, char *uuidStr)
+{
+    unsigned  fmtbase, fmtidx, i;
+    uint8_t   uuidfmt[] = { 4, 2, 2, 2, 6 };
+    char     *p = uuidStr;
+    MD5_CTX   md5c;
+    uint8_t   mdresult[16];
+
+    bzero(mdresult, sizeof(mdresult));
+
+    // just like AppleFileSystemDriver
+    MD5Init(&md5c);
+    MD5Update(&md5c, kFSUUIDNamespaceSHA1, sizeof(kFSUUIDNamespaceSHA1));
+    MD5Update(&md5c, uubytes, nbytes);
+    MD5Final(mdresult, &md5c);
+
+    // this UUID has been made version 3 style (i.e. via namespace)
+    // see "-uuid-urn-" IETF draft (which otherwise copies byte for byte)
+    mdresult[6] = 0x30 | ( mdresult[6] & 0x0F );
+    mdresult[8] = 0x80 | ( mdresult[8] & 0x3F );
+
+
+    // generate the text: e.g. 5EB1869F-C4FA-3502-BDEB-3B8ED5D87292
+    i = 0; fmtbase = 0;
+    for(fmtidx = 0; fmtidx < sizeof(uuidfmt); fmtidx++) {
+        for(i=0; i < uuidfmt[fmtidx]; i++) {
+            uint8_t byte = mdresult[fmtbase+i];
+            char nib;
+
+            nib = byte >> 4;
+            *p = nib + '0';  // 0x4 -> '4'
+            if(*p > '9')  *p = (nib - 9 + ('A'-1));  // 0xB -> 'B'
+            p++;
+
+            nib = byte & 0xf;
+            *p = nib + '0';  // 0x4 -> '4'
+            if(*p > '9')  *p = (nib - 9 + ('A'-1));  // 0xB -> 'B'
+            p++;
+
+        }
+        fmtbase += i;
+        if(fmtidx < sizeof(uuidfmt)-1)
+            *(p++) = '-';
+        else
+            *p = '\0';
+    }
+
+    return 0;
 }
 
 
@@ -543,14 +612,15 @@ int readdir_ext(struct dirstuff * dirp, const char ** name, long * flags,
 
 int currentdev()
 {
-    return bootArgs->kernDev;
+    printf("currentdev = %d\n", bootInfo->kernDev);
+    return bootInfo->kernDev;
 }
 
 //==========================================================================
 
 int switchdev(int dev)
 {
-    bootArgs->kernDev = dev;
+    bootInfo->kernDev = dev;
     return dev;
 }
 
@@ -620,9 +690,9 @@ BVRef getBootVolumeRef( const char * path, const char ** outPath )
 {
     const char * cp;
     BVRef        bvr;
-    int          type = B_TYPE( bootArgs->kernDev );
-    int          unit = B_UNIT( bootArgs->kernDev );
-    int          part = B_PARTITION( bootArgs->kernDev );
+    int          type = B_TYPE( bootInfo->kernDev );
+    int          unit = B_UNIT( bootInfo->kernDev );
+    int          part = B_PARTITION( bootInfo->kernDev );
     int          biosdev = gBIOSDev;
     static BVRef lastBVR = 0;
     static int   lastKernDev;
@@ -636,7 +706,7 @@ BVRef getBootVolumeRef( const char * path, const char ** outPath )
     if (*cp != LP)  // no left paren found
     {
         cp = path;
-        if ( lastBVR && lastKernDev == bootArgs->kernDev )
+        if ( lastBVR && lastKernDev == bootInfo->kernDev )
         {
             bvr = lastBVR;
             goto quick_exit;
@@ -703,10 +773,10 @@ BVRef getBootVolumeRef( const char * path, const char ** outPath )
     // Record the most recent device parameters in the
     // KernBootStruct.
 
-    bootArgs->kernDev = biosdev;
+    bootInfo->kernDev = biosdev;
 
     lastBVR = bvr;
-    lastKernDev = bootArgs->kernDev;
+    lastKernDev = bootInfo->kernDev;
 
 quick_exit:
     // Returns the file path following the device spec.

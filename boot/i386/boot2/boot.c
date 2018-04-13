@@ -61,6 +61,7 @@ BOOL gOverrideKernel;
 static char gBootKernelCacheFile[512];
 static char gCacheNameAdler[64 + 256];
 char *gPlatformName = gCacheNameAdler;
+char gRootDevice[512];
 char gMKextName[512];
 BVRef gBootVolume;
 
@@ -103,7 +104,7 @@ static void malloc_error(char *addr, size_t size)
 {
     printf("\nMemory allocation error (0x%x, 0x%x)\n",
            (unsigned)addr, (unsigned)size);
-    asm("hlt");
+    asm volatile ("hlt");
 }
 
 //==========================================================================
@@ -113,9 +114,6 @@ static int ExecKernel(void *binary)
 {
     entry_t                   kernelEntry;
     int                       ret;
-#ifdef APM_SUPPORT
-    BOOL                      apm;
-#endif /* APM_SUPPORT */
     BOOL                      bootGraphics;
 
     bootArgs->kaddr = bootArgs->ksize = 0;
@@ -123,7 +121,7 @@ static int ExecKernel(void *binary)
     ret = DecodeKernel(binary,
                        &kernelEntry,
                        (char **) &bootArgs->kaddr,
-                       &bootArgs->ksize );
+                       (int *)&bootArgs->ksize );
 
     if ( ret != 0 )
         return ret;
@@ -147,17 +145,6 @@ static int ExecKernel(void *binary)
 
     printf("Starting Darwin/x86");
 
-    turnOffFloppy();
-
-#ifdef APM_SUPPORT
-    // Connect to APM BIOS.
-
-    if ( getBoolForKey("APM", &apm) && apm == YES )
-    {
-        if ( APMPresent() ) APMConnect32();
-    }
-#endif /* APM_SUPPORT */
-
     // Cleanup the PXE base code.
 
     if ( (gBootFileType == kNetworkDeviceType) && gUnloadPXEOnExit ) {
@@ -176,19 +163,23 @@ static int ExecKernel(void *binary)
     }
 
     if (bootGraphics) {
-        if (bootArgs->graphicsMode == TEXT_MODE) {
+        if (bootArgs->Video.v_display == VGA_TEXT_MODE) {
             // If we were in text mode, switch to graphics mode.
-            // This will draw the boot graphics.
+            // This will draw the boot graphics unless we are in
+            // verbose mode.
             setVideoMode( GRAPHICS_MODE );
         } else {
             // If we were already in graphics mode, clear the screen.
             drawBootGraphics();
         }
     } else {
-        if (bootArgs->graphicsMode == GRAPHICS_MODE) {
-            setVideoMode( TEXT_MODE );
-        }
+        // Always set text mode to initialize video fields
+        // in the boot args structure.
+        setVideoMode( VGA_TEXT_MODE );
+        setCursorType( kCursorTypeHidden );
     }
+
+    finalizeBootStruct();
 
     // Jump to kernel's entry point. There's no going back now.
 
@@ -207,13 +198,13 @@ static void scanHardware()
     extern int  ReadPCIBusInfo(PCI_bus_info_t *);
     extern void PCI_Bus_Init(PCI_bus_info_t *);
 
-    ReadPCIBusInfo( &bootArgs->pciInfo );
+    ReadPCIBusInfo( &bootInfo->pciInfo );
     
     //
     // Initialize PCI matching support in the booter.
     // Not used, commented out to minimize code size.
     //
-    // PCI_Bus_Init( &bootArgs->pciInfo );
+    // PCI_Bus_Init( &bootInfo->pciInfo );
 }
 
 //==========================================================================
@@ -242,7 +233,6 @@ void boot(int biosdev)
     zeroBSS();
 
     // Initialize malloc
-
     malloc_init(0, 0, 0, malloc_error);
 
     // Enable A20 gate before accessing memory above 1Mb.
@@ -266,10 +256,21 @@ void boot(int biosdev)
     // Not sure if it is safe to call setVideoMode() before the
     // config table has been loaded. Call video_mode() instead.
 
+#if DEBUG
+    printf("before video_mode\n");
+#endif
     video_mode( 2 );  // 80x25 mono text mode.
+#if DEBUG
+    printf("after video_mode\n");
+#endif
+
+    // Check to see that this hardware is supported.
+    status = checkForSupportedHardware();
+    if (status != 0) {
+        stop("This hardware configuration is not supported by Darwin/x86. (%d)", status);
+    }
 
     // Scan hardware configuration.
-
     scanHardware();
 
     // First get info for boot volume.
@@ -277,7 +278,7 @@ void boot(int biosdev)
 
     // Record default boot device.
     gBootVolume = selectBootVolume(bvChain);
-    bootArgs->kernDev = MAKEKERNDEV(gBIOSDev,
+    bootInfo->kernDev = MAKEKERNDEV(gBIOSDev,
                                     BIOS_DEV_UNIT(gBootVolume),
                                     gBootVolume->part_no );
 
@@ -297,6 +298,7 @@ void boot(int biosdev)
         int trycache;
         long flags, cachetime, kerneltime, exttime;
         int ret = -1;
+        void *binary = (void *)kLoadAddr;
 
         // Initialize globals.
 
@@ -315,19 +317,11 @@ void boot(int biosdev)
 
 
         // Reset cache name.
-        bzero(gCacheNameAdler, sizeof(gCacheNameAdler));
+        bzero(gCacheNameAdler + 64, sizeof(gCacheNameAdler) - 64);
 
-        if ( getValueForKey( kRootDeviceKey, &val, &len ) == YES ) {
-            if (*val == '*') {
-                val++;
-                len--;
-            }
-            strncpy( gCacheNameAdler + 64, val, len );
-            sprintf(gCacheNameAdler + 64 + len, ",%s", bootArgs->bootFile);
-        } else {
-            strcpy(gCacheNameAdler + 64, bootArgs->bootFile);
-        }
-        adler32 = Adler32(gCacheNameAdler, sizeof(gCacheNameAdler));
+        sprintf(gCacheNameAdler + 64, "%s,%s", gRootDevice, bootInfo->bootFile);
+
+        adler32 = Adler32((unsigned char *)gCacheNameAdler, sizeof(gCacheNameAdler));
 
         if (getValueForKey(kKernelCacheKey, &val, &len) == YES) {
             strlcpy(gBootKernelCacheFile, val, len+1);
@@ -336,7 +330,6 @@ void boot(int biosdev)
         }
 
         // Check for cache file.
-
 
         trycache = (((gBootMode & kBootModeSafe) == 0) &&
                     (gOverrideKernel == NO) &&
@@ -349,7 +342,7 @@ void boot(int biosdev)
         if (trycache) do {
       
             // if we haven't found the kernel yet, don't use the cache
-            ret = GetFileInfo(NULL, bootArgs->bootFile, &flags, &kerneltime);
+            ret = GetFileInfo(NULL, bootInfo->bootFile, &flags, &kerneltime);
             if ((ret != 0) || ((flags & kFileTypeMask) != kFileTypeFlat)) {
                 trycache = 0;
                 break;
@@ -380,13 +373,14 @@ void boot(int biosdev)
                 bootFile = gBootKernelCacheFile;
                 verbose("Loading kernel cache %s\n", bootFile);
                 ret = LoadFile(bootFile);
+                binary = (void *)kLoadAddr;
                 if (ret >= 0) {
                     break;
                 }
             }
-            bootFile = bootArgs->bootFile;
+            bootFile = bootInfo->bootFile;
             verbose("Loading kernel %s\n", bootFile);
-            ret = LoadFile(bootFile);
+            ret = LoadThinFatFile(bootFile, &binary);
         } while (0);
 
         clearActivityIndicator();
@@ -398,14 +392,7 @@ void boot(int biosdev)
         if (ret < 0) {
             error("Can't find %s\n", bootFile);
 
-            if ( gBootFileType == kBIOSDevTypeFloppy )
-            {
-                // floppy in drive, but failed to load kernel.
-                gBIOSDev = kBIOSDevTypeHardDrive;
-                initKernBootStruct( gBIOSDev );
-                printf("Attempting to load from hard drive...");
-            }
-            else if ( gBootFileType == kNetworkDeviceType )
+            if ( gBootFileType == kNetworkDeviceType )
             {
                 // Return control back to PXE. Don't unload PXE base code.
                 gUnloadPXEOnExit = 0;
@@ -413,7 +400,7 @@ void boot(int biosdev)
             }
         } else {
             /* Won't return if successful. */
-            ret = ExecKernel((void *)kLoadAddr);
+            ret = ExecKernel(binary);
         }
 
     } /* while(1) */
@@ -458,4 +445,5 @@ unsigned long Adler32(unsigned char *buf, long len)
     result = (s2 << 16) | s1;
     return OSSwapHostToBigInt32(result);
 }
+
 

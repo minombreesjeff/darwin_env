@@ -52,6 +52,7 @@ void drawDataRectangle( unsigned short  x,
                                unsigned short  height,
                         unsigned char * data );
 
+static void setBorderColor( unsigned char colorIndex );
 
 int
 convertImage( unsigned short width,
@@ -59,7 +60,7 @@ convertImage( unsigned short width,
               const unsigned char *imageData,
               unsigned char **newImageData );
 
-#define VIDEO(x) (bootArgs->video.v_ ## x)
+#define VIDEO(x) (bootArgs->Video.v_ ## x)
 
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
@@ -81,7 +82,7 @@ void printVBEInfo()
 
     // Check presence of VESA signature.
 
-    if ( strncmp( vbeInfo.VESASignature, "VESA", 4 ) )
+    if ( strncmp( (char *)vbeInfo.VESASignature, "VESA", 4 ) )
         return;
 
     // Announce controller properties.
@@ -428,12 +429,12 @@ setVESAGraphicsMode( unsigned short width,
         // Update KernBootStruct using info provided by the selected
         // VESA mode.
 
-        bootArgs->graphicsMode     = GRAPHICS_MODE;
-        bootArgs->video.v_width    = minfo.XResolution;
-        bootArgs->video.v_height   = minfo.YResolution;
-        bootArgs->video.v_depth    = minfo.BitsPerPixel;
-        bootArgs->video.v_rowBytes = minfo.BytesPerScanline;
-        bootArgs->video.v_baseAddr = VBEMakeUInt32(minfo.PhysBasePtr);
+        bootArgs->Video.v_display  = GRAPHICS_MODE;
+        bootArgs->Video.v_width    = minfo.XResolution;
+        bootArgs->Video.v_height   = minfo.YResolution;
+        bootArgs->Video.v_depth    = minfo.BitsPerPixel;
+        bootArgs->Video.v_rowBytes = minfo.BytesPerScanline;
+        bootArgs->Video.v_baseAddr = VBEMakeUInt32(minfo.PhysBasePtr);
 
     }
     while ( 0 );
@@ -494,6 +495,8 @@ drawBootGraphics( void )
         drawColorRectangle( 0, 0, VIDEO(width), VIDEO(height),
                             0x01 /* color index */ );
 
+        setBorderColor( 0x01 /* color index */ );
+
         appleBootPict = decodeRLE( gAppleBootPictRLE, kAppleBootRLEBlocks,
                                    kAppleBootWidth * kAppleBootHeight );
 
@@ -502,7 +505,7 @@ drawBootGraphics( void )
         if ( appleBootPict )
         {
             convertImage(kAppleBootWidth, kAppleBootHeight,
-                         appleBootPict, &imageData);
+                         (unsigned char *)appleBootPict, &imageData);
 
             x = ( VIDEO(width) - kAppleBootWidth ) / 2;
             y = ( VIDEO(height) - kAppleBootHeight ) / 2 + kAppleBootOffset;
@@ -559,7 +562,7 @@ static unsigned long lookUpCLUTIndex( unsigned char index,
 
 static void * stosl(void * dst, long val, long len)
 {
-    asm( "rep; stosl"
+    asm volatile ( "rep; stosl"
        : "=c" (len), "=D" (dst)
        : "0" (len), "1" (dst), "a" (val)
        : "memory" );
@@ -616,6 +619,29 @@ void drawDataRectangle( unsigned short  x,
     }
 }
 
+
+//==========================================================================
+// setBorderColor
+
+static void
+setBorderColor( unsigned char  colorIndex )
+{
+    long   color = lookUpCLUTIndex( colorIndex, 32 );
+    VBEInfoBlock     vbeInfo;
+    int              err;
+
+    // Get VBE controller info.
+
+    bzero( &vbeInfo, sizeof(vbeInfo) );
+    err = getVBEInfo( &vbeInfo );
+    if ( err != errSuccess )
+    {
+        return;
+    }
+
+}
+
+
 //==========================================================================
 // setVESATextMode
 
@@ -646,12 +672,12 @@ setVESATextMode( unsigned short cols,
     // Update KernBootStruct using info provided by the selected
     // VESA mode.
 
-    bootArgs->graphicsMode     = TEXT_MODE;
-    bootArgs->video.v_baseAddr = 0xb8000;
-    bootArgs->video.v_width    = minfo.XResolution;
-    bootArgs->video.v_height   = minfo.YResolution;
-    bootArgs->video.v_depth    = 8;
-    bootArgs->video.v_rowBytes = 0x8000;
+    bootArgs->Video.v_display  = VGA_TEXT_MODE;
+    bootArgs->Video.v_baseAddr = 0xb8000;
+    bootArgs->Video.v_width    = minfo.XResolution;
+    bootArgs->Video.v_height   = minfo.YResolution;
+    bootArgs->Video.v_depth    = 8;
+    bootArgs->Video.v_rowBytes = 0x8000;
 
     return errSuccess;  // always return success
 }
@@ -696,7 +722,7 @@ getNumberArrayFromProperty( const char *  propKey,
 //==========================================================================
 // setVideoMode
 //
-// Set the video mode to TEXT_MODE or GRAPHICS_MODE.
+// Set the video mode to VGA_TEXT_MODE or GRAPHICS_MODE.
 
 void
 setVideoMode( int mode )
@@ -725,19 +751,17 @@ setVideoMode( int mode )
         err = setVESAGraphicsMode( params[0], params[1], params[2], params[3] );
         if ( err == errSuccess )
         {
-            // If this boolean is set to true, then the console driver
-            // in the kernel will show the animated color wheel on the
-            // upper left corner.
-
-            bootArgs->video.v_display = !gVerboseMode;
-            
-            if (!gVerboseMode) {
+            if (gVerboseMode) {
+                // Tell the kernel to use text mode on a linear frame buffer display
+                bootArgs->Video.v_display = FB_TEXT_MODE;
+            } else {
+                bootArgs->Video.v_display = GRAPHICS_MODE;
                 drawBootGraphics();
             }
         }
     }
 
-    if ( (mode == TEXT_MODE) || (err != errSuccess) )
+    if ( (mode == VGA_TEXT_MODE) || (err != errSuccess) )
     {
         count = getNumberArrayFromProperty( kTextModeKey, params, 2 );
         if ( count < 2 )
@@ -747,18 +771,18 @@ setVideoMode( int mode )
         }
 
         setVESATextMode( params[0], params[1], 4 );
-        bootArgs->video.v_display = 0;
+        bootArgs->Video.v_display = VGA_TEXT_MODE;
     }
 
     currentIndicator = 0;
 }
 
 //==========================================================================
-// Return the current video mode, TEXT_MODE or GRAPHICS_MODE.
+// Return the current video mode, VGA_TEXT_MODE or GRAPHICS_MODE.
 
 int getVideoMode(void)
 {
-    return bootArgs->graphicsMode;
+    return bootArgs->Video.v_display;
 }
 
 //==========================================================================
@@ -783,7 +807,7 @@ spinActivityIndicator( void )
     else
         lastTickTime = currentTickTime;
 
-    if ( getVideoMode() == TEXT_MODE )
+    if ( getVideoMode() == VGA_TEXT_MODE )
     {
         if (currentIndicator >= kNumIndicators) currentIndicator = 0;
         string[0] = indicator[currentIndicator++];
@@ -794,7 +818,7 @@ spinActivityIndicator( void )
 void
 clearActivityIndicator( void )
 {
-    if ( getVideoMode() == TEXT_MODE )
+    if ( getVideoMode() == VGA_TEXT_MODE )
     {
         printf(" \b");
     }

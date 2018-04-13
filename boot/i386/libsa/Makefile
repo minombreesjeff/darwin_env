@@ -6,10 +6,11 @@ UTILDIR = ../util
 INSTALL_SA_DIR = $(DSTROOT)/System/Library/Frameworks/System.framework/Versions/B/PrivateHeaders/standalone
 INSTALL_MD_DIR = $(DSTROOT)/System/Library/Frameworks/System.framework/Versions/B/PrivateHeaders/machdep/i386
 
-OPTIM = -Os
+OPTIM = -Os -Oz
 CFLAGS	= $(RC_CFLAGS) $(OPTIM) $(MORECPP) -arch i386 -g -Wmost -Werror \
 	      -fno-builtin -static -fomit-frame-pointer \
-	      -mpreferred-stack-boundary=2 -fno-align-functions
+	      -mpreferred-stack-boundary=2 -fno-align-functions \
+	      -mno-sse2 -mfpmath=387
 
 INC = -I. -I$(SYMROOT) -I$(UTILDIR)
 ifneq "" "$(wildcard /bin/mkdirs)"

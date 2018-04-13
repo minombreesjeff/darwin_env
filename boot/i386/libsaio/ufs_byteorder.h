@@ -44,12 +44,11 @@
 #include <ufs/ufs/dir.h>
 #include <ufs/ffs/fs.h>
 
-void byte_swap_ints(int *array, int count);
-void byte_swap_shorts(short *array, int count);
+void byte_swap_ints(unsigned int *array, int count);
+void byte_swap_shorts(unsigned short *array, int count);
 void byte_swap_longlongs(unsigned long long *array, int count);
 
 void byte_swap_superblock(struct fs *sb);
-void byte_swap_partition(struct partition *part);
 void byte_swap_dinode_in(struct dinode *di);
 void byte_swap_dir_block_in(char *addr, int count);
 void byte_swap_inode_in(struct dinode *dc, struct dinode *ic);

@@ -5,11 +5,11 @@
 DIR = boot2
 include ../MakePaths.dir
 
-OPTIM = -Os
+OPTIM = -Os -Oz
 CFLAGS	= $(RC_CFLAGS) $(OPTIM) $(MORECPP) -arch i386 -g -Wmost -Werror \
           -fno-builtin -DSAIO_INTERNAL_USER -static \
 	  -fomit-frame-pointer -mpreferred-stack-boundary=2 \
-	  -fno-align-functions
+	  -fno-align-functions -mno-sse2 -mfpmath=387
 DEFINES=
 CONFIG = hd
 SYMDIR = $(SYMROOT)
@@ -23,7 +23,7 @@ else
   MKDIRS = /bin/mkdir -p
 endif
 AS = as
-LD = ld
+LD = gcc
 # LIBS= -lc_static
 LIBS= -L$(SYMDIR) -lsaio -lsa
 LIBDEP= $(SYMDIR)/libsaio.a $(SYMDIR)/libsa.a
@@ -52,7 +52,8 @@ MAXBOOTSIZE = 65024
 all: $(DIRS_NEEDED) boot
 
 boot: machOconv $(OBJS) $(LIBDEP)
-	$(LD) -static -preload -segaddr __TEXT $(BOOT2ADDR) -segalign 20 \
+	$(LD) -static -Wl,-preload -Wl,-segaddr,__TEXT,$(BOOT2ADDR) \
+	        -nostdlib -arch i386 -Wl,-segalign,20 \
 		-o $(SYMROOT)/boot.sys $(filter %.o,$^) $(LIBS) -lcc_kext
 	machOconv $(SYMROOT)/boot.sys $(SYMROOT)/boot
 	size $(SYMROOT)/boot.sys

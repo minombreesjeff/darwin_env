@@ -43,11 +43,6 @@ static void showHelp();
 
 //==========================================================================
 
-enum {
-    kCursorTypeHidden    = 0x0100,
-    kCursorTypeUnderline = 0x0607
-};
-
 typedef struct {
     int x;
     int y;
@@ -101,7 +96,7 @@ static int countdown( const char * msg, int row, int timeout )
     moveCursor( 0, row );
     printf(msg);
 
-    for ( time = time18(), timeout++; timeout; )
+    for ( time = time18(), timeout++; timeout > 0; )
     {
         if (ch = readKeyboardStatus())
             break;
@@ -395,7 +390,7 @@ printMemoryInfo(void)
 {
     int line;
     int i;
-    MemoryRange *mp = bootArgs->memoryMap;
+    MemoryRange *mp = bootInfo->memoryMap;
 
     // Activate and clear page 1
     setActiveDisplayPage(1);
@@ -404,7 +399,7 @@ printMemoryInfo(void)
 
     printf("BIOS reported memory ranges:\n");
     line = 1;
-    for (i=0; i<bootArgs->memoryMapCount; i++) {
+    for (i=0; i<bootInfo->memoryMapCount; i++) {
         printf("Base 0x%08x%08x, ",
                (unsigned long)(mp->base >> 32),
                (unsigned long)(mp->base));
@@ -441,20 +436,29 @@ getBootOptions(BOOL firstRun)
     BVRef   bvr;
     BVRef   bvChain;
     BVRef   menuBVR;
-    BOOL    showPrompt, newShowPrompt;
+    BOOL    showPrompt, newShowPrompt, isCDROM;
     MenuItem *  menuItems = NULL;
+
+    if ( diskIsCDROM(gBootVolume) )
+        isCDROM = TRUE;
+    else
+        isCDROM = FALSE;
 
     // Allow user to override default timeout.
 
     if ( getIntForKey(kTimeoutKey, &timeout) == NO )
     {
-        timeout = kBootTimeout;
+        if ( isCDROM )
+            timeout = kCDBootTimeout;
+        else
+            timeout = kBootTimeout;
     }
+    if (timeout < 0) gBootMode |= kBootModeQuiet;
 
-    // If the user is holding down a shift key,
-    // abort quiet mode.
+    // If the user is holding down a modifier key,
+    // enter safe mode.
     if ( ( readKeyboardShiftFlags() & 0x0F ) != 0 ) {
-        gBootMode &= ~kBootModeQuiet;
+        gBootMode |= kBootModeSafe;
     }
 
     // If user typed F8, abort quiet mode,
@@ -470,7 +474,7 @@ getBootOptions(BOOL firstRun)
     clearScreenRows( 0, kScreenLastRow );
     if ( ! ( gBootMode & kBootModeQuiet ) ) {
         // Display banner and show hardware info. 
-        printf( bootBanner, (bootArgs->convmem + bootArgs->extmem) / 1024 );
+        printf( bootBanner, (bootInfo->convmem + bootInfo->extmem) / 1024 );
         printVBEInfo();
     }
 
@@ -483,32 +487,61 @@ getBootOptions(BOOL firstRun)
     bvChain = scanBootVolumes( gBIOSDev, &bvCount );
     gBootVolume = menuBVR = selectBootVolume( bvChain );
 
-#if 0
-    // When booting from CD (via HD emulation), default to hard
+    // When booting from CD, default to hard
     // drive boot when possible. 
 
-    if ( gBootVolume->part_type == FDISK_BOOTER &&
-         gBootVolume->biosdev   == 0x80 )
+    if ( isCDROM )
     {
-        // Scan the original device 0x80 that has been displaced
-        // by the CD-ROM.
+        const char *val;
+        char *prompt;
+        int cnt;
+        int optionKey;
 
-        BVRef hd_bvr = selectBootVolume(scanBootVolumes(0x81, 0));
-        if ( hd_bvr->flags & kBVFlagNativeBoot )
-        {
-            int key = countdown("Press C to start up from CD-ROM.",
-                                kMenuTopRow, 5);
-            
-            if ( (key & 0x5f) != 'c' )
-            {
+        if (getValueForKey( kCDROMPromptKey, &val, &cnt )) {
+            cnt += 1;
+            prompt = malloc(cnt);
+            strlcpy(prompt, val, cnt);
+        } else {
+            prompt = "Press any key to start up from CD-ROM, "
+                "or press F8 to enter startup options.";
+            cnt = 0;
+        }
+
+        if (getIntForKey( kCDROMOptionKey, &optionKey )) {
+            // The key specified is a special key.
+        } else if (getValueForKey( kCDROMOptionKey, &val, &cnt) && cnt >= 1) {
+            optionKey = val[0];
+        } else {
+            // Default to F8.
+            optionKey = 0x4200;
+        }
+
+        key = countdown(prompt, kMenuTopRow, timeout);
+        if (cnt)
+            free(prompt);
+
+        clearScreenRows( kMenuTopRow, kMenuTopRow + 2 );
+
+        if (key == 0) {
+            // Boot from hard disk.
+            // Scan the original device 0x80.
+
+            BVRef hd_bvr = selectBootVolume(scanBootVolumes(0x80, 0));
+            if ( hd_bvr->flags & kBVFlagNativeBoot ) {
                 gBootVolume = hd_bvr;
                 gBIOSDev = hd_bvr->biosdev;
                 initKernBootStruct( gBIOSDev );
                 goto done;
             }
+        } else  {
+            if (optionKey < 0x100)
+                key = key & 0x5F;
+            if (key != optionKey)
+                goto done;
         }
+        gBootMode &= ~kBootModeQuiet;
+        timeout = 0;
     }
-#endif
 
     if ( gBootMode & kBootModeQuiet )
     {
@@ -520,6 +553,11 @@ getBootOptions(BOOL firstRun)
          ( countdown("Press any key to enter startup options.",
                      kMenuTopRow, timeout) == 0 ) )
     {
+        // If the user is holding down a modifier key,
+        // enter safe mode.
+        if ( ( readKeyboardShiftFlags() & 0x0F ) != 0 ) {
+            gBootMode |= kBootModeSafe;
+        }
         goto done;
     }
 
@@ -622,7 +660,71 @@ done:
 extern unsigned char chainbootdev;
 extern unsigned char chainbootflag;
 
-int processBootOptions()
+BOOL
+copyArgument(const char *argName, const char *val, int cnt, char **argP, int *cntRemainingP)
+{
+    int argLen = argName ? strlen(argName) : 0;
+    int len = argLen + cnt + 1;  // +1 to account for space
+
+    if (len > *cntRemainingP) {
+        error("Warning: boot arguments too long, truncating\n");
+        return NO;
+    }
+
+    if (argName) {
+        strncpy( *argP, argName, argLen );
+        *argP += argLen;
+        *argP[0] = '=';
+        (*argP)++;
+        len++; // +1 to account for '='
+    }
+    strncpy( *argP, val, cnt );
+    *argP += cnt;
+    *argP[0] = ' ';
+    (*argP)++;
+
+    *cntRemainingP -= len;
+    return YES;
+}
+// 
+// Returns TRUE if an argument was copied, FALSE otherwise
+
+BOOL
+processBootArgument(
+                    const char *argName,      // The argument to search for
+                    const char *userString,   // Typed-in boot arguments
+                    const char *kernelFlags,  // Kernel flags from config table
+                    const char *configTable,
+                    char **argP,                // Output value
+                    int *cntRemainingP,         // Output count
+                    char *foundVal              // found value
+                    )
+{
+    const char *val;
+    int cnt;
+    BOOL found = NO;
+
+    if (getValueForBootKey(userString, argName, &val, &cnt)) {
+        // Don't copy; these values will be copied at the end of argument processing.
+        found = YES;
+    } else if (getValueForBootKey(kernelFlags, argName, &val, &cnt)) {
+        // Don't copy; these values will be copied at the end of argument processing.
+        found = YES;
+    } else if (getValueForConfigTableKey(configTable, argName, &val, &cnt)) {
+        copyArgument(argName, val, cnt, argP, cntRemainingP);
+        found = YES;
+    }
+    if (found && foundVal) {
+        strlcpy(foundVal, val, cnt+1);
+    }
+    return found;
+}
+
+// Maximum config table value size
+#define VALUE_SIZE 1024
+
+int
+processBootOptions()
 {
     const char *     cp  = gBootArgs;
     const char *     val = 0;
@@ -631,6 +733,12 @@ int processBootOptions()
     int		     userCnt;
     int              cntRemaining;
     char *           argP;
+    char             uuidStr[64];
+    BOOL             uuidSet = NO;
+    char *           configKernelFlags;
+    char *           valueBuffer;
+
+    valueBuffer = (char *)malloc(VALUE_SIZE);
 
     skipblanks( &cp );
 
@@ -654,10 +762,10 @@ int processBootOptions()
             return 1;
         }
 
-        bootArgs->kernDev &= ~((B_UNITMASK << B_UNITSHIFT ) |
+        bootInfo->kernDev &= ~((B_UNITMASK << B_UNITSHIFT ) |
                           (B_PARTITIONMASK << B_PARTITIONSHIFT));
 
-        bootArgs->kernDev |= MAKEKERNDEV(    0,
+        bootInfo->kernDev |= MAKEKERNDEV(    0,
  		         /* unit */      BIOS_DEV_UNIT(gBootVolume),
                         /* partition */ gBootVolume->part_no );
     }
@@ -680,60 +788,94 @@ int processBootOptions()
 
     gOverrideKernel = NO;
     if (( kernel = extractKernelName((char **)&cp) )) {
-        strcpy( bootArgs->bootFile, kernel );
+        strcpy( bootInfo->bootFile, kernel );
         gOverrideKernel = YES;
     } else {
         if ( getValueForKey( kKernelNameKey, &val, &cnt ) ) {
-            strlcpy( bootArgs->bootFile, val, cnt+1 );
-            if (strcmp( bootArgs->bootFile, kDefaultKernel ) != 0) {
+            strlcpy( bootInfo->bootFile, val, cnt+1 );
+            if (strcmp( bootInfo->bootFile, kDefaultKernel ) != 0) {
                 gOverrideKernel = YES;
             }
         } else {
-            strcpy( bootArgs->bootFile, kDefaultKernel );
+            strcpy( bootInfo->bootFile, kDefaultKernel );
         }
     }
 
     cntRemaining = BOOT_STRING_LEN - 2;  // save 1 for NULL, 1 for space
+    argP = bootArgs->CommandLine;
 
-    // Check to see if we need to specify root device.
-    // If user types "rd=.." on the boot line, it overrides
-    // the boot device key in the boot arguments file.
-    //
-    argP = bootArgs->bootString;
-    if ( getValueForBootKey( cp, kRootDeviceKey, &val, &cnt ) == FALSE &&
-         getValueForKey( kRootDeviceKey, &val, &cnt ) == FALSE ) {
-        if ( getValueForKey( kBootDeviceKey, &val, &cnt ) ) {
-            strcpy( argP, "rd=*" );
-            argP += 4;
-            strlcpy( argP, val, cnt+1);
-            cntRemaining -= cnt;
-            argP += cnt;
-            *argP++ = ' ';
+    // Get config table kernel flags, if not ignored.
+    if (getValueForBootKey(cp, kIgnoreBootFileFlag, &val, &cnt) == TRUE ||
+            getValueForKey( kKernelFlagsKey, &val, &cnt ) == FALSE) {
+        val = "";
+        cnt = 0;
+    }
+    configKernelFlags = (char *)malloc(cnt + 1);
+    strlcpy(configKernelFlags, val, cnt + 1);
+
+    if (processBootArgument(kBootUUIDKey, cp, configKernelFlags, bootInfo->config, &argP, &cntRemaining, 0)) {
+        // boot-uuid was set either on the command-line
+        // or in the config file.
+        uuidSet = YES;
+    } else {
+        if (GetFSUUID(bootInfo->bootFile, uuidStr) == 0) {
+            verbose("Setting boot-uuid to: %s\n", uuidStr);
+            copyArgument(kBootUUIDKey, uuidStr, strlen(uuidStr), &argP, &cntRemaining);
+            uuidSet = YES;
         }
     }
 
-    // Check to see if we should ignore saved kernel flags.
-    if (getValueForBootKey(cp, kIgnoreBootFileFlag, &val, &cnt) == FALSE) {
-        if (getValueForKey( kKernelFlagsKey, &val, &cnt ) == FALSE) {
-	    val = 0;
-	    cnt = 0;
+    if (!processBootArgument(kRootDeviceKey, cp, configKernelFlags, bootInfo->config, &argP, &cntRemaining, gRootDevice)) {
+        cnt = 0;
+        if ( getValueForKey( kBootDeviceKey, &val, &cnt)) {
+            valueBuffer[0] = '*';
+            cnt++;
+            strlcpy(valueBuffer + 1, val, cnt);
+            val = valueBuffer;
+        } else {
+            if (uuidSet) {
+                val = "*uuid";
+                cnt = 5;
+            } else {
+                // Don't set "rd=.." if there is no boot device key
+                // and no UUID.
+                val = "";
+                cnt = 0;
+            }
+        } 
+        if (cnt > 0) {
+            copyArgument( kRootDeviceKey, val, cnt, &argP, &cntRemaining);
+        }
+        strlcpy( gRootDevice, val, (cnt + 1));
+    }
+
+    if (!processBootArgument(kPlatformKey, cp, configKernelFlags, bootInfo->config, &argP, &cntRemaining, gPlatformName)) {
+        getPlatformName(gPlatformName);
+        copyArgument(kPlatformKey, gPlatformName, strlen(gPlatformName), &argP, &cntRemaining);
+    }
+
+    if (!getValueForBootKey(cp, kSafeModeFlag, &val, &cnt) &&
+        !getValueForBootKey(configKernelFlags, kSafeModeFlag, &val, &cnt)) {
+        if (gBootMode & kBootModeSafe) {
+            copyArgument(0, kSafeModeFlag, strlen(kSafeModeFlag), &argP, &cntRemaining);
         }
     }
 
     // Store the merged kernel flags and boot args.
 
-    if (cnt > cntRemaining) {
-	error("Warning: boot arguments too long, truncated\n");
-	cnt = cntRemaining;
-    }
+    cnt = strlen(configKernelFlags);
     if (cnt) {
-      strncpy(argP, val, cnt);
-      argP[cnt++] = ' ';
+        if (cnt > cntRemaining) {
+            error("Warning: boot arguments too long, truncating\n");
+            cnt = cntRemaining;
+        }
+        strncpy(argP, configKernelFlags, cnt);
+        argP[cnt++] = ' ';
+        cntRemaining -= cnt;
     }
-    cntRemaining = cntRemaining - cnt;
     userCnt = strlen(cp);
     if (userCnt > cntRemaining) {
-	error("Warning: boot arguments too long, truncated\n");
+	error("Warning: boot arguments too long, truncating\n");
 	userCnt = cntRemaining;
     }
     strncpy(&argP[cnt], cp, userCnt);
@@ -745,18 +887,20 @@ int processBootOptions()
     gBootMode = ( getValueForKey( kSafeModeFlag, &val, &cnt ) ) ?
                 kBootModeSafe : kBootModeNormal;
 
-    if ( getValueForKey( kPlatformKey, &val, &cnt ) ) {
-        strlcpy(gPlatformName, val, cnt + 1);
-    } else {
-        strcpy(gPlatformName, "ACPI");
+    if ( getValueForKey( kOldSafeModeFlag, &val, &cnt ) ) {
+        gBootMode = kBootModeSafe;
     }
 
     if ( getValueForKey( kMKextCacheKey, &val, &cnt ) ) {
         strlcpy(gMKextName, val, cnt + 1);
     }
 
+    free(configKernelFlags);
+    free(valueBuffer);
+
     return 0;
 }
+
 
 //==========================================================================
 // Load the help file and display the file contents on the screen.

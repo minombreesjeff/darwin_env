@@ -52,7 +52,7 @@ byte_swap_longlongs(unsigned long long *array, int count)
 #endif
 
 void
-byte_swap_ints(int *array, int count)
+byte_swap_ints(unsigned int *array, int count)
 {
 	register int	i;
 
@@ -61,7 +61,7 @@ byte_swap_ints(int *array, int count)
 }
 
 void
-byte_swap_shorts(short *array, int count)
+byte_swap_shorts(unsigned short *array, int count)
 {
 	register int	i;
 
@@ -71,7 +71,7 @@ byte_swap_shorts(short *array, int count)
 
 #if UNUSED
 static void
-swapBigIntsToHost(int *array, int count)
+swapBigIntsToHost(unsigned int *array, int count)
 {
 	register int	i;
 
@@ -80,7 +80,7 @@ swapBigIntsToHost(int *array, int count)
 }
 
 static void
-swapBigShortToHosts(short *array, int count)
+swapBigShortToHosts(unsigned short *array, int count)
 {
 	register int	i;
 
@@ -95,16 +95,16 @@ byte_swap_superblock(struct fs *sb)
 	u_int16_t *   usptr;
 	unsigned long size;
 
-	byte_swap_ints(((int32_t *)&sb->fs_firstfield), 52);
+	byte_swap_ints(((u_int32_t *)&sb->fs_firstfield), 52);
 	byte_swap_int(sb->fs_cgrotor);
 	byte_swap_int(sb->fs_cpc);
-	byte_swap_shorts((int16_t *)sb->fs_opostbl, 16 * 8); 
-	byte_swap_ints((int32_t *)sb->fs_sparecon, 50);
-	byte_swap_ints((int32_t *)&sb->fs_contigsumsize, 3);
+	byte_swap_shorts((u_int16_t *)sb->fs_opostbl, 16 * 8); 
+	byte_swap_ints((u_int32_t *)sb->fs_sparecon, 50);
+	byte_swap_ints((u_int32_t *)&sb->fs_contigsumsize, 3);
 #if UNUSED
 	byte_swap_longlongs((u_int64_t *)&sb->fs_maxfilesize,3);
 #endif
-	byte_swap_ints((int32_t *)&sb->fs_state, 6);
+	byte_swap_ints((u_int32_t *)&sb->fs_state, 6);
 
 	/* Got these magic numbers from mkfs.c in newfs */
 	if (sb->fs_nrpos != 8 || sb->fs_cpc > 16) {
