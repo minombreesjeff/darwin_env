@@ -126,8 +126,8 @@ static long FileLoadDrivers(char *dirSpec, long plugin)
     ret = GetFileInfo(dirSpec, "Extensions.mkext", &flags, &time);
     if ((ret == 0) && ((flags & kFileTypeMask) == kFileTypeFlat)) {
       ret = GetFileInfo(dirSpec, "Extensions", &flags, &time2);
-      // use mkext if if it looks right or if the folder was bad
-      if ((ret != 0) ||
+      // try mkext if if it looks right or if the folder was bad
+      if ((ret != 0) ||	  // ret == 0 -> flags is good
 	  ((flags & kFileTypeMask) != kFileTypeDirectory) ||
 	  (((gBootMode & kBootModeSafe) == 0) && (time == (time2 + 1)))) {
 	sprintf(gDriverSpec, "%sExtensions.mkext", dirSpec);
@@ -485,6 +485,11 @@ static long XML2Module(char *buffer, ModulePtr *module, TagPtr *personalities)
   if(ParseXML(buffer, &moduleDict) < 0)
     return -1;
 
+  // to be loaded by BootX, you must have OSBundleRequired and it
+  // must not be set to Safe Boot (that's for kextd later)
+  // <http://developer.apple.com/documentation/Darwin/Conceptual/KEXTConcept/KEXTConceptLoading/loading_kexts.html>
+  // in other words, BootX always loads the minimal number of kexts
+  // if loading them one at a time
   required = GetProperty(moduleDict, kPropOSBundleRequired);
   if ((required == 0) || (required->type != kTagTypeString) ||
       !strcmp(required->string, "Safe Boot")) {
@@ -499,7 +504,6 @@ static long XML2Module(char *buffer, ModulePtr *module, TagPtr *personalities)
   }
   tmpModule->dict = moduleDict;
   
-  // For now, load any module that has OSBundleRequired != "Safe Boot".
   tmpModule->willLoad = 1;
   
   *module = tmpModule;

@@ -272,8 +272,6 @@ extern int decompress_lzss(u_int8_t *dst, u_int8_t *src, u_int32_t srclen);
 
 
 // Externs for plist.c
-#define PLIST_DEBUG 0	// whether report parsing errors, etc
-
 extern TagPtr GetProperty(TagPtr dict, char *key);
 extern long ParseXML(char *buffer, TagPtr *dict);
 extern void FreeTag(TagPtr tag);

@@ -1,24 +1,31 @@
 /*
- * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000-2007 Apple Inc. All rights reserved.
  *
- * @APPLE_LICENSE_HEADER_START@
+ * @APPLE_OSREFERENCE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. The rights granted to you under the License
+ * may not be used to create, or enable the creation or redistribution of,
+ * unlawful or unlicensed copies of an Apple operating system, or to
+ * circumvent, violate, or enable the circumvention or violation of, any
+ * terms of an Apple operating system software license agreement.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
- * @APPLE_LICENSE_HEADER_END@
+ * @APPLE_OSREFERENCE_LICENSE_HEADER_END@
  */
+
 /*
  *  main.c - Main functions for BootX.
  *
@@ -31,6 +38,7 @@
 #include <sl.h>
 #include "aes.h"
 #include <IOKit/IOHibernatePrivate.h>
+#include <bootfiles.h>
 
 static void Start(void *unused1, void *unused2, ClientInterfacePtr ciPtr);
 static void Main(ClientInterfacePtr ciPtr);
@@ -43,7 +51,8 @@ static long InitMemoryMap(void);
 static long GetOFVersion(void);
 static long TestForKey(long key);
 static long GetBootPaths(void);
-static long ReadBootPlist(char *devSpec);
+static long ReadBootPlist(char *devSpec, char *rpsDir);
+static long FindRPSDir(char *bootDevice, char **rpsDir);
 
 const unsigned long StartTVector[2] = {(unsigned long)Start, 0};
 
@@ -1206,13 +1215,21 @@ static long TestForKey(long key)
 
 
 #define kBootpBootFileOffset (108)
-
+#define UUIDLEN 63
 static long GetBootPaths(void)
 {
   long ret, cnt, cnt2, cnt3, cnt4, size, partNum, bootplen, bsdplen;
   unsigned long adler32;
-  char *filePath, *buffer, uuidStr[64];
+  char *filePath, *buffer, uuidStr[UUIDLEN+1] = { '\0' };
+  char *rpsDir = "";	      // perhaps to be one of "com.apple.Boot.[RPS]"
   
+/*
+printf("accessing the first few bytes of memory...\n");
+unsigned *mem = NULL;
+for(cnt=0; cnt<10; cnt++)
+printf("mem[%d]: %x ('%c')\n", cnt, mem[cnt], mem[cnt]);
+*/
+
   if (gBootSourceNumber == -1) {
     // Get the boot device and derive its type
     // (try chosen "bootpath", then boot-device in the options)
@@ -1234,13 +1251,24 @@ static long GetBootPaths(void)
 //strcpy(gBootDevice, "fw/node@50770e0000725b/sbp-2@4000/@0:3");  // m120
 
 
-    // Look for Boot.plist-based booter stuff (like RAID :)
-    ret = ReadBootPlist(gBootDevice);
+    // check for Boot != Root
+    ret = FindRPSDir(gBootDevice, &rpsDir);   // rpsDir set on success
     if (ret == 0) {
-      // success -> gBootDevice = "AppleRAID/#:0,\\\\:tbxi"
-      (void)LookForRAID(gBootDict);	// could take gBootDevice?
+      SetProp(gChosenPH, kBootRootActiveKey, NULL, 0);	// crumb for the OS
+      // would be nice to set gBootSourceNumberMax = 1, but overridden below
     }
-    
+
+    // Load any Boot.plist data (for Tiger RAID, BootRoot, etc)
+    ret = ReadBootPlist(gBootDevice, rpsDir);	// sets gBootDict on success
+    if (ret == 0) {
+      // XX until we decide to be rid of the RAID implementation, short-
+      // circuit common 10.5 case (Boot.plist exists but doesn't mean RAID)
+      if (gBootDict->type != kTagTypeDict ||
+	  GetProperty(gBootDict, kKernelNameKey) == NULL) {
+	(void)LookForRAID(gBootDict);	// might change gBootDevice
+	// LFR() success -> gBootDevice = "AppleRAID/#:0,\\:tbxi"
+      }
+    }
 
     // note RAID itself is of "block" type like members
     gBootDeviceType = GetDeviceType(gBootDevice);
@@ -1368,8 +1396,8 @@ static long GetBootPaths(void)
       
       // Construct the boot-file
       strncpy(gBootFile, gBootDevice, cnt + 1);
-      sprintf(gBootFile + cnt + 1, "%d,%s\\mach_kernel",
-	      partNum, ((gBootSourceNumber & 1) ? "" : "\\"));
+      sprintf(gBootFile + cnt + 1, "%d,%s%s\\mach_kernel",
+	      partNum, ((gBootSourceNumber & 1) ? "" : "\\"), rpsDir);
       
       // and the cache file name
       
@@ -1398,7 +1426,7 @@ static long GetBootPaths(void)
   
   strcat(gExtensionsSpec, ",");
   
-  // Add in any extra path to gRootDir.
+  // Add in any extra path to gRootDir (handles com.apple.boot.[RPS]).
   cnt = 0;
   while (filePath[cnt] != '\0') cnt++;
   
@@ -1422,7 +1450,17 @@ static long GetBootPaths(void)
   // technically could just do this once at the end
   SetProp(gChosenPH, "rootpath", gBootFile, strlen(gBootFile) + 1);
 
-  if (GetFSUUID(gBootFile, uuidStr) == 0) {
+  if (gBootDict && gBootDict->type == kTagTypeDict) {
+    TagPtr prop = GetProperty(gBootDict, kRootUUIDKey);
+    if (prop && prop->type == kTagTypeString)
+      strncpy(uuidStr, prop->string, UUIDLEN);
+  }
+
+  if (uuidStr[0] == '\0') {
+    (void)GetFSUUID(gBootFile, uuidStr);
+  }
+
+  if (uuidStr[0]) {
     printf("setting boot-uuid to: %s\n", uuidStr);
     SetProp(gChosenPH, "boot-uuid", uuidStr, strlen(uuidStr) + 1);
   }
@@ -1432,27 +1470,98 @@ static long GetBootPaths(void)
   return 0;
 }
 
-#define BOOTPLIST_PATH "com.apple.Boot.plist"
-
-// ReadBootPlist could live elsewhere
-static long ReadBootPlist(char *devSpec)
+/*
+ * FindRPSDir looks for a "rock," "paper," or "scissors" directory
+ * - handle all permutations: 3 dirs, any 2 dirs, any 1 dir
+ */
+#define SPECLEN 1024
+static char rootDirSpec[SPECLEN+1];	// not sure how big our stacks are
+static long FindRPSDir(char *bootDevice, char **rpsDir)
 {
-  char plistSpec[256];
+  long rval = 0;
+  long flags, time;
+  char haveR, haveP, haveS;
+
+  unsigned long index = 0;
+  char *curName;
+
+  haveR = haveP = haveS = 0;
+
+  // strip any file specifier and start at the root
+  if (ConvertFileSpec(bootDevice, rootDirSpec, NULL))  return -1;
+  strncat(rootDirSpec, ",\\", SPECLEN-strlen(rootDirSpec));
+
+  // walk the directory looking for com.apple.Boot.[RPS]
+  while (GetDirEntry(rootDirSpec, &index, &curName, &flags, &time) != -1) {
+    if (!strcmp(curName, kBootDirR))	{ haveR = 1; continue; }
+    if (!strcmp(curName, kBootDirP))	{ haveP = 1; continue; }
+    if (!strcmp(curName, kBootDirS))	{ haveS = 1; continue; }
+  }
+
+  if (haveR && haveP && haveS) {    	  // NComb(3,3) = 1
+    printf("WARNING: all of R,P,S exist: booting from 'R'\n");
+    *rpsDir = kBootDirR;
+  } else if (haveR && haveP) {        	  // NComb(3,2) = 3
+    // p wins
+    *rpsDir = kBootDirP;
+  } else if (haveR && haveS) {
+    // r wins
+    *rpsDir = kBootDirR;
+  } else if (haveP && haveS) {
+    // s wins
+    *rpsDir = kBootDirS;
+  } else if (haveR) {                 	  // NComb(3,1) = 3
+    // wins by default
+    *rpsDir = kBootDirR;
+  } else if (haveP) {
+    // wins by default
+    *rpsDir = kBootDirP;
+  } else if (haveS) {
+    // wins by default
+    *rpsDir = kBootDirS;
+  } else {                             	  // NComb(3,0) = 0
+    rval = -1;
+  }
+
+  return rval;
+}
+
+/*
+ * ReadBootPlist looks around for com.apple.Boot.plist, populates gBootDict
+ * could live elsewhere
+ */
+#define OF_BLESSEDDIR ",\\\\"
+#define BOOTPLIST_NAME "com.apple.Boot.plist"
+#define BOOTPLIST_PATH OF_BLESSEDDIR BOOTPLIST_NAME
+#define PREF_BOOTPLIST_PATH "\\Library\\Preferences\\SystemConfiguration\\" \
+                            BOOTPLIST_NAME
+static char plistSpec[SPECLEN+1];	// save stack space
+static long ReadBootPlist(char *devSpec, char *rpsDir)
+{
   int len;
 
   do {
-    // construct the Boot.plist spec
     if (ConvertFileSpec(devSpec, plistSpec, NULL))  break;
-    strncat(plistSpec, ",\\\\", 255-strlen(plistSpec));
-    strncat(plistSpec, BOOTPLIST_PATH, 255-strlen(plistSpec));
+    strncat(plistSpec, ",", SPECLEN-strlen(plistSpec));
+    strncat(plistSpec, rpsDir, SPECLEN-strlen(plistSpec));   // may be ""
+    strncat(plistSpec, PREF_BOOTPLIST_PATH, SPECLEN-strlen(plistSpec));
 
-    // load the contents
-    if ((len = LoadFile(plistSpec)) < 0)  break;
-    // we could try for the root as well as the blessed folder
+    // try to load the contents
+    if ((len = LoadFile(plistSpec)) < 0) {
+      // construct old-style spec for Boot.plist (in blessed folder == root)
+      if (ConvertFileSpec(devSpec, plistSpec, NULL))  break;
+      strncat(plistSpec, BOOTPLIST_PATH, SPECLEN-strlen(plistSpec));
+
+      // and try to load again
+      if ((len = LoadFile(plistSpec)) < 0) {
+	printf("couldn't load %s\n", BOOTPLIST_NAME);
+	break;
+      }
+    }
     *((char*)kLoadAddr + len) = '\0';  // terminate for parser safety
 
     if (ParseXML((char*)kLoadAddr, &gBootDict) < 0 || !gBootDict) {
-      printf("couldn't parse %s\n", BOOTPLIST_PATH);
+      printf("couldn't parse %s\n", BOOTPLIST_NAME);
       break;
     }
 
