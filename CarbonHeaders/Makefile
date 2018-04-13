@@ -12,7 +12,9 @@ CARBONCORE_HEADERS=$(CARBONCORE)/Versions/A/Headers
 install:
 	mkdir -p $(INCLUDE)
 	cp AssertMacros.h $(INCLUDE)
+	cp Availability.h $(INCLUDE)
 	cp AvailabilityMacros.h $(INCLUDE)
+	cp AvailabilityInternal.h $(INCLUDE)
 	cp TargetConditionals.h $(INCLUDE)
 
 	mkdir -p $(CARBONCORE_HEADERS)
