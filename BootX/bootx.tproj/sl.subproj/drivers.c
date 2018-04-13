@@ -22,7 +22,7 @@
 /*
  *  drivers.c - Driver Loading Functions.
  *
- *  Copyright (c) 2000 Apple Computer, Inc.
+ *  Copyright (c) 2000-2005 Apple Computer, Inc.
  *
  *  DRI: Josh de Cesare
  */
@@ -98,9 +98,9 @@ static char      gFileName[4096];
 long LoadDrivers(char *dirSpec)
 {
   if (gBootFileType == kNetworkDeviceType) {
-    NetLoadDrivers(dirSpec);
+    if(NetLoadDrivers(dirSpec) < 0) return -1;
   } else if (gBootFileType == kBlockDeviceType) {
-    FileLoadDrivers(dirSpec, 0);
+    FileLoadDrivers(dirSpec, 0);	// never returns errors
   } else {
     return 0;
   }
@@ -116,6 +116,7 @@ long LoadDrivers(char *dirSpec)
 
 // Private Functions
 
+// XX FileLoadDrivers could use some more error checking
 static long FileLoadDrivers(char *dirSpec, long plugin)
 {
   long ret, length, index, flags, time, time2, bundleType;
@@ -220,7 +221,10 @@ static long LoadDriverMKext(char *fileSpec)
   // Verify the MKext.
   if ((package->signature1 != kDriverPackageSignature1) ||
       (package->signature2 != kDriverPackageSignature2)) return -1;
-  if (package->length > kLoadSize) return -1;
+  if (package->length > kMaxMKextSize) {
+    printf("mkext segment too big (%ld bytes)\n", package->length);
+    return -1;
+  }
   if (package->adler32 != Adler32((char *)&package->version,
 				  package->length - 0x10)) return -1;
   

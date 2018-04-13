@@ -22,7 +22,7 @@
 /*
  *  net.c - File System Module for wrapping TFTP.
  *
- *  Copyright (c) 1999-2002 Apple Computer, Inc.
+ *  Copyright (c) 1999-2002, 2005 Apple Computer, Inc.
  *
  *  DRI: Josh de Cesare
  */
@@ -82,6 +82,11 @@ long NetLoadFile(CICell ih, char *filePath)
   
   Close(netIH);
   
+  if (length > kLoadSize) {
+    printf("\nLoadFile failure: %ld bytes overran the load buffer (%ld bytes)\n", length, kLoadSize);
+    return -1;
+  }
+
   return length;
 }
 

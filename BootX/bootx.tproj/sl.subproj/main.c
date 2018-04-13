@@ -30,6 +30,7 @@
 
 #include <sl.h>
 #include "aes.h"
+#include <IOKit/IOHibernatePrivate.h>
 
 static void Start(void *unused1, void *unused2, ClientInterfacePtr ciPtr);
 static void Main(ClientInterfacePtr ciPtr);
@@ -80,6 +81,8 @@ long *gDeviceTreeMMTmp = 0;
 long gOFVersion = 0;
 
 char *gKeyMap;
+char gHibernateBoot;
+unsigned long gHibernateKeySizeBytes;
 
 long gRootAddrCells;
 long gRootSizeCells;
@@ -117,7 +120,316 @@ static void Start(void *unused1, void *unused2, ClientInterfacePtr ciPtr)
   Main(ciPtr);
 }
 
+static long WakeKernel(void *p1, void *p2, void *p3, void *p4)
+{
+  IOHibernateImageHeader * header = (IOHibernateImageHeader *) p1;
+  unsigned long msr;
+  typedef void (*Proc)(void *, void *, void *, void *);
+  Proc proc;
+  unsigned long cnt, newSP;
+  unsigned long *src, *dst;
+  unsigned int 	count;
+  unsigned int 	page;
+  unsigned int 	compressedSize;
+  unsigned int 	uncompressedPages;
+  int32_t   	byteCnt;
+  u_int32_t 	lowHalf, highHalf;
+  u_int32_t 	sum;
 
+  Quiesce();
+  printf("\nWake Kernel!\n");
+
+  // Save SPRs for OF
+  __asm__ volatile("mfmsr %0" : "=r" (gOFMSRSave));
+  __asm__ volatile("mfsprg %0, 0" : "=r" (gOFSPRG0Save));
+  __asm__ volatile("mfsprg %0, 1" : "=r" (gOFSPRG1Save));
+  __asm__ volatile("mfsprg %0, 2" : "=r" (gOFSPRG2Save));
+  __asm__ volatile("mfsprg %0, 3" : "=r" (gOFSPRG3Save));
+  
+  // Turn off translations
+  msr = 0x00001000;
+  __asm__ volatile("sync");
+  __asm__ volatile("mtmsr %0" : : "r" (msr));
+  __asm__ volatile("isync");
+  
+  // Save OF's Exceptions Vectors
+  bcopy(0x0, gOFVectorSave, kVectorSize);
+
+  dst   = (unsigned long *) (header->restore1CodePage << 12);
+  count = header->restore1PageCount;
+  proc  = (Proc) (header->restore1CodeOffset + ((uint32_t) dst));
+  newSP = header->restore1StackOffset + (header->restore1CodePage << 12);
+
+  src  = (unsigned long *) (((u_int32_t) &header->fileExtentMap[0]) 
+        + header->fileExtentMapSize);
+  sum  = 0;
+   
+  for (page = 0; page < count; page++)
+  {
+    compressedSize = 4096;
+
+    lowHalf = 1;
+    highHalf = 0;
+
+    for (cnt = 0; cnt < compressedSize; cnt += 0x20) {
+      dst[0] = src[0];
+      dst[1] = src[1];
+      dst[2] = src[2];
+      dst[3] = src[3];
+      dst[4] = src[4];
+      dst[5] = src[5];
+      dst[6] = src[6];
+      dst[7] = src[7];
+      for (byteCnt = 0; byteCnt < 0x20; byteCnt++) {
+        lowHalf += ((u_int8_t *) dst)[byteCnt];
+        highHalf += lowHalf;
+      }
+      __asm__ volatile("dcbf 0, %0" : : "r" (dst));
+      __asm__ volatile("sync");
+      __asm__ volatile("icbi 0, %0" : : "r" (dst));
+      __asm__ volatile("isync");
+      __asm__ volatile("sync");
+      src += 8;
+      dst += 8;
+    }
+
+    lowHalf  %= 65521L;
+    highHalf %= 65521L;
+    sum += (highHalf << 16) | lowHalf;
+  }
+  uncompressedPages = count;
+  header->actualRestore1Sum = sum;
+
+  __asm__ volatile("dcbf 0, %0" : : "r" (dst));
+  __asm__ volatile("dcbf 0, %0" : : "r" (dst+32));
+  __asm__ volatile("sync");
+  __asm__ volatile("icbi 0, %0" : : "r" (dst));
+  __asm__ volatile("icbi 0, %0" : : "r" (dst+32));
+  __asm__ volatile("isync");
+  __asm__ volatile("sync");
+
+  // Make sure everything get sync'd up.
+  __asm__ volatile("isync");
+  __asm__ volatile("sync");
+  __asm__ volatile("eieio");
+  
+  // Move the Stack 
+  __asm__ volatile("mr r1, %0" : : "r" (newSP));
+  __asm__ volatile("ori 0, 0, 0" : : );
+  proc(p1, p2, p3, p4);
+  
+  return -1;
+}
+
+void HibernateBoot(void)
+{
+  CICell dev, size, maxRead, imageSize, codeSize, allocSize, bytesToRead;
+  CICell memoryPH;
+  CICell available[2*16];
+  long mem_base;
+  IOHibernateImageHeader _header;
+  IOHibernateImageHeader * header = &_header;
+  volatile IOPolledFileExtent * currentExtent;
+  long long extentStart;
+  long long extentLength;
+  long long position, positionMax;
+  long buffer;
+  char c;
+  int havePreview, readingPreview;
+  char * tail;
+  Boot_Video videoInfo;
+  hibernate_graphics_t * graphicsInfo;
+  uint32_t machineSignature;
+  int32_t blob, lastBlob = 0;
+  // decryption data
+  static const unsigned char first_iv[AES_BLOCK_SIZE]
+  = {  0xa3, 0x63, 0x65, 0xa9, 0x0b, 0x71, 0x7b, 0x1c,
+       0xdf, 0x9e, 0x5f, 0x32, 0xd7, 0x61, 0x63, 0xda };
+  hibernate_cryptvars_t       _cryptvars;
+  hibernate_cryptvars_t *     cryptvars = &_cryptvars;
+  hibernate_cryptwakevars_t * cryptwakevars;
+ 
+  do {
+    tail = &gBootDevice[0];
+    while ((c = *++tail) && (c != ','))
+	{}
+    if (!c)
+	break;
+    
+    *tail++ = 0;
+    extentStart = strtouq(tail, 0, 16);
+    
+    printf("extentStart %s, %qx\n", gBootDevice, extentStart);
+    
+    dev = Open(gBootDevice);
+    Seek(dev, extentStart);
+
+    size = Read(dev, (CICell) header, sizeof(IOHibernateImageHeader));
+    printf("header read size %x\n", size);
+
+    imageSize = header->image1Size;
+    codeSize  = header->restore1PageCount << 12;
+    if (kIOHibernateHeaderSignature != header->signature)
+      break;
+
+    size = GetProp(gChosenPH, kIOHibernateMachineSignatureKey, 
+                    (char *)&machineSignature, sizeof(machineSignature));
+    if (size != sizeof(machineSignature)) machineSignature = 0;
+    if (machineSignature != header->machineSignature)
+      break;
+    
+    allocSize = imageSize + ((4095 + sizeof(hibernate_graphics_t) + sizeof(hibernate_cryptwakevars_t)) & ~4095);
+
+    // try to allocate the image as high as possible - end of available memory
+    memoryPH = FindDevice("/memory");
+    if (memoryPH == -1) break;
+    size = GetProp(memoryPH, "available", (char *) &available[0], sizeof(available));
+    if (size == 0) break;
+    size /= sizeof(CICell);
+    mem_base = available[size - 2] + available[size - 1] - allocSize;
+    
+    if (-1 == Claim(mem_base, allocSize, 0)) {
+      // else try above BootX's image
+      mem_base = kImageAddr_H;
+      if (-1 == Claim(mem_base, allocSize, 0)) {
+        // else try below BootX's image
+        mem_base = (header->restore1CodePage << 12) + codeSize;
+        if (-1 == Claim(mem_base, allocSize, 0))
+	  break;
+      }
+    }
+    
+    printf("mem_base %x\n", mem_base);
+
+    graphicsInfo = (hibernate_graphics_t *) mem_base;
+    cryptwakevars = (hibernate_cryptwakevars_t *) (graphicsInfo + 1);
+    mem_base += (allocSize - imageSize);
+    
+    bcopy(header, (void *) mem_base, sizeof(IOHibernateImageHeader));
+    header = (IOHibernateImageHeader *) mem_base;
+
+    imageSize -= sizeof(IOHibernateImageHeader);
+    //	imageSize -= codeSize;
+    currentExtent = &header->fileExtentMap[0];
+    extentLength = currentExtent->length - sizeof(IOHibernateImageHeader);
+    extentStart  = currentExtent->start  + sizeof(IOHibernateImageHeader);
+    buffer = (long)(header + 1);
+
+    position = 0;
+    maxRead  = 0;
+    bytesToRead = header->previewSize;
+    havePreview = readingPreview = (bytesToRead != 0);
+    if (readingPreview) {
+      bytesToRead += header->fileExtentMapSize - sizeof(header->fileExtentMap) + codeSize;
+      positionMax = header->imageSize - bytesToRead;
+      imageSize -= bytesToRead;
+    } else {
+      bytesToRead = imageSize;
+      positionMax = header->imageSize;
+      maxRead     = positionMax / kIOHibernateProgressCount;
+      SplashPreview(NULL, &graphicsInfo->progressSaveUnder[0][0], sizeof(graphicsInfo->progressSaveUnder));
+    }
+
+    while (bytesToRead) {
+
+      if (!extentLength) {
+        currentExtent++;
+        extentStart  = currentExtent->start;
+        extentLength = currentExtent->length;
+      }
+      if (extentLength < bytesToRead)
+        size = extentLength;
+      else
+        size = bytesToRead;
+
+      if (maxRead && (size > maxRead))
+        size = maxRead;
+
+      if (-1 == Seek(dev, extentStart)) {
+        printf("seek fail\n");
+        break;
+      }
+      if (size != Read(dev, buffer, size)) {
+        printf("read fail\n");
+        break;
+      }
+
+      bytesToRead -= size;
+
+      if (!bytesToRead && readingPreview) {
+        uint8_t * src = (uint8_t *) (
+            ((uint32_t) &header->fileExtentMap[0]) 
+            + header->fileExtentMapSize
+            + codeSize
+            + header->previewPageListSize);
+
+        SplashPreview(src, &graphicsInfo->progressSaveUnder[0][0], sizeof(graphicsInfo->progressSaveUnder));
+        readingPreview = 0;
+        bytesToRead = imageSize;
+        maxRead = positionMax / kIOHibernateProgressCount;
+      } else if (!readingPreview) {
+        // progress
+        position += size;
+        blob = (position * kIOHibernateProgressCount) / positionMax;
+        if (blob != lastBlob)
+        {
+          SplashProgress(&graphicsInfo->progressSaveUnder[0][0], lastBlob, blob);
+          lastBlob = blob;
+        }
+      }
+
+      if (bytesToRead) {
+        extentStart += size;
+        extentLength -= size;
+        buffer += size;
+      }
+    }
+    if (bytesToRead)
+      break;
+
+    if (header->encryptStart) {
+      aes_decrypt_key(&gExtensionsSpec[0],
+                      gHibernateKeySizeBytes,
+                      &cryptvars->ctx.decrypt);
+
+      // set the vector for the following decryptions
+      bcopy(((uint8_t *) header) + header->image1Size - AES_BLOCK_SIZE, 
+              &cryptvars->aes_iv[0], AES_BLOCK_SIZE);
+
+      // decrypt the buffer
+      uint32_t len = (uint32_t)(header->image1Size - header->encryptStart);
+      aes_decrypt_cbc(((uint8_t *) header) + header->encryptStart,
+                      &first_iv[0],
+                      len >> 4,
+                      ((uint8_t *) header) + header->encryptStart,
+                      &cryptvars->ctx.decrypt);
+    }
+
+    bcopy(&cryptvars->aes_iv[0], &cryptwakevars->aes_iv[0], sizeof(cryptwakevars->aes_iv));
+
+    bzero(&cryptvars->aes_iv[0], sizeof(cryptvars));
+    bzero(&gExtensionsSpec[0], sizeof(gExtensionsSpec));
+
+    Close(dev);
+
+    // Get the video info
+    GetMainScreenPH(&videoInfo, 0);
+    videoInfo.v_display = 1;
+    graphicsInfo->physicalAddress = videoInfo.v_baseAddr;
+    graphicsInfo->mode            = videoInfo.v_display;
+    graphicsInfo->rowBytes        = videoInfo.v_rowBytes;
+    graphicsInfo->width           = videoInfo.v_width;
+    graphicsInfo->height          = videoInfo.v_height;
+    graphicsInfo->depth           = videoInfo.v_depth;
+
+    WakeKernel(header, graphicsInfo, cryptwakevars, 0);
+    break;
+  }
+  while (0);
+
+  // failures reboot
+  Interpret(0, 0, " reset-all");
+}
 
 static void Main(ClientInterfacePtr ciPtr)
 {
@@ -129,6 +441,9 @@ static void Main(ClientInterfacePtr ciPtr)
   ret = InitEverything(ciPtr);
   if (ret != 0) Exit();
 
+  if (gHibernateBoot) {
+    HibernateBoot();
+  }
 
   // Get or infer the boot paths.
   ret = GetBootPaths();
@@ -337,7 +652,50 @@ static long InitEverything(ClientInterfacePtr ciPtr)
     gBootMode |= kBootModeSafe;
   }
 
+  size = GetProp(gOptionsPH, kIOHibernateBootImageKey, gBootDevice, 255);
+  if (size && (-1 != size)) do {
+    gBootDevice[size] = '\0';
+
+    // reuse gExtensionsSpec
+#define keyBufSize (sizeof(gExtensionsSpec) / 2)
+    size = GetProp(gOptionsPH, kIOHibernateBootImageKeyKey, 
+                        gExtensionsSpec + keyBufSize, keyBufSize);
+    if (size && (-1 != size))
+      gHibernateKeySizeBytes = UnescapeData(gExtensionsSpec + keyBufSize, size,
+                                            gExtensionsSpec, keyBufSize);
+
+    // always clear the boot-image variable
+#if kFailToBoot
+    Interpret(0, 0, " setenv " kIOHibernateBootImageKey);
+    Interpret(0, 0, " setenv " kIOHibernateBootImageKeyKey); // (will need to be done by OF)
+    Interpret(0, 0, " sync-nvram");
+#endif
+
+    // safe mode means no hibernate
+    if (kBootModeSafe & gBootMode) break;
+
+#if kFailToBoot
+    // check we booted from nvram-set device
+    size = GetProp(gChosenPH, "bootpath", gBootFile, 255);
+    if (!size || (-1 == size)) break;
+    gBootFile[size] = '\0';
+
+    if (FindDevice(gBootFile) != FindDevice(gBootDevice)) break;
+#endif
+
+    gHibernateBoot = 1;
+  } while (0);
+
+  if (gHibernateBoot)
   {
+    // Claim memory for malloc.
+    if (Claim(kMallocAddr_H, kMallocSize_H, 0) == 0) {
+      printf("Claim for malloc failed.\n");
+      return -1;
+    }
+    malloc_init((char *)kMallocAddr_H, kMallocSize_H);
+    gImageFirstBootXAddr = kMallocAddr_H + kMallocSize_H;
+  } else {
     // Claim memory for the FS Cache.
     if (Claim(kFSCacheAddr, kFSCacheSize, 0) == 0) {
       printf("Claim for fs cache failed.\n");

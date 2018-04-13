@@ -31,6 +31,8 @@
 
 #include "ufs_byteorder.h"
 
+#include <dirent.h>		// for MAXNAMLEN
+
 typedef struct dinode Inode, *InodePtr;
 
 // Private function prototypes
