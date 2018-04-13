@@ -1,0 +1,112 @@
+============================================================
+Installation Instructions for Darwin/ppc (April 29, 2005)
+============================================================
+
+Supported Hardware
+==================
+
+Darwin/ppc 8.0.1 will install and boot on all PowerPC-based
+Macintoshes supported by Mac OS X 10.4.
+
+Some functionality like the PMU and low-level hardware support works
+only by using binary drivers distributed by Apple on the installation CD.
+
+At least 128 MB RAM are needed.
+
+
+Installation Instructions
+=========================
+
+0) Get the CD image from http://www.opendarwin.org/downloads/
+
+1) The .iso image is gzipped. Use 'gunzip' or StuffIt Expander to
+   extract the image.
+
+2) Burn the CD image to CD.
+	If you have an OS X system with a CD burner, you can burn the CD image
+	using Disk Copy.  Select Image->Burn Image from the menu bar.
+	If you have a OpenDarwin, *BSD or Linux system with a CD burner, you 
+   	can burn the CD image using cdrecord.  See the cdrecord man page for 
+   	information.
+
+3) Boot from the CD image.
+	Insert the CD image into the CDROM drive, and reboot.  Hold down the
+	'c' key while rebooting to boot off the CD.
+
+	When the machine boots off the CD, you will see a screen with a black
+	background and white text.  Much text will scroll by, and you will
+	eventually be prompted for installation questions.
+
+4) Select the disk to install onto.
+	When the CD has finished booting, you will be prompted with the
+	following question:
+	The following devices are available for installation:
+	1. <disk id string> @ disk1 (<size>)
+	Which device would you like to install Darwin onto? 
+
+	Enter the number (on the far left) of the device you'd like
+	to install Darwin on.
+
+	At this point you can also enter the word "shell" to enter
+	an emergency shell.  This should not be needed for normal
+	installation.
+
+5) Select the partition to install onto.
+	After selecting the disk to install into, you must choose a partition.
+	You will be prompted as follows:
+	Which partition would you like to install into:
+	1) /dev/disk1s1 Apple_partition_map Apple
+	2) /dev/disk1s2 Apple_Driver_ATA Macintosh
+	3) /dev/disk1s3 Apple_Driver_ATA Macintosh
+	4) /dev/disk1s4 Apple_Driver_IOKit Macintosh
+	5) /dev/disk1s5 Apple_Patches Patch Partition
+	6) /dev/disk1s6 Apple_HFS untitled
+	7) /dev/disk1s7 Apple_HFS untitled 2
+	Your Choice:
+
+	The choices are displayed in the form of 
+	#) <device name> <partition type> <partition name>
+	You should choose the partition you want to install into.
+	You should never choose partitions of type other than Apple_HFS unless
+	you know what you're doing.  
+
+6) Do you want the partition erased or not?
+	The install script will prompt you for whether you want to do a
+	clean install or not.  Answering "yes" will newfs_hfs the partition
+	and begin installing Darwin.
+	If you choose "no" here, the partition will not be newfs'd but
+	the installer will begin extracting files over the top of whatever
+	is on the disk.  Doing a clean install is the recommended method.
+
+7) Wait.
+	After choosing the partition to install onto, the installer will
+	automatically create a new filesystem on that partition (HFS, and
+	it will destroy all existing data on that partition), and install
+	OpenDarwin onto it. The install script will also run bless to make 
+   	the partition bootable.
+
+8) Setting the root password.
+    The installer is now done installing files on the target filesystem and
+    prompts for the root password. 
+
+9) Further configration.
+    Now there is the option to do further configuration of the system (like
+    adding more users) or finishing up.
+
+8) Finishing up. 
+	After installing all the packages onto the partition, the installer
+	will prompt you to reboot the machine.  At this point, if there are
+	any last minute changes you would like to make, the installer also
+	provides the option of spawning a shell.
+
+9) Login.
+    Once your machine has booted OpenDarwin, it waits for your first
+    login. Login as 'root', with the password set during install.
+
+
+Known Issues
+============
+
+* Airport wireless cards are detected, but cannot be configured.
+
+* PowerManagement is not working

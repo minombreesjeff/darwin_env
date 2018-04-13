@@ -1,0 +1,323 @@
+===============================================
+ Darwin 8.0.1 Release Notes
+ April 29, 2005
+===============================================
+
+The Darwin 8.0.1 Installation CD is based on the Darwin source
+release which corresponds to Mac OS X 10.3 (Darwin is the core
+of Mac OS X).
+
+Please visit <http://developer.apple.com/darwin/> for more
+information about Darwin, and <http://www.apple.com/macosx/>
+for more information about Mac OS X.
+
+
+Table Of Contents
+=================
+1.  Supported Hardware
+2.  Installation Instructions
+    a.  PowerPC-based Macintosh computers
+    b.  x86-based personal computers
+3.  Major Changes Since Darwin 7.0.1
+4.  Known Issues
+5.  Obtaining the Source Code
+6.  Additional Information
+7.  Licensing Information
+
+
+Supported Hardware
+==================
+
+Darwin 8.0.1 should install and boot on all PowerPC-based Macintosh
+computers supported by Mac OS X 10.4.
+
+Additionally, Darwin 7.0.1 supports many x86-based personal computers:
+
+See <http://www.opendarwin.org/hardware/> for a community-maintained
+site that lists hardware that has been found to work.
+
+
+Installation Instructions
+=========================
+
+Note:
+   When preparing your system to install Darwin, it is a good idea 
+   to disconnect all hard drives other than the target disk.  This
+   is to prevent the accidental destruction of data on the wrong disk.  
+
+Important:
+   It is recommended that you install Darwin onto a partition that
+   is at least 3.0GB in size.
+
+0) Retrieve this CD image from one of the following URLs:
+
+   For PowerPC:
+   <http://www.opensource.apple.com/darwinsource/images/darwin-801.dmg.gz>
+   <http://www.opendarwin.org/downloads/8.0.1/darwin-801.dmg.gz>
+
+   For x86:
+   <http://www.opensource.apple.com/darwinsource/images/darwin-801.iso.gz>
+   <http://www.opendarwin.org/downloads/8.0.1/darwin-801.iso.gz>
+
+1) The disk images are gzipped. Use 'gunzip' or double-click the icon in the
+   Finder to extract the image.
+
+2) Burn the CD image to CD.
+   After downloading the CD image, you'll need to write that image
+   to a CDROM.  The installation image is a bootable HFS+ volume for PowerPC,
+   and a ISO-9660 El-Torito disk image for x86.
+
+   If you have an OS X system with a CD burner, you can burn the CD
+   image using Disk Copy.  Select Image->Burn Image from the menu bar.
+   If you have a *BSD or Linux system with a CD burner, you can burn the 
+   CD image using cdrecord.  See the cdrecord man page for information.
+
+
+Installation Instructions (PowerPC-based Macintosh computers)
+=============================================================
+
+3) Boot from the CD image
+   Insert the CD image into the CDROM drive, and reboot.  Hold down the
+   'c' key while rebooting to boot off the CD.
+
+   When the machine boots off the CD, you will see a screen with a black
+   background and white text.  Much text will scroll by, and you will
+   eventually be prompted for installation questions.
+
+4) Select the disk to install onto.
+   When the CD has finished booting, you will be prompted with the
+   following question:
+   
+        The following devices are available for installation:
+	1. <disk id string> @ disk1 (<size>)
+	Which device would you like to install Darwin onto? 
+
+   Enter the number (on the far left) of the device you'd like
+   to install Darwin/PPC on.
+
+   At this point you can also enter the word "shell" to enter
+   an emergency shell.  This should not be needed for normal
+   installation.
+
+5) Select the partition to install onto.
+   After selecting the disk to install into, you must choose a
+   partition.  You will be prompted as follows:
+
+        Which partition would you like to install into:
+        1) /dev/disk1s1 Apple_partition_map Apple
+        2) /dev/disk1s2 Apple_Driver_ATA Macintosh
+        3) /dev/disk1s3 Apple_Driver_ATA Macintosh
+        4) /dev/disk1s4 Apple_Driver_IOKit Macintosh
+        5) /dev/disk1s5 Apple_Patches Patch Partition
+        6) /dev/disk1s6 Apple_HFS untitled
+        7) /dev/disk1s7 Apple_HFS untitled 2
+        Your Choice:
+
+   The choices are displayed in the form of 
+   #) <device name> <partition type> <partition name>
+   You should choose the partition you want to install into.
+   You should never choose partitions of type other than Apple_HFS
+   unless you know what you're doing.  
+
+6) Do you want the partition erased or not?
+   The install script will prompt you for whether you want to do a
+   clean install or not.  Answering "yes" will newfs_hfs the partition
+   and begin installing Darwin/PPC.
+   If you choose "no" here, the partition will not be newfs'd but
+   the installer will begin extracting files over the top of whatever
+   is on the disk.  Doing a clean install is the recommended method.
+
+7) Wait. 
+   The installer will copy Darwin/PPC packages onto the destination partition.
+
+8) Setup.
+   After installation, you will be prompted to enter a root password.
+   You will also be prompted to enter a name for the computer (for Bonjour).
+    
+9) Reboot.
+   When the install script is finished, it will give you the choice
+   of rebooting or spawning a shell.  Unless you have post-install
+   things you wish to do, such as adding additional accounts, you
+   should reboot the system and remove the install CD from the CDROM drive.
+   
+10) Login.
+   After reboot your machine should be running Darwin/PPC, log in and enjoy!
+
+
+
+Installation Instructions (x86-based personal computers)
+=============================================================
+
+3) Boot from the CD image
+   When booting off the CDROM, the first screen you'll see is a
+   bootloader prompt.  You should not need to enter any flags to the
+   bootloader, so either press enter to continue, or wait 10 seconds
+   and the boot process will continue automatically. 
+
+4) Select the disk to install onto.
+   After the boot process continues, you will see diagnostic
+   output from the kernel, and you will end up at an installation
+   prompt.  The installation prompt will list the devices it found
+   to potentially install Darwin/x86 onto:
+
+        The following devices are available for installation:
+        1. [ Vendor String ] @ /dev/disk0 (size)
+        2. [ Vendor String ] @ /dev/disk1 (size)
+        Which device would you like to install Darwin onto?
+
+   Enter the number (on the far left) of the device you'd like
+   to install Darwin/x86 on.
+
+   At this point you can also enter the word "shell" to enter
+   an emergency shell.  This should not be needed for normal
+   installation.
+
+5) Select the partition to install onto.
+   After entering the disk you wish to install Darwin/x86 onto,
+   the install script will give you the following prompt:
+
+        1) Auto-partition the disk (Destroys all disk contents)
+        2) Manually partition the disk using fdisk
+        Choice:
+
+   If your disk is already partitioned, you will get a third option:
+
+        3) Use existing partitions
+
+   The first option (Auto-partition) will destroy the contents of
+   the disk and create a single Apple HFS+ (journaled) filesystem partition.
+   This is the preferred option.
+
+   The second option (Manually partition) will run the Darwin/x86
+   fdisk utility.  Use this only if you know which partition scheme
+   you want.  This option can also destroy all contents of the
+   selected disk.  If you choose this option, you must create an
+   Apple HFS+ (journaled) partition of type 0xAF.
+
+   The third option will let you install Darwin/x86 onto an already
+   existing partition.  Make sure you already have the partitions
+   from option 2 set up.  The install script will ask you which
+   partition you would like to use for your root partition.
+   All contents of that partition will be destroyed.
+
+6) Wait.
+   The installer will copy Darwin/x86 packages onto the destination partition.
+
+7) Setup.
+   After installation, you will be prompted to enter a root password.
+   You will also be prompted to enter a name for the computer (for Bonjour).
+
+8) Reboot.
+   When the install script is finished, it will give you the choice
+   of rebooting or spawning a shell.  Unless you have post-install
+   things you wish to do, such as adding additional accounts, you
+   should reboot the system and remove the install CD from the CDROM drive.
+
+8) Login.
+   After reboot your machine should be running Darwin, log in and enjoy!
+
+
+Major Changes Since Darwin 7.0.1
+================================
+
+*  PowerPC 64-bit support.
+
+*  Darwin/x86 installs onto and boots from an HFS+ (journaled) partition.
+
+*  GCC-4.0
+
+*  Enhanced dlopen(3) API support.
+
+*  Korn shell (ksh) included.
+
+*  launchd, a dynamic system management daemon, replaces SystemStarter and init
+
+*  And much more ...
+
+
+Known Issues
+============
+
+PowerPC-based Macintosh computers:
+
+*  AirPort wireless cards are detected, but cannot be configured.
+
+x86-based personal computers:
+
+*  IDE drives may not work on x86.  Try it, if it doesn't work,
+   it's a known problem.
+
+*  Video cards must support VESA 2.0 framebuffer modes on x86.
+   Try it, if your console looks weird, or doesn't appear, it's a
+   known problem.
+
+
+Obtaining the Source Code
+=========================
+
+The source code is available via the web at:
+
+    <http://www.opensource.apple.com/darwinsource/10.4/>
+    or
+    <http://darwinsource.opendarwin.org/10.4/>
+
+This Installation CD was created using the Darwin Build Scripts available at:
+
+    <http://darwinsource.opendarwin.org/darwinbuild/>
+
+
+Additional Information
+======================
+
+Comments and Questions can be directed to the
+'darwinos-users@lists.apple.com' and
+'darwin-development@lists.apple.com' mailing lists,
+to which one can subscribe to via the following URLs:
+
+    <http://lists.apple.com/mailman/listinfo/darwinos-users>
+    <http://lists.apple.com/mailman/listinfo/darwin-development>
+
+You may also wish to subscribe to the 'hackers@opendarwin.org'
+mailing list at OpenDarwin, a community-driven project dedicated
+to enhancing Darwin.
+
+    <http://www.opendarwin.org/mailman/listinfo/hackers>
+
+From the OpenDarwin web site <http://www.opendarwin.org/>:
+
+"OpenDarwin.org, jointly founded in April 2002 by Internet Software
+Consortium, Inc. (ISC) and Apple, is an attempt to take cooperative
+Darwin development to the next level.  Membership in the OpenDarwin
+project and access to its works are open to everyone. The project is
+also fully independent, with control over its own web site, project
+news, bug tracking information and CVS repository, as well as any
+other services that the community owners may wish to provide.
+Neither Apple nor ISC take any responsibility for, or exercise any
+editorial control over, the OpenDarwin project."
+
+OpenDarwin also maintains a FAQ:
+    <http://www.opendarwin.org/en/faq/>
+
+
+Licensing Information
+=====================
+
+IMPORTANT LICENSING INFORMATION:  The Apple-developed portions of the
+Source Code and corresponding binary package folders are covered by the
+Apple Public Source License Version 2.0 that can be found on this CD in the
+file /APPLE_LICENSE.txt.
+
+The Apple binary drivers and kernel extension files are covered by a separate
+Apple Binary Driver Software License Agreement that can be found on this CD in
+the file /APPLE_DRIVER_LICENSE.txt.
+
+Other portions of Darwin may be covered by third party licenses.  Please
+read these licenses carefully before using any of this software, as your use
+of this software signifies that you have read the licenses and that you
+accept and agree to their respective terms.  Please see the file
+/Library/Documentation/Acknowledgements.rtf on this CD for more information.
+
+Please read all these licenses carefully before using any of this software, 
+as your use of this software signifies that you have read the licenses and 
+that you accept and agree to their respective terms.
+

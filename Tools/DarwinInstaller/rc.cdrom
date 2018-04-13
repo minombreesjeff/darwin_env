@@ -1,0 +1,461 @@
+#!/bin/sh
+# OpenDarwin install script
+# $Id: rc.cdrom,v 1.30 2005/04/28 20:06:46 kevin Exp $
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/libexec:/etc:/private/etc ; export PATH
+ARCH=`arch`
+TARGET_MOUNT=/mnt
+AVAIL_SHELLS="sh tcsh csh bash zsh"
+T_UID_DEFAULT=1000
+T_GID_DEFAULT=1000
+
+abort () {
+	echo "Aborting the installation"
+	echo "Press enter to reboot"
+	read REBOOT
+	reboot
+}
+
+umount_target_disk () {        
+	umount ${ROOTPART}
+
+	if [ "${ARCH}" == "ppc" ]; then
+            ${PDISKCOMMAND}
+        fi
+}
+
+finishup () {
+
+	echo "Installation of the base system is now complete."
+	echo "You may: "
+	until [ ! : ]
+	do
+		echo "1) add a user to the new system"
+		echo "2) Reboot"
+		echo "3) Spawn a shell"
+		echo -n "Your Choice: "
+		read CHOICE
+		case ${CHOICE} in
+			1) add_user ;;
+			2) umount_target_disk
+			   reboot 
+			   break ;;
+			3) umount_target_disk
+			   /bin/sh
+			   break ;;
+		esac
+	done
+	
+}
+
+add_user () {
+	
+	# a few helper vars
+	# make T_PW and T_PW_2 not equal
+	ADMIN_USER=0	
+	SHELL_VALID=0
+	T_PW=0
+	T_PW_2=1
+	
+
+	echo ""
+	echo -n "Username: "
+	read T_USERNAME
+	echo -n "Realname: "
+	read T_REALNAME
+	echo -n "UID (default: ${T_UID_DEFAULT}): "
+	read T_UID
+	echo -n "GID (default: ${T_GID_DEFAULT}): "
+	read T_GID
+	
+	if [ "$T_UID" == "" ]; then
+		T_UID=${T_UID_DEFAULT}
+	fi
+	
+	if [ "$T_GID" == "" ]; then
+		T_GID=${T_GID_DEFAULT}
+	fi
+
+    	until [ "$SHELL_VALID" == "1" ]; do
+		echo -n "Available shells: "
+		for shell in ${AVAIL_SHELLS} 
+		do
+			echo -n "${shell} "
+		done
+		echo ""
+		echo -n "Shell: "
+		read T_SHELL;
+
+ 	      	for shell in ${AVAIL_SHELLS}
+       		do
+       			if [ "$T_SHELL" == "$shell" ]; then
+       			SHELL_VALID=1
+       			fi
+       		done
+    	done
+
+    	echo -n "Home directory (default: /Users/${T_USERNAME}): "
+    	read T_HOMEDIR;
+
+    	if [ "$T_HOMEDIR" == "" ]; then
+		T_HOMEDIR=/Users/${T_USERNAME}
+    	fi
+
+	echo -n "Add ${T_USERNAME} to the admin group? (yes/no): "
+	read CHOICE;
+
+	if [ "$CHOICE" == "yes" ]; then
+		ADMIN_USER=1
+	fi
+
+    	while [ 1 ]; do
+		T_PW=`openssl passwd`
+		if [ ${?} == "0" ]; then
+			break
+    		fi
+    	done
+
+	echo ""
+	echo "Username: ${T_USERNAME}"
+	echo "Realname: ${T_REALNAME}"
+	echo "UID: ${T_UID}"
+	echo "GID: ${T_GID}"
+	echo "Shell: ${T_SHELL}"
+	echo "Home: ${T_HOMEDIR}"
+	echo ""
+	echo -n "Add (yes/no): "
+	read CHOICE
+
+	if [ "$CHOICE" == "yes" ]; then
+		nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /users/${T_USERNAME} passwd ${T_PW}
+		nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /users/${T_USERNAME} realname ${REALNAME}
+		nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /users/${T_USERNAME} uid ${T_UID}
+		nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /users/${T_USERNAME} gid ${T_GID}
+		nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /users/${T_USERNAME} shell /bin/${T_SHELL}
+		nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /users/${T_USERNAME} home ${T_HOMEDIR}
+		nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /groups/${T_USERNAME} name ${T_USERNAME}
+		nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /groups/${T_USERNAME} gid ${T_GID}
+		nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /groups/${T_USERNAME} passwd "*"
+
+		if [ "$ADMIN_USER" == "1" ]; then
+			nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /groups/admin users ${T_USERNAME}
+		fi
+
+		mkdir -p ${TARGET_MOUNT}/${T_HOMEDIR}
+		chown ${T_UID}:${T_GID} ${TARGET_MOUNT}/${T_HOMEDIR}
+		echo "User ${T_USERNAME} created"
+		echo ""
+	
+		if [ "$T_UID" == "$T_UID_DEFAULT" ]; then
+			T_UID_DEFAULT=$(($T_UID_DEFAULT+1))
+			T_GID_DEFAULT=$(($T_GID_DEFAULT+1))
+		fi
+	fi
+}
+
+# and a way to iterate through the list of available services
+# with a method to initialize them
+enable_various_services() {
+
+	echo "Following services can be enabled: "
+	chroot ${TARGET_MOUNT} /sbin/service --list
+
+	while [ 1 ]; do
+		echo -n "Enter service to enabled ('quit' to abort, list to print list): "
+		read SERVICE
+		if [ "$SERVICE" == "quit" ]; then
+			break
+		fi
+		if [ "$SERVICE" == "list" ]; then
+			chroot ${TARGET_MOUNT} /sbin/service --list
+		else
+			echo "Enabling service: ${SERVICE}" 
+			sed -e 's/disable.*=.*yes/disable = no/' < ${TARGET_MOUNT}/etc/xinetd.d/${SERVICE} > ${TARGET_MOUNT}/etc/xinetd.d/${SERVICE}.new
+			mv ${TARGET_MOUNT}/etc/xinetd.d/${SERVICE}.new ${TARGET_MOUNT}/etc/xinetd.d/${SERVICE}
+		fi
+	done
+}
+
+choose_filesystem_type () {
+	while [ 1 ]; do
+		echo "Choose the filesystem type from the following."
+		echo "  hfs) HFS+ (journaled) filesystem"
+		echo "  ufs) UFS filesystem"
+		echo -n "Filesystem type: "
+                read FILESYSTEMTYPE
+                if [ "$FILESYSTEMTYPE" == "hfs" -o "$FILESYSTEMTYPE" == "ufs"]; then
+                        break
+                fi
+	done
+}
+
+# This function will nuke the whole disk and create the 0xAB and 0xA8
+# partitions.  $INSTALLDEV and $RAWINSTDEV need to be set to the
+# device to nuke, and the corresponding raw device.
+partition_disk () {
+	# needs help on ppc
+	echo "Partitioning disk ${INSTALLDEV} using filesystem type ${FILESYSTEMTYPE}"
+	echo "Warning: this will destroy all data on the disk!"
+	echo -n "Continue? (y/n) "
+	read CONT
+
+	if [ "${CONT}" == "y" -o "${CONT}" == "yes" ]; then
+		fdisk -i -y -a ${FILESYSTEMTYPE} ${RAWINSTDEV}
+	else
+		abort
+	fi
+
+}
+
+# This will look for partitions on the selected disk, and 
+# allow the user to select the 0xA8 partitions to use.
+# $INSTALLDEV needs to be set to the device to look for,
+# and $ROOTPART will be set to the chosen value upon return.
+use_partitions () {
+	echo ""
+	PARTS=`ls -1 ${INSTALLDEV}s*`
+
+	echo "The following partitions are available:"
+	for devs in ${PARTS}
+	do
+		echo ${devs}
+	done
+
+	ROOTPART=""
+	until [[ ${ROOTPART} != "" && -b ${ROOTPART} ]]
+	do
+		echo "Which will be the root partition?"
+		read ROOTPART
+	done
+
+	echo "Using: "
+	echo "${ROOTPART} as the root partition"
+
+}
+
+# This just runs fdisk interactivly on the chosen raw install device
+run_fdisk () {
+	echo "Starting fdisk"
+	if [ "${ARCH}" == "i386" ]; then
+		fdisk -e ${RAWINSTDEV}
+	elif [ "${ARCH}" == "ppc" ]; then
+		/usr/sbin/pdisk
+	fi
+}
+
+install_booter () {
+	if [ "${ARCH}" == "i386" ]; then
+		cd /
+		umount -f ${ROOTPART}
+		RAWROOTPART=`echo ${ROOTPART} | sed 's/disk/rdisk/'`
+		if [ "${FILESYSTEMTYPE}" == "ufs" ]; then
+			dd if=/usr/standalone/i386/boot1u of=${RAWROOTPART} bs=512 count=15 >>/dev/null 2>&1
+		elif [ "${FILESYSTEMTYPE}" == "hfs" ]; then
+			dd if=/usr/standalone/i386/boot1h of=${RAWROOTPART} bs=512 count=1 >>/dev/null 2>&1
+			/usr/sbin/startupfiletool ${RAWROOTPART} /usr/standalone/i386/boot >/dev/null 2>&1
+			bless -device ${ROOTPART} -setBoot >/dev/null 2>&1
+		fi
+		mount -t ${FILESYSTEMTYPE} ${ROOTPART} ${TARGET_MOUNT}
+		bless -mount ${TARGET_MOUNT} -setBoot >/dev/null 2>&1
+		cd ${TARGET_MOUNT}
+	elif [ "${ARCH}" == "ppc" ]; then
+		PDISKCOMMAND=`bless -folder ${TARGET_MOUNT}/System/Library/CoreServices -folder9 ${TARGET_MOUNT}/System/Library/CoreServices -bootinfo ${TARGET_MOUNT}/usr/standalone/ppc/bootx.bootinfo -bootBlockFile ${TARGET_MOUNT}/usr/share/misc/bootblockdata -systemfile ${TARGET_MOUNT}/usr/share/misc/hdbootdata -xcoff ${TARGET_MOUNT}/usr/standalone/ppc/bootx.xcoff -label ${VOLUMENAME} -setOF`
+	fi
+}
+
+install_packages () {
+	VOLUMENAME="Darwin"
+
+	echo "WARNING: answering "yes" here will destroy all data on the partition"
+	until [ ! : ]
+	do
+		echo -n "Would you like to do a clean install? (yes/no)"
+		read ANSWER
+		if [ "$ANSWER" == "yes" ]; then
+		echo -n "Desired Volumename: "
+		read VOLUMENAME
+			
+		echo "Creating ${FILESYSTEMTYPE} Filesystem on ${ROOTPART}"
+		if [ "${FILESYSTEMTYPE}" == "hfs" ]; then
+			newfs_hfs -J -v "${VOLUMENAME}" ${ROOTPART} >> /dev/null 2>&1
+			break
+		elif [ "${FILESYSTEMTYPE}" == "ufs" ]; then
+			newfs -v "${VOLUMENAME}" ${ROOTPART} >> /dev/null 2>&1
+			break
+		fi
+		elif [ "$ANSWER" == "no" ]; then
+			break
+		fi
+	done
+	mount -t ${FILESYSTEMTYPE} ${ROOTPART} ${TARGET_MOUNT}
+	cd ${TARGET_MOUNT}
+	echo "Installing packages on ${ROOTPART}"
+	for f in /System/Installation/Packages_${ARCH}/files-*.tar.bz2 \
+		 /System/Installation/Packages_${ARCH}/*-*.tar.bz2 \
+		 /System/Installation/BinaryDrivers_${ARCH}/*-*.tar.bz2 ; do
+		echo "Uncompressing $(basename $f)"
+		tar xjpf $f 2>/dev/null
+	done
+
+	cd /
+}
+
+main() {
+
+	if [ -f "/Release Notes.txt" ]; then
+		echo ""
+		echo "Welcome to the installation of" `grep 'Darwin [0-9.-]*' /Release\ Notes.txt | head -1 | awk '{print $1" "$2}'`
+		echo ""
+	fi
+	if [ -f "/Important Notice.txt" ]; then
+		cat "/Important Notice.txt"
+	fi
+
+	# Get the device the user wants to install onto.
+	INSTALLDEV="novalue"
+	until [[ ${INSTALLDEV} != "" && -b ${INSTALLDEV} ]]
+	do
+		echo "The following devices are available for installation:"
+		until [[ ! -z "${FOO}" ]]
+		do
+			FOO=`iofindwholemedia`
+		done
+		iofindwholemedia
+		echo "Enter 'shell' to drop into a shell"
+		echo -n "Which device would you like to install Darwin onto? "
+		read INSTALLDEV
+	
+		if [ "${INSTALLDEV}" == "shell" ]; then
+			exec /bin/sh
+		fi
+	
+		INSTALLDEV=`iofindwholemedia ${INSTALLDEV}`
+
+		if [ ! -b "${INSTALLDEV}" ]; then
+			echo ""
+			echo "${INSTALLDEV} doesn't exist, please enter one of the listed devices."
+			echo ""
+		fi
+	done
+	
+	RAWINSTDEV=`echo ${INSTALLDEV} | sed 's/disk/rdisk/'`
+
+	
+	if [ "${ARCH}" == "i386" ]; then 
+		if fdisk -t ${RAWINSTDEV} ; then
+			echo ""
+			echo "For partitioning the disk, you have the following choices:"
+			until [ ! : ]
+			do
+				echo "1) Auto-partition the disk (Destroys all disk contents)"
+				echo "2) Manually partition the disk using fdisk"
+				echo "3) Use existing partitions"
+				echo -n "Choice: "
+				read ANSWER
+				case ${ANSWER} in
+					1) choose_filesystem_type
+					partition_disk
+				   	# Don't ask which to use, since we already know.
+				   	ROOTPART="${INSTALLDEV}s1"
+				   	break
+				   	;;
+					2) run_fdisk
+				   	use_partitions
+					choose_filesystem_type
+				   	break
+				   	;;
+					3) use_partitions
+					choose_filesystem_type
+				   	break
+				   	;;
+				esac
+			done
+		else
+			echo ""
+			echo "For partitioning the disk, you have the following choices:"
+			until [ ! : ]
+			do
+				echo "1) Auto-partition the disk (Destroys all disk contents)"
+				echo "2) Manually partition the disk using fdisk"
+				echo -n "Choice: "
+				read ANSWER
+				case ${ANSWER} in
+					1) partition_disk
+				   	# Don't ask which to use, since we already know.
+				   	ROOTPART="${INSTALLDEV}s1"
+				   	break
+				   	;;
+					2) run_fdisk
+				   	use_partitions
+				   	break
+				   	;;
+				esac
+			done
+		fi
+	elif [ "${ARCH}" == "ppc" ]; then
+		until [ ! : ]
+		do
+			echo "Which partition would you like to install into: "
+			i=0
+			slice=`pdisk ${INSTALLDEV} -getPartitionOfType Apple_HFS $i 2> /dev/null`
+			if [ $? != 0 ]; then
+				echo "You have no partitions of type Apple_HFS!  You really need at least one to install Darwin onto."
+			fi
+			until [[ $? != 0 ]]
+			do
+				name=`pdisk ${INSTALLDEV} -partitionName ${slice}`
+				echo "${i}) ${INSTALLDEV}s${slice} Apple_HFS ${name}"
+				i=`expr ${i} + 1`
+				slice=`pdisk ${INSTALLDEV} -getPartitionOfType Apple_HFS $i 2> /dev/null`
+			done
+			echo -n "Your choice: "
+			read ANSWER
+
+			slice=`pdisk ${INSTALLDEV} -getPartitionOfType Apple_HFS ${ANSWER}`
+			if [ -b "${INSTALLDEV}s${slice}" ]; then
+				ROOTPART="${INSTALLDEV}s${slice}"
+				break;
+			fi
+		done
+	fi
+	install_packages
+	install_booter
+	echo 'LANGUAGE=English' > ${TARGET_MOUNT}/var/log/CDIS.custom
+	echo "Updating mkext cache"
+	export TMPDIR=${TARGET_MOUNT}/private/tmp
+	kextcache -K ${TARGET_MOUNT}/mach_kernel -a ${ARCH} -m ${TARGET_MOUNT}/System/Library/Extensions.mkext ${TARGET_MOUNT}/System/Library/Extensions 2>/dev/null
+	export -n TMPDIR
+
+	echo "Creating root user"
+	
+	# loop until password was entered the same twice
+	while [ 1 ]; do
+	ROOT_PW=`openssl passwd`
+	if [ ${?} == "0" ]; then
+		break
+        fi
+    	done
+
+	echo -n "Set computer name (Bonjour hostname): "
+	read BONJOUR
+	echo "$BONJOUR" | scutil --set ComputerName
+	echo "$BONJOUR" | tr A-Z a-z | sed -e 's/[^a-z0-9_-][^a-z0-9_-]*/-/g' | scutil --set LocalHostName
+	
+   	nicl -raw ${TARGET_MOUNT}/var/db/netinfo/local.nidb -create /users/root passwd ${ROOT_PW}
+
+	echo "Configuring emacs"
+	chroot ${TARGET_MOUNT} /usr/libexec/dumpemacs > /dev/null 2>&1
+
+	finishup
+}
+	
+# Set the erase character properly
+# This is only for telnet consoles...
+#stty erase 
+
+# Ignore ^C
+#trap "" 2
+
+main
+
+exit

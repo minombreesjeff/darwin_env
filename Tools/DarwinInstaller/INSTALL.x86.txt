@@ -1,0 +1,142 @@
+============================================================
+Installation Instructions for OpenDarwin/x86 (July 19, 2004)
+============================================================
+
+Supported Hardware
+==================
+
+IDE:
+  PIIX4 IDE controllers have been found to work.
+  VIA VT82xx IDE chipsets
+  Attached devices must be UDMA/33 compatible or better.
+Ethernet:
+  Intel 8255x 10/100 ethernet controllers are supported.
+    3Com 905cXXX based ethernet controllers are supported.
+  DEC Tulip based ethernet controllers are supported.
+     - ADMtek 981, 983, 985
+     - PNIC 82c168
+     - DEC 21143
+     - preliminary support for PNIC2 and DEC 21140
+Video:
+  You must have a VESA 2.0 compliant video card.  Almost all
+  modern graphics cards are VESA 2.0 compliant.  However, emulators
+  such as vmware do not have VESA 2.0 compliant emulated video cards.
+Successfully tested hardware:
+  All 440BX motherboards tested have worked with their internal
+  IDE controllers.
+  IBM ThinkPad A21m (with onboard Intel ethernet)
+  MSI K8T Neo motherboard with Athlon64 3200+
+
+See http://www.opendarwin.org/hardware/ for a community-created
+site with hardware that has been found to work.
+
+At least 128 MB RAM is needed.
+
+Installation Instructions
+=========================
+
+To install OpenDarwin/x86, you must retrieve the installation CD image from
+http://www.opendarwin.org/downloads/.  After getting the CD image, you'll
+need to write that image to a CDROM.  The installation image is a bootable
+El-Torito ISO disk image.
+
+When preparing your system to install OpenDarwin/x86, it is a good idea to
+disconnect all hard drives other than the target disk.  This is to prevent
+the accidental destruction of data on the wrong disk.
+
+After getting the installation CD, and your machine prepared to install
+OpenDarwin/x86, insert the installation CD into an IDE CDROM drive and turn
+the machine on.
+
+When booting off the CDROM, the first screen you'll see is a bootloader
+prompt.  You should not need to enter any flags to the bootloader, so
+either press enter to continue, or wait 10 seconds and the boot process
+will continue automatically.
+After the boot process continues, you will see diagnostic output from the
+kernel, and you will end up at an installation prompt. If you just see a
+white background with the Apple logo, add "-v" as a boot argument. The
+installation prompt will list the devices it found to potentially install
+OpenDarwin/x86 onto:
+
+The following devices are available for installation:
+1. [ Vendor String ] /dev/disk0 [ size ]
+2. [ Vendor String ] /dev/disk1 [ size ]
+Which device would you like to install Darwin onto?
+
+At this prompt enter the disk you wish to install OpenDarwin onto (the
+number of the disk to install onto; 1 for /dev/disk0, 2 for /dev/disk1).
+You can also enter "shell" at this prompt and it will drop you into an
+emergency shell.
+
+After entering the disk you wish to install OpenDarwin/x86 onto, the install
+script will give you the following prompt:
+1) Auto-partition the disk (Destroys all disk contents)
+2) Manually partition the disk using fdisk
+Choice:
+
+If your disk is already partitioned, you will get a third option:
+3) Use existing partitions
+
+The first option (Auto-partition) will destroy the contents of the disk,
+and create one large partition containing an Apple UFS filesystem. This is
+the preferred option.
+
+The second option (Manually partition) will run the OpenDarwin/x86 fdisk.
+Use this only if you know which partition scheme you want. This option can
+also destroy all contents of the selected disk. If you choose this option,
+you must create at least one Apple UFS partition with a size of at least
+900MB.
+
+The third option will let you install OpenDarwin/x86 onto an already
+existing partition.  Make sure you already have the partitions from option
+2 set up.  In particular, you must have a UFS parition; OpenDarwin/x86
+7.2.1 will not boot from a HFS+ partition . The install script will ask you
+which partition you want to use. The contents of this partition will be
+destroyed.
+
+The install script then will create a new filesystem on this partition and
+will start to install OpenDarwin on this partition.
+
+When the install script is finished extracting the packages onto the disk
+it will prompt for the root password. You then have the choice whether to
+do further configuration of the system or not. Further configuration offers
+such things as adding more users.
+
+Once done with the configuration there is the option of rebooting or
+spawning a shell. Unless you have post-install things you wish to do, you
+should reboot the system and remove the install CD from the CDROM drive.
+
+Once your machine has booted OpenDarwin, it waits for your first login.
+Login as 'root', with the password set during the install.
+
+Known Issues
+============
+
+* The booter won't automatically use the OpenDarwin UFS partition as the
+  root disk. You have to pass the "rd=" parameter to the kernel. On a lot
+  of installs the parameter to be passed is:
+  rd=disk0s1
+  However this depends on your local setup. Once booted you can hardwire
+  this kernel argument in the file:
+  /Library/Preferences/SystemConfiguration/com.apple.Boot.plist
+
+* IDE drives may not work on x86.  If you have specfied the proper
+  partition, and you still see "waiting for root device", then you
+  probably have an unsupported IDE device.  Try it, if it doesn't work,
+  it's a known problem.
+
+* Video cards must support VESA 2.0 framebuffer modes on x86.
+  Try it, if your console looks weird, or doesn't appear, it's a
+  known problem.
+
+* ssh is not enabled by default.  To enable it, edit /etc/xinetd.d/ssh and
+  change the line which says "disable = yes" to "disable = no" and restart
+  xinetd with "killall -HUP xinetd" or
+  "/usr/sbin/xinetd -pidfile /var/run/xinetd.pid"
+
+* X11 is not installed by default.   We had to remove it from the standard
+  distribution due to space constraints. You can download either the X
+  tarball at http://www.opendarwin.org/downloads/7.2.1/X11-x86.tar.bz2 or
+  X11 rpm at
+  http://www.opendarwin.org/downloads/7.2.1/org.opendarwin.X11-7.2.1-1.i386.rpm
+  separately and install it.

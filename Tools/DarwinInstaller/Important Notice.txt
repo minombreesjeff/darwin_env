@@ -1,0 +1,17 @@
+
+IMPORTANT LICENSING INFORMATION:  The Apple-developed portions of the
+Source Code and corresponding binary package folders are covered by the
+Apple Public Source License Version 2.0 that can be found on this CD in the
+file /APPLE_LICENSE.txt.
+
+The Apple binary drivers and kernel extension files are covered by a separate
+Apple Binary Driver Software License Agreement that can be found on this CD in
+the file /APPLE_DRIVER_LICENSE.txt.
+
+Other portions of Darwin may be covered by third party licenses.  Please
+read these licenses carefully before using any of this software, as your use
+of this software signifies that you have read the licenses and that you
+accept and agree to their respective terms.  Please see the file 
+/Library/Documentation/Acknowledgements.rtf on this CD for more information.
+
+
