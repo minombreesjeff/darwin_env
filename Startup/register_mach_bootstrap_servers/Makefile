@@ -7,29 +7,30 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = Sendmail
+NAME = register_mach_bootstrap_servers
 
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-OTHERLINKED = Sendmail
+CFILES = register_mach_bootstrap_servers.c
+HFILES = initng.h
 
-OTHERSRCS = Makefile.preamble Makefile Makefile.postamble\
-            StartupParameters.plist Localizable.strings
+OTHERSRCS = Makefile.preamble Makefile Makefile.postamble
 
-OTHERLINKEDOFILES = Sendmail.o
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC
 MAKEFILE = tool.make
-NEXTSTEP_INSTALLDIR = $(NSLIBRARYDIR)/StartupItems/$(NAME)
+NEXTSTEP_INSTALLDIR = /usr/libexec
 WINDOWS_INSTALLDIR = /Library/Executables
-PDO_UNIX_INSTALLDIR = /bin
+PDO_UNIX_INSTALLDIR = /sbin
 LIBS = 
 DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 
 
+NEXTSTEP_PB_CFLAGS = -no-cpp-precomp -Wall -Werror
+FRAMEWORKS = -framework CoreFoundation
 
 
 NEXTSTEP_OBJCPLUS_COMPILER = /usr/bin/cc
