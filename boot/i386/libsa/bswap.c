@@ -21,15 +21,13 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-#import <stddef.h>
-#import "kernBootStruct.h"
 
-main()
+#include "libsa.h"
+
+unsigned long bswap32( unsigned long data )
 {
-    KERNBOOTSTRUCT kb;
-    printf("EISA info size: %d bytes\n",sizeof(EISA_slot_info_t));
-    printf("reserved size: %d bytes\n",sizeof(kb._reserved));
-    printf("offset of APM: %d\n",offsetof(KERNBOOTSTRUCT, apm_config));
-    printf("offset of config: %d\n",offsetof(KERNBOOTSTRUCT, config));
-    printf("space left at end: %d\n",65536 - (offsetof(KERNBOOTSTRUCT, config) + sizeof(kb.config)));
+    __asm__ volatile("bswap %0"
+                     : "=r" (data)
+                     : "0"  (data));
+    return data;
 }
