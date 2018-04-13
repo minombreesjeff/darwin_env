@@ -23,17 +23,11 @@
 ; Boot Loader: boot0
 ;
 ; A small boot sector program written in x86 assembly whose only
-; responsibility is to load the booter into memory
-; and jump to the booter's entry point.
-; The booter partition can be a primary or a logical partition.
+; responsibility is to locate the active partition, load the
+; partition booter into memory, and jump to the booter's entry point.
+; It leaves the boot drive in DL and a pointer to the partition entry in SI.
 ; 
-; This boot loader can be placed at any of the following places:
-; 1. Boot sector of an extended partition
-; 2. Boot sector of a primary partition
-; 3. Boot sector of a logical partition
-;
-; It expects that the MBR has left the drive number in DL
-; and a pointer to the partition entry in SI.
+; This boot loader must be placed in the Master Boot Record.
 ;
 ; In order to coexist with a fdisk partition table (64 bytes), and
 ; leave room for a two byte signature (0xAA55) in the end, boot0 is
@@ -52,7 +46,7 @@
 DEBUG                EQU  0
 
 ;
-; Set to 1 to support loading the booter (boot2) from a
+; Set to 1 to support loading the partition booter (boot1) from a
 ; logical partition.
 ;
 EXT_PART_SUPPORT     EQU  1
@@ -72,26 +66,18 @@ kPartTableOffset     EQU  0x1be
 kMBRPartTable        EQU  kMBRBuffer + kPartTableOffset
 kExtPartTable        EQU  kExtBuffer + kPartTableOffset
 
-kBoot1uSectors       EQU  16            ; sectors to load for boot2
-kBoot1uAddress       EQU  0x0000        ; boot2 load address
-kBoot1uSegment       EQU  0x1000        ; boot2 load segment
-	
 kSectorBytes         EQU  512           ; sector size in bytes
 kBootSignature       EQU  0xAA55        ; boot sector signature
 
 kPartCount           EQU  4             ; number of paritions per table
 kPartTypeBoot        EQU  0xab          ; boot2 partition type
-kPartTypeUFS         EQU  0xa8          ; 
+kPartTypeUFS         EQU  0xa8          ; UFS partition type
+kPartTypeHFS         EQU  0xaf          ; HFS partition type
 kPartTypeExtDOS      EQU  0x05          ; DOS extended partition type
 kPartTypeExtWin      EQU  0x0f          ; Windows extended partition type
 kPartTypeExtLinux    EQU  0x85          ; Linux extended partition type
-kPartActive          EQU  0x80
 
-%ifdef FLOPPY
-kDriveNumber         EQU  0x00
-%else
-kDriveNumber         EQU  0x80
-%endif
+kPartActive	     EQU  0x80
 
 ;
 ; Format of fdisk partition entry.
@@ -131,17 +117,12 @@ kDriveNumber         EQU  0x80
 
     SEGMENT .text
 
-    ORG     0x7C00
+    ORG     0xE000                  ; must match kBoot0RelocAddr
 
 ;--------------------------------------------------------------------------
 ; Boot code is loaded at 0:7C00h.
 ;
 start
-    DebugChar('!')
-%if DEBUG
-    mov     al, dl
-    call    print_hex
-%endif
     ;
     ; Set up the stack to grow down from kBoot0Segment:kBoot0Stack.
     ; Interrupts should be off while the stack is being manipulated.
@@ -155,14 +136,8 @@ start
     mov     es, ax                  ; es <- 0
     mov     ds, ax                  ; ds <- 0
 
-%if 0
-    ; 
-    ; Save SI register.
     ;
-    mov     bx, si
-
-    ;
-    ; Relocate ourselves.
+    ; Relocate boot0 code.
     ;
     mov     si, kBoot0LoadAddr      ; si <- source
     mov     di, kBoot0RelocAddr     ; di <- destination
@@ -179,9 +154,8 @@ start
 ; Start execution from the relocated location.
 ;
 start_reloc:
-%endif
-        
-    DebugChar('*')
+
+    DebugChar('>')
 
 .loop:
 
@@ -202,7 +176,6 @@ start_reloc:
     ;
     mov     ah, 0x41                ; Function 0x41
     mov     bx, 0x55AA              ; check signature
-;   mov     dl, kDriveNumber        ; Drive number
     int     0x13
 
     ;
@@ -222,56 +195,208 @@ start_reloc:
     DebugChar('E')                  ; EBIOS supported
 .ebios_check_done:
 
-    DebugChar('L')
+    ;
+    ; Since this code may not always reside in the MBR, always start by
+    ; loading the MBR to kMBRBuffer.
+    ;
+    mov     al, 1                   ; load one sector
+    xor     bx, bx
+    mov     es, bx                  ; MBR load segment = 0
+    mov     bx, kMBRBuffer          ; MBR load address
+    mov     si, bx                  ; pointer to fake partition entry
+    mov     WORD [si], 0x0000       ; CHS DX: head = 0
+    mov     WORD [si + 2], 0x0001   ; CHS CX: cylinder = 0, sector = 1
+    mov     DWORD [si + part.lba], 0x00000000 ; LBA sector 0
 
-%if DEBUG
-    mov     al, BYTE [si + part.type]
-    call    print_hex
-%endif
-        
-    ; Check to make sure our partition is the correct type.
-    cmp     BYTE [si + part.type], kPartTypeUFS
-    je      load_boot
+    call    load
+    jc      .next_drive             ; MBR load error
 
-part_error:
-    ; Drat, the partition entry was the wrong type.
-    ; Print an error and hang.
-    mov     si, part_error_str
+    ;
+    ; Look for the booter partition in the MBR partition table,
+    ; which is at offset kMBRPartTable.
+    ;
+    mov     di, kMBRPartTable       ; pointer to partition table
+    mov     ah, 0                   ; initial nesting level is 0
+    call    find_boot               ; will not return on success
+
+.next_drive:
+    inc     dl                      ; next drive number
+    test    dl, 0x4                 ; went through all 4 drives?
+    jz      .loop                   ; not yet, loop again
+
+    mov     si, boot_error_str
     call    print_string
 
 hang:
-    hlt
     jmp     SHORT hang
 
-    ;--------------------------------------------------------------------------
-    ; Load the booter from the partition.
-
-load_boot:
+;--------------------------------------------------------------------------
+; Find the active (boot) partition and load the booter from the partition.
+;
+; Arguments:
+;   AH = recursion nesting level
+;   DL = drive number (0x80 + unit number)
+;   DI = pointer to fdisk partition table.
+;
+; Clobber list:
+;   AX, BX, EBP
+;
+find_boot:
+    push    cx                      ; preserve CX and SI
+    push    si
 
     ;
-    ; Found boot partition, read boot1u image to memory.
+    ; Check for boot block signature 0xAA55 following the 4 partition
+    ; entries.
     ;
-    mov     al, kBoot1uSectors
-    mov     bx, kBoot1uSegment
+    cmp     WORD [di + part_size * kPartCount], kBootSignature
+    jne     NEAR .exit              ; boot signature not found
+
+    mov     si, di                  ; make SI a pointer to partition table
+    mov     cx, kPartCount          ; number of partition entries per table
+
+.loop:
+    ;
+    ; First scan through the partition table looking for the active
+    ; partition. Postpone walking the extended partition chain for
+    ; the second pass. Do not merge the two without changing the
+    ; buffering scheme used to store extended partition tables.
+    ;
+%if DEBUG
+    mov     al, ah                  ; indent based on nesting level
+    call    print_spaces
+    mov     al, [si + part.type]    ; print partition type
+    call    print_hex
+%endif
+
+    cmp     BYTE [si + part.type], kPartTypeBoot
+    je      .found
+    cmp     BYTE [si + part.type], kPartTypeUFS
+    je      .found
+    cmp     BYTE [si + part.type], kPartTypeHFS
+    je      .found
+        
+    jmp     .continue
+
+.found
+    DebugChar('*')
+
+    ;
+    ; Found boot partition, read boot sector to memory.
+    ;
+    mov     al, 1
+    mov     bx, kBoot0Segment
     mov     es, bx
-    mov     bx, kBoot1uAddress
-    call    load                    ;
-    jc      part_error              ; load error, keep looking?
+    mov     bx, kBoot0LoadAddr
+    call    load
+    jc      .continue               ; load error, keep looking?
 
-    DebugChar('^')
+    ; 
+    ; Check signature
+    ; 
+    cmp     WORD [bx + 510], kBootSignature
+    jne     NEAR .exit              ; boot signature not found
+
+    DebugChar('&')
+
+    ; 
+    ; Fix up absolute block location in partition record.
+    ;
+    mov     eax, [si + part.lba]
+    add     eax, [ebios_lba]
+    mov     [si + part.lba], eax
+	
+    DebugChar('%')
+	
+    ;
+    ; Jump to partition booter. The drive number is already in register DL.
+    ; SI is pointing to the modified partition entry.
+    ;
+    jmp     kBoot0Segment:kBoot0LoadAddr
+
+.continue:
+    add     si, part_size           ; advance SI to next partition entry
+    loop    .loop                   ; loop through all partition entries
+
+%if EXT_PART_SUPPORT
+    ;
+    ; No primary (or logical) boot partition found in the current
+    ; partition table. Restart and look for extended partitions.
+    ;
+    mov     si, di                  ; make SI a pointer to partition table
+    mov     cx, kPartCount          ; number of partition entries per table
+
+.ext_loop:
+
+    mov     al, [si + part.type]    ; AL <- partition type
+
+    cmp     al, kPartTypeExtDOS     ; Extended DOS
+    je      .ext_load
+
+    cmp     al, kPartTypeExtWin     ; Extended Windows(95)
+    je      .ext_load
+
+    cmp     al, kPartTypeExtLinux   ; Extended Linux
+    je      .ext_load
+
+.ext_continue:
+    ;
+    ; Advance si to the next partition entry in the extended
+    ; partition table.
+    ;
+    add     si, part_size           ; advance SI to next partition entry
+    loop    .ext_loop               ; loop through all partition entries
+    jmp     .exit                   ; boot partition not found
+
+.ext_load:
+    ;
+    ; Setup the arguments for the load function call to bring the
+    ; extended partition table into memory.
+    ; Remember that SI points to the extended partition entry.
+    ;
+    mov     al, 1                   ; read 1 sector
+    xor     bx, bx
+    mov     es, bx                  ; es = 0
+    mov     bx, kExtBuffer          ; load extended boot sector
+    call    load
+    jc      .ext_continue           ; load error
 
     ;
-    ; Jump to boot1u. The drive number is already in register DL.
+    ; The LBA address of all extended partitions is relative based
+    ; on the LBA address of the extended partition in the MBR, or
+    ; the extended partition at the head of the chain. Thus it is
+    ; necessary to save the LBA address of the first extended partition.
     ;
-    ; The first sector loaded from the disk is reserved for the boot
-    ; block (boot1), adjust the jump location by adding a sector offset.
+    or      ah, ah
+    jnz     .ext_find_boot
+    mov     ebp, [si + part.lba]
+    mov     [ebios_lba], ebp
+
+.ext_find_boot:
     ;
-    jmp     kBoot1uSegment:kBoot1uAddress + kSectorBytes
+    ; Call find_boot recursively to scan through the extended partition
+    ; table. Load DI with a pointer to the extended table in memory.
+    ;
+    inc     ah                      ; increment recursion level
+    mov     di, kExtPartTable       ; partition table pointer
+    call    find_boot               ; recursion...
+    ;dec    ah
+
+    ;
+    ; Since there is an "unwritten" rule that limits each partition table
+    ; to have 0 or 1 extended partitions, there is no point in looking for
+    ; any additional extended partition entries at this point. There is no
+    ; boot partition linked beyond the extended partition that was loaded
+    ; above.
+    ;
+
+%endif ; EXT_PART_SUPPORT
 
 .exit:
     ;
     ; Boot partition not found. Giving up.
     ;
+    DebugChar('X')
     pop     si
     pop     cx
     ret
@@ -300,7 +425,6 @@ load:
     call    read_lba                ; use INT13/F42
     jnc     .exit
     loop    .ebios_loop
-
 .chs:
     mov     cx, 5                   ; load retry count
 .chs_loop:
@@ -309,6 +433,7 @@ load:
     loop    .chs_loop
 
 .exit
+    DebugChar('R')
     pop     cx
     ret
 
@@ -353,7 +478,6 @@ read_chs:
     ;   carry = 0 success
     ;           1 error
     ;
-;   mov     dl, kDriveNumber
     mov     ah, 0x02                ; Func 2
     int     0x13                    ; INT 13
     jnc     .exit
@@ -428,7 +552,6 @@ read_lba:
     ; Packet offset 2 indicates the number of sectors read
     ; successfully.
     ;
-;   mov     dl, kDriveNumber
     mov     si, sp
     mov     ah, 0x42
     int     0x13
@@ -473,8 +596,9 @@ print_string
 .exit
     ret
 
-%if DEBUG
 
+%if DEBUG
+	
 ;--------------------------------------------------------------------------
 ; Write a ASCII character to the console.
 ;
@@ -488,6 +612,27 @@ print_char
     int     0x10                    ; display byte in tty mode
     popa
     ret
+
+%if DEBUG
+;--------------------------------------------------------------------------
+; Write a variable number of spaces to the console.
+;
+; Arguments:
+;   AL = number to spaces.
+;
+print_spaces:
+    pusha
+    xor     cx, cx
+    mov     cl, al                  ; use CX as the loop counter
+    mov     al, ' '                 ; character to print
+.loop:
+    jcxz    .exit
+    call    print_char
+    loop    .loop
+.exit:
+    popa
+    ret
+%endif
 
 ;--------------------------------------------------------------------------
 ; Write the byte value to the console in hex.
@@ -518,12 +663,19 @@ print_nibble:
     call    print_char
     ret
 
+getc:
+    pusha
+    mov    ah, 0
+    int    0x16
+    popa
+    ret
+	
 %endif ; DEBUG
 
 ;--------------------------------------------------------------------------
 ; NULL terminated strings.
 ;
-part_error_str   db  10, 13, 'Error loading UFS partition', 0
+boot_error_str   db  10, 13, 'Chain booting error', 0
 
 ;--------------------------------------------------------------------------
 ; Pad the rest of the 512 byte sized booter with zeroes. The last
@@ -532,40 +684,17 @@ part_error_str   db  10, 13, 'Error loading UFS partition', 0
 ; If the booter code becomes too large, then nasm will complain
 ; that the 'times' argument is negative.
 
-;;pad_boot
- ;;   times 446-($-$$) db 0
-
-%ifdef FLOPPY
-;--------------------------------------------------------------------------
-; Put fake partition entries for the bootable floppy image
 ;
-part1bootid     db    0x80          ; first partition active
-part1head       db    0x00          ; head #
-part1sect       db    0x02          ; sector # (low 6 bits)
-part1cyl        db    0x00          ; cylinder # (+ high 2 bits of above)
-part1systid     db    0xab          ; Apple boot partition
-times   3       db    0x00          ; ignore head/cyl/sect #'s
-part1relsect    dd    0x00000001    ; start at sector 1
-part1numsect    dd    0x00000080    ; 64K for booter
-part2bootid     db    0x00          ; not active
-times   3       db    0x00          ; ignore head/cyl/sect #'s
-part2systid     db    0xa8          ; Apple UFS partition
-times   3       db    0x00          ; ignore head/cyl/sect #'s
-part2relsect    dd    0x00000082    ; start after booter
-; part2numsect  dd    0x00000abe    ; 1.44MB - 65K
-part2numsect    dd    0x000015fe    ; 2.88MB - 65K
-%endif
+; In memory variables.
+;
+ebios_lba       dd   0   ; starting LBA of the intial extended partition.
+ebios_present   db   0   ; 1 if EBIOS is supported, 0 otherwise.
+
+pad_boot
+    times 446-($-$$) db 0
 
 pad_table_and_sig
     times 510-($-$$) db 0
     dw    kBootSignature
-
-	ABSOLUTE 0xE400
-
-;
-; In memory variables.
-;
-ebios_lba       resd  1   ; starting LBA of the intial extended partition.
-ebios_present   resb  1   ; 1 if EBIOS is supported, 0 otherwise.
 
     END

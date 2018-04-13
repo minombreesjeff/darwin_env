@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,11 +20,6 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-extern long HFSInitPartition(CICell ih);
-extern long HFSLoadFile(CICell ih, char * filePath);
-extern long HFSReadFile(CICell ih, char * filePath, void *base, unsigned long offset, unsigned long length);
-extern long HFSGetDirEntry(CICell ih, char * dirPath, long * dirIndex,
-                           char ** name, long * flags, long * time,
-                           FinderInfo * finderInfo, long * infoValid);
-extern void HFSGetDescription(CICell ih, char *str, long strMaxLen);
-extern long HFSGetFileBlock(CICell ih, char *str, unsigned long long *firstBlock);
+extern void NTFSGetDescription(CICell ih, char *str, long strMaxLen);
+extern void NTFSGetDescriptionX(CICell ih, char *str, long strMaxLen);
+
