@@ -159,9 +159,9 @@ extern long gSymbolTableSize;
 extern long gBootMode;
 extern long gBootDeviceType;
 extern long gBootFileType;
+extern char gHaveKernelCache;
 extern char gBootDevice[256];
 extern char gBootFile[256];
-extern char gRootDir[256];
 
 extern char gTempStr[4096];
 
@@ -219,5 +219,8 @@ extern long LoadDrivers(char *dirPath);
 // Externs for config.c
 extern long InitConfig(void);
 extern long ParseConfigFile(char *addr);
+
+// Externs for lzss.c
+extern int decompress_lzss(u_int8_t *dst, u_int8_t *src, u_int32_t srclen);
 
 #endif /* ! _BOOTX_SL_H_ */

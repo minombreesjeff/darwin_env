@@ -171,6 +171,9 @@ static long DecodeSegment(long cmdBase)
   // Add the Segment to the memory-map.
   sprintf(rangeName, "Kernel-%s", segCmd->segname);
   AllocateMemoryRange(rangeName, (long)vmaddr, vmsize);
+
+  if (vmsize && (strcmp(segCmd->segname, "__PRELINK") == 0))
+    gHaveKernelCache = 1;
   
   // Handle special segments first.
   

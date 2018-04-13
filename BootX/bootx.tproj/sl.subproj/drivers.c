@@ -141,7 +141,6 @@ static void DumpTag(TagPtr tag, long depth);
 
 static ModulePtr gModuleHead, gModuleTail;
 static TagPtr    gPersonalityHead, gPersonalityTail;
-static char      gExtensionsSpec[4096];
 static char      gDriverSpec[4096];
 static char      gFileSpec[4096];
 static char      gTempSpec[4096];
@@ -154,9 +153,7 @@ long LoadDrivers(char *dirSpec)
   if (gBootFileType == kNetworkDeviceType) {
     NetLoadDrivers(dirSpec);
   } else if (gBootFileType == kBlockDeviceType) {
-    strcpy(gExtensionsSpec, dirSpec);
-    strcat(gExtensionsSpec, "System\\Library\\");
-    FileLoadDrivers(gExtensionsSpec, 0);
+    FileLoadDrivers(dirSpec, 0);
   } else {
     return 0;
   }
