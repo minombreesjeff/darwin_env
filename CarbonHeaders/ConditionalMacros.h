@@ -3,9 +3,9 @@
  
      Contains:   Set up for compiler independent conditionals
  
-     Version:    CarbonCore-653~1
+     Version:    CarbonCore-783~2
  
-     Copyright:  © 1993-2005 by Apple Computer, Inc., all rights reserved
+     Copyright:  © 1993-2006 by Apple Computer, Inc., all rights reserved
  
      Bugs?:      For bug reports, consult the following page on
                  the World Wide Web:
@@ -90,10 +90,22 @@
      gcc based compilers used on Mac OS X
    */
   #define PRAGMA_IMPORT               0
-  #define PRAGMA_STRUCT_ALIGN         1
   #define PRAGMA_ONCE                 0
-  #define PRAGMA_STRUCT_PACK          0
-  #define PRAGMA_STRUCT_PACKPUSH      0
+
+  #if __GNUC__ >= 4
+    #define PRAGMA_STRUCT_PACK          1
+    #define PRAGMA_STRUCT_PACKPUSH      1
+  #else
+    #define PRAGMA_STRUCT_PACK          0
+    #define PRAGMA_STRUCT_PACKPUSH      0
+  #endif
+
+  #if __LP64__
+    #define PRAGMA_STRUCT_ALIGN         0
+  #else
+    #define PRAGMA_STRUCT_ALIGN         1
+  #endif
+
   #define PRAGMA_ENUM_PACK            0
   #define PRAGMA_ENUM_ALWAYSINT       0
   #define PRAGMA_ENUM_OPTIONS         0

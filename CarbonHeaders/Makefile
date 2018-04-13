@@ -16,11 +16,17 @@ install:
 	cp TargetConditionals.h $(INCLUDE)
 
 	mkdir -p $(CARBONCORE_HEADERS)
+
 	ln -hfs /System/Library/Frameworks/CoreServices.framework/Frameworks/CarbonCore.framework/Headers $(INCLUDE)/CarbonCore
 	ln -hfs A $(CORESERVICES)/Versions/Current
 	ln -hfs A $(CARBONCORE)/Versions/Current
+	
+	mkdir -p $(CORESERVICES)/Versions/Current/Headers
+
 	ln -hfs Versions/Current/Frameworks $(CORESERVICES)/Frameworks
+	ln -hfs Versions/Current/Headers $(CORESERVICES)/Headers
 	ln -hfs Versions/Current/Headers $(CARBONCORE)/Headers
+
 	cp Aliases.h $(CARBONCORE_HEADERS)
 	cp ConditionalMacros.h $(CARBONCORE_HEADERS)
 	cp DateTimeUtils.h $(CARBONCORE_HEADERS)
@@ -33,3 +39,4 @@ install:
 	cp OSUtils.h $(CARBONCORE_HEADERS)
 	cp TextCommon.h $(CARBONCORE_HEADERS)
 	cp UTCUtils.h $(CARBONCORE_HEADERS)
+

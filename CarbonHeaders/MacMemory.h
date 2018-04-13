@@ -3,9 +3,9 @@
  
      Contains:   Memory Manager Interfaces.
  
-     Version:    CarbonCore-653~1
+     Version:    CarbonCore-783~2
  
-     Copyright:  © 1985-2005 by Apple Computer, Inc., all rights reserved
+     Copyright:  © 1985-2006 by Apple Computer, Inc., all rights reserved
  
      Bugs?:      For bug reports, consult the following page on
                  the World Wide Web:
@@ -25,9 +25,7 @@
 #endif
 
 
-#if defined(__GNUC__)
 #include <string.h>
-#endif
 
 #include <AvailabilityMacros.h>
 
@@ -39,7 +37,7 @@
 extern "C" {
 #endif
 
-#pragma options align=mac68k
+#pragma pack(push, 2)
 
 enum {
   maxSize                       = 0x7FFFFFF0 /*the largest block possible*/
@@ -90,6 +88,7 @@ enum {
   kHandleLockedMask             = 0x80
 };
 
+#if !__LP64__
 typedef CALLBACK_API( long , GrowZoneProcPtr )(Size cbNeeded);
 typedef CALLBACK_API( void , PurgeProcPtr )(Handle blockToPurge);
 typedef CALLBACK_API( void , UserFnProcPtr )(void * parameter);
@@ -254,6 +253,32 @@ extern void
 InvokeUserFnUPP(
   void *     parameter,
   UserFnUPP  userUPP)                                         AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_4;
+
+#if __MACH__
+  #ifdef __cplusplus
+    inline GrowZoneUPP                                          NewGrowZoneUPP(GrowZoneProcPtr userRoutine) { return userRoutine; }
+    inline PurgeUPP                                             NewPurgeUPP(PurgeProcPtr userRoutine) { return userRoutine; }
+    inline UserFnUPP                                            NewUserFnUPP(UserFnProcPtr userRoutine) { return userRoutine; }
+    inline void                                                 DisposeGrowZoneUPP(GrowZoneUPP) { }
+    inline void                                                 DisposePurgeUPP(PurgeUPP) { }
+    inline void                                                 DisposeUserFnUPP(UserFnUPP) { }
+    inline long                                                 InvokeGrowZoneUPP(Size cbNeeded, GrowZoneUPP userUPP) { return (*userUPP)(cbNeeded); }
+    inline void                                                 InvokePurgeUPP(Handle blockToPurge, PurgeUPP userUPP) { (*userUPP)(blockToPurge); }
+    inline void                                                 InvokeUserFnUPP(void * parameter, UserFnUPP userUPP) { (*userUPP)(parameter); }
+  #else
+    #define NewGrowZoneUPP(userRoutine)                         ((GrowZoneUPP)userRoutine)
+    #define NewPurgeUPP(userRoutine)                            ((PurgeUPP)userRoutine)
+    #define NewUserFnUPP(userRoutine)                           ((UserFnUPP)userRoutine)
+    #define DisposeGrowZoneUPP(userUPP)
+    #define DisposePurgeUPP(userUPP)
+    #define DisposeUserFnUPP(userUPP)
+    #define InvokeGrowZoneUPP(cbNeeded, userUPP)                (*userUPP)(cbNeeded)
+    #define InvokePurgeUPP(blockToPurge, userUPP)               (*userUPP)(blockToPurge)
+    #define InvokeUserFnUPP(parameter, userUPP)                 (*userUPP)(parameter)
+  #endif
+#endif
+
+#endif  /* !__LP64__ */
 
 /*
  *  MemError()
@@ -577,8 +602,9 @@ extern Ptr
 NewPtrClear(Size byteCount)                                   AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
 
 
+#if !__LP64__
 /*
- *  MaxBlock()
+ *  MaxBlock()   *** DEPRECATED ***
  *  
  *  Summary:
  *    Return the size of the largest block you could allocate in the
@@ -594,16 +620,16 @@ NewPtrClear(Size byteCount)                                   AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.5
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
 extern long 
-MaxBlock(void)                                                AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
+MaxBlock(void)                                                AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_5;
 
 
 /*
- *  StackSpace()
+ *  StackSpace()   *** DEPRECATED ***
  *  
  *  Summary:
  *    Returns the amount of space unused on the current thread's stack.
@@ -612,13 +638,15 @@ MaxBlock(void)                                                AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.5
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
 extern long 
-StackSpace(void)                                              AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
+StackSpace(void)                                              AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_5;
 
+
+#endif  /* !__LP64__ */
 
 /*
  *  NewEmptyHandle()
@@ -760,6 +788,7 @@ extern void
 HUnlock(Handle h)                                             AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
 
 
+#if !__LP64__
 /*
  *  HPurge()   *** DEPRECATED ***
  *  
@@ -793,7 +822,7 @@ HUnlock(Handle h)                                             AVAILABLE_MAC_OS_X
  *      HPurge() just sets MemError() to noErr.
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -822,13 +851,15 @@ HPurge(Handle h)                                              AVAILABLE_MAC_OS_X
  *      HPurge() just sets MemError() to noErr.
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
 extern void 
 HNoPurge(Handle h)                                            AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_4;
 
+
+#endif  /* !__LP64__ */
 
 /*
  *  TempNewHandle()
@@ -883,6 +914,7 @@ TempNewHandle(
   OSErr *  resultCode)                                        AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
 
 
+#if !__LP64__
 /*
  *  TempMaxMem()   *** DEPRECATED ***
  *  
@@ -904,7 +936,7 @@ TempNewHandle(
  *      If != NULL, then this is filled in with the the value 0.
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -929,7 +961,7 @@ TempMaxMem(Size * grow)                                       AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -953,7 +985,7 @@ TempFreeMem(void)                                             AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -977,7 +1009,7 @@ CompactMem(Size cbNeeded)                                     AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -986,7 +1018,7 @@ PurgeMem(Size cbNeeded)                                       AVAILABLE_MAC_OS_X
 
 
 /*
- *  FreeMem()
+ *  FreeMem()   *** DEPRECATED ***
  *  
  *  Summary:
  *    Return the maximum amount of free memory in the temporary heap.
@@ -1001,16 +1033,16 @@ PurgeMem(Size cbNeeded)                                       AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.5
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
 extern long 
-FreeMem(void)                                                 AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
+FreeMem(void)                                                 AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_5;
 
 
 /*
- *  MaxMem()
+ *  MaxMem()   *** DEPRECATED ***
  *  
  *  Summary:
  *    Return the maximum amount of free memory available
@@ -1030,12 +1062,12 @@ FreeMem(void)                                                 AVAILABLE_MAC_OS_X
  *      If != NULL, then this is filled in with the the value 0.
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.5
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
 extern Size 
-MaxMem(Size * grow)                                           AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
+MaxMem(Size * grow)                                           AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_5;
 
 
 /*
@@ -1057,7 +1089,7 @@ MaxMem(Size * grow)                                           AVAILABLE_MAC_OS_X
  *      a upp for a function to call when a heap needs to be grown
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -1079,7 +1111,7 @@ SetGrowZone(GrowZoneUPP growZone)                             AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.1 and later
  *    Non-Carbon CFM:   not available
  */
@@ -1110,13 +1142,15 @@ GetGrowZone(void)                                             AVAILABLE_MAC_OS_X
  *      the handle to move
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
 extern void 
 MoveHHi(Handle h)                                             AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_4;
 
+
+#endif  /* !__LP64__ */
 
 /*
  *  DisposePtr()
@@ -1551,53 +1585,65 @@ HSetState(
     
 *****************************************************************************/
 
-#if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
-static inline void BlockMove(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
-#elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
-extern __inline__ void BlockMove(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
-#else
-extern void BlockMove(const void *srcPtr,void *destPtr,Size byteCount);
-#endif
+#if ! __LP64__
+    #if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
+  static inline void BlockMove(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
+  #elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
+ extern __inline__ void BlockMove(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
+  #else
+  extern void BlockMove(const void *srcPtr,void *destPtr,Size byteCount);
+    #endif
+#endif // !__LP64__
 
-#if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
-static inline void BlockMoveData(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
-#elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
-extern __inline__ void BlockMoveData(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
-#else
-extern void BlockMoveData(const void *srcPtr,void *destPtr,Size byteCount);
-#endif
+#if ! __LP64__
+    #if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
+  static inline void BlockMoveData(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
+  #elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
+ extern __inline__ void BlockMoveData(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
+  #else
+  extern void BlockMoveData(const void *srcPtr,void *destPtr,Size byteCount);
+    #endif
+#endif // !__LP64__
 
-#if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
-static inline void BlockMoveUncached(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
-#elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
-extern __inline__ void BlockMoveUncached(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
-#else
-extern void BlockMoveUncached(const void *srcPtr,void *destPtr,Size byteCount);
-#endif
+#if ! __LP64__
+    #if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
+  static inline void BlockMoveUncached(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
+  #elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
+ extern __inline__ void BlockMoveUncached(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
+  #else
+  extern void BlockMoveUncached(const void *srcPtr,void *destPtr,Size byteCount);
+    #endif
+#endif // !__LP64__
 
-#if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
-static inline void BlockMoveDataUncached(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
-#elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
-extern __inline__ void BlockMoveDataUncached(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
-#else
-extern void BlockMoveDataUncached(const void *srcPtr,void *destPtr,Size byteCount);
-#endif
+#if ! __LP64__
+    #if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
+  static inline void BlockMoveDataUncached(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
+  #elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
+ extern __inline__ void BlockMoveDataUncached(const void *srcPtr,void *destPtr,Size byteCount) { if ( byteCount > 0 ) memmove( destPtr, srcPtr, byteCount ); }
+  #else
+  extern void BlockMoveDataUncached(const void *srcPtr,void *destPtr,Size byteCount);
+    #endif
+#endif // !__LP64__
 
-#if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
-static inline void BlockZero(void *destPtr,Size byteCount) { if ( byteCount > 0 ) bzero( destPtr, byteCount ); }
-#elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
-extern __inline__ void BlockZero(void *destPtr,Size byteCount) { if ( byteCount > 0 ) bzero( destPtr, byteCount ); }
-#else
-extern void BlockZero(void *destPtr,Size byteCount);
-#endif
+#if ! __LP64__
+    #if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
+  static inline void BlockZero(void *destPtr,Size byteCount) { if ( byteCount > 0 ) bzero( destPtr, byteCount ); }
+   #elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
+ extern __inline__ void BlockZero(void *destPtr,Size byteCount) { if ( byteCount > 0 ) bzero( destPtr, byteCount ); }
+   #else
+  extern void BlockZero(void *destPtr,Size byteCount);
+   #endif
+#endif // !__LP64__
 
-#if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
-static inline void BlockZeroUncached(void *destPtr,Size byteCount) { if ( byteCount > 0 ) bzero( destPtr, byteCount ); }
-#elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
-extern __inline__ void BlockZeroUncached(void *destPtr,Size byteCount) { if ( byteCount > 0 ) bzero( destPtr, byteCount ); }
-#else
-extern void BlockZeroUncached(void *destPtr,Size byteCount);
-#endif
+#if ! __LP64__
+    #if ! NO_BLOCKMOVE_INLINE && ( defined(__cplusplus) || ( defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L ) )
+  static inline void BlockZeroUncached(void *destPtr,Size byteCount) { if ( byteCount > 0 ) bzero( destPtr, byteCount ); }
+   #elif ! NO_BLOCKMOVE_INLINE && defined( __GCC__ ) 
+ extern __inline__ void BlockZeroUncached(void *destPtr,Size byteCount) { if ( byteCount > 0 ) bzero( destPtr, byteCount ); }
+   #else
+  extern void BlockZeroUncached(void *destPtr,Size byteCount);
+   #endif
+#endif // !__LP64__
 /*
  *  HandToHand()
  *  
@@ -1823,6 +1869,7 @@ PtrAndHand(
   long          size)                                         AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
 
 
+#if !__LP64__
 /*
  *  MoreMasters()   *** DEPRECATED ***
  *  
@@ -1834,7 +1881,7 @@ PtrAndHand(
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -1858,7 +1905,7 @@ MoreMasters(void)                                             AVAILABLE_MAC_OS_X
  *      the number of master pointers to preallocate
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   not available
  */
@@ -1878,7 +1925,7 @@ MoreMasterPointers(UInt32 inCount)                            AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -1899,7 +1946,7 @@ TempHLock(
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -1910,7 +1957,7 @@ TempHUnlock(
 
 
 /*
- *  TempDisposeHandle()
+ *  TempDisposeHandle()   *** DEPRECATED ***
  *  
  *  Discussion:
  *    This function has been deprecated for many years; replace it with
@@ -1920,14 +1967,14 @@ TempHUnlock(
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.5
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
 extern void 
 TempDisposeHandle(
   Handle   h,
-  OSErr *  resultCode)                                        AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
+  OSErr *  resultCode)                                        AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_5;
 
 
 /*
@@ -1941,7 +1988,7 @@ TempDisposeHandle(
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -1966,7 +2013,7 @@ TempTopMem(void)                                              AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.1 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -1987,7 +2034,7 @@ HoldMemory(
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.1 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -2016,7 +2063,7 @@ UnholdMemory(
  *      the count of pages to make make resident
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0.2 and later
  *    Non-Carbon CFM:   in InterfaceLib 8.5 and later
  */
@@ -2045,7 +2092,7 @@ MakeMemoryResident(
  *      the count of pages to make make release
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0.2 and later
  *    Non-Carbon CFM:   in InterfaceLib 8.5 and later
  */
@@ -2074,7 +2121,7 @@ ReleaseMemoryData(
  *      the count of pages to make make non-resident
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0.2 and later
  *    Non-Carbon CFM:   in InterfaceLib 8.5 and later
  */
@@ -2103,7 +2150,7 @@ MakeMemoryNonResident(
  *      the count of pages to make flush
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0.2 and later
  *    Non-Carbon CFM:   in InterfaceLib 8.5 and later
  */
@@ -2124,7 +2171,7 @@ FlushMemory(
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -2142,7 +2189,7 @@ GZSaveHnd(void)                                               AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -2160,7 +2207,7 @@ TopMem(void)                                                  AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -2188,7 +2235,7 @@ ReserveMem(Size cbNeeded)                                     AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -2213,7 +2260,7 @@ PurgeSpace(
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 8.5 and later
  */
@@ -2236,7 +2283,7 @@ PurgeSpaceTotal(void)                                         AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 8.5 and later
  */
@@ -2258,13 +2305,15 @@ PurgeSpaceContiguous(void)                                    AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   not available
  */
 extern Boolean 
 CheckAllHeaps(void)                                           AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_4;
 
+
+#endif  /* !__LP64__ */
 
 /*
  *  IsHeapValid()
@@ -2316,6 +2365,7 @@ extern Boolean
 IsPointerValid(Ptr p)                                         AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER;
 
 
+#if !__LP64__
 #if OLDROUTINENAMES
 #define ApplicZone() ApplicationZone()
 #define MFTempNewHandle(logicalSize, resultCode) TempNewHandle(logicalSize, resultCode)
@@ -2331,6 +2381,9 @@ IsPointerValid(Ptr p)                                         AVAILABLE_MAC_OS_X
 #define ReallocHandle(h, byteCount) ReallocateHandle(h, byteCount)
 #endif  /* OLDROUTINENAMES */
 
+#endif  /* !__LP64__ */
+
+#if !__LP64__
 /*
  *  LMGetSysZone()   *** DEPRECATED ***
  *  
@@ -2341,7 +2394,7 @@ IsPointerValid(Ptr p)                                         AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -2359,7 +2412,7 @@ LMGetSysZone(void)                                            AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -2377,7 +2430,7 @@ LMSetSysZone(THz value)                                       AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -2395,7 +2448,7 @@ LMGetApplZone(void)                                           AVAILABLE_MAC_OS_X
  *    Not thread safe
  *  
  *  Availability:
- *    Mac OS X:         in version 10.0 and later in CoreServices.framework but deprecated in 10.4
+ *    Mac OS X:         in version 10.0 and later in CoreServices.framework [32-bit only] but deprecated in 10.4
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in InterfaceLib 7.1 and later
  */
@@ -2403,19 +2456,23 @@ extern void
 LMSetApplZone(THz value)                                      AVAILABLE_MAC_OS_X_VERSION_10_0_AND_LATER_BUT_DEPRECATED_IN_MAC_OS_X_VERSION_10_4;
 
 
+
+#endif  /* !__LP64__ */
+
 #if __MAC_OS_X_MEMORY_MANAGER_CLEAN__
 
 #ifdef __cplusplus
     inline void HLock(Handle ) { LMSetMemErr(0); }
     inline void HLockHi(Handle ) { LMSetMemErr(0); }
     inline void HUnlock(Handle ) { LMSetMemErr(0); }
-    inline void HPurge(Handle ) { LMSetMemErr(0); }
-    inline void HNoPurge(Handle ) { LMSetMemErr(0); }
-    inline void MoveHHi(Handle ) { LMSetMemErr(0); }
     inline void HSetRBit(Handle ) { LMSetMemErr(0); }
     inline void HClrRBit(Handle ) { LMSetMemErr(0); }
     inline SInt8 HGetState(Handle ) { LMSetMemErr(0); return 0; }
     inline void HSetState(Handle , SInt8 ) { LMSetMemErr(0); }
+#if !__LP64__
+    inline void HPurge(Handle ) { LMSetMemErr(0); }
+    inline void HNoPurge(Handle ) { LMSetMemErr(0); }
+    inline void MoveHHi(Handle ) { LMSetMemErr(0); }
     inline void TempHLock(Handle , OSErr *resultCode) { LMSetMemErr(0), *resultCode = 0; }
     inline void TempHUnlock(Handle , OSErr *resultCode) { LMSetMemErr(0), *resultCode = 0; }
 
@@ -2429,19 +2486,21 @@ LMSetApplZone(THz value)                                      AVAILABLE_MAC_OS_X
     inline void PurgeSpace(long *, long *) { LMSetMemErr(0); }
     inline long PurgeSpaceTotal() { LMSetMemErr(0); }
     inline long PurgeSpaceContiguous() { LMSetMemErr(0); }
+#endif
 
 
 #else
     #define HLock(h) { LMSetMemErr(0); }
     #define HLockHi(h) { LMSetMemErr(0); }
     #define HUnlock(h) { LMSetMemErr(0); }
-    #define HPurge(h) { LMSetMemErr(0); }
-    #define HNoPurge(h) { LMSetMemErr(0); }
-    #define MoveHHi(h) { LMSetMemErr(0); }
     #define HSetRBit(h) { LMSetMemErr(0); }
     #define HClrRBit(h) { LMSetMemErr(0); }
     #define HGetState(h) ( LMSetMemErr(0), 0 )
     #define HSetState(h, flags) { LMSetMemErr(0); }
+#if !__LP64__
+    #define HPurge(h) { LMSetMemErr(0); }
+    #define HNoPurge(h) { LMSetMemErr(0); }
+    #define MoveHHi(h) { LMSetMemErr(0); }
     #define TempHLock(h, resultCode) { LMSetMemErr(0) ; *resultCode = 0; }
     #define TempHUnlock(h, resultCode) { LMSetMemErr(0) ; *resultCode = 0; }
 
@@ -2457,11 +2516,12 @@ LMSetApplZone(THz value)                                      AVAILABLE_MAC_OS_X
     #define PurgeSpaceTotal() ( LMSetMemErr(0), 0 )
     #define    PurgeSpaceContiguous()  ( LMSetMemErr(0), 0 )
 #endif
+#endif
 
 #endif  /* __MAC_OS_X_MEMORY_MANAGER_CLEAN__ */
 
 
-#pragma options align=reset
+#pragma pack(pop)
 
 #ifdef __cplusplus
 }

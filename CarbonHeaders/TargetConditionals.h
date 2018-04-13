@@ -36,6 +36,9 @@
         TARGET_OS_WIN32         - Generate code will run under 32-bit Windows
         TARGET_OS_UNIX          - Generate code will run under some non Mac OS X unix 
 
+        TARGET_OS_EMBEDDED      - Generate code will run under an embedded OS variant
+                                  of one of the above OSes. Can be true at the same
+                                  time as TARGET_OS_MAC
 
     TARGET_RT_* 
     These conditionals specify in which runtime the generated code will
@@ -58,11 +61,13 @@
     #define TARGET_OS_MAC               1
     #define TARGET_OS_WIN32             0
     #define TARGET_OS_UNIX              0
+    #define TARGET_OS_EMBEDDED          0
     #if defined(__ppc__) 
         #define TARGET_CPU_PPC          1
         #define TARGET_CPU_PPC64        0
         #define TARGET_CPU_68K          0
         #define TARGET_CPU_X86          0
+        #define TARGET_CPU_X86_64       0
         #define TARGET_CPU_MIPS         0
         #define TARGET_CPU_SPARC        0   
         #define TARGET_CPU_ALPHA        0
@@ -81,6 +86,7 @@
         #define TARGET_CPU_PPC64        1
         #define TARGET_CPU_68K          0
         #define TARGET_CPU_X86          0
+        #define TARGET_CPU_X86_64       0
         #define TARGET_CPU_MIPS         0
         #define TARGET_CPU_SPARC        0   
         #define TARGET_CPU_ALPHA        0
@@ -94,6 +100,7 @@
         #define TARGET_CPU_PPC64        0
         #define TARGET_CPU_68K          0
         #define TARGET_CPU_X86          1
+        #define TARGET_CPU_X86_64       0
         #define TARGET_CPU_MIPS         0
         #define TARGET_CPU_SPARC        0
         #define TARGET_CPU_ALPHA        0
@@ -102,6 +109,20 @@
         #define TARGET_RT_LITTLE_ENDIAN 1
         #define TARGET_RT_BIG_ENDIAN    0
         #define TARGET_RT_64_BIT        0
+     #elif defined(__x86_64__) 
+        #define TARGET_CPU_PPC          0
+        #define TARGET_CPU_PPC64        0
+        #define TARGET_CPU_68K          0
+        #define TARGET_CPU_X86          0
+        #define TARGET_CPU_X86_64       1
+        #define TARGET_CPU_MIPS         0
+        #define TARGET_CPU_SPARC        0
+        #define TARGET_CPU_ALPHA        0
+        #define TARGET_RT_MAC_CFM       0
+        #define TARGET_RT_MAC_MACHO     1
+        #define TARGET_RT_LITTLE_ENDIAN 1
+        #define TARGET_RT_BIG_ENDIAN    0
+        #define TARGET_RT_64_BIT        1
     #else
         #error unrecognized GNU C compiler
     #endif
@@ -114,6 +135,7 @@
     #define TARGET_OS_MAC               1
     #define TARGET_OS_WIN32             0
     #define TARGET_OS_UNIX              0
+    #define TARGET_OS_EMBEDDED          0
     #if defined(__POWERPC__)
         #define TARGET_CPU_PPC          1
         #define TARGET_CPU_PPC64        0
@@ -151,26 +173,37 @@
  */
 #else
     #if defined(TARGET_CPU_PPC) && TARGET_CPU_PPC
-        #define TARGET_CPU_PPC64 0
-        #define TARGET_CPU_68K   0
-        #define TARGET_CPU_X86   0
-        #define TARGET_CPU_MIPS  0
-        #define TARGET_CPU_SPARC 0
-        #define TARGET_CPU_ALPHA 0
+        #define TARGET_CPU_PPC64    0
+        #define TARGET_CPU_68K      0
+        #define TARGET_CPU_X86      0
+        #define TARGET_CPU_X86_64   0
+        #define TARGET_CPU_MIPS     0
+        #define TARGET_CPU_SPARC    0
+        #define TARGET_CPU_ALPHA    0
     #elif defined(TARGET_CPU_PPC64) && TARGET_CPU_PPC64
-        #define TARGET_CPU_PPC   0
-        #define TARGET_CPU_68K   0
-        #define TARGET_CPU_X86   0
-        #define TARGET_CPU_MIPS  0
-        #define TARGET_CPU_SPARC 0
-        #define TARGET_CPU_ALPHA 0
+        #define TARGET_CPU_PPC      0
+        #define TARGET_CPU_68K      0
+        #define TARGET_CPU_X86      0
+        #define TARGET_CPU_X86_64   0
+        #define TARGET_CPU_MIPS     0
+        #define TARGET_CPU_SPARC    0
+        #define TARGET_CPU_ALPHA    0
     #elif defined(TARGET_CPU_X86) && TARGET_CPU_X86
-        #define TARGET_CPU_PPC   0
-        #define TARGET_CPU_PPC64 0
-        #define TARGET_CPU_68K   0
-        #define TARGET_CPU_MIPS  0
-        #define TARGET_CPU_SPARC 0
-        #define TARGET_CPU_ALPHA 0
+        #define TARGET_CPU_PPC      0
+        #define TARGET_CPU_PPC64    0
+        #define TARGET_CPU_X86_64   0
+        #define TARGET_CPU_68K      0
+        #define TARGET_CPU_MIPS     0
+        #define TARGET_CPU_SPARC    0
+        #define TARGET_CPU_ALPHA    0
+    #elif defined(TARGET_CPU_X86_64) && TARGET_CPU_X86_64
+        #define TARGET_CPU_PPC      0
+        #define TARGET_CPU_PPC64    0
+        #define TARGET_CPU_X86      0
+        #define TARGET_CPU_68K      0
+        #define TARGET_CPU_MIPS     0
+        #define TARGET_CPU_SPARC    0
+        #define TARGET_CPU_ALPHA    0
     #else
         /*
             NOTE:   If your compiler errors out here then support for your compiler 
@@ -198,6 +231,7 @@
     #define TARGET_OS_MAC                1
     #define TARGET_OS_WIN32              0
     #define TARGET_OS_UNIX               0
+    #define TARGET_OS_EMBEDDED           0
     #if TARGET_CPU_PPC || TARGET_CPU_PPC64
         #define TARGET_RT_BIG_ENDIAN     1
         #define TARGET_RT_LITTLE_ENDIAN  0
@@ -205,7 +239,7 @@
         #define TARGET_RT_BIG_ENDIAN     0
         #define TARGET_RT_LITTLE_ENDIAN  1
     #endif
-    #if TARGET_CPU_PPC64
+    #if TARGET_CPU_PPC64 || TARGET_CPU_X86_64
         #define TARGET_RT_64_BIT         1
     #else
         #define TARGET_RT_64_BIT         0
