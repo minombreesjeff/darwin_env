@@ -7,22 +7,21 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = Cleanup
+NAME = ConsoleMessage
 
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-OTHERLINKED = Cleanup
+CFILES = ConsoleMessage.c
 
 OTHERSRCS = Makefile.preamble Makefile Makefile.postamble\
-            StartupParameters.plist Localizable.strings
+            ConsoleMessage.8
 
-OTHERLINKEDOFILES = Cleanup.o
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC
 MAKEFILE = tool.make
-NEXTSTEP_INSTALLDIR = $(NSLIBRARYDIR)/StartupItems/$(NAME)
+NEXTSTEP_INSTALLDIR = /usr/libexec
 WINDOWS_INSTALLDIR = /Library/Executables
 PDO_UNIX_INSTALLDIR = /bin
 LIBS = 
@@ -30,6 +29,8 @@ DEBUG_LIBS = $(LIBS)
 PROF_LIBS = $(LIBS)
 
 
+NEXTSTEP_PB_CFLAGS = -traditional-cpp -Wall -Werror
+FRAMEWORKS = -framework CoreFoundation
 
 
 NEXTSTEP_OBJCPLUS_COMPILER = /usr/bin/cc

@@ -7,17 +7,17 @@
 # and Makefile.postamble (both optional), and Makefile will include them.
 #
 
-NAME = QuickTimeServer
+NAME = LDAP
 
 PROJECTVERSION = 2.8
 PROJECT_TYPE = Tool
 
-OTHERLINKED = QuickTimeServer
+OTHERLINKED = LDAP
 
 OTHERSRCS = Makefile.preamble Makefile Makefile.postamble\
             StartupParameters.plist Localizable.strings
 
-OTHERLINKEDOFILES = QuickTimeServer.o
+OTHERLINKEDOFILES = LDAP.o
 
 MAKEFILEDIR = $(MAKEFILEPATH)/pb_makefiles
 CODE_GEN_STYLE = DYNAMIC

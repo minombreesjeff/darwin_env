@@ -3,7 +3,7 @@
     FILESTABLE = {
         FRAMEWORKS = (); 
         H_FILES = (); 
-        OTHER_LINKED = (Cleanup); 
+        OTHER_LINKED = (mDNSResponder); 
         OTHER_SOURCES = (
             Makefile.preamble, 
             Makefile, 
@@ -25,7 +25,7 @@
     PDO_UNIX_INSTALLDIR = /bin; 
     PDO_UNIX_JAVA_COMPILER = "$(JDKBINDIR)/javac"; 
     PDO_UNIX_OBJCPLUS_COMPILER = "$(NEXTDEV_BIN)/gcc"; 
-    PROJECTNAME = Cleanup; 
+    PROJECTNAME = mDNSResponder; 
     PROJECTTYPE = Tool; 
     PROJECTVERSION = 2.8; 
     WINDOWS_BUILDTOOL = $NEXT_ROOT/Developer/Executables/make; 
