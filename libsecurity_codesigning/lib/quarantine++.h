@@ -20,25 +20,58 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-#ifndef _H_XPCENGINE
-#define _H_XPCENGINE
 
-#include "SecAssessment.h"
-#include "policydb.h"
-#include <xpc/private.h>
-#include <Security/Security.h>
+//
+// quarantine++ - interface to XAR-format archive files
+//
+#ifndef _H_QUARANTINEPLUSPLUS
+#define _H_QUARANTINEPLUSPLUS
+
+#include <security_utilities/utilities.h>
+#include <CoreFoundation/CoreFoundation.h>
+
+extern "C" {
+#include <quarantine.h>
+}
 
 namespace Security {
 namespace CodeSigning {
 
 
-void xpcEngineAssess(CFURLRef path, uint flags, CFDictionaryRef context, CFMutableDictionaryRef result);
-bool xpcEngineUpdate(CFTypeRef target, uint flags, CFDictionaryRef context);
-bool xpcEngineControl(const char *name);
+//
+// A file quarantine object
+//
+class FileQuarantine {
+public:	
+	FileQuarantine(const char *path);
+	FileQuarantine(int fd);
+	virtual ~FileQuarantine();
+	
+	uint32_t flags() const
+		{ return qtn_file_get_flags(mQtn); }
+	bool flag(uint32_t f) const
+		{ return this->flags() & f; }
+	
+	void setFlags(uint32_t flags);
+	void setFlag(uint32_t flag);
+	void clearFlag(uint32_t flag);
+	
+	void applyTo(const char *path);
+	void applyTo(int fd);
+	
+	operator bool() const { return mQtn != 0; }
+	bool quarantined() const { return mQuarantined; }
 
+private:
+	void check(int err);
+	
+private:
+	qtn_file_t mQtn;		// qtn handle
+	bool mQuarantined;		// has quarantine information
+};
 
 
 } // end namespace CodeSigning
 } // end namespace Security
 
-#endif //_H_XPCENGINE
+#endif // !_H_QUARANTINEPLUSPLUS
