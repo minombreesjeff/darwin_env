@@ -20,40 +20,20 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * keychain_utilities.h
+ * user_trust_enable.h
  */
 
-#ifndef _KEYCHAIN_UTILITIES_H_
-#define _KEYCHAIN_UTILITIES_H_ 1
-
-#include <Security/SecKeychain.h>
-
-#include <stdio.h>
+#ifndef _USER_TRUST_ENABLE_H_
+#define _USER_TRUST_ENABLE_H_  1
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Open a given named name. */
-extern SecKeychainRef keychain_open(const char *name);
-
-/* Return either NULL if argc is 0, or a SecKeychainRef if argc is 1 or a CFArrayRef of SecKeychainRefs if argc is greater than 1. */
-extern CFTypeRef keychain_create_array(int argc, char * const *argv);
-
-extern int print_keychain_name(FILE *stream, SecKeychainRef keychain);
-
-extern int print_keychain_item_attributes(FILE *stream, SecKeychainItemRef item, Boolean show_data, Boolean show_raw_data, Boolean show_acl, Boolean interactive);
-
-extern void print_buffer(FILE *stream, UInt32 length, const void *data);
-
-extern void print_buffer_pem(FILE *stream, const char *headerString, UInt32 length, const void *data);
-
-extern void print_uint32(FILE* stream, uint32 n);
-
-void check_obsolete_keychain(const char *kcName);
+extern int user_trust_enable(int argc, char * const *argv);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /*  _KEYCHAIN_UTILITIES_H_ */
+#endif /* _USER_TRUST_ENABLE_H_ */
