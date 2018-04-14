@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2012 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,45 +22,48 @@
  */
 
 //
-// xar++ - interface to XAR-format archive files
+// drmaker - create Designated Requirements
 //
-#ifndef _H_XARPLUSPLUS
-#define _H_XARPLUSPLUS
+#ifndef _H_DRMAKER
+#define _H_DRMAKER
 
-#include <security_utilities/utilities.h>
-#include <CoreFoundation/CoreFoundation.h>
-
-extern "C" {
-#include <xar/xar.h>
-}
+#include "reqmaker.h"
 
 namespace Security {
 namespace CodeSigning {
 
 
 //
-// A XAR-format file on disk
+// Some useful certificate OID markers
 //
-class Xar {
-public:	
-	Xar(const char *path = NULL);
-	virtual ~Xar();
-	void open(const char *path);
+extern const CSSM_DATA adcSdkMarkerOID;
+extern const CSSM_DATA devIdSdkMarkerOID;
+extern const CSSM_DATA devIdLeafMarkerOID;
+
+
+
+//
+// A Maker of Designated Requirements
+//
+class DRMaker : public Requirement::Maker {
+public:
+	DRMaker(const Requirement::Context &context);
+	virtual ~DRMaker();
 	
-	operator bool() const { return mXar != 0; }
-	bool isSigned() const { return mSigClassic != 0 || mSigCMS != 0; }
+	const Requirement::Context &ctx;
 	
-	CFArrayRef copyCertChain();
+public:
+	Requirement *make();
 
 private:
-	xar_t mXar;
-	xar_signature_t mSigClassic;
-	xar_signature_t mSigCMS;
+	void appleAnchor();
+	void nonAppleAnchor();
+	bool isIOSSignature();
+	bool isDeveloperIDSignature();
 };
-
 
 
 } // end namespace CodeSigning
 } // end namespace Security
 
-#endif // !_H_XARPLUSPLUS
+#endif // !_H_DRMAKER
