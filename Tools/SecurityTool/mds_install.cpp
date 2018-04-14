@@ -20,22 +20,31 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * key_create.h
+ * mds_install.cpp
  */
 
-#ifndef _KEY_CREATE_H_
-#define _KEY_CREATE_H_  1
+#include "mds_install.h"
+#include <security_cdsa_client/mdsclient.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-extern int key_create_pair(int argc, char * const *argv);
-
-extern int csr_create(int argc, char * const *argv);
-
-#ifdef __cplusplus
+int
+mds_install(int argc, char * const *argv)
+{
+	if(argc != 1) {
+		/* crufty "show usage" return code */
+		return 2;
+	}
+	
+	try {
+		MDSClient::mds().install();
+	}
+	catch(const CssmError &err) {
+		cssmPerror("MDS_Install", err.error);
+		return -1;
+	}
+	catch(...) {
+		/* should never happen */
+		fprintf(stderr, "Unexpected error on MDS_Install\n");
+		return -1;
+	}
+	return 0;
 }
-#endif
-
-#endif /* _KEY_CREATE_H_ */

@@ -20,73 +20,85 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * keychain_lock.c
+ * keychain_recode.c
  */
 
-#include "keychain_lock.h"
+#include "keychain_recode.h"
 
 #include "keychain_utilities.h"
 #include "readline.h"
 #include "security.h"
 
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <Security/SecKeychain.h>
+#include <Security/SecKeychainPriv.h>
 
 static int
-do_lock_all(void)
+do_recode(const char *keychainName1, const char *keychainName2)
 {
-	OSStatus result = SecKeychainLockAll();
-    if (result)
-        sec_perror("SecKeychainLockAll", result);
-
-	return result;
-}
-
-static int
-do_lock(const char *keychainName)
-{
-	SecKeychainRef keychain = NULL;
+	SecKeychainRef keychain1 = NULL, keychain2 = NULL;
+	CFDataRef dbBlob = NULL, extraData = NULL;
 	OSStatus result;
 
-	if (keychainName)
+	if (keychainName1)
 	{
-		keychain = keychain_open(keychainName);
-		if (!keychain)
+		keychain1 = keychain_open(keychainName1);
+		if (!keychain1)
 		{
 			result = 1;
 			goto loser;
 		}
 	}
 
-	result = SecKeychainLock(keychain);
-	if (result)
+	keychain2 = keychain_open(keychainName2);
+	if (!keychain2)
 	{
-		sec_error("SecKeychainLock %s: %s", keychainName ? keychainName : "<NULL>", sec_errstr(result));
+		result = 1;
+		goto loser;
 	}
 
+	result = SecKeychainCopyBlob(keychain2, &dbBlob);
+	if (result)
+	{
+		sec_error("SecKeychainCopyBlob %s: %s", keychainName2,
+			sec_errstr(result));
+		goto loser;
+	}
+
+	extraData = CFDataCreate(NULL, NULL, 0);
+
+	result = SecKeychainRecodeKeychain(keychain1, dbBlob, extraData);
+	if (result)
+		sec_error("SecKeychainRecodeKeychain %s, %s: %s", keychainName1,
+			keychainName2, sec_errstr(result));
+
 loser:
-	if (keychain)
-		CFRelease(keychain);
+	if (dbBlob)
+		CFRelease(dbBlob);
+	if (extraData)
+		CFRelease(extraData);
+	if (keychain1)
+		CFRelease(keychain1);
+	if (keychain2)
+		CFRelease(keychain2);
 
 	return result;
 }
 
 int
-keychain_lock(int argc, char * const *argv)
+keychain_recode(int argc, char * const *argv)
 {
-	char *keychainName = NULL;
+	char *keychainName1 = NULL, *keychainName2 = NULL;
 	int ch, result = 0;
-	Boolean lockAll = FALSE;
-	while ((ch = getopt(argc, argv, "ah")) != -1)
+
+	while ((ch = getopt(argc, argv, "h")) != -1)
 	{
 		switch  (ch)
 		{
-		case 'a':
-			lockAll = TRUE;
-			break;
 		case '?':
 		default:
 			return 2; /* @@@ Return 2 triggers usage message. */
@@ -95,22 +107,27 @@ keychain_lock(int argc, char * const *argv)
 	argc -= optind;
 	argv += optind;
 
-	if (argc == 1 && !lockAll)
+	if (argc == 2)
 	{
-		keychainName = argv[0];
-		if (*keychainName == '\0')
+		keychainName1 = argv[0];
+		if (*keychainName1 == '\0')
 		{
 			result = 2;
 			goto loser;
 		}
+
+		keychainName2 = argv[1];
+		if (*keychainName2 == '\0')
+		{
+			result = 2;
+			goto loser;
+		}
+
 	}
-	else if (argc != 0)
+	else
 		return 2;
 
-	if (lockAll)
-		result = do_lock_all();
-	else
-		result = do_lock(keychainName);
+	result = do_recode(keychainName1, keychainName2);
 
 loser:
 

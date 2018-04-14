@@ -20,22 +20,20 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * key_create.h
+ * mds_install.h
  */
 
-#ifndef _KEY_CREATE_H_
-#define _KEY_CREATE_H_  1
+#ifndef _MDS_INSTALL_H_
+#define _MDS_INSTALL_H_  1
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern int key_create_pair(int argc, char * const *argv);
-
-extern int csr_create(int argc, char * const *argv);
+extern int mds_install(int argc, char * const *argv);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _KEY_CREATE_H_ */
+#endif /* _MDS_INSTALL_H_ */

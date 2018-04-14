@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2004 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2004 Apple Computer, Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,22 +20,20 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * key_create.h
+ * cmsutil.h
  */
 
-#ifndef _KEY_CREATE_H_
-#define _KEY_CREATE_H_  1
+#ifndef _CMSUTIL_H_
+#define _CMSUTIL_H_  1
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern int key_create_pair(int argc, char * const *argv);
-
-extern int csr_create(int argc, char * const *argv);
+extern int cms_util(int argc, char * const *argv);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _KEY_CREATE_H_ */
+#endif /* _CMSUTIL_H_ */
