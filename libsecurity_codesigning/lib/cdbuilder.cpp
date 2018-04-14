@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2006 Apple Computer, Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -39,22 +39,14 @@ namespace CodeSigning {
 //
 // Create an (empty) builder
 //
-CodeDirectory::Builder::Builder(HashAlgorithm digestAlgorithm)
-	: mFlags(0),
-	  mHashType(digestAlgorithm),
-	  mSpecialSlots(0),
-	  mCodeSlots(0),
-	  mScatter(NULL),
-	  mScatterSize(0),
-	  mDir(NULL)
+CodeDirectory::Builder::Builder()
+	: mFlags(0), mSpecialSlots(0), mCodeSlots(0), mScatter(NULL), mScatterSize(0), mDir(NULL)
 {
-	mDigestLength = MakeHash<Builder>(this)->digestLength();
-	mSpecial = (unsigned char *)calloc(cdSlotMax, mDigestLength);
+	memset(mSpecial, 0, sizeof(mSpecial));
 }
 
 CodeDirectory::Builder::~Builder()
 {
-	::free(mSpecial);
 	::free(mScatter);
 }
 
@@ -85,12 +77,12 @@ void CodeDirectory::Builder::reopen(string path, size_t offset, size_t length)
 //
 // Set the source for one special slot
 //
-void CodeDirectory::Builder::specialSlot(SpecialSlot slot, CFDataRef data)
+void CodeDirectory::Builder::special(size_t slot, CFDataRef data)
 {
 	assert(slot <= cdSlotMax);
-	MakeHash<Builder> hash(this);
-	hash->update(CFDataGetBytePtr(data), CFDataGetLength(data));
-	hash->finish(specialSlot(slot));
+	Hash hash;
+	hash(CFDataGetBytePtr(data), CFDataGetLength(data));
+	hash.finish(mSpecial[slot]);
 	if (slot >= mSpecialSlots)
 		mSpecialSlots = slot;
 }
@@ -128,7 +120,7 @@ size_t CodeDirectory::Builder::size()
 	size_t offset = sizeof(CodeDirectory);
 	offset += mScatterSize;				// scatter vector
 	offset += mIdentifier.size() + 1;	// size of identifier (with null byte)
-	offset += (mCodeSlots + mSpecialSlots) * mDigestLength; // hash vector
+	offset += (mCodeSlots + mSpecialSlots) * Hash::digestLength; // hash vector
 	return offset;
 }
 
@@ -163,8 +155,8 @@ CodeDirectory *CodeDirectory::Builder::build()
 	mDir->nSpecialSlots = mSpecialSlots;
 	mDir->nCodeSlots = mCodeSlots;
 	mDir->codeLimit = mExecLength;
-	mDir->hashType = mHashType;
-	mDir->hashSize = mDigestLength;
+	mDir->hashSize = Hash::digestLength;
+	mDir->hashType = cdHashTypeDefault;
 	if (mPageSize) {
 		int pglog;
 		assert(frexp(mPageSize, &pglog) == 0.5); // must be power of 2
@@ -189,22 +181,21 @@ CodeDirectory *CodeDirectory::Builder::build()
 
 	// (add new flexibly-allocated fields here)
 
-	mDir->hashOffset = offset + mSpecialSlots * mDigestLength;
-	offset += (mSpecialSlots + mCodeSlots) * mDigestLength;
+	mDir->hashOffset = offset + mSpecialSlots * Hash::digestLength;
+	offset += (mSpecialSlots + mCodeSlots) * Hash::digestLength;
 	assert(offset == total);	// matches allocated size
 	
 	// fill special slots
-	memset((*mDir)[-mSpecialSlots], 0, mDigestLength * mSpecialSlots);
+	memset((*mDir)[-mSpecialSlots], 0, mDir->hashSize * mSpecialSlots);
 	for (size_t slot = 1; slot <= mSpecialSlots; ++slot)
-		memcpy((*mDir)[-slot], specialSlot(slot), mDigestLength);
+		memcpy((*mDir)[-slot], &mSpecial[slot], Hash::digestLength);
 	
 	// fill code slots
 	mExec.seek(mExecOffset);
 	size_t remaining = mExecLength;
 	for (unsigned int slot = 0; slot < mCodeSlots; ++slot) {
 		size_t thisPage = min(mPageSize, remaining);
-		MakeHash<Builder> hasher(this);
-		generateHash(hasher, mExec, (*mDir)[slot], thisPage);
+		hash(mExec, (*mDir)[slot], thisPage);
 		remaining -= thisPage;
 	}
 	

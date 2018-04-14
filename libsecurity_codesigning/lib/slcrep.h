@@ -48,7 +48,7 @@ public:
 	DYLDCacheRep(const char *path);
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
-	size_t pageSize(const SigningContext &ctx);
+	size_t pageSize();
 	std::string format();
 	
 	static bool candidate(UnixPlusPlus::FileDesc &fd);

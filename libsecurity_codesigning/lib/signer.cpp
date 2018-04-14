@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2007 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -35,7 +35,6 @@
 #include <CoreFoundation/CFBundlePriv.h>
 #include "renum.h"
 #include "machorep.h"
-#include "csutilities.h"
 #include <security_utilities/unix++.h>
 #include <security_utilities/unixchild.h>
 #include <security_utilities/cfmunge.h>
@@ -71,7 +70,7 @@ void SecCodeSigner::Signer::remove(SecCSFlags flags)
 	rep = code->diskRep();
 	if (Universal *fat = state.mNoMachO ? NULL : rep->mainExecutableImage()) {
 		// architecture-sensitive removal
-		MachOEditor editor(rep->writer(), *fat, kSecCodeSignatureNoHash, rep->mainExecutablePath());
+		MachOEditor editor(rep->writer(), *fat, rep->mainExecutablePath());
 		editor.allocate();		// create copy
 		editor.commit();		// commit change
 	} else {
@@ -96,11 +95,9 @@ void SecCodeSigner::Signer::prepare(SecCSFlags flags)
 	// work out the canonical identifier
 	identifier = state.mIdentifier;
 	if (identifier.empty()) {
-		identifier = rep->recommendedIdentifier(state);
+		identifier = rep->recommendedIdentifier();
 		if (identifier.find('.') == string::npos)
 			identifier = state.mIdentifierPrefix + identifier;
-		if (identifier.find('.') == string::npos && state.isAdhoc())
-			identifier = identifier + "-" + uniqueName();
 		secdebug("signer", "using default identifier=%s", identifier.c_str());
 	} else
 		secdebug("signer", "using explicit identifier=%s", identifier.c_str());
@@ -144,10 +141,10 @@ void SecCodeSigner::Signer::prepare(SecCSFlags flags)
 
 		// finally, ask the DiskRep for its default
 		if (!resourceRules)
-			resourceRules.take(rep->defaultResourceRules(state));
+			resourceRules.take(rep->defaultResourceRules());
 		
 		// build the resource directory
-		ResourceBuilder resources(rpath, cfget<CFDictionaryRef>(resourceRules, "rules"), digestAlgorithm());
+		ResourceBuilder resources(rpath, cfget<CFDictionaryRef>(resourceRules, "rules"));
 		rep->adjustResources(resources);	// DiskRep-specific adjustments
 		CFRef<CFDictionaryRef> rdir = resources.build();
 		resourceDirectory.take(CFPropertyListCreateXMLData(NULL, rdir));
@@ -166,7 +163,7 @@ void SecCodeSigner::Signer::prepare(SecCSFlags flags)
 		signingTime = time;
 	}
 	
-	pagesize = state.mPageSize ? cfNumber<size_t>(state.mPageSize) : rep->pageSize(state);
+	pagesize = state.mPageSize ? cfNumber<size_t>(state.mPageSize) : rep->pageSize();
 }
 
 
@@ -181,7 +178,7 @@ void SecCodeSigner::Signer::signMachO(Universal *fat)
 	// Mach-O executable at the core - perform multi-architecture signing
 	auto_ptr<ArchEditor> editor(state.mDetached
 		? static_cast<ArchEditor *>(new BlobEditor(*fat, *this))
-		: new MachOEditor(rep->writer(), *fat, this->digestAlgorithm(), rep->mainExecutablePath()));
+		: new MachOEditor(rep->writer(), *fat, rep->mainExecutablePath()));
 	assert(editor->count() > 0);
 	if (!editor->attribute(writerNoGlobal))	// can store architecture-common components
 		populate(*editor);
@@ -190,7 +187,7 @@ void SecCodeSigner::Signer::signMachO(Universal *fat)
 	for (MachOEditor::Iterator it = editor->begin(); it != editor->end(); ++it) {
 		MachOEditor::Arch &arch = *it->second;
 		arch.source.reset(fat->architecture(it->first));
-		arch.ireqs(state.mRequirements, rep->defaultRequirements(&arch.architecture, state));
+		arch.ireqs(state.mRequirements, rep->defaultRequirements(&arch.architecture));
 		if (editor->attribute(writerNoGlobal))	// can't store globally, add per-arch
 			populate(arch);
 		populate(arch.cdbuilder, arch, arch.ireqs,
@@ -244,9 +241,9 @@ void SecCodeSigner::Signer::signArchitectureAgnostic()
 	// non-Mach-O executable - single-instance signing
 	RefPointer<DiskRep::Writer> writer = state.mDetached ?
 		(new DetachedBlobWriter(*this)) : rep->writer();
-	CodeDirectory::Builder builder(state.mDigestAlgorithm);
+	CodeDirectory::Builder builder;
 	InternalRequirements ireqs;
-	ireqs(state.mRequirements, rep->defaultRequirements(NULL, state));
+	ireqs(state.mRequirements, rep->defaultRequirements(NULL));
 	populate(*writer);
 	populate(builder, *writer, ireqs, rep->signingBase(), rep->signingLimit());
 	
@@ -292,21 +289,21 @@ void SecCodeSigner::Signer::populate(CodeDirectory::Builder &builder, DiskRep::W
 	builder.identifier(identifier);
 	
 	if (CFDataRef data = rep->component(cdInfoSlot))
-		builder.specialSlot(cdInfoSlot, data);
+		builder.special(cdInfoSlot, data);
 	if (ireqs) {
 		CFRef<CFDataRef> data = makeCFData(*ireqs);
 		writer.component(cdRequirementsSlot, data);
-		builder.specialSlot(cdRequirementsSlot, data);
+		builder.special(cdRequirementsSlot, data);
 	}
 	if (resourceDirectory)
-		builder.specialSlot(cdResourceDirSlot, resourceDirectory);
+		builder.special(cdResourceDirSlot, resourceDirectory);
 #if NOT_YET
 	if (state.mApplicationData)
-		builder.specialSlot(cdApplicationSlot, state.mApplicationData);
+		builder.special(cdApplicationSlot, state.mApplicationData);
 #endif
 	if (state.mEntitlementData) {
 		writer.component(cdEntitlementSlot, state.mEntitlementData);
-		builder.specialSlot(cdEntitlementSlot, state.mEntitlementData);
+		builder.special(cdEntitlementSlot, state.mEntitlementData);
 	}
 	
 	writer.addDiscretionary(builder);
@@ -366,31 +363,6 @@ uint32_t SecCodeSigner::Signer::cdTextFlags(std::string text)
 			break;
 	}
 	return flags;
-}
-
-
-//
-// Generate a unique string from our underlying DiskRep.
-// We could get 90%+ of the uniquing benefit by just generating
-// a random string here. Instead, we pick the (hex string encoding of)
-// the source rep's unique identifier blob. For universal binaries,
-// this is the canonical local architecture, which is a bit arbitrary.
-// This provides us with a consistent unique string for all architectures
-// of a fat binary, *and* (unlike a random string) is reproducible
-// for identical inputs, even upon resigning.
-//
-std::string SecCodeSigner::Signer::uniqueName() const
-{
-	CFRef<CFDataRef> identification = rep->identification();
-	const UInt8 *ident = CFDataGetBytePtr(identification);
-	const unsigned int length = CFDataGetLength(identification);
-	string result;
-	for (unsigned int n = 0; n < length; n++) {
-		char hex[3];
-		snprintf(hex, sizeof(hex), "%02x", ident[n]);
-		result += hex;
-	}
-	return result;
 }
 
 

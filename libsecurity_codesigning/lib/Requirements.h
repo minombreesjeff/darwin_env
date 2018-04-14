@@ -48,9 +48,6 @@ public:
 	SecRequirement(const Requirement *req, bool transferOwnership = false);
     virtual ~SecRequirement() throw();
 	
-    bool equal(SecCFObject &other);
-    CFHashCode hash();
-	
 	const Requirement *requirement() const { return mReq; }
 
 private:

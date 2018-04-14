@@ -49,14 +49,7 @@ class SecCode;
 //
 // Note that concrete knowledge of where stuff is stored resides in the DiskRep
 // object we hold. DiskReps allocate, retrieve, and return data to us. We are
-// responsible for interpreting, caching, and validating them. (In other words,
-// DiskReps know where stuff is and how it is stored, but we know what it means.)
-//
-// Data accessors (returning CFDataRef, CFDictionaryRef, various pointers, etc.)
-// cache those values internally and return unretained(!) references ("Get" style)
-// that are valid as long as the SecStaticCode object's lifetime, or until
-// resetValidity() is called, whichever is sooner. If you need to keep them,
-// retain or copy them as needed.
+// responsible for interpreting, caching, and validating them.
 //
 class SecStaticCode : public SecCFObject {
 	NOCOPY(SecStaticCode)
@@ -118,7 +111,7 @@ public:
 	std::string identifier() { return codeDirectory()->identifier(); }
 	std::string format() const { return mRep->format(); }
 	std::string signatureSource();
-	CFDataRef component(CodeDirectory::SpecialSlot slot, OSStatus fail = errSecCSSignatureFailed);
+	CFDataRef component(CodeDirectory::SpecialSlot slot);
 	CFDictionaryRef infoDictionary();
 	CFDictionaryRef entitlements();
 
@@ -126,18 +119,18 @@ public:
 	CFURLRef resourceBase();
 	CFDataRef resource(std::string path);
 	CFDataRef resource(std::string path, ValidationContext &ctx);
-	void validateResource(std::string path, ValidationContext &ctx);
+	void validateResource(string path, ValidationContext &ctx);
 	
 	bool flag(uint32_t tested);
 	
-	void resetValidity();						// clear validation caches (if something may have changed)
+	void resetValidity();
 	
 	bool validated() const	{ return mValidated; }
 	bool valid() const
 		{ assert(validated()); return mValidated && (mValidationResult == noErr); }
 	
 	void validateDirectory();
-	void validateComponent(CodeDirectory::SpecialSlot slot, OSStatus fail = errSecCSSignatureFailed);
+	void validateComponent(CodeDirectory::SpecialSlot slot);
 	void validateResources();
 	void validateExecutable();
 	
@@ -147,21 +140,16 @@ public:
 	const Requirement *defaultDesignatedRequirement();		// newly allocated (caller owns)
 	
 	void validateRequirements(SecRequirementType type, SecStaticCode *target,
-		OSStatus nullError = noErr);										// target against my [type], throws
-	void validateRequirement(const Requirement *req, OSStatus failure);		// me against [req], throws
-	bool satisfiesRequirement(const Requirement *req, OSStatus failure);	// me against [req], returns on clean miss
+		OSStatus nullError = noErr);
+	void validateRequirements(const Requirement *req, OSStatus failure);
 	
-	// certificates are available after signature validation (they are stored in the CMS signature)
 	SecCertificateRef cert(int ix);		// get a cert from the cert chain
 	CFArrayRef certificates();			// get the entire certificate chain
 	
-	CFDictionaryRef signingInformation(SecCSFlags flags); // omnibus information-gathering API (creates new dictionary)
-	
-public:
-	class AllArchitectures;
+	CFDictionaryRef signingInformation(SecCSFlags flags); // information-gathering API
 	
 protected:
-	CFDictionaryRef getDictionary(CodeDirectory::SpecialSlot slot, OSStatus fail); // component value as a dictionary
+	CFDictionaryRef getDictionary(CodeDirectory::SpecialSlot slot);
 	bool verifySignature();
 	SecPolicyRef verificationPolicy();
 
@@ -206,24 +194,6 @@ private:
 	
 	// cached verification policy
 	CFRef<SecPolicyRef> mPolicy;
-};
-
-
-//
-// Given a SecStaticCode, create an iterator that produces SecStaticCodes
-// for all architectures encompassed by this static code reference.
-//
-class SecStaticCode::AllArchitectures : public SecPointer<SecStaticCode> {
-public:
-	AllArchitectures(SecStaticCode *code);
-	
-	SecStaticCode *operator () ();
-	
-private:
-	SecPointer<SecStaticCode> mBase;
-	enum { fatBinary, firstNonFat, atEnd } mState;
-	Universal::Architectures mArchitectures;
-	Universal::Architectures::const_iterator mCurrent;
 };
 
 

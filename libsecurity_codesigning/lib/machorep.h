@@ -37,8 +37,8 @@ namespace CodeSigning {
 
 
 //
-// MachORep is a DiskRep class that supports code signatures
-// directly embedded in Mach-O binary files.
+// MachORep is a mix-in class that supports reading
+// Code Signing resources from the main executable.
 //
 // It does not have write support (for writing signatures);
 // writing multi-architecture binaries is complicated enough
@@ -52,13 +52,12 @@ public:
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
 	CFDataRef identification();
+	std::string recommendedIdentifier();
+	const Requirements *defaultRequirements(const Architecture *arch);
 	Universal *mainExecutableImage();
+	size_t pageSize();
 	size_t signingBase();
 	std::string format();
-	
-	std::string recommendedIdentifier(const SigningContext &ctx);
-	const Requirements *defaultRequirements(const Architecture *arch, const SigningContext &ctx);
-	size_t pageSize(const SigningContext &ctx);
 	
 	void flush();		// flush cache
 	
@@ -75,7 +74,7 @@ public:
 protected:
 	CFDataRef embeddedComponent(CodeDirectory::SpecialSlot slot);
 	CFDataRef infoPlist();
-	Requirement *libraryRequirements(const Architecture *arch, const SigningContext &ctx);
+	Requirement *libraryRequirements(const Architecture *arch);
 
 private:
 	Universal *mExecutable;	// cached Mach-O/Universal reference to mainExecutablePath()
@@ -84,9 +83,7 @@ private:
 
 
 //
-// The write side of a MachORep.
-// This is purposely dysfunctional; Mach-O signatures are written
-// by code in signerutils, not by DiskRep::Writers.
+// The write side of a FileDiskRep
 //
 class MachORep::Writer : public SingleDiskRep::Writer {
 	friend class FileDiskRep;

@@ -49,9 +49,7 @@ SecCode::SecCode(SecCode *host)
 // Clean up a SecCode object
 //
 SecCode::~SecCode() throw()
-try {
-} catch (...) {
-	return;
+{
 }
 
 
@@ -182,7 +180,7 @@ void SecCode::checkValidity(SecCSFlags flags)
 {
 	if (this->isRoot()) {
 		// the root-of-trust is valid by definition
-		CODESIGN_EVAL_DYNAMIC_ROOT(this);
+		CODESIGN_EVAL_DYNAMIC_ROOT();
 		return;
 	}
 	DTRACK(CODESIGN_EVAL_DYNAMIC, this, (char*)this->staticCode()->mainExecutablePath().c_str());

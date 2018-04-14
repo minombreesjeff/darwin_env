@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2006 Apple Computer, Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -28,7 +28,6 @@
 #define _H_RSIGN
 
 #include "renum.h"
-#include "codedirectory.h"
 #include <security_utilities/utilities.h>
 #include <security_utilities/cfutilities.h>
 #include <security_utilities/hashing.h>
@@ -48,7 +47,7 @@ namespace CodeSigning {
 //
 class ResourceBuilder : public ResourceEnumerator {
 public:
-	ResourceBuilder(const std::string &root, CFDictionaryRef rules, CodeDirectory::HashAlgorithm hashType);
+	ResourceBuilder(const std::string &root, CFDictionaryRef rules);
 	~ResourceBuilder();
 
 	CFDictionaryRef build();
@@ -82,13 +81,11 @@ public:
 protected:
 	void addRule(CFTypeRef key, CFTypeRef value);
 	CFDataRef hashFile(const char *path);
-	DynamicHash *getHash() const { return CodeDirectory::hashFor(this->mHashType); }
 	
 private:
 	CFCopyRef<CFDictionaryRef> mRawRules;
 	typedef std::vector<Rule *> Rules;
 	Rules mRules;
-	CodeDirectory::HashAlgorithm mHashType;
 };
 
 

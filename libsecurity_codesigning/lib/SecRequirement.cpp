@@ -55,7 +55,7 @@ OSStatus SecRequirementCreateWithData(CFDataRef data, SecCSFlags flags,
 	BEGIN_CSAPI
 	
 	checkFlags(flags);
-	CodeSigning::Required(requirementRef) = (new SecRequirement(CFDataGetBytePtr(data), CFDataGetLength(data)))->handle();
+	Required(requirementRef) = (new SecRequirement(CFDataGetBytePtr(data), CFDataGetLength(data)))->handle();
 
 	END_CSAPI
 }
@@ -71,7 +71,7 @@ OSStatus SecRequirementCreateWithResource(CFURLRef resource, SecCSFlags flags,
 	
 	checkFlags(flags);
 	CFRef<CFDataRef> data = cfLoadFile(resource);
-	CodeSigning::Required(requirementRef) =
+	Required(requirementRef) =
 		(new SecRequirement(CFDataGetBytePtr(data), CFDataGetLength(data)))->handle();
 
 	END_CSAPI
@@ -93,7 +93,7 @@ OSStatus SecRequirementCreateWithStringAndErrors(CFStringRef text, SecCSFlags fl
 	BEGIN_CSAPI
 	
 	checkFlags(flags);
-	CodeSigning::Required(requirementRef) = (new SecRequirement(parseRequirement(cfString(text)), true))->handle();
+	Required(requirementRef) = (new SecRequirement(parseRequirement(cfString(text))))->handle();
 
 	END_CSAPI_ERRORS
 }
@@ -119,7 +119,7 @@ OSStatus SecRequirementCreateGroup(CFStringRef groupName, SecCertificateRef anch
 	} else {
 		maker.anchor();			// canonical Apple anchor
 	}
-	CodeSigning::Required(requirementRef) = (new SecRequirement(maker.make(), true))->handle();
+	Required(requirementRef) = (new SecRequirement(maker.make(), true))->handle();
 
 	END_CSAPI
 }
@@ -135,7 +135,7 @@ OSStatus SecRequirementCopyData(SecRequirementRef requirementRef, SecCSFlags fla
 	
 	const Requirement *req = SecRequirement::required(requirementRef)->requirement();
 	checkFlags(flags);
-	CodeSigning::Required(data);
+	Required(data);
 	*data = makeCFData(*req);
 
 	END_CSAPI
@@ -152,7 +152,7 @@ OSStatus SecRequirementCopyString(SecRequirementRef requirementRef, SecCSFlags f
 	
 	const Requirement *req = SecRequirement::required(requirementRef)->requirement();
 	checkFlags(flags);
-	CodeSigning::Required(text);
+	Required(text);
 	*text = makeCFString(Dumper::dump(req));
 
 	END_CSAPI
@@ -181,7 +181,7 @@ OSStatus SecRequirementsCreateFromRequirements(CFDictionaryRef requirements, Sec
 		maker.add(cfNumber<Requirements::Type>(keys[n]), req->clone());
 	}
 	Requirements *reqset = maker.make();					// malloc'ed
-	CodeSigning::Required(requirementSet) = makeCFDataMalloc(*reqset);	// takes ownership of reqs
+	Required(requirementSet) = makeCFDataMalloc(*reqset);	// takes ownership of reqs
 
 	END_CSAPI
 }
@@ -206,7 +206,7 @@ OSStatus SecRequirementsCopyRequirements(CFDataRef requirementSet, SecCSFlags fl
 		CFRef<SecRequirementRef> req = (new SecRequirement(reqs->blob<Requirement>(n)))->handle();
 		CFDictionaryAddValue(dict, CFTempNumber(reqs->type(n)), req);
 	}
-	CodeSigning::Required(requirements) = dict.yield();
+	Required(requirements) = dict.yield();
 
 	END_CSAPI
 }
@@ -271,7 +271,7 @@ OSStatus SecRequirementsCopyString(CFTypeRef input, SecCSFlags flags, CFStringRe
 		const Requirements *reqs = (const Requirements *)CFDataGetBytePtr(CFDataRef(input));
 		if (!reqs->validateBlob(CFDataGetLength(CFDataRef(input))))
 			return errSecCSReqInvalid;
-		CodeSigning::Required(text) = makeCFString(Dumper::dump(reqs, false));
+		Required(text) = makeCFString(Dumper::dump(reqs, false));
 	} else
 		return errSecCSInvalidObjectRef;
 
