@@ -29,23 +29,52 @@
 #include <Security/SecTrustSettingsPriv.h>
 #include <Security/SecCertificatePriv.h>
 #include <security_utilities/memutils.h>
+#include <security_utilities/logging.h>
 #include "csutilities.h"
 
 namespace Security {
 namespace CodeSigning {
 
 
+//
+// Fragment fetching, caching, and evaluation.
+//
+// Several language elements allow "calling" of separate requirement programs
+// stored on disk as (binary) requirement blobs. The Fragments class takes care
+// of finding, loading, caching, and evaluating them.
+//
+// This is a singleton for (process global) caching. It works fine as multiple instances,
+// at a loss of caching effectiveness.
+//
+class Fragments {
+public:
+	Fragments();
+	
+	bool named(const std::string &name, const Requirement::Context &ctx)
+		{ return evalNamed("subreq", name, ctx); }
+	bool namedAnchor(const std::string &name, const Requirement::Context &ctx)
+		{ return evalNamed("anchorreq", name, ctx); }
+
+private:
+	bool evalNamed(const char *type, const std::string &name, const Requirement::Context &ctx);
+	CFDataRef fragment(const char *type, const std::string &name);
+	
+	typedef std::map<std::string, CFRef<CFDataRef> > FragMap;
+	
+private:
+	CFBundleRef mMyBundle;			// Security.framework bundle
+	Mutex mLock;					// lock for all of the below...
+	FragMap mFragments;				// cached fragments
+};
+
+static ModuleNexus<Fragments> fragments;
+
+
+//
+// Magic certificate features
+//
 static CFStringRef appleIntermediateCN = CFSTR("Apple Code Signing Certification Authority");
 static CFStringRef appleIntermediateO = CFSTR("Apple Inc.");
-
-
-//
-// Construct an interpreter given a Requirement and an evaluation context.
-//
-Requirement::Interpreter::Interpreter(const Requirement *req, const Context *ctx)
-	: Reader(req), mContext(ctx)
-{
-}
 
 
 //
@@ -64,7 +93,7 @@ bool Requirement::Interpreter::evaluate()
 	case opTrue:
 		return true;
 	case opIdent:
-		return getString() == mContext->directory->identifier();
+		return mContext->directory && getString() == mContext->directory->identifier();
 	case opAppleAnchor:
 		return appleSigned();
 	case opAppleGenericAnchor:
@@ -84,11 +113,12 @@ bool Requirement::Interpreter::evaluate()
 	case opOr:
 		return evaluate() | evaluate();
 	case opCDHash:
-		{
+		if (mContext->directory) {
 			SHA1 hash;
 			hash(mContext->directory, mContext->directory->length());
 			return hash.verify(getHash());
-		}
+		} else
+			return false;
 	case opNot:
 		return !evaluate();
 	case opInfoKeyField:
@@ -117,10 +147,21 @@ bool Requirement::Interpreter::evaluate()
 			Match match(*this);
 			return certFieldGeneric(key, match, cert);
 		}
+	case opCertPolicy:
+		{
+			SecCertificateRef cert = mContext->cert(get<int32_t>());
+			string key = getString();
+			Match match(*this);
+			return certFieldPolicy(key, match, cert);
+		}
 	case opTrustedCert:
 		return trustedCert(get<int32_t>());
 	case opTrustedCerts:
 		return trustedCerts();
+	case opNamedAnchor:
+		return fragments().namedAnchor(getString(), *mContext);
+	case opNamedCode:
+		return fragments().named(getString(), *mContext);
 	default:
 		// opcode not recognized - handle generically if possible, fail otherwise
 		if (op & (opGenericFalse | opGenericSkip)) {
@@ -180,10 +221,16 @@ bool Requirement::Interpreter::certFieldValue(const string &key, const Match &ma
 		{ "subject.CN", &CSSMOID_CommonName },
 		{ "subject.D", &CSSMOID_Description },
 		{ "subject.L", &CSSMOID_LocalityName },
+//		{ "subject.C-L", &CSSMOID_CollectiveLocalityName },	// missing from Security.framework headers
 		{ "subject.O", &CSSMOID_OrganizationName },
+		{ "subject.C-O", &CSSMOID_CollectiveOrganizationName },
 		{ "subject.OU", &CSSMOID_OrganizationalUnitName },
+		{ "subject.C-OU", &CSSMOID_CollectiveOrganizationalUnitName },
 		{ "subject.ST", &CSSMOID_StateProvinceName },
+		{ "subject.C-ST", &CSSMOID_CollectiveStateProvinceName },
 		{ "subject.STREET", &CSSMOID_StreetAddress },
+		{ "subject.C-STREET", &CSSMOID_CollectiveStreetAddress },
+		{ "subject.UID", &CSSMOID_UserID },
 		{ NULL, NULL }
 	};
 	
@@ -192,7 +239,7 @@ bool Requirement::Interpreter::certFieldValue(const string &key, const Match &ma
 		if (cf->name == key) {
 			CFRef<CFStringRef> value;
 			if (OSStatus rc = SecCertificateCopySubjectComponent(cert, cf->oid, &value.aref())) {
-				secdebug("csinterp", "cert %p lookup for DN.%s failed rc=%ld", cert, key.c_str(), rc);
+				secdebug("csinterp", "cert %p lookup for DN.%s failed rc=%d", cert, key.c_str(), rc);
 				return false;
 			}
 			return match(value);
@@ -202,7 +249,7 @@ bool Requirement::Interpreter::certFieldValue(const string &key, const Match &ma
 	if (key == "email") {
 		CFRef<CFArrayRef> value;
 		if (OSStatus rc = SecCertificateCopyEmailAddresses(cert, &value.aref())) {
-			secdebug("csinterp", "cert %p lookup for email failed rc=%ld", cert, rc);
+			secdebug("csinterp", "cert %p lookup for email failed rc=%d", cert, rc);
 			return false;
 		}
 		return match(value);
@@ -213,7 +260,7 @@ bool Requirement::Interpreter::certFieldValue(const string &key, const Match &ma
 	return false;
 }
 
-
+	
 bool Requirement::Interpreter::certFieldGeneric(const string &key, const Match &match, SecCertificateRef cert)
 {
 	// the key is actually a (binary) OID value
@@ -224,6 +271,18 @@ bool Requirement::Interpreter::certFieldGeneric(const string &key, const Match &
 bool Requirement::Interpreter::certFieldGeneric(const CssmOid &oid, const Match &match, SecCertificateRef cert)
 {
 	return cert && certificateHasField(cert, oid) && match(kCFBooleanTrue);
+}
+
+bool Requirement::Interpreter::certFieldPolicy(const string &key, const Match &match, SecCertificateRef cert)
+{
+	// the key is actually a (binary) OID value
+	CssmOid oid((char *)key.data(), key.length());
+	return certFieldPolicy(oid, match, cert);
+}
+
+bool Requirement::Interpreter::certFieldPolicy(const CssmOid &oid, const Match &match, SecCertificateRef cert)
+{
+	return cert && certificateHasPolicy(cert, oid) && match(kCFBooleanTrue);
 }
 
 
@@ -381,7 +440,7 @@ Requirement::Interpreter::Match::Match(Interpreter &interp)
 	case matchGreaterThan:
 	case matchLessEqual:
 	case matchGreaterEqual:
-		mValue = makeCFString(interp.getString());
+		mValue.take(makeCFString(interp.getString()));
 		break;
 	default:
 		// Assume this (unknown) match type has a single data argument.
@@ -463,6 +522,50 @@ bool Requirement::Interpreter::Match::inequality(CFTypeRef candidate, CFStringCo
 			return true;
 	}
 	return false;
+}
+
+
+//
+// External fragments
+//
+Fragments::Fragments()
+{
+	mMyBundle = CFBundleGetBundleWithIdentifier(CFSTR("com.apple.security"));
+}
+
+
+bool Fragments::evalNamed(const char *type, const std::string &name, const Requirement::Context &ctx)
+{
+	if (CFDataRef fragData = fragment(type, name)) {
+		const Requirement *req = (const Requirement *)CFDataGetBytePtr(fragData);	// was prevalidated as Requirement
+		return req->validates(ctx);
+	}
+	return false;
+}
+
+
+CFDataRef Fragments::fragment(const char *type, const std::string &name)
+{
+	string key = name + "!!" + type;	// compound key
+	StLock<Mutex> _(mLock);				// lock for cache access
+	FragMap::const_iterator it = mFragments.find(key);
+	if (it == mFragments.end()) {
+		CFRef<CFDataRef> fragData;		// will always be set (NULL on any errors)
+		if (CFRef<CFURLRef> fragURL = CFBundleCopyResourceURL(mMyBundle, CFTempString(name), CFSTR("csreq"), CFTempString(type)))
+			if (CFRef<CFDataRef> data = cfLoadFile(fragURL)) {	// got data
+				const Requirement *req = (const Requirement *)CFDataGetBytePtr(data);
+				if (req->validateBlob(CFDataGetLength(data)))	// looks like a Requirement...
+					fragData = data;			// ... so accept it
+				else
+					Syslog::warning("Invalid sub-requirement at %s", cfString(fragURL).c_str());
+			}
+		if (CODESIGN_EVAL_REQINT_FRAGMENT_LOAD_ENABLED())
+			CODESIGN_EVAL_REQINT_FRAGMENT_LOAD(type, name.c_str(), fragData ? CFDataGetBytePtr(fragData) : NULL);
+		mFragments[key] = fragData;		// cache it, success or failure
+		return fragData;
+	}
+	CODESIGN_EVAL_REQINT_FRAGMENT_HIT(type, name.c_str());
+	return it->second;
 }
 
 
