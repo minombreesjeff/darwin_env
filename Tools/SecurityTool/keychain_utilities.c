@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/param.h>
+#include <libkern/OSByteOrder.h>
 
 #include "readline.h"
 
@@ -432,7 +433,7 @@ print_keychain_item_attributes(FILE *stream, SecKeychainItemRef item, Boolean sh
 		}
 
 		fputs("    ", stream);
-		print_buffer(stream, 4, &tag);
+		print_uint32(stream, tag);
 		switch (format)
 		{
 		case CSSM_DB_ATTRIBUTE_FORMAT_STRING:
@@ -470,7 +471,34 @@ print_keychain_item_attributes(FILE *stream, SecKeychainItemRef item, Boolean sh
 		if (!attribute->length && !attribute->data)
 			fputs("<NULL>", stream);
 		else
-			print_buffer(stream, attribute->length, attribute->data);
+		{	switch (format)
+			{
+				case CSSM_DB_ATTRIBUTE_FORMAT_SINT32: 
+				case CSSM_DB_ATTRIBUTE_FORMAT_UINT32:
+				{
+					print_uint32(stream, *(UInt32*) attribute->data);
+					break;
+				}
+				
+				case CSSM_DB_ATTRIBUTE_FORMAT_MULTI_UINT32:
+				{
+					int n = attribute->length / sizeof(UInt32);
+					UInt32* ptr = (UInt32*) attribute->data;
+					
+					while (n--)
+					{
+						print_uint32(stream, *ptr++);
+					}
+				}
+				break;
+				
+				default:
+				{
+					print_buffer(stream, attribute->length, attribute->data);
+				}
+				break;
+			}
+		}
 		fputc('\n', stream);
 	}
 
@@ -642,6 +670,13 @@ print_buffer(FILE *stream, UInt32 length, const void *data)
 		print_buffer_ascii(stream, length, data);
 		fputc('"', stream);
 	}
+}
+
+void
+print_uint32(FILE *stream, uint32 n)
+{
+	n = OSSwapHostToBigInt32 (n);
+	print_buffer(stream, sizeof(UInt32), &n);
 }
 
 /*

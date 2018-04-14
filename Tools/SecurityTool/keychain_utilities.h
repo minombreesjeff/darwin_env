@@ -48,6 +48,8 @@ extern void print_buffer(FILE *stream, UInt32 length, const void *data);
 
 extern void print_buffer_pem(FILE *stream, const char *headerString, UInt32 length, const void *data);
 
+extern void print_uint32(FILE* stream, uint32 n);
+
 #ifdef __cplusplus
 }
 #endif

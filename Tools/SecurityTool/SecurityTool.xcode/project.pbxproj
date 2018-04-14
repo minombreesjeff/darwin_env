@@ -231,7 +231,7 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 24739;
+				CURRENT_PROJECT_VERSION = 30489;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks /usr/local/SecurityPieces/Components/Security";
 				INSTALL_PATH = /usr/bin;
 				OPT_LDXNOPIC = ",_nopic";
