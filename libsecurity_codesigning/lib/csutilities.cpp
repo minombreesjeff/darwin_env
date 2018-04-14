@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2007 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -69,7 +69,7 @@ bool certificateHasField(SecCertificateRef cert, const CssmOid &oid)
 	case noErr:
 		MacOSError::check(SecCertificateReleaseFirstFieldValue(cert, &oid, value));
 		return true;					// extension found by oid
-	case CSSMERR_CL_UNKNOWN_TAG:
+	case errSecUnknownTag:
 		break;							// oid not recognized by CL - continue below
 	default:
 		MacOSError::throwMe(rc);		// error: fail
@@ -90,6 +90,66 @@ bool certificateHasField(SecCertificateRef cert, const CssmOid &oid)
 		}
 	MacOSError::check(SecCertificateReleaseFieldValues(cert, &CSSMOID_X509V3CertificateExtensionCStruct, values));
 	return found;
+}
+    
+    
+//
+// Retrieve X.509 policy extension OIDs, if any.
+// This currently ignores policy qualifiers.
+//
+bool certificateHasPolicy(SecCertificateRef cert, const CssmOid &policyOid)
+{
+	bool matched = false;
+	assert(cert);
+	CSSM_DATA *data;
+	if (OSStatus rc = SecCertificateCopyFirstFieldValue(cert, &CSSMOID_CertificatePolicies, &data))
+		MacOSError::throwMe(rc);
+	if (data && data->Data && data->Length == sizeof(CSSM_X509_EXTENSION)) {
+		const CSSM_X509_EXTENSION *ext = (const CSSM_X509_EXTENSION *)data->Data;
+		assert(ext->format == CSSM_X509_DATAFORMAT_PARSED);
+		const CE_CertPolicies *policies = (const CE_CertPolicies *)ext->value.parsedValue;
+		if (policies)
+			for (unsigned int n = 0; n < policies->numPolicies; n++) {
+				const CE_PolicyInformation &cp = policies->policies[n];
+				if (cp.certPolicyId == policyOid) {
+					matched = true;
+					break;
+				}
+			}
+	}
+	SecCertificateReleaseFirstFieldValue(cert, &CSSMOID_PolicyConstraints, data);
+	return matched;
+}
+
+
+//
+// Copyfile
+//
+Copyfile::Copyfile()
+{
+	if (!(mState = copyfile_state_alloc()))
+		UnixError::throwMe();
+}
+	
+void Copyfile::set(uint32_t flag, const void *value)
+{
+	check(::copyfile_state_set(mState, flag, value));
+}
+
+void Copyfile::get(uint32_t flag, void *value)
+{
+	check(::copyfile_state_set(mState, flag, value));
+}
+	
+void Copyfile::operator () (const char *src, const char *dst, copyfile_flags_t flags)
+{
+	check(::copyfile(src, dst, mState, flags));
+}
+
+void Copyfile::check(int rc)
+{
+	if (rc < 0)
+		UnixError::throwMe();
 }
 
 

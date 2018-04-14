@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,8 +25,10 @@
 // resource directory construction and verification
 //
 #include "resources.h"
+#include "csutilities.h"
 #include <Security/CSCommon.h>
-#include <security_codesigning/cfmunge.h>
+#include <security_utilities/unix++.h>
+#include <security_utilities/cfmunge.h>
 
 namespace Security {
 namespace CodeSigning {
@@ -35,8 +37,8 @@ namespace CodeSigning {
 //
 // Construction and maintainance
 //
-ResourceBuilder::ResourceBuilder(const std::string &root, CFDictionaryRef rulesDict)
-	: ResourceEnumerator(root)
+ResourceBuilder::ResourceBuilder(const std::string &root, CFDictionaryRef rulesDict, CodeDirectory::HashAlgorithm hashType)
+	: ResourceEnumerator(root), mHashType(hashType)
 {
 	CFDictionary rules(rulesDict, errSecCSResourceRulesInvalid);
 	rules.apply(this, &ResourceBuilder::addRule);
@@ -94,7 +96,7 @@ FTSENT *ResourceBuilder::next(string &path, Rule * &rule)
 				}
 				if (!bestRule || rule->weight > bestRule->weight)
 					bestRule = rule;
-			}
+		}
 		}
 		if (!bestRule || (bestRule->flags & omitted))
 			continue;
@@ -111,7 +113,7 @@ FTSENT *ResourceBuilder::next(string &path, Rule * &rule)
 CFDictionaryRef ResourceBuilder::build()
 {
 	secdebug("codesign", "start building resource directory");
-	CFRef<CFMutableDictionaryRef> files = makeCFMutableDictionary(0);
+	CFRef<CFMutableDictionaryRef> files = makeCFMutableDictionary();
 
 	string path;
 	Rule *rule;
@@ -129,11 +131,8 @@ CFDictionaryRef ResourceBuilder::build()
 	}
 	secdebug("codesign", "finished code directory with %d entries",
 		int(CFDictionaryGetCount(files)));
-		
-	return makeCFDictionary(2,
-		CFSTR("rules"), mRawRules.get(),
-		CFSTR("files"), files.get()
-	);
+	
+	return cfmake<CFDictionaryRef>("{rules=%O,files=%O}", mRawRules.get(), files.get());
 }
 
 
@@ -142,12 +141,12 @@ CFDictionaryRef ResourceBuilder::build()
 //
 CFDataRef ResourceBuilder::hashFile(const char *path)
 {
-	CFRef<CFDataRef> data = cfLoadFile(path);
-	secdebug("rdirenum", "  %s (%d bytes)", path, int(CFDataGetLength(data)));
-	SHA1 hasher;
-	hasher(CFDataGetBytePtr(data), CFDataGetLength(data));
-	unsigned char digest[CC_SHA1_DIGEST_LENGTH];
-	hasher.finish(digest);
+	UnixPlusPlus::AutoFileDesc fd(path);
+	fd.fcntl(F_NOCACHE, true);		// turn off page caching (one-pass)
+	MakeHash<ResourceBuilder> hasher(this);
+	hashFileData(fd, hasher.get());
+	Hashing::Byte digest[hasher->digestLength()];
+	hasher->finish(digest);
 	return CFDataCreate(NULL, digest, sizeof(digest));
 }
 
@@ -182,6 +181,19 @@ bool ResourceBuilder::Rule::match(const char *s) const
 }
 
 
+std::string ResourceBuilder::escapeRE(const std::string &s)
+{
+	string r;
+	for (string::const_iterator it = s.begin(); it != s.end(); ++it) {
+		char c = *it;
+		if (strchr("\\[]{}().+*", c))
+			r.push_back('\\');
+		r.push_back(c);
+	}
+	return r;
+}
+
+
 //
 // Resource Seals
 //
@@ -194,8 +206,7 @@ ResourceSeal::ResourceSeal(CFTypeRef it)
 		mOptional = false;
 	} else {
 		mOptional = false;
-		if (!cfscan(it, "{hash=%XO,?optional=%B}", &mHash, &mOptional)
-				|| size_t(CFDataGetLength(mHash)) != SHA1::digestLength)
+		if (!cfscan(it, "{hash=%XO,?optional=%B}", &mHash, &mOptional))
 			MacOSError::throwMe(errSecCSResourcesInvalid);
 	}
 }

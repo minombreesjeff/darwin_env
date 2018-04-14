@@ -55,7 +55,7 @@ OSStatus SecRequirementCreateWithData(CFDataRef data, SecCSFlags flags,
 	BEGIN_CSAPI
 	
 	checkFlags(flags);
-	Required(requirementRef) = (new SecRequirement(CFDataGetBytePtr(data), CFDataGetLength(data)))->handle();
+	CodeSigning::Required(requirementRef) = (new SecRequirement(CFDataGetBytePtr(data), CFDataGetLength(data)))->handle();
 
 	END_CSAPI
 }
@@ -71,7 +71,7 @@ OSStatus SecRequirementCreateWithResource(CFURLRef resource, SecCSFlags flags,
 	
 	checkFlags(flags);
 	CFRef<CFDataRef> data = cfLoadFile(resource);
-	Required(requirementRef) =
+	CodeSigning::Required(requirementRef) =
 		(new SecRequirement(CFDataGetBytePtr(data), CFDataGetLength(data)))->handle();
 
 	END_CSAPI
@@ -93,7 +93,7 @@ OSStatus SecRequirementCreateWithStringAndErrors(CFStringRef text, SecCSFlags fl
 	BEGIN_CSAPI
 	
 	checkFlags(flags);
-	Required(requirementRef) = (new SecRequirement(parseRequirement(cfString(text))))->handle();
+	CodeSigning::Required(requirementRef) = (new SecRequirement(parseRequirement(cfString(text)), true))->handle();
 
 	END_CSAPI_ERRORS
 }
@@ -119,9 +119,7 @@ OSStatus SecRequirementCreateGroup(CFStringRef groupName, SecCertificateRef anch
 	} else {
 		maker.anchor();			// canonical Apple anchor
 	}
-	Required(requirementRef) = (new SecRequirement(maker.make(), true))->handle();
-
-	secdebug("codesign", "created group requirement for %s", cfString(groupName).c_str());
+	CodeSigning::Required(requirementRef) = (new SecRequirement(maker.make(), true))->handle();
 
 	END_CSAPI
 }
@@ -137,7 +135,7 @@ OSStatus SecRequirementCopyData(SecRequirementRef requirementRef, SecCSFlags fla
 	
 	const Requirement *req = SecRequirement::required(requirementRef)->requirement();
 	checkFlags(flags);
-	Required(data);
+	CodeSigning::Required(data);
 	*data = makeCFData(*req);
 
 	END_CSAPI
@@ -154,9 +152,128 @@ OSStatus SecRequirementCopyString(SecRequirementRef requirementRef, SecCSFlags f
 	
 	const Requirement *req = SecRequirement::required(requirementRef)->requirement();
 	checkFlags(flags);
-	Required(text);
+	CodeSigning::Required(text);
 	*text = makeCFString(Dumper::dump(req));
 
 	END_CSAPI
 }
 
+
+//
+// Assemble a requirement set (as a CFData) from a dictionary of requirement objects.
+// An empty set is allowed.
+//
+OSStatus SecRequirementsCreateFromRequirements(CFDictionaryRef requirements, SecCSFlags flags,
+	CFDataRef *requirementSet)
+{
+	BEGIN_CSAPI
+	
+	checkFlags(flags);
+	if (requirements == NULL)
+		return errSecCSObjectRequired;
+	CFIndex count = CFDictionaryGetCount(requirements);
+	CFNumberRef keys[count];
+	SecRequirementRef reqs[count];
+	CFDictionaryGetKeysAndValues(requirements, (const void **)keys, (const void **)reqs);
+	Requirements::Maker maker;
+	for (CFIndex n = 0; n < count; n++) {
+		const Requirement *req = SecRequirement::required(reqs[n])->requirement();
+		maker.add(cfNumber<Requirements::Type>(keys[n]), req->clone());
+	}
+	Requirements *reqset = maker.make();					// malloc'ed
+	CodeSigning::Required(requirementSet) = makeCFDataMalloc(*reqset);	// takes ownership of reqs
+
+	END_CSAPI
+}
+
+
+//
+// Break a requirement set (given as a CFData) into its constituent requirements
+// and return it as a CFDictionary.
+//
+OSStatus SecRequirementsCopyRequirements(CFDataRef requirementSet, SecCSFlags flags,
+	CFDictionaryRef *requirements)
+{
+	BEGIN_CSAPI
+	
+	checkFlags(flags);
+	if (requirementSet == NULL)
+		return errSecCSObjectRequired;
+	const Requirements *reqs = (const Requirements *)CFDataGetBytePtr(requirementSet);
+	CFRef<CFMutableDictionaryRef> dict = makeCFMutableDictionary();
+	unsigned count = reqs->count();
+	for (unsigned n = 0; n < count; n++) {
+		CFRef<SecRequirementRef> req = (new SecRequirement(reqs->blob<Requirement>(n)))->handle();
+		CFDictionaryAddValue(dict, CFTempNumber(reqs->type(n)), req);
+	}
+	CodeSigning::Required(requirements) = dict.yield();
+
+	END_CSAPI
+}
+
+	
+//
+// Generically parse a string as some kind of requirement-related source form.
+// If properly recognized, return the result as a CF object:
+//	SecRequirementRef for a single requirement
+//	CFDataRef for a requirement set
+//
+OSStatus SecRequirementsCreateWithString(CFStringRef text, SecCSFlags flags,
+	CFTypeRef *result, CFErrorRef *errors)
+{
+	BEGIN_CSAPI
+	
+	checkFlags(flags, kSecCSParseRequirement | kSecCSParseRequirementSet);
+	if (text == NULL || result == NULL)
+		return errSecCSObjectRequired;
+	std::string s = cfString(text);
+	switch (flags & (kSecCSParseRequirement | kSecCSParseRequirementSet)) {
+	case kSecCSParseRequirement:		// single only
+		*result = (new SecRequirement(parseRequirement(s), true))->handle();
+		break;
+	case kSecCSParseRequirementSet:		// single only
+		{
+			const Requirements *reqs = parseRequirements(s);
+			*result = makeCFDataMalloc(*reqs);
+			break;
+		}
+	case 0:
+	case kSecCSParseRequirement | kSecCSParseRequirementSet:
+		{
+			const BlobCore *any = parseGeneric(s);
+			if (any->is<Requirement>())
+				*result = (new SecRequirement(Requirement::specific(any), true))->handle();
+			else
+				*result = makeCFDataMalloc(*any);
+			break;
+		}
+	}
+
+	END_CSAPI_ERRORS
+}
+
+	
+//
+// Convert a SecRequirementRef or a CFDataRef containing a requirement set to text.
+// Requirement sets will be formatted as multiple lines (one per requirement). They can be empty.
+// A single requirement will return a single line that is NOT newline-terminated.
+//
+OSStatus SecRequirementsCopyString(CFTypeRef input, SecCSFlags flags, CFStringRef *text)
+{
+	BEGIN_CSAPI
+	
+	checkFlags(flags);
+	if (input == NULL)
+		return errSecCSObjectRequired;
+	if (CFGetTypeID(input) == SecRequirementGetTypeID()) {
+		return SecRequirementCopyString(SecRequirementRef(input), flags, text);
+	} else if (CFGetTypeID(input) == CFDataGetTypeID()) {
+		const Requirements *reqs = (const Requirements *)CFDataGetBytePtr(CFDataRef(input));
+		if (!reqs->validateBlob(CFDataGetLength(CFDataRef(input))))
+			return errSecCSReqInvalid;
+		CodeSigning::Required(text) = makeCFString(Dumper::dump(reqs, false));
+	} else
+		return errSecCSInvalidObjectRef;
+
+	END_CSAPI
+}

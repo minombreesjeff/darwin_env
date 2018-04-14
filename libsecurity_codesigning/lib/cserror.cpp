@@ -25,7 +25,7 @@
 // cserror.h - extended-diagnostics Code Signing errors
 //
 #include "cs.h"
-#include "cfmunge.h"
+#include <security_utilities/cfmunge.h>
 
 namespace Security {
 namespace CodeSigning {
@@ -54,6 +54,15 @@ void CSError::throwMe(OSStatus rc, CFDictionaryRef dict)
 void CSError::throwMe(OSStatus rc, CFStringRef key, CFTypeRef value)
 {
 	throw CSError(rc, cfmake<CFDictionaryRef>("{%O=%O}", key, value));
+}
+
+
+//
+// Add a key/value pair to the dictionary
+//
+void CSError::augment(CFStringRef key, CFTypeRef value)
+{
+	mInfoDict.take(cfmake<CFDictionaryRef>("{+%O,%O=%O}", mInfoDict.get(), key, value));
 }
 
 

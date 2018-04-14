@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2007 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,7 +25,8 @@
 // singlediskrep - semi-abstract diskrep for a single file of some kind
 //
 #include "singlediskrep.h"
-
+#include "csutilities.h"
+#include <security_utilities/cfutilities.h>
 
 namespace Security {
 namespace CodeSigning {
@@ -36,9 +37,24 @@ using namespace UnixPlusPlus;
 //
 // Construct a SingleDiskRep
 //
-SingleDiskRep::SingleDiskRep(const char *path)
+SingleDiskRep::SingleDiskRep(const std::string &path)
 	: mPath(path)
 {
+}
+
+
+//
+// The default binary identification of a SingleDiskRep is the (SHA-1) hash
+// of the entire file itself.
+//
+CFDataRef SingleDiskRep::identification()
+{
+	SHA1 hash;
+	this->fd().seek(0);
+	hashFileData(this->fd(), &hash);
+	SHA1::Digest digest;
+	hash.finish(digest);
+	return makeCFData(digest, sizeof(digest));
 }
 
 
@@ -53,20 +69,6 @@ CFURLRef SingleDiskRep::canonicalPath()
 string SingleDiskRep::mainExecutablePath()
 {
 	return mPath;
-}
-
-
-//
-// The recommended identifier of a SingleDiskRep is, absent any better clue,
-// the basename of its path.
-//
-string SingleDiskRep::recommendedIdentifier()
-{	
-	string::size_type p = mPath.rfind('/');
-	if (p == string::npos)
-		return mPath;
-	else
-		return mPath.substr(p+1);
 }
 
 
@@ -97,6 +99,16 @@ FileDesc &SingleDiskRep::fd()
 void SingleDiskRep::flush()
 {
 	mFd.close();
+}
+
+
+//
+// The recommended identifier of a SingleDiskRep is, absent any better clue,
+// the basename of its path.
+//
+string SingleDiskRep::recommendedIdentifier(const SigningContext &)
+{
+	return canonicalIdentifier(mPath);
 }
 
 

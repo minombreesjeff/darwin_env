@@ -25,20 +25,24 @@
 	@header SecStaticCode
 	SecStaticCode represents the Code Signing identity of code in the file system.
 	This includes applications, tools, frameworks, plugins,	scripts, and so on.
+	Note that arbitrary files will be considered scripts of unknown provenance;
+	and thus it is possible to handle most files as if they were code, though that is
+	not necessarily a good idea.
 	
 	Normally, each SecCode has a specific SecStaticCode that holds its static signing
-	data. Informally, that is the SecStaticCode the SecCode "was made from". There is
-	however no viable link in the other direction - given a SecStaticCode, it is not
-	possible to find, enumerate, or control any SecCode that originated from it.
+	data. Informally, that is the SecStaticCode the SecCode "was made from" (by its host).
+	There is however no viable link in the other direction - given a SecStaticCode,
+	it is not possible to find, enumerate, or control any SecCode that originated from it.
+	There might not be any at a given point in time; or there might be many.
 */
 #ifndef _H_SECSTATICCODE
 #define _H_SECSTATICCODE
 
+#include <Security/CSCommon.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <Security/CSCommon.h>
 
 
 /*!
@@ -55,19 +59,41 @@ CFTypeID SecStaticCodeGetTypeID(void);
 	linked to running code in the system.
 	
 	It is possible to create a SecStaticCode object from an unsigned code object.
-	Most uses of such an object will return the errSecCSUnsigned error.
+	Most uses of such an object will return the errSecCSUnsigned error. However,
+	SecCodeCopyPath and SecCodeCopySigningInformation can be safely applied to such objects.
 
 	@param path A path to a location in the file system. Only file:// URLs are
 	currently supported. For bundles, pass a URL to the root directory of the
 	bundle. For single files, pass a URL to the file. If you pass a URL to the
 	main executable of a bundle, the bundle as a whole will be generally recognized.
+	Caution: Paths containing embedded // or /../ within a bundle's directory
+	may cause the bundle to be misconstrued. If you expect to submit such paths,
+	first clean them with realpath(3) or equivalent.
 	@param flags Optional flags. Pass kSecCSDefaultFlags for standard behavior.
+	@param attributes A CFDictionary containing additional attributes of the code sought.
 	@param staticCode On successful return, contains a reference to the StaticCode object
 	representing the code at path. Unchanged on error.
 	@result Upon success, noErr. Upon error, an OSStatus value documented in
 	CSCommon.h or certain other Security framework headers.
+	
+	@constant kSecCodeAttributeArchitecture Specifies the Mach-O architecture of code desired.
+	This can be a CFString containing a canonical architecture name ("i386" etc.), or a CFNumber
+	specifying an architecture numerically (see mach/machine.h). This key is ignored if the code
+	is not in Mach-O binary form. If the code is Mach-O but not universal ("thin"), the architecture
+	specified must agree with the actual file contents.
+	@constant kSecCodeAttributeSubarchitecture If the architecture is specified numerically
+	(using the kSecCodeAttributeArchitecture key), specifies any sub-architecture by number.
+	This key is ignored if no main architecture is specified; if it is specified by name; or
+	if the code is not in Mach-O form.
 */
+extern const CFStringRef kSecCodeAttributeArchitecture;
+extern const CFStringRef kSecCodeAttributeSubarchitecture;
+extern const CFStringRef kSecCodeAttributeBundleVersion;
+
 OSStatus SecStaticCodeCreateWithPath(CFURLRef path, SecCSFlags flags, SecStaticCodeRef *staticCode);
+
+OSStatus SecStaticCodeCreateWithPathAndAttributes(CFURLRef path, SecCSFlags flags, CFDictionaryRef attributes,
+	SecStaticCodeRef *staticCode);
 
 
 /*!
@@ -80,6 +106,8 @@ OSStatus SecStaticCodeCreateWithPath(CFURLRef path, SecCSFlags flags, SecStaticC
 	
 	This call is only secure if the code is not subject to concurrent modification,
 	and the outcome is only valid as long as the code is unmodified thereafter.
+	Consider this carefully if the underlying file system has dynamic characteristics,
+	such as a network file system, union mount, FUSE, etc.
 
 	@param staticCode The code object to be validated.
 	@param flags Optional flags. Pass kSecCSDefaultFlags for standard behavior.
@@ -97,10 +125,10 @@ OSStatus SecStaticCodeCreateWithPath(CFURLRef path, SecCSFlags flags, SecStaticC
 	the staticCode object must satisfy to be considered valid. If NULL, no additional
 	requirements are imposed.
 	@param errors An optional pointer to a CFErrorRef variable. If the call fails
-	(and something other than noErr is returned), and this argument is non-NULL,
+	(something other than noErr is returned), and this argument is non-NULL,
 	a CFErrorRef is stored there further describing the nature and circumstances
 	of the failure. The caller must CFRelease() this error object when done with it.
-	@result If validation passes, noErr. If validation fails, an OSStatus value
+	@result If validation succeeds, noErr. If validation fails, an OSStatus value
 	documented in CSCommon.h or certain other Security framework headers.
 */
 enum {

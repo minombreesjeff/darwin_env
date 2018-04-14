@@ -56,8 +56,9 @@ public:
 	FileDiskRep(const char *path);
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
-	const Requirements *defaultRequirements(const Architecture *arch);
 	std::string format();
+	
+	const Requirements *defaultRequirements(const Architecture *arch, const SigningContext &ctx);
 	
 public:
 	DiskRep::Writer *writer();
@@ -77,6 +78,7 @@ class FileDiskRep::Writer : public SingleDiskRep::Writer {
 	friend class FileDiskRep;
 public:
 	void component(CodeDirectory::SpecialSlot slot, CFDataRef data);
+	void remove();
 	bool preferredStore();
 
 protected:

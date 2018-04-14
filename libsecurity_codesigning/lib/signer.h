@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -47,11 +47,17 @@ class SecCodeSigner::Signer {
 public:
 	Signer(SecCodeSigner &s, SecStaticCode *c) : state(s), code(c) { }
 	void sign(SecCSFlags flags);
+	void remove(SecCSFlags flags);
 	
 	SecCodeSigner &state;
 	SecStaticCode * const code;
 	
+	CodeDirectory::HashAlgorithm digestAlgorithm() const { return state.mDigestAlgorithm; }
+	
+	std::string path() const { return cfString(rep->canonicalPath()); }
+	
 protected:
+	void prepare(SecCSFlags flags);				// set up signing parameters
 	void signMachO(Universal *fat);				// sign a Mach-O binary
 	void signArchitectureAgnostic();			// sign anything else
 
@@ -59,6 +65,9 @@ protected:
 	void populate(CodeDirectory::Builder &builder, DiskRep::Writer &writer,
 		InternalRequirements &ireqs, size_t offset = 0, size_t length = 0);	// per-architecture
 	CFDataRef signCodeDirectory(const CodeDirectory *cd);
+
+	uint32_t cdTextFlags(std::string text);		// convert text CodeDirectory flags
+	std::string uniqueName() const;				// derive unique string from rep
 	
 private:
 	RefPointer<DiskRep> rep;		// DiskRep of Code being signed

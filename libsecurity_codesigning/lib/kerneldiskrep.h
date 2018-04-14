@@ -47,12 +47,14 @@ public:
 	KernelDiskRep();
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
+	CFDataRef identification();
 	std::string mainExecutablePath();
 	CFURLRef canonicalPath();
-	std::string recommendedIdentifier();
 	size_t signingLimit();
 	std::string format();
 	UnixPlusPlus::FileDesc &fd();
+	
+	std::string recommendedIdentifier(const SigningContext &ctx);
 };
 
 

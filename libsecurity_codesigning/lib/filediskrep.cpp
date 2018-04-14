@@ -22,7 +22,7 @@
  */
 #include "filediskrep.h"
 #include "StaticCode.h"
-#include "macho++.h"	// may perhaps move into security_utilities...
+#include <security_utilities/macho++.h>
 #include <cstring>
 
 
@@ -38,6 +38,7 @@ using namespace UnixPlusPlus;
 FileDiskRep::FileDiskRep(const char *path)
 	: SingleDiskRep(path)
 {
+	CODESIGN_DISKREP_CREATE_FILE(this, (char*)path);
 }
 
 
@@ -57,12 +58,23 @@ string FileDiskRep::attrName(const char *name)
 CFDataRef FileDiskRep::getAttribute(const char *name)
 {
 	string aname = attrName(name);
-	ssize_t length = fd().getAttrLength(aname);
-	if (length < 0)
-		return NULL;		// no such attribute
-	CFMallocData buffer(length);
-	fd().getAttr(aname, buffer, length);
-	return buffer;
+	try {
+		ssize_t length = fd().getAttrLength(aname);
+		if (length < 0)
+			return NULL;		// no such attribute
+		CFMallocData buffer(length);
+		fd().getAttr(aname, buffer, length);
+		return buffer;
+	} catch (const UnixError &err) {
+		// recover some errors that happen in (relatively) benign circumstances
+		switch (err.error) {
+		case ENOTSUP:	// no extended attributes on this filesystem
+		case EPERM:		// filesystem objects to name(?)
+			return NULL;
+		default:
+			throw;
+		}
+	}
 }
 
 
@@ -86,7 +98,7 @@ CFDataRef FileDiskRep::component(CodeDirectory::SpecialSlot slot)
 // starts with the magic "#!" script marker, we do suggest that this should
 // be a valid host if we can reasonably make out what that is.
 //
-const Requirements *FileDiskRep::defaultRequirements(const Architecture *)
+const Requirements *FileDiskRep::defaultRequirements(const Architecture *, const SigningContext &ctx)
 {
 	// read start of file
 	char buffer[256];
@@ -96,19 +108,20 @@ const Requirements *FileDiskRep::defaultRequirements(const Architecture *)
 		if (length == sizeof(buffer))
 			length--;
 		buffer[length] = '\0';
-		char *path = buffer + 2;
-		path[strcspn(path, " \t\n\r\f")] = '\0';
-		secdebug("filediskrep", "looks like a script for %s", path);
-		if (path[1])
+		char *cmd = buffer + 2;
+		cmd[strcspn(cmd, " \t\n\r\f")] = '\0';
+		secdebug("filediskrep", "looks like a script for %s", cmd);
+		if (cmd[1])
 			try {
 				// find path on disk, get designated requirement (if signed)
+				string path = ctx.sdkPath(cmd);
 				if (RefPointer<DiskRep> rep = DiskRep::bestFileGuess(path))
 					if (SecPointer<SecStaticCode> code = new SecStaticCode(rep))
 						if (const Requirement *req = code->designatedRequirement()) {
+							CODESIGN_SIGN_DEP_INTERP(this, (char*)cmd, (void*)req);
 							// package up as host requirement and return that
 							Requirements::Maker maker;
 							maker.add(kSecHostRequirementType, req->clone());
-							secdebug("filediskrep", "made a scripting host requirement");
 							return maker.make();
 						}
 			} catch (...) {
@@ -142,13 +155,25 @@ DiskRep::Writer *FileDiskRep::writer()
 void FileDiskRep::Writer::component(CodeDirectory::SpecialSlot slot, CFDataRef data)
 {
 	try {
-	fd().setAttr(attrName(CodeDirectory::canonicalSlotName(slot)),
-		CFDataGetBytePtr(data), CFDataGetLength(data));
+		fd().setAttr(attrName(CodeDirectory::canonicalSlotName(slot)),
+			CFDataGetBytePtr(data), CFDataGetLength(data));
 	} catch (const UnixError &error) {
 		if (error.error == ERANGE)
 			MacOSError::throwMe(errSecCSCMSTooLarge);
 		throw;
 	}
+}
+
+
+//
+// Clear all signing data
+//
+void FileDiskRep::Writer::remove()
+{
+	for (CodeDirectory::SpecialSlot slot = 0; slot < cdSlotCount; slot++)
+		if (const char *name = CodeDirectory::canonicalSlotName(slot))
+			fd().removeAttr(attrName(name));
+	fd().removeAttr(attrName(kSecCS_SIGNATUREFILE));
 }
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -28,6 +28,7 @@
 #include "signer.h"
 #include "reqparser.h"
 #include "renum.h"
+#include "csdatabase.h"
 #include <security_utilities/unix++.h>
 #include <security_utilities/unixchild.h>
 #include <vector>
@@ -61,10 +62,9 @@ public:
 //
 // Construct a SecCodeSigner
 //
-SecCodeSigner::SecCodeSigner()
-	: mRequirements(NULL)
+SecCodeSigner::SecCodeSigner(SecCSFlags flags)
+	: mOpFlags(flags), mRequirements(NULL), mDigestAlgorithm(kSecCodeSignatureDefaultDigestAlgorithm)
 {
-	secdebug("signer", "%p created", this);
 }
 
 
@@ -72,9 +72,10 @@ SecCodeSigner::SecCodeSigner()
 // Clean up a SecCodeSigner
 //
 SecCodeSigner::~SecCodeSigner() throw()
-{
-	secdebug("signer", "%p destroyed", this);
+try {
 	::free((Requirements *)mRequirements);
+} catch (...) {
+	return;
 }
 
 
@@ -83,10 +84,21 @@ SecCodeSigner::~SecCodeSigner() throw()
 //
 void SecCodeSigner::parameters(CFDictionaryRef paramDict)
 {
-	secdebug("signer", "%p loading %d parameters", this, int(CFDictionaryGetCount(paramDict)));
 	Parser(*this, paramDict);
 	if (!valid())
 		MacOSError::throwMe(errSecCSInvalidObjectRef);
+}
+
+
+//
+// Roughly check for validity.
+// This isn't thorough; it just sees if if looks like we've set up the object appropriately.
+//
+bool SecCodeSigner::valid() const
+{
+	if (mOpFlags & kSecCSRemoveSignature)
+		return true;
+	return mSigner;
 }
 
 
@@ -95,10 +107,16 @@ void SecCodeSigner::parameters(CFDictionaryRef paramDict)
 //
 void SecCodeSigner::sign(SecStaticCode *code, SecCSFlags flags)
 {
-	if (!valid())
-		MacOSError::throwMe(errSecCSInvalidObjectRef);
-	secdebug("signer", "%p will sign %p (flags 0x%x)", this, code, flags);
-	Signer(*this, code).sign(flags);
+	Signer operation(*this, code);
+	if ((flags | mOpFlags) & kSecCSRemoveSignature) {
+		secdebug("signer", "%p will remove signature from %p", this, code);
+		operation.remove(flags);
+	} else {
+		if (!valid())
+			MacOSError::throwMe(errSecCSInvalidObjectRef);
+		secdebug("signer", "%p will sign %p (flags 0x%x)", this, code, flags);
+		operation.sign(flags);
+	}
 	code->resetValidity();
 }
 
@@ -107,7 +125,7 @@ void SecCodeSigner::sign(SecStaticCode *code, SecCSFlags flags)
 // ReturnDetachedSignature is called by writers or editors that try to return
 // detached signature data (rather than annotate the target).
 //
-void SecCodeSigner::returnDetachedSignature(BlobCore *blob)
+void SecCodeSigner::returnDetachedSignature(BlobCore *blob, Signer &signer)
 {
 	assert(mDetached);
 	if (CFGetTypeID(mDetached) == CFURLGetTypeID()) {
@@ -117,8 +135,29 @@ void SecCodeSigner::returnDetachedSignature(BlobCore *blob)
 	} else if (CFGetTypeID(mDetached) == CFDataGetTypeID()) {
 		CFDataAppendBytes(CFMutableDataRef(mDetached.get()),
 			(const UInt8 *)blob, blob->length());
+	} else if (CFGetTypeID(mDetached) == CFNullGetTypeID()) {
+		signatureDatabaseWriter().storeCode(blob, signer.path().c_str());
 	} else
 		assert(false);
+}
+
+
+//
+// Our DiskRep::signingContext methods communicate with the signing subsystem
+// in terms those callers can easily understand.
+//
+string SecCodeSigner::sdkPath(const std::string &path) const
+{
+	assert(path[0] == '/');	// need absolute path here
+	if (mSDKRoot)
+		return cfString(mSDKRoot) + path;
+	else
+		return path;
+}
+
+bool SecCodeSigner::isAdhoc() const
+{
+	return mSigner == SecIdentityRef(kCFNull);
 }
 
 
@@ -137,8 +176,6 @@ SecCodeSigner::Parser::Parser(SecCodeSigner &state, CFDictionaryRef parameters)
 			state.mSigner = SecIdentityRef(signer);
 		else
 			MacOSError::throwMe(errSecCSInvalidObjectRef);
-	else
-		MacOSError::throwMe(errSecCSInvalidObjectRef);
 
 	// the flags need some augmentation
 	if (CFNumberRef flags = get<CFNumberRef>(kSecCodeSignerFlags)) {
@@ -146,6 +183,10 @@ SecCodeSigner::Parser::Parser(SecCodeSigner &state, CFDictionaryRef parameters)
 		state.mCdFlags = cfNumber<uint32_t>(flags);
 	} else
 		state.mCdFlagsGiven = false;
+	
+	// digest algorithms are specified as a numeric code
+	if (CFNumberRef digestAlgorithm = get<CFNumberRef>(kSecCodeSignerDigestAlgorithm))
+		state.mDigestAlgorithm = cfNumber<long>(digestAlgorithm);
 
 	if (CFNumberRef cmsSize = get<CFNumberRef>(CFSTR("cmssize")))
 		state.mCMSSize = cfNumber<size_t>(cmsSize);
@@ -183,8 +224,8 @@ SecCodeSigner::Parser::Parser(SecCodeSigner &state, CFDictionaryRef parameters)
 	
 	// detached can be (destination) file URL or (mutable) Data to be appended-to
 	if (state.mDetached = get<CFTypeRef>(kSecCodeSignerDetached)) {
-		if (CFGetTypeID(state.mDetached) != CFURLGetTypeID()
-			&& CFGetTypeID(state.mDetached) != CFDataGetTypeID())
+		CFTypeID type = CFGetTypeID(state.mDetached);
+		if (type != CFURLGetTypeID() && type != CFDataGetTypeID() && type != CFNullGetTypeID())
 			MacOSError::throwMe(errSecCSInvalidObjectRef);
 	}
 	
@@ -194,6 +235,8 @@ SecCodeSigner::Parser::Parser(SecCodeSigner &state, CFDictionaryRef parameters)
 	
 	state.mApplicationData = get<CFDataRef>(kSecCodeSignerApplicationData);
 	state.mEntitlementData = get<CFDataRef>(kSecCodeSignerEntitlements);
+	
+	state.mSDKRoot = get<CFURLRef>(kSecCodeSignerSDKRoot);
 }
 
 

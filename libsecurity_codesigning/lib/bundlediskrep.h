@@ -47,25 +47,27 @@ namespace CodeSigning {
 //
 class BundleDiskRep : public DiskRep {
 public:
-	BundleDiskRep(const char *path);
-	BundleDiskRep(CFBundleRef ref);
+	BundleDiskRep(const char *path, const Context *ctx = NULL);
+	BundleDiskRep(CFBundleRef ref, const Context *ctx = NULL);
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
+	CFDataRef identification();
 	std::string mainExecutablePath();
 	CFURLRef canonicalPath();
-	std::string recommendedIdentifier();
 	std::string resourcesRootPath();
-	CFDictionaryRef defaultResourceRules();
 	void adjustResources(ResourceBuilder &builder);
-	const Requirements *defaultRequirements(const Architecture *arch);
 	Universal *mainExecutableImage();
-	size_t pageSize();
 	size_t signingBase();
 	size_t signingLimit();
 	std::string format();
 	CFArrayRef modifiedFiles();
 	UnixPlusPlus::FileDesc &fd();
 	void flush();
+	
+	std::string recommendedIdentifier(const SigningContext &ctx);
+	CFDictionaryRef defaultResourceRules(const SigningContext &ctx);
+	const Requirements *defaultRequirements(const Architecture *arch, const SigningContext &ctx);
+	size_t pageSize(const SigningContext &ctx);
 
 	CFBundleRef bundle() const { return mBundle; }
 	
@@ -80,6 +82,7 @@ protected:
 	void createMeta();						// (try to) create the meta-file directory
 	
 private:
+	void setup(const Context *ctx);			// shared init
 	void checkModifiedFile(CFMutableArrayRef files, CodeDirectory::SpecialSlot slot);
 
 private:
@@ -100,10 +103,12 @@ public:
 	Writer(BundleDiskRep *r);
 	
 	void component(CodeDirectory::SpecialSlot slot, CFDataRef data);
+	void remove();
 	void flush();
 	
 protected:
 	DiskRep *execRep() { return rep->mExecRep; }
+	void remove(CodeDirectory::SpecialSlot slot);
 
 protected:
 	RefPointer<BundleDiskRep> rep;

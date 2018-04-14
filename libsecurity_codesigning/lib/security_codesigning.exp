@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2006-2007 Apple Inc. All Rights Reserved.
+# Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
 #
 # @APPLE_LICENSE_HEADER_START@
 #
@@ -21,8 +21,10 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 _SecCodeGetTypeID
-_SecGetRootCode
 _SecCodeCopySelf
+_SecCodeCopyInternalRequirement
+_SecCodeGetStatus
+_SecCodeSetStatus
 _SecCodeCopyStaticCode
 _SecCodeCopyHost
 _SecCodeCopyGuestWithAttributes
@@ -34,8 +36,12 @@ _SecCodeCopyDesignatedRequirement
 _SecCodeCopySigningInformation
 _SecCodeMapMemory
 _SecCodeSetDetachedSignature
+_kSecCodeAttributeArchitecture
+_kSecCodeAttributeBundleVersion
+_kSecCodeAttributeSubarchitecture
 _SecStaticCodeGetTypeID
 _SecStaticCodeCreateWithPath
+_SecStaticCodeCreateWithPathAndAttributes
 _SecStaticCodeCheckValidity
 _SecStaticCodeCheckValidityWithErrors
 _SecRequirementGetTypeID
@@ -46,6 +52,10 @@ _SecRequirementCreateWithStringAndErrors
 _SecRequirementCreateGroup
 _SecRequirementCopyData
 _SecRequirementCopyString
+_SecRequirementsCreateFromRequirements
+_SecRequirementsCopyRequirements
+_SecRequirementsCreateWithString
+_SecRequirementsCopyString
 _SecCodeSignerGetTypeID
 _SecCodeSignerCreate
 _SecCodeSignerAddSignature
@@ -56,8 +66,10 @@ _SecHostSetGuestStatus
 _SecHostSelectGuest
 _SecHostSelectedGuest
 _SecHostSetHostingPort
+_kSecCodeDirectoryFlagTable
 _kSecCodeSignerApplicationData
 _kSecCodeSignerDetached
+_kSecCodeSignerDigestAlgorithm
 _kSecCodeSignerDryRun
 _kSecCodeSignerEntitlements
 _kSecCodeSignerFlags
@@ -67,6 +79,7 @@ _kSecCodeSignerIdentity
 _kSecCodeSignerPageSize
 _kSecCodeSignerRequirements
 _kSecCodeSignerResourceRules
+_kSecCodeSignerSDKRoot
 _kSecCodeSignerSigningTime
 _kSecCodeInfoCertificates
 _kSecCodeInfoChangedFiles
@@ -75,17 +88,25 @@ _kSecCodeInfoTime
 _kSecCodeInfoDesignatedRequirement
 _kSecCodeInfoEntitlements
 _kSecCodeInfoFormat
+_kSecCodeInfoDigestAlgorithm
 _kSecCodeInfoIdentifier
 _kSecCodeInfoImplicitDesignatedRequirement
 _kSecCodeInfoMainExecutable
 _kSecCodeInfoPList
 _kSecCodeInfoRequirements
 _kSecCodeInfoRequirementData
+_kSecCodeInfoSource
 _kSecCodeInfoStatus
 _kSecCodeInfoTrust
-_kSecGuestAttributePid
+_kSecCodeInfoUnique
+_kSecCodeInfoCodeDirectory
+_kSecCodeInfoCodeOffset
+_kSecCodeInfoResourceDirectory
 _kSecGuestAttributeCanonical
+_kSecGuestAttributeHash
 _kSecGuestAttributeMachPort
+_kSecGuestAttributePid
+_kSecCFErrorArchitecture
 _kSecCFErrorPattern
 _kSecCFErrorResourceSeal
 _kSecCFErrorResourceAdded
@@ -94,3 +115,11 @@ _kSecCFErrorResourceMissing
 _kSecCFErrorInfoPlist
 _kSecCFErrorGuestAttributes
 _kSecCFErrorRequirementSyntax
+
+
+# Entitlements
+_SecTaskGetTypeID
+_SecTaskCreateWithAuditToken
+_SecTaskCopyValueForEntitlement
+_SecTaskCopyValuesForEntitlements
+

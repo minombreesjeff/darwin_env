@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2007 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2006-2010 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -31,8 +31,7 @@
 #include "cs.h"
 #include "Code.h"
 #include "cskernel.h"
-#include <security_codesigning/cfmunge.h>
-#include <sys/codesign.h>
+#include <security_utilities/cfmunge.h>
 
 using namespace CodeSigning;
 
@@ -40,6 +39,7 @@ using namespace CodeSigning;
 //
 // CFError user info keys
 //
+const CFStringRef kSecCFErrorArchitecture =		CFSTR("SecCSArchitecture");
 const CFStringRef kSecCFErrorPattern =			CFSTR("SecCSPattern");
 const CFStringRef kSecCFErrorResourceSeal =		CFSTR("SecCSResourceSeal");
 const CFStringRef kSecCFErrorResourceAdded =	CFSTR("SecCSResourceAdded");
@@ -48,6 +48,7 @@ const CFStringRef kSecCFErrorResourceMissing =	CFSTR("SecCSResourceMissing");
 const CFStringRef kSecCFErrorInfoPlist =		CFSTR("SecCSInfoPlist");
 const CFStringRef kSecCFErrorGuestAttributes =	CFSTR("SecCSGuestAttributes");
 const CFStringRef kSecCFErrorRequirementSyntax = CFSTR("SecRequirementSyntax");
+
 
 //
 // CF-standard type code functions
@@ -61,20 +62,6 @@ CFTypeID SecCodeGetTypeID(void)
 
 
 //
-// Get the root of trust Code
-//
-SecCodeRef SecGetRootCode(SecCSFlags flags)
-{
-	BEGIN_CSAPI
-	
-	checkFlags(flags);
-	return KernelCode::active()->handle();
-	
-	END_CSAPI1(NULL)
-}
-
-
-//
 // Get a reference to the calling code.
 //
 OSStatus SecCodeCopySelf(SecCSFlags flags, SecCodeRef *selfRef)
@@ -84,7 +71,36 @@ OSStatus SecCodeCopySelf(SecCSFlags flags, SecCodeRef *selfRef)
 	checkFlags(flags);
 	CFRef<CFMutableDictionaryRef> attributes = makeCFMutableDictionary(1,
 		kSecGuestAttributePid, CFTempNumber(getpid()).get());
-	Required(selfRef) = SecCode::autoLocateGuest(attributes, flags)->handle(false);
+	CodeSigning::Required(selfRef) = SecCode::autoLocateGuest(attributes, flags)->handle(false);
+	
+	END_CSAPI
+}
+
+
+//
+// Get the dynamic status of a code.
+//
+OSStatus SecCodeGetStatus(SecCodeRef codeRef, SecCSFlags flags, SecCodeStatus *status)
+{
+	BEGIN_CSAPI
+	
+	checkFlags(flags);
+	CodeSigning::Required(status) = SecCode::required(codeRef)->status();
+	
+	END_CSAPI
+}
+
+
+//
+// Change the dynamic status of a code
+//
+OSStatus SecCodeSetStatus(SecCodeRef codeRef, SecCodeStatusOperation operation,
+	CFDictionaryRef arguments, SecCSFlags flags)
+{
+	BEGIN_CSAPI
+	
+	checkFlags(flags);
+	SecCode::required(codeRef)->status(operation, arguments);
 	
 	END_CSAPI
 }
@@ -99,7 +115,7 @@ OSStatus SecCodeCopyStaticCode(SecCodeRef codeRef, SecCSFlags flags, SecStaticCo
 	
 	checkFlags(flags);
 	SecPointer<SecStaticCode> staticCode = SecCode::required(codeRef)->staticCode();
-	Required(staticCodeRef) = staticCode ? staticCode->handle() : NULL;
+	CodeSigning::Required(staticCodeRef) = staticCode ? staticCode->handle() : NULL;
 
 	END_CSAPI
 }
@@ -114,7 +130,7 @@ OSStatus SecCodeCopyHost(SecCodeRef guestRef, SecCSFlags flags, SecCodeRef *host
 	
 	checkFlags(flags);
 	SecPointer<SecCode> host = SecCode::required(guestRef)->host();
-	Required(hostRef) = host ? host->handle() : NULL;
+	CodeSigning::Required(hostRef) = host ? host->handle() : NULL;
 
 	END_CSAPI
 }
@@ -123,9 +139,12 @@ OSStatus SecCodeCopyHost(SecCodeRef guestRef, SecCSFlags flags, SecCodeRef *host
 //
 // Find a guest by attribute(s)
 //
-const CFStringRef kSecGuestAttributePid =			CFSTR("pid");
 const CFStringRef kSecGuestAttributeCanonical =		CFSTR("canonical");
+const CFStringRef kSecGuestAttributeHash =			CFSTR("codedirectory-hash");
 const CFStringRef kSecGuestAttributeMachPort =		CFSTR("mach-port");
+const CFStringRef kSecGuestAttributePid =			CFSTR("pid");
+const CFStringRef kSecGuestAttributeArchitecture =	CFSTR("architecture");
+const CFStringRef kSecGuestAttributeSubarchitecture = CFSTR("subarchitecture");
 
 OSStatus SecCodeCopyGuestWithAttributes(SecCodeRef hostRef,
 	CFDictionaryRef attributes,	SecCSFlags flags, SecCodeRef *guestRef)
@@ -135,11 +154,11 @@ OSStatus SecCodeCopyGuestWithAttributes(SecCodeRef hostRef,
 	checkFlags(flags);
 	if (hostRef) {
 		if (SecCode *guest = SecCode::required(hostRef)->locateGuest(attributes))
-			Required(guestRef) = guest->handle(false);
+			CodeSigning::Required(guestRef) = guest->handle(false);
 		else
 			return errSecCSNoSuchCode;
 	} else
-		Required(guestRef) = SecCode::autoLocateGuest(attributes, flags)->handle(false);
+		CodeSigning::Required(guestRef) = SecCode::autoLocateGuest(attributes, flags)->handle(false);
 	
 	END_CSAPI
 }
@@ -154,7 +173,7 @@ OSStatus SecCodeCreateWithPID(pid_t pid, SecCSFlags flags, SecCodeRef *processRe
 	
 	checkFlags(flags);
 	if (SecCode *guest = KernelCode::active()->locateGuest(CFTemp<CFDictionaryRef>("{%O=%d}", kSecGuestAttributePid, pid)))
-		Required(processRef) = guest->handle(false);
+		CodeSigning::Required(processRef) = guest->handle(false);
 	else
 		return errSecCSNoSuchCode;
 	
@@ -181,7 +200,7 @@ OSStatus SecCodeCheckValidityWithErrors(SecCodeRef codeRef, SecCSFlags flags,
 	SecPointer<SecCode> code = SecCode::required(codeRef);
 	code->checkValidity(flags);
 	if (const SecRequirement *req = SecRequirement::optional(requirementRef))
-		code->staticCode()->validateRequirements(req->requirement(), errSecCSReqFailed);
+		code->staticCode()->validateRequirement(req->requirement(), errSecCSReqFailed);
 
 	END_CSAPI_ERRORS
 }
@@ -200,16 +219,24 @@ const CFStringRef kSecCodeInfoChangedFiles =	CFSTR("changed-files");
 const CFStringRef kSecCodeInfoCMS =				CFSTR("cms");
 const CFStringRef kSecCodeInfoDesignatedRequirement = CFSTR("designated-requirement");
 const CFStringRef kSecCodeInfoEntitlements =	CFSTR("entitlements");
-const CFStringRef kSecCodeInfoTime =			CFSTR("signing-time");
 const CFStringRef kSecCodeInfoFormat =			CFSTR("format");
+const CFStringRef kSecCodeInfoDigestAlgorithm =	CFSTR("digest-algorithm");
 const CFStringRef kSecCodeInfoIdentifier =		CFSTR("identifier");
 const CFStringRef kSecCodeInfoImplicitDesignatedRequirement = CFSTR("implicit-requirement");
 const CFStringRef kSecCodeInfoMainExecutable =	CFSTR("main-executable");
 const CFStringRef kSecCodeInfoPList =			CFSTR("info-plist");
 const CFStringRef kSecCodeInfoRequirements =	CFSTR("requirements");
 const CFStringRef kSecCodeInfoRequirementData =	CFSTR("requirement-data");
+const CFStringRef kSecCodeInfoSource =			CFSTR("source");
 const CFStringRef kSecCodeInfoStatus =			CFSTR("status");
+const CFStringRef kSecCodeInfoTime =			CFSTR("signing-time");
 const CFStringRef kSecCodeInfoTrust =			CFSTR("trust");
+const CFStringRef kSecCodeInfoUnique =			CFSTR("unique");
+
+const CFStringRef kSecCodeInfoCodeDirectory =	CFSTR("CodeDirectory");
+const CFStringRef kSecCodeInfoCodeOffset =		CFSTR("CodeOffset");
+const CFStringRef kSecCodeInfoResourceDirectory = CFSTR("ResourceDirectory");
+
 
 OSStatus SecCodeCopySigningInformation(SecStaticCodeRef codeRef, SecCSFlags flags,
 	CFDictionaryRef *infoRef)
@@ -227,17 +254,11 @@ OSStatus SecCodeCopySigningInformation(SecStaticCodeRef codeRef, SecCSFlags flag
 	CFRef<CFDictionaryRef> info = code->signingInformation(flags);
 	
 	if (flags & kSecCSDynamicInformation)
-		if (SecPointer<SecCode> dcode = SecStaticCode::optionalDynamic(codeRef)) {
-			uint32_t status;
-			if (SecPointer<SecCode> host = dcode->host())
-				status = host->getGuestStatus(dcode);
-			else
-				status = CS_VALID;		// root of trust, presumed valid
+		if (SecPointer<SecCode> dcode = SecStaticCode::optionalDynamic(codeRef))
 			info = cfmake<CFDictionaryRef>("{+%O,%O=%u}", info.get(),
-				kSecCodeInfoStatus, status);
-		}
+				kSecCodeInfoStatus, dcode->status());
 	
-	Required(infoRef) = info.yield();
+	CodeSigning::Required(infoRef) = info.yield();
 	
 	END_CSAPI
 }

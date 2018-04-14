@@ -30,15 +30,15 @@
 #include "singlediskrep.h"
 #include "sigblob.h"
 #include <security_utilities/unix++.h>
-#include <security_codesigning/macho++.h>
+#include <security_utilities/macho++.h>
 
 namespace Security {
 namespace CodeSigning {
 
 
 //
-// MachORep is a mix-in class that supports reading
-// Code Signing resources from the main executable.
+// MachORep is a DiskRep class that supports code signatures
+// directly embedded in Mach-O binary files.
 //
 // It does not have write support (for writing signatures);
 // writing multi-architecture binaries is complicated enough
@@ -47,20 +47,25 @@ namespace CodeSigning {
 //
 class MachORep : public SingleDiskRep {
 public:
-	MachORep(const char *path);
+	MachORep(const char *path, const Context *ctx = NULL);
 	virtual ~MachORep();
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
-	std::string recommendedIdentifier();
-	const Requirements *defaultRequirements(const Architecture *arch);
+	CFDataRef identification();
 	Universal *mainExecutableImage();
-	size_t pageSize();
 	size_t signingBase();
 	std::string format();
 	
+	std::string recommendedIdentifier(const SigningContext &ctx);
+	const Requirements *defaultRequirements(const Architecture *arch, const SigningContext &ctx);
+	size_t pageSize(const SigningContext &ctx);
+	
 	void flush();		// flush cache
 	
-	static bool candidiate(UnixPlusPlus::FileDesc &fd);
+	static bool candidate(UnixPlusPlus::FileDesc &fd);
+	
+public:
+	static CFDataRef identificationFor(MachO *macho);
 	
 public:
 	DiskRep::Writer *writer();
@@ -70,6 +75,7 @@ public:
 protected:
 	CFDataRef embeddedComponent(CodeDirectory::SpecialSlot slot);
 	CFDataRef infoPlist();
+	Requirement *libraryRequirements(const Architecture *arch, const SigningContext &ctx);
 
 private:
 	Universal *mExecutable;	// cached Mach-O/Universal reference to mainExecutablePath()
@@ -78,7 +84,9 @@ private:
 
 
 //
-// The write side of a FileDiskRep
+// The write side of a MachORep.
+// This is purposely dysfunctional; Mach-O signatures are written
+// by code in signerutils, not by DiskRep::Writers.
 //
 class MachORep::Writer : public SingleDiskRep::Writer {
 	friend class FileDiskRep;

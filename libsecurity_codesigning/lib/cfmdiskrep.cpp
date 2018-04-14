@@ -40,6 +40,7 @@ using namespace UnixPlusPlus;
 CFMDiskRep::CFMDiskRep(const char *path)
 	: SingleDiskRep(path), mTriedRead(false)
 {
+	CODESIGN_DISKREP_CREATE_CFM(this, (char*)path);
 }
 
 CFMDiskRep::~CFMDiskRep()
@@ -50,15 +51,24 @@ CFMDiskRep::~CFMDiskRep()
 
 
 //
-// CFM filter heuristic
+// CFM filter heuristic.
+// We look for the PEF header within the first scanLength bytes
+// of the file's data fork, at certain alignment boundaries (probably
+// conservative).
 //
-bool CFMDiskRep::candidiate(FileDesc &fd)
+bool CFMDiskRep::candidate(FileDesc &fd)
 {
 	static const char magicMarker[] = "Joy!peffpwpc";
 	static const size_t magicLength = 12;
-	char marker[magicLength];
-	return fd.read(marker, magicLength, 0) == magicLength
-		&& !memcmp(marker, magicMarker, magicLength);
+	static const size_t scanLength = 128;
+	static const size_t scanAlignment = 4;
+	
+	char marker[scanLength];
+	if (fd.read(marker, scanLength, 0) == scanLength)
+		for (size_t p = 0; p <= scanLength - magicLength; p += scanAlignment)
+			if (!memcmp(marker+p, magicMarker, magicLength))
+				return true;
+	return false;
 }
 
 
@@ -75,33 +85,6 @@ CFDataRef CFMDiskRep::component(CodeDirectory::SpecialSlot slot)
 		return mSigningData->component(slot);
 	else
 		return NULL;
-}
-
-
-//
-// In Mac OS X, a CFM binary must always be managed by the LaunchCFMApp
-// system tool. Thus, we recommend that this be required as a host.
-//
-static const uint8_t cfm_ireqs[] = {	// host => anchor apple and identifier com.apple.LaunchCFMApp
-	0xfa, 0xde, 0x0c, 0x01, 0x00, 0x00, 0x00, 0x48, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-	0x00, 0x00, 0x00, 0x14, 0xfa, 0xde, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x34, 0x00, 0x00, 0x00, 0x01,
-	0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x16,
-	0x63, 0x6f, 0x6d, 0x2e, 0x61, 0x70, 0x70, 0x6c, 0x65, 0x2e, 0x4c, 0x61, 0x75, 0x6e, 0x63, 0x68,
-	0x43, 0x46, 0x4d, 0x41, 0x70, 0x70, 0x00, 0x00,
-};
-
-const Requirements *CFMDiskRep::defaultRequirements(const Architecture *)
-{
-	return ((const Requirements *)cfm_ireqs)->clone();	// need to pass ownership
-}
-
-
-//
-// Default to system-paged signing
-//
-size_t CFMDiskRep::pageSize()
-{
-	return segmentedPageSize;
 }
 
 
@@ -139,6 +122,33 @@ void CFMDiskRep::flush()
 
 
 //
+// In Mac OS X, a CFM binary must always be managed by the LaunchCFMApp
+// system tool. Thus, we recommend that this be required as a host.
+//
+static const uint8_t cfm_ireqs[] = {	// host => anchor apple and identifier com.apple.LaunchCFMApp
+	0xfa, 0xde, 0x0c, 0x01, 0x00, 0x00, 0x00, 0x48, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x00, 0x00, 0x00, 0x14, 0xfa, 0xde, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x34, 0x00, 0x00, 0x00, 0x01,
+	0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x16,
+	0x63, 0x6f, 0x6d, 0x2e, 0x61, 0x70, 0x70, 0x6c, 0x65, 0x2e, 0x4c, 0x61, 0x75, 0x6e, 0x63, 0x68,
+	0x43, 0x46, 0x4d, 0x41, 0x70, 0x70, 0x00, 0x00,
+};
+
+const Requirements *CFMDiskRep::defaultRequirements(const Architecture *, const SigningContext &)
+{
+	return ((const Requirements *)cfm_ireqs)->clone();	// need to pass ownership
+}
+
+
+//
+// Default to system-paged signing
+//
+size_t CFMDiskRep::pageSize(const SigningContext &)
+{
+	return segmentedPageSize;
+}
+
+
+//
 // Locate, read, and cache embedded signing data from the CFM binary.
 //
 void CFMDiskRep::readSigningData()
@@ -153,9 +163,7 @@ void CFMDiskRep::readSigningData()
 		if (fd.read(&sentinel, sizeof(sentinel), fd.fileSize() - sizeof(Sentinel)) == sizeof(Sentinel))
 			if (sentinel.magic == EmbeddedSignatureBlob::typeMagic) {
 				mSigningOffset = sentinel.offset;
-				fd.seek(mSigningOffset);
-				mSigningData = EmbeddedSignatureBlob::readBlob(fd);
-				if (mSigningData)
+				if (mSigningData = EmbeddedSignatureBlob::readBlob(fd, mSigningOffset))
 					secdebug("cfmrep", "%zd signing bytes in %d blob(s) from %s(CFM)",
 						mSigningData->length(), mSigningData->count(),
 						mainExecutablePath().c_str());
