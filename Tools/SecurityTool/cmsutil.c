@@ -303,13 +303,13 @@ static OSStatus do_update(update_func *update,
     {
         for (;len; --len, ++data)
         {
-            rv = update(cx, data, 1);
+            rv = update(cx, (const char *)data, 1);
             if (rv)
                 break;
         }
     }
     else
-	rv = update(cx, data, len);
+	rv = update(cx, (const char *)data, len);
 
     return rv;
 }
