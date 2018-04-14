@@ -255,6 +255,7 @@ struct BC_cache_control {
 #define BC_FLAG_PREFETCH	(1<<4)		/* fast prefetch in progress */
 #define BC_FLAG_STARTED		(1<<5)		/* cache started by user */
 	int		c_strategycalls;	/* count of busy strategy calls */
+	int		c_bypasscalls;		/* count of busy strategy bypasses */
 	
 	/*
 	 * The cache buffer contains c_buffer_count blocks of disk data.
@@ -848,6 +849,14 @@ BC_strategy_bypass(struct buf *bp)
 	int isread;
 	assert(bp != NULL);
 
+	/*
+	 * Since the strategy routine may drop the funnel, we need
+	 * to protect ourselves from being unloaded so that the return
+	 * address is still valid.  This is protected by the kernel
+	 * funnel.
+	 */
+	BC_cache->c_bypasscalls++;
+
 	/* if here, and it's a read, we missed the cache */
 	if (ISSET(bp->b_flags, B_READ)) {
 		BC_add_history(CB_BLOCK_TO_BYTE(BC_cache, bp->b_blkno), bp->b_bcount, BC_HE_MISS);
@@ -900,6 +909,9 @@ BC_strategy_bypass(struct buf *bp)
 			}
 		}
 	}
+	
+	/* un-refcount ourselves */
+	BC_cache->c_bypasscalls--;
 }
 
 /*
@@ -936,7 +948,7 @@ BC_strategy(struct buf *bp)
 	}
 	
 	/*
-	 * In order to prevent the cleanup code from raacing with us
+	 * In order to prevent the cleanup code from racing with us
 	 * when we sleep, we track the number of strategy calls active.
 	 * This value is protected by the kernel funnel, and must be
 	 * incremented here before we have a chance to sleep and
@@ -1188,6 +1200,7 @@ BC_terminate_readahead(void)
 	 * on them, so we don't have to worry about them here.
 	 */
 	if (BC_cache->c_flags & BC_FLAG_IOBUSY) {
+		debug("terminating active readahead");
 
 		/*
 		 * Signal the readahead thread to terminate, and wait for
@@ -1256,6 +1269,7 @@ BC_terminate_cache(void)
 		return(ENXIO);
 	}
 	BC_cache->c_flags &= ~BC_FLAG_CACHEACTIVE;
+	debug("terminating cache...");
 
 	/*
 	 * It is possible that one or more callers are asleep in the
@@ -1315,10 +1329,34 @@ BC_terminate_cache(void)
 static int
 BC_terminate_history(void)
 {
+	int retry;
+
+	debug("terminating history collection...");
 	/* disconnect the strategy routine */
 	if ((BC_cache->c_devsw != NULL) &&
 	    (BC_cache->c_strategy != NULL))
 		BC_cache->c_devsw->d_strategy = BC_cache->c_strategy;
+
+	/*
+	 * It is possible that one or more callers are asleep in the
+	 * real strategy routine (as it may drop the funnel).  Check
+	 * the count of callers in the bypass code, and sleep until
+	 * there are none left (or we time out here).  Note that by
+	 * removing ourselves from the bdev switch above we prevent
+	 * any new callers from entering the bypass code, so the count
+	 * must eventually drain to zero.
+	 */
+	retry = 0;
+	while (BC_cache->c_bypasscalls > 0) {
+		tsleep(BC_cache, PRIBIO, "BC_terminate_history", hz / 10);
+		if (retry++ > 50) {
+			debug("could not terminate history, timed out with %d caller%s in BC_strategy_bypass",
+			    BC_cache->c_bypasscalls,
+			    BC_cache->c_bypasscalls == 1 ? "" : "s");
+
+			return(EBUSY);	/* again really EWEDGED */
+		}
+	}
 
 	/* record stop time */
 	microtime(&BC_cache->c_stats.ss_cache_stop);
@@ -2179,12 +2217,35 @@ BC_start(void)
 int
 BC_stop(void)
 {
-	/* prevent unload if the cache is active or owns any memory */
-	if ((BC_cache->c_flags & BC_FLAG_CACHEACTIVE) ||
-	    (BC_cache->c_history != NULL))
-		return(1);
-	
-	sysctl_unregister_oid(&sysctl__kern_BootCache);
+	boolean_t funnel_state;
+	int error;
 
-	return(0);
+	/* we run under the kernel funnel */
+	error = 1;
+	funnel_state = thread_funnel_set(kernel_flock, TRUE);
+
+	debug("preparing to unload...");
+	/*
+	 * Kill the timeout handler; we don't want it going off
+	 * now.
+	 */
+	untimeout(BC_timeout_cache, NULL);
+		
+	/*
+	 * If the cache is running, stop it.  If it's already stopped
+	 * (it may have stopped itself), that's OK.
+	 */
+	if (BC_terminate_readahead())
+		goto out;
+	BC_terminate_cache();
+	BC_terminate_history();
+	BC_discard_history();
+	BC_cache->c_flags = 0;
+
+	sysctl_unregister_oid(&sysctl__kern_BootCache);
+	error = 0;
+
+out:
+	(void) thread_funnel_set(kernel_flock, funnel_state);
+	return(error);
 }
