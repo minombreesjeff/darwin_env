@@ -21,43 +21,28 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-//
-// kerneldiskrep - the kernel's own disk representation.
-//
-// This is a very special case.
-// It's here primarily so we don't have to add special cases for the kernel
-// all over the higher layers.
-//
-#ifndef _H_KERNELDISKREP
-#define _H_KERNELDISKREP
+/*!
+	@header SecStaticCode
+	SecStaticCodePriv is the private counter-part to SecStaticCode. Its contents are not
+	official API, and are subject to change without notice.
+*/
+#ifndef _H_SECSTATICCODEPRIV
+#define _H_SECSTATICCODEPRIV
 
-#include "diskrep.h"
+#include <Security/SecStaticCode.h>
 
-namespace Security {
-namespace CodeSigning {
-
-
-//
-// A KernelDiskRep represents a (the) kernel on disk.
-// It has no write support, so we can't sign the kernel,
-// which is fine since we unconditionally trust it anyway.
-//
-class KernelDiskRep : public DiskRep {
-public:
-	KernelDiskRep();
-	
-	CFDataRef component(CodeDirectory::SpecialSlot slot);
-	CFDataRef identification();
-	std::string mainExecutablePath();
-	CFURLRef canonicalPath();
-	std::string recommendedIdentifier();
-	size_t signingLimit();
-	std::string format();
-	UnixPlusPlus::FileDesc &fd();
-};
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 
-} // end namespace CodeSigning
-} // end namespace Security
+/*
+ * Currently empty
+ */
 
-#endif // !_H_KERNELDISKREP
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif //_H_SECSTATICCODEPRIV

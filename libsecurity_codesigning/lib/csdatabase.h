@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2007 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,42 +22,47 @@
  */
 
 //
-// kerneldiskrep - the kernel's own disk representation.
+// csdb - system-supported Code Signing related database interfaces
 //
-// This is a very special case.
-// It's here primarily so we don't have to add special cases for the kernel
-// all over the higher layers.
-//
-#ifndef _H_KERNELDISKREP
-#define _H_KERNELDISKREP
+#ifndef _H_CSDATABASE
+#define _H_CSDATABASE
 
 #include "diskrep.h"
+#include "sigblob.h"
+#include <Security/Security.h>
+#include <security_utilities/globalizer.h>
+#include <security_utilities/sqlite++.h>
+#include <security_utilities/cfutilities.h>
+
 
 namespace Security {
 namespace CodeSigning {
 
+namespace SQLite = SQLite3;
 
-//
-// A KernelDiskRep represents a (the) kernel on disk.
-// It has no write support, so we can't sign the kernel,
-// which is fine since we unconditionally trust it anyway.
-//
-class KernelDiskRep : public DiskRep {
+
+class SignatureDatabase : public SQLite::Database {
 public:
-	KernelDiskRep();
+	SignatureDatabase(const char *path = defaultPath,
+		int flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
+	virtual ~SignatureDatabase();
 	
-	CFDataRef component(CodeDirectory::SpecialSlot slot);
-	CFDataRef identification();
-	std::string mainExecutablePath();
-	CFURLRef canonicalPath();
-	std::string recommendedIdentifier();
-	size_t signingLimit();
-	std::string format();
-	UnixPlusPlus::FileDesc &fd();
+	FilterRep *findCode(DiskRep *rep);
+	void storeCode(const BlobCore *sig, const char *location);
+	
+private:
+	SQLite::int64 insertGlobal(const char *location, const BlobCore *blob);
+	void insertCode(SQLite::int64 globid, int arch, const EmbeddedSignatureBlob *sig);
+
+public:
+	static const char defaultPath[];
 };
+
+
+extern ModuleNexus<SignatureDatabase> signatureDatabase;
 
 
 } // end namespace CodeSigning
 } // end namespace Security
 
-#endif // !_H_KERNELDISKREP
+#endif // !_H_CSDATABASE
