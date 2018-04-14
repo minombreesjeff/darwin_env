@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2009 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2008-2009 Apple Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,22 +20,27 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * keychain_delete.h
+ *  access_utils.h
  */
 
-#ifndef _KEYCHAIN_DELETE_H_
-#define _KEYCHAIN_DELETE_H_  1
+#ifndef _ACCESS_UTILS_H_
+#define _ACCESS_UTILS_H_  1
+
+#include <CoreFoundation/CFArray.h>
+#include <Security/SecBase.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+	
+extern int create_access(const char *accessName, Boolean allowAny, CFArrayRef trustedApps, SecAccessRef *access);
 
-extern int keychain_delete_certificate(int argc, char * const *argv);
+extern int merge_access(SecAccessRef access, SecAccessRef otherAccess);
 
-extern int keychain_delete(int argc, char * const *argv);
+extern int modify_access(SecKeychainItemRef itemRef, SecAccessRef access);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _KEYCHAIN_DELETE_H_ */
+#endif /* _ACCESS_UTILS_H_ */

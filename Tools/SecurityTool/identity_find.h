@@ -20,22 +20,28 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * keychain_delete.h
+ * identity_find.h
  */
 
-#ifndef _KEYCHAIN_DELETE_H_
-#define _KEYCHAIN_DELETE_H_  1
+#ifndef _IDENTITY_FIND_H_
+#define _IDENTITY_FIND_H_  1
+
+#include <Security/SecBase.h>
+#include <Security/cssmtype.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-extern int keychain_delete_certificate(int argc, char * const *argv);
-
-extern int keychain_delete(int argc, char * const *argv);
-
+	
+extern SecIdentityRef find_identity(CFTypeRef keychainOrArray,
+									const char *identity,
+									const char *hash,
+									CSSM_KEYUSE keyUsage);
+	
+extern int keychain_find_identity(int argc, char * const *argv);
+	
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _KEYCHAIN_DELETE_H_ */
+#endif /* _IDENTITY_FIND_H_ */

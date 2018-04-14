@@ -20,22 +20,35 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * keychain_delete.h
+ * leaks.c
  */
 
-#ifndef _KEYCHAIN_DELETE_H_
-#define _KEYCHAIN_DELETE_H_  1
+#include "display_error_code.h"
+#include "security.h"
+#include <Security/cssmapple.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <libkern/OSByteOrder.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// cssmErrorString
+#include <Security/SecBasePriv.h>
 
-extern int keychain_delete_certificate(int argc, char * const *argv);
 
-extern int keychain_delete(int argc, char * const *argv);
-
-#ifdef __cplusplus
+int display_error_code(int argc, char *const *argv)
+{
+	CSSM_RETURN error;
+	int ix = 0;
+	
+	for (ix = 0; ix < argc; ix++)
+	{
+		if (strcmp("error", argv[ix])==0)
+			continue;
+		// set base to 0 to have it interpret radix automatically
+		error = strtoul(argv[ix], NULL, 0);
+		printf("Error: 0x%08X %d %s\n", error, error, cssmErrorString(error));
+	}
+	
+	return 1;
 }
-#endif
-
-#endif /* _KEYCHAIN_DELETE_H_ */

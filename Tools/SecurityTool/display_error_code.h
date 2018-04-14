@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2009 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2003-2004 Apple Computer, Inc. All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,22 +20,20 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * keychain_delete.h
+ * leaks.h
  */
 
-#ifndef _KEYCHAIN_DELETE_H_
-#define _KEYCHAIN_DELETE_H_  1
+#ifndef _DISPLAY_ERROR_CODE_H_
+#define _DISPLAY_ERROR_CODE_H_ 1
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern int keychain_delete_certificate(int argc, char * const *argv);
-
-extern int keychain_delete(int argc, char * const *argv);
+extern int display_error_code(int argc, char *const *argv);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _KEYCHAIN_DELETE_H_ */
+#endif /*  _DISPLAY_ERROR_CODE_H_ */

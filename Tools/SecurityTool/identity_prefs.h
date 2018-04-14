@@ -20,22 +20,25 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * keychain_delete.h
+ * identity_prefs.h
  */
 
-#ifndef _KEYCHAIN_DELETE_H_
-#define _KEYCHAIN_DELETE_H_  1
+#ifndef _IDENTITY_PREFS_H_
+#define _IDENTITY_PREFS_H_  1
+
+#include <Security/SecBase.h>
+#include <Security/cssmtype.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern int keychain_delete_certificate(int argc, char * const *argv);
+extern int set_identity_preference(int argc, char * const *argv);
 
-extern int keychain_delete(int argc, char * const *argv);
-
+extern int get_identity_preference(int argc, char * const *argv);
+	
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _KEYCHAIN_DELETE_H_ */
+#endif /* _IDENTITY_PREFS_H_ */
