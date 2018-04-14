@@ -83,7 +83,7 @@
  *
  * Size in megabytes.
  */
-static int BC_minimum_mem_size = 256;
+static int BC_minimum_mem_size = 128;
 
 /*
  * Number of seconds to wait in BC_strategy for readahead to catch up
@@ -281,8 +281,7 @@ struct BC_cache_control {
 	vm_map_t	c_map;
 	vm_address_t	c_mapbase;
 	vm_size_t	c_mapsize;
-	mach_port_t	c_object_port;
-	vm_object_t	c_object;
+	mach_port_t	c_entry_port;
 
 #ifdef READ_HISTORY_BUFFER
 	int		c_rhistory_idx;
@@ -642,7 +641,7 @@ BC_discard_blocks(struct BC_cache_extent *ce, u_int64_t offset, u_int64_t length
 			 * page.  Only *really* free the page if we can be
 			 * certain we'll never try to touch it again.
 			 */
-			if ((CB_PAGE_PRESENT(BC_cache, page)) && CB_PAGE_VACANT(BC_cache, page)) {
+			if ((CB_PAGE_PRESENT(BC_cache, i)) && CB_PAGE_VACANT(BC_cache, page)) {
 				CB_MARK_PAGE_VACANT(BC_cache, page);
 
 				BC_free_page(page);
@@ -2158,13 +2157,12 @@ BC_alloc_pagebuffer(size_t size)
 		&s,				/* size */
 		0,				/* offset */
 		VM_PROT_READ | VM_PROT_WRITE,	/* default memory protection */
-		&BC_cache->c_object_port,	/* return handle */
+		&BC_cache->c_entry_port,	/* return handle */
 		NULL);				/* parent */
 	if ((kret != KERN_SUCCESS) || (s != size)) {
 		debug("mach_make_memory_entry failed - %d", kret);
 		return(ENOMEM);
 	}
-	BC_cache->c_object = convert_port_entry_to_object(BC_cache->c_object_port);
 	kret = vm_protect(BC_cache->c_map,	/* map */
 	    BC_cache->c_mapbase,		/* offset */
 	    BC_cache->c_mapsize,		/* length */
@@ -2257,10 +2255,9 @@ BC_free_pagebuffer(void)
 	/*
 	 * Kill our map by removing its name, nuke the object's name.
 	 */
-	if (BC_cache->c_object_port != 0) {
-		ipc_port_release_send(BC_cache->c_object_port);
-		BC_cache->c_object_port = 0;
-		BC_cache->c_object = 0;
+	if (BC_cache->c_entry_port != 0) {
+		ipc_port_release_send(BC_cache->c_entry_port);
+		BC_cache->c_entry_port = 0;
 	}
 	if (BC_cache->c_map_port != 0) {
 		ipc_port_release_send(BC_cache->c_map_port);
@@ -2298,8 +2295,8 @@ BC_free_page(int page)
 	/*
 	 * Push the page completely out of the object.
 	 */
-	memory_object_page_op(
-		(memory_object_control_t)&BC_cache->c_object,	/* handle */
+	mach_memory_entry_page_op(
+		BC_cache->c_entry_port,			/* handle */
 		(page * PAGE_SIZE),			/* offset */
 		UPL_POP_DUMP,				/* operation */
 		NULL,					/* phys_entry */
