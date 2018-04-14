@@ -28,11 +28,7 @@
 #define _H_CS
 
 #include "cserror.h"
-#include "codesigning_dtrace.h"
-#include <Security/CSCommonPriv.h>
-#include <Security/SecCodePriv.h>
-#include <Security/SecStaticCodePriv.h>
-#include <Security/SecRequirementPriv.h>
+#include <Security/CodeSigning.h>
 #include <Security/SecCodeSigner.h>
 #include <Security/SecBasePriv.h>
 #include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
@@ -40,7 +36,6 @@
 #include <security_utilities/seccfobject.h>
 #include <security_utilities/cfclass.h>
 #include <security_utilities/errors.h>
-#include <security_utilities/sqlite++.h>
 #include <security_utilities/cfutilities.h>
 
 
@@ -75,8 +70,6 @@ extern ModuleNexus<CFObjects> gCFObjects;
 
 static inline SecCSFlags apiFlags() { return gCFObjects().flags(); }
 
-OSStatus dbError(const SQLite3::Error &err);
-
 
 //
 // Code Signing API brackets
@@ -92,10 +85,9 @@ OSStatus dbError(const SQLite3::Error &err);
 		default: return err.osStatus(); \
 		}} \
     catch (const MacOSError &err) { return err.osStatus(); } \
-    catch (const SQLite3::Error &err) { return dbError(err); } \
     catch (const CommonError &err) { return SecKeychainErrFromOSStatus(err.osStatus()); } \
     catch (const std::bad_alloc &) { return memFullErr; } \
-    catch (...) { return errSecCSInternalError; } \
+    catch (...) { return internalComponentErr; } \
 	return noErr;
 	
 #define END_CSAPI_ERRORS \
@@ -107,10 +99,9 @@ OSStatus dbError(const SQLite3::Error &err);
 		default: return CSError::cfError(errors, err.osStatus()); \
 		}} \
     catch (const MacOSError &err) { return CSError::cfError(errors, err.osStatus()); } \
-    catch (const SQLite3::Error &err) { return CSError::cfError(errors, dbError(err)); } \
     catch (const CommonError &err) { return CSError::cfError(errors, SecKeychainErrFromOSStatus(err.osStatus())); } \
     catch (const std::bad_alloc &) { return CSError::cfError(errors, memFullErr); } \
-    catch (...) { return CSError::cfError(errors, errSecCSInternalError); } \
+    catch (...) { return CSError::cfError(errors, internalComponentErr); } \
 	return noErr;
 	
 #define END_CSAPI1(bad)    } catch (...) { return bad; }
@@ -143,23 +134,6 @@ static inline void checkFlags(SecCSFlags flags, SecCSFlags acceptable = 0)
 		MacOSError::throwMe(errSecCSInvalidFlags);
 	gCFObjects().flags() = flags;
 }
-
-
-//
-// DTrace USDT function bracket.
-// Use like this:
-//	DTRACK(PROVIDER_PROBE_PREFIX, arguments-after-this);
-// which will call
-//	PROVIDER_PROBE_PREFIX_START(this, arguments-after-this)
-// and
-//	PROVIDER_PROBE_PREFIX_END(this)
-//
-#define DTRACK(_prefix, _obj, _args...) \
-	if (_prefix ## _START_ENABLED()) _prefix ## _START((_obj), ## _args); \
-	struct _DTFrame ## _prefix { void *me; \
-		_DTFrame ## _prefix(void *m) : me(m) { } \
-		~_DTFrame ## _prefix() { _prefix ## _END(me); } \
-	} _dtframe##_prefix((_obj));
 
 
 }	// CodeSigning

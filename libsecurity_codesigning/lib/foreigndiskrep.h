@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2007 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,67 +22,66 @@
  */
 
 //
-// slcrep - DiskRep representing the Mac OS Shared Library Cache
+// foreigndiskrep - foreign executable disk representation
 //
-#ifndef _H_SLCREP
-#define _H_SLCREP
+#ifndef _H_FOREIGNDISKREP
+#define _H_FOREIGNDISKREP
 
 #include "singlediskrep.h"
 #include "sigblob.h"
+#include "signerutils.h"
 #include <security_utilities/unix++.h>
-#include <security_utilities/macho++.h>
-#include <security_utilities/dyldcache.h>
+#include <security_utilities/cfutilities.h>
 
 namespace Security {
 namespace CodeSigning {
 
 
 //
-// DYLDCacheRep implements the on-disk format for the Mac OS X
-// Shared Library Cache, which coalesces a set of system libraries
-// and frameworks into one big (mappable) code blob in the sky.
 //
-class DYLDCacheRep : public SingleDiskRep {
+//
+class ForeignDiskRep : public SingleDiskRep {
 public:
-	DYLDCacheRep(const Context *ctx = NULL);
-	DYLDCacheRep(const char *path);
+	ForeignDiskRep(const char *path);
+	~ForeignDiskRep();
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
 	size_t pageSize();
 	std::string format();
+	void flush();
 	
-	static bool candidate(UnixPlusPlus::FileDesc &fd);
-	
-public:
-	static CFDataRef identificationFor(MachO *macho);
-	
+	static bool candidate(UnixPlusPlus::FileDesc &fd); // could this reasonably be a CFM code?
+
 public:
 	DiskRep::Writer *writer();
 	class Writer;
 	friend class Writer;
-
+	
+protected:
+	void readSigningData();					// read and cache signing data
+	string cspath();						// path to sidecar
+	
 private:
-	void setup();
-
-private:
-	DYLDCache mCache;
-	const EmbeddedSignatureBlob *mSigningData;	// pointer to signature SuperBlob (in mapped memory)
+	bool mTriedRead;						// tried to get signing data
+	size_t mSigningOffset;					// where we found the signing data
+	EmbeddedSignatureBlob *mSigningData;	// cached signing data
 };
 
 
 //
 // The write side of a FileDiskRep
 //
-class DYLDCacheRep::Writer : public SingleDiskRep::Writer, private EmbeddedSignatureBlob::Maker {
-	friend class FileDiskRep;
+class ForeignDiskRep::Writer : public DiskRep::Writer, private EmbeddedSignatureBlob::Maker {
+	friend class ForeignDiskRep;
 public:
-	Writer(DYLDCacheRep *r) : SingleDiskRep::Writer(r, writerNoGlobal), rep(r), mSigningData(NULL) { }
-	void component(CodeDirectory::SpecialSlot slot, CFDataRef data);
-	void flush();
-	void addDiscretionary(CodeDirectory::Builder &builder);
+	Writer(ForeignDiskRep *r) : rep(r), mSigningData(NULL) { }
+	~Writer();
 	
-private:
-	DYLDCacheRep *rep;
+	void component(CodeDirectory::SpecialSlot slot, CFDataRef data);
+	virtual void flush();
+
+protected:
+	RefPointer<ForeignDiskRep> rep;
 	EmbeddedSignatureBlob *mSigningData;
 };
 
@@ -90,4 +89,4 @@ private:
 } // end namespace CodeSigning
 } // end namespace Security
 
-#endif // !_H_SLCREP
+#endif // !_H_FOREIGNDISKREP

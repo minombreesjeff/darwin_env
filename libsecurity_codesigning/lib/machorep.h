@@ -30,7 +30,7 @@
 #include "singlediskrep.h"
 #include "sigblob.h"
 #include <security_utilities/unix++.h>
-#include <security_utilities/macho++.h>
+#include <security_codesigning/macho++.h>
 
 namespace Security {
 namespace CodeSigning {
@@ -47,11 +47,10 @@ namespace CodeSigning {
 //
 class MachORep : public SingleDiskRep {
 public:
-	MachORep(const char *path, const Context *ctx = NULL);
+	MachORep(const char *path);
 	virtual ~MachORep();
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
-	CFDataRef identification();
 	std::string recommendedIdentifier();
 	const Requirements *defaultRequirements(const Architecture *arch);
 	Universal *mainExecutableImage();
@@ -61,10 +60,7 @@ public:
 	
 	void flush();		// flush cache
 	
-	static bool candidate(UnixPlusPlus::FileDesc &fd);
-	
-public:
-	static CFDataRef identificationFor(MachO *macho);
+	static bool candidiate(UnixPlusPlus::FileDesc &fd);
 	
 public:
 	DiskRep::Writer *writer();
@@ -74,7 +70,6 @@ public:
 protected:
 	CFDataRef embeddedComponent(CodeDirectory::SpecialSlot slot);
 	CFDataRef infoPlist();
-	Requirement *libraryRequirements(const Architecture *arch);
 
 private:
 	Universal *mExecutable;	// cached Mach-O/Universal reference to mainExecutablePath()

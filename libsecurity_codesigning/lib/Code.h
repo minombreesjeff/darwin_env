@@ -44,32 +44,23 @@ class SecStaticCode;
 //
 class SecCode : public SecCFObject {
 	NOCOPY(SecCode)
-	friend class KernelCode;	// overrides identify() to set mStaticCode/mCDHash
 public:
 	SECCFFUNCTIONS(SecCode, SecCodeRef, errSecCSInvalidObjectRef, gCFObjects().Code)
 
 	SecCode(SecCode *host);
     virtual ~SecCode() throw();
 	
-    bool equal(SecCFObject &other);
-    CFHashCode hash();
-	
 	SecCode *host() const;
 	bool isRoot() const { return host() == NULL; }
 	SecStaticCode *staticCode();	// cached. Result lives as long as this SecCode
-	CFDataRef cdHash();
-	
-	SecCodeStatus status();				// dynamic status
-	void status(SecCodeStatusOperation operation, CFDictionaryRef arguments);
 
 	// primary virtual drivers. Caller owns the result
-	virtual void identify();
+	virtual SecStaticCode *getStaticCode();
 	virtual SecCode *locateGuest(CFDictionaryRef attributes);
-	virtual SecStaticCode *identifyGuest(SecCode *guest, CFDataRef *cdhash);
+	virtual SecStaticCode *mapGuestToStatic(SecCode *guest);
 	
 	void checkValidity(SecCSFlags flags);
-	virtual SecCodeStatus getGuestStatus(SecCode *guest);
-	virtual void changeGuestStatus(SecCode *guest, SecCodeStatusOperation operation, CFDictionaryRef arguments);
+	virtual uint32_t getGuestStatus(SecCode *guest);
 	
 public:
 	// perform "autolocation" (root-based heuristic). Caller owns the result
@@ -77,9 +68,7 @@ public:
 
 private:
 	SecPointer<SecCode> mHost;
-	bool mIdentified;							// called identify(), mStaticCode & mCDHash are valid
-	SecPointer<SecStaticCode> mStaticCode;		// (static) code origin
-	CFRef<CFDataRef> mCDHash;					// (dynamic) CodeDirectory hash as per host
+	SecPointer<SecStaticCode> mStaticCode;
 };
 
 

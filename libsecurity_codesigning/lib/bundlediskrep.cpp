@@ -23,7 +23,7 @@
 #include "bundlediskrep.h"
 #include <CoreFoundation/CFURLAccess.h>
 #include <CoreFoundation/CFBundlePriv.h>
-#include <security_utilities/cfmunge.h>
+#include <security_codesigning/cfmunge.h>
 #include <copyfile.h>
 
 
@@ -36,20 +36,18 @@ using namespace UnixPlusPlus;
 //
 // We make a CFBundleRef immediately, but everything else is lazy
 //
-BundleDiskRep::BundleDiskRep(const char *path, const Context *ctx)
+BundleDiskRep::BundleDiskRep(const char *path)
 	: mBundle(_CFBundleCreateIfMightBeBundle(NULL, CFTempURL(path)))
 {
 	if (!mBundle)
 		MacOSError::throwMe(errSecCSBadObjectFormat);
-	mExecRep = DiskRep::bestFileGuess(this->mainExecutablePath(), ctx);
-	CODESIGN_DISKREP_CREATE_BUNDLE_PATH(this, (char*)path, (void*)ctx, mExecRep);
+	mExecRep = DiskRep::bestFileGuess(this->mainExecutablePath());
 }
 
-BundleDiskRep::BundleDiskRep(CFBundleRef ref, const Context *ctx)
+BundleDiskRep::BundleDiskRep(CFBundleRef ref)
 {
 	mBundle = ref;		// retains
-	mExecRep = DiskRep::bestFileGuess(this->mainExecutablePath(), ctx);
-	CODESIGN_DISKREP_CREATE_BUNDLE_REF(this, ref, (void*)ctx, mExecRep);
+	mExecRep = DiskRep::bestFileGuess(this->mainExecutablePath());
 }
 
 
@@ -125,15 +123,6 @@ CFDataRef BundleDiskRep::component(CodeDirectory::SpecialSlot slot)
 
 
 //
-// The binary identifier is taken directly from the main executable.
-//
-CFDataRef BundleDiskRep::identification()
-{
-	return mExecRep->identification();
-}
-
-
-//
 // Various aspects of our DiskRep personality.
 //
 CFURLRef BundleDiskRep::canonicalPath()
@@ -192,8 +181,7 @@ void BundleDiskRep::adjustResources(ResourceBuilder &builder)
 	string resources = resourcesRootPath();
 	string executable = mainExecutablePath();
 	if (!executable.compare(0, resources.length(), resources, 0, resources.length()))	// is prefix
-		builder.addExclusion(string("^")
-			+ ResourceBuilder::escapeRE(executable.substr(resources.length() + 1)) + "$");
+		builder.addExclusion(string("^") + executable.substr(resources.length() + 1) + "$");
 }
 
 
@@ -297,41 +285,12 @@ void BundleDiskRep::Writer::component(CodeDirectory::SpecialSlot slot, CFDataRef
 			if (rep->mMetaExists) {
 				// leave a symlink in the support directory for pre-10.5.3 compatibility (but ignore errors)
 				string legacy = cfString(CFBundleCopySupportFilesDirectoryURL(rep->mBundle), true) + "/" + name;
-# if FORCE_REPLACE_SYMLINK		/* replace any existing file with legacy symlink */
-				::unlink(legacy.c_str());		// force-replace
-#endif
+//				::unlink(legacy.c_str());		// force-replace
 				::symlink((string(BUNDLEDISKREP_DIRECTORY "/") + name).c_str(), legacy.c_str());
 			}
 		} else
 			MacOSError::throwMe(errSecCSBadObjectFormat);
 	}
-}
-
-
-//
-// Remove all signature data
-//
-void BundleDiskRep::Writer::remove()
-{
-	// remove signature from the executable
-	execWriter->remove();
-	
-	// remove signature files from bundle
-	for (CodeDirectory::SpecialSlot slot = 0; slot < cdSlotCount; slot++)
-		remove(slot);
-	remove(cdSignatureSlot);
-}
-
-void BundleDiskRep::Writer::remove(CodeDirectory::SpecialSlot slot)
-{
-	if (const char *name = CodeDirectory::canonicalSlotName(slot))
-		if (::unlink(rep->metaPath(name).c_str()))
-			switch (errno) {
-			case ENOENT:		// not found - that's okay
-				break;
-			default:
-				UnixError::throwMe();
-			}
 }
 
 

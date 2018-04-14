@@ -25,7 +25,7 @@
 // cs.h - code signing core header
 //
 #include "cs.h"
-#include <security_utilities/cfmunge.h>
+#include "cfmunge.h"
 
 namespace Security {
 namespace CodeSigning {
@@ -34,28 +34,11 @@ namespace CodeSigning {
 ModuleNexus<CFObjects> gCFObjects;
 
 CFObjects::CFObjects()
-	: Code("SecCode"),
-	  StaticCode("SecStaticCode"),
-	  Requirement("SecRequirements"),
-	  CodeSigner("SecCodeSigner")
+	: Code("SecCode", false),
+	  StaticCode("SecStaticCode", false),
+	  Requirement("SecRequirements", false),
+	  CodeSigner("SecCodeSigner", false)
 {
-}
-
-
-OSStatus dbError(const SQLite3::Error &err)
-{
-	switch (err.error) {
-	case SQLITE_PERM:
-	case SQLITE_READONLY:
-	case SQLITE_AUTH:
-		return errSecCSSigDBDenied;
-	case SQLITE_CANTOPEN:
-	case SQLITE_EMPTY:
-	case SQLITE_NOTADB:
-		return errSecCSSigDBAccess;
-	default:
-		return SecKeychainErrFromOSStatus(err.osStatus());
-	}
 }
 
 

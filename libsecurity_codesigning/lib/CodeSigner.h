@@ -44,26 +44,24 @@ namespace CodeSigning {
 class SecCodeSigner : public SecCFObject {
 	NOCOPY(SecCodeSigner)
 public:
-	class Parser;
-	class Signer;
-
-public:
 	SECCFFUNCTIONS(SecCodeSigner, SecCodeSignerRef, errSecCSInvalidObjectRef, gCFObjects().CodeSigner)
 
-	SecCodeSigner(SecCSFlags flags);
+	SecCodeSigner();
     virtual ~SecCodeSigner() throw();
 	
 	void parameters(CFDictionaryRef args);	// parse and set parameters
-	bool valid() const;
+	bool valid() const { return mSigner; }
 	
 	void sign(SecStaticCode *code, SecCSFlags flags);
-	void remove(SecStaticCode *code, SecCSFlags flags);
 	
-	void returnDetachedSignature(BlobCore *blob, Signer &signer);
+	void returnDetachedSignature(BlobCore *blob);
+
+public:
+	class Parser;
+	class Signer;
 	
 private:
 	// parsed parameter set
-	SecCSFlags mOpFlags;			// operation flags
 	CFRef<SecIdentityRef> mSigner;	// signing identity
 	CFRef<CFTypeRef> mDetached;		// detached-signing information (NULL => attached)
 	CFRef<CFDictionaryRef> mResourceRules; // explicit resource collection rules (override)

@@ -28,7 +28,6 @@
 #include "signer.h"
 #include "reqparser.h"
 #include "renum.h"
-#include "csdatabase.h"
 #include <security_utilities/unix++.h>
 #include <security_utilities/unixchild.h>
 #include <vector>
@@ -62,9 +61,10 @@ public:
 //
 // Construct a SecCodeSigner
 //
-SecCodeSigner::SecCodeSigner(SecCSFlags flags)
-	: mOpFlags(flags), mRequirements(NULL)
+SecCodeSigner::SecCodeSigner()
+	: mRequirements(NULL)
 {
+	secdebug("signer", "%p created", this);
 }
 
 
@@ -73,6 +73,7 @@ SecCodeSigner::SecCodeSigner(SecCSFlags flags)
 //
 SecCodeSigner::~SecCodeSigner() throw()
 {
+	secdebug("signer", "%p destroyed", this);
 	::free((Requirements *)mRequirements);
 }
 
@@ -82,21 +83,10 @@ SecCodeSigner::~SecCodeSigner() throw()
 //
 void SecCodeSigner::parameters(CFDictionaryRef paramDict)
 {
+	secdebug("signer", "%p loading %d parameters", this, int(CFDictionaryGetCount(paramDict)));
 	Parser(*this, paramDict);
 	if (!valid())
 		MacOSError::throwMe(errSecCSInvalidObjectRef);
-}
-
-
-//
-// Roughly check for validity.
-// This isn't thorough; it just sees if if looks like we've set up the object appropriately.
-//
-bool SecCodeSigner::valid() const
-{
-	if (mOpFlags & kSecCSRemoveSignature)
-		return true;
-	return mSigner;
 }
 
 
@@ -105,16 +95,10 @@ bool SecCodeSigner::valid() const
 //
 void SecCodeSigner::sign(SecStaticCode *code, SecCSFlags flags)
 {
-	Signer operation(*this, code);
-	if ((flags | mOpFlags) & kSecCSRemoveSignature) {
-		secdebug("signer", "%p will remove signature from %p", this, code);
-		operation.remove(flags);
-	} else {
-		if (!valid())
-			MacOSError::throwMe(errSecCSInvalidObjectRef);
-		secdebug("signer", "%p will sign %p (flags 0x%x)", this, code, flags);
-		operation.sign(flags);
-	}
+	if (!valid())
+		MacOSError::throwMe(errSecCSInvalidObjectRef);
+	secdebug("signer", "%p will sign %p (flags 0x%x)", this, code, flags);
+	Signer(*this, code).sign(flags);
 	code->resetValidity();
 }
 
@@ -123,7 +107,7 @@ void SecCodeSigner::sign(SecStaticCode *code, SecCSFlags flags)
 // ReturnDetachedSignature is called by writers or editors that try to return
 // detached signature data (rather than annotate the target).
 //
-void SecCodeSigner::returnDetachedSignature(BlobCore *blob, Signer &signer)
+void SecCodeSigner::returnDetachedSignature(BlobCore *blob)
 {
 	assert(mDetached);
 	if (CFGetTypeID(mDetached) == CFURLGetTypeID()) {
@@ -133,8 +117,6 @@ void SecCodeSigner::returnDetachedSignature(BlobCore *blob, Signer &signer)
 	} else if (CFGetTypeID(mDetached) == CFDataGetTypeID()) {
 		CFDataAppendBytes(CFMutableDataRef(mDetached.get()),
 			(const UInt8 *)blob, blob->length());
-	} else if (CFGetTypeID(mDetached) == CFNullGetTypeID()) {
-		signatureDatabase().storeCode(blob, signer.path().c_str());
 	} else
 		assert(false);
 }
@@ -155,6 +137,8 @@ SecCodeSigner::Parser::Parser(SecCodeSigner &state, CFDictionaryRef parameters)
 			state.mSigner = SecIdentityRef(signer);
 		else
 			MacOSError::throwMe(errSecCSInvalidObjectRef);
+	else
+		MacOSError::throwMe(errSecCSInvalidObjectRef);
 
 	// the flags need some augmentation
 	if (CFNumberRef flags = get<CFNumberRef>(kSecCodeSignerFlags)) {
@@ -199,8 +183,8 @@ SecCodeSigner::Parser::Parser(SecCodeSigner &state, CFDictionaryRef parameters)
 	
 	// detached can be (destination) file URL or (mutable) Data to be appended-to
 	if (state.mDetached = get<CFTypeRef>(kSecCodeSignerDetached)) {
-		CFTypeID type = CFGetTypeID(state.mDetached);
-		if (type != CFURLGetTypeID() && type != CFDataGetTypeID() && type != CFNullGetTypeID())
+		if (CFGetTypeID(state.mDetached) != CFURLGetTypeID()
+			&& CFGetTypeID(state.mDetached) != CFDataGetTypeID())
 			MacOSError::throwMe(errSecCSInvalidObjectRef);
 	}
 	

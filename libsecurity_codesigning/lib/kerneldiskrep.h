@@ -47,7 +47,6 @@ public:
 	KernelDiskRep();
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
-	CFDataRef identification();
 	std::string mainExecutablePath();
 	CFURLRef canonicalPath();
 	std::string recommendedIdentifier();

@@ -40,9 +40,6 @@ namespace CodeSigning {
 Requirement::Reader::Reader(const Requirement *req)
 	: mReq(req), mPC(sizeof(Requirement))
 {
-	assert(req);
-	if (req->kind() != exprForm)
-		MacOSError::throwMe(errSecCSReqUnsupported);
 }
 
 

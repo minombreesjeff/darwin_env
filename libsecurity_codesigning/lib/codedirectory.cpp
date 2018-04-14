@@ -25,8 +25,7 @@
 // codedirectory - format and operations for code signing "code directory" structures
 //
 #include "codedirectory.h"
-#include "csutilities.h"
-#include "CSCommonPriv.h"
+#include "CSCommon.h"
 
 using namespace UnixPlusPlus;
 
@@ -76,8 +75,6 @@ unsigned CodeDirectory::slotAttributes(SpecialSlot slot)
 		return cdComponentPerArchitecture; // raw
 	case cdEntitlementSlot:
 		return cdComponentIsBlob; // global
-	case cdIdentificationSlot:
-		return cdComponentPerArchitecture; // raw
 	default:
 		return 0; // global, raw
 	}
@@ -95,58 +92,26 @@ const char * const CodeDirectory::debugSlotName[] = {
 	"info",
 	"requirements",
 	"resources",
-	"application",
-	"entitlement"
+	"application"
 };
 #endif //NDEBUG
 
 
 //
-// Check a CodeDirectory for basic integrity. This should ensure that the
-// version is understood by our code, and that the internal structure
-// (offsets etc.) is intact. In particular, it must make sure that no offsets
-// point outside the CodeDirectory.
+// Check the version of this CodeDirectory for basic sanity.
 // Throws if the directory is corrupted or out of versioning bounds.
 // Returns if the version is usable (perhaps with degraded features due to
 // compatibility hacks).
 //
-// Note: There are some things we don't bother checking because they won't
-// cause crashes, and will just be flagged as nonsense later. For example,
-// a Bad Guy could overlap the identifier and hash fields, which is nonsense
-// but not dangerous.
-//
-void CodeDirectory::checkIntegrity() const
+void CodeDirectory::checkVersion() const
 {
-	// check version for support
 	if (!this->validateBlob())
 		MacOSError::throwMe(errSecCSSignatureInvalid);	// busted
 	if (version > compatibilityLimit)
 		MacOSError::throwMe(errSecCSSignatureUnsupported);	// too new - no clue
-	if (version < earliestVersion)
-		MacOSError::throwMe(errSecCSSignatureUnsupported);	// too old - can't support
 	if (version > currentVersion)
 		secdebug("codedir", "%p version 0x%x newer than current 0x%x",
 			this, uint32_t(version), currentVersion);
-	
-	// now check interior offsets for validity
-	if (!stringAt(identOffset))
-		MacOSError::throwMe(errSecCSSignatureFailed); // identifier out of blob range
-	if (!contains(hashOffset - hashSize * nSpecialSlots, hashSize * (nSpecialSlots + nCodeSlots)))
-		MacOSError::throwMe(errSecCSSignatureFailed); // hash array out of blob range
-	if (const Scatter *scatter = this->scatterVector()) {
-		// the optional scatter vector is terminated with an element having (count == 0)
-		unsigned int pagesConsumed = 0;
-		while (scatter->count) {
-			if (!contains(scatter, sizeof(Scatter)))
-				MacOSError::throwMe(errSecCSSignatureFailed);
-			pagesConsumed += scatter->count;
-			scatter++;
-		}
-		if (!contains(scatter, sizeof(Scatter)))			// (even sentinel must be in range)
-			MacOSError::throwMe(errSecCSSignatureFailed);
-		if (!contains((*this)[pagesConsumed-1], hashSize))	// referenced too many main hash slots
-			MacOSError::throwMe(errSecCSSignatureFailed);
-	}
 }
 
 
@@ -200,10 +165,27 @@ bool CodeDirectory::slotIsPresent(Slot slot) const
 //
 size_t CodeDirectory::hash(FileDesc fd, Hash::Byte *digest, size_t limit)
 {
-	SHA1 hasher;
-	size_t size = hashFileData(fd, hasher, limit);
-	hasher.finish(digest);
-	return size;
+	IFDEBUG(size_t hpos = fd.position());
+	IFDEBUG(size_t hlimit = limit);
+	unsigned char buffer[4096];
+	Hash hash;
+	size_t total = 0;
+	for (;;) {
+		size_t size = sizeof(buffer);
+		if (limit && limit < size)
+			size = limit;
+		size_t got = fd.read(buffer, size);
+		total += got;
+		if (fd.atEnd())
+			break;
+		hash(buffer, got);
+		if (limit && (limit -= got) == 0)
+			break;
+	}
+	hash.finish(digest);
+	secdebug("cdhash", "fd %d %zd@0x%zx => %2x.%2x.%2x...",
+		fd.fd(), hpos, hlimit, digest[0], digest[1], digest[2]);
+	return total;
 }
 
 
@@ -219,15 +201,10 @@ size_t CodeDirectory::hash(const void *data, size_t length, Hash::Byte *digest)
 }
 
 
-}	// CodeSigning
-}	// Security
-
-
 //
-// Canonical text form for user-settable code directory flags.
-// Note: This table is actually exported from Security.framework.
+// Canonical text form for user-settable code directory flags
 //
-const SecCodeDirectoryFlagTable kSecCodeDirectoryFlagTable[] = {
+const CodeDirectory::FlagItem CodeDirectory::flagItems[] = {
 	{ "host",		kSecCodeSignatureHost,			true },
 	{ "adhoc",		kSecCodeSignatureAdhoc,			false },
 	{ "hard",		kSecCodeSignatureForceHard,		true },
@@ -235,3 +212,33 @@ const SecCodeDirectoryFlagTable kSecCodeDirectoryFlagTable[] = {
 	{ "expires",	kSecCodeSignatureForceExpiration, true },
 	{ NULL }
 };
+
+
+//
+// Parse a canonical text description of code flags, in the form
+//	flag,...,flag
+// where each flag can be a prefix of a known flag name.
+// Internally set flags are not accepted.
+//
+uint32_t CodeDirectory::textFlags(std::string text)
+{
+	uint32_t flags = 0;
+	for (string::size_type comma = text.find(','); ; text = text.substr(comma+1), comma = text.find(',')) {
+		string word = (comma == string::npos) ? text : text.substr(0, comma);
+		const CodeDirectory::FlagItem *item;
+		for (item = CodeDirectory::flagItems; item->name; item++)
+			if (item->external && !strncmp(word.c_str(), item->name, word.size())) {
+				flags |= item->value;
+				break;
+			}
+		if (!item)	// not found
+			MacOSError::throwMe(errSecCSInvalidFlags);
+		if (comma == string::npos)	// last word
+			break;
+	}
+	return flags;
+}
+
+
+}	// CodeSigning
+}	// Security

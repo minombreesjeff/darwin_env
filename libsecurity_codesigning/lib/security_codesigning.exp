@@ -21,10 +21,8 @@
 # @APPLE_LICENSE_HEADER_END@
 #
 _SecCodeGetTypeID
+_SecGetRootCode
 _SecCodeCopySelf
-_SecCodeCopyInternalRequirement
-_SecCodeGetStatus
-_SecCodeSetStatus
 _SecCodeCopyStaticCode
 _SecCodeCopyHost
 _SecCodeCopyGuestWithAttributes
@@ -48,10 +46,6 @@ _SecRequirementCreateWithStringAndErrors
 _SecRequirementCreateGroup
 _SecRequirementCopyData
 _SecRequirementCopyString
-_SecRequirementsCreateFromRequirements
-_SecRequirementsCopyRequirements
-_SecRequirementsCreateWithString
-_SecRequirementsCopyString
 _SecCodeSignerGetTypeID
 _SecCodeSignerCreate
 _SecCodeSignerAddSignature
@@ -62,7 +56,6 @@ _SecHostSetGuestStatus
 _SecHostSelectGuest
 _SecHostSelectedGuest
 _SecHostSetHostingPort
-_kSecCodeDirectoryFlagTable
 _kSecCodeSignerApplicationData
 _kSecCodeSignerDetached
 _kSecCodeSignerDryRun
@@ -88,17 +81,11 @@ _kSecCodeInfoMainExecutable
 _kSecCodeInfoPList
 _kSecCodeInfoRequirements
 _kSecCodeInfoRequirementData
-_kSecCodeInfoSource
 _kSecCodeInfoStatus
 _kSecCodeInfoTrust
-_kSecCodeInfoUnique
-_kSecCodeInfoCodeDirectory
-_kSecCodeInfoCodeOffset
-_kSecCodeInfoResourceDirectory
-_kSecGuestAttributeCanonical
-_kSecGuestAttributeHash
-_kSecGuestAttributeMachPort
 _kSecGuestAttributePid
+_kSecGuestAttributeCanonical
+_kSecGuestAttributeMachPort
 _kSecCFErrorPattern
 _kSecCFErrorResourceSeal
 _kSecCFErrorResourceAdded

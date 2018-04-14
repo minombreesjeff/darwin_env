@@ -32,7 +32,7 @@
 #include "filediskrep.h"
 #include "bundlediskrep.h"
 #include "cfmdiskrep.h"
-#include "slcrep.h"
+#include "foreigndiskrep.h"
 
 
 namespace Security {
@@ -49,9 +49,7 @@ DiskRep::DiskRep()
 }
 
 DiskRep::~DiskRep()
-{
-	CODESIGN_DISKREP_DESTROY(this);
-}
+{ /* virtual */ }
 
 
 //
@@ -72,12 +70,6 @@ DiskRep::Writer *DiskRep::writer()
 }
 
 
-void DiskRep::Writer::addDiscretionary(CodeDirectory::Builder &)
-{
-	// do nothing
-}
-
-
 //
 // Given a file system path, come up with the most likely correct
 // disk representation for what's there.
@@ -86,38 +78,25 @@ void DiskRep::Writer::addDiscretionary(CodeDirectory::Builder &)
 // fine in ordinary use. If you happen to know what you're looking at
 // (say, a bundle), then just create the suitable subclass of DiskRep directly.
 // That's quite legal.
-// The optional context argument can provide additional information that guides the guess.
 //
-DiskRep *DiskRep::bestGuess(const char *path, const Context *ctx)
+DiskRep *DiskRep::bestGuess(const char *path)
 {
 	try {
-		if (!(ctx && ctx->fileOnly)) {
-			struct stat st;
-			if (::stat(path, &st))
-				UnixError::throwMe();
-				
-			// if it's a directory, assume it's a bundle
-			if ((st.st_mode & S_IFMT) == S_IFDIR)	// directory - assume bundle
-				return new BundleDiskRep(path, ctx);
-			
-			// see if it's the main executable of a recognized bundle
-			if (CFRef<CFURLRef> pathURL = makeCFURL(path))
-				if (CFRef<CFBundleRef> bundle = _CFBundleCreateWithExecutableURLIfMightBeBundle(NULL, pathURL))
-						return new BundleDiskRep(bundle, ctx);
-		}
+    struct stat st;
+    if (::stat(path, &st))
+        UnixError::throwMe();
 		
-		// try the various single-file representations
-		AutoFileDesc fd(path, O_RDONLY);
-		if (MachORep::candidate(fd))
-			return new MachORep(path, ctx);
-		if (CFMDiskRep::candidate(fd))
-			return new CFMDiskRep(path);
-		if (DYLDCacheRep::candidate(fd))
-			return new DYLDCacheRep(path);
-
-		// ultimate fallback - the generic file representation
-		return new FileDiskRep(path);
-
+	// if it's a directory, assume it's a bundle
+    if ((st.st_mode & S_IFMT) == S_IFDIR)	// directory - assume bundle
+		return new BundleDiskRep(path);
+	
+	// see if it's the main executable of a recognized bundle
+	if (CFRef<CFURLRef> pathURL = makeCFURL(path))
+		if (CFRef<CFBundleRef> bundle = _CFBundleCreateWithExecutableURLIfMightBeBundle(NULL, pathURL))
+				return new BundleDiskRep(bundle);
+	
+	// follow the file choosing rules
+	return bestFileGuess(path);
 	} catch (const CommonError &error) {
 		switch (error.unixError()) {
 		case ENOENT:
@@ -129,43 +108,17 @@ DiskRep *DiskRep::bestGuess(const char *path, const Context *ctx)
 }
 
 
-DiskRep *DiskRep::bestFileGuess(const char *path, const Context *ctx)
+DiskRep *DiskRep::bestFileGuess(const char *path)
 {
-	Context dctx;
-	if (ctx)
-		dctx = *ctx;
-	dctx.fileOnly = true;
-	return bestGuess(path, &dctx);
-}
+	AutoFileDesc fd(path, O_RDONLY);
+	if (MachORep::candidiate(fd))
+		return new MachORep(path);
+	if (CFMDiskRep::candidiate(fd))
+		return new CFMDiskRep(path);
+	if (ForeignDiskRep::candidate(fd))
+		return new ForeignDiskRep(path);
 
-
-//
-// Given a main executable known to be a Mach-O binary, and an offset into
-// the file of the actual architecture desired (of a Universal file),
-// produce a suitable MachORep.
-// This function does not consider non-MachO binaries. It does however handle
-// bundles with Mach-O main executables correctly.
-//
-DiskRep *DiskRep::bestGuess(const char *path, size_t archOffset)
-{
-	try {
-		// is it the main executable of a bundle?
-		if (CFRef<CFURLRef> pathURL = makeCFURL(path))
-			if (CFRef<CFBundleRef> bundle = _CFBundleCreateWithExecutableURLIfMightBeBundle(NULL, pathURL)) {
-				Context ctx; ctx.offset = archOffset;
-				return new BundleDiskRep(bundle, &ctx);	// ask bundle to make bundle-with-MachO-at-offset
-			}
-		// else, must be a Mach-O binary
-		Context ctx; ctx.offset = archOffset;
-		return new MachORep(path, &ctx);
-	} catch (const CommonError &error) {
-		switch (error.unixError()) {
-		case ENOENT:
-			MacOSError::throwMe(errSecCSStaticCodeNotFound);
-		default:
-			throw;
-		}
-	}
+	return new FileDiskRep(path);
 }
 
 
@@ -236,11 +189,6 @@ uint32_t DiskRep::Writer::attributes() const
 
 void DiskRep::Writer::flush()
 { /* do nothing */ }
-
-void DiskRep::Writer::remove()
-{
-	MacOSError::throwMe(errSecCSNotSupported);
-}
 
 
 } // end namespace CodeSigning

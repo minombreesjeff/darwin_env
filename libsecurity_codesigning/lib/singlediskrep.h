@@ -44,9 +44,8 @@ namespace CodeSigning {
 //
 class SingleDiskRep : public DiskRep {
 public:
-	SingleDiskRep(const std::string &path);
+	SingleDiskRep(const char *path);
 
-	CFDataRef identification();								// partial file hash
 	std::string mainExecutablePath();						// base path
 	CFURLRef canonicalPath();								// base path
 	std::string recommendedIdentifier();					// basename(path)

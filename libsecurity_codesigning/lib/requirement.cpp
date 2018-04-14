@@ -26,7 +26,6 @@
 //
 #include "requirement.h"
 #include "reqinterp.h"
-#include "codesigning_dtrace.h"
 #include <security_utilities/errors.h>
 #include <security_utilities/unix++.h>
 #include <security_utilities/logging.h>
@@ -66,18 +65,13 @@ const char *const Requirement::typeNames[] = {
 //
 void Requirement::validate(const Requirement::Context &ctx, OSStatus failure /* = errSecCSReqFailed */) const
 {
-	CODESIGN_EVAL_REQINT_START((void*)this, this->length());
 	switch (kind()) {
 	case exprForm:
-		if (Requirement::Interpreter(this, &ctx).evaluate()) {
-			CODESIGN_EVAL_REQINT_END(0);
-			return;
-		} else {
-			CODESIGN_EVAL_REQINT_END(failure);
+		if (!Requirement::Interpreter(this, &ctx).evaluate())
 			MacOSError::throwMe(failure);
-		}
+		return;
 	default:
-		CODESIGN_EVAL_REQINT_END(errSecCSReqUnsupported);
+		secdebug("reqval", "unrecognized requirement kind %d", kind());
 		MacOSError::throwMe(errSecCSReqUnsupported);
 	}
 }
@@ -146,20 +140,6 @@ const SHA1::Digest &Requirement::testAppleAnchorHash()
 
 #endif //TEST_APPLE_ANCHOR
 
-
-//
-// InternalRequirements
-//
-void InternalRequirements::operator () (const Requirements *given, const Requirements *defaulted)
-{
-	if (defaulted) {
-		this->add(defaulted);
-		::free((void *)defaulted);		// was malloc(3)ed by DiskRep
-	}
-	if (given)
-		this->add(given);
-	mReqs = make();
-}
 
 
 //

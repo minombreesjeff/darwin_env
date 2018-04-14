@@ -47,11 +47,10 @@ namespace CodeSigning {
 //
 class BundleDiskRep : public DiskRep {
 public:
-	BundleDiskRep(const char *path, const Context *ctx = NULL);
-	BundleDiskRep(CFBundleRef ref, const Context *ctx = NULL);
+	BundleDiskRep(const char *path);
+	BundleDiskRep(CFBundleRef ref);
 	
 	CFDataRef component(CodeDirectory::SpecialSlot slot);
-	CFDataRef identification();
 	std::string mainExecutablePath();
 	CFURLRef canonicalPath();
 	std::string recommendedIdentifier();
@@ -101,12 +100,10 @@ public:
 	Writer(BundleDiskRep *r);
 	
 	void component(CodeDirectory::SpecialSlot slot, CFDataRef data);
-	void remove();
 	void flush();
 	
 protected:
 	DiskRep *execRep() { return rep->mExecRep; }
-	void remove(CodeDirectory::SpecialSlot slot);
 
 protected:
 	RefPointer<BundleDiskRep> rep;

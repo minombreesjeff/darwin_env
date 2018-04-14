@@ -25,7 +25,6 @@
 // sigblob - signature (Super)Blob types
 //
 #include "sigblob.h"
-#include "CSCommon.h"
 
 
 namespace Security {
@@ -37,10 +36,8 @@ CFDataRef EmbeddedSignatureBlob::component(CodeDirectory::SpecialSlot slot) cons
 	if (const BlobCore *blob = this->find(slot))
 		if (CodeDirectory::slotAttributes(slot) & cdComponentIsBlob)
 			return makeCFData(*blob);	// is a native Blob
-		else if (const BlobWrapper *wrap = BlobWrapper::specific(blob))
-			return makeCFData(*wrap);
 		else
-			MacOSError::throwMe(errSecCSSignatureInvalid);
+			return makeCFData(*BlobWrapper::specific(blob)); // unwrap payload
 	return NULL;
 }
 

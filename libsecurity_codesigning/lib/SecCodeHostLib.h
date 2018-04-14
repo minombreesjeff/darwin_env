@@ -36,7 +36,9 @@
 #ifndef _H_SECCODEHOSTLIB
 #define _H_SECCODEHOSTLIB
 
-#include <Security/SecCodeHost.h>
+//#include <Security/SecCodeHost.h>
+#include "SecCodeHost.h"
+#include <System/sys/codesign.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,10 +62,6 @@ OSStatus SecHostLibInit(SecCSFlags flags);
  */
 OSStatus SecHostLibCreateGuest(SecGuestRef host,
 	uint32_t status, const char *path, const char *attributeXML,
-	SecCSFlags flags, SecGuestRef *newGuest) DEPRECATED_ATTRIBUTE;
-	
-OSStatus SecHostLibCreateGuest2(SecGuestRef host,
-	uint32_t status, const char *path, const void *cdhash, size_t cdhashLength, const char *attributeXML,
 	SecCSFlags flags, SecGuestRef *newGuest);
 
 
@@ -96,11 +94,6 @@ OSStatus SecHostSelectGuest(SecGuestRef guestRef, SecCSFlags flags);
 OSStatus SecHostSelectedGuest(SecCSFlags flags, SecGuestRef *guestRef);
 
 */
-
-
-/*!
- */
-OSStatus SecHostLibCheckLoad(const char *path, SecRequirementType type);
 
 
 #ifdef __cplusplus

@@ -77,7 +77,6 @@ OSStatus SecStaticCodeCheckValidityWithErrors(SecStaticCodeRef staticCodeRef, Se
 		| kSecCSConsiderExpiration);
 
 	SecPointer<SecStaticCode> code = SecStaticCode::requiredStatic(staticCodeRef);
-	DTRACK(CODESIGN_EVAL_STATIC, code, (char*)code->mainExecutablePath().c_str());
 	code->validateDirectory();
 	if (!(flags & kSecCSDoNotValidateExecutable))
 		code->validateExecutable();
@@ -132,23 +131,6 @@ OSStatus SecCodeCopyDesignatedRequirement(SecStaticCodeRef staticCodeRef, SecCSF
 
 
 //
-// Fetch a particular internal requirement, if present
-//
-OSStatus SecCodeCopyInternalRequirement(SecStaticCodeRef staticCodeRef, SecRequirementType type,
-	SecCSFlags flags, SecRequirementRef *requirementRef)
-{
-	BEGIN_CSAPI
-	
-	checkFlags(flags);
-	const Requirement *req =
-		SecStaticCode::requiredStatic(staticCodeRef)->internalRequirement(type);
-	Required(requirementRef) = req ? (new SecRequirement(req))->handle() : NULL;
-
-	END_CSAPI
-}
-
-
-//
 // Record for future use a detached code signature.
 //
 OSStatus SecCodeSetDetachedSignature(SecStaticCodeRef codeRef, CFDataRef signature,
@@ -159,9 +141,7 @@ OSStatus SecCodeSetDetachedSignature(SecStaticCodeRef codeRef, CFDataRef signatu
 	checkFlags(flags);
 	SecPointer<SecStaticCode> code = SecStaticCode::requiredStatic(codeRef);
 
-	if (signature)
-		CFRetain(signature);	// own a reference...
-	code->detachedSignature(signature); // ... and pass it to the code
+	code->detachedSignature(signature);
 	code->resetValidity();
 
 	END_CSAPI

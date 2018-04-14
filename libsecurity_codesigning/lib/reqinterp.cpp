@@ -25,7 +25,6 @@
 // reqinterp - Requirement language (exprOp) interpreter
 //
 #include "reqinterp.h"
-#include "codesigning_dtrace.h"
 #include <Security/SecTrustSettingsPriv.h>
 #include <Security/SecCertificatePriv.h>
 #include <security_utilities/memutils.h>
@@ -57,7 +56,6 @@ Requirement::Interpreter::Interpreter(const Requirement *req, const Context *ctx
 bool Requirement::Interpreter::evaluate()
 {
 	ExprOp op = ExprOp(get<uint32_t>());
-	CODESIGN_EVAL_REQINT_OP(op, this->pc() - sizeof(uint32_t));
 	switch (op & ~opFlagMask) {
 	case opFalse:
 		return false;
@@ -127,10 +125,10 @@ bool Requirement::Interpreter::evaluate()
 			// unknown opcode, but it has a size field and can be safely bypassed
 			skip(get<uint32_t>());
 			if (op & opGenericFalse) {
-				CODESIGN_EVAL_REQINT_UNKNOWN_FALSE(op);
+				secdebug("csinterp", "opcode 0x%x interpreted as false", op);
 				return false;
 			} else {
-				CODESIGN_EVAL_REQINT_UNKNOWN_SKIPPED(op);
+				secdebug("csinterp", "opcode 0x%x ignored; continuing", op);
 				return evaluate();
 			}
 		}
@@ -191,7 +189,7 @@ bool Requirement::Interpreter::certFieldValue(const string &key, const Match &ma
 	for (const CertField *cf = certFields; cf->name; cf++)
 		if (cf->name == key) {
 			CFRef<CFStringRef> value;
-			if (OSStatus rc = SecCertificateCopySubjectComponent(cert, cf->oid, &value.aref())) {
+			if (IFDEBUG(OSStatus rc =) SecCertificateCopySubjectComponent(cert, cf->oid, &value.aref())) {
 				secdebug("csinterp", "cert %p lookup for DN.%s failed rc=%ld", cert, key.c_str(), rc);
 				return false;
 			}
@@ -245,11 +243,11 @@ bool Requirement::Interpreter::appleAnchored()
 bool Requirement::Interpreter::appleSigned()
 {
 	if (appleAnchored())
-		if (SecCertificateRef intermed = mContext->cert(-2))	// first intermediate
-			// first intermediate common name match (exact)
-			if (certFieldValue("subject.CN", Match(appleIntermediateCN, matchEqual), intermed)
+			if (SecCertificateRef intermed = mContext->cert(-2))	// first intermediate
+				// first intermediate common name match (exact)
+				if (certFieldValue("subject.CN", Match(appleIntermediateCN, matchEqual), intermed)
 					&& certFieldValue("subject.O", Match(appleIntermediateO, matchEqual), intermed))
-				return true;
+					return true;
 	return false;
 }
 

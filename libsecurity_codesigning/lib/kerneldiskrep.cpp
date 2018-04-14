@@ -34,7 +34,6 @@ using namespace UnixPlusPlus;
 //
 KernelDiskRep::KernelDiskRep()
 {
-	CODESIGN_DISKREP_CREATE_KERNEL(this);
 }
 
 
@@ -46,12 +45,6 @@ CFDataRef KernelDiskRep::component(CodeDirectory::SpecialSlot slot)
 {
 	return NULL;
 }
-
-CFDataRef KernelDiskRep::identification()
-{
-	return NULL;
-}
-
 
 CFURLRef KernelDiskRep::canonicalPath()
 {

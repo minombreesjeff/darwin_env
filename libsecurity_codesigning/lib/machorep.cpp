@@ -25,8 +25,6 @@
 // machorep - DiskRep mix-in for handling Mach-O main executables
 //
 #include "machorep.h"
-#include "StaticCode.h"
-#include "reqmaker.h"
 
 
 namespace Security {
@@ -38,25 +36,11 @@ using namespace UnixPlusPlus;
 //
 // Object management.
 // We open the main executable lazily, so nothing much happens on construction.
-// If the context specifies a file offset, we directly pick that Mach-O binary (only).
-// if it specifies an architecture, we try to pick that. Otherwise, we deliver the whole
-// Universal object (which will usually deliver the "native" architecture later).
 //
-MachORep::MachORep(const char *path, const Context *ctx)
+MachORep::MachORep(const char *path)
 	: SingleDiskRep(path), mSigningData(NULL)
 {
-	if (ctx)
-		if (ctx->offset)
-			mExecutable = new Universal(fd(), ctx->offset);
-		else if (ctx->arch) {
-			auto_ptr<Universal> full(new Universal(fd()));
-			mExecutable = new Universal(fd(), full->archOffset(ctx->arch));
-		} else
-			mExecutable = new Universal(fd());
-	else
-		mExecutable = new Universal(fd());
-	assert(mExecutable);
-	CODESIGN_DISKREP_CREATE_MACHO(this, (char*)path, (void*)ctx);
+	mExecutable = new Universal(fd());
 }
 
 MachORep::~MachORep()
@@ -69,7 +53,7 @@ MachORep::~MachORep()
 //
 // Sniffer function for "plausible Mach-O binary"
 //
-bool MachORep::candidate(FileDesc &fd)
+bool MachORep::candidiate(FileDesc &fd)
 {
 	switch (Universal::typeOf(fd)) {
 	case MH_EXECUTE:
@@ -87,67 +71,25 @@ bool MachORep::candidate(FileDesc &fd)
 
 
 //
-// The default suggested requirements for Mach-O binaries are as follows:
-// Hosting requirement: Rosetta if it's PPC, none otherwise.
-// Library requirement: Composed from dynamic load commands.
+// For Mach-O binaries that are of PowerPC architecture, we recommend
+// allowing the Rosetta translator as a host. Otherwise, no suggestions.
 //
-static const uint8_t ppc_host_ireq[] = {	// anchor apple and identifier com.apple.translate
-	0xfa, 0xde, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x06,
-	0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x13, 0x63, 0x6f, 0x6d, 0x2e,
-	0x61, 0x70, 0x70, 0x6c, 0x65, 0x2e, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x6c, 0x61, 0x74, 0x65, 0x00,
+static const uint8_t ppc_ireqs[] = {	// host => anchor apple and identifier com.apple.translate
+	0xfa, 0xde, 0x0c, 0x01, 0x00, 0x00, 0x00, 0x44, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x00, 0x00, 0x00, 0x14, 0xfa, 0xde, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, 0x01,
+	0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x13,
+	0x63, 0x6f, 0x6d, 0x2e, 0x61, 0x70, 0x70, 0x6c, 0x65, 0x2e, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x6c,
+	0x61, 0x74, 0x65, 0x00,
 };
 
 const Requirements *MachORep::defaultRequirements(const Architecture *arch)
 {
 	assert(arch);		// enforced by signing infrastructure
-	Requirements::Maker maker;
-	
-	// if ppc architecture, add hosting requirement for Rosetta's translate tool
 	if (arch->cpuType() == CPU_TYPE_POWERPC)
-		maker.add(kSecHostRequirementType, ((const Requirement *)ppc_host_ireq)->clone());
-		
-	// add library requirements from DYLIB commands (if any)
-	if (Requirement *libreq = libraryRequirements(arch))
-		maker.add(kSecLibraryRequirementType, libreq);	// takes ownership
-
-	// that's all
-	return maker.make();
-}
-
-Requirement *MachORep::libraryRequirements(const Architecture *arch)
-{
-	auto_ptr<MachO> macho(mainExecutableImage()->architecture(*arch));
-	Requirement::Maker maker;
-	Requirement::Maker::Chain chain(maker, opOr);
-	if (macho.get()) {
-		for (const load_command *command = macho->loadCommands(); command; command = macho->nextCommand(command)) {
-			if (macho->flip(command->cmd) == LC_LOAD_DYLIB) {
-				const dylib_command *dycmd = (const dylib_command *)command;
-				if (const char *name = macho->string(command, dycmd->dylib.name))
-					try {
-						secdebug("machorep", "examining DYLIB %s", name);
-						// find path on disk, get designated requirement (if signed)
-						if (RefPointer<DiskRep> rep = DiskRep::bestFileGuess(name))
-							if (SecPointer<SecStaticCode> code = new SecStaticCode(rep))
-								if (const Requirement *req = code->designatedRequirement()) {
-									secdebug("machorep", "adding library requirement for %s", name);
-									chain.add();
-									chain.maker.copy(req);
-								}
-					} catch (...) {
-						secdebug("machorep", "exception getting library requirement (ignored)");
-					}
-				else
-					secdebug("machorep", "no string for DYLIB command (ignored)");
-			}
-		}
-	}
-	if (chain.empty())
-		return NULL;
+		return ((const Requirements *)ppc_ireqs)->clone();	// need to pass ownership
 	else
-		return maker.make();
+		return NULL;
 }
-
 
 
 //
@@ -182,38 +124,6 @@ size_t MachORep::signingBase()
 
 
 //
-// We choose the binary identifier for a Mach-O binary as follows:
-//	- If the Mach-O headers have a UUID command, use the UUID.
-//	- Otherwise, use the SHA-1 hash of the (entire) load commands.
-//
-CFDataRef MachORep::identification()
-{
-	std::auto_ptr<MachO> macho(mainExecutableImage()->architecture());
-	return identificationFor(macho.get());
-}
-
-CFDataRef MachORep::identificationFor(MachO *macho)
-{
-	// if there is a LC_UUID load command, use the UUID contained therein
-	if (const load_command *cmd = macho->findCommand(LC_UUID)) {
-		const uuid_command *uuidc = reinterpret_cast<const uuid_command *>(cmd);
-		char result[4 + sizeof(uuidc->uuid)];
-		memcpy(result, "UUID", 4);
-		memcpy(result+4, uuidc->uuid, sizeof(uuidc->uuid));
-		return makeCFData(result, sizeof(result));
-	}
-	
-	// otherwise, use the SHA-1 hash of the entire load command area
-	SHA1 hash;
-	hash(&macho->header(), sizeof(mach_header));
-	hash(macho->loadCommands(), macho->commandLength());
-	SHA1::Digest digest;
-	hash.finish(digest);
-	return makeCFData(digest, sizeof(digest));
-}
-
-
-//
 // Retrieve a component from the executable.
 // This reads the entire signing SuperBlob when first called for an executable,
 // and then caches it for further use.
@@ -242,23 +152,24 @@ CFDataRef MachORep::component(CodeDirectory::SpecialSlot slot)
 //
 CFDataRef MachORep::embeddedComponent(CodeDirectory::SpecialSlot slot)
 {
-	if (!mSigningData) {		// fetch and cache
-		auto_ptr<MachO> macho(mainExecutableImage()->architecture());
-		if (macho.get())
-			if (const linkedit_data_command *cs = macho->findCodeSignature()) {
-				size_t offset = macho->flip(cs->dataoff);
-				size_t length = macho->flip(cs->datasize);
-				if (mSigningData = EmbeddedSignatureBlob::readBlob(macho->fd(), macho->offset() + offset, length)) {
-					secdebug("machorep", "%zd signing bytes in %d blob(s) from %s(%s)",
-						mSigningData->length(), mSigningData->count(),
-						mainExecutablePath().c_str(), macho->architecture().name());
-				} else {
-					secdebug("machorep", "failed to read signing bytes from %s(%s)",
-						mainExecutablePath().c_str(), macho->architecture().name());
-					MacOSError::throwMe(errSecCSSignatureInvalid);
+	if (!mSigningData)		// fetch and cache
+		try {
+			auto_ptr<MachO> macho(mainExecutableImage()->architecture());
+			if (macho.get())
+				if (size_t offset = macho->signingOffset()) {
+					macho->seek(offset);
+					mSigningData = EmbeddedSignatureBlob::readBlob(macho->fd());
+					if (mSigningData)
+						secdebug("machorep", "%zd signing bytes in %d blob(s) from %s(%s)",
+							mSigningData->length(), mSigningData->count(),
+							mainExecutablePath().c_str(), macho->architecture().name());
+					else
+						secdebug("machorep", "failed to read signing bytes from %s(%s)",
+							mainExecutablePath().c_str(), macho->architecture().name());
 				}
-			}
-	}
+		} catch (...) {
+			secdebug("machorep", "exception reading Mach-O from universal");
+		}
 	if (mSigningData)
 		return mSigningData->component(slot);
 	
@@ -279,9 +190,9 @@ CFDataRef MachORep::infoPlist()
 		if (const section *sect = macho->findSection("__TEXT", "__info_plist")) {
 			if (macho->is64()) {
 				const section_64 *sect64 = reinterpret_cast<const section_64 *>(sect);
-				info.take(macho->dataAt(macho->flip(sect64->offset), macho->flip(sect64->size)));
+				info = macho->dataAt(macho->flip(sect64->offset), macho->flip(sect64->size));
 			} else {
-				info.take(macho->dataAt(macho->flip(sect->offset), macho->flip(sect->size)));
+				info = macho->dataAt(macho->flip(sect->offset), macho->flip(sect->size));
 			}
 		}
 	} catch (...) {
@@ -336,7 +247,7 @@ string MachORep::format()
 			return string("Mach-O thin (") + archs.begin()->name() + ")";
 		}
 	} else
-		return "Mach-O (unrecognized format)";
+		return "not Mach-O";		// (you don't usually show that one to the user)
 }
 
 
@@ -370,7 +281,6 @@ DiskRep::Writer *MachORep::writer()
 //
 void MachORep::Writer::component(CodeDirectory::SpecialSlot slot, CFDataRef data)
 {
-	assert(false);
 	MacOSError::throwMe(errSecCSInternalError);
 }
 

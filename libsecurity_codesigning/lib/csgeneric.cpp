@@ -74,7 +74,8 @@ SecCode *GenericCode::locateGuest(CFDictionaryRef attributes)
 		mach_port_t subport;
 		CALL(host, findGuest, guestRef(), attrPtr, attrLength,
 			&guestPath, &guestPathLength, &subport);
-		CODESIGN_GUEST_LOCATE_GENERIC(this, guestPath, guestPathLength, subport);
+		secdebug("genericcode", "%p found guest chain length=%d",
+			this, guestPathLength);
 		SecPointer<SecCode> code = this;
 		for (unsigned n = 0; n < guestPathLength; n++)
 			code = new GenericCode(code, guestPath[n]);
@@ -85,56 +86,15 @@ SecCode *GenericCode::locateGuest(CFDictionaryRef attributes)
 
 
 //
-// Identify a guest by returning its StaticCode and running CodeDirectory hash.
+// Map a guest to its StaticCode.
 // This uses cshosting RPCs to ask the host (or its proxy).
 //
-SecStaticCode *GenericCode::identifyGuest(SecCode *guest, CFDataRef *cdhashOut)
-{
-	if (GenericCode *iguest = dynamic_cast<GenericCode *>(guest)) {
-		FilePathOut path;
-		CFRef<CFDataRef> cdhash;
-		CFDictionary attributes(errSecCSHostProtocolInvalidAttribute);
-		identifyGuest(iguest->guestRef(), path, cdhash.aref(), attributes.aref());
-		DiskRep::Context ctx;
-		if (CFNumberRef architecture = attributes.get<CFNumberRef>(kSecGuestAttributeArchitecture)) {
-			cpu_type_t cpu = cfNumber<cpu_type_t>(architecture);
-			if (CFNumberRef subarchitecture = attributes.get<CFNumberRef>(kSecGuestAttributeSubarchitecture))
-				ctx.arch = Architecture(cpu, cfNumber<cpu_subtype_t>(subarchitecture));
-			else
-				ctx.arch = Architecture(cpu);
-		}
-		SecPointer<GenericStaticCode> code = new GenericStaticCode(DiskRep::bestGuess(path, &ctx));
-		CODESIGN_GUEST_IDENTIFY_GENERIC(iguest, iguest->guestRef(), code);
-		if (cdhash) {
-			CODESIGN_GUEST_CDHASH_GENERIC(iguest, (void *)CFDataGetBytePtr(cdhash), CFDataGetLength(cdhash));
-			*cdhashOut = cdhash.yield();
-		}
-		return code.yield();
-	} else
-		MacOSError::throwMe(errSecCSNotAHost);
-}
-
-// helper to drive the identifyGuest hosting IPC and return results as CF objects
-void GenericCode::identifyGuest(SecGuestRef guest, char *path, CFDataRef &cdhash, CFDictionaryRef &attributes)
+SecStaticCode *GenericCode::mapGuestToStatic(SecCode *guest)
 {
 	if (Port host = hostingPort()) {
-		HashDataOut hash;
-		uint32_t hashLength;
-		XMLBlobOut attr;
-		uint32_t attrLength;
-		CALL(host, identifyGuest, guest, path, hash, &hashLength, &attr, &attrLength);
-		if (hashLength)
-			cdhash = makeCFData(hash, hashLength);
-		if (attrLength) {
-			CFRef<CFDataRef> attrData = makeCFData(attr, attrLength);
-			attributes = makeCFDictionaryFrom(attrData);
-#if ROSETTA_TEST_HACK
-			CFMutableDictionaryRef hattr = makeCFMutableDictionary(attributes);
-			CFDictionaryAddValue(hattr, kSecGuestAttributeArchitecture, CFTempNumber(CPU_TYPE_POWERPC));
-			CFRelease(attributes);
-			attributes = hattr;
-#endif
-		}
+		char path[MAXPATHLEN];
+		CALL(host, guestPath, safe_cast<GenericCode *>(guest)->guestRef(), path);
+		return (new GenericStaticCode(DiskRep::bestGuess(path)))->retain();
 	} else
 		MacOSError::throwMe(errSecCSNotAHost);
 }
@@ -144,7 +104,7 @@ void GenericCode::identifyGuest(SecGuestRef guest, char *path, CFDataRef &cdhash
 // Get the Code Signing Status Word for a Code.
 // This uses cshosting RPCs to ask the host (or its proxy).
 //
-SecCodeStatus GenericCode::getGuestStatus(SecCode *guest)
+uint32_t GenericCode::getGuestStatus(SecCode *guest)
 {
 	if (Port host = hostingPort()) {
 		uint32_t status;
@@ -152,28 +112,6 @@ SecCodeStatus GenericCode::getGuestStatus(SecCode *guest)
 		return status;
 	} else
 		MacOSError::throwMe(errSecCSNotAHost);
-}
-
-
-//
-// Status changes are transmitted through the cshosting RPCs.
-//
-void GenericCode::changeGuestStatus(SecCode *iguest, SecCodeStatusOperation operation, CFDictionaryRef arguments)
-{
-	if (GenericCode *guest = dynamic_cast<GenericCode *>(iguest))
-		switch (operation) {
-		case kSecCodeOperationNull:
-			break;
-		case kSecCodeOperationInvalidate:
-		case kSecCodeOperationSetHard:
-		case kSecCodeOperationSetKill:
-			MacOSError::throwMe(errSecCSUnimplemented);
-			break;
-		default:
-			MacOSError::throwMe(errSecCSInvalidOperation);
-		}
-	else
-		MacOSError::throwMe(errSecCSNoSuchCode);
 }
 
 
@@ -190,10 +128,8 @@ void GenericCode::changeGuestStatus(SecCode *iguest, SecCodeStatusOperation oper
 Port GenericCode::hostingPort()
 {
 	if (!mHostingPort) {
-		if (staticCode()->codeDirectory()->flags & kSecCodeSignatureHost) {
+		if (staticCode()->codeDirectory()->flags & kSecCodeSignatureHost)
 			mHostingPort = getHostingPort();
-			CODESIGN_GUEST_HOSTINGPORT(this, mHostingPort);
-		}
 	}
 	return mHostingPort;	
 }
