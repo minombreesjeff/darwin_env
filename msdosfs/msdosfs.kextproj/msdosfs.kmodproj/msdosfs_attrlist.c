@@ -3,19 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -33,6 +36,7 @@
 #include <sys/malloc.h>
 #include <sys/attr.h>
 #include <sys/utfconv.h>
+#include <sys/buf.h>
 
 #include "bpb.h"
 #include "direntry.h"
@@ -106,27 +110,25 @@ static void msdosfs_packvolattr(
     struct denode *dep,			/* DOS-specific vnode information */
     void **attrptrptr,			/* Buffer for fixed-size attributes */
     void **varptrptr,			/* Buffer for variable-length attributes */
-    struct ucred *cred)			/* Credentials (used for ATTR_CMN_USERACCESS) */
+    vfs_context_t context)			/* Credentials (used for ATTR_CMN_USERACCESS) */
 {
     attrgroup_t a;
     void *attrptr = *attrptrptr;
     void *varptr = *varptrptr;
     struct msdosfsmount *pmp = dep->de_pmp;
-    struct mount *mp = pmp->pm_mountp;
+    mount_t mp = pmp->pm_mountp;
+    ucred_t cred = vfs_context_ucred(context);
     
     a = alist->commonattr;
     if (a)
     {
-#if 1
-        /* We don't currently support volume names, but we could later */
         if (a & ATTR_CMN_NAME) {
             varptr = packstr(pmp->pm_label, attrptr, varptr);
             ++((struct attrreference *)attrptr);
         }
-#endif
-        if (a & ATTR_CMN_DEVID) *((dev_t *) attrptr)++ = pmp->pm_devvp->v_rdev;
-        if (a & ATTR_CMN_FSID) *((fsid_t *)attrptr)++ = DETOV(dep)->v_mount->mnt_stat.f_fsid;
-        if (a & ATTR_CMN_OBJTYPE) *((fsobj_type_t *)attrptr)++ = DETOV(dep)->v_type;
+        if (a & ATTR_CMN_DEVID) *((dev_t *) attrptr)++ = vnode_specrdev(pmp->pm_devvp);
+        if (a & ATTR_CMN_FSID) *((fsid_t *)attrptr)++ = vfs_statfs(mp)->f_fsid;
+        if (a & ATTR_CMN_OBJTYPE) *((fsobj_type_t *)attrptr)++ = vnode_vtype(DETOV(dep));
         if (a & ATTR_CMN_OBJTAG) *((fsobj_tag_t *)attrptr)++ = VT_MSDOSFS;
         if (a & ATTR_CMN_OBJID) {
 			((fsobj_id_t *)attrptr)->fid_objno = defileid(dep);
@@ -175,7 +177,7 @@ static void msdosfs_packvolattr(
     a = alist->volattr;
     if (a)
     {
-        if (a & ATTR_VOL_FSTYPE) *((u_long *)attrptr)++ = (u_long) mp->mnt_vfc->vfc_typenum;
+        if (a & ATTR_VOL_FSTYPE) *((u_long *)attrptr)++ = (u_long)vfs_typenum(mp);
         if (a & ATTR_VOL_SIGNATURE) *((u_long *)attrptr)++ = 0x4244;
         if (a & ATTR_VOL_SIZE) *((off_t *)attrptr)++ = (off_t) (pmp->pm_maxcluster-2) * (off_t) pmp->pm_bpcluster;
         if (a & ATTR_VOL_SPACEFREE) *((off_t *)attrptr)++ = (off_t) pmp->pm_freeclustercount * (off_t) pmp->pm_bpcluster;
@@ -190,16 +192,16 @@ static void msdosfs_packvolattr(
          */
         if (a & ATTR_VOL_MAXOBJCOUNT) *((u_long *)attrptr)++ = 0xFFFFFFFF;
         if (a & ATTR_VOL_MOUNTPOINT) {
-            varptr = packstr(mp->mnt_stat.f_mntonname, attrptr, varptr);
+            varptr = packstr(vfs_statfs(mp)->f_mntonname, attrptr, varptr);
             ++((struct attrreference *)attrptr);
         }
         if (a & ATTR_VOL_NAME) {
             varptr = packstr(pmp->pm_label, attrptr, varptr);
             ++((struct attrreference *)attrptr);
         }
-        if (a & ATTR_VOL_MOUNTFLAGS) *((u_long *)attrptr)++ = mp->mnt_flag;
+        if (a & ATTR_VOL_MOUNTFLAGS) *((u_long *)attrptr)++ = vfs_flags(mp);
         if (a & ATTR_VOL_MOUNTEDDEVICE) {
-            varptr = packstr(mp->mnt_stat.f_mntfromname, attrptr, varptr);
+            varptr = packstr(vfs_statfs(mp)->f_mntfromname, attrptr, varptr);
             ++((struct attrreference *)attrptr);
         }
         /* ATTR_VOL_ENCODINGSUSED not supported */
@@ -279,25 +281,24 @@ static void msdosfs_packcommonattr(
     struct denode *dep,			/* DOS-specific vnode information */
     void **attrptrptr,			/* Buffer for fixed-size attributes */
     void **varptrptr,			/* Buffer for variable-length attributes */
-    struct ucred *cred)			/* Credentials (used for ATTR_CMN_USERACCESS) */
+    vfs_context_t context)			/* Credentials (used for ATTR_CMN_USERACCESS) */
 {
     attrgroup_t a;
     void *attrptr = *attrptrptr;
     void *varptr = *varptrptr;
     struct msdosfsmount *pmp = dep->de_pmp;
-    
+    mount_t mp = pmp->pm_mountp;
+    ucred_t cred = vfs_context_ucred(context);
+
     a = alist->commonattr;
 
-#if 1
-    /* We don't currently support file and directory names, but we could later */
     if (a & ATTR_CMN_NAME) {
-        varptr = packstr(dep->de_Name, attrptr, varptr);	/*ее Should really be long name */
+        varptr = packstr(dep->de_Name, attrptr, varptr);	/*е Should really be long name */
         ++((struct attrreference *)attrptr);
     }
-#endif
-    if (a & ATTR_CMN_DEVID) *((dev_t *)attrptr)++ = pmp->pm_devvp->v_rdev;
-    if (a & ATTR_CMN_FSID) *((fsid_t *)attrptr)++ = DETOV(dep)->v_mount->mnt_stat.f_fsid;
-    if (a & ATTR_CMN_OBJTYPE) *((fsobj_type_t *)attrptr)++ = DETOV(dep)->v_type;
+    if (a & ATTR_CMN_DEVID) *((dev_t *)attrptr)++ = vnode_specrdev(pmp->pm_devvp);
+    if (a & ATTR_CMN_FSID) *((fsid_t *)attrptr)++ = vfs_statfs(mp)->f_fsid;
+    if (a & ATTR_CMN_OBJTYPE) *((fsobj_type_t *)attrptr)++ = vnode_vtype(DETOV(dep));
     if (a & ATTR_CMN_OBJTAG) *((fsobj_tag_t *)attrptr)++ = VT_MSDOSFS;
     if (a & ATTR_CMN_OBJID) {
         ((fsobj_id_t *)attrptr)->fid_objno = defileid(dep);
@@ -357,7 +358,7 @@ static void msdosfs_packdirattr(struct attrlist *alist, struct denode *dep, void
     if (a & ATTR_DIR_LINKCOUNT) *((u_long *)attrptr)++ = 1;	/* A safe value to indicate we don't do hard links. */
     /* ATTR_DIR_ENTRYCOUNT not supported because it would require iterating over the directory contents. */
     if (a & ATTR_DIR_MOUNTSTATUS) {
-        if (DETOV(dep)->v_mountedhere) {
+        if (vnode_mountedhere(DETOV(dep))) {
             *((u_long *)attrptr)++ = DIR_MNTSTATUS_MNTPOINT;
         } else {
             *((u_long *)attrptr)++ = 0;
@@ -395,17 +396,22 @@ static void msdosfs_packfileattr(struct attrlist *alist, struct denode *dep, voi
     *attrptrptr = attrptr;
 }
 
-static void msdosfs_packattr(struct attrlist *alist, struct denode *dep, void **attrptr, void **varptr, struct ucred *cred)
+static void msdosfs_packattr(
+	struct attrlist *alist,
+	struct denode *dep,
+	void **attrptr,
+	void **varptr,
+	vfs_context_t context)
 {
     if (alist->volattr != 0)
     {
-        msdosfs_packvolattr(alist, dep, attrptr, varptr, cred);
+        msdosfs_packvolattr(alist, dep, attrptr, varptr, context);
     }
     else
     {
-        msdosfs_packcommonattr(alist, dep, attrptr, varptr, cred);
+        msdosfs_packcommonattr(alist, dep, attrptr, varptr, context);
         
-        switch (DETOV(dep)->v_type)
+        switch (vnode_vtype(DETOV(dep)))
         {
             case VDIR:
                 msdosfs_packdirattr(alist, dep, attrptr);
@@ -504,23 +510,16 @@ static size_t msdosfs_attrsize(struct attrlist *attrlist)
 	return size;
 }
 
-/*
-#
-#% getattrlist	vp	= = =
-#
- vop_getattrlist {
-     IN struct vnode *vp;
-     IN struct attrlist *alist;
-     INOUT struct uio *uio;
-     IN struct ucred *cred;
-     IN struct proc *p;
- };
 
- */
 __private_extern__
-int msdosfs_getattrlist(struct vop_getattrlist_args *ap)
+int msdosfs_getattrlist(struct vnop_getattrlist_args /* {
+		vnode_t a_vp;
+		struct attrlist *a_alist;
+		struct uio *a_uio;
+		vfs_context_t a_context;
+	} */ *ap)
 {
-    struct vnode *vp = ap->a_vp;
+    vnode_t vp = ap->a_vp;
     struct denode *dep = VTODE(vp);
 	struct attrlist *alist = ap->a_alist;
 	size_t fixedblocksize;
@@ -559,7 +558,7 @@ int msdosfs_getattrlist(struct vop_getattrlist_args *ap)
     /*
      * Requesting volume information requires a vnode for the volume root.
      */
-    if (alist->volattr && (vp->v_flag & VROOT) == 0)
+    if (alist->volattr && !vnode_isvroot(vp))
     {
         return EINVAL;
     }
@@ -581,7 +580,7 @@ int msdosfs_getattrlist(struct vop_getattrlist_args *ap)
 	++((u_long *)attrptr);     /* skip over length field */
 	varptr = ((char *)attrptr) + fixedblocksize;
 
-    msdosfs_packattr(alist, dep, &attrptr, &varptr, ap->a_cred);
+    msdosfs_packattr(alist, dep, &attrptr, &varptr, ap->a_context);
 
     /* Don't return more data than was generated */
     attrbufsize = MIN(attrbufsize, (size_t) varptr - (size_t) attrbufptr);
@@ -591,7 +590,8 @@ int msdosfs_getattrlist(struct vop_getattrlist_args *ap)
     
     error = uiomove((caddr_t) attrbufptr, attrbufsize, ap->a_uio);
     
-    FREE(attrbufptr, M_TEMP);
+	FREE(attrbufptr, M_TEMP);
+		
     return error;
 }
 
@@ -599,7 +599,8 @@ int msdosfs_getattrlist(struct vop_getattrlist_args *ap)
 static int msdosfs_unpackvolattr(
     attrgroup_t attrs,
     struct denode *dep,
-    void *attrbufptr)
+    void *attrbufptr,
+    vfs_context_t context)
 {
     int i;
     int error = 0;
@@ -659,17 +660,17 @@ static int msdosfs_unpackvolattr(
         pmp->pm_label[attrref->attr_length] = '\0';
 
         /* Update label in boot sector */
-        error = meta_bread(pmp->pm_devvp, 0, pmp->pm_BlockSize, NOCRED, &bp);
+        error = (int)buf_meta_bread(pmp->pm_devvp, 0, pmp->pm_BlockSize, vfs_context_ucred(context), &bp);
         if (!error) {
             if (FAT32(pmp))
-                bcopy(label, (char*)bp->b_data+71, 11);
+                bcopy(label, (char*)buf_dataptr(bp)+71, 11);
             else
-                bcopy(label, (char*)bp->b_data+43, 11);
-            bwrite(bp);
+                bcopy(label, (char*)buf_dataptr(bp)+43, 11);
+            buf_bdwrite(bp);
             bp = NULL;
         }
         if (bp)
-            brelse(bp);
+            buf_brelse(bp);
         bp = NULL;
 
         /*
@@ -678,14 +679,14 @@ static int msdosfs_unpackvolattr(
          * cameras don't understand them).
          */
         if (pmp->pm_label_cluster != CLUST_EOFE) {
-        	error = readep(pmp, pmp->pm_label_cluster, pmp->pm_label_offset, &bp, NULL);
+        	error = readep(pmp, pmp->pm_label_cluster, pmp->pm_label_offset, &bp, NULL, context);
             if (!error) {
-                bcopy(label, bp->b_data + pmp->pm_label_offset, 11);
-                bwrite(bp);
+                bcopy(label, (char *)buf_dataptr(bp) + pmp->pm_label_offset, 11);
+                buf_bdwrite(bp);
                 bp = NULL;
             }
             if (bp)
-                brelse(bp);
+                buf_brelse(bp);
             bp=NULL;
         }
         
@@ -711,12 +712,13 @@ static int msdosfs_unpackcommonattr(
 static int msdosfs_unpackattr(
     struct attrlist *alist,
     struct denode *dep,
-    void *attrbufptr)
+    void *attrbufptr,
+    vfs_context_t context)
 {
     int error;
     
     if (alist->volattr != 0)
-        error = msdosfs_unpackvolattr(alist->volattr, dep, attrbufptr);
+        error = msdosfs_unpackvolattr(alist->volattr, dep, attrbufptr, context);
     else
         error = msdosfs_unpackcommonattr(alist->commonattr, dep, attrbufptr);
     
@@ -725,30 +727,23 @@ static int msdosfs_unpackattr(
 
 
 
-/*
-#
-#% setattrlist	vp	L L L
-#
-vop_setattrlist {
-	IN struct vnode *vp;
-	IN struct attrlist *alist;
-	INOUT struct uio *uio;
-	IN struct ucred *cred;
-	IN struct proc *p;
-};
-*/
 __private_extern__
-int msdosfs_setattrlist(struct vop_setattrlist_args *ap)
+int msdosfs_setattrlist(struct vnop_setattrlist_args /* {
+		vnode_t a_vp;
+		struct attrlist *a_alist;
+		struct uio *a_uio;
+		vfs_context_t a_context;
+	} */ *ap)
 {
-    struct vnode *vp = ap->a_vp;
+    vnode_t vp = ap->a_vp;
     struct denode *dep = VTODE(vp);
 	struct attrlist *alist = ap->a_alist;
 	size_t attrblocksize;
 	void *attrbufptr;
     int error;
     
-	if (vp->v_mount->mnt_flag & MNT_RDONLY)
-		return (EROFS);
+	if (vnode_vfsisrdonly(vp))
+		return EROFS;
 
     /* Check the attrlist for valid inputs (i.e. be sure we understand what caller is asking) */
 	if ((alist->bitmapcount != ATTR_BIT_MAP_COUNT) ||
@@ -775,7 +770,7 @@ int msdosfs_setattrlist(struct vop_setattrlist_args *ap)
 
     /*
      * Make sure caller isn't asking for an attibute we don't support.
-     *ее Right now, all we support is setting the volume name.
+     *е Right now, all we support is setting the volume name.
      */
     if ((alist->commonattr & ~MSDOSFS_ATTR_CMN_SETTABLE) != 0 ||
         (alist->volattr & ~MSDOSFS_ATTR_VOL_SETTABLE) != 0 ||
@@ -789,30 +784,29 @@ int msdosfs_setattrlist(struct vop_setattrlist_args *ap)
     /*
      * Setting volume information requires a vnode for the volume root.
      */
-    if (alist->volattr && (vp->v_flag & VROOT) == 0)
+    if (alist->volattr && !vnode_isvroot(vp))
     {
         return EINVAL;
     }
 
     /*
-     *ее We should check that the user has access to change the
-     *ее passed attributes.
+     *е We should check that the user has access to change the
+     * passed attributes.
      */
 
     attrblocksize = ap->a_uio->uio_resid;
     if (attrblocksize < msdosfs_attrsize(alist))
         return EINVAL;
-    /*ее We should check that attrreferences don't point outside the buffer */
+    /*е We should check that attrreferences don't point outside the buffer */
     
 	MALLOC(attrbufptr, void *, attrblocksize, M_TEMP, M_WAITOK);
 
 	error = uiomove((caddr_t)attrbufptr, attrblocksize, ap->a_uio);
-	if (error)
-        goto ErrorExit;
+	if (error) goto exit;
 
-    error = msdosfs_unpackattr(alist, dep, attrbufptr);
+    error = msdosfs_unpackattr(alist, dep, attrbufptr, ap->a_context);
 
-ErrorExit:
+exit:
     FREE(attrbufptr, M_TEMP);
     return error;
 }

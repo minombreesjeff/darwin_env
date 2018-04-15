@@ -3,19 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -48,6 +51,8 @@
 
 /*	@(#)dosutil.c	3.0	13/09/00	(c) 2000 Apple Computer, Inc.	*/
 
+#include <stdint.h>
+#include <mach/machine/boolean.h>
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -78,8 +83,6 @@
 #include "../msdosfs.kextproj/msdosfs.kmodproj/bootsect.h"
 #include "../msdosfs.kextproj/msdosfs.kmodproj/bpb.h"
 #include "../msdosfs.kextproj/msdosfs.kmodproj/direntry.h"
-
-#define D2U_LOWER_CASE	0		/* */
 
 #define FS_TYPE			"msdos"
 #define FS_NAME_FILE		"MSDOS"
@@ -284,9 +287,9 @@ static int fs_probe(char *devpath, int removable, int writable)
     struct byte_bpb50 *b50;
     struct byte_bpb710 *b710;
     u_int16_t	bps;
-    int8_t		spc;
-    int 		rootDirSectors;
-    int 		i,j, finished;
+    u_int8_t	spc;
+    unsigned	rootDirSectors;
+    unsigned	i,j, finished;
 	char diskLabel[LABEL_LENGTH];
     char buf[MAX_DOS_BLOCKSIZE];
 
@@ -326,12 +329,16 @@ static int fs_probe(char *devpath, int removable, int writable)
     /* We only work with 512, 1024, and 2048 byte sectors */
     bps = getushort(b33->bpbBytesPerSec);
     if ((bps < 0x200) || (bps & (bps - 1)) || (bps > 0x800))
+	{
         return(FSUR_UNRECOGNIZED);
+	}
 
     /* Check to make sure valid sectors per cluster */
     spc = b33->bpbSecPerClust;
     if ((spc == 0 ) || (spc & (spc - 1)))
+	{
         return(FSUR_UNRECOGNIZED);
+	}
 
     /* we know this disk, find the volume label */
     /* First, find the root directory */
@@ -340,7 +347,7 @@ static int fs_probe(char *devpath, int removable, int writable)
     rootDirSectors = ((getushort(b50->bpbRootDirEnts) * sizeof(struct direntry)) +
                       (bps-1)) / bps;
     if (rootDirSectors) {			/* FAT12 or FAT16 */
-    	int firstRootDirSecNum;
+    	unsigned firstRootDirSecNum;
     	char rootdirbuf[MAX_DOS_BLOCKSIZE];
     	
         firstRootDirSecNum = getushort(b33->bpbResSectors) + (b33->bpbFATs * getushort(b33->bpbFATsecs));
@@ -372,7 +379,7 @@ static int fs_probe(char *devpath, int removable, int writable)
         u_int8_t *rootDirBuffer;
         off_t readOffset;
         
-        bytesPerCluster = bps * spc;
+        bytesPerCluster = (u_int32_t) bps * (u_int32_t) spc;
         rootDirBuffer = malloc(bytesPerCluster);
         cluster = getulong(b710->bpbRootClust);
         
@@ -487,7 +494,7 @@ static int fs_label(char *devpath, char *volName)
         struct byte_bpb33 *b33;
         struct byte_bpb50 *b50;
         u_int16_t	bps;
-        int8_t		spc;
+        u_int8_t	spc;
         char		tmplabel[LABEL_LENGTH], label[LABEL_LENGTH];
         char 		buf[MAX_DOS_BLOCKSIZE];
         CFStringRef 	cfstr;
@@ -560,14 +567,6 @@ static int fs_label(char *devpath, char *volName)
         return(FSUR_IO_SUCCESS);
 }
 
-
-void msd_str_to_lower(char *s1)
-{
-	for(; *s1; s1++) {
-		if((*s1 >= 'A') && (*s1 <= 'Z'))
-			*s1 = 'a' + (*s1 - 'A');
-	}
-}
 
 static CFStringEncoding GetDefaultDOSEncoding(void)
 {
@@ -678,10 +677,6 @@ static void fs_set_label_file(char *labelPtr)
 		else
 			break;
 	}
-
-#if	D2U_LOWER_CASE
-    msd_str_to_lower(label);
-#endif	/* D2U_LOWER_CASE */
 
     /* Convert it to UTF-8 */
     encoding = GetDefaultDOSEncoding();

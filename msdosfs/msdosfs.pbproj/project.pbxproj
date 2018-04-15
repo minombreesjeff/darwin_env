@@ -23,6 +23,12 @@
 			isa = PBXCopyFilesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 1;
 		};
+		1291E4B60242448403A87B01 = {
+			fileRef = 1291E4B40242448303A87B01;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
 		1291E4B8024244C503A87B01 = {
 			fileRef = 1291E4B40242448303A87B01;
 			isa = PBXBuildFile;
@@ -39,28 +45,28 @@
 //4D2
 //4D3
 //4D4
-		4D30CB1F0794A4AE00904478 = {
+		4DF791C005B49C360038DC5D = {
 			containerPortal = 7D8BA340010E490C02CA2964;
 			isa = PBXContainerItemProxy;
 			proxyType = 1;
 			remoteGlobalIDString = 7DE2785C010E618E02CA2964;
 			remoteInfo = msdos.fs;
 		};
-		4D30CB200794A4AE00904478 = {
+		4DF791C105B49C360038DC5D = {
 			containerPortal = 7D8BA340010E490C02CA2964;
 			isa = PBXContainerItemProxy;
 			proxyType = 1;
 			remoteGlobalIDString = 7D8BA383010E490C02CA2964;
 			remoteInfo = msdos.util;
 		};
-		4D30CB210794A4AE00904478 = {
+		4DF791C205B49C360038DC5D = {
 			containerPortal = 7D8BA340010E490C02CA2964;
 			isa = PBXContainerItemProxy;
 			proxyType = 1;
 			remoteGlobalIDString = 7D8BA38A010E490C02CA2964;
 			remoteInfo = msdosfs;
 		};
-		4D30CB220794A4AE00904478 = {
+		4DF791C305B49C360038DC5D = {
 			containerPortal = 7D8BA340010E490C02CA2964;
 			isa = PBXContainerItemProxy;
 			proxyType = 1;
@@ -77,10 +83,16 @@
 //7D2
 //7D3
 //7D4
+		7D3170210117A0CD02CA2964 = {
+			fileRef = 7D8BA378010E490C02CA2964;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
 		7D3170220117A10D02CA2964 = {
 			isa = PBXTargetDependency;
 			target = 7D8BA383010E490C02CA2964;
-			targetProxy = 4D30CB200794A4AE00904478;
+			targetProxy = 4DF791C105B49C360038DC5D;
 		};
 		7D3170230117A1E602CA2964 = {
 			fileRef = 7D8BA378010E490C02CA2964;
@@ -107,7 +119,7 @@
 		7D871B7B010E6ACA02CA2964 = {
 			isa = PBXTargetDependency;
 			target = 7DE2785C010E618E02CA2964;
-			targetProxy = 4D30CB1F0794A4AE00904478;
+			targetProxy = 4DF791C005B49C360038DC5D;
 		};
 		7D88539B010E5E2C02CA2964 = {
 			isa = PBXFileReference;
@@ -382,6 +394,8 @@
 		};
 		7D8BA37A010E490C02CA2964 = {
 			buildPhases = (
+				7D8BA39E010E490C02CA2964,
+				7D8BA3A1010E490C02CA2964,
 			);
 			buildSettings = {
 				OTHER_CFLAGS = "";
@@ -403,7 +417,7 @@
 		7D8BA37B010E490C02CA2964 = {
 			isa = PBXTargetDependency;
 			target = 7D8BA37C010E490C02CA2964;
-			targetProxy = 4D30CB220794A4AE00904478;
+			targetProxy = 4DF791C305B49C360038DC5D;
 		};
 		7D8BA37C010E490C02CA2964 = {
 			buildPhases = (
@@ -540,7 +554,7 @@
 		7D8BA389010E490C02CA2964 = {
 			isa = PBXTargetDependency;
 			target = 7D8BA38A010E490C02CA2964;
-			targetProxy = 4D30CB210794A4AE00904478;
+			targetProxy = 4DF791C205B49C360038DC5D;
 		};
 		7D8BA38A010E490C02CA2964 = {
 			buildPhases = (
@@ -562,7 +576,7 @@
 				MODULE_NAME = com.apple.filesystems.msdosfs;
 				MODULE_START = msdosfs_module_start;
 				MODULE_STOP = "msdosfs_module_stop ";
-				MODULE_VERSION = 1.3;
+				MODULE_VERSION = 1.4;
 				OTHER_CFLAGS = "-Wno-format";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -597,21 +611,21 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.1</string>
+	<string>1.4</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3.1</string>
+	<string>1.4</string>
 	<key>IOKitPersonalities</key>
 	<dict/>
 	<key>OSBundleLibraries</key>
 	<dict>
-		<key>com.apple.kernel.bsd</key>
-		<string>1.1</string>
-		<key>com.apple.kernel.iokit</key>
-		<string>1.0.0b1</string>
-		<key>com.apple.kernel.mach</key>
-		<string>1.0.0b1</string>
+		<key>com.apple.kpi.bsd</key>
+		<string>8.0.0b1</string>
+		<key>com.apple.kpi.libkern</key>
+		<string>8.0.0b1</string>
+		<key>com.apple.kpi.mach</key>
+		<string>8.0.0b1</string>
 	</dict>
 </dict>
 </plist>
@@ -769,20 +783,57 @@
 			shellPath = /bin/sh;
 			shellScript = "script=\"${SYSTEM_DEVELOPER_DIR}/ProjectBuilder Extras/Kernel Extension Support/KEXTPostprocess\";\nif [ -x \"$script\" ]; then\n    . \"$script\"\nfi";
 		};
+		7D8BA39E010E490C02CA2964 = {
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				7D8BA39F010E490C02CA2964,
+				7D3170210117A0CD02CA2964,
+				1291E4B60242448403A87B01,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7D8BA39F010E490C02CA2964 = {
+			fileRef = 7D8BA377010E490C02CA2964;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		7D8BA3A1010E490C02CA2964 = {
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				7D8BA3A2010E490C02CA2964,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7D8BA3A2010E490C02CA2964 = {
+			fileRef = 7D8BA379010E490C02CA2964;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
 		7D8BA3A3010E490C02CA2964 = {
+			buildRules = (
+			);
 			buildSettings = {
 				COPY_PHASE_STRIP = NO;
 				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_ENABLE_FIX_AND_CONTINUE = YES;
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
-				OPTIMIZATION_CFLAGS = "-O0";
-				ZERO_LINK = YES;
+				ZERO_LINK = NO;
 			};
 			isa = PBXBuildStyle;
 			name = Development;
 		};
 		7D8BA3A4010E490C02CA2964 = {
+			buildRules = (
+			);
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
@@ -851,11 +902,11 @@
 	<key>CFBundlePackageType</key>
 	<string>fs  </string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.1</string>
+	<string>1.4</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3.1</string>
+	<string>1.4</string>
 	<key>FSMediaTypes</key>
 	<dict>
 		<key>DOS_FAT_12</key>

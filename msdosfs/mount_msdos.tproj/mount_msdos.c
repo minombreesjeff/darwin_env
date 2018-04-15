@@ -3,19 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -55,6 +58,12 @@
 static const char rcsid[] =
   "$FreeBSD: src/sbin/mount_msdos/mount_msdos.c,v 1.19 2000/01/08 16:47:55 ache Exp $";
 #endif /* not lint */
+
+/* Various system headers use standard int types */
+#include <stdint.h>
+
+/* Get the boolean_t type. */
+#include <mach/machine/boolean.h>
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -189,12 +198,6 @@ static struct mntopt mopts[] = {
 	MOPT_FORCE,
 	MOPT_SYNC,
 	MOPT_UPDATE,
-#ifdef MSDOSFSMNT_GEMDOSFS
-	{ "gemdosfs", 0, MSDOSFSMNT_GEMDOSFS, 1 },
-#endif
-	{ "shortnames", 0, MSDOSFSMNT_SHORTNAME, 1 },
-	{ "longnames", 0, MSDOSFSMNT_LONGNAME, 1 },
-	{ "nowin95", 0, MSDOSFSMNT_NOWIN95, 1 },
 	{ NULL }
 };
 
@@ -202,10 +205,6 @@ static gid_t	a_gid __P((char *));
 static uid_t	a_uid __P((char *));
 static mode_t	a_mask __P((char *));
 static void		usage __P((void));
-#if 0
-static void     load_u2wtable __P((struct msdosfs_args *, char *));
-static void     load_ultable __P((struct msdosfs_args *, char *));
-#endif
 
 static int checkLoadable();
 static char *progname;
@@ -239,20 +238,6 @@ main(argc, argv)
 
 	while ((c = getopt(argc, argv, "sl9u:g:m:o:")) != -1) {
 		switch (c) {
-#ifdef MSDOSFSMNT_GEMDOSFS
-		case 'G':
-			args.flags |= MSDOSFSMNT_GEMDOSFS;
-			break;
-#endif
-		case 's':
-			args.flags |= MSDOSFSMNT_SHORTNAME;
-			break;
-		case 'l':
-			args.flags |= MSDOSFSMNT_LONGNAME;
-			break;
-		case '9':
-			args.flags |= MSDOSFSMNT_NOWIN95;
-			break;
 		case 'u':
 			args.uid = a_uid(optarg);
 			set_uid = 1;
@@ -265,16 +250,6 @@ main(argc, argv)
 			args.mask = a_mask(optarg);
 			set_mask = 1;
 			break;
-#if 0
-		case 'L':
-			load_ultable(&args, optarg);
-			args.flags |= MSDOSFSMNT_ULTABLE;
-			break;
-		case 'W':
-			load_u2wtable(&args, optarg);
-			args.flags |= MSDOSFSMNT_U2WTABLE;
-			break;
-#endif
 		case 'o':
 			getmntopts(optarg, mopts, &mntflags, &args.flags);
 			break;
@@ -298,12 +273,6 @@ main(argc, argv)
 	(void)checkpath(dir, mntpath);
 	(void)rmslashes(dev, dev);
 
-	args.fspec = dev;
-	args.export.ex_root = -2;	/* unchecked anyway on DOS fs */
-	if (mntflags & MNT_RDONLY)
-		args.export.ex_flags = MNT_EXRDONLY;
-	else
-		args.export.ex_flags = 0;
 	if (!set_gid || !set_uid || !set_mask) {
 		if (stat(mntpath, &sb) == -1)
 			err(EX_OSERR, "stat %s", mntpath);
@@ -321,7 +290,8 @@ main(argc, argv)
 			mntflags |= MNT_UNKNOWNPERMISSIONS;
 			}
 	}
-        
+
+	args.fspec = dev;
 	/* Pass the number of seconds that local time (including DST) is west of GMT */
 	gettimeofday(NULL, &local_tz);
 	args.secondsWest = local_tz.tz_minuteswest * 60 -
@@ -347,7 +317,7 @@ main(argc, argv)
 			errx(EX_OSERR, "msdos filesystem is not available");
 
 	if (mount("msdos", mntpath, mntflags, &args) < 0)
-		err(EX_OSERR, "%s on %s", args.fspec, mntpath);
+		err(EX_OSERR, "%s on %s", dev, mntpath);
 
 	exit (0);
 }
@@ -792,90 +762,3 @@ end_of_dir:
 	}
 	args->flags |= MSDOSFSMNT_LABEL;
 }
-
-
-#if 0
-
-void
-load_u2wtable (pargs, name)
-	struct msdosfs_args *pargs;
-	char *name;
-{
-	FILE *f;
-	int i, j, code[8];
-	size_t line = 0;
-	char buf[128];
-	char *fn, *s, *p;
-
-	if (*name == '/')
-		fn = name;
-	else {
-		snprintf(buf, sizeof(buf), "/usr/share/msdosfs/%s", name);
-		buf[127] = '\0';
-		fn = buf;
-	}
-	if ((f = fopen(fn, "r")) == NULL)
-		err(EX_NOINPUT, "%s", fn);
-	p = NULL;
-	for (i = 0; i < 16; i++) {
-		do {
-			if (p != NULL) free(p);
-			if ((p = s = fparseln(f, NULL, &line, NULL, 0)) == NULL)
-				errx(EX_DATAERR, "can't read u2w table row %d near line %d", i, line);
-			while (isspace((unsigned char)*s))
-				s++;
-		} while (*s == '\0');
-		if (sscanf(s, "%i%i%i%i%i%i%i%i",
-code, code + 1, code + 2, code + 3, code + 4, code + 5, code + 6, code + 7) != 8)
-			errx(EX_DATAERR, "u2w table: missing item(s) in row %d, line %d", i, line);
-		for (j = 0; j < 8; j++)
-			pargs->u2w[i * 8 + j] = code[j];
-	}
-	for (i = 0; i < 16; i++) {
-		do {
-			free(p);
-			if ((p = s = fparseln(f, NULL, &line, NULL, 0)) == NULL)
-				errx(EX_DATAERR, "can't read d2u table row %d near line %d", i, line);
-			while (isspace((unsigned char)*s))
-				s++;
-		} while (*s == '\0');
-		if (sscanf(s, "%i%i%i%i%i%i%i%i",
-code, code + 1, code + 2, code + 3, code + 4, code + 5, code + 6, code + 7) != 8)
-			errx(EX_DATAERR, "d2u table: missing item(s) in row %d, line %d", i, line);
-		for (j = 0; j < 8; j++)
-			pargs->d2u[i * 8 + j] = code[j];
-	}
-	for (i = 0; i < 16; i++) {
-		do {
-			free(p);
-			if ((p = s = fparseln(f, NULL, &line, NULL, 0)) == NULL)
-				errx(EX_DATAERR, "can't read u2d table row %d near line %d", i, line);
-			while (isspace((unsigned char)*s))
-				s++;
-		} while (*s == '\0');
-		if (sscanf(s, "%i%i%i%i%i%i%i%i",
-code, code + 1, code + 2, code + 3, code + 4, code + 5, code + 6, code + 7) != 8)
-			errx(EX_DATAERR, "u2d table: missing item(s) in row %d, line %d", i, line);
-		for (j = 0; j < 8; j++)
-			pargs->u2d[i * 8 + j] = code[j];
-	}
-	free(p);
-	fclose(f);
-}
-
-void
-load_ultable (pargs, name)
-	struct msdosfs_args *pargs;
-	char *name;
-{
-	int i;
-
-	if (setlocale(LC_CTYPE, name) == NULL)
-		err(EX_CONFIG, name);
-	for (i = 0; i < 128; i++) {
-		pargs->ul[i] = tolower(i | 0x80);
-		pargs->lu[i] = toupper(i | 0x80);
-	}
-}
-
-#endif

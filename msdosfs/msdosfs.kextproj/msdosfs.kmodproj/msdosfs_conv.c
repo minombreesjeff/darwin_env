@@ -3,19 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -129,7 +132,7 @@ long msdos_secondsWest = 0;
  * Convert the unix version of time to dos's idea of time to be used in
  * file timestamps. The passed in unix time is assumed to be in GMT.
  */
-void
+__private_extern__ void
 unix2dostime(tsp, ddp, dtp, dhp)
 	struct timespec *tsp;
 	u_int16_t *ddp;
@@ -208,7 +211,7 @@ static u_long  lastseconds;
  * called from the stat(), and fstat() system calls and so probably need
  * not be too efficient.
  */
-void
+__private_extern__ void
 dos2unixtime(dd, dt, dh, tsp)
 	u_int dd;
 	u_int dt;
@@ -363,6 +366,40 @@ l2u[256] = {
 	0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff, /* f8-ff */
 };
 
+/*
+ *	Look-up table to determine whether a given ASCII character is
+ *	considered upper case, lower case, or neither.  Also indicates
+ *	which characters should require generation of a long name.
+ *
+ *	Values are bit masks composed of the following constants:
+ */
+enum {
+	CASE_LOWER	= 1,
+	CASE_UPPER	= 2,
+	CASE_LONG	= 4,	/* A long name should be generated */
+};
+
+static u_char
+ascii_case[128] = {
+	0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,	/* 00-07 */
+	0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,	/* 08-0F */
+	0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,	/* 10-17 */
+	0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,	/* 18-1F */
+	0x04, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,	/* 20-27 */
+	0x00, 0x00, 0x04, 0x04, 0x04, 0x00, 0x04, 0x04,	/* 28-2F */
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,	/* 30-37 */
+	0x00, 0x00, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,	/* 38-3F */
+	0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,	/* 40-47 */
+	0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,	/* 48-4F */
+	0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,	/* 50-57 */
+	0x02, 0x02, 0x02, 0x04, 0x04, 0x04, 0x00, 0x00,	/* 58-5F */
+	0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,	/* 60-67 */
+	0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,	/* 68-6F */
+	0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,	/* 70-77 */
+	0x01, 0x01, 0x01, 0x00, 0x04, 0x00, 0x00, 0x00,	/* 78-7F */
+};
+
+
 /* map a Unicode char into a DOS char */
 __private_extern__ u_char
 unicode2dos(uc)
@@ -423,15 +460,11 @@ unicode2dos(uc)
  * characters in the resulting unix filename excluding the terminating
  * null.
  */
-int
-dos2unicodefn(dn, un, lower, d2u_loaded, d2u, ul_loaded, ul)
+__private_extern__ int
+dos2unicodefn(dn, un, lower)
 	u_char dn[11];
 	u_int16_t *un;
 	int lower;
-	int d2u_loaded;
-	u_int8_t *d2u;
-	int ul_loaded;
-	u_int8_t *ul;
 {
 	int i;
 	u_char dc;
@@ -451,9 +484,12 @@ dos2unicodefn(dn, un, lower, d2u_loaded, d2u, ul_loaded, ul)
 			dc = 0xe5;
 		
 		/*
-		 * (lower & LCASE_BASE) is currently not supported.
-		 * Future versions may have a dos2unicode_lc table
+		 * If the name was supposed to be all lower case,
+		 * then convert it.
 		 */
+		if (lower & LCASE_BASE)
+			dc = l2u[dc];	/* Map to lower case equivalent */
+		
 		un[unichars++] = (dc < 0x80 || dc > 0x9F ? (u_int16_t)dc : dos2unicode[dc - 0x80]);
 	}
 	dn += 8 - i;
@@ -466,10 +502,14 @@ dos2unicodefn(dn, un, lower, d2u_loaded, d2u, ul_loaded, ul)
 		un[unichars++] = '.';
 		for (i = 0; i < 3 && *dn != ' '; i++) {
 			dc = *dn++;
+
 			/*
-			* (lower & LCASE_EXT) is currently not supported.
-			* Future versions may have a dos2unicode_lc table
-			*/
+			 * If the extension was supposed to be all lower case,
+			 * then convert it.
+			 */
+			if (lower & LCASE_EXT)
+				dc = l2u[dc];	/* Map to lower case equivalent */
+			
 			un[unichars++] = (dc < 0x80 || dc > 0x9F ? (u_int16_t)dc : dos2unicode[dc - 0x80]);
 		}
 	}
@@ -487,19 +527,34 @@ dos2unicodefn(dn, un, lower, d2u_loaded, d2u, ul_loaded, ul)
  *	  (no long filename entry necessary for Win95)
  *	2 if conversion was successful
  *	3 if conversion was successful and generation number was inserted
+ *
+ * In order to support setting the LCASE_BASE and LCASE_EXT flags, this
+ * routine returns the corresponding value for those flags when the name can
+ * be converted (when the function result is 1).
+ *
+ * The test is whether the name (base or extension) contains at least one
+ * lower case letter, no upper case, and zero or more case-neutral characters
+ * allowed in an 8.3 name (such as digits, dollar sign, ampersand, etc.).
+ *
+ * By experimentation with Windows XP, it seems to always create long names
+ * for names that contain extended characters, such as letter e with acute
+ * (regardless of upper/lower case).  This is true even on a U.S. system
+ * with characters that are representable in code page 437 (which is in
+ * fact what you see in the short name).  I'm guessing it uses pure short
+ * names only if all characters are pure ASCII.
  */
-int
-unicode2dosfn(un, dn, unlen, gen)
-	const u_int16_t *un;
-	u_char dn[12];
-	int unlen;
-	u_int gen;
+__private_extern__ int
+unicode2dosfn(const u_int16_t *un, u_char dn[12], int unlen, u_int gen, u_int8_t *lower_case)
 {
 	int i, j, l;
 	int conv = 1;
 	const u_int16_t *cp, *dp, *dp1;
 	u_char gentext[6], *wcp;
 	u_int16_t c;
+	int case_flags;		/* accumulates upper/low/neither case information */
+
+	*lower_case = 0;	/* default to all upper case, and clear undefined bits */
+	
 	/*
 	 * Fill the dos filename string with blanks. These are DOS's pad
 	 * characters.
@@ -569,25 +624,35 @@ unicode2dosfn(un, dn, unlen, gen)
 			l = dp1 - dp;
 		else
 			l = unlen - (dp - un);
-		for (i = 0, j = 8; i < l && j < 11; i++, j++) {
+		for (case_flags = i = 0, j = 8; i < l && j < 11; i++, j++) {
 			c = dp[i];
+			if (c < 0x80)
+				case_flags |= ascii_case[c];
+			else
+				case_flags |= CASE_LONG;	/* Non-ASCII always requires a long name */
 			if (c < 0x100)
    				c = l2u[c];
 			c = unicode2dos(c);
-			if (dp[i] != (dn[j] = c)
-			    && conv != 3)
-				conv = 2;
-			if (dn[j] == 1) {
-				conv = 3;
-				dn[j] = '_';
+			dn[j] = c;
+			if (c == 1) {
+				conv = 3;		/* Character is not allowed in short names */
+				dn[j] = '_';	/* and must be replaced with underscore */
 			}
-			if (dn[j] == 2) {
-				conv = 3;
-				dn[j--] = ' ';
+			if (c == 2) {
+				conv = 3;		/* Character is not allowed in short names */
+				dn[j--] = ' ';	/* and is not substituted */
 			}
 		}
+		if ((case_flags & CASE_LONG) != 0 && conv != 3)
+			conv = 2;	/* Force a long name for things like embedded spaces */
+		if (conv == 1) {
+			if ((case_flags & (CASE_LOWER | CASE_UPPER)) == (CASE_LOWER | CASE_UPPER))
+				conv = 2;	/* Force a long name for names with mixed case */
+			else if (case_flags & CASE_LOWER)
+				*lower_case |= LCASE_EXT;	/* Extension has lower case */
+		}
 		if (i < l)
-			conv = 3;
+			conv = 3;	/* Extension was longer than 3 characters */
 		dp--;
 	} else {
 		for (dp = cp; *--dp == ' ' || *dp == '.';);
@@ -597,25 +662,37 @@ unicode2dosfn(un, dn, unlen, gen)
 	/*
 	 * Now convert the rest of the name
 	 */
-	for (i = j = 0; un < dp && j < 8; i++, j++, un++) {
+	for (case_flags = i = j = 0; un < dp && j < 8; i++, j++, un++) {
         c = *un;
+		if (c < 0x80)
+			case_flags |= ascii_case[c];
+		else
+			case_flags |= CASE_LONG;	/* Non-ASCII always requires a long name */
         if (c < 0x100)
             c = l2u[c];
         c = unicode2dos(c);
-		if (*un != (dn[j] = c)
-		    && conv != 3)
-			conv = 2;
-		if (dn[j] == 1) {
-			conv = 3;
-			dn[j] = '_';
+        dn[j] = c;
+		if (c == 1) {
+			conv = 3;		/* Character is not allowed in short names */
+			dn[j] = '_';	/* and must be replaced with underscore */
 		}
-		if (dn[j] == 2) {
-			conv = 3;
-			dn[j--] = ' ';
+		if (c == 2) {
+			conv = 3;		/* Character is not allowed in short names */
+			dn[j--] = ' ';	/* and is not substituted */
 		}
 	}
+	if ((case_flags & CASE_LONG) != 0 && conv != 3)
+		conv = 2;	/* Force a long name for things like embedded spaces */
+	if (conv == 1) {
+		if ((case_flags & (CASE_LOWER | CASE_UPPER)) == (CASE_LOWER | CASE_UPPER))
+			conv = 2;	/* Force a long name for names with mixed case */
+		else if (case_flags & CASE_LOWER)
+			*lower_case |= LCASE_BASE;	/* Base name has lower case */
+	}
+
 	if (un < dp)
-		conv = 3;
+		conv = 3;	/* Base name was longer than 8 characters */
+
 	/*
 	 * If we didn't have any chars in filename,
 	 * generate a default
@@ -629,6 +706,15 @@ unicode2dosfn(un, dn, unlen, gen)
 	 */
 	if (dn[0] == 0xe5)
 		dn[0] = SLOT_E5;
+
+	/*
+	 * If the name couldn't be represented as a short name,
+	 * make sure the lower case flags are clear (in case
+	 * the base or extension was all lower case, but the other
+	 * was not, in which case we left one of the bits set above).
+	 */
+	if (conv != 1)
+		*lower_case = 0;
 
 	/*
 	 * If there wasn't any char dropped,
@@ -664,7 +750,7 @@ unicode2dosfn(un, dn, unlen, gen)
  * Note: assumes that the filename is valid,
  *	 i.e. doesn't consist solely of blanks and dots
  */
-int
+__private_extern__ int
 unicode2winfn(un, unlen, wep, cnt, chksum)
 	const u_int16_t *un;
 	int unlen;
@@ -766,16 +852,12 @@ static inline u_int16_t case_fold(u_int16_t ch)
  * Compare our filename to the one in the Win95 entry
  * Returns the checksum or -1 if no match
  */
-int
-winChkName(un, ucslen, wep, chksum, u2w_loaded, u2w, ul_loaded, ul)
+__private_extern__ int
+winChkName(un, ucslen, wep, chksum)
 	const u_int16_t *un;
 	int ucslen;
 	struct winentry *wep;
 	int chksum;
-	int u2w_loaded;
-	u_int16_t *u2w;
-	int ul_loaded;
-	u_int8_t *ul;
 {
 	u_int8_t *cp;
 	int i;
@@ -864,7 +946,7 @@ winChkName(un, ucslen, wep, chksum, u2w_loaded, u2w, ul_loaded, ul)
  * Collect Win95 filename Unicode chars into buf.
  * Returns the checksum or -1 if impossible
  */
-int
+__private_extern__ int
 getunicodefn(wep, ucfn, unichars, chksum)
 	struct winentry *wep;
 	u_int16_t *ucfn;
@@ -982,7 +1064,7 @@ getunicodefn(wep, ucfn, unichars, chksum)
 /*
  * Compute the checksum of a DOS filename for Win95 use
  */
-u_int8_t
+__private_extern__ u_int8_t
 winChksum(name)
 	u_int8_t *name;
 {
@@ -997,7 +1079,7 @@ winChksum(name)
 /*
  * Determine the number of slots necessary for Win95 names
  */
-int
+__private_extern__ int
 winSlotCnt(un, unlen)
 	const u_int16_t *un;
 	int unlen;
@@ -1011,7 +1093,7 @@ winSlotCnt(un, unlen)
 /*
  * Determine the number of bytes neccesary for Win95 names
  */
-int
+__private_extern__ int
 winLenFixup(un, unlen)
 	const u_int16_t* un;
 	int unlen;
