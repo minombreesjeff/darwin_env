@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2004 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2000-2006 Apple Computer, Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -189,6 +189,13 @@ public:
 	static const uint32 forcedAttributes =
 		CSSM_KEYATTR_EXTRACTABLE;
 
+	/* 
+	 * Public Key blobs can be stored unencrypted. A unique blobSignature
+	 * is used to indicate this state.
+	 */
+	bool isClearText();
+	void setClearTextSignature();
+	
 public:
     KeyBlob *copy(Allocator &alloc) const
     {

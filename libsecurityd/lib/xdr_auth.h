@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2003-2004,2006 Apple Computer, Inc. All Rights Reserved.
- *
+ * Copyright (c) 2006 Apple Computer, Inc. All Rights Reserved.
+ * 
  * @APPLE_LICENSE_HEADER_START@
  * 
  * This file contains Original Code and/or Modifications of Original Code
@@ -21,40 +21,21 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef _H_EVENTLISTENER
-#define _H_EVENTLISTENER
+#include "sec_xdr.h"
+#include <mach/message.h>
+#include <Security/Authorization.h>
 
-#include <securityd_client/ssclient.h>
-#include <security_utilities/cfmach++.h>
-#include <security_utilities/refcount.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-namespace Security {
-namespace SecurityServer {
+bool_t xdr_AuthorizationItem(XDR *xdrs, AuthorizationItem *objp);
+bool_t xdr_AuthorizationItemSet(XDR *xdrs, AuthorizationItemSet *objp);
+bool_t xdr_AuthorizationItemSetPtr(XDR *xdrs, AuthorizationItemSet **objp);
 
+bool_t copyin_AuthorizationItemSet(const AuthorizationItemSet *rights, void **copy, mach_msg_size_t *size);
+bool_t copyout_AuthorizationItemSet(const void *copy, mach_msg_size_t size, AuthorizationItemSet **rights);
 
-//
-// A CFNotificationDispatcher registers with the local CFRunLoop to automatically
-// receive notification messages and dispatch them.
-//
-class EventListener : public RefCount
-{
-protected:
-	NotificationDomain mDomain;
-	NotificationMask mMask;
-
-public:
-	EventListener(NotificationDomain domain, NotificationMask eventMask);
-	virtual ~EventListener();
-
-	virtual void consume(NotificationDomain domain, NotificationEvent event, const CssmData& data) = 0;
-	
-	NotificationDomain GetDomain () {return mDomain;}
-	NotificationMask GetMask () {return mMask;}
-};
-
-
-} // end namespace SecurityServer
-} // end namespace Security
-
-
+#ifdef __cplusplus
+} // extern "C"
 #endif
