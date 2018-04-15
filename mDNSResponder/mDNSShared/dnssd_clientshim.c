@@ -807,4 +807,5 @@ DNSServiceErrorType DNSSD_API DNSServiceReconfirmRecord
     return(kDNSServiceErr_Unsupported);
 }
 
+
 #endif  // !MDNS_BUILDINGSTUBLIBRARY
