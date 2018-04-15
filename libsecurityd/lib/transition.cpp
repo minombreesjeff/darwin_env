@@ -773,8 +773,14 @@ OSStatus ClientSession::dispatchNotification(const mach_msg_header_t *message,
 {
 	const __Request__notify_t *msg = reinterpret_cast<const __Request__notify_t *>(message);
 	OSStatus status;
+	mach_msg_type_number_t length = msg->dataCnt;
 	try {
-		status = consumer(msg->domain, msg->event, msg->data.address, msg->dataCnt, context);
+#if TARGET_RT_BIG_ENDIAN
+		if (msg->NDR.int_rep != NDR_record.int_rep) {
+		length = OSSwapInt32(length);
+}
+#endif
+		status = consumer(msg->domain, msg->event, msg->data.address, length, context);
 	} catch (const CommonError &err) {
 		status = err.osStatus();
 	} catch (const std::bad_alloc &) {
@@ -783,7 +789,7 @@ OSStatus ClientSession::dispatchNotification(const mach_msg_header_t *message,
 		status = internalComponentErr;
 	}
 
-    mig_deallocate((vm_offset_t) msg->data.address, msg->dataCnt);
+    mig_deallocate((vm_offset_t) msg->data.address, length);
 #if 0
     msg->data.address = (vm_offset_t) 0;
     msg->data.size = (mach_msg_size_t) 0;
