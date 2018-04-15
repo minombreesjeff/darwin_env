@@ -29,6 +29,10 @@
 #include <errno.h>
 #include <stdlib.h>
 
+#if APPLE_OSX_mDNSResponder
+#include <mach-o/dyld.h>
+#endif
+
 #include "dnssd_ipc.h"
 
 static int gDaemonErr = kDNSServiceErr_NoError;
@@ -42,6 +46,7 @@ static int gDaemonErr = kDNSServiceErr_NoError;
 	#include <ws2tcpip.h>
 	#include <windows.h>
 	#include <stdarg.h>
+	#include <stdio.h>
 	
 	#define sockaddr_mdns sockaddr_in
 	#define AF_MDNS AF_INET
@@ -1122,6 +1127,34 @@ fail:
 	syslog(LOG_WARNING, "dnssd_clientstub handle_resolve_response: error reading result from daemon");
 	}
 
+#if APPLE_OSX_mDNSResponder
+
+static int32_t	libSystemVersion = 0;
+
+// Return true if the application linked against a version of libsystem where P2P
+// interfaces were included by default when using kDNSServiceInterfaceIndexAny.
+// Using 160.0.0 == 0xa00000 as the version threshold.
+static int includeP2PWithIndexAny()
+	{
+	if (libSystemVersion == 0) 
+		libSystemVersion = NSVersionOfLinkTimeLibrary("System");
+
+	if (libSystemVersion < 0xa00000)
+		return 1;
+	else
+		return 0;
+	}
+
+#else	// APPLE_OSX_mDNSResponder
+
+// always return false for non Apple platforms
+static int includeP2PWithIndexAny()
+	{
+	return 0;
+	}
+
+#endif	// APPLE_OSX_mDNSResponder
+
 DNSServiceErrorType DNSSD_API DNSServiceResolve
 	(
 	DNSServiceRef                 *sdRef,
@@ -1151,6 +1184,9 @@ DNSServiceErrorType DNSSD_API DNSServiceResolve
 		return kDNSServiceErr_BadParam;
 		}
 		
+	if ((interfaceIndex == kDNSServiceInterfaceIndexAny) && includeP2PWithIndexAny())
+		flags |= kDNSServiceFlagsIncludeP2P;
+
 	err = ConnectToServer(sdRef, flags, resolve_request, handle_resolve_response, callBack, context);
 	if (err) return err;	// On error ConnectToServer leaves *sdRef set to NULL
 
@@ -1209,7 +1245,12 @@ DNSServiceErrorType DNSSD_API DNSServiceQueryRecord
 	char *ptr;
 	size_t len;
 	ipc_msg_hdr *hdr;
-	DNSServiceErrorType err = ConnectToServer(sdRef, flags, query_request, handle_query_response, callBack, context);
+	DNSServiceErrorType err;
+
+	if ((interfaceIndex == kDNSServiceInterfaceIndexAny) && includeP2PWithIndexAny())
+		flags |= kDNSServiceFlagsIncludeP2P;
+
+	err = ConnectToServer(sdRef, flags, query_request, handle_query_response, callBack, context);
 	if (err) return err;	// On error ConnectToServer leaves *sdRef set to NULL
 
 	if (!name) name = "\0";
@@ -1354,7 +1395,12 @@ DNSServiceErrorType DNSSD_API DNSServiceBrowse
 	char *ptr;
 	size_t len;
 	ipc_msg_hdr *hdr;
-	DNSServiceErrorType err = ConnectToServer(sdRef, flags, browse_request, handle_browse_response, callBack, context);
+	DNSServiceErrorType err;
+
+	if ((interfaceIndex == kDNSServiceInterfaceIndexAny) && includeP2PWithIndexAny())
+		flags |= kDNSServiceFlagsIncludeP2P;
+
+	err = ConnectToServer(sdRef, flags, browse_request, handle_browse_response, callBack, context);
 	if (err) return err;	// On error ConnectToServer leaves *sdRef set to NULL
 
 	if (!domain) domain = "";
@@ -1437,6 +1483,9 @@ DNSServiceErrorType DNSSD_API DNSServiceRegister
 
 	// No callback must have auto-rename
 	if (!callBack && (flags & kDNSServiceFlagsNoAutoRename)) return kDNSServiceErr_BadParam;
+
+	if ((interfaceIndex == kDNSServiceInterfaceIndexAny) && includeP2PWithIndexAny())
+		flags |= kDNSServiceFlagsIncludeP2P;
 
 	err = ConnectToServer(sdRef, flags, reg_service_request, callBack ? handle_regservice_response : NULL, callBack, context);
 	if (err) return err;	// On error ConnectToServer leaves *sdRef set to NULL
@@ -1582,6 +1631,9 @@ DNSServiceErrorType DNSSD_API DNSServiceRegisterRecord
 	int f1 = (flags & kDNSServiceFlagsShared) != 0;
 	int f2 = (flags & kDNSServiceFlagsUnique) != 0;
 	if (f1 + f2 != 1) return kDNSServiceErr_BadParam;
+
+	if ((interfaceIndex == kDNSServiceInterfaceIndexAny) && includeP2PWithIndexAny())
+		flags |= kDNSServiceFlagsIncludeP2P;
 
 	if (!sdRef) { syslog(LOG_WARNING, "dnssd_clientstub DNSServiceRegisterRecord called with NULL DNSServiceRef"); return kDNSServiceErr_BadParam; }
 

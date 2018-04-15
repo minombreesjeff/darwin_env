@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 4 -*-
  *
- * Copyright (c) 2003-2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2011 Apple Computer, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -282,9 +282,10 @@ mDNSexport DNameListElem *AutoBrowseDomains;		// List created from those local-o
 
 mDNSlocal void FatalError(char *errmsg)
 	{
+	char* ptr = NULL;
 	LogMsg("%s: %s", errmsg, dnssd_strerror(dnssd_errno));
-	*(long*)0 = 0;	// On OS X abort() doesn't generate a crash log, but writing to zero does
-	abort();		// On platforms where writing to zero doesn't generate an exception, abort instead
+	*ptr = 0;	// On OS X abort() doesn't generate a crash log, but writing to zero does
+	abort();    // On platforms where writing to zero doesn't generate an exception, abort instead
 	}
 
 mDNSlocal mDNSu32 dnssd_htonl(mDNSu32 l)
@@ -2334,7 +2335,7 @@ mDNSlocal mStatus handle_resolve_request(request_state *request)
 #endif
 
 	// ask the questions
-	LogOperation("%3d: DNSServiceResolve(%##s) START", request->sd, request->u.resolve.qsrv.qname.c);
+	LogOperation("%3d: DNSServiceResolve(%X %d %##s) START", request->sd, flags, interfaceIndex, request->u.resolve.qsrv.qname.c);
 	err = mDNS_StartQuery(&mDNSStorage, &request->u.resolve.qsrv);
 	if (!err)
 		{
@@ -2504,9 +2505,6 @@ mDNSlocal mStatus SendAdditionalQuery(DNSQuestion *q, request_state *request, mS
 			*q2               = *q;
 			q2->InterfaceID   = mDNSInterface_Unicast;
 			q2->ExpectUnique  = mDNStrue;
-			// Always set the QuestionContext to indicate that this question should be stopped
-			// before freeing. Don't rely on "q".
-			q2->QuestionContext = request;
 			// If the query starts as a single label e.g., somehost, and we have search domains with .local,
 			// queryrecord_result_callback calls this function when .local is appended to "somehost".
 			// At that time, the name in "q" is pointing at somehost.local and its qnameOrig pointing at
@@ -2730,26 +2728,8 @@ mDNSlocal void queryrecord_result_callback(mDNS *const m, DNSQuestion *question,
 			{
 			if (!answer->InterfaceID && IsLocalDomain(answer->name))
 				{
-				mDNSu16 qtype;
-				// Sanity check: "q" will be set only if "question" is the .local unicast query.
-				if (!q)
-					{
-					LogMsg("queryrecord_result_callback: ERROR!! answering multicast question with unicast cache record");
-					return;
-					}
-				// Deliver negative response for A/AAAA if there was a positive response for AAAA/A respectively.
-				if (question->qtype != kDNSType_A && question->qtype != kDNSType_AAAA)
-					{
-					LogInfo("queryrecord_result_callback:Question %##s (%s) not answering local question with negative unicast response", question->qname.c, DNSTypeName(question->qtype));
-					return;
-					}
-				qtype = (question->qtype == kDNSType_A ? kDNSType_AAAA : kDNSType_A);
-				if (!mDNS_CheckForCacheRecord(m, question, qtype))
-					{
-					LogInfo("queryrecord_result_callback:Question %##s (%s) not answering local question with negative unicast response (can't find positive record)", question->qname.c, DNSTypeName(question->qtype));
-					return;
-					}
-				LogInfo("queryrecord_result_callback:Question %##s (%s) answering local with negative unicast response (found positive record)", question->qname.c, DNSTypeName(question->qtype));
+				LogInfo("queryrecord_result_callback:Question %##s (%s) answering local with unicast", question->qname.c, DNSTypeName(question->qtype));
+				return;
 				}
 			error = kDNSServiceErr_NoSuchRecord;
 			}
@@ -4728,7 +4708,7 @@ struct CompileTimeAssertionChecks_uds_daemon
 	// Check our structures are reasonable sizes. Including overly-large buffers, or embedding
 	// other overly-large structures instead of having a pointer to them, can inadvertently
 	// cause structure sizes (and therefore memory usage) to balloon unreasonably.
-	char sizecheck_request_state          [(sizeof(request_state)           <= 1784) ? 1 : -1];
+	char sizecheck_request_state          [(sizeof(request_state)           <= 2000) ? 1 : -1];
 	char sizecheck_registered_record_entry[(sizeof(registered_record_entry) <=   60) ? 1 : -1];
 	char sizecheck_service_instance       [(sizeof(service_instance)        <= 6552) ? 1 : -1];
 	char sizecheck_browser_t              [(sizeof(browser_t)               <= 1050) ? 1 : -1];
