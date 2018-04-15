@@ -504,7 +504,7 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug nopic";
-				CURRENT_PROJECT_VERSION = 25962;
+				CURRENT_PROJECT_VERSION = 26483;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				HEADER_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers\" \"$(BUILT_PRODUCTS_DIR)/SecurityPieces/PrivateHeaders\"";
 				LIBRARY_STYLE = STATIC;
@@ -569,7 +569,7 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug nopic";
-				CURRENT_PROJECT_VERSION = 25962;
+				CURRENT_PROJECT_VERSION = 26483;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				HEADER_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers\" \"$(BUILT_PRODUCTS_DIR)/SecurityPieces/PrivateHeaders\"";
 				LIBRARY_STYLE = STATIC;

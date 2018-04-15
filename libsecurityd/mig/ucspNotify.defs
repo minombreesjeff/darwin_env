@@ -43,3 +43,8 @@ waittime 0;
 simpleroutine notify(requestport receiver: mach_port_t;
     in domain: uint32; in event: uint32; in data: Data;
     in sender: uint32);
+// note:  If you make changes to notify you must MANUALLY
+// modify the routines in transition.cpp (look for the line
+// reading #if TARGET_RT_BIG_ENDIAN
+// Do not expect automatic swapping with MIG to work.
+
