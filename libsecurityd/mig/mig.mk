@@ -25,7 +25,9 @@
 DERIVED_SRC = $(BUILT_PRODUCTS_DIR)/derived_src
 
 HDRS = $(DERIVED_SRC)/ucsp.h $(DERIVED_SRC)/ucspNotify.h
-SRCS = $(DERIVED_SRC)/ucspServer.cpp $(DERIVED_SRC)/ucspUser.cpp $(DERIVED_SRC)/ucspNotifyServer.cpp $(DERIVED_SRC)/ucspNotifyUser.cpp
+SRCS =	$(DERIVED_SRC)/ucspServer.cpp $(DERIVED_SRC)/ucspClient.cpp \
+		$(DERIVED_SRC)/ucspNotifyReceiver.cpp $(DERIVED_SRC)/ucspNotifySender.cpp
+INCLUDES = $(SRCROOT)/mig/ss_types.defs
 
 build: $(HDRS) $(SRCS)
 
@@ -38,12 +40,12 @@ installsrc:
 clean:
 	rm -f $(HDRS) $(SRCS)
 
-$(DERIVED_SRC)/ucsp.h $(DERIVED_SRC)/ucspServer.cpp $(DERIVED_SRC)/ucspUser.cpp: $(SRCROOT)/mig/ucsp.defs $(SRCROOT)/lib/ucsp_types.h
+$(DERIVED_SRC)/ucsp.h $(DERIVED_SRC)/ucspServer.cpp $(DERIVED_SRC)/ucspClient.cpp: $(SRCROOT)/mig/ucsp.defs $(INCLUDES)
 	mkdir -p $(DERIVED_SRC)
-	mig -server $(DERIVED_SRC)/ucspServer.cpp -user $(DERIVED_SRC)/ucspUser.cpp \
+	mig -server $(DERIVED_SRC)/ucspServer.cpp -user $(DERIVED_SRC)/ucspClient.cpp \
 		-header $(DERIVED_SRC)/ucsp.h $(SRCROOT)/mig/ucsp.defs
 
-$(DERIVED_SRC)/ucspNotify.h $(DERIVED_SRC)/ucspNotifyServer.cpp $(DERIVED_SRC)/ucspNotifyUser.cpp: $(SRCROOT)/mig/ucspNotify.defs $(SRCROOT)/lib/ucsp_types.h
+$(DERIVED_SRC)/ucspNotify.h $(DERIVED_SRC)/ucspNotifyReceiver.cpp $(DERIVED_SRC)/ucspNotifySender.cpp: $(SRCROOT)/mig/ucspNotify.defs $(INCLUDES)
 	mkdir -p $(DERIVED_SRC)
-	mig -server $(DERIVED_SRC)/ucspNotifyServer.cpp -user $(DERIVED_SRC)/ucspNotifyUser.cpp \
+	mig -server $(DERIVED_SRC)/ucspNotifyReceiver.cpp -user $(DERIVED_SRC)/ucspNotifySender.cpp \
 		-header $(DERIVED_SRC)/ucspNotify.h $(SRCROOT)/mig/ucspNotify.defs

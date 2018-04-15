@@ -3,8 +3,6 @@
 //
 // @APPLE_LICENSE_HEADER_START@
 // 
-// Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
-// 
 // This file contains Original Code and/or Modifications of Original Code
 // as defined in and that are subject to the Apple Public Source License
 // Version 2.0 (the 'License'). You may not use this file except in
@@ -26,6 +24,7 @@
 //
 #include <mach/std_types.defs>
 #include <mach/mach_types.defs>
+#include "ss_types.defs"
 
 subsystem ucsp 1000;
 serverprefix ucsp_server_;
@@ -36,216 +35,73 @@ import <securityd_client/ucsp_types.h>;
 
 
 //
-// Data types
-//
-type Data = array [] of char;
-
-type Pointer = uint32_t;
-type BasePointer = uint32_t;
-
-type KeyHandle = uint32_t;
-type KeyBlob = Data
-	ctype: Pointer;
-
-type DbHandle = uint32_t;
-type DbBlob = Data
-	ctype: Pointer;
-
-type AclEntryPrototypeBlob = Data
-	ctype: AclEntryPrototypePtr;
-type AclEntryPrototypePtr = BasePointer;
-
-type AclEntryInfoBlob = Data
-	ctype: AclEntryInfoPtr;
-type AclEntryInfoPtr = BasePointer;
-
-type AclEntryInputBlob = Data
-	ctype: AclEntryInputPtr;
-type AclEntryInputPtr = BasePointer;
-
-type AclOwnerPrototypeBlob = Data
-	ctype: AclOwnerPrototypePtr;
-type AclOwnerPrototypePtr = BasePointer;
-
-type AccessCredentialsBlob = Data
-	ctype: AccessCredentialsPtr;
-type AccessCredentialsPtr = BasePointer;
-
-type DLDbIdentBlob = Data
-    ctype: DLDbIdentPtr;
-type DLDbIdentPtr = BasePointer;
-
-type ParamInputBlob = Data
-	ctype: ParamInputPtr;
-type ParamInputPtr = BasePointer;
-
-type CssmDbRecordAttributeDataBlob = Data
-	ctype: CssmDbRecordAttributeDataPtr;
-type CssmDbRecordAttributeDataPtr = BasePointer;
-
-type CssmQueryBlob = Data
-	ctype: CssmQueryPtr;
-type CssmQueryPtr = BasePointer;
-
-type CssmSubserviceUidBlob = Data
-	ctype: CssmSubserviceUidPtr;
-type CssmSubserviceUidPtr = BasePointer;
-
-type CSSM_DBINFOBlob = Data
-	ctype: CSSM_DBINFOPtr;
-type CSSM_DBINFOPtr = BasePointer;
-
-type CSSM_DB_SCHEMA_ATTRIBUTE_INFOBlob = Data
-	ctype: CSSM_DB_SCHEMA_ATTRIBUTE_INFOPtr;
-type CSSM_DB_SCHEMA_ATTRIBUTE_INFOPtr = BasePointer;
-
-type CSSM_DB_SCHEMA_INDEX_INFOBlob = Data
-	ctype: CSSM_DB_SCHEMA_INDEX_INFOPtr;
-type CSSM_DB_SCHEMA_INDEX_INFOPtr = BasePointer;
-
-type CSSM_NAME_LISTBlob = Data
-	ctype: CSSM_NAME_LISTPtr;
-type CSSM_NAME_LISTPtr = BasePointer;
-
-type CssmNetAddressBlob = Data
-	ctype: CssmNetAddressPtr;
-type CssmNetAddressPtr = BasePointer;
-
-
-// @@@ VoidBlob and VoidPtr are't used anymore I think
-type VoidBlob = Data
-    ctype: VoidPtr;
-type VoidPtr = uint32_t;
-
-type SetupInfo = struct[4] of uint8_t
-	ctype: ClientSetupInfo;
-
-type Context = struct [9*4] of uint8_t
-	ctype: CSSM_CONTEXT
-	intran: Context inTrans(CSSM_CONTEXT);
-type ContextAttributes = array [] of char
-	cservertype: ContextAttributesPointer;
-	
-type CssmKeyHeader = struct [23*4] of uint8_t;
-
-type CssmKey = struct [(23+2)*4] of uint8_t
-	ctype: CSSM_KEY
-	intran: CssmKey inTrans(CSSM_KEY)
-	outtran: CSSM_KEY outTrans(CssmKey);
-    
-type CSSM_KEY_SIZE = struct [2*4] of uint32_t
-    ctype: CSSM_KEY_SIZE;
-
-type DBParameters = struct [1*4] of uint32_t;
-
-type AuthorizationItemSetBlob = Data
-	ctype: AuthorizationItemSetPtr;
-type AuthorizationItemSetPtr = BasePointer;
-
-type AuthorizationBlob = struct [8] of uint8_t;					// 8 opaque bytes
-type AuthorizationExternalForm = struct [32] of uint8_t;		// 32 opaque bytes
-
-type CssmString = c_string[*:64+4];
-type AuthorizationString = c_string[*:1024];
-type CSSM_RETURN = int32;
-type CSSM_ALGORITHMS = uint32_t;
-type CSSM_ACL_EDIT_MODE = uint32_t;
-type CSSM_ACL_HANDLE = uint32_t;
-type AclKind = uint32_t;
-type uint32 = uint32_t;
-type SecuritySessionId = uint32_t;
-type SessionAttributeBits = uint32_t;
-type SessionCreationFlags = uint32_t;
-
-type AttachmentHandle = uint32_t;
-type RecordHandle = uint32_t;
-type SearchHandle = uint32_t;
-type CSSM_DB_RECORDTYPE = uint32_t;
-type CSSM_DB_ACCESS_TYPE = uint32_t;
-type CSSM_DB_MODIFY_MODE = uint32_t;
-
-type ExecutablePath = c_string[*:2048];
-type RelationName = c_string[*:2048];
-
-//
 // Common argument profiles
 //
 #define UCSP_PORTS	requestport sport: mach_port_t; \
 					replyport rport: mach_port_make_send_t; \
-                    serversectoken sourceSecurity: security_token_t; \
+                    serveraudittoken sourceAudit: audit_token_t; \
 					out rcode: CSSM_RETURN
-#define IN_CONTEXT	in context: Context; in contextBase: BasePointer; in attrs: ContextAttributes
-#define IN_BLOB(name,type)	in name: type##Blob; in name##Base: type##Ptr
-#define OUT_BLOB(name,type)	out name: type##Blob; out name##Base: type##Ptr
 
 
 //
 // Management and administrative functions
 //
-routine setup(UCSP_PORTS; in tport: mach_port_t; in info: SetupInfo; in executablePath: ExecutablePath);
-routine setupNew(UCSP_PORTS; in tport: mach_port_t; in info: SetupInfo; in executablePath: ExecutablePath;
+routine setup(UCSP_PORTS; in tport: mach_port_t; in info: SetupInfo; in FilePath: FilePath);
+routine setupNew(UCSP_PORTS; in tport: mach_port_t; in info: SetupInfo; in FilePath: FilePath;
 	out newServicePort: mach_port_make_send_t);
 routine setupThread(UCSP_PORTS; in tport: mach_port_t);
-routine teardown(UCSP_PORTS);
 
 
 //
-// DL Interface
+// Common database functions
 //
-routine attach(UCSP_PORTS; IN_BLOB(ssUid,CssmSubserviceUid); out attachment: AttachmentHandle);
-routine detach(UCSP_PORTS; in attachment: AttachmentHandle);
-routine openDb(UCSP_PORTS; in attachment: AttachmentHandle; in dbName: Data; IN_BLOB(location,CssmNetAddress);
-	in accessType: CSSM_DB_ACCESS_TYPE; IN_BLOB(accessCredentials,AccessCredentials);
-	in openParameters: Data; out db: DbHandle);
-routine createDb2(UCSP_PORTS; in attachment: AttachmentHandle; in dbName: Data; IN_BLOB(location,CssmNetAddress);
-	IN_BLOB(dbInfo,CSSM_DBINFO); in accessType: CSSM_DB_ACCESS_TYPE; IN_BLOB(accessCredentials,AccessCredentials);
-	IN_BLOB(aclEntryPrototype,AclEntryPrototype);
-	in openParameters: Data; out db: DbHandle);
-routine deleteDb(UCSP_PORTS; in attachment: AttachmentHandle; in dbName: Data; IN_BLOB(location,CssmNetAddress);
-	IN_BLOB(accessCredentials,AccessCredentials));
-routine getDbNames(UCSP_PORTS; in attachment: AttachmentHandle; OUT_BLOB(nameList,CSSM_NAME_LIST));
-routine getDbNameFromHandle(UCSP_PORTS; in db: DbHandle; out name: Data);
-routine closeDb(UCSP_PORTS; in db: DbHandle);
 routine authenticateDb(UCSP_PORTS; in db: DbHandle; in accessType: CSSM_DB_ACCESS_TYPE; IN_BLOB(accessCredentials,AccessCredentials));
-routine createRelation(UCSP_PORTS; in db: DbHandle;
-	in recordType: CSSM_DB_RECORDTYPE; in relationName: RelationName;
-	in attributeCount: uint32; IN_BLOB(attributes,CSSM_DB_SCHEMA_ATTRIBUTE_INFO);
-	in indexCount: uint32; IN_BLOB(indices,CSSM_DB_SCHEMA_INDEX_INFO));
-routine destroyRelation(UCSP_PORTS; in db: DbHandle; in recordType: CSSM_DB_RECORDTYPE);
+routine releaseDb(UCSP_PORTS; in db: DbHandle);
+routine getDbName(UCSP_PORTS; in db: DbHandle; out name: FilePathOut);
+routine setDbName(UCSP_PORTS; in db: DbHandle; in name: FilePath);
+
+
+//
+// External database interface
+//
+routine openToken(UCSP_PORTS; in ssid: uint32; in name: FilePath;
+	IN_BLOB(accessCredentials,AccessCredentials); out db: DbHandle);
+	
+routine findFirst(UCSP_PORTS; in db: DbHandle; IN_BLOB(query,CssmQuery);
+	IN_BLOB(inAttributes,CssmDbRecordAttributeData); OUT_BLOB(outAttributes,CssmDbRecordAttributeData);
+	in getData: boolean_t; out data: Data; out key: KeyHandle; out search: SearchHandle; out record: RecordHandle);
+routine findNext(UCSP_PORTS; in search: SearchHandle;
+	IN_BLOB(inAttributes,CssmDbRecordAttributeData); OUT_BLOB(outAttributes,CssmDbRecordAttributeData);
+	in getData: boolean_t; out data: Data; out key: KeyHandle; out record: RecordHandle);
+routine findRecordHandle(UCSP_PORTS; in record: RecordHandle;
+	IN_BLOB(inAttributes,CssmDbRecordAttributeData); OUT_BLOB(outAttributes,CssmDbRecordAttributeData);
+	in getData: boolean_t; out data: Data; out key: KeyHandle);
 routine insertRecord(UCSP_PORTS; in db: DbHandle; in recordType: CSSM_DB_RECORDTYPE;
 	IN_BLOB(attributes,CssmDbRecordAttributeData); in data: Data; out record: RecordHandle);
-routine deleteRecord(UCSP_PORTS; in record: RecordHandle);
-routine modifyRecord(UCSP_PORTS; in record: RecordHandle; in recordType: CSSM_DB_RECORDTYPE;
-	IN_BLOB(attributes,CssmDbRecordAttributeData); in data: Data; in modifyMode: CSSM_DB_MODIFY_MODE);
-routine findFirstRecord(UCSP_PORTS; in db: DbHandle; IN_BLOB(query,CssmQuery);
-	out search: SearchHandle;
-	IN_BLOB(inAttributes,CssmDbRecordAttributeData); OUT_BLOB(outAttributes,CssmDbRecordAttributeData);
-	in getData: boolean_t; out data: Data; out record: RecordHandle);
-routine findNextRecord(UCSP_PORTS; in search: SearchHandle;
-	IN_BLOB(inAttributes,CssmDbRecordAttributeData); OUT_BLOB(outAttributes,CssmDbRecordAttributeData);
-	in getData: boolean_t; out data: Data; out record: RecordHandle);
-routine abortFind(UCSP_PORTS; in search: SearchHandle);
-routine getRecordFromHandle(UCSP_PORTS; in record: RecordHandle;
-	IN_BLOB(inAttributes,CssmDbRecordAttributeData); OUT_BLOB(outAttributes,CssmDbRecordAttributeData);
-	in getData: boolean_t; out data: Data);
-routine freeRecordHandle(UCSP_PORTS; in record: RecordHandle);
+routine deleteRecord(UCSP_PORTS; in db: DbHandle; in record: RecordHandle);
+routine modifyRecord(UCSP_PORTS; in db: DbHandle; inout record: RecordHandle; in recordType: CSSM_DB_RECORDTYPE;
+	IN_BLOB(attributes,CssmDbRecordAttributeData); in setData: boolean_t; in data: Data;
+	in modifyMode: CSSM_DB_MODIFY_MODE);
+routine releaseSearch(UCSP_PORTS; in search: SearchHandle);
+routine releaseRecord(UCSP_PORTS; in record: RecordHandle);
+
 
 
 //
-// Database management
+// Internal database interface
 //
 routine createDb(UCSP_PORTS; out db: DbHandle; IN_BLOB(ident,DLDbIdent);
     IN_BLOB(accessCredentials,AccessCredentials); IN_BLOB(aclEntryPrototype,AclEntryPrototype);
     in params: DBParameters);
+routine cloneDbForSync(UCSP_PORTS; in secretsBlob: DbBlob; 
+    in srcDb: DbHandle; in agentData: Data; out newDb: DbHandle);
 routine decodeDb(UCSP_PORTS; out db: DbHandle; IN_BLOB(ident,DLDbIdent);
     IN_BLOB(accessCredentials,AccessCredentials); in blob: DbBlob);
 routine encodeDb(UCSP_PORTS; in db: DbHandle; out blob: DbBlob);
-routine releaseDb(UCSP_PORTS; in db: DbHandle);
 routine setDbParameters(UCSP_PORTS; in db: DbHandle; in params: DBParameters);
 routine getDbParameters(UCSP_PORTS; in db: DbHandle; out params: DBParameters);
 routine changePassphrase(UCSP_PORTS; in db: DbHandle; 
 	IN_BLOB(accessCredentials,AccessCredentials));
-routine lockDb(UCSP_PORTS; in db: DbHandle);
 routine lockAll(UCSP_PORTS; in forSleep: boolean_t);
 routine unlockDb(UCSP_PORTS; in db: DbHandle);
 routine unlockDbWithPassphrase(UCSP_PORTS; in db: DbHandle; in passPhrase: Data);
@@ -259,6 +115,9 @@ routine encodeKey(UCSP_PORTS; in key: KeyHandle; out blob: KeyBlob;
     in wantUid: boolean_t; out uid: Data);
 routine decodeKey(UCSP_PORTS; out key: KeyHandle; out header: CssmKeyHeader;
     in db: DbHandle; in blob: KeyBlob);
+// keychain synchronization
+routine recodeKey(UCSP_PORTS; in oldDb: DbHandle; in key: KeyHandle; 
+    in newDb: DbHandle; out newBlob: KeyBlob);
 routine releaseKey(UCSP_PORTS; in key: KeyHandle);
 
 routine queryKeySizeInBits(UCSP_PORTS; in key: KeyHandle; out length: CSSM_KEY_SIZE);
@@ -266,11 +125,6 @@ routine getOutputSize(UCSP_PORTS; IN_CONTEXT; in key: KeyHandle;
     in inputSize: uint32; in encrypt: boolean_t; out outputSize: uint32);
 
 routine getKeyDigest(UCSP_PORTS; in key: KeyHandle; out digest: Data);
-
-//
-// Random numbers
-//
-routine generateRandom(UCSP_PORTS; in bytes: uint32; out data: Data);
 
 
 //
@@ -296,10 +150,6 @@ routine generateKeyPair(UCSP_PORTS; in db: DbHandle; IN_CONTEXT;
 	in pubUsage: uint32; in pubAttrs: uint32; in privUsage: uint32; in privAttrs: uint32;
 	out pubKey: KeyHandle; out pubHeader: CssmKeyHeader;
     out privKey: KeyHandle; out privHeader: CssmKeyHeader);
-routine deriveKey(UCSP_PORTS; in db: DbHandle; IN_CONTEXT; in baseKey: KeyHandle;
-	IN_BLOB(accessCredentials,AccessCredentials); IN_BLOB(aclEntryPrototype,AclEntryPrototype);
-    IN_BLOB(paramInput,ParamInput); out paramOutput: Data;
-	in keyUsage: uint32; in keyAttrs: uint32; out key: KeyHandle; out header: CssmKeyHeader);
 
 routine wrapKey(UCSP_PORTS; IN_CONTEXT; in key: KeyHandle;
     IN_BLOB(accessCredentials,AccessCredentials); in keyToBeWrapped: KeyHandle;
@@ -310,21 +160,44 @@ routine unwrapKey(UCSP_PORTS; in db: DbHandle; IN_CONTEXT; in key: KeyHandle;
 	in usage: uint32; in attributes: uint32; out data: Data; 
     out resultKey: KeyHandle; out header: CssmKeyHeader);
 
+routine deriveKey(UCSP_PORTS; in db: DbHandle; IN_CONTEXT; in baseKey: KeyHandle;
+	IN_BLOB(accessCredentials,AccessCredentials); IN_BLOB(aclEntryPrototype,AclEntryPrototype);
+    IN_BLOB(paramInput,CssmDeriveData); out paramOutput: Data;
+	in keyUsage: uint32; in keyAttrs: uint32; out key: KeyHandle; out header: CssmKeyHeader);
+
+routine generateRandom(UCSP_PORTS; in ssid: uint32; IN_CONTEXT; out data: Data);
+
 
 //
 // ACL management
 //
-routine getOwner(UCSP_PORTS; in kind: AclKind; in key: KeyHandle;
+routine getOwner(UCSP_PORTS; in kind: AclKind; in key: GenericHandle;
 	out proto: AclOwnerPrototypeBlob; out protoBase: AclOwnerPrototypePtr);
-routine setOwner(UCSP_PORTS; in kind: AclKind; in key: KeyHandle;
+routine setOwner(UCSP_PORTS; in kind: AclKind; in key: GenericHandle;
 	IN_BLOB(accessCredentials,AccessCredentials); IN_BLOB(aclOwnerPrototype,AclOwnerPrototype));
-routine getAcl(UCSP_PORTS; in kind: AclKind; in key: KeyHandle;
+routine getAcl(UCSP_PORTS; in kind: AclKind; in key: GenericHandle;
 	in haveTag: boolean_t; in tag: CssmString;
 	out count: uint32; out acls: AclEntryInfoBlob; out aclsBase: AclEntryInfoPtr);
-routine changeAcl(UCSP_PORTS; in kind: AclKind; in key: KeyHandle;
+routine changeAcl(UCSP_PORTS; in kind: AclKind; in key: GenericHandle;
 	IN_BLOB(accessCredentials,AccessCredentials);
 	in mode: CSSM_ACL_EDIT_MODE; in handle: CSSM_ACL_HANDLE;
 	IN_BLOB(aclEntryInput,AclEntryInput));
+
+routine login(UCSP_PORTS; IN_BLOB(accessCredentials,AccessCredentials); in name: Data);
+routine logout(UCSP_PORTS);
+
+
+//
+// Miscellanea
+//
+routine getStatistics(UCSP_PORTS; in ssid: uint32; out statistics: CSPOperationalStatistics);
+routine getTime(UCSP_PORTS; in ssid: uint32; in algorithm: CSSM_ALGORITHMS; out data: Data);
+routine getCounter(UCSP_PORTS; in ssid: uint32; out data: Data);
+routine selfVerify(UCSP_PORTS; in ssid: uint32);
+
+routine cspPassThrough(UCSP_PORTS; in ssid: uint32; in id: uint32; IN_CONTEXT; in hKey: KeyHandle;
+	in inData: Data; out outData: Data);
+routine dlPassThrough(UCSP_PORTS; in ssid: uint32; in id: uint32; in inData: Data; out outData: Data);
 
 
 //
@@ -362,13 +235,20 @@ routine getSessionInfo(UCSP_PORTS; inout sessionId: SecuritySessionId;
 
 routine setupSession(UCSP_PORTS; in flags: SessionCreationFlags; in attrs: SessionAttributeBits);
 
+routine setSessionDistinguishedUid(UCSP_PORTS; in sessionId: SecuritySessionId; in user: uid_t);
+routine getSessionDistinguishedUid(UCSP_PORTS; in sessionId: SecuritySessionId; out user: uid_t);
+
+routine setSessionUserPrefs(UCSP_PORTS; in sessionId: SecuritySessionId; in userPrefs: Data);
 
 //
 // Notification subsystem
 //
-routine requestNotification(UCSP_PORTS; in receiver: mach_port_t; in domain: uint32; in events: uint32);
+routine requestNotification(UCSP_PORTS; in receiver: mach_port_make_send_t; in domain: uint32; in events: uint32);
 routine stopNotification(UCSP_PORTS; in receiver: mach_port_t);
-routine postNotification(UCSP_PORTS; in domain: uint32; in event: uint32; in data: Data);
+
+waittime 0;
+simpleroutine postNotification(requestport receiver: mach_port_t; in domain: uint32; in event: uint32; in data: Data);
+nowaittime;
 
 
 //
@@ -378,7 +258,6 @@ routine extractMasterKey(UCSP_PORTS; in db: DbHandle; IN_CONTEXT; in sourceDb: D
 	IN_BLOB(accessCredentials,AccessCredentials); IN_BLOB(aclEntryPrototype,AclEntryPrototype);
 	in keyUsage: uint32; in keyAttrs: uint32; out key: KeyHandle; out header: CssmKeyHeader);
 
-routine getDbIndex(UCSP_PORTS; in db: DbHandle; out index: Data);
 
 //
 // AuthorizationDB operations
@@ -391,16 +270,23 @@ routine authorizationdbRemove(UCSP_PORTS; in authorization: AuthorizationBlob; i
 //
 // Miscellaneous administrative calls
 //
-routine addCodeEquivalence(UCSP_PORTS; in oldCode: Data; in newCode: Data; in name: ExecutablePath;
+routine addCodeEquivalence(UCSP_PORTS; in oldCode: Data; in newCode: Data; in name: FilePath;
 	in forSystem: boolean_t);
-routine removeCodeEquivalence(UCSP_PORTS; in code: Data; in name: ExecutablePath;
+routine removeCodeEquivalence(UCSP_PORTS; in code: Data; in name: FilePath;
 	in forSystem: boolean_t);
-routine setAlternateSystemRoot(UCSP_PORTS; in path: ExecutablePath);
+routine setAlternateSystemRoot(UCSP_PORTS; in path: FilePath);
+
 
 //
-// Child releated calls
+// Subsidiary process (child) management.
+// This call does NOT cause securityd-client activation.
 //
-simpleroutine registerChild(requestport sport: mach_port_t; replyport rport: mach_port_make_send_t;
-                            in task_port: mach_port_t);
-simpleroutine handleSignal(requestport sport: mach_port_make_send_t;
-                           in task_port: mach_port_t; in signal_number: int);
+simpleroutine childCheckIn(requestport sport: mach_port_t;
+	in servicePort: mach_port_make_send_t; in task_port: mach_port_t);
+
+//
+// late keychain syncing addition: force new operational secrets into 
+// existing securityd keychain database
+//
+routine commitDbForSync(UCSP_PORTS; in srcDb: DbHandle; in cloneDb: DbHandle;
+    out blob: DbBlob);

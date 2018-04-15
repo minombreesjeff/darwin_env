@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -25,118 +23,45 @@
 
 #include "eventlistener.h"
 
+using namespace MachPlusPlus;
+
 
 namespace Security {
 namespace SecurityServer {
 
-EventListener::EventListener (Allocator &standard, Allocator &returning)
-	: mClientSession (standard, returning),
-	mMachPortRef (NULL),
-	mRunLoopSourceRef (NULL)
+
+//
+// Constructing an EventListener immediately enables it for event reception.
+//
+EventListener::EventListener (NotificationDomain domain, NotificationMask eventMask,
+	Allocator &standard, Allocator &returning)
+	: SecurityServer::ClientSession (standard, returning)
 {
-	Initialize ();
+	// behold the power of multiple inheritance...
+	CFAutoPort::enable();								// enable port reception
+	Port::qlimit(MACH_PORT_QLIMIT_MAX);					// set maximum queue depth
+	ClientSession::requestNotification(*this, domain, eventMask); // request notifications there
 }
 
 
-
+//
+// StopNotification() is needed on destruction; everyone else cleans up after themselves.
+//
 EventListener::~EventListener ()
 {
-	if (mMachPortRef != NULL)
-	{
-		mach_port_t mp = CFMachPortGetPort (mMachPortRef);
-		mClientSession.stopNotification (mp);
-		CFRelease (mMachPortRef);
-	}
-	
-	if (mRunLoopSourceRef != NULL)
-	{
-		CFRelease (mRunLoopSourceRef);
-	}
+	ClientSession::stopNotification(*this);
 }
 
 
-
-void EventListener::Callback (CFMachPortRef port, void *msg, CFIndex size, void *info)
+//
+// We simply hand off the incoming raw mach message to ourselves via
+// SecurityServer::dispatchNotification. This will call our consume() method,
+// which our subclass will have to provide.
+//
+void EventListener::receive(const Message &message)
 {
-	reinterpret_cast<EventListener*>(info)->HandleCallback (port, msg, size);
+	ClientSession::dispatchNotification(message, this);
 }
-
-
-
-void EventListener::Initialize ()
-{
-	// create a callback information structure
-	CFMachPortContext context = {1, this, NULL, NULL, NULL};
-	
-	// create the CFMachPort
-	mMachPortRef = CFMachPortCreate (NULL, Callback, &context, NULL);
-	if (mMachPortRef == NULL)
-	{
-		return;
-	}
-	
-    // set the buffer limit for the port
-	mach_port_t mp = CFMachPortGetPort (mMachPortRef);
-
-    mach_port_limits_t limits;
-    limits.mpl_qlimit = MACH_PORT_QLIMIT_MAX;
-    kern_return_t result =
-        mach_port_set_attributes (mach_task_self (), mp, MACH_PORT_LIMITS_INFO,
-                                  mach_port_info_t (&limits), MACH_PORT_LIMITS_INFO_COUNT);
-
-    if (result != KERN_SUCCESS)
-    {
-        secdebug ("notify", "Got error %d when trying to maximize queue size", result);
-    }
-    
-	// make a run loop source for this ref
-	mRunLoopSourceRef = CFMachPortCreateRunLoopSource (NULL, mMachPortRef, NULL);
-	if (mRunLoopSourceRef == NULL)
-	{
-		CFRelease (mMachPortRef);
-		return;
-	}
-	
-	// attach this run loop source to the main run loop
-	CFRunLoopAddSource (CFRunLoopGetCurrent (), mRunLoopSourceRef, kCFRunLoopDefaultMode);
-	
-	// extract the actual port from the run loop, and request callbacks on that port
-	mClientSession.requestNotification (mp, kNotificationDomainDatabase,
-											kNotificationAllEvents);
-}
-
-
-
-void EventListener::HandleCallback (CFMachPortRef port, void *msg, CFIndex size)
-{
-	// we need to parse the message and see what happened
-	mClientSession.dispatchNotification (reinterpret_cast<mach_msg_header_t *>(msg), ProcessMessage, this);
-}
-
-
-
-OSStatus EventListener::ProcessMessage (NotificationDomain domain, NotificationEvent event, const void *data, size_t dataLength, void *context)
-{
-	reinterpret_cast<EventListener*>(context)->EventReceived (domain, event, data, dataLength);
-	return noErr;
-}
-
-
-
-void EventListener::RequestEvents (NotificationDomain whichDomain, NotificationMask whichEvents)
-{
-	// stop the old event request and change to the new one
-	mach_port_t mp = CFMachPortGetPort (mMachPortRef);
-	mClientSession.stopNotification (mp);
-	mClientSession.requestNotification (mp, whichDomain, whichEvents);
-}
-
-
-
-void EventListener::EventReceived (NotificationDomain domain, NotificationEvent event, const void* data, size_t dataLength)
-{
-}
-
 
 
 } // end namespace SecurityServer

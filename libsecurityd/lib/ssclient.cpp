@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -33,7 +31,6 @@
 
 using MachPlusPlus::check;
 using MachPlusPlus::Bootstrap;
-using CodeSigning::OSXCode;
 
 
 namespace Security {
@@ -52,7 +49,7 @@ const char *ClientSession::mContactName;
 // Construct a client session
 //
 ClientSession::ClientSession(Allocator &std, Allocator &rtn)
-: internalAllocator(std), returnAllocator(rtn), mCallback(NULL), mCallbackContext(NULL)
+: ClientCommon(std, rtn), mCallback(NULL), mCallbackContext(NULL)
 { }
 
 
@@ -91,7 +88,6 @@ void ClientSession::activate()
 		// first time for this thread - use abbreviated registration
 		IPCN(ucsp_client_setupThread(UCSP_ARGS, mach_task_self()));
         thread.registered = true;
-        global.serverPort.requestNotify(thread.replyPort, MACH_NOTIFY_DEAD_NAME, true);
         secdebug("SSclnt", "Thread registered with %s", mContactName);
 	}
 }
@@ -125,12 +121,7 @@ const char *ClientSession::contactName() const
 ClientSession::Global::Global()
 {
     // find server port
-	IFDEBUG(if (!mContactName) mContactName = getenv(SECURITYSERVER_BOOTSTRAP_ENV));
-	if (!mContactName)
-		mContactName = SECURITYSERVER_BOOTSTRAP_NAME;
-    secdebug("SSclnt", "Locating %s", mContactName);
-    serverPort = Bootstrap().lookup(mContactName);
-	secdebug("SSclnt", "contacting %s at port %d", mContactName, serverPort.port());
+	serverPort = findSecurityd();
     
     // send identification/setup message
     string extForm;
@@ -143,14 +134,14 @@ ClientSession::Global::Global()
         secdebug("SSclnt", "failed to obtain my own OSXCode");
     }
 
-	ClientSetupInfo info = { SSPROTOVERSION };
+	ClientSetupInfo info = { 0x1234, SSPROTOVERSION };
 	
     // cannot use UCSP_ARGS here because it uses mGlobal() -> deadlock
     Thread &thread = this->thread();
 	
 	if (mSetupSession) {
 		secdebug("SSclnt", "sending session setup request");
-		mSetupSession = false;
+		mSetupSession = false;	// reset global
 		IPCN(ucsp_client_setupNew(serverPort, thread.replyPort, &rcode,
 			mach_task_self(), info, extForm.c_str(), &serverPort.port()));
 		secdebug("SSclnt", "new session server port is %d", serverPort.port());
@@ -159,21 +150,63 @@ ClientSession::Global::Global()
 			mach_task_self(), info, extForm.c_str()));
 	}
     thread.registered = true;	// as a side-effect of setup call above
-	serverPort.requestNotify(thread.replyPort, MACH_NOTIFY_DEAD_NAME, true);
+	IFDEBUG(serverPort.requestNotify(thread.replyPort));
 	secdebug("SSclnt", "contact with %s established", mContactName);
 }
 
 
 //
-// Terminate a session. This is called by the session destructor, or explicitly.
+// Reset the connection.
+// This discards all client state accumulated for the securityd link.
+// Existing connections will go stale and fail; new connections will
+// re-establish the link. This is an expert tool ONLY. If you don't know
+// exactly how this gig is danced, you don't want to call this. Really.
 //
-void ClientSession::terminate()
+void ClientSession::reset()
 {
-	// currently defunct
-	secdebug("SSclnt", "ClientSession::terminate() call ignored");
+	secdebug("SSclnt", "resetting client state (OUCH)");
+	mGlobal.reset();
 }
 
 
+//
+// Common utility for finding the registered securityd port for the current
+// session. This does not cache the port anywhere, though it does effectively
+// cache the name.
+//
+Port ClientSession::findSecurityd()
+{
+	if (!mContactName)
+	{
+		mContactName = getenv(SECURITYSERVER_BOOTSTRAP_ENV);
+		if (!mContactName)
+			mContactName = SECURITYSERVER_BOOTSTRAP_NAME;
+	}
+
+    secdebug("SSclnt", "Locating %s", mContactName);
+    Port serverPort = Bootstrap().lookup(mContactName);
+	secdebug("SSclnt", "contacting %s at port %d (version %d)",
+		mContactName, serverPort.port(), SSPROTOVERSION);
+	return serverPort;
+}
+
+
+//
+// Subsidiary process management.
+// This does not go through the generic securityd-client setup.
+//
+void ClientSession::childCheckIn(Port serverPort, Port taskPort)
+{
+	check(ucsp_client_childCheckIn(findSecurityd(), serverPort, taskPort));
+}
+
+
+//
+// Temporary hack - deal with securityd-generated special error codes by
+// calling a special callback for ACL editing. This facility will move entirely
+// into securityd at some point (hopefully near), after which this call will
+// disappear with a contented sigh.
+//
 void ClientSession::addApplicationAclSubject(KeyHandle key, CSSM_ACL_AUTHORIZATION_TAG tag)
 {
 	/* Notify our client if they are interested. */

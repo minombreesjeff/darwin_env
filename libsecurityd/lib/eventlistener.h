@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -27,35 +25,29 @@
 #define _H_EVENTLISTENER
 
 #include <securityd_client/ssclient.h>
-#include <CoreFoundation/CFMachPort.h>
+#include <security_utilities/cfmach++.h>
 
-
-
-#undef verify
 
 namespace Security {
 namespace SecurityServer {
 
 
-class EventListener
-{
-protected:
-	ClientSession mClientSession;
-	CFMachPortRef mMachPortRef;
-	CFRunLoopSourceRef mRunLoopSourceRef;
-
-	static void Callback (CFMachPortRef port, void *msg, CFIndex size, void *info);
-	static OSStatus ProcessMessage (NotificationDomain domain, NotificationEvent event, const void *data, size_t dataLength, void *context);
-	void HandleCallback (CFMachPortRef port, void *msg, CFIndex size);
-	void HandleMessage ();
-	void Initialize ();
-	
+//
+// A CFNotificationDispatcher registers with the local CFRunLoop to automatically
+// receive notification messages and dispatch them.
+//
+class EventListener : private MachPlusPlus::CFAutoPort,
+	protected SecurityServer::ClientSession::NotificationConsumer,
+	private SecurityServer::ClientSession {
 public:
-	EventListener (Allocator &standard = Allocator::standard(), Allocator &returning = Allocator::standard());
-	virtual ~EventListener ();
+	EventListener(NotificationDomain domain, NotificationMask eventMask,
+		Allocator &standard = Allocator::standard(), Allocator &returning = Allocator::standard());
+	virtual ~EventListener();
 
-	void RequestEvents (NotificationDomain domain, NotificationMask eventMask);
-	virtual void EventReceived (NotificationDomain domain, NotificationEvent event, const void* data, size_t dataLength);
+	// NotificationConsumer::consume (virtual from NotificationConsumer) is still abstract here
+
+private:
+	void receive(const MachPlusPlus::Message &message);
 };
 
 

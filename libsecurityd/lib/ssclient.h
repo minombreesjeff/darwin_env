@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -34,54 +32,30 @@
 #define _H_SSCLIENT
 
 
-#include <Security/cssm.h>
-#include <security_utilities/alloc.h>
-#include <security_cdsa_utilities/cssmdata.h>
-#include <security_cdsa_utilities/cssmdbname.h>
-#include <security_cdsa_utilities/cssmkey.h>
-#include <security_cdsa_utilities/cssmacl.h>
-#include <security_cdsa_utilities/context.h>
-#include <security_utilities/globalizer.h>
-#include <security_utilities/unix++.h>
-#include <security_utilities/mach++.h>
-#include <security_cdsa_utilities/cssmdb.h>
-#include <security_cdsa_client/osxsigning.h>
+#include <security_utilities/osxcode.h>
 #include <Security/Authorization.h>
 #include <Security/AuthSession.h>
+#include <security_utilities/unix++.h>
+#include <security_utilities/globalizer.h>
+#include "sscommon.h"
 #include "ssnotify.h"
 
 
 namespace Security {
 namespace SecurityServer {
 
-using MachPlusPlus::Port;
-using MachPlusPlus::ReceivePort;
-
 
 //
-// The default Mach bootstrap registration name for SecurityServer,
-// and the environment variable to override it
+// Unique-identifier blobs for key objects
 //
-#define SECURITYSERVER_BOOTSTRAP_NAME	"com.apple.SecurityServer"
-#define SECURITYSERVER_BOOTSTRAP_ENV	"SECURITYSERVER"
-
-
-//
-// Common data types
-//
-typedef CSSM_HANDLE AttachmentHandle;
-typedef CSSM_HANDLE DbHandle;
-typedef CSSM_HANDLE KeyHandle;
-typedef CSSM_HANDLE RecordHandle;
-typedef CSSM_HANDLE SearchHandle;
-
-static const CSSM_HANDLE noDb = 0;
-static const CSSM_HANDLE noKey = 0;
-
 struct KeyUID {
     uint8 signature[20];
 };
 
+
+//
+// Authorization blobs
+//
 struct AuthorizationBlob {
     uint32 data[2];
 	
@@ -96,12 +70,15 @@ struct AuthorizationBlob {
     }
 };
 
+
+//
+// Initial-setup data for versioning etc.
+//
 struct ClientSetupInfo {
+	uint32 order;
 	uint32 version;
 };
-#define SSPROTOVERSION 5
-
-enum AclKind { dbAcl, keyAcl, loginAcl };
+#define SSPROTOVERSION 10005
 
 
 //
@@ -117,26 +94,15 @@ public:
 //
 // A client connection (session)
 //
-class ClientSession {
-	NOCOPY(ClientSession)
+class ClientSession : public ClientCommon {
 public:
-	typedef void DidChangeKeyAclCallback(void *context, ClientSession &clientSession,
-		KeyHandle key, CSSM_ACL_AUTHORIZATION_TAG tag);
-
-	ClientSession(Allocator &standard, Allocator &returning);
+	ClientSession(Allocator &standard = Allocator::standard(),
+		Allocator &returning = Allocator::standard());
 	virtual ~ClientSession();
-
-	void registerForAclEdits(DidChangeKeyAclCallback *callback, void *context);
-
-	Allocator &internalAllocator;
-	Allocator &returnAllocator;
-
-public:
-	typedef Security::Context Context;
 
 public:
 	void activate();
-	void terminate();
+	void reset();
 	
 public:
 	// use this only if you know what you're doing...
@@ -144,109 +110,60 @@ public:
 	const char *contactName() const;
 
 public:
-	// DL interface
-	
-	// Managing attachments.
-	AttachmentHandle attach(const CssmSubserviceUid &ssuid);
-	void detach(AttachmentHandle attachment);
-	
-	// Calls that operate on an attachment.
-	// CSSM_DL_DbOpen
-	DbHandle openDb(AttachmentHandle attachment,
-					const char *dbName,
-					const CssmNetAddress *dbLocation,
-					CSSM_DB_ACCESS_TYPE accessType,
-					const AccessCredentials *cred,
-					const CssmData &openParameters);
-
-	// CSSM_DL_DbCreate
-	DbHandle createDb(AttachmentHandle attachment,
-					  const char *dbName,
-					  const CssmNetAddress *dbLocation,
-					  const CSSM_DBINFO &dBInfo,
-					  CSSM_DB_ACCESS_TYPE accessType,
-					  const AccessCredentials *cred,
-					  const AclEntryInput *owner,
-					  const CssmData &openParameters);
-
-	// CSSM_DL_DbDelete
-	void deleteDb(AttachmentHandle attachment,
-				  const char *dbName,
-				  const CssmNetAddress *dbLocation,
-                  const AccessCredentials *cred);
-
-	// CSSM_DL_GetDbNames
-	CSSM_NAME_LIST_PTR getDbNames(AttachmentHandle attachment);
-
-	// CSSM_DL_FreeNameList @@@ Not an RPC
-	void freeNameList(AttachmentHandle attachment,
-                      CSSM_NAME_LIST_PTR NameList);
-
-	// Calls that operate on a db
-	// CSSM_DL_GetDbNameFromHandle result is allocated using the returnAllocator.
-	char *getDbNameFromHandle(DbHandle db);
-	// CSSM_DL_DbClose
-	void closeDb(DbHandle db);
-	// CSSM_DL_Authenticate
-	// @@@ cred should be non optional.
+	//
+	// common database interface
+	//
 	void authenticateDb(DbHandle db, CSSM_DB_ACCESS_TYPE type, const AccessCredentials *cred);
-	// CSSM_DL_CreateRelation
-	void createRelation(DbHandle db,
-                        CSSM_DB_RECORDTYPE recordType,
-                        const char &relationName,
-                        uint32 attributeCount,
-                        const CSSM_DB_SCHEMA_ATTRIBUTE_INFO *attributes,
-                        uint32 indexCount,
-                        const CSSM_DB_SCHEMA_INDEX_INFO *indices);
-	// CSSM_DL_DestroyRelation
-	void destroyRelation(DbHandle db,
-						 CSSM_DB_RECORDTYPE recordType);
-	// CSSM_DL_DataInsert
+	void releaseDb(DbHandle db);
+	
+	//
+	// External database interface
+	//
+	DbHandle openToken(uint32 ssid, const AccessCredentials *cred, const char *name = NULL);
+
 	RecordHandle insertRecord(DbHandle db,
-							  CSSM_DB_RECORDTYPE recordType,
-							  const CssmDbRecordAttributeData *attributes,
-							  const CssmData *data);
-	// CSSM_DL_DataDelete
-	void deleteRecord(RecordHandle record);
-	// CSSM_DL_DataModify
-	void modifyRecord(RecordHandle record,
+					  CSSM_DB_RECORDTYPE recordType,
+					  const CssmDbRecordAttributeData *attributes,
+					  const CssmData *data);
+	void deleteRecord(DbHandle db, RecordHandle record);
+	void modifyRecord(DbHandle db, RecordHandle &record,
 					  CSSM_DB_RECORDTYPE recordType,
 					  const CssmDbRecordAttributeData *attributesToBeModified,
 					  const CssmData *dataToBeModified,
 					  CSSM_DB_MODIFY_MODE modifyMode);
-	// CSSM_DL_DataGetFirst
-	RecordHandle getFirstRecord(DbHandle db,
-								const CssmQuery &query,
-								SearchHandle &outSearchHandle,
-								CssmDbRecordAttributeData *inOutAttributes,
-								CssmData *inOutData);
-	// CSSM_DL_DataGetNext
-	RecordHandle getNextRecord(SearchHandle searchHandle,
-							   CssmDbRecordAttributeData *inOutAttributes,
-							   CssmData *inOutData);
-	// CSSM_DL_DataAbortQuery
-	void abortFind(SearchHandle searchHandle);
-	// CSSM_DL_DataGetFromUniqueRecordId
-	void getRecordFromHandle(RecordHandle record,
-							 CssmDbRecordAttributeData *inOutAttributes,
-							 CssmData *inOutData);
-	// CSSM_DL_FreeUniqueRecord
-	void freeRecordHandle(RecordHandle record);
 
-	// database sessions
+	RecordHandle findFirst(DbHandle db,
+						const CssmQuery &query,
+						SearchHandle &outSearchHandle,
+						CssmDbRecordAttributeData *inOutAttributes,
+						CssmData *outData, KeyHandle &key);
+	RecordHandle findNext(SearchHandle searchHandle,
+					   CssmDbRecordAttributeData *inOutAttributes,
+					   CssmData *inOutData, KeyHandle &key);
+	void findRecordHandle(RecordHandle record,
+						 CssmDbRecordAttributeData *inOutAttributes,
+						 CssmData *inOutData, KeyHandle &key);
+	void releaseSearch(SearchHandle searchHandle);
+	void releaseRecord(RecordHandle record);
+	
+	void getDbName(DbHandle db, std::string &name);
+	void setDbName(DbHandle db, const std::string &name);
+
+	//
+	// Internal database interface
+	//
 	DbHandle createDb(const DLDbIdentifier &dbId,
         const AccessCredentials *cred, const AclEntryInput *owner,
         const DBParameters &params);
+	DbHandle cloneDbForSync(const CssmData &secretsBlob, DbHandle srcDb, 
+		const CssmData &agentData);
+    void commitDbForSync(DbHandle srcDb, DbHandle cloneDb, CssmData &blob, Allocator &alloc);
 	DbHandle decodeDb(const DLDbIdentifier &dbId,
         const AccessCredentials *cred, const CssmData &blob);
 	void encodeDb(DbHandle db, CssmData &blob, Allocator &alloc);
     void encodeDb(DbHandle db, CssmData &blob) { return encodeDb(db, blob, returnAllocator); }
-	void releaseDb(DbHandle db);
 	void setDbParameters(DbHandle db, const DBParameters &params);
 	void getDbParameters(DbHandle db, DBParameters &params);
-	void getDbSuggestedIndex(DbHandle db, CssmData &index, Allocator &alloc);
-	void getDbSuggestedIndex(DbHandle db, CssmData &index)
-	{ return getDbSuggestedIndex(db, index, returnAllocator); }
     void changePassphrase(DbHandle db, const AccessCredentials *cred);
     void lock(DbHandle db);
     void lockAll(bool forSleep);
@@ -254,11 +171,15 @@ public:
     void unlock(DbHandle db, const CssmData &passPhrase);
     bool isLocked(DbHandle db);
 	
-	// key objects
+public:
+	//
+	// Key objects
+	//
 	void encodeKey(KeyHandle key, CssmData &blob, KeyUID *uid, Allocator &alloc);
 	void encodeKey(KeyHandle key, CssmData &blob, KeyUID *uid = NULL)
     { return encodeKey(key, blob, uid, returnAllocator); }
 	KeyHandle decodeKey(DbHandle db, const CssmData &blob, CssmKey::Header &header);
+	void recodeKey(DbHandle oldDb, KeyHandle key, DbHandle newDb, CssmData &blob);
 	void releaseKey(KeyHandle key);
 
 	CssmKeySize queryKeySizeInBits(KeyHandle key);
@@ -270,7 +191,6 @@ public:
 	{ return getKeyDigest(key, digest, returnAllocator); }
 
 
-public:
     // key wrapping and unwrapping
 	void wrapKey(const Security::Context &context, KeyHandle key, KeyHandle keyToBeWrapped,
 		const AccessCredentials *cred,
@@ -313,7 +233,9 @@ public:
     { return deriveKey(db, context, baseKey, keyUsage, keyAttr, param, cred, owner, newKey, newHeader, returnAllocator); }
 	//void generateAlgorithmParameters();	// not implemented
 
-	void generateRandom(CssmData &data);
+	void generateRandom(const Security::Context &context, CssmData &data, Allocator &alloc);
+	void generateRandom(const Security::Context &context, CssmData &data)
+	{ return generateRandom(context, data, returnAllocator); }
 	
     // encrypt/decrypt
 	void encrypt(const Security::Context &context, KeyHandle key,
@@ -399,6 +321,9 @@ public:
     // Session API support
     void getSessionInfo(SecuritySessionId &sessionId, SessionAttributeBits &attrs);
     void setupSession(SessionCreationFlags flags, SessionAttributeBits attrs);
+	void setSessionDistinguishedUid(SecuritySessionId sessionId, uid_t user);
+	void getSessionDistinguishedUid(SecuritySessionId sessionId, uid_t &user);
+	void setSessionUserPrefs(SecuritySessionId sessionId, uint32_t userPreferencesLength, const void *userPreferences);
     
 public:
     // Notification core support
@@ -406,10 +331,23 @@ public:
     void stopNotification(Port receiver);
     void postNotification(NotificationDomain domain, NotificationEvent event, const CssmData &data);
     
+	// low-level callback (C form)
     typedef OSStatus ConsumeNotification(NotificationDomain domain, NotificationEvent event,
         const void *data, size_t dataLength, void *context);
+	
+	// high-level callback (C++ object form)
+	class NotificationConsumer {
+	public:
+		virtual ~NotificationConsumer();
+		virtual void consume(NotificationDomain domain, NotificationEvent event,
+			const CssmData &data) = 0;
+	};
+
+	// notification dispatch (got message, want it handled)
     OSStatus dispatchNotification(const mach_msg_header_t *message,
         ConsumeNotification *consumer, void *context) throw();
+	OSStatus dispatchNotification(const mach_msg_header_t *message,
+		NotificationConsumer *consumer) throw();
 
 public:
 	// AuthorizationDB API
@@ -418,20 +356,35 @@ public:
 	void authorizationdbRemove(const AuthorizationBlob &auth, const AuthorizationString rightname);
 	
 public:
+	// securityd helper support
+	void childCheckIn(Port serverPort, Port taskPort);
+	
+public:
 	// miscellaneous administrative calls
 	void addCodeEquivalence(const CssmData &oldCode, const CssmData &newCode,
 		const char *name, bool forSystem = false);
 	void removeCodeEquivalence(const CssmData &code, const char *name, bool forSystem = false);
 	void setAlternateSystemRoot(const char *path);
 
+public:
+	// temporary hack to deal with "edit acl" pseudo-error returns
+	typedef void DidChangeKeyAclCallback(void *context, ClientSession &clientSession,
+		KeyHandle key, CSSM_ACL_AUTHORIZATION_TAG tag);
+	void registerForAclEdits(DidChangeKeyAclCallback *callback, void *context);
+
 private:
-	void getAcl(AclKind kind, KeyHandle key, const char *tag,
+	static Port findSecurityd();
+	void getAcl(AclKind kind, GenericHandle key, const char *tag,
 		uint32 &count, AclEntryInfo * &info, Allocator &alloc);
-	void changeAcl(AclKind kind, KeyHandle key,
+	void changeAcl(AclKind kind, GenericHandle key,
 		const AccessCredentials &cred, const AclEdit &edit);
-	void getOwner(AclKind kind, KeyHandle key, AclOwnerPrototype &owner, Allocator &alloc);
-	void changeOwner(AclKind kind, KeyHandle key, const AccessCredentials &cred,
-		const AclOwnerPrototype &edit);
+	void getOwner(AclKind kind, GenericHandle key,
+		AclOwnerPrototype &owner, Allocator &alloc);
+	void changeOwner(AclKind kind, GenericHandle key,
+		const AccessCredentials &cred, const AclOwnerPrototype &edit);
+	
+	static OSStatus consumerDispatch(NotificationDomain domain, NotificationEvent event,
+		const void *data, size_t dataLength, void *context);
 
 	void addApplicationAclSubject(KeyHandle key, CSSM_ACL_AUTHORIZATION_TAG tag);
 
@@ -455,7 +408,7 @@ private:
 	struct Global {
         Global();
 		Port serverPort;
-		RefPointer<CodeSigning::OSXCode> myself;
+		RefPointer<OSXCode> myself;
 		ThreadNexus<Thread> thread;
 	};
 

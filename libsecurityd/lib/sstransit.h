@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -25,28 +23,19 @@
 
 
 //
-// sstransit - SecurityServer client library transition code.
-//
-// These are the functions that implement CssmClient methods in terms of
-// MIG IPC client calls, plus their supporting machinery.
-//
-// WARNING! HERE BE DRAGONS!
-// This code involves moderately arcane magic including (but not limited to)
-// dancing macros paired off with self-maintaining stack objects. Don't take
-// anything for granted! Be very afraid of ALL-CAPS names. Your best bet is
-// probably to stick with the existing patterns.
+// sstransit - Securityd client side transition support.
 //
 #ifndef _H_SSTRANSIT
 #define _H_SSTRANSIT
 
 #include <securityd_client/ssclient.h>
-#include <security_utilities/mach++.h>
 #include <security_cdsa_utilities/cssmwalkers.h>
 #include <security_cdsa_utilities/AuthorizationWalkers.h>
 #include <securityd_client/ucsp.h>
+#include <securityd_client/ucspNotify.h>
 
-namespace Security
-{
+namespace Security {
+
 
 // stock leading argument profile used by all calls
 #define UCSP_ARGS	mGlobal().serverPort, mGlobal().thread().replyPort, &rcode
@@ -86,16 +75,18 @@ namespace Security
 class DataOutput {
 public:
 	DataOutput(CssmData &arg, Allocator &alloc)
-		: argument(arg), allocator(alloc) { mData = NULL; mLength = 0; }
+		: allocator(alloc), mTarget(&arg) { mData = NULL; mLength = 0; }
+	DataOutput(CssmData *arg, Allocator &alloc)
+		: allocator(alloc), mTarget(arg) { mData = NULL; mLength = 0; }
 	~DataOutput();
 	
 	void **data() { return &mData; }
 	mach_msg_type_number_t *length() { return &mLength; }
 	
-	CssmData &argument;
 	Allocator &allocator;
 
 private:
+	CssmData *mTarget;
 	void *mData;
 	mach_msg_type_number_t mLength;
 };
@@ -129,6 +120,27 @@ public:
 
 #define CONTEXT(ctx)	ctx.context, ctx.attributes, ctx.attributes, ctx.attributeSize
 
-} // end namespace Security
+
+//
+// Handle the standard CSSM data retrieval pattern (attribute vector+data)
+//
+class DataRetrieval : public Copier<CssmDbRecordAttributeData> {
+public:
+	DataRetrieval(CssmDbRecordAttributeData *&attrs, Allocator &alloc);
+	~DataRetrieval();
+
+	operator CssmDbRecordAttributeData **() { return &mAddr; }
+	operator mach_msg_type_number_t *() { return &mLength; }
+	CssmDbRecordAttributeData **base() { return &mBase; }
+
+private:
+	Allocator &mAllocator;
+	CssmDbRecordAttributeData *&mAttributes;
+	CssmDbRecordAttributeData *mAddr, *mBase;
+	mach_msg_type_number_t mLength;
+};
+
+
+} // namespace Security
 
 #endif //_H_SSTRANSIT
