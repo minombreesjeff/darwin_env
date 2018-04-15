@@ -54,15 +54,14 @@
 
 @implementation DNSServiceDiscoveryPref
 
-static NSComparisonResult
+static NSInteger
 MyArrayCompareFunction(id val1, id val2, void *context)
 {
 	(void)context; // Unused
     return CFStringCompare((CFStringRef)val1, (CFStringRef)val2, kCFCompareCaseInsensitive);
 }
 
-
-static NSComparisonResult
+static NSInteger
 MyDomainArrayCompareFunction(id val1, id val2, void *context)
 {
 	(void)context; // Unused

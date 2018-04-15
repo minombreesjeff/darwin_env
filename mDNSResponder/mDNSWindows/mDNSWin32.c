@@ -52,6 +52,8 @@
 #include	"GenLinkedList.h"
 #include	"DNSCommon.h"
 #include	"mDNSWin32.h"
+#include    "dnssec.h"
+#include    "nsec.h"
 
 #if 0
 #pragma mark == Constants ==
@@ -635,6 +637,43 @@ mDNSexport mDNSBool	mDNSPlatformMemSame( const void *inDst, const void *inSrc, m
 }
 
 //===========================================================================================================================
+//	mDNSPlatformMemCmp
+//===========================================================================================================================
+
+mDNSexport int	mDNSPlatformMemCmp( const void *inDst, const void *inSrc, mDNSu32 inSize )
+{
+	check( inSrc );
+	check( inDst );
+	
+	return( memcmp( inSrc, inDst, inSize ) );
+}
+
+mDNSexport void mDNSPlatformQsort(void *base, int nel, int width, int (*compar)(const void *, const void *))
+{
+	(void)base;
+	(void)nel;
+	(void)width;
+	(void)compar;
+}
+
+// DNSSEC stub functions
+mDNSexport void VerifySignature(mDNS *const m, DNSSECVerifier *dv, DNSQuestion *q)
+	{
+	(void)m;
+	(void)dv;
+	(void)q;
+	}
+
+mDNSexport mDNSBool AddNSECSForCacheRecord(mDNS *const m, CacheRecord *crlist, CacheRecord *negcr, mDNSu8 rcode)
+	{
+	(void)m;
+	(void)crlist;
+	(void)negcr;
+	(void)rcode;
+	return mDNSfalse;
+	}
+
+//===========================================================================================================================
 //	mDNSPlatformMemZero
 //===========================================================================================================================
 
@@ -879,7 +918,8 @@ mDNSPlatformTCPSocket
 	(
 	mDNS			* const m,
 	TCPSocketFlags		flags,
-	mDNSIPPort			*	port 
+	mDNSIPPort			*	port, 
+	mDNSBool			useBackgroundTrafficClass
 	)
 {
 	TCPSocket *		sock    = NULL;
@@ -889,6 +929,7 @@ mDNSPlatformTCPSocket
 	mStatus				err		= mStatus_NoError;
 
 	DEBUG_UNUSED( m );
+	DEBUG_UNUSED( useBackgroundTrafficClass );
 
 	require_action( flags == 0, exit, err = mStatus_UnsupportedErr );
 
@@ -1302,7 +1343,8 @@ mDNSexport mStatus
 		mDNSInterfaceID 			inInterfaceID, 
 		UDPSocket *					inSrcSocket,
 		const mDNSAddr *			inDstIP, 
-		mDNSIPPort 					inDstPort )
+		mDNSIPPort 					inDstPort,
+		mDNSBool 					useBackgroundTrafficClass )
 {
 	SOCKET						sendingsocket = INVALID_SOCKET;
 	mStatus						err = mStatus_NoError;
@@ -1311,6 +1353,7 @@ mDNSexport mStatus
 	int							n;
 	
 	DEBUG_USE_ONLY( inMDNS );
+	DEBUG_USE_ONLY( useBackgroundTrafficClass );
 	
 	n = (int)( inMsgEnd - ( (const mDNSu8 * const) inMsg ) );
 	check( inMDNS );
@@ -1497,12 +1540,26 @@ mDNSexport mDNSBool mDNSPlatformValidRecordForInterface(AuthRecord *rr, const Ne
 	return mDNStrue;
 }
  
+mDNSexport mDNSBool mDNSPlatformValidQuestionForInterface(DNSQuestion *q, const NetworkInterfaceInfo *intf)
+{
+	DEBUG_UNUSED( q );
+	DEBUG_UNUSED( intf );
 
+	return mDNStrue;
+}
+ 
 mDNSexport void mDNSPlatformSendRawPacket(const void *const msg, const mDNSu8 *const end, mDNSInterfaceID InterfaceID)
 	{
 	DEBUG_UNUSED( msg );
 	DEBUG_UNUSED( end );
 	DEBUG_UNUSED( InterfaceID );
+	}
+
+// Used for debugging purposes. For now, just set the buffer to zero
+mDNSexport void mDNSPlatformFormatTime(unsigned long te, mDNSu8 *buf, int bufsize)
+	{
+	DEBUG_UNUSED( te );
+	if (bufsize) buf[0] = 0;
 	}
 
 
@@ -1863,7 +1920,7 @@ SetDNSServers( mDNS *const m )
 	{
 		mDNSAddr addr;
 		err = StringToAddress( &addr, ipAddr->IpAddress.String );
-		if ( !err ) mDNS_AddDNSServer(m, mDNSNULL, mDNSInterface_Any, &addr, UnicastDNSPort, mDNSfalse, DEFAULT_UDNS_TIMEOUT, mDNSfalse);
+		if ( !err ) mDNS_AddDNSServer(m, mDNSNULL, mDNSInterface_Any, &addr, UnicastDNSPort, mDNSfalse, DEFAULT_UDNS_TIMEOUT, mDNSfalse, 0);
 	}
 
 exit:
@@ -2045,6 +2102,26 @@ exit:
 	return err;
 }
 
+mDNSexport void mDNSPlatformSendKeepalive(mDNSAddr *sadd, mDNSAddr *dadd, mDNSIPPort *lport, mDNSIPPort *rport, mDNSu32 seq, mDNSu32 ack, mDNSu16 win)
+	{
+	(void) sadd; 	// Unused
+	(void) dadd; 	// Unused
+	(void) lport; 	// Unused
+	(void) rport; 	// Unused
+	(void) seq; 	// Unused
+	(void) ack; 	// Unused
+	(void) win;		// Unused
+	}
+
+mDNSexport mStatus mDNSPlatformRetrieveTCPInfo(mDNS *const m, mDNSAddr *laddr, mDNSIPPort *lport, mDNSAddr *raddr, mDNSIPPort *rport, mDNSTCPInfo *mti)
+	{
+	(void) m;       // Unused
+	(void) laddr; 	// Unused
+	(void) raddr; 	// Unused
+	(void) lport; 	// Unused
+	(void) rport; 	// Unused
+	(void) mti; 	// Unused
+	}
 
 #if 0
 #pragma mark -
