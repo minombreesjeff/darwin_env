@@ -167,8 +167,11 @@ msdosfs_fat_init_vol(struct msdosfsmount *pmp, vfs_context_t context)
 	 * fill it in.
 	 */
 	MALLOC(pmp->pm_inusemap, u_int *,
-	       ((pmp->pm_maxcluster + N_INUSEBITS - 1) / N_INUSEBITS) *	/*¥ Shouldn't that be division? */
+	       ((pmp->pm_maxcluster + N_INUSEBITS - 1) / N_INUSEBITS) *
 	        sizeof(*pmp->pm_inusemap), M_TEMP, M_WAITOK);
+
+	if (pmp->pm_inusemap == NULL)
+		return ENOMEM;	/* Locks are cleaned up in msdosfs_fat_uninit_vol */
 
 	return fillinusemap(pmp, context);
 }
@@ -559,7 +562,7 @@ updatefats(pmp, bp, fatbn, context)
 			if (pmp->pm_flags & MSDOSFSMNT_WAITONFAT)
 				(void)buf_bwrite(bpn);
 			else
-				buf_bdwrite(bpn);
+				buf_bawrite(bpn);
 		}
 	}
 
@@ -582,7 +585,7 @@ updatefats(pmp, bp, fatbn, context)
 			if (pmp->pm_flags & MSDOSFSMNT_WAITONFAT)
 				(void)buf_bwrite(bpn);
 			else
-				buf_bdwrite(bpn);
+				buf_bawrite(bpn);
 		}
 	}
 
@@ -592,7 +595,7 @@ updatefats(pmp, bp, fatbn, context)
 	if (pmp->pm_flags & MSDOSFSMNT_WAITONFAT)
 		(void)buf_bwrite(bp);
 	else
-		buf_bdwrite(bp);
+		buf_bawrite(bp);
 	/*
 	 * Maybe update fsinfo sector here?
 	 */
@@ -976,7 +979,7 @@ clusteralloc_internal(pmp, start, count, fillwith, retcluster, got, context)
 	vfs_context_t context;
 {
 	u_long idx;
-	u_long len, newst, foundl, cn, l;
+	u_long len, foundl, cn, l;
 	u_long foundcn = 0; /* XXX: foundcn could be used unititialized */
 	u_int map;
 
@@ -986,31 +989,9 @@ clusteralloc_internal(pmp, start, count, fillwith, retcluster, got, context)
 	} else 
 		len = 0;
 
-	/*
-	 * Start at a (pseudo) random place to maximize cluster runs
-	 * under multiple writers.
-	 */
-	newst = random() % (pmp->pm_maxcluster + 1);
 	foundl = 0;
 
-	for (cn = newst; cn <= pmp->pm_maxcluster;) {
-		idx = cn / N_INUSEBITS;
-		map = pmp->pm_inusemap[idx];
-		map |= (1 << (cn % N_INUSEBITS)) - 1;
-		if (map != (u_int)-1) {
-			cn = idx * N_INUSEBITS + ffs(map^(u_int)-1) - 1;
-			if ((l = chainlength(pmp, cn, count)) >= count)
-				return (chainalloc(pmp, cn, count, fillwith, retcluster, got, context));
-			if (l > foundl) {
-				foundcn = cn;
-				foundl = l;
-			}
-			cn += l + 1;
-			continue;
-		}
-		cn += N_INUSEBITS - cn % N_INUSEBITS;
-	}
-	for (cn = 0; cn < newst;) {
+	for (cn = 0; cn <= pmp->pm_maxcluster;) {
 		idx = cn / N_INUSEBITS;
 		map = pmp->pm_inusemap[idx];
 		map |= (1 << (cn % N_INUSEBITS)) - 1;
@@ -1152,7 +1133,7 @@ fillinusemap(pmp, context)
 	 * Mark all clusters in use, we mark the free ones in the fat scan
 	 * loop further down.
 	 */
-	for (cn = 0; cn < (pmp->pm_maxcluster + N_INUSEBITS) / N_INUSEBITS; cn++)
+	for (cn = 0; cn < (pmp->pm_maxcluster + N_INUSEBITS - 1) / N_INUSEBITS; cn++)
 		pmp->pm_inusemap[cn] = (u_int)-1;
 
 	/*
@@ -1283,7 +1264,7 @@ extendfile(dep, count, context)
         fc_setcache(dep, FC_LASTFC, frcn + got - 1, cn + got - 1);
 
         /*
-         * Clear only meta data here, file meta is cleared by the caller
+         * Clear directory clusters here, file clusters are cleared by the caller
          */
         if (dep->de_Attributes & ATTR_DIRECTORY) {
             while (got-- > 0) {
@@ -1293,7 +1274,7 @@ extendfile(dep, count, context)
                 bp = buf_getblk(pmp->pm_devvp, cntobn(pmp, cn++),
 					pmp->pm_bpcluster, 0, 0, BLK_META);
                 buf_clear(bp);
-                buf_bdwrite(bp);
+				buf_bwrite(bp);
             }
         }
 

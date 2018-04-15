@@ -148,10 +148,10 @@ struct msdosfsmount {
 #define	pm_HugeSectors	pm_bpb.bpbHugeSectors
 
 /*
- * Convert pointer to buffer -> pointer to direntry
+ * Convert pointer to buffer -> pointer to dosdirentry
  */
 #define	bptoep(pmp, bp, dirofs) \
-	((struct direntry *)((buf_dataptr(bp))	\
+	((struct dosdirentry *)((buf_dataptr(bp))	\
 	 + ((dirofs) & (pmp)->pm_crbomask)))
 /*
  * Convert number of blocks to number of clusters
@@ -225,15 +225,15 @@ uid_t get_pmuid(struct msdosfsmount *pmp, uid_t current_user);
  */
 struct msdosfs_args {
 #ifndef KERNEL
-	char	*fspec;		/* path of device to mount */
+	char		*fspec;		/* path of device to mount */
 #endif
-	uid_t	uid;		/* uid that owns msdosfs files */
-	gid_t	gid;		/* gid that owns msdosfs files */
-	mode_t	mask;		/* mask to be applied for msdosfs perms */
-	int	flags;		/* see below */
-	int magic;		/* version number */
-	long	secondsWest;	/* for GMT<->local time conversions */
-	u_int8_t  label[64];	/* Volume label in UTF-8 */
+	uid_t		uid;		/* uid that owns msdosfs files */
+	gid_t		gid;		/* gid that owns msdosfs files */
+	mode_t		mask;		/* mask to be applied for msdosfs perms */
+	uint32_t	flags;		/* see below */
+	uint32_t	magic;		/* version number */
+	int32_t		secondsWest;	/* for GMT<->local time conversions */
+	u_int8_t	label[64];	/* Volume label in UTF-8 */
 };
 
 /*

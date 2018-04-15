@@ -149,4 +149,6 @@ void fc_purge __P((struct denode *dep, u_int frcn));
  */
 int markvoldirty(struct msdosfsmount *pmp, int dirty, vfs_context_t context);
 
+enum vtype msdosfs_check_link(struct denode *dep, vfs_context_t context);
+
 #endif	/* KERNEL */

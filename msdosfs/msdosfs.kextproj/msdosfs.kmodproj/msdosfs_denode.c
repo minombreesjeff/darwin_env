@@ -88,14 +88,14 @@
 #include "direntry.h"
 #include "denode.h"
 #include "fat.h"
-#include <kern/zalloc.h>
+#include <libkern/OSMalloc.h>
 
-zone_t  msdosfs_node_zone;
+OSMallocTag  msdosfs_node_tag;
 
 static struct denode **dehashtbl;
 static u_long dehash;			/* size of hash table - 1 */
 #define	DEHASH(dev, dcl, doff)	(dehashtbl[(minor(dev) + (dcl) + (doff) / 	\
-				sizeof(struct direntry)) & dehash])
+				sizeof(struct dosdirentry)) & dehash])
 
 union _qcvt {
 	quad_t qcvt;
@@ -123,15 +123,14 @@ static void	msdosfs_hashrem __P((struct denode *dep));
 __private_extern__ void
 msdosfs_hash_init(void)
 {
-	/*¥ Should be using M_TMP.  No need to divide by 2.  Need a hash_destroy (call it on unload). */
-    msdosfs_node_zone = zinit (sizeof(struct denode), desiredvnodes/2 *sizeof(struct denode), 0, "msdos node zone");
-    dehashtbl = hashinit(desiredvnodes/2, M_CACHE, &dehash);
+    msdosfs_node_tag = OSMalloc_Tagalloc("msdosfs denode", OSMT_DEFAULT);
+    dehashtbl = hashinit(desiredvnodes, M_TEMP, &dehash);
 }
 
 __private_extern__ void
 msdosfs_hash_uninit(void)
 {
-
+	OSMalloc_Tagfree(msdosfs_node_tag);
 }
 
 static struct denode *
@@ -156,7 +155,7 @@ loop:
 			{
 				/* Denode is being initialized.  Wait for it to complete. */
 				SET(dep->de_flag, DE_WAITINIT);
-				tsleep(dep, PINOD, "msdosfs_hashget", 0);
+				msleep(dep, NULL, PINOD, "msdosfs_hashget", 0);
 				goto loop;
 			}
 			vp = DETOV(dep);
@@ -197,7 +196,9 @@ msdosfs_hashrem(dep)
 }
 
 /*
- * If deget() succeeds it returns with the gotten denode locked().
+ * If deget() succeeds it returns with an io_count reference on the denode's
+ * corresponding vnode.  If not returning that vnode to VFS, then be sure
+ * to vnode_put it!
  *
  * pmp	     - address of msdosfsmount structure of the filesystem containing
  *	       the denode of interest.  The pm_dev field and the address of
@@ -225,7 +226,7 @@ deget(pmp, dirclust, diroffset, dvp, cnp, depp, context)
 	struct mount *mntp = pmp->pm_mountp;
 	struct denode *new_dep = NULL;
 	struct denode *found_dep;
-	struct direntry *direntptr;
+	struct dosdirentry *direntptr;
 	struct buf *bp = NULL;
 	struct timeval tv;
 	struct vnode_fsparam vfsp;
@@ -244,7 +245,7 @@ deget(pmp, dirclust, diroffset, dvp, cnp, depp, context)
 	 * because the allocation could block, during which time
 	 * a denode could be added to or removed from the hash.
 	 */
-    new_dep = (struct denode *) zalloc(msdosfs_node_zone);
+    new_dep = OSMalloc(sizeof(struct denode), msdosfs_node_tag);
 
 	/*
 	 * See if the denode is already in our hash.  If so,
@@ -253,7 +254,9 @@ deget(pmp, dirclust, diroffset, dvp, cnp, depp, context)
 	found_dep = msdosfs_hashget(dev, dirclust, diroffset);
 	if (found_dep != NULL) {
 		*depp = found_dep;
-        zfree(msdosfs_node_zone, new_dep);
+		if (dvp && cnp && (cnp->cn_flags & MAKEENTRY))
+			cache_enter(dvp, DETOV(found_dep), cnp);
+		OSFree(new_dep, sizeof(struct denode), msdosfs_node_tag);
 		return (0);
 	}
 
@@ -372,11 +375,13 @@ deget(pmp, dirclust, diroffset, dvp, cnp, depp, context)
 			if (error == E2BIG) {
 				new_dep->de_FileSize = de_cn2off(pmp, size);
 				error = 0;
-			} else
-				printf("deget(): pcbmap returned %d\n", error);
+			}
 		}
 	} else {
-		vtype = VREG;
+		/*
+		 * We found a regular file.  See if it is really a symlink.
+		 */
+		vtype = msdosfs_check_link(new_dep, context);
 	}
 	getmicrouptime(&tv);
 	SETHIGH(new_dep->de_modrev, tv.tv_sec);
@@ -432,7 +437,7 @@ fail:
 	if (ISSET(new_dep->de_flag, DE_WAITINIT))
 		wakeup(new_dep);
 	
-	zfree(msdosfs_node_zone, new_dep);
+	OSFree(new_dep, sizeof(struct denode), msdosfs_node_tag);
 	
 	return error;
 }
@@ -445,7 +450,7 @@ deupdat(dep, waitfor, context)
 {
 	int error;
 	struct buf *bp;
-	struct direntry *dirp;
+	struct dosdirentry *dirp;
 	struct timespec ts;
 
 	if (vnode_vfsisrdonly(DETOV(dep)))
@@ -468,12 +473,7 @@ deupdat(dep, waitfor, context)
             DE_EXTERNALIZE_ROOT(dirp, dep);
         else
             DE_EXTERNALIZE(dirp, dep);
-	if (waitfor)
-		return ((int)buf_bwrite(bp));
-	else {
-		buf_bdwrite(bp);
-		return (0);
-	}
+	return ((int)buf_bwrite(bp));
 }
 
 /*
@@ -540,7 +540,7 @@ detrunc(dep, length, flags, context)
 	ubc_setsize(vp, (off_t)length); /* XXX check errors */
 
 	allerror = buf_invalidateblks(vp, ((length > 0) ? BUF_WRITE_DATA : 0), 0, 0);
-
+	
     dep->de_FileSize = length;
    /*
      * If the new length is not a multiple of the cluster size then we
@@ -559,10 +559,7 @@ detrunc(dep, length, flags, context)
          * is this the right place for it?
          */
         bzero((char *)buf_dataptr(bp) + boff, pmp->pm_bpcluster - boff);
-        if (flags & IO_SYNC)
-            (void)buf_bwrite(bp);
-        else
-            buf_bdwrite(bp);
+		buf_bwrite(bp);
     }
 
     /*
@@ -692,6 +689,13 @@ msdosfs_reclaim(ap)
 	struct denode *dep = VTODE(vp);
 
 	/*
+	 * Skip everything if there was no denode.  This can happen
+	 * If the vnode was temporarily created in msdosfs_check_link.
+	 */
+	if (dep == NULL)
+		return 0;
+
+	/*
 	 * Remove the denode from its hash chain.
 	 */
 	msdosfs_hashrem(dep);
@@ -701,7 +705,7 @@ msdosfs_reclaim(ap)
 	cache_purge(vp);
 	vnode_rele(dep->de_devvp);
 	
-	zfree(msdosfs_node_zone, dep);
+	OSFree(dep, sizeof(struct denode), msdosfs_node_tag);
 	vnode_clearfsnode(vp);
 	vnode_removefsref(vp);
 
@@ -719,6 +723,13 @@ msdosfs_inactive(ap)
 	vfs_context_t context = ap->a_context;
 	struct denode *dep = VTODE(vp);
 	int error = 0;
+
+	/*
+	 * Skip everything if there was no denode.  This can happen
+	 * If the vnode was temporarily created in msdosfs_check_link.
+	 */
+	if (dep == NULL)
+		return 0;
 
 	/*
 	 * Ignore denodes related to stale file handles.
@@ -751,8 +762,8 @@ out:
 
 /*
  * defileid -- Return the file ID (inode number) for a given denode.  This routine
- * is used by msdosfs_getattr, msdosfs_readdir, and msdosfs_getattrlist to ensure
- * a consistent file ID space.
+ * is used by msdosfs_getattr and msdosfs_readdir to ensure a consistent file
+ * ID space.
  *
  * In older versions, the file ID was based on the location of the directory entry
  * on disk (essentially the byte offset of the entry divided by the size of an entry).

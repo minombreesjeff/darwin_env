@@ -177,8 +177,6 @@ struct denode {
 	dev_t de_dev;				/* device where direntry lives */
 	u_long de_dirclust;			/* cluster of the directory file containing this entry */
 	u_long de_diroffset;		/* offset of this entry from the start of parent directory */
-	u_long de_fndoffset;		/* offset of found dir entry */
-	int de_fndcnt;				/* number of slots before de_fndoffset */
 	long de_refcnt;				/* reference count */
 	struct msdosfsmount *de_pmp;	/* addr of our mount struct */
 	u_char de_Name[12];			/* name, from DOS directory entry */
@@ -191,7 +189,7 @@ struct denode {
 	u_short de_MTime;			/* modification time */
 	u_short de_MDate;			/* modification date */
 	u_long de_StartCluster;		/* starting cluster of file */
-	u_long de_FileSize;			/* size of file in bytes */
+	u_long de_FileSize;			/* size of file, or length of symlink, in bytes */
 	struct fatcache de_fc[FC_SIZE];	/* fat cache */
 	u_quad_t de_modrev;			/* Revision level for lease. */
 	struct msdosfs_lockf *de_lockf; /* Head of byte range lock list. */
@@ -212,7 +210,7 @@ struct denode {
 /*
  * Transfer directory entries between internal and external form.
  * dep is a struct denode * (internal form),
- * dp is a struct direntry * (external form).
+ * dp is a struct dosdirentry * (external form).
  */
 #define DE_INTERNALIZE32(dep, dp)			\
 	 ((dep)->de_StartCluster |= getushort((dp)->deHighClust) << 16)
@@ -313,7 +311,6 @@ int msdosfs_reclaim __P((struct vnop_reclaim_args *ap));
 int msdosfs_blktooff __P((struct vnop_blktooff_args *ap));
 int msdosfs_offtoblk __P((struct vnop_offtoblk_args *ap));
 int msdosfs_blockmap __P((struct vnop_blockmap_args *ap));
-int msdosfs_access_internal(vnode_t vp, int mode, ucred_t cred);
 
 /*
  * Internal service routine prototypes.
@@ -323,16 +320,16 @@ void msdosfs_hash_uninit(void);
 int deget(struct msdosfsmount *pmp, u_long dirclust, u_long diroffset, vnode_t dvp, struct componentname *cnp, struct denode **, vfs_context_t context);
 int uniqdosname __P((struct denode *, struct componentname *, u_char *, u_int8_t *lower_case, vfs_context_t context));
 
-int readep __P((struct msdosfsmount *pmp, u_long dirclu, u_long dirofs,  struct buf **bpp, struct direntry **epp, vfs_context_t context));
-int readde __P((struct denode *dep, struct buf **bpp, struct direntry **epp, vfs_context_t context));
+int readep __P((struct msdosfsmount *pmp, u_long dirclu, u_long dirofs,  struct buf **bpp, struct dosdirentry **epp, vfs_context_t context));
+int readde __P((struct denode *dep, struct buf **bpp, struct dosdirentry **epp, vfs_context_t context));
 int deextend __P((struct denode *dep, u_long length, int flags, vfs_context_t context));
 void reinsert __P((struct denode *dep));
 int dosdirempty __P((struct denode *dep, vfs_context_t context));
-int createde __P((struct denode *dep, struct denode *ddep, struct denode **depp, struct componentname *cnp, vfs_context_t context));
+int createde __P((struct denode *dep, struct denode *ddep, struct denode **depp, struct componentname *cnp, u_long offset, u_long long_count, vfs_context_t context));
 int deupdat __P((struct denode *dep, int waitfor, vfs_context_t context));
-int removede __P((struct denode *pdep, struct denode *dep, vfs_context_t context));
+int removede __P((struct denode *pdep, uint32_t offset, vfs_context_t context));
 int detrunc __P((struct denode *dep, u_long length, int flags, vfs_context_t context));
 int doscheckpath __P(( struct denode *source, struct denode *target, vfs_context_t context));
-int findslots __P((struct denode *dep, struct componentname *cnp, u_int8_t *lower_case, vfs_context_t context));
+int findslots __P((struct denode *dep, struct componentname *cnp, u_int8_t *lower_case, u_long *offset, u_long *long_count, vfs_context_t context));
 u_long defileid(struct denode *dep);
 #endif	/* KERNEL */

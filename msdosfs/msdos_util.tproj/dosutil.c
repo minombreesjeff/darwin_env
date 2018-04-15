@@ -114,8 +114,8 @@
 #define	DEVICE_DEV			"dev"
 #define	DEVICE_NODEV		"nodev"
 
-#define	CLUST_FIRST	2		/* first legal cluster number */
-#define	CLUST_RSRVD	0xfffffff6	/* reserved cluster range */
+#define	CLUST_FIRST	2			/* first legal cluster number */
+#define	CLUST_RSRVD	0x0ffffff6	/* reserved cluster range */
 
 
 
@@ -281,7 +281,7 @@ int main(int argc, char **argv)
 static int fs_probe(char *devpath, int removable, int writable)
 {
     int fd;
-    struct direntry *dirp;
+    struct dosdirentry *dirp;
     union bootsector *bsp;
     struct byte_bpb33 *b33;
     struct byte_bpb50 *b50;
@@ -340,11 +340,29 @@ static int fs_probe(char *devpath, int removable, int writable)
         return(FSUR_UNRECOGNIZED);
 	}
 
+	/* Make sure the number of FATs is OK; on NTFS, this will be zero */
+	if (b33->bpbFATs == 0)
+	{
+		return(FSUR_UNRECOGNIZED);
+	}
+	
+	/* Make sure the total sectors is non-zero */
+	if (getushort(b33->bpbSectors) == 0 && getulong(b50->bpbHugeSectors) == 0)
+	{
+		return(FSUR_UNRECOGNIZED);
+	}
+
+	/* Make sure there is a root directory */
+	if (getushort(b33->bpbRootDirEnts) == 0 && getulong(b710->bpbRootClust) == 0)
+	{
+		return(FSUR_UNRECOGNIZED);
+	}
+
     /* we know this disk, find the volume label */
     /* First, find the root directory */
     diskLabel[0] = 0;
     finished = false;
-    rootDirSectors = ((getushort(b50->bpbRootDirEnts) * sizeof(struct direntry)) +
+    rootDirSectors = ((getushort(b50->bpbRootDirEnts) * sizeof(struct dosdirentry)) +
                       (bps-1)) / bps;
     if (rootDirSectors) {			/* FAT12 or FAT16 */
     	unsigned firstRootDirSecNum;
@@ -353,8 +371,8 @@ static int fs_probe(char *devpath, int removable, int writable)
         firstRootDirSecNum = getushort(b33->bpbResSectors) + (b33->bpbFATs * getushort(b33->bpbFATsecs));
         for (i=0; i< rootDirSectors; i++) {
             safe_read(fd, rootdirbuf, bps, (firstRootDirSecNum+i)*bps);
-            dirp = (struct direntry *)rootdirbuf;
-            for (j=0; j<bps; j+=sizeof(struct direntry), dirp++) {
+            dirp = (struct dosdirentry *)rootdirbuf;
+            for (j=0; j<bps; j+=sizeof(struct dosdirentry), dirp++) {
                 if (dirp->deName[0] == SLOT_EMPTY) {
                     finished = true;
                     break;
@@ -395,10 +413,10 @@ static int fs_probe(char *devpath, int removable, int writable)
             
             /* Read in "cluster" */
             safe_read(fd, rootDirBuffer, bytesPerCluster, readOffset);
-            dirp = (struct direntry *) rootDirBuffer;
+            dirp = (struct dosdirentry *) rootDirBuffer;
             
             /* Examine each directory entry in this cluster */
-            for (i=0; i < bytesPerCluster; i += sizeof(struct direntry), dirp++)
+            for (i=0; i < bytesPerCluster; i += sizeof(struct dosdirentry), dirp++)
             {
                 if (dirp->deName[0] == SLOT_EMPTY) {
                     finished = true;	// Reached end of directory (never used entry)
@@ -438,7 +456,9 @@ static int fs_probe(char *devpath, int removable, int writable)
 	/* else look in the boot blocks */
     if (diskLabel[0] == 0) {
         if (getushort(b50->bpbRootDirEnts) == 0) { /* Its a FAT32 */
-            strncpy(diskLabel, ((struct extboot *)bsp->bs710.bsExt)->exVolumeLabel, LABEL_LENGTH);
+            if (((struct extboot *)bsp->bs710.bsExt)->exBootSignature == EXBOOTSIG) {
+            	strncpy(diskLabel, ((struct extboot *)bsp->bs710.bsExt)->exVolumeLabel, LABEL_LENGTH);
+			}
         }
         else if (((struct extboot *)bsp->bs50.bsExt)->exBootSignature == EXBOOTSIG) {
             strncpy(diskLabel, ((struct extboot *)bsp->bs50.bsExt)->exVolumeLabel, LABEL_LENGTH);
@@ -830,34 +850,17 @@ safe_write(int fd, char *buf, int nbytes, off_t off)
 }
 
 
-static int checkLoadable()
+/* Return non-zero if the file system is not yet loaded. */
+static int checkLoadable(void)
 {
-        struct vfsconf vfc;
-        int name[4], maxtypenum, cnt;
-        size_t buflen;
+	int error;
+	struct vfsconf vfc;
+	
+	error = getvfsbyname(FS_TYPE, &vfc);
 
-        name[0] = CTL_VFS;
-        name[1] = VFS_GENERIC;
-        name[2] = VFS_MAXTYPENUM;
-        buflen = 4;
-        if (sysctl(name, 3, &maxtypenum, &buflen, (void *)0, (size_t)0) < 0)
-                return (-1);
-        name[2] = VFS_CONF;
-        buflen = sizeof vfc;
-        for (cnt = 0; cnt < maxtypenum; cnt++) {
-                name[3] = cnt;
-                if (sysctl(name, 4, &vfc, &buflen, (void *)0, (size_t)0) < 0) {
-                        if (errno != EOPNOTSUPP && errno != ENOENT)
-                                return (-1);
-                        continue;
-                }
-                if (!strcmp(FS_TYPE, vfc.vfc_name))
-                        return (0);
-        }
-        errno = ENOENT;
-        return (-1);
-
+	return error;
 }
+
 
 
 #ifdef DEBUG

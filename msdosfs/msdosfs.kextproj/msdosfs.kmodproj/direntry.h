@@ -75,7 +75,7 @@
 /*
  * Structure of a dos directory entry.
  */
-struct direntry {
+struct dosdirentry {
 	u_int8_t	deName[8];	/* filename, blank filled */
 #define	SLOT_EMPTY	0x00		/* slot has never been used */
 #define	SLOT_E5		0x05		/* the real value is 0xe5 */
@@ -128,7 +128,7 @@ struct winentry {
 #define	WIN_MAXLEN	255
 
 /*
- * This is the format of the contents of the deTime field in the direntry
+ * This is the format of the contents of the deTime field in the dosdirentry
  * structure.
  * We don't use bitfields because we don't know how compilers for
  * arbitrary machines will lay them out.
@@ -141,7 +141,7 @@ struct winentry {
 #define DT_HOURS_SHIFT		11
 
 /*
- * This is the format of the contents of the deDate field in the direntry
+ * This is the format of the contents of the deDate field in the dosdirentry
  * structure.
  */
 #define DD_DAY_MASK		0x1F	/* day of month */
@@ -163,7 +163,8 @@ int winChkName __P((const u_int16_t *un, int unlen, struct winentry *wep, int ch
 int getunicodefn __P((struct winentry *wep, u_int16_t *ucfn, u_int16_t *unichars, int chksum));
 u_int8_t winChksum __P((u_int8_t *name));
 int winSlotCnt __P((const u_int16_t *un, int unlen));
-int winLenFixup __P((const u_int16_t *un, int unlen));
+void mac2sfmfn __P((u_int16_t *un, size_t unlen));
+void sfm2macfn __P((u_int16_t *un, u_int16_t unlen));
 int msdosfs_fsync_internal(vnode_t vp, int sync, vfs_context_t context);
 
 #endif	/* KERNEL */

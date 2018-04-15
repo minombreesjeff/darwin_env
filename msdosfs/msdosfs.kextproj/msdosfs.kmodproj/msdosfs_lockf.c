@@ -129,39 +129,6 @@ msdosfs_setlock(lock)
 			return (EAGAIN);
 		}
 		/*
-		 * We are blocked. Since flock style locks cover
-		 * the whole file, there is no chance for deadlock.
-		 * For byte-range locks we must check for deadlock.
-		 *
-		 * Deadlock detection is done by looking through the
-		 * wait channels to see if there are any cycles that
-		 * involve us. MAXDEPTH is set just to make sure we
-		 * do not go off into neverland.
-		 */
-		if ((lock->lf_flags & F_POSIX) &&
-		    (block->lf_flags & F_POSIX)) {
-			proc_t wproc;
-			struct msdosfs_lockf *waitblock;
-			int i = 0;
-
-			/* The block is waiting on something */
-			wproc = (proc_t)block->lf_id;
-			while (wproc->p_wchan &&
-			       (wproc->p_wmesg == lockstr) &&
-			       (i++ < msdosfsmaxlockdepth)) {
-				waitblock = (struct msdosfs_lockf *)wproc->p_wchan;
-				/* Get the owner of the blocking lock */
-				waitblock = waitblock->lf_next;
-				if ((waitblock->lf_flags & F_POSIX) == 0)
-					break;
-				wproc = (proc_t)waitblock->lf_id;
-				if (wproc == (proc_t)lock->lf_id) {
-					_FREE(lock, M_LOCKF);
-					return (EDEADLK);
-				}
-			}
-		}
-		/*
 		 * For flock type locks, we must first remove
 		 * any shared locks that we hold before we sleep
 		 * waiting for an exclusive lock.
@@ -184,7 +151,7 @@ msdosfs_setlock(lock)
 			msdosfs_lprintlist("msdosfs_setlock", block);
 		}
 #endif /* LOCKF_DEBUG */
-		if (error = tsleep((caddr_t)lock, priority, lockstr, 0)) {
+		if (error = msleep((caddr_t)lock, NULL, priority, lockstr, 0)) {
 			/*
 			 * We may have been awakened by a signal (in
 			 * which case we must remove ourselves from the
@@ -422,7 +389,7 @@ msdosfs_getlock(lock, fl)
 		else
 			fl->l_len = block->lf_end - block->lf_start + 1;
 		if (block->lf_flags & F_POSIX)
-			fl->l_pid = ((proc_t)(block->lf_id))->p_pid;
+			fl->l_pid = proc_pid((proc_t)(block->lf_id));
 		else
 			fl->l_pid = -1;
 	} else {
@@ -650,7 +617,7 @@ __private_extern__ void msdosfs_lprint(tag, lock)
 	
 	printf("%s: lock 0x%lx for ", tag, lock);
 	if (lock->lf_flags & F_POSIX)
-		printf("proc %d", ((proc_t)(lock->lf_id))->p_pid);
+		printf("proc %d", proc_pid((proc_t)(lock->lf_id)));
 	else
 		printf("id 0x%x", lock->lf_id);
 	printf(" in cluster %d, offset %d on dev <%d, %d>, %s, start %d, end %d",
@@ -683,7 +650,7 @@ __private_extern__ void msdosfs_lprintlist(tag, lock)
 	for (lf = lock->lf_denode->de_lockf; lf; lf = lf->lf_next) {
 		printf("\tlock 0x%lx for ", lf);
 		if (lf->lf_flags & F_POSIX)
-			printf("proc %d", ((proc_t)(lf->lf_id))->p_pid);
+			printf("proc %d", proc_pid((proc_t)(lf->lf_id)));
 		else
 			printf("id 0x%x", lf->lf_id);
 		printf(", %s, start %d, end %d",
@@ -696,7 +663,7 @@ __private_extern__ void msdosfs_lprintlist(tag, lock)
 			printf("\n\t\tlock request 0x%lx for ", blk);
 			if (blk->lf_flags & F_POSIX)
 				printf("proc %d",
-				    ((proc_t)(blk->lf_id))->p_pid);
+				    proc_pid((proc_t)(blk->lf_id)));
 			else
 				printf("id 0x%x", blk->lf_id);
 			printf(", %s, start %d, end %d",

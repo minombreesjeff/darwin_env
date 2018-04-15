@@ -23,12 +23,6 @@
 			isa = PBXCopyFilesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 1;
 		};
-		1291E4B60242448403A87B01 = {
-			fileRef = 1291E4B40242448303A87B01;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
 		1291E4B8024244C503A87B01 = {
 			fileRef = 1291E4B40242448303A87B01;
 			isa = PBXBuildFile;
@@ -83,12 +77,6 @@
 //7D2
 //7D3
 //7D4
-		7D3170210117A0CD02CA2964 = {
-			fileRef = 7D8BA378010E490C02CA2964;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
 		7D3170220117A10D02CA2964 = {
 			isa = PBXTargetDependency;
 			target = 7D8BA383010E490C02CA2964;
@@ -292,7 +280,6 @@
 		};
 		7D8BA369010E490C02CA2964 = {
 			children = (
-				B673AAE70250E44704C9147C,
 				7D8BA36A010E490C02CA2964,
 				7D8BA36B010E490C02CA2964,
 				7D8BA36C010E490C02CA2964,
@@ -394,8 +381,6 @@
 		};
 		7D8BA37A010E490C02CA2964 = {
 			buildPhases = (
-				7D8BA39E010E490C02CA2964,
-				7D8BA3A1010E490C02CA2964,
 			);
 			buildSettings = {
 				OTHER_CFLAGS = "";
@@ -626,6 +611,8 @@
 		<string>8.0.0b1</string>
 		<key>com.apple.kpi.mach</key>
 		<string>8.0.0b1</string>
+		<key>com.apple.kpi.unsupported</key>
+		<string>8.0.0b1</string>
 	</dict>
 </dict>
 </plist>
@@ -707,7 +694,6 @@
 				7D8BA399010E490C02CA2964,
 				7D8BA39A010E490C02CA2964,
 				B64F35810230385404C9147C,
-				B673AAE80250E44704C9147C,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -783,57 +769,20 @@
 			shellPath = /bin/sh;
 			shellScript = "script=\"${SYSTEM_DEVELOPER_DIR}/ProjectBuilder Extras/Kernel Extension Support/KEXTPostprocess\";\nif [ -x \"$script\" ]; then\n    . \"$script\"\nfi";
 		};
-		7D8BA39E010E490C02CA2964 = {
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 7;
-			files = (
-				7D8BA39F010E490C02CA2964,
-				7D3170210117A0CD02CA2964,
-				1291E4B60242448403A87B01,
-			);
-			isa = PBXCopyFilesBuildPhase;
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		7D8BA39F010E490C02CA2964 = {
-			fileRef = 7D8BA377010E490C02CA2964;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		7D8BA3A1010E490C02CA2964 = {
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				7D8BA3A2010E490C02CA2964,
-			);
-			isa = PBXCopyFilesBuildPhase;
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		7D8BA3A2010E490C02CA2964 = {
-			fileRef = 7D8BA379010E490C02CA2964;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
 		7D8BA3A3010E490C02CA2964 = {
-			buildRules = (
-			);
 			buildSettings = {
 				COPY_PHASE_STRIP = NO;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
+				OPTIMIZATION_CFLAGS = "-O0";
 				ZERO_LINK = NO;
 			};
 			isa = PBXBuildStyle;
 			name = Development;
 		};
 		7D8BA3A4010E490C02CA2964 = {
-			buildRules = (
-			);
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
@@ -1032,18 +981,107 @@
 			<string>DOS_FAT_32</string>
 			<key>FSFormatExecutable</key>
 			<string>../../../../../../sbin/newfs_msdos</string>
+			<key>FSFormatMaximumSize</key>
+			<integer>8796093022208</integer>
 			<key>FSFormatMinimumSize</key>
-			<integer>49152</integer>
+			<integer>32768</integer>
 			<key>FSMountArguments</key>
 			<string></string>
 			<key>FSMountExecutable</key>
 			<string>../../../../../../sbin/mount_msdos</string>
 			<key>FSName</key>
-			<string>MS-DOS</string>
+			<string>MS-DOS File System</string>
 			<key>FSRepairArguments</key>
 			<string>-y</string>
 			<key>FSRepairExecutable</key>
 			<string>../../../../../../sbin/fsck_msdos</string>
+			<key>FSVerificationArguments</key>
+			<string>-n</string>
+			<key>FSVerificationExecutable</key>
+			<string>../../../../../../sbin/fsck_msdos</string>
+		</dict>
+		<key>MS-DOS FAT12</key>
+		<dict>
+			<key>FSFormatArguments</key>
+			<string>-F 12</string>
+			<key>FSFormatContentMask</key>
+			<string>DOS_FAT_12</string>
+			<key>FSFormatExecutable</key>
+			<string>../../../../../../sbin/newfs_msdos</string>
+			<key>FSFormatMaximumSize</key>
+			<integer>133169152</integer>
+			<key>FSFormatMinimumSize</key>
+			<integer>32768</integer>
+			<key>FSMountArguments</key>
+			<string></string>
+			<key>FSMountExecutable</key>
+			<string>../../../../../../sbin/mount_msdos</string>
+			<key>FSName</key>
+			<string>MS-DOS File System (FAT12)</string>
+			<key>FSRepairArguments</key>
+			<string>-y</string>
+			<key>FSRepairExecutable</key>
+			<string>../../../../../../sbin/fsck_msdos</string>
+			<key>FSSubType</key>
+			<integer>0</integer>
+			<key>FSVerificationArguments</key>
+			<string>-n</string>
+			<key>FSVerificationExecutable</key>
+			<string>../../../../../../sbin/fsck_msdos</string>
+		</dict>
+		<key>MS-DOS FAT16</key>
+		<dict>
+			<key>FSFormatArguments</key>
+			<string>-F 16</string>
+			<key>FSFormatContentMask</key>
+			<string>DOS_FAT_16</string>
+			<key>FSFormatExecutable</key>
+			<string>../../../../../../sbin/newfs_msdos</string>
+			<key>FSFormatMaximumSize</key>
+			<integer>2147483648</integer>
+			<key>FSFormatMinimumSize</key>
+			<integer>4299161</integer>
+			<key>FSMountArguments</key>
+			<string></string>
+			<key>FSMountExecutable</key>
+			<string>../../../../../../sbin/mount_msdos</string>
+			<key>FSName</key>
+			<string>MS-DOS File System (FAT16)</string>
+			<key>FSRepairArguments</key>
+			<string>-y</string>
+			<key>FSRepairExecutable</key>
+			<string>../../../../../../sbin/fsck_msdos</string>
+			<key>FSSubType</key>
+			<integer>1</integer>
+			<key>FSVerificationArguments</key>
+			<string>-n</string>
+			<key>FSVerificationExecutable</key>
+			<string>../../../../../../sbin/fsck_msdos</string>
+		</dict>
+		<key>MS-DOS FAT32</key>
+		<dict>
+			<key>FSFormatArguments</key>
+			<string>-F 32</string>
+			<key>FSFormatContentMask</key>
+			<string>DOS_FAT_32</string>
+			<key>FSFormatExecutable</key>
+			<string>../../../../../../sbin/newfs_msdos</string>
+			<key>FSFormatMaximumSize</key>
+			<integer>8796093022208</integer>
+			<key>FSFormatMinimumSize</key>
+			<integer>34603008</integer>
+			<key>FSMountArguments</key>
+			<string></string>
+			<key>FSMountExecutable</key>
+			<string>../../../../../../sbin/mount_msdos</string>
+			<key>FSName</key>
+			<string>MS-DOS File System (FAT32)</string>
+			<key>FSRepairArguments</key>
+			<string>-y</string>
+			<key>FSRepairExecutable</key>
+			<string>../../../../../../sbin/fsck_msdos</string>
+			<key>FSSubType</key>
+			<integer>2</integer>
 			<key>FSVerificationArguments</key>
 			<string>-n</string>
 			<key>FSVerificationExecutable</key>
@@ -1165,23 +1203,6 @@
 		};
 		B64F35810230385404C9147C = {
 			fileRef = B64F35800230385404C9147C;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		B673AAE70250E44704C9147C = {
-			fileEncoding = 30;
-			indentWidth = 4;
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.c.c;
-			path = msdosfs_attrlist.c;
-			refType = 4;
-			sourceTree = "<group>";
-			tabWidth = 4;
-			usesTabs = 0;
-		};
-		B673AAE80250E44704C9147C = {
-			fileRef = B673AAE70250E44704C9147C;
 			isa = PBXBuildFile;
 			settings = {
 			};

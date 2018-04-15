@@ -300,20 +300,8 @@ main(argc, argv)
 
 	FindVolumeName(&args);
 
-#if 0
-	error = getvfsbyname("msdos", &vfc);
-	if (error && vfsisloadable("msdos")) {
-		if (vfsload("msdos"))
-			err(EX_OSERR, "vfsload(msdos)");
-		endvfsent();	/* clear cache */
-		error = getvfsbyname("msdos", &vfc);
-	}
-	if (error)
-		errx(EX_OSERR, "msdos filesystem is not available");
-#endif
-
 	if (checkLoadable())		/* Is it already loaded? */
-                if (load_kmod())		/* Load it in */
+		if (load_kmod())		/* Load it in */
 			errx(EX_OSERR, "msdos filesystem is not available");
 
 	if (mount("msdos", mntpath, mntflags, &args) < 0)
@@ -392,34 +380,17 @@ usage()
 
 #define FS_TYPE			"msdos"
 
-static int checkLoadable()
+/* Return non-zero if the file system is not yet loaded. */
+static int checkLoadable(void)
 {
-        struct vfsconf vfc;
-        int name[4], maxtypenum, cnt;
-        size_t buflen;
+	int error;
+	struct vfsconf vfc;
+	
+	error = getvfsbyname(FS_TYPE, &vfc);
 
-        name[0] = CTL_VFS;
-        name[1] = VFS_GENERIC;
-        name[2] = VFS_MAXTYPENUM;
-        buflen = 4;
-        if (sysctl(name, 3, &maxtypenum, &buflen, (void *)0, (size_t)0) < 0)
-                return (-1);
-        name[2] = VFS_CONF;
-        buflen = sizeof vfc;
-        for (cnt = 0; cnt < maxtypenum; cnt++) {
-                name[3] = cnt;
-                if (sysctl(name, 4, &vfc, &buflen, (void *)0, (size_t)0) < 0) {
-                        if (errno != EOPNOTSUPP && errno != ENOENT)
-                                return (-1);
-                        continue;
-                }
-                if (!strcmp(FS_TYPE, vfc.vfc_name))
-                        return (0);
-        }
-        errno = ENOENT;
-        return (-1);
-
+	return error;
 }
+
 
 #define LOAD_COMMAND "/sbin/kextload"
 #define MSDOS_MODULE_PATH "/System/Library/Extensions/msdosfs.kext"
@@ -557,7 +528,7 @@ static CFStringEncoding GetDefaultDOSEncoding(void)
 
 #define MAX_DOS_BLOCKSIZE	2048
 
-struct direntry {
+struct dosdirentry {
 	u_int8_t name[11];
 	u_int8_t attr;
 	u_int8_t reserved;
@@ -587,7 +558,7 @@ static void FindVolumeName(struct msdosfs_args *args)
 {
 	int fd;
 	u_int32_t i;
-	struct direntry *dir;
+	struct dosdirentry *dir;
 	void *rootBuffer;
 	unsigned bytesPerSector;
 	unsigned sectorsPerCluster;
@@ -647,7 +618,7 @@ static void FindVolumeName(struct msdosfs_args *args)
 		firstRootSector = reservedSectors + numFATs * sectorsPerFAT;
 
 		readOffset = firstRootSector * bytesPerSector;
-		readAmount = (rootDirEntries * sizeof(struct direntry) + bytesPerSector-1) / bytesPerSector;
+		readAmount = (rootDirEntries * sizeof(struct dosdirentry) + bytesPerSector-1) / bytesPerSector;
 		readAmount *= bytesPerSector;
 
 		rootBuffer = malloc(readAmount);
@@ -685,7 +656,7 @@ static void FindVolumeName(struct msdosfs_args *args)
 			errx(EX_OSERR, "Out of memory");
 		
 		/* Figure out the number of directory entries per cluster */
-		rootDirEntries = readAmount / sizeof(struct direntry);
+		rootDirEntries = readAmount / sizeof(struct dosdirentry);
 		
 		/* Start with the first cluster of the root directory */
 		cluster = buf[44] + (buf[45]<<8L) + (buf[46]<<16L) + (buf[47]<<24L);
