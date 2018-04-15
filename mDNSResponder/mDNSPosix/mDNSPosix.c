@@ -159,8 +159,12 @@ mDNSexport mStatus mDNSPlatformSendUDP(const mDNS *const m, const void *const ms
 	assert(msg != NULL);
 	assert(end != NULL);
 	assert((((char *) end) - ((char *) msg)) > 0);
-	assert(dstPort.NotAnInteger != 0);
 
+	if (dstPort.NotAnInteger == 0) 
+		{
+		LogMsg("mDNSPlatformSendUDP: Invalid argument -dstPort is set to 0");
+		return PosixErrorToStatus(EINVAL);
+		}
 	if (dst->type == mDNSAddrType_IPv4)
 		{
 		struct sockaddr_in *sin = (struct sockaddr_in*)&to;
@@ -714,7 +718,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 	#if defined(IPV6_PKTINFO)
 		if (err == 0)
 			{
-				err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_PKTINFO, &kOn, sizeof(kOn));
+				err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_2292_PKTINFO, &kOn, sizeof(kOn));
 				if (err < 0) { err = errno; perror("setsockopt - IPV6_PKTINFO"); }
 			}
 	#else
@@ -723,7 +727,7 @@ mDNSlocal int SetupSocket(struct sockaddr *intfAddr, mDNSIPPort port, int interf
 	#if defined(IPV6_HOPLIMIT)
 		if (err == 0)
 			{
-				err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_HOPLIMIT, &kOn, sizeof(kOn));
+				err = setsockopt(*sktPtr, IPPROTO_IPV6, IPV6_2292_HOPLIMIT, &kOn, sizeof(kOn));
 				if (err < 0) { err = errno; perror("setsockopt - IPV6_HOPLIMIT"); }
 			}
 	#endif
@@ -841,6 +845,7 @@ mDNSlocal int SetupOneInterface(mDNS *const m, struct sockaddr *intfAddr, struct
 		// Set up the fields required by the mDNS core.
 		SockAddrTomDNSAddr(intfAddr, &intf->coreIntf.ip, NULL);
 		SockAddrTomDNSAddr(intfMask, &intf->coreIntf.mask, NULL);
+
 		//LogMsg("SetupOneInterface: %#a %#a",  &intf->coreIntf.ip,  &intf->coreIntf.mask);
 		strncpy(intf->coreIntf.ifname, intfName, sizeof(intf->coreIntf.ifname));
 		intf->coreIntf.ifname[sizeof(intf->coreIntf.ifname)-1] = 0;

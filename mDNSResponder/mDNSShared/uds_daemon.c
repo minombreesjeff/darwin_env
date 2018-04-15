@@ -3994,6 +3994,11 @@ mDNSexport int udsserver_init(dnssd_sock_t skts[], mDNSu32 count)
 			// determine whether sa_len is defined on a particular platform.
 			laddr.sun_len = sizeof(struct sockaddr_un);
 			#endif
+			if (strlen(MDNS_UDS_SERVERPATH) >= sizeof(laddr.sun_path))
+				{
+					LogMsg("ERROR: MDNS_UDS_SERVERPATH must be < %d characters", (int)sizeof(laddr.sun_path));
+					goto error;
+				}
 			mDNSPlatformStrCopy(laddr.sun_path, MDNS_UDS_SERVERPATH);
 			ret = bind(listenfd, (struct sockaddr *) &laddr, sizeof(laddr));
 			umask(mask);
