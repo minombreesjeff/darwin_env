@@ -2784,15 +2784,25 @@ kern_return_t do_mDNSStoreSPSMACAddress(__unused mach_port_t port, int family, v
 {
     ethaddr_t              eth;
     char                   spsip[INET6_ADDRSTRLEN];
-    int                    ret   = 0;
-    CFStringRef            sckey = NULL;
-    SCDynamicStoreRef      store = NULL;
-    CFMutableDictionaryRef dict  = NULL;
+    int                    ret        = 0;
+    CFStringRef            sckey      = NULL;
+    SCDynamicStoreRef      store      = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:StoreSPSMACAddress"), NULL, NULL);
+    SCDynamicStoreRef      ipstore    = SCDynamicStoreCreate(NULL, CFSTR("mDNSResponder:GetIPv6Addresses"), NULL, NULL);
+    CFMutableDictionaryRef dict       = NULL;
+    CFStringRef            entityname = NULL;
+    CFDictionaryRef        ipdict     = NULL;
+    CFArrayRef             addrs      = NULL;
 
     if (!authorized(&token))
     {
         helplog(ASL_LEVEL_ERR, "mDNSStoreSPSMAC: Not authorized");
         return kmDNSHelperNotAuthorized;
+    }
+
+    if ((store == NULL) || (ipstore == NULL))
+    {
+        helplog(ASL_LEVEL_ERR, "Unable to access SC Dynamic Store");
+        return KERN_FAILURE;
     }
 
     // Get the MAC address of the Sleep Proxy Server
@@ -2816,7 +2826,7 @@ kern_return_t do_mDNSStoreSPSMACAddress(__unused mach_port_t port, int family, v
 
     CFStringRef macaddr = CFStringCreateWithFormat(kCFAllocatorDefault, NULL, CFSTR("%02x:%02x:%02x:%02x:%02x:%02x"), eth[0], eth[1], eth[2], eth[3], eth[4], eth[5]);
     CFDictionarySetValue(dict, CFSTR("MACAddress"), macaddr);
-    CFRelease(macaddr);
+    if (NULL != macaddr) CFRelease(macaddr);
 
     if( NULL == inet_ntop(family, (void *)spsaddr, spsip, sizeof(spsip)))
     {
@@ -2827,17 +2837,30 @@ kern_return_t do_mDNSStoreSPSMACAddress(__unused mach_port_t port, int family, v
 
     CFStringRef ipaddr = CFStringCreateWithCString(NULL, spsip, kCFStringEncodingUTF8);
     CFDictionarySetValue(dict, CFSTR("IPAddress"), ipaddr);
-    CFRelease(ipaddr);
+    if (NULL != ipaddr) CFRelease(ipaddr);
 
+    // Get the current IPv6 addresses on this interface and store them so NAs can be sent on wakeup
+    if ((entityname = CFStringCreateWithFormat(NULL, NULL, CFSTR("State:/Network/Interface/%s/IPv6"), ifname)) != NULL)
+    {
+        if ((ipdict = SCDynamicStoreCopyValue(ipstore, entityname)) != NULL)
+        {
+            if((addrs = CFDictionaryGetValue(ipdict, CFSTR("Addresses"))) != NULL)
+            {
+                addrs = CFRetain(addrs);
+                CFDictionarySetValue(dict, CFSTR("RegisteredAddresses"), addrs);
+            }
+        }
+    }
     SCDynamicStoreSetValue(store, sckey, dict);
 
 fin:
-    if (NULL != store)
-        CFRelease(store);
-    if (NULL != sckey)
-        CFRelease(sckey);
-    if (NULL != dict)
-        CFRelease(dict);
+    if (store)      CFRelease(store);
+    if (ipstore)    CFRelease(ipstore);
+    if (sckey)      CFRelease(sckey);
+    if (dict)       CFRelease(dict);
+    if (ipdict)     CFRelease(ipdict);
+    if (entityname) CFRelease(entityname);
+    if (addrs)      CFRelease(addrs);
 
     update_idle_timer();
     return ret;
