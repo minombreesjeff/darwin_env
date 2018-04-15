@@ -453,12 +453,11 @@ static mStatus RegisterOneService(const char *  richTextName,
 
         if (gMDNSPlatformPosixVerboseLevel > 0) {
             fprintf(stderr, 
-                    "%s: Registered service %d, name \"%s\", type \"%s\", domain \"%s\",  port %ld\n", 
+                    "%s: Registered service %d, name '%s', type '%s', port %ld\n", 
                     gProgramName, 
                     thisServ->serviceID, 
                     richTextName,
                     serviceType,
-                    serviceDomain,
                     portNumber);
         }
     } else {
@@ -469,143 +468,108 @@ static mStatus RegisterOneService(const char *  richTextName,
     return status;
 }
 
-static mDNSBool ReadALine(char *buf, size_t bufSize, FILE *fp, mDNSBool skipBlankLines)
+static mDNSBool ReadALine(char *buf, size_t bufSize, FILE *fp)
+// Read a line, skipping over any blank lines or lines starting with '#'
 {
-	size_t	len;
-	mDNSBool readNextLine;
-
+	mDNSBool good, skip;
 	do {
-		readNextLine = mDNSfalse;
-
-		if (fgets(buf, bufSize, fp) == NULL)
-			return mDNSfalse;	// encountered EOF or an error condition
-
-		// These first characters indicate a blank line.
-		if (buf[0] == ' ' || buf[0] == '\t' || buf[0] == '\r' || buf[0] == '\n') {
-			if (!skipBlankLines)
-				return mDNSfalse;
-			readNextLine = mDNStrue;
-		}
-		// always skip comment lines
-		if (buf[0] == '#')
-			readNextLine = mDNStrue;
-
-	} while (readNextLine);
-
-	len = strlen( buf);
-	if ( buf[len - 1] == '\r' || buf[len - 1] == '\n')
-		buf[len - 1] = '\0';
-
-    return mDNStrue;
+		good = (fgets(buf, bufSize, fp) != NULL);
+		skip = (good && (buf[0] == '#'));
+	} while (good && skip);
+	if (good)
+	{
+		int		len = strlen( buf);
+		if ( buf[len - 1] == '\r' || buf[len - 1] == '\n')
+			buf[len - 1] = '\0';
+	}
+    return good;
 }
 
 static mStatus RegisterServicesInFile(const char *filePath)
 {
     mStatus     status = mStatus_NoError;
     FILE *      fp = fopen(filePath, "r");
+    int         junk;
     
     if (fp == NULL) {
-        return mStatus_UnknownErr;
+        status = mStatus_UnknownErr;
     }
+    if (status == mStatus_NoError) {
+        mDNSBool good = mDNStrue;
+        do {
+			int         ch;
+			char name[256];
+			char type[256];
+			const char *dom = kDefaultServiceDomain;
+			char rawText[1024];
+			mDNSu8  text[sizeof(RDataBody)];
+			unsigned int textLen = 0;
+			char port[256];
 
-	if (gMDNSPlatformPosixVerboseLevel > 1)
-		fprintf(stderr, "Parsing %s for services\n", filePath);
-
-	do {
-		char nameBuf[256];
-		char * name = nameBuf; 
-		char type[256];
-		const char *dom = kDefaultServiceDomain;
-		char rawText[1024];
-		mDNSu8  text[sizeof(RDataBody)];
-		unsigned int textLen = 0;
-		char port[256];
-		char *p;
-
-		// Read the service name, type, port, and optional text record fields.
-		// Skip blank lines while looking for the next service name.
-		if (! ReadALine(name, sizeof(nameBuf), fp, mDNStrue))
-			break;
-
-		// Special case that allows service name to begin with a '#'
-		// character by escaping it with a '\' to distiguish it from
-		// a comment line.  Remove the leading '\' here before
-		// registering the service.
-		if (name[0] == '\\' && name[1] == '#')
-			name++;
-
-		if (gMDNSPlatformPosixVerboseLevel > 1)
-			fprintf(stderr, "Service name: \"%s\"\n", name);
-
-		// Don't skip blank lines in calls to ReadAline() after finding the
-		// service name since the next blank line indicates the end
-		// of this service record.
-		if (! ReadALine(type, sizeof(type), fp, mDNSfalse))
-			break;
-
-		// see if a domain name is specified
-		p = type;
-		while (*p && *p != ' ' && *p != '\t') p++;
-		if (*p) {
-			*p = 0;	// NULL terminate the <type>.<protocol> string
-			// skip any leading whitespace before domain name
-			p++;
-			while (*p && (*p == ' ' || *p == '\t')) p++;
-			if (*p)
-				dom = p;
-		}
-		if (gMDNSPlatformPosixVerboseLevel > 1) {
-			fprintf(stderr, "Service type: \"%s\"\n", type);
-			fprintf(stderr, "Service domain: \"%s\"\n", dom);
-		}
-
-		if (! ReadALine(port, sizeof(port), fp, mDNSfalse))
-			break;
-		if (gMDNSPlatformPosixVerboseLevel > 1)
-			fprintf(stderr, "Service port: %s\n", port);
-
-		if (   ! CheckThatRichTextNameIsUsable(name, mDNStrue)
-			|| ! CheckThatServiceTypeIsUsable(type, mDNStrue)
-			|| ! CheckThatPortNumberIsUsable(atol(port), mDNStrue))
-			break;
-
-		// read the TXT record fields
-		while (1) {
-			int len;
-			if (!ReadALine(rawText, sizeof(rawText), fp, mDNSfalse)) break;
-			if (gMDNSPlatformPosixVerboseLevel > 1)
-				fprintf(stderr, "Text string: \"%s\"\n", rawText);
-			len = strlen(rawText);
-			if (len <= 255)
-				{
-				unsigned int newlen = textLen + 1 + len;
-				if (len == 0 || newlen >= sizeof(text)) break;
-				text[textLen] = len;
-				mDNSPlatformMemCopy(text + textLen + 1, rawText, len);
-				textLen = newlen;
+            // Skip over any blank lines.
+            do ch = fgetc(fp); while ( ch == '\n' || ch == '\r' );
+            if (ch != EOF) good = (ungetc(ch, fp) == ch);
+            
+            // Read three lines, check them for validity, and register the service.
+			good = ReadALine(name, sizeof(name), fp);               
+			if (good) {
+				good = ReadALine(type, sizeof(type), fp);
+			}
+			if (good) {
+				char *p = type;
+				while (*p && *p != ' ') p++;
+				if (*p) {
+					*p = 0;
+					dom = p+1;
 				}
-			else
-				fprintf(stderr, "%s: TXT attribute too long for name = %s, type = %s, port = %s\n", 
-					gProgramName, name, type, port);
-		}
+			}
+			if (good) {
+				good = ReadALine(port, sizeof(port), fp);
+			}
+			if (good) {
+				good =     CheckThatRichTextNameIsUsable(name, mDNSfalse)
+						&& CheckThatServiceTypeIsUsable(type, mDNSfalse)
+						&& CheckThatPortNumberIsUsable(atol(port), mDNSfalse);
+			}
+			if (good) {
+				while (1) {
+					int len;
+					if (!ReadALine(rawText, sizeof(rawText), fp)) break;
+					len = strlen(rawText);
+					if (len <= 255)
+						{
+						unsigned int newlen = textLen + 1 + len;
+						if (len == 0 || newlen >= sizeof(text)) break;
+						text[textLen] = len;
+						mDNSPlatformMemCopy(text + textLen + 1, rawText, len);
+						textLen = newlen;
+						}
+					else
+						fprintf(stderr, "%s: TXT attribute too long for name = %s, type = %s, port = %s\n", 
+							gProgramName, name, type, port);
+				}
+			}
+			if (good) {
+				status = RegisterOneService(name, type, dom, text, textLen, atol(port));
+				if (status != mStatus_NoError) {
+					fprintf(stderr, "%s: Failed to register service, name = %s, type = %s, port = %s\n", 
+							gProgramName, name, type, port);
+					status = mStatus_NoError;       // keep reading
+				}
+			}
+        } while (good && !feof(fp));
 
-		status = RegisterOneService(name, type, dom, text, textLen, atol(port));
-		if (status != mStatus_NoError) {
-			// print error, but try to read and register other services in the file
-			fprintf(stderr, "%s: Failed to register service, name \"%s\", type \"%s\", domain \"%s\", port %s\n", 
-					gProgramName, name, type, dom, port);
-		}
-
-	} while (!feof(fp));
-
-	if (!feof(fp)) {
-		fprintf(stderr, "%s: Error reading service file %s\n", gProgramName, filePath);
-		status = mStatus_UnknownErr;
-	}
+        if ( ! good ) {
+            fprintf(stderr, "%s: Error reading service file %s\n", gProgramName, filePath);
+        }
+    }
     
-	assert(0 == fclose(fp));
+    if (fp != NULL) {
+        junk = fclose(fp);
+        assert(junk == 0);
+    }
     
-	return status;
+    return status;
 }
 
 static mStatus RegisterOurServices(void)
