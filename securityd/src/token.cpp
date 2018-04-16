@@ -395,8 +395,8 @@ void Token::kill()
 void Token::notify(NotificationEvent event)
 {
     NameValueDictionary nvd;
-	CssmSubserviceUid ssuid(mGuid, NULL, mSubservice,
-		CSSM_SERVICE_DL | CSSM_SERVICE_CSP);
+	CssmSubserviceUid ssuid(mGuid, NULL, h2n (mSubservice),
+		h2n(CSSM_SERVICE_DL | CSSM_SERVICE_CSP));
 	nvd.Insert(new NameValuePair(SSUID_KEY, CssmData::wrap(ssuid)));
     CssmData data;
     nvd.Export(data);

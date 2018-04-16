@@ -836,21 +836,21 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 30544;
+				CURRENT_PROJECT_VERSION = 30557;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks /usr/local/SecurityPieces/Components/securityd $(SYSTEM_LIBRARY_DIR)/PrivateFrameworks";
 				INSTALL_PATH = /usr/sbin;
-				OPT_CPPXFLAGS = "$(OPT_CXFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_CPPXFLAGS = "$(OPT_CXFLAGS)";
 				OPT_CXFLAGS = "-DNDEBUG $(OPT_INLINEXFLAGS)";
-				OPT_INLINEXFLAGS = " -finline-functions --param max-inline-insns-single=150 --param max-inline-insns-auto=150 --param max-inline-insns=300 --param min-inline-insns=90";
+				OPT_INLINEXFLAGS = "-finline-functions";
 				OPT_LDXFLAGS = "-dead_strip";
 				OPT_LDXNOPIC = ",_nopic";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
-				OTHER_CFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
+				OTHER_CFLAGS_debug = "$(OTHER_CFLAGS) -O1 -fno-inline";
 				OTHER_CFLAGS_normal = "$(OPT_CXFLAGS) $(OTHER_CFLAGS)";
 				OTHER_CFLAGS_profile = "$(OPT_CXFLAGS) $(OTHER_CFLAGS) -pg";
-				OTHER_CPLUSPLUSFLAGS_debug = "$(OTHER_CPLUSPLUSFLAGS) -O0 -fno-inline";
+				OTHER_CPLUSPLUSFLAGS_debug = "$(OTHER_CPLUSPLUSFLAGS) -O1 -fno-inline";
 				OTHER_CPLUSPLUSFLAGS_normal = "$(OPT_CPPXFLAGS) $(OTHER_CPLUSPLUSFLAGS)";
 				OTHER_CPLUSPLUSFLAGS_profile = "$(OPT_CPPXFLAGS) $(OTHER_CPLUSPLUSFLAGS) -pg";
 				OTHER_LDFLAGS = "-lbsm";
@@ -1378,8 +1378,8 @@
 				OPT_LDFLAGS = "";
 				OPT_LDXFLAGS = "";
 				OPT_LDXNOPIC = "";
-				OTHER_CFLAGS_normal = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CPLUSPLUSFLAGS_normal = "$(OTHER_CPLUSPLUSFLAGS) -O0 -fno-inline";
+				OTHER_CFLAGS_normal = "$(OTHER_CFLAGS) -O1 -fno-inline";
+				OTHER_CPLUSPLUSFLAGS_normal = "$(OTHER_CPLUSPLUSFLAGS) -O1 -fno-inline";
 			};
 			isa = PBXBuildStyle;
 			name = "normal with debug";

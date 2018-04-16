@@ -242,7 +242,7 @@ Reason QueryKeychainUse::queryUser (const char *database, const char *descriptio
 	
 	if (mPassphraseCheck)
 	{
-		create("builtin", "confirm-access-password", NULL);
+		create("builtin", "confirm-access-password", noSecuritySession);
 		
 		CssmAutoData data(Allocator::standard(Allocator::sensitive));
 
@@ -280,7 +280,7 @@ Reason QueryKeychainUse::queryUser (const char *database, const char *descriptio
 	}
 	else
 	{
-		create("builtin", "confirm-access", NULL);
+		create("builtin", "confirm-access", noSecuritySession);
         setInput(hints, context);
 		invoke();
 	}
@@ -322,7 +322,7 @@ bool QueryCodeCheck::operator () (const char *aclPath)
 	
 	hints.insert(AuthItemRef(AGENT_HINT_APPLICATION_PATH, AuthValueOverlay(strlen(aclPath), const_cast<char*>(aclPath))));
 	
-	create("builtin", "code-identity", NULL);
+	create("builtin", "code-identity", noSecuritySession);
 
     setInput(hints, context);
 	status = invoke();
@@ -366,7 +366,7 @@ Reason QueryOld::query()
 
 	hints.insert(mClientHints.begin(), mClientHints.end());
 
-	create("builtin", "unlock-keychain", NULL);
+	create("builtin", "unlock-keychain", noSecuritySession);
 
 	do
 	{
@@ -478,10 +478,10 @@ Reason QueryNewPassphrase::query()
     switch (initialReason)
     {
         case SecurityAgent::newDatabase: 
-            create("builtin", "new-passphrase", NULL);
+            create("builtin", "new-passphrase", noSecuritySession);
             break;
         case SecurityAgent::changePassphrase:
-            create("builtin", "change-passphrase", NULL);
+            create("builtin", "change-passphrase", noSecuritySession);
             break;
         default:
             assert(false);
@@ -597,11 +597,11 @@ Reason QueryGenericPassphrase::query(const char *prompt, bool verify,
     // CSSM_ATTRIBUTE_ALERT_TITLE (optional alert panel title)
 	
     if (false == verify) {  // import
-		create("builtin", "generic-unlock", NULL);
+		create("builtin", "generic-unlock", noSecuritySession);
     } else {		// verify passphrase (export)
 					// new-passphrase-generic works with the pre-4 June 2004 agent; 
 					// generic-new-passphrase is required for the new agent
-		create("builtin", "generic-new-passphrase", NULL);
+		create("builtin", "generic-new-passphrase", noSecuritySession);
     }
     
     AuthItem *passwordItem;
@@ -652,7 +652,7 @@ Reason QueryDBBlobSecret::query(DatabaseCryptoCore &dbCore, const DbBlob *secret
 	
     hints.insert(mClientHints.begin(), mClientHints.end());
 	
-	create("builtin", "generic-unlock-kcblob", NULL);
+	create("builtin", "generic-unlock-kcblob", noSecuritySession);
     
     AuthItem *secretItem;
     
