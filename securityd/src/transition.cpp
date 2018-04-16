@@ -218,6 +218,10 @@ kern_return_t ucsp_server_findFirst(UCSP_ARGS, DbHandle db,
 
 		// return data (temporary fix)
 		if (getData) {
+			if (key) {
+				flip (*outData.interpretedAs<CssmKey>());
+			}
+			
 			*data = outData.data();
 			*dataLength = outData.length();
 		}
@@ -257,6 +261,10 @@ kern_return_t ucsp_server_findNext(UCSP_ARGS, SearchHandle hSearch,
 
 		// return data (temporary fix)
 		if (getData) {
+			if (key) {
+				flip (*outData.interpretedAs<CssmKey>());
+			}
+			
 			*data = outData.data();
 			*dataLength = outData.length();
 		}
@@ -288,6 +296,10 @@ kern_return_t ucsp_server_findRecordHandle(UCSP_ARGS, RecordHandle hRecord,
 
 	// return data (temporary fix)
 	if (getData) {
+		if (key) {
+			flip (*outData.interpretedAs<CssmKey>());
+		}
+			
 		*data = outData.data();
 		*dataLength = outData.length();
 	}
