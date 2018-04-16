@@ -178,13 +178,6 @@ bool TokenDaemon::probe()
 
 
 //
-// FaultRelay
-//
-FaultRelay::~FaultRelay()
-{ /* virtual */ }
-
-
-//
 // Debug dump support
 //
 #if defined(DEBUGDUMP)

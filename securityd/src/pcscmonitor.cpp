@@ -365,7 +365,7 @@ PCSCMonitor::DeviceSupport PCSCMonitor::deviceSupport(const IOKit::Device &dev)
 	try {
 		secdebug("scsel", "%s", dev.path().c_str());
 
-		// composite USB device with interface class
+               // composite USB device with interface class
 		if (CFRef<CFNumberRef> cfInterface = dev.property<CFNumberRef>("bInterfaceClass"))
 			switch (IFDEBUG(uint32 clas =) cfNumber(cfInterface)) {
 			case kUSBChipSmartCardInterfaceClass:		// CCID smartcard reader - go
@@ -379,19 +379,19 @@ PCSCMonitor::DeviceSupport PCSCMonitor::deviceSupport(const IOKit::Device &dev)
 				return impossible;
 			}
 
-		// noncomposite USB device
+               // noncomposite USB device
 		if (CFRef<CFNumberRef> cfDevice = dev.property<CFNumberRef>("bDeviceClass"))
 			if (cfNumber(cfDevice) == kUSBVendorSpecificClass) {
 				secdebug("scsel", "  Vendor-specific device - possible match");
 				return possible;
 			}
 
-	   // PCCard (aka PCMCIA aka ...) interface (don't know how to recognize a reader here)
-	   if (CFRef<CFStringRef> ioName = dev.property<CFStringRef>("IOName"))
-			   if (cfString(ioName).find("pccard", 0, 1) == 0) {
-					   secdebug("scsel", "  PCCard - possible match");
-					   return possible;
-			   }
+               // PCCard (aka PCMCIA aka ...) interface (don't know how to recognize a reader here)
+               if (CFRef<CFStringRef> ioName = dev.property<CFStringRef>("IOName"))
+                       if (cfString(ioName).find("pccard", 0, 1) == 0) {
+                               secdebug("scsel", "  PCCard - possible match");
+                               return possible;
+                       }
 		return impossible;
 	} catch (...) {
 		secdebug("scsel", "  exception while examining device - ignoring it");

@@ -878,10 +878,10 @@ void KeychainDatabase::validateBlob(const DbBlob *blob)
 	blob->validate(CSSMERR_APPLEDL_INVALID_DATABASE_BLOB);
 	switch (blob->version()) {
 #if defined(COMPAT_OSX_10_0)
-		case DbBlob::version_MacOS_10_0:
+		case blob->version_MacOS_10_0:
 			break;
 #endif
-		case DbBlob::version_MacOS_10_1:
+		case blob->version_MacOS_10_1:
 			break;
 		default:
 			CssmError::throwMe(CSSMERR_APPLEDL_INCOMPATIBLE_DATABASE_BLOB);

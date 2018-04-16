@@ -114,11 +114,11 @@ public:
 	static AclSource &aclBearer(AclKind kind, CSSM_HANDLE handle);
 	
 	// Generic version of handle lookup
-	template <class ProcessBearer>
-	static RefPointer<ProcessBearer> find(CSSM_HANDLE handle, CSSM_RETURN notFoundError)
+	template <class Type>
+	static RefPointer<Type> find(CSSM_HANDLE handle, CSSM_RETURN notFoundError)
 	{
-		RefPointer<ProcessBearer> object = 
-			HandleObject::findRef<ProcessBearer>(handle, notFoundError);
+		RefPointer<Type> object = 
+			HandleObject::findRef<Type>(handle, notFoundError);
 		if (object->process() != Server::process())
 			CssmError::throwMe(notFoundError);
 		return object;

@@ -64,6 +64,7 @@
 #include <security_cdsa_utilities/acl_preauth.h>
 #include "acl_keychain.h"
 
+
 //
 // Local functions of the main program driver
 //
@@ -260,7 +261,7 @@ int main(int argc, char *argv[])
     
     // install MDS and initialize the local CSSM
     server.loadCssm();
-
+    
 	// okay, we're ready to roll
 	Syslog::notice("Entering service");
 	secdebug("SS", "%s initialized", bootstrapName);

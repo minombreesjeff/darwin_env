@@ -118,7 +118,6 @@ public:
 class AclSource {
 protected:
 	AclSource() { }
-	virtual ~AclSource();
 	
 public:
 	virtual SecurityServerAcl &acl();	// defaults to "no ACL; throw exception"

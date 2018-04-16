@@ -116,8 +116,7 @@ CodeSignatures::~CodeSignatures()
 void CodeSignatures::open(const char *path)
 {
 	mDb.open(path, O_RDWR | O_CREAT, 0644);
-	if (mDb)
-		mDb.flush();
+	mDb.flush();
 	IFDUMPING("equiv", debugDump("reopen"));
 }
 
@@ -145,8 +144,6 @@ string CodeSignatures::Identity::canonicalName(const string &path)
 //
 bool CodeSignatures::find(Identity &id, uid_t user)
 {
-	if (!mDb)
-		return false;
 	if (id.mState != Identity::untried)
 		return id.mState == Identity::valid;
 	try {
@@ -174,8 +171,6 @@ bool CodeSignatures::find(Identity &id, uid_t user)
 
 void CodeSignatures::makeLink(Identity &id, const string &ident, bool forUser, uid_t user)
 {
-	if (!mDb)
-		UnixError::throwMe(ENOENT);
 	DbKey key('H', id.getHash(mSigner), forUser, user);
 	if (!mDb.put(key, StringData(ident)))
 		UnixError::throwMe();
@@ -219,8 +214,6 @@ void CodeSignatures::addLink(const CssmData &oldHash, const CssmData &newHash,
 
 void CodeSignatures::removeLink(const CssmData &hash, const char *name, bool forSystem)
 {
-	if (!mDb)
-		UnixError::throwMe(ENOENT);
 	AclIdentity code(hash, name);
 	uid_t user = Server::process().uid();
 	if (forSystem && user)	// only root user can remove forSystem links
@@ -256,12 +249,6 @@ bool CodeSignatures::verify(Process &process,
 		}
 	} catch (...) {
 		secdebug("codesign", "exception getting client code hash: fail");
-		return false;
-	}
-	
-	// don't bother the user if the db is MIA
-	if (!mDb) {
-		secdebug("codesign", "database not open; cannot verify");
 		return false;
 	}
 	
@@ -315,7 +302,7 @@ bool CodeSignatures::verify(Process &process,
 			return false;
 		}
 	}
-
+	
 	// ask the user
 	QueryCodeCheck query;
     query.inferHints(process);
@@ -370,24 +357,20 @@ void CodeSignatures::debugDump(const char *how) const
 	if (!how)
 		how = "dump";
 	CssmData key, value;
-	if (!mDb) {
-		dump("CODE EQUIVALENTS DATABASE IS NOT OPEN (%s)", how);
+	if (!mDb.first(key, value)) {
+		dump("CODE EQUIVALENTS DATABASE IS EMPTY (%s)\n", how);
 	} else {
-		if (!mDb.first(key, value)) {
-			dump("CODE EQUIVALENTS DATABASE IS EMPTY (%s)\n", how);
-		} else {
-			dump("CODE EQUIVALENTS DATABASE DUMP (%s)\n", how);
-			do {
-				const char *header = key.interpretedAs<const char>();
-				size_t headerLength = strlen(header) + 1;
-				dump("%s:", header);
-				dumpData(key.at(headerLength), key.length() - headerLength);
-				dump(" => ");
-				dumpData(value);
-				dump("\n");
-			} while (mDb.next(key, value));
-			dump("END DUMP\n");
-		}
+		dump("CODE EQUIVALENTS DATABASE DUMP (%s)\n", how);
+		do {
+			const char *header = key.interpretedAs<const char>();
+			size_t headerLength = strlen(header) + 1;
+			dump("%s:", header);
+			dumpData(key.at(headerLength), key.length() - headerLength);
+			dump(" => ");
+			dumpData(value);
+			dump("\n");
+		} while (mDb.next(key, value));
+		dump("END DUMP\n");
 	}
 }
 

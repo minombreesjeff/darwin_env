@@ -48,9 +48,9 @@ Token &TokenDbCommon::token() const
 	return parent<Token>();
 }
 
-const std::string &TokenDbCommon::dbName() const
+string TokenDbCommon::dbName() const
 {
-	return token().printName();
+	return token().printName().c_str();
 }
 
 

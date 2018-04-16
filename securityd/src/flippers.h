@@ -56,7 +56,8 @@ inline void flip(T &obj)
 // It's a bad idea to try to flip a const, so flag that
 //
 template <class T>
-inline void flip(const T &);
+inline void flip(const T &)
+{ tryingToFlipAConstWontWork(); }
 
 
 //
