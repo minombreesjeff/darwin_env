@@ -1,0 +1,93 @@
+/*
+ * Copyright (c) 2000-2001,2003-2004 Apple Computer, Inc. All Rights Reserved.
+ * 
+ * @APPLE_LICENSE_HEADER_START@
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
+ * 
+ * @APPLE_LICENSE_HEADER_END@
+ */
+
+
+//
+// acls - SecurityServer ACL implementation
+//
+#ifndef _H_ACLS
+#define _H_ACLS
+
+#include "securityserver.h"
+#include <security_cdsa_utilities/cssmacl.h>
+#include <security_cdsa_utilities/acl_process.h>
+#include <security_cdsa_utilities/acl_codesigning.h>
+
+
+class Connection;
+class Database;
+
+
+//
+// ACL implementation as used by the SecurityServer
+//
+class SecurityServerAcl : public ObjectAcl {
+public:
+	SecurityServerAcl(AclKind k, Allocator &alloc) : ObjectAcl(alloc), mKind(k) { }
+	virtual ~SecurityServerAcl();
+	
+	AclKind kind() const { return mKind; }
+
+    // validation calls restated
+	void validate(AclAuthorization auth, const AccessCredentials *cred);
+	void validate(AclAuthorization auth, const Context &context);
+
+    void cssmChangeAcl(const AclEdit &edit, const AccessCredentials *cred);
+    void cssmChangeOwner(const AclOwnerPrototype &newOwner, const AccessCredentials *cred);
+	
+	virtual const Database *relatedDatabase() const;
+	
+	// aclSequence is taken to serialize ACL validations to pick up mutual changes
+	Mutex aclSequence;
+	
+private:
+	AclKind mKind;
+};
+
+
+//
+// Our implementation of an ACL validation environment uses information
+// derived from a Connection object. It implements context for
+// -- ProcessAclSubjects (getuid/getgid)
+// -- KeychainPromptAclSubjects (connection link)
+//
+class SecurityServerEnvironment : public virtual AclValidationEnvironment,
+    public virtual ProcessAclSubject::Environment,
+	public virtual CodeSignatureAclSubject::Environment {
+public:
+    SecurityServerEnvironment(const SecurityServerAcl &baseAcl)
+    : acl(baseAcl) { }
+	
+	const SecurityServerAcl &acl;
+    
+	const Database *database() const		{ return acl.relatedDatabase(); }
+    uid_t getuid() const;
+    gid_t getgid() const;
+	pid_t getpid() const;
+	bool verifyCodeSignature(const CodeSigning::Signature *signature, const CssmData *comment);
+};
+
+
+#endif //_H_ACLS
