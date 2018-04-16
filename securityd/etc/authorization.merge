@@ -2,43 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>comment</key>
-	<string>The name of the requested right is matched against the keys.  An exact match has priority, otherwise the longest match from the start is used.	Note that the right will only match wildcard rules (ending in a ".") during this reduction.
-
-allow rule: this is always allowed
-&lt;key&gt;com.apple.TestApp.benign&lt;/key&gt;
-&lt;string&gt;allow&lt;/string&gt;
-
-deny rule: this is always denied
-&lt;key&gt;com.apple.TestApp.dangerous&lt;/key&gt;
-&lt;string&gt;deny&lt;/string&gt;
-
-user rule: successful authentication as a user in the specified group(5) allows the associated right.
-
-The shared property specifies whether a credential generated on success is shared with other apps (i.e., those in the same "session"). This property defaults to false if not specified.
-
-The timeout property specifies the maximum age of a (cached/shared) credential accepted for this rule.
-
-The allow-root property specifies whether a right should be allowed automatically if the requesting process is running with uid == 0.  This defaults to false if not specified.
-
-See remaining rules for examples.
-</string>
 	<key>rights</key>
 	<dict>
-		<key></key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>comment</key>
-			<string>Matches otherwise unmatched rights (i.e., is a default).</string>
-			<key>rule</key>
-			<string>default</string>
-		</dict>
-		<key>com.apple.</key>
-		<dict>
-			<key>rule</key>
-			<string>default</string>
-		</dict>
 		<key>com.apple.DiskManagement.</key>
 		<dict>
 			<key>class</key>
@@ -320,18 +285,6 @@ See remaining rules for examples.
 			<string>admin</string>
 			<key>shared</key>
 			<false/>
-		</dict>
-		<key>com.apple.KerberosAgent</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>comment</key>
-			<string>Used to acquire Kerberos credentials.</string>
-			<key>mechanisms</key>
-			<array>
-				<string>KerberosAgent:kerberos-dialog</string>
-				<string>KerberosAgent:kerberos-authenticate,privileged</string>
-			</array>
 		</dict>
 		<key>com.apple.OpenScripting.additions.send</key>
 		<dict>
@@ -1478,23 +1431,6 @@ See remaining rules for examples.
 			<key>rule</key>
 			<string>root-or-entitled-admin-or-authenticate-admin</string>
 		</dict>
-		<key>com.apple.ZFSManager.</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>comment</key>
-			<string>Used by zfsmanager to allow access to destructive zfs functions</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>is-root</string>
-				<string>is-admin</string>
-				<string>default</string>
-			</array>
-			<key>shared</key>
-			<true/>
-		</dict>
 		<key>com.apple.activitymonitor.kill</key>
 		<dict>
 			<key>class</key>
@@ -1908,81 +1844,6 @@ See remaining rules for examples.
 				<string>appserver-admin</string>
 				<string>appserver-user</string>
 			</array>
-		</dict>
-		<key>com.apple.builtin.confirm-access</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:confirm-access</string>
-			</array>
-			<key>tries</key>
-			<integer>1</integer>
-		</dict>
-		<key>com.apple.builtin.confirm-access-password</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:confirm-access-password</string>
-			</array>
-		</dict>
-		<key>com.apple.builtin.generic-new-passphrase</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:generic-new-passphrase</string>
-			</array>
-		</dict>
-		<key>com.apple.builtin.generic-unlock</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:generic-unlock</string>
-			</array>
-		</dict>
-		<key>com.apple.dashboard.advisory.allow</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>shared</key>
-			<false/>
-			<key>timeout</key>
-			<integer>300</integer>
-		</dict>
-		<key>com.apple.desktopservices</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>For privileged file operations from within the Finder.</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>shared</key>
-			<false/>
-			<key>timeout</key>
-			<integer>0</integer>
-		</dict>
-		<key>com.apple.desktopservices.scripted</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>For scripting-initiated privileged file operations from within the Finder.</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>shared</key>
-			<false/>
-			<key>timeout</key>
-			<integer>0</integer>
 		</dict>
 		<key>com.apple.docset.install</key>
 		<dict>
@@ -2809,55 +2670,6 @@ See remaining rules for examples.
 			<key>rule</key>
 			<string>entitled-admin-or-authenticate-admin</string>
 		</dict>
-		<key>config.add.</key>
-		<dict>
-			<key>class</key>
-			<string>allow</string>
-			<key>comment</key>
-			<string>Wildcard right for adding rights.  Anyone is allowed to add any (non-wildcard) rights.</string>
-		</dict>
-		<key>config.config.</key>
-		<dict>
-			<key>class</key>
-			<string>deny</string>
-			<key>comment</key>
-			<string>Wildcard right for any change to meta-rights for db modification.  Not allowed programmatically (just edit this file).</string>
-		</dict>
-		<key>config.modify.</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>comment</key>
-			<string>Wildcard right for modifying rights.  Admins are allowed to modify any (non-wildcard) rights.  Root does not require authentication.</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>is-root</string>
-				<string>authenticate-admin</string>
-			</array>
-		</dict>
-		<key>config.remove.</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>comment</key>
-			<string>Wildcard right for deleting rights.  Admins are allowed to delete any (non-wildcard) rights.  Root does not require authentication.</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>is-root</string>
-				<string>authenticate-admin</string>
-			</array>
-		</dict>
-		<key>config.remove.system.</key>
-		<dict>
-			<key>class</key>
-			<string>deny</string>
-			<key>comment</key>
-			<string>Wildcard right for deleting system rights.</string>
-		</dict>
 		<key>sys.openfile.</key>
 		<dict>
 			<key>class</key>
@@ -2996,11 +2808,6 @@ See remaining rules for examples.
 			<false/>
 			<key>timeout</key>
 			<integer>300</integer>
-		</dict>
-		<key>system.</key>
-		<dict>
-			<key>rule</key>
-			<string>default</string>
 		</dict>
 		<key>system.burn</key>
 		<dict>
@@ -3412,18 +3219,6 @@ See remaining rules for examples.
 			<string>admin</string>
 			<key>shared</key>
 			<true/>
-		</dict>
-		<key>system.disk.unlock</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>comment</key>
-			<string>Do not modify.</string>
-			<key>mechanisms</key>
-			<array>
-				<string>DiskUnlock:prompt</string>
-				<string>DiskUnlock:unlock,privileged</string>
-			</array>
 		</dict>
 		<key>system.global-login-items.</key>
 		<dict>
@@ -4519,25 +4314,6 @@ See remaining rules for examples.
 			<key>timeout</key>
 			<integer>300</integer>
 		</dict>
-		<key>system.keychain.create.loginkc</key>
-		<dict>
-			<key>allow-root</key>
-			<false/>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>comment</key>
-			<string>Used by the Security framework when you add an item to an unconfigured default keychain.</string>
-			<key>mechanisms</key>
-			<array>
-				<string>loginKC:queryCreate</string>
-				<string>loginKC:showPasswordUI</string>
-				<string>authinternal</string>
-			</array>
-			<key>session-owner</key>
-			<true/>
-			<key>shared</key>
-			<false/>
-		</dict>
 		<key>system.keychain.modify</key>
 		<dict>
 			<key>class</key>
@@ -4676,56 +4452,6 @@ See remaining rules for examples.
 			<true/>
 			<key>timeout</key>
 			<integer>30</integer>
-		</dict>
-		<key>system.login.console</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>comment</key>
-			<string>Login mechanism based rule.  Not for general use, yet.</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:policy-banner</string>
-				<string>loginwindow:login</string>
-				<string>builtin:reset-password,privileged</string>
-				<string>builtin:forward-login,privileged</string>
-				<string>builtin:auto-login,privileged</string>
-				<string>builtin:authenticate,privileged</string>
-				<string>PKINITMechanism:auth,privileged</string>
-				<string>loginwindow:success</string>
-				<string>HomeDirMechanism:login,privileged</string>
-				<string>HomeDirMechanism:status</string>
-				<string>MCXMechanism:login</string>
-				<string>loginwindow:done</string>
-			</array>
-		</dict>
-		<key>system.login.done</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>mechanisms</key>
-			<array/>
-		</dict>
-		<key>system.login.screensaver</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>comment</key>
-			<string>The owner or any administrator can unlock the screensaver.</string>
-			<key>rule</key>
-			<string>authenticate-session-owner-or-admin</string>
-		</dict>
-		<key>system.login.tty</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>mechanisms</key>
-			<array>
-				<string>push_hints_to_context</string>
-				<string>authinternal</string>
-			</array>
-			<key>tries</key>
-			<integer>1</integer>
 		</dict>
 		<key>system.preferences</key>
 		<dict>
@@ -5423,21 +5149,6 @@ See remaining rules for examples.
 			<string>admin</string>
 			<key>shared</key>
 			<true/>
-		</dict>
-		<key>system.preferences.location</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>comment</key>
-			<string>For changing the network location from the Apple menu.</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>on-console</string>
-				<string>is-admin</string>
-				<string>is-root</string>
-			</array>
 		</dict>
 		<key>system.preferences.network</key>
 		<dict>
@@ -7229,23 +6940,6 @@ See remaining rules for examples.
 				<string>authenticate-admin</string>
 			</array>
 		</dict>
-		<key>system.privilege.admin</key>
-		<dict>
-			<key>allow-root</key>
-			<true/>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Used by AuthorizationExecuteWithPrivileges(...).  
-		AuthorizationExecuteWithPrivileges() is used by programs requesting
-		to run a tool as root (e.g., some installers).</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>shared</key>
-			<false/>
-			<key>timeout</key>
-			<integer>300</integer>
-		</dict>
 		<key>system.privilege.taskport</key>
 		<dict>
 			<key>allow-root</key>
@@ -7666,19 +7360,6 @@ See remaining rules for examples.
 				<string>“__APPNAME__”正在嘗試控制另一個程序。</string>
 			</dict>
 		</dict>
-		<key>system.restart</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>comment</key>
-			<string>Checked if the foreground console user tries to restart the system while other users are logged in via fast-user switching.</string>
-			<key>mechanisms</key>
-			<array>
-				<string>RestartAuthorization:restart</string>
-				<string>builtin:authenticate,privileged</string>
-				<string>RestartAuthorization:success</string>
-			</array>
-		</dict>
 		<key>system.services.directory.configure</key>
 		<dict>
 			<key>class</key>
@@ -7952,412 +7633,6 @@ See remaining rules for examples.
 			<string>admin</string>
 			<key>shared</key>
 			<true/>
-		</dict>
-		<key>system.shutdown</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>comment</key>
-			<string>Checked if the foreground console user tries to shut down the system while other users are logged in via fast-user switching.</string>
-			<key>mechanisms</key>
-			<array>
-				<string>RestartAuthorization:shutdown</string>
-				<string>builtin:authenticate,privileged</string>
-				<string>RestartAuthorization:success</string>
-			</array>
-		</dict>
-	</dict>
-	<key>rules</key>
-	<dict>
-		<key>admin</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>shared</key>
-			<true/>
-		</dict>
-		<key>allow</key>
-		<dict>
-			<key>class</key>
-			<string>allow</string>
-			<key>comment</key>
-			<string>Allow anyone.</string>
-		</dict>
-		<key>appserver-admin</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>group</key>
-			<string>appserveradm</string>
-		</dict>
-		<key>appserver-user</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>group</key>
-			<string>appserverusr</string>
-		</dict>
-		<key>authenticate</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:authenticate</string>
-				<string>builtin:reset-password,privileged</string>
-				<string>builtin:authenticate,privileged</string>
-				<string>PKINITMechanism:auth,privileged</string>
-			</array>
-		</dict>
-		<key>authenticate-admin</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Authenticate as an administrator.</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>shared</key>
-			<true/>
-			<key>timeout</key>
-			<integer>0</integer>
-		</dict>
-		<key>authenticate-admin-30</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Like the default rule, but 
-            credentials remain valid for only 30 seconds after they've 
-            been obtained.  An acquired credential is shared by all clients.
-			</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>shared</key>
-			<true/>
-			<key>timeout</key>
-			<integer>30</integer>
-		</dict>
-		<key>authenticate-appstore-30</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>group</key>
-			<string>_appstore</string>
-			<key>shared</key>
-			<true/>
-			<key>timeout</key>
-			<integer>30</integer>
-		</dict>
-		<key>authenticate-developer</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Authenticate as a developer.</string>
-			<key>group</key>
-			<string>_developer</string>
-			<key>shared</key>
-			<true/>
-			<key>timeout</key>
-			<integer>36000</integer>
-		</dict>
-		<key>authenticate-session-owner</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Authenticate as the session owner.</string>
-			<key>session-owner</key>
-			<true/>
-		</dict>
-		<key>authenticate-session-owner-or-admin</key>
-		<dict>
-			<key>allow-root</key>
-			<false/>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Authenticate either as the owner or as an administrator.</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>session-owner</key>
-			<true/>
-			<key>shared</key>
-			<false/>
-		</dict>
-		<key>authenticate-session-user</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Same as authenticate-session-owner.</string>
-			<key>session-owner</key>
-			<true/>
-		</dict>
-		<key>default</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Default rule.	
-            Credentials remain valid for 5 minutes after they've been obtained. 
-            An acquired credential is shared by all clients.
-			</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>shared</key>
-			<true/>
-			<key>timeout</key>
-			<integer>300</integer>
-		</dict>
-		<key>entitled</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:entitled,privileged</string>
-			</array>
-			<key>tries</key>
-			<integer>1</integer>
-		</dict>
-		<key>entitled-admin</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>2</integer>
-			<key>rule</key>
-			<array>
-				<string>is-admin</string>
-				<string>entitled</string>
-			</array>
-		</dict>
-		<key>entitled-admin-or-authenticate-admin</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>entitled-admin</string>
-				<string>authenticate-admin-30</string>
-			</array>
-		</dict>
-		<key>entitled-appstore</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>2</integer>
-			<key>rule</key>
-			<array>
-				<string>is-appstore</string>
-				<string>entitled</string>
-			</array>
-		</dict>
-		<key>entitled-appstore-or-entitled-authenticate-appstore</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>entitled-appstore</string>
-				<string>entitled-authenticate-appstore</string>
-			</array>
-		</dict>
-		<key>entitled-authenticate-admin</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>2</integer>
-			<key>rule</key>
-			<array>
-				<string>entitled</string>
-				<string>authenticate-admin-30</string>
-			</array>
-		</dict>
-		<key>entitled-authenticate-appstore</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>2</integer>
-			<key>rule</key>
-			<array>
-				<string>entitled</string>
-				<string>authenticate-appstore-30</string>
-			</array>
-		</dict>
-		<key>entitled-session-owner</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>2</integer>
-			<key>rule</key>
-			<array>
-				<string>is-session-owner</string>
-				<string>entitled</string>
-			</array>
-		</dict>
-		<key>entitled-session-owner-or-authenticate-session-owner</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>entitled-session-owner</string>
-				<string>authenticate-session-owner</string>
-			</array>
-		</dict>
-		<key>is-admin</key>
-		<dict>
-			<key>authenticate-user</key>
-			<false/>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Verify that the user asking for authorization is an administrator.</string>
-			<key>group</key>
-			<string>admin</string>
-			<key>shared</key>
-			<string>true</string>
-		</dict>
-		<key>is-appstore</key>
-		<dict>
-			<key>authenticate-user</key>
-			<false/>
-			<key>class</key>
-			<string>user</string>
-			<key>group</key>
-			<string>_appstore</string>
-			<key>shared</key>
-			<string>true</string>
-		</dict>
-		<key>is-developer</key>
-		<dict>
-			<key>authenticate-user</key>
-			<false/>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Verify that the user asking for authorization is a developer.</string>
-			<key>group</key>
-			<string>_developer</string>
-		</dict>
-		<key>is-lpadmin</key>
-		<dict>
-			<key>authenticate-user</key>
-			<false/>
-			<key>class</key>
-			<string>user</string>
-			<key>group</key>
-			<string>_lpadmin</string>
-		</dict>
-		<key>is-root</key>
-		<dict>
-			<key>allow-root</key>
-			<true/>
-			<key>authenticate-user</key>
-			<false/>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Verify that the process that created this AuthorizationRef is running as root.</string>
-		</dict>
-		<key>is-session-owner</key>
-		<dict>
-			<key>allow-root</key>
-			<false/>
-			<key>authenticate-user</key>
-			<false/>
-			<key>class</key>
-			<string>user</string>
-			<key>comment</key>
-			<string>Verify that the requesting process is running as the session owner.</string>
-			<key>session-owner</key>
-			<true/>
-		</dict>
-		<key>lpadmin</key>
-		<dict>
-			<key>class</key>
-			<string>user</string>
-			<key>group</key>
-			<string>_lpadmin</string>
-			<key>shared</key>
-			<true/>
-		</dict>
-		<key>on-console</key>
-		<dict>
-			<key>class</key>
-			<string>evaluate-mechanisms</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:on-console</string>
-			</array>
-			<key>tries</key>
-			<integer>1</integer>
-		</dict>
-		<key>root-or-admin-or-authenticate-admin</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>is-root</string>
-				<string>is-admin</string>
-				<string>authenticate-admin-30</string>
-			</array>
-		</dict>
-		<key>root-or-entitled-admin-or-admin</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>is-root</string>
-				<string>entitled-admin</string>
-				<string>admin</string>
-			</array>
-		</dict>
-		<key>root-or-entitled-admin-or-authenticate-admin</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>is-root</string>
-				<string>entitled-admin-or-authenticate-admin</string>
-			</array>
-		</dict>
-		<key>root-or-lpadmin</key>
-		<dict>
-			<key>class</key>
-			<string>rule</string>
-			<key>k-of-n</key>
-			<integer>1</integer>
-			<key>rule</key>
-			<array>
-				<string>is-root</string>
-				<string>is-lpadmin</string>
-				<string>lpadmin</string>
-			</array>
 		</dict>
 	</dict>
 </dict>
