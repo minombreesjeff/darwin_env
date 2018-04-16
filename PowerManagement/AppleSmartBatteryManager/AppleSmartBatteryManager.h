@@ -32,8 +32,6 @@
 
 void BattLog(char *fmt, ...);
 
-void BattLog(char *fmt, ...);
-
 class AppleSmartBattery;
 class AppleSmartBatteryManagerUserClient;
 
