@@ -58,7 +58,6 @@
 /usr/bin/crlrefresh
 /usr/bin/security
 /usr/bin/smbutil
-/usr/libexec/airportd
 /usr/local/bin/cmsutil
 /usr/sbin/configd    
 /usr/sbin/pppd

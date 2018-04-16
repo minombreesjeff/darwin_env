@@ -187,9 +187,6 @@ ObjectAcl *SecurityServerEnvironment::preAuthSource()
 //
 // The default AclSource denies having an ACL at all
 //
-AclSource::~AclSource()
-{ /* virtual */ }
-
 SecurityServerAcl &AclSource::acl()
 {
 	CssmError::throwMe(CSSM_ERRCODE_OBJECT_ACL_NOT_SUPPORTED);

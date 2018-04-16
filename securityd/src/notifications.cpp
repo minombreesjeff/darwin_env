@@ -29,6 +29,7 @@
 #include "server.h"
 #include <securityd_client/ucspNotify.h>
 
+
 Listener::ListenerMap Listener::listeners;
 Mutex Listener::setLock;
 
@@ -115,7 +116,7 @@ void ProcessListener::notifyMe(NotificationDomain domain,
 {
     secdebug("notify", "%p sending domain %ld event 0x%lx to port %d process %d",
         this, domain, event, mPort.port(), process.pid());
-
+    
     // send mach message (via MIG simpleroutine)
     if (IFDEBUG(kern_return_t rc =) ucsp_notify_sender_notify(mPort,
         domain, event, data.data(), data.length(),

@@ -56,7 +56,8 @@ inline void flip(T &obj)
 // It's a bad idea to try to flip a const, so flag that
 //
 template <class T>
-inline void flip(const T &);
+inline void flip(const T &)
+{ tryingToFlipAConstWontWork(); }
 
 
 //
@@ -76,8 +77,6 @@ inline void flip(Base * &obj)			{ flip(&obj, sizeof(obj)); }
 //
 void flip(void *addr, size_t size);
 
-void flip(CSSM_DB_ATTRIBUTE_INFO &obj);
-inline void flip(CssmDbAttributeInfo &obj) { flip(static_cast<CSSM_DB_ATTRIBUTE_INFO &>(obj)); }
 
 //
 // Include automatically generated flipper declarations

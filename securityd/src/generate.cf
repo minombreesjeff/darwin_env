@@ -33,9 +33,7 @@ CSSM_RANGE *
 CSSM_KEY_SIZE/CssmKeySize *
 CSSM_KEYHEADER/CssmKey::Header *
 CSSM_KEY/CssmKey	KeyHeader
-CSSM_QUERY/CssmQuery RecordType Conjunctive NumSelectionPredicates QueryLimits QueryFlags
-CSSM_DB_ATTRIBUTE_DATA/CssmDbAttributeData NumberOfValues
-CSSM_DB_RECORD_ATTRIBUTE_DATA/CssmDbRecordAttributeData DataRecordType SemanticInformation NumberOfAttributes
+
 
 #
 # Authorization structures
