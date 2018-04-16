@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2009 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,36 +20,31 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-#ifndef _H_AUTHHOST
-#define _H_AUTHHOST
 
-#include <security_agent_client/sa_types.h>
 
-#include "structure.h"
-#include "child.h"
+//
+// child - track a single child process and its belongings
+//
+#ifndef _H_AUDITEVENTS
+#define _H_AUDITEVENTS
 
-class Session;
+#include <security_utilities/threading.h>
+#include <security_utilities/mach++.h>
+#include <security_utilities/kq++.h>
+#include <sys/event.h>
+#include <bsm/audit_session.h>
 
-typedef enum {
-	privilegedAuthHost,
-	securityAgent,
-	userAuthHost
-} AuthHostType;
 
-class AuthHostInstance : public PerSession, public ServerChild {
+class AuditMonitor : public Thread, public UnixPlusPlus::KQueue {
 public:
-	AuthHostInstance(Session &session, AuthHostType host);
-	virtual ~AuthHostInstance();
-
-	Session &session() const;
-	mach_port_t lookup(SessionId jobId);
-	Port activate();
-		
-protected:
-	void childAction();
+	AuditMonitor(MachPlusPlus::Port relay);
+	~AuditMonitor();
+	
+	void action();
 
 private:
-	AuthHostType mHostType;
+	MachPlusPlus::Port mRelay;
 };
 
-#endif /* _H_AUTHHOST */
+
+#endif //_H_AUDITEVENTS
