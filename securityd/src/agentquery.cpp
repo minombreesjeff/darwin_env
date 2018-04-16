@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -28,8 +26,6 @@
 //
 #include "agentquery.h"
 #include "authority.h"
-#include "server.h"
-#include "session.h"
 
 #include <Security/AuthorizationTags.h>
 #include <Security/AuthorizationTagsPriv.h>
@@ -71,44 +67,18 @@ static void getNoSA(char *buffer, size_t bufferSize, const char *fmt, ...)
 #endif //NOSA
 
 
-//
-// The default Mach service name for SecurityAgent
-//
-const char SecurityAgentQuery::defaultName[] = "com.apple.SecurityAgent";
-
 using SecurityAgent::Reason;
 using namespace Authorization;
 
-//
-// Construct a query object
-//
-
-SecurityAgentQuery::SecurityAgentQuery() :
-    SecurityAgent::Client(Server::process().uid(),
-		Server::session().bootstrapPort(),
-		defaultName),
-	mClientSession(Server::session())
+SecurityAgentQuery::SecurityAgentQuery(const AuthHostType type, Session &session) : mAuthHostType(type), mHostInstance(session.authhost(mAuthHostType)), mConnection(&Server::connection())
 {
-    secdebug("SecurityAgentQuery", "new query");
-        
-	// XXX/cs set up the general settings for the client as hints
-		// any invoke will merge these and whatever the client passes on invoke
-	
-}
-
-SecurityAgentQuery::SecurityAgentQuery(uid_t clientUID,
-                                       const Session &clientSession,
-                                       const char *agentName) :
-SecurityAgent::Client(clientUID, clientSession.bootstrapPort(), agentName ? agentName : defaultName),
-	mClientSession(clientSession)
-{
-    secdebug("SecurityAgentQuery", "new query");
+    secdebug("SecurityAgentQuery", "new SecurityAgentQuery(%p)", this);
 }
 
 SecurityAgentQuery::~SecurityAgentQuery()
 {
-    secdebug("SecurityAgentQuery", "query dying");
-    Server::connection().useAgent(NULL);
+    secdebug("SecurityAgentQuery", "SecurityAgentQuery(%p) dying", this);
+	mConnection->useAgent(NULL);
 
 #if defined(NOSA)
 	if (getenv("NOSA")) {
@@ -117,39 +87,45 @@ SecurityAgentQuery::~SecurityAgentQuery()
 	}
 #endif		
 
-    if (state() != dead)
+    if (SecurityAgent::Client::state() != SecurityAgent::Client::dead)
         destroy(); 
 }
 
 void
 SecurityAgentQuery::activate()
 {
-	if (isActive())
-		return;
-
-	// Before popping up an agent: is UI session allowed?
-	if (!(mClientSession.attributes() & sessionHasGraphicAccess))
-		CssmError::throwMe(CSSM_ERRCODE_NO_USER_INTERACTION);
-
 	// this may take a while
 	Server::active().longTermActivity();
-	Server::connection().useAgent(this);
+	mConnection->useAgent(this);
 
 	try {
-		SecurityAgent::Client::activate();
+		SecurityAgent::Client::activate(mHostInstance->activate());
 	} catch (...) {
-		Server::connection().useAgent(NULL);	// guess not
+		mConnection->useAgent(NULL);	// guess not
 		throw;
 	}
-	
-	
 }
-
 
 void
 SecurityAgentQuery::inferHints(Process &thisProcess)
 {
-	AuthItemSet processHints = clientHints(thisProcess.clientCode(), thisProcess.pid(), thisProcess.uid());
+	RefPointer<OSXCode> clientCode = thisProcess.clientCode();
+	SecurityAgent::RequestorType requestorType = SecurityAgent::unknown;
+	string bundlePath;
+	
+	if (clientCode)
+	{
+		string encodedBundle = clientCode->encode();
+		char bundleType = (encodedBundle.c_str())[0]; // yay, no accessor
+		switch(bundleType)
+		{
+		   case 'b': requestorType = SecurityAgent::bundle; break;
+		   case 't': requestorType = SecurityAgent::tool; break;
+		}
+		bundlePath = clientCode->canonicalPath();
+	}
+
+	AuthItemSet processHints = clientHints(requestorType, bundlePath, thisProcess.pid(), thisProcess.uid());
     mClientHints.insert(processHints.begin(), processHints.end());
 }
 
@@ -159,7 +135,7 @@ SecurityAgentQuery::readChoice()
     allow = false;
     remember = false;
     
-	AuthItem *allowAction = mContext.find(AGENT_CONTEXT_ALLOW);
+	AuthItem *allowAction = outContext().find(AGENT_CONTEXT_ALLOW);
 	if (allowAction)
 	{
 	   string allowString;
@@ -168,7 +144,7 @@ SecurityAgentQuery::readChoice()
 		          allow = true;
 	}
 	
-	AuthItem *rememberAction = mContext.find(AGENT_CONTEXT_REMEMBER_ACTION);
+	AuthItem *rememberAction = outContext().find(AGENT_CONTEXT_REMEMBER_ACTION);
 	if (rememberAction)
 	{
 	   string rememberString;
@@ -181,15 +157,29 @@ SecurityAgentQuery::readChoice()
 void
 SecurityAgentQuery::terminate()
 {
-	if (!isActive())
-		activate();
+	activate();
 
     // @@@ This happens already in the destructor; presumably we do this to tear things down orderly
-	Server::connection(true).useAgent(NULL);
+	mConnection->useAgent(NULL);
     
 	SecurityAgent::Client::terminate();
 }
 
+void
+SecurityAgentQuery::create(const char *pluginId, const char *mechanismId, const SessionId inSessionId)
+{
+	activate();
+	OSStatus status = SecurityAgent::Client::create(pluginId, mechanismId, inSessionId);
+	if (status)
+	{
+		secdebug("SecurityAgentQuery", "agent went walkabout, restarting");
+		Session &session = mHostInstance->session();
+		mHostInstance = session.authhost(mAuthHostType, true);
+		activate();
+		status = SecurityAgent::Client::create(pluginId, mechanismId, inSessionId);
+	}
+	if (status) MacOSError::throwMe(status);
+}
 
 //
 // Perform the "rogue app" access query dialog
@@ -236,8 +226,6 @@ Reason QueryKeychainUse::queryUser (const char *database, const char *descriptio
 	}
 #endif
 
-    activate();
-    
 	// prepopulate with client hints
 	hints.insert(mClientHints.begin(), mClientHints.end());
 	
@@ -254,7 +242,7 @@ Reason QueryKeychainUse::queryUser (const char *database, const char *descriptio
 	
 	if (mPassphraseCheck)
 	{
-		status = create("builtin", "confirm-access-password", NULL);
+		create("builtin", "confirm-access-password", NULL);
 		
 		CssmAutoData data(Allocator::standard(Allocator::sensitive));
 
@@ -272,7 +260,8 @@ Reason QueryKeychainUse::queryUser (const char *database, const char *descriptio
             AuthItemRef retryHint(AGENT_HINT_RETRY_REASON, AuthValueOverlay(sizeof(reason), &reason));
             hints.erase(retryHint); hints.insert(retryHint); // replace
 
-			status = invoke(arguments, hints, context);
+            setInput(hints, context);
+			status = invoke();
 
             if (retryCount > kMaximumAuthorizationTries)
 			{
@@ -281,7 +270,7 @@ Reason QueryKeychainUse::queryUser (const char *database, const char *descriptio
 			
 			checkResult();
 			
-			AuthItem *passwordItem = mContext.find(kAuthorizationEnvironmentPassword);
+			AuthItem *passwordItem = outContext().find(kAuthorizationEnvironmentPassword);
 			if (!passwordItem)
 				continue;
 						
@@ -292,7 +281,8 @@ Reason QueryKeychainUse::queryUser (const char *database, const char *descriptio
 	else
 	{
 		create("builtin", "confirm-access", NULL);
-		invoke(arguments, hints, context);
+        setInput(hints, context);
+		invoke();
 	}
 	
     readChoice();
@@ -332,9 +322,10 @@ bool QueryCodeCheck::operator () (const char *aclPath)
 	
 	hints.insert(AuthItemRef(AGENT_HINT_APPLICATION_PATH, AuthValueOverlay(strlen(aclPath), const_cast<char*>(aclPath))));
 	
-	MacOSError::check(create("builtin", "code-identity", NULL));
+	create("builtin", "code-identity", NULL);
 
-	status = invoke(arguments, hints, context);
+    setInput(hints, context);
+	status = invoke();
 		
     checkResult();
 
@@ -349,7 +340,7 @@ bool QueryCodeCheck::operator () (const char *aclPath)
 // or we can't get another passphrase. Accept() should consume the passphrase
 // if it is accepted. If no passphrase is acceptable, throw out of here.
 //
-Reason QueryUnlock::query()
+Reason QueryOld::query()
 {
 	Reason reason = SecurityAgent::noReason;
 	OSStatus status;
@@ -367,8 +358,6 @@ Reason QueryUnlock::query()
     	return database.decode(passphrase) ? SecurityAgent::noReason : SecurityAgent::invalidPassphrase;
 	}
 #endif
-    activate();
-
 	
 	// prepopulate with client hints
 
@@ -377,7 +366,7 @@ Reason QueryUnlock::query()
 
 	hints.insert(mClientHints.begin(), mClientHints.end());
 
-	MacOSError::check(create("builtin", "unlock-keychain", NULL));
+	create("builtin", "unlock-keychain", NULL);
 
 	do
 	{
@@ -394,7 +383,8 @@ Reason QueryUnlock::query()
         AuthItemRef retryHint(AGENT_HINT_RETRY_REASON, AuthValueOverlay(sizeof(reason), &reason));
         hints.erase(retryHint); hints.insert(retryHint); // replace
 
-        status = invoke(arguments, hints, context);
+        setInput(hints, context);
+        status = invoke();
 
         if (retryCount > maxTries)
         {
@@ -403,13 +393,14 @@ Reason QueryUnlock::query()
 
         checkResult();
 		
-		AuthItem *passwordItem = mContext.find(kAuthorizationEnvironmentPassword);
+		AuthItem *passwordItem = outContext().find(kAuthorizationEnvironmentPassword);
 		if (!passwordItem)
 			continue;
 		
 		passwordItem->getCssmData(passphrase);
+		
 	}
-	while (reason = database.decode(passphrase) ? SecurityAgent::noReason : SecurityAgent::invalidPassphrase);
+	while (reason = accept(passphrase));
 
 	return SecurityAgent::noReason;
 }
@@ -418,9 +409,36 @@ Reason QueryUnlock::query()
 //
 // Get existing passphrase (unlock) Query
 //
-Reason QueryUnlock::operator () ()
+Reason QueryOld::operator () ()
 {
 	return query();
+}
+
+
+//
+// End-classes for old secrets
+//
+Reason QueryUnlock::accept(CssmManagedData &passphrase)
+{
+	if (safer_cast<KeychainDatabase &>(database).decode(passphrase))
+		return SecurityAgent::noReason;
+	else
+		return SecurityAgent::invalidPassphrase;
+}
+
+
+QueryPIN::QueryPIN(Database &db)
+	: QueryOld(db), mPin(Allocator::standard())
+{
+	this->inferHints(Server::process());
+}
+
+
+Reason QueryPIN::accept(CssmManagedData &pin)
+{
+	// no retries for now
+	mPin = pin;
+	return SecurityAgent::noReason;
 }
 
 
@@ -451,8 +469,6 @@ Reason QueryNewPassphrase::query()
 	}
 #endif
 
-    activate();
-
 	// prepopulate with client hints
 	hints.insert(mClientHints.begin(), mClientHints.end());
 
@@ -462,10 +478,10 @@ Reason QueryNewPassphrase::query()
     switch (initialReason)
     {
         case SecurityAgent::newDatabase: 
-            MacOSError::check(create("builtin", "new-passphrase", NULL));
+            create("builtin", "new-passphrase", NULL);
             break;
         case SecurityAgent::changePassphrase:
-            MacOSError::check(create("builtin", "change-passphrase", NULL));
+            create("builtin", "change-passphrase", NULL);
             break;
         default:
             assert(false);
@@ -484,7 +500,8 @@ Reason QueryNewPassphrase::query()
         AuthItemRef retryHint(AGENT_HINT_RETRY_REASON, AuthValueOverlay(sizeof(reason), &reason));
         hints.erase(retryHint); hints.insert(retryHint); // replace
 
-		status = invoke(arguments, hints, context);
+        setInput(hints, context);
+		status = invoke();
 
 		if (retryCount > maxTries)
 		{
@@ -495,19 +512,19 @@ Reason QueryNewPassphrase::query()
 
 		if (SecurityAgent::changePassphrase == initialReason)
         {
-            AuthItem *oldPasswordItem = mContext.find(AGENT_PASSWORD);
+            AuthItem *oldPasswordItem = outContext().find(AGENT_PASSWORD);
             if (!oldPasswordItem)
                 continue;
             
             oldPasswordItem->getCssmData(oldPassphrase);
         }
         
-		AuthItem *passwordItem = mContext.find(AGENT_CONTEXT_NEW_PASSWORD);
+		AuthItem *passwordItem = outContext().find(AGENT_CONTEXT_NEW_PASSWORD);
 		if (!passwordItem)
 			continue;
 		
 		passwordItem->getCssmData(passphrase);
-        
+
     }
 	while (reason = accept(passphrase, (initialReason == SecurityAgent::changePassphrase) ? &oldPassphrase.get() : NULL));
     
@@ -532,7 +549,7 @@ Reason QueryNewPassphrase::accept(CssmManagedData &passphrase, CssmData *oldPass
 	//@@@ This validation presumes ASCII - UTF8 might be more lenient
 	
 	// if we have an old passphrase, check it
-	if (oldPassphrase && !database.validatePassphrase(*oldPassphrase))
+	if (oldPassphrase && !safer_cast<KeychainDatabase&>(database).validatePassphrase(*oldPassphrase))
 		return SecurityAgent::oldPassphraseWrong;
 	
 	// sanity check the new passphrase (but allow user override)
@@ -573,8 +590,6 @@ Reason QueryGenericPassphrase::query(const char *prompt, bool verify,
     }
 #endif
 	
-    activate();
-	
     hints.insert(mClientHints.begin(), mClientHints.end());
     hints.insert(AuthItemRef(AGENT_HINT_CUSTOM_PROMPT, AuthValueOverlay(prompt ? strlen(prompt) : 0, const_cast<char*>(prompt))));
     // XXX/gh  defined by dmitch but no analogous hint in
@@ -582,20 +597,20 @@ Reason QueryGenericPassphrase::query(const char *prompt, bool verify,
     // CSSM_ATTRIBUTE_ALERT_TITLE (optional alert panel title)
 	
     if (false == verify) {  // import
-		MacOSError::check(create("builtin", "generic-unlock", NULL));
+		create("builtin", "generic-unlock", NULL);
     } else {		// verify passphrase (export)
 					// new-passphrase-generic works with the pre-4 June 2004 agent; 
 					// generic-new-passphrase is required for the new agent
-		MacOSError::check(create("builtin", "generic-new-passphrase", NULL));
+		create("builtin", "generic-new-passphrase", NULL);
     }
     
     AuthItem *passwordItem;
     
     do {
-		
-		status = invoke(arguments, hints, context);
+        setInput(hints, context);
+		status = invoke();
 		checkResult();
-		passwordItem = mContext.find(AGENT_PASSWORD);
+		passwordItem = outContext().find(AGENT_PASSWORD);
 		
     } while (!passwordItem);
 	
@@ -605,20 +620,93 @@ Reason QueryGenericPassphrase::query(const char *prompt, bool verify,
 }
 
 
-QueryInvokeMechanism::QueryInvokeMechanism() :
-    SecurityAgentQuery() { }
+// 
+// Get a DB blob's passphrase--keychain synchronization
+// 
 
-QueryInvokeMechanism::QueryInvokeMechanism(uid_t clientUID, const Session &session, const char *agentName) :
-	SecurityAgentQuery(clientUID, session, agentName) 
+void QueryDBBlobSecret::addHint(const char *name, const void *value, UInt32 valueLen, UInt32 flags)
 {
+    AuthorizationItem item = { name, valueLen, const_cast<void *>(value), flags };
+    mClientHints.insert(AuthItemRef(item));
 }
 
-void QueryInvokeMechanism::initialize(const string &inPluginId, const string &inMechanismId, const SessionId inSessionId)
+Reason QueryDBBlobSecret::operator () (DatabaseCryptoCore &dbCore, const DbBlob *secretsBlob)
 {
-    activate();
+    return query(dbCore, secretsBlob);
+}
 
-    if (init == state())
-        MacOSError::check(create(inPluginId.c_str(), inMechanismId.c_str(), inSessionId));
+Reason QueryDBBlobSecret::query(DatabaseCryptoCore &dbCore, const DbBlob *secretsBlob)
+{
+    Reason reason = SecurityAgent::noReason;
+	CssmAutoData passphrase(Allocator::standard(Allocator::sensitive));
+    OSStatus status;    // not really used; remove?  
+    AuthValueVector arguments;
+    AuthItemSet hints/*NUKEME*/, context;
+	
+#if defined(NOSA)
+    if (getenv("NOSA")) {
+		// FIXME  akin to 3690984
+		return SecurityAgent::noReason;
+    }
+#endif
+	
+    hints.insert(mClientHints.begin(), mClientHints.end());
+	
+	create("builtin", "generic-unlock-kcblob", NULL);
+    
+    AuthItem *secretItem;
+    
+	int retryCount = 0;
+	
+    do {
+        AuthItemRef triesHint(AGENT_HINT_TRIES, AuthValueOverlay(sizeof(retryCount), &retryCount));
+        hints.erase(triesHint); hints.insert(triesHint); // replace
+
+		if (++retryCount > maxTries)
+		{
+			reason = SecurityAgent::tooManyTries;
+		}		
+		
+        AuthItemRef retryHint(AGENT_HINT_RETRY_REASON, AuthValueOverlay(sizeof(reason), &reason));
+        hints.erase(retryHint); hints.insert(retryHint); // replace
+		
+        setInput(hints, context);
+		status = invoke();
+		checkResult();
+		secretItem = outContext().find(AGENT_PASSWORD);
+		if (!secretItem)
+			continue;
+		secretItem->getCssmData(passphrase);
+		
+    } while (reason = accept(passphrase, dbCore, secretsBlob));
+	    
+    return reason;
+}
+
+Reason QueryDBBlobSecret::accept(CssmManagedData &passphrase, 
+								 DatabaseCryptoCore &dbCore, 
+								 const DbBlob *secretsBlob)
+{
+	try {
+		dbCore.setup(secretsBlob, passphrase);
+		dbCore.decodeCore(secretsBlob, NULL);
+	} catch (const CommonError &err) {
+		// XXX/gh  Are there errors other than this?  
+		return SecurityAgent::invalidPassphrase;
+	}
+	return SecurityAgent::noReason;
+}
+
+QueryInvokeMechanism::QueryInvokeMechanism(const AuthHostType type, Session &session) :
+    SecurityAgentQuery(type, session) { }
+
+void QueryInvokeMechanism::initialize(const string &inPluginId, const string &inMechanismId, const AuthValueVector &inArguments, const SessionId inSessionId)
+{
+    if (SecurityAgent::Client::init == SecurityAgent::Client::state())
+    {
+        create(inPluginId.c_str(), inMechanismId.c_str(), inSessionId);
+        mArguments = inArguments;
+    }
 }
 
 // XXX/cs should return AuthorizationResult
@@ -627,16 +715,17 @@ void QueryInvokeMechanism::run(const AuthValueVector &inArguments, AuthItemSet &
     // prepopulate with client hints
 	inHints.insert(mClientHints.begin(), mClientHints.end());
 
-    MacOSError::check(invoke(inArguments, inHints, inContext));
+    setArguments(inArguments);
+    setInput(inHints, inContext);
+    MacOSError::check(invoke());
     
 	if (outResult) *outResult = result();
     
-    inHints = hints();
-    inContext = context();
+    inHints = outHints();
+    inContext = outContext();
 }
 
 void QueryInvokeMechanism::terminateAgent()
 {
     terminate();
 }
-

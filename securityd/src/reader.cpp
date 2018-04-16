@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,14 +28,17 @@
 #include "reader.h"
 
 
-Reader::Reader(const PCSC::ReaderState &state)
-	: mToken(NULL)
+//
+// Construct a Reader
+// This does not commence state tracking; call update to start up the reader.
+//
+Reader::Reader(TokenCache &tc, const PCSC::ReaderState &state)
+	: cache(tc), mToken(NULL)
 {
-	mName = state.name();
+	mName = state.name();	// remember separate copy of name
+	mPrintName = mName;		//@@@ how to make this readable? Use IOKit information?
 	secdebug("reader", "%p (%s) new reader", this, name().c_str());
-	transit(state);
 }
-
 
 Reader::~Reader()
 {
@@ -45,6 +46,9 @@ Reader::~Reader()
 }
 
 
+//
+// Killing a reader forcibly removes its Token, if any
+//
 void Reader::kill()
 {
 	if (mToken)
@@ -53,44 +57,47 @@ void Reader::kill()
 }
 
 
-void Reader::update(const PCSC::ReaderState &state)
-{
-	transit(state);
-}
-
-
 //
 // State transition matrix for a reader, based on PCSC state changes
 //
-void Reader::transit(const PCSC::ReaderState &state)
+void Reader::update(const PCSC::ReaderState &state)
 {
-	if (state.state(SCARD_STATE_UNAVAILABLE)) {
-		// reader is unusable (probably being removed)
-		secdebug("reader", "%p (%s) unavailable (0x%lx)",
-			this, name().c_str(), state.state());
-		if (mToken)
-			removeToken();
-	} else if (state.state(SCARD_STATE_EMPTY)) {
-		// reader is empty (no token present)
-		secdebug("reader", "%p (%s) empty (0x%lx)",
-			this, name().c_str(), state.state());
-		if (mToken)
-			removeToken();
-	} else if (state.state(SCARD_STATE_PRESENT)) {
-		// reader has a token inserted
-		secdebug("reader", "%p (%s) card present (0x%lx)",
-			this, name().c_str(), state.state());
-		//@@@ is this hack worth it (with notifications in)??
-		if (mToken && CssmData(state) != CssmData(pcscState()))
-			removeToken();  // incomplete but better than nothing
-		//@@@ or should we call some verify-still-the-same function of tokend?
-		if (!mToken)
-			insertToken();
-	} else {
-		secdebug("reader", "%p (%s) unexpected state change (0x%ld to 0x%lx)",
-			this, name().c_str(), mState.state(), state.state());
-	}
+	// set new state
+	IFDEBUG(unsigned long oldState = mState.state());
 	mState = state;
+	mState.name(mName.c_str());		// (fix name pointer, unchanged)
+	
+	try {
+		if (state.state(SCARD_STATE_UNAVAILABLE)) {
+			// reader is unusable (probably being removed)
+			secdebug("reader", "%p (%s) unavailable (0x%lx)",
+				this, name().c_str(), state.state());
+			if (mToken)
+				removeToken();
+		} else if (state.state(SCARD_STATE_EMPTY)) {
+			// reader is empty (no token present)
+			secdebug("reader", "%p (%s) empty (0x%lx)",
+				this, name().c_str(), state.state());
+			if (mToken)
+				removeToken();
+		} else if (state.state(SCARD_STATE_PRESENT)) {
+			// reader has a token inserted
+			secdebug("reader", "%p (%s) card present (0x%lx)",
+				this, name().c_str(), state.state());
+			//@@@ is this hack worth it (with notifications in)??
+			if (mToken && CssmData(state) != CssmData(pcscState()))
+				removeToken();  // incomplete but better than nothing
+			//@@@ or should we call some verify-still-the-same function of tokend?
+			//@@@ (I think pcsc will return an error if the card changed?)
+			if (!mToken)
+				insertToken();
+		} else {
+			secdebug("reader", "%p (%s) unexpected state change (0x%lx to 0x%lx)",
+				this, name().c_str(), oldState, state.state());
+		}
+	} catch (...) {
+		secdebug("reader", "state update exception (ignored)");
+	}
 }
 
 

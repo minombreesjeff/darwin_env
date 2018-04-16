@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -40,6 +38,11 @@ class KeychainDbCommon;
 class KeychainKey;
 
 
+//
+// We identify KeychainDatabases uniquely by a combination of
+// a DLDbIdentifier and a database (blob) identifier. Equivalence
+// by DbIdentifier is the criterion for parent-side merging.
+//
 class DbIdentifier {
 public:
 	DbIdentifier(const DLDbIdentifier &id, DbBlob::Signature sig)
@@ -68,6 +71,22 @@ private:
 
 
 //
+// A vestigal system-global database instance
+// We don't (yet) use it for anything. Perhaps it should carry our ACL...
+//
+class KeychainDbGlobal : public PerGlobal {
+public:
+	KeychainDbGlobal(const DbIdentifier &id);
+	~KeychainDbGlobal();
+
+	const DbIdentifier &identifier() const { return mIdentifier; }
+
+private:
+	DbIdentifier mIdentifier;	// database external identifier [const]
+};
+
+
+//
 // KeychainDatabase DbCommons
 //
 class KeychainDbCommon : public DbCommon,
@@ -76,10 +95,13 @@ public:
 	KeychainDbCommon(Session &ssn, const DbIdentifier &id);
 	~KeychainDbCommon();
 	
+	KeychainDbGlobal &global() const;
+	
 	bool unlockDb(DbBlob *blob, void **privateAclBlob = NULL);
-	void lockDb(bool forSleep = false); // versatile lock primitive
+	void lockDb();				// make locked (if currently unlocked)
 	bool isLocked() const { return mIsLocked; } // lock status
 	void setUnlocked();
+	void invalidateBlob() { version++; }
 	
 	void activity();			// reset lock timeout
 	
@@ -94,6 +116,7 @@ public:
 	void notify(NotificationEvent event);
 
 	void sleepProcessing();
+	void lockProcessing();
 
 public:
     // debugging
@@ -103,7 +126,6 @@ protected:
 	void action();				// timer queue action to lock keychain
 
 public:
-	DbIdentifier mIdentifier;	// database external identifier [const]
 	// all following data locked with object lock
 	uint32 sequence;			// change sequence number
 	DBParameters mParams;		// database parameters (arbitrated copy)
@@ -111,6 +133,8 @@ public:
 	uint32 version;				// version stamp for change tracking
 	
 private:
+	DbIdentifier mIdentifier;	// database external identifier [const]
+	// all following data protected by object lock
 	bool mIsLocked;				// logically locked
 	bool mValidParams;			// mParams has been set
 };
@@ -121,15 +145,22 @@ private:
 // It maintains its protected semantic state (including keys) and provides controlled
 // access.
 //
-class KeychainDatabase : public LocalDatabase {
+class KeychainDatabase : public LocalDatabase, private virtual SecurityServerAcl {
 	friend class KeychainDbCommon;
 public:
 	KeychainDatabase(const DLDbIdentifier &id, const DBParameters &params, Process &proc,
         const AccessCredentials *cred, const AclEntryPrototype *owner);
+	KeychainDatabase(const DLDbIdentifier &id, const DbBlob *blob, Process &proc,
+        const AccessCredentials *cred);
+	// keychain synchronization
+	KeychainDatabase(KeychainDatabase &src, Process &proc, const DbBlob *secretsBlob, const CssmData &agentData);
 	virtual ~KeychainDatabase();
 
 	KeychainDbCommon &common() const;
 	const char *dbName() const;
+	bool transient() const;
+    
+    KeychainDbGlobal &global() const { return common().global(); }
 	
 public:	
 	static const int maxUnlockTryCount = 3;
@@ -140,13 +171,12 @@ public:
 public:
 	// encoding/decoding databases
 	DbBlob *blob();
-	KeychainDatabase(const DLDbIdentifier &id, const DbBlob *blob, Process &proc,
-        const AccessCredentials *cred);
-    void authenticate(const AccessCredentials *cred);
+	
+    void authenticate(CSSM_DB_ACCESS_TYPE mode, const AccessCredentials *cred);
     void changePassphrase(const AccessCredentials *cred);
 	RefPointer<Key> extractMasterKey(Database &db, const AccessCredentials *cred,
 		const AclEntryPrototype *owner, uint32 usage, uint32 attrs);
-	void getDbIndex(CssmData &indexData);
+    void commitSecretsForSync(KeychainDatabase &cloneDb);
 	
 	// lock/unlock processing
 	void lockDb();											// unconditional lock
@@ -164,24 +194,32 @@ public:
 	// encoding/decoding keys
     void decodeKey(KeyBlob *blob, CssmKey &key, void * &pubAcl, void * &privAcl);
 	KeyBlob *encodeKey(const CssmKey &key, const CssmData &pubAcl, const CssmData &privAcl);
-	
+	KeyBlob *recodeKey(KeychainKey &oldKey);	
     bool validBlob() const	{ return mBlob && version == common().version; }
 
 	// manage database parameters
 	void setParameters(const DBParameters &params);
 	void getParameters(DBParameters &params);
+	
+	// where's my (database) ACL?
+	SecurityServerAcl &acl();
+	
+	AclKind aclKind() const;
+	Database *relatedDatabase();
     
     // ACL state management hooks
 	void instantiateAcl();
 	void changedAcl();
-	const Database *relatedDatabase() const; // "self", for SecurityServerAcl's sake
+    	
+	// miscellaneous utilities
+	static void validateBlob(const DbBlob *blob);
 
     // debugging
     IFDUMP(void dumpNode());
 
 protected:
-	RefPointer<Key> makeKey(const CssmKey &newKey, uint32 moreAttributes,
-		const AclEntryPrototype *owner);
+	RefPointer<Key> makeKey(const CssmKey &newKey, uint32 moreAttributes, const AclEntryPrototype *owner);
+	RefPointer<Key> makeKey(Database &db, const CssmKey &newKey, uint32 moreAttributes, const AclEntryPrototype *owner);
 
 	void makeUnlocked();							// interior version of unlock()
 	void makeUnlocked(const AccessCredentials *cred); // like () with explicit cred
@@ -190,10 +228,10 @@ protected:
 	void establishOldSecrets(const AccessCredentials *creds);
 	void establishNewSecrets(const AccessCredentials *creds, SecurityAgent::Reason reason);
 	
-	static CssmClient::Key keyFromCreds(const TypedList &sample);
+	static CssmClient::Key keyFromCreds(const TypedList &sample, unsigned int requiredLength);
 	
 	void encode();									// (re)generate mBlob if needed
-
+	
 private:
 	// all following data is locked by the common lock
     bool mValidData;				// valid ACL and params (blob decoded)
@@ -202,6 +240,8 @@ private:
     DbBlob *mBlob;					// database blob (encoded)
     
     AccessCredentials *mCred;		// local access credentials (always valid)
+	
+	RefPointer<KeychainDatabase> mRecodingSource;	// keychain synchronization ONLY; should not require accessors
 };
 
 #endif //_H_KCDATABASE

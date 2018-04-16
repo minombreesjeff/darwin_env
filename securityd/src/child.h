@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,49 +28,49 @@
 #ifndef _CHILD_H_
 #define _CHILD_H_  1
 
-#include "securityserver.h"
+#include <security_utilities/mach++.h>
+#include <security_utilities/unixchild.h>
 
-class Child;
+using MachPlusPlus::Port;
+using MachPlusPlus::TaskPort;
+
 
 //
-// ChildManager - Singleton Child Manager class
+// ServerChild builds on the generic UNIX Child abstraction.
+// The child is expected to engage in a checkin protocol after launch,
+// whereby it RPC-calls childCheckIn in securityd and thus authenticates
+// and declares readiness to provide service.
 //
-class ChildManager
-{
+// @@@ PerWhat are these, if they are at all?
+//
+class ServerChild : public UnixPlusPlus::Child {
 public:
-    // The singleton childManager.
-    static ChildManager childManager;
+	ServerChild();
+	~ServerChild();
+	
+	Port servicePort() const { return mServicePort; }
+	bool ready() const { return mServicePort; }
 
-    ChildManager();
-    ~ChildManager();
+public:
+	static void checkIn(Port servicePort, pid_t pid);
 
-    // Return true in the child.  Return false in the parent and set outChildPort to 0 if the child died prematuely.  In this case outWaitStatus contains the result of a waitpid() on the child.  if outChildPort is non 0 it's a send right to contact the child on.
-    bool forkChild(mach_port_t &outChildPort, int &outWaitStatus);
-
-    // SigChild signal handler
-    void handleSignal(int signal);
-
-    // Be notified a child just contacted us on our main server port telling us it's child port.  Set childPort to 0 iff we don't wish it to be deallocated by our caller.
-    void registerChild(pid_t pid, mach_port_t &childPort);
-
-    // Assumes mLock is not locked (called by Child's eraseFromMap() function).
-    void eraseChild(pid_t pid);
-
-    // Assumes mLock is already locked (called by Child's insertInMap() function).
-    void insertChild(pid_t pid, Child *child);
+protected:
+	void childAction() = 0;		// must be provided by subclass
+	void parentAction();		// fully implemented
+	void dying();				// fully implemented
 
 private:
-    Child *findChild(pid_t pid);
+	Port mServicePort;			// child's main service port
 
-    void handleSigChild();
+private:
+	typedef map<pid_t, ServerChild *> CheckinMap;
+	static CheckinMap mCheckinMap;
 
-    // Be notifed of a term or signal waitpid() status.
-    void waitStatusForPid(pid_t pid, int status);
-
-
-    typedef std::map<pid_t, Child *> ChildMap;
-    ChildMap mChildMap;
-    Mutex mLock;
+	// The parent side will wait on mCheckinCond until the child checks in
+	// or fails. During that time ONLY, mCheckinLock protects the entire Child
+	// object.
+	static Mutex mCheckinLock;
+	Condition mCheckinCond;
 };
 
 

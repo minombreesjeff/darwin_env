@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -55,7 +53,7 @@ bool flipClient();
 // A CheckingReconstituteWalker is a variant of an ordinary ReconstituteWalker
 // that checks object pointers and sizes against the incoming block limits.
 // It throws an exception if incoming data has pointers outside the incoming block.
-// This avoids trouble inside of the SecurityServer caused (by bug or malice)
+// This avoids trouble inside of securityd caused (by bug or malice)
 // from someone spoofing the client access side.
 //
 class CheckingReconstituteWalker {
@@ -150,48 +148,39 @@ void relocate(Context &context, void *base, Context::Attr *attrs, uint32 attrSiz
 //
 // A FlipWalker is a walker operator that collects its direct invocations
 // into a set of memory objects. These objects can then collectively be
-// byte-flipped (exactly once :-) at the flick of a function.
+// byte-flipped (exactly once :-) at the flick of a method.
 //
 class FlipWalker {
 private:
-	struct FlipBase {
-		virtual ~FlipBase() { }
+	struct Base {
+		virtual ~Base() { }
 		virtual void flip() const = 0;
 	};
 
 	template <class T>
-	struct FlipRef : public FlipBase {
+	struct FlipRef : public Base {
 		T &obj;
 		FlipRef(T &s) : obj(s)		{ }
-		void flip() const		
-{ secdebug("outflip", "%p flip/ref %s@%p", this, Debug::typeName(obj).c_str(), &obj);
-{ Flippers::flip(obj); }
-}
+		void flip() const			{ Flippers::flip(obj); }
 	};
 
 	template <class T>
-	struct FlipPtr : public FlipBase {
+	struct FlipPtr : public Base {
 		T * &obj;
 		FlipPtr(T * &s) : obj(s)	{ }
-		void flip() const			
-{ secdebug("outflip", "%p flip/ptr %s@%p(%p)", this, Debug::typeName(obj).c_str(), &obj, obj);
-{ Flippers::flip(*obj); Flippers::flip(obj); }
-}
-};
+		void flip() const			{ Flippers::flip(*obj); Flippers::flip(obj); }
+	};
 
 	template <class T>
-	struct FlipBlob : public FlipBase {
+	struct FlipBlob : public Base {
 		T * &obj;
 		FlipBlob(T * &s) : obj(s)	{ }
-		void flip() const			
-{ secdebug("outflip", "%p flip/blob %s@%p(%p)", this, Debug::typeName(obj).c_str(), &obj, obj);
-{ Flippers::flip(obj); }
-}
+		void flip() const			{ Flippers::flip(obj); }
 	};
 	
 	struct Flipper {
-		FlipBase *impl;
-		Flipper(FlipBase *p) : impl(p)	{ }
+		Base *impl;
+		Flipper(Base *p) : impl(p)	{ }
 		bool operator < (const Flipper &other) const
 			{ return impl < other.impl; }
 	};
@@ -232,6 +221,12 @@ void flip(T &addr)
 	}
 }
 
+
+//
+// Take an object at value, flip it, and return appropriately flipped
+// addr/base pointers ready to be returned through IPC.
+// Note that this doesn't set the outgoing length (aka 'fooLength') field.
+//
 template <class T>
 void flips(T *value, T ** &addr, T ** &base)
 {
@@ -243,6 +238,57 @@ void flips(T *value, T ** &addr, T ** &base)
 		Flippers::flip(*base); // flip base (so it arrives right side up)
 	}
 }
+
+
+//
+// Take a DATA type RPC argument purportedly representing a Blob of some kind,
+// turn it into a Blob, and fail properly if it's not kosher.
+//
+template <class BlobType>
+const BlobType *makeBlob(const CssmData &blobData, CSSM_RETURN error = CSSM_ERRCODE_INVALID_DATA)
+{
+	if (!blobData.data() || blobData.length() < sizeof(BlobType))
+		CssmError::throwMe(error);
+	const BlobType *blob = static_cast<const BlobType *>(blobData.data());
+	if (blob->totalLength != blobData.length())
+		CssmError::throwMe(error);
+	return blob;
+}
+
+
+//
+// An OutputData object will take memory allocated within securityd,
+// hand it to the MIG return-output parameters, and schedule it to be released
+// after the MIG reply has been sent. It will also get rid of it in case of
+// error.
+//
+class OutputData : public CssmData {
+public:
+	OutputData(void **outP, mach_msg_type_number_t *outLength)
+		: mData(*outP), mLength(*outLength) { }
+	~OutputData()
+	{ mData = data(); mLength = length(); Server::releaseWhenDone(mData); }
+    
+    void operator = (const CssmData &source)
+    { CssmData::operator = (source); }
+	
+private:
+	void * &mData;
+	mach_msg_type_number_t &mLength;
+};
+
+
+//
+// Choose a Database from a choice of two sources, giving preference
+// to persistent stores and to earlier sources.
+//
+Database *pickDb(Database *db1, Database *db2);
+
+static inline Database *dbOf(Key *key)	{ return key ? &key->database() : NULL; }
+
+inline Database *pickDb(Key *k1, Key *k2) { return pickDb(dbOf(k1), dbOf(k2)); }
+inline Database *pickDb(Database *db1, Key *k2) { return pickDb(db1, dbOf(k2)); }
+inline Database *pickDb(Key *k1, Database *db2) { return pickDb(dbOf(k1), db2); }
 
 
 #endif //_H_TRANSWALKERS

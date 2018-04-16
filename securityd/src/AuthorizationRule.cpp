@@ -3,8 +3,6 @@
  *
  *  @APPLE_LICENSE_HEADER_START@
  *  
- *  Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- *  
  *  This file contains Original Code and/or Modifications of Original Code
  *  as defined in and that are subject to the Apple Public Source License
  *  Version 2.0 (the 'License'). You may not use this file except in
@@ -32,6 +30,9 @@
 #include <Security/AuthorizationTagsPriv.h>
 #include <Security/AuthorizationDB.h>
 #include <Security/AuthorizationPriv.h>
+#include <security_utilities/logging.h>
+#include <security_utilities/ccaudit.h>
+#include <bsm/audit_uevents.h>
 #include "authority.h"
 #include "server.h"
 #include "process.h"
@@ -41,7 +42,11 @@
 #include <pwd.h>
 #include <grp.h>
 #include <unistd.h>
+#include <membership.h>
 
+extern "C" {
+#include <membershipPriv.h>
+}
 
 //
 // Rule class
@@ -64,9 +69,11 @@ CFStringRef RuleImpl::kRuleDenyID = CFSTR(kAuthorizationRuleClassDeny);
 CFStringRef RuleImpl::kRuleUserID = CFSTR(kAuthorizationRuleClassUser);
 CFStringRef RuleImpl::kRuleDelegateID = CFSTR(kAuthorizationRightRule);
 CFStringRef RuleImpl::kRuleMechanismsID = CFSTR(kAuthorizationRuleClassMechanisms);
+CFStringRef RuleImpl::kRuleAuthenticateUserID = CFSTR(kAuthorizationRuleParameterAuthenticateUser);
+
 
 string
-RuleImpl::Attribute::getString(CFDictionaryRef config, CFStringRef key, bool required = false, char *defaultValue = NULL)
+RuleImpl::Attribute::getString(CFDictionaryRef config, CFStringRef key, bool required = false, char *defaultValue = "")
 {
 	CFTypeRef value = CFDictionaryGetValue(config, key);
 	if (value && (CFGetTypeID(value) == CFStringGetTypeID()))
@@ -127,44 +134,6 @@ RuleImpl::Attribute::getBool(CFDictionaryRef config, CFStringRef key, bool requi
 			MacOSError::throwMe(errAuthorizationInternal); // XXX/cs invalid rule
 	
 	return boolValue;
-}
-
-// add reference to string that we're modifying
-void
-RuleImpl::Attribute::setString(CFMutableDictionaryRef config, CFStringRef key, string &value)
-{
-	CFStringRef cfstringValue = CFStringCreateWithCString(NULL /*allocator*/, value.c_str(), kCFStringEncodingUTF8);
-	
-	if (cfstringValue)
-	{
-		CFDictionarySetValue(config, key, cfstringValue);
-		CFRelease(cfstringValue);
-	}
-	else
-		MacOSError::throwMe(errAuthorizationInternal); // XXX/cs invalid attribute
-}			
-
-void
-RuleImpl::Attribute::setDouble(CFMutableDictionaryRef config, CFStringRef key, double value)
-{
-	CFNumberRef doubleValue = CFNumberCreate(NULL /*allocator*/, kCFNumberDoubleType, doubleValue);
-	
-	if (doubleValue)
-	{
-		CFDictionarySetValue(config, key, doubleValue);
-		CFRelease(doubleValue);
-	}
-	else
-		MacOSError::throwMe(errAuthorizationInternal); // XXX/cs invalid attribute
-}
-
-void
-RuleImpl::Attribute::setBool(CFMutableDictionaryRef config, CFStringRef key, bool value)
-{
-	if (value)
-		CFDictionarySetValue(config, key, kCFBooleanTrue);
-	else
-		CFDictionarySetValue(config, key, kCFBooleanFalse);
 }
 
 vector<string>
@@ -240,7 +209,7 @@ bool RuleImpl::Attribute::getLocalizedPrompts(CFDictionaryRef config, map<string
 
 // default rule
 RuleImpl::RuleImpl() :
-mType(kUser), mGroupName("admin"), mMaxCredentialAge(300.0), mShared(true), mAllowRoot(false), mSessionOwner(false), mTries(0)
+mType(kUser), mGroupName("admin"), mMaxCredentialAge(300.0), mShared(true), mAllowRoot(false), mSessionOwner(false), mTries(0), mAuthenticateUser(true)
 {
 	// XXX/cs read default descriptions from somewhere
 	// @@@ Default rule is shared admin group with 5 minute timeout
@@ -281,7 +250,14 @@ RuleImpl::RuleImpl(const string &inRightName, CFDictionaryRef cfRight, CFDiction
 			mSessionOwner = Attribute::getBool(cfRight, kSessionOwnerID);
 			// authorization tags can have eval now too
 			mEvalDef = Attribute::getVector(cfRight, kMechanismsID);
+            if (mEvalDef.size() == 0 && cfRules /*only rights default see appserver-admin*/)
+            {
+                CFDictionaryRef cfRuleDef = reinterpret_cast<CFDictionaryRef>(CFDictionaryGetValue(cfRules, CFSTR("authenticate")));
+				if (cfRuleDef && CFGetTypeID(cfRuleDef) == CFDictionaryGetTypeID())
+                    mEvalDef = Attribute::getVector(cfRuleDef, kMechanismsID);
+            }
 			mTries = int(Attribute::getDouble(cfRight, kTriesID, false, 3.0)); // XXX/cs double(kAuthorizationMaxTries)
+			mAuthenticateUser = Attribute::getBool(cfRight, kRuleAuthenticateUserID, false, true);
 
 			secdebug("authrule", "%s : rule user in group \"%s\" timeout %g%s%s",
 				inRightName.c_str(),
@@ -296,10 +272,11 @@ RuleImpl::RuleImpl(const string &inRightName, CFDictionaryRef cfRight, CFDiction
 			// mechanisms to evaluate
 			mEvalDef = Attribute::getVector(cfRight, kMechanismsID, true);
 			mTries = int(Attribute::getDouble(cfRight, kTriesID, false, 0.0)); // "forever"
+			mShared = Attribute::getBool(cfRight, kSharedID, false, true);
 		}
 		else if (classTag == kAuthorizationRightRule)
 		{
-			assert(cfRules); // this had better not be a rule
+            assert(cfRules); // rules can't delegate to other rules
 			secdebug("authrule", "%s : rule delegate rule", inRightName.c_str());
 			mType = kRuleDelegation;
 
@@ -313,7 +290,7 @@ RuleImpl::RuleImpl(const string &inRightName, CFDictionaryRef cfRight, CFDiction
 					CFRelease(ruleDefRef);
 				if (!cfRuleDef || CFGetTypeID(cfRuleDef) != CFDictionaryGetTypeID())
 					MacOSError::throwMe(errAuthorizationInternal); // XXX/cs invalid rule
-				mRuleDef.push_back(Rule(ruleDefString, cfRuleDef, NULL));
+				mRuleDef.push_back(Rule(ruleDefString, cfRuleDef, cfRules));
 			}
 			else // array
 			{
@@ -326,7 +303,7 @@ RuleImpl::RuleImpl(const string &inRightName, CFDictionaryRef cfRight, CFDiction
 						CFRelease(ruleNameRef);
 					if (!cfRuleDef || (CFGetTypeID(cfRuleDef) != CFDictionaryGetTypeID()))
 						MacOSError::throwMe(errAuthorizationInternal); // XXX/cs invalid rule
-					mRuleDef.push_back(Rule(*it, cfRuleDef, NULL));
+					mRuleDef.push_back(Rule(*it, cfRuleDef, cfRules));
 				}
 			}
 
@@ -347,7 +324,6 @@ RuleImpl::RuleImpl(const string &inRightName, CFDictionaryRef cfRight, CFDiction
 		// it _must_ have a definition for "rule" which will be used as a delegate
 		// it may have a comment (not extracted here)
 		// it may have a default prompt, or a whole dictionary of languages (not extracted here)
-		assert(cfRules);
 		mType = kRuleDelegation;
 		string ruleName = Attribute::getString(cfRight, kRuleDelegateID, true);
 		secdebug("authrule", "%s : rule delegate rule (1): %s", inRightName.c_str(), ruleName.c_str());
@@ -357,7 +333,7 @@ RuleImpl::RuleImpl(const string &inRightName, CFDictionaryRef cfRight, CFDiction
 			CFRelease(ruleNameRef);
 		if (!cfRuleDef || CFGetTypeID(cfRuleDef) != CFDictionaryGetTypeID())
 			MacOSError::throwMe(errAuthorizationInternal); // XXX/cs invalid rule
-		mRuleDef.push_back(Rule(ruleName, cfRuleDef, NULL));
+		mRuleDef.push_back(Rule(ruleName, cfRuleDef, cfRules));
 	}
 
 	Attribute::getLocalizedPrompts(cfRight, mLocalizedPrompts);
@@ -373,31 +349,37 @@ void
 RuleImpl::setAgentHints(const AuthItemRef &inRight, const Rule &inTopLevelRule, AuthItemSet &environmentToClient, AuthorizationToken &auth) const
 {
 	string authorizeString(inRight->name());
+    environmentToClient.erase(AuthItemRef(AGENT_HINT_AUTHORIZE_RIGHT)); 
 	environmentToClient.insert(AuthItemRef(AGENT_HINT_AUTHORIZE_RIGHT, AuthValueOverlay(authorizeString)));
-	
-	// XXX/cs pid/uid/client should only be added when we're ready to call the agent
-	pid_t cPid = Server::process().pid();
-	environmentToClient.insert(AuthItemRef(AGENT_HINT_CLIENT_PID, AuthValueOverlay(sizeof(pid_t), &cPid)));
-	
-	uid_t cUid = auth.creatorUid();
-	environmentToClient.insert(AuthItemRef(AGENT_HINT_CLIENT_UID, AuthValueOverlay(sizeof(uid_t), &cUid)));
 
 	pid_t creatorPid = auth.creatorPid();
+    environmentToClient.erase(AuthItemRef(AGENT_HINT_CREATOR_PID)); 
 	environmentToClient.insert(AuthItemRef(AGENT_HINT_CREATOR_PID, AuthValueOverlay(sizeof(pid_t), &creatorPid)));
+
+	Process &thisProcess = Server::process();
+	RefPointer<OSXCode> clientCode = auth.creatorCode();
+	SecurityAgent::RequestorType requestorType = SecurityAgent::unknown;
+	string bundlePath;
 	
+	if (clientCode)
 	{
-		CodeSigning::OSXCode *osxcode = auth.creatorCode();
-		if (!osxcode)
-			MacOSError::throwMe(errAuthorizationDenied);
-			
-		string encodedBundle = osxcode->encode();
+		string encodedBundle = clientCode->encode();
 		char bundleType = (encodedBundle.c_str())[0]; // yay, no accessor
-		string bundlePath = osxcode->canonicalPath();
-	
-		environmentToClient.insert(AuthItemRef(AGENT_HINT_CLIENT_TYPE, AuthValueOverlay(sizeof(bundleType), &bundleType)));
-		environmentToClient.insert(AuthItemRef(AGENT_HINT_CLIENT_PATH, AuthValueOverlay(bundlePath)));
+		switch(bundleType)
+		{
+		   case 'b': requestorType = SecurityAgent::bundle; break;
+		   case 't': requestorType = SecurityAgent::tool; break;
+		}
+		bundlePath = clientCode->canonicalPath();
 	}
-	
+
+	AuthItemSet processHints = SecurityAgent::Client::clientHints(requestorType, bundlePath, thisProcess.pid(), thisProcess.uid());
+    environmentToClient.erase(AuthItemRef(AGENT_HINT_CLIENT_TYPE));
+    environmentToClient.erase(AuthItemRef(AGENT_HINT_CLIENT_PATH));
+    environmentToClient.erase(AuthItemRef(AGENT_HINT_CLIENT_PID));
+    environmentToClient.erase(AuthItemRef(AGENT_HINT_CLIENT_UID));
+    environmentToClient.insert(processHints.begin(), processHints.end());
+
 	map<string,string> defaultPrompts = inTopLevelRule->localizedPrompts();
 
 	if (defaultPrompts.empty())
@@ -416,35 +398,8 @@ RuleImpl::setAgentHints(const AuthItemRef &inRight, const Rule &inTopLevelRule, 
 
 	// add rulename as a hint
 	string ruleName = name();
+    environmentToClient.erase(AuthItemRef(AGENT_HINT_AUTHORIZE_RULE));
 	environmentToClient.insert(AuthItemRef(AGENT_HINT_AUTHORIZE_RULE, AuthValueOverlay(ruleName)));
-}
-
-string
-RuleImpl::agentNameForAuth(const AuthorizationToken &auth) const
-{
-	uint8_t hash[20];
-	AuthorizationBlob authBlob = auth.handle();
-	CssmData hashedData = CssmData::wrap(&hash, sizeof(hash));
-	CssmData data = CssmData::wrap(&authBlob, sizeof(authBlob));
-	CssmClient::Digest ctx(Server::csp(), CSSM_ALGID_SHA1);
-	try {
-		ctx.digest(data, hashedData);
-	}
-	catch (CssmError &e)
-	{
-		secdebug("auth", "digesting authref failed (%lu)", e.osStatus());
-		return string("SecurityAgentMechanism");
-	}
-	
-	uint8_t *point = static_cast<uint8_t*>(hashedData.data());
-	for (uint8_t i=0; i < hashedData.length(); point++, i++)
-	{
-		uint8 value = (*point % 62) + '0';
-		if (value > '9') value += 7; 
-		if (value > 'Z') value += 6;
-		*point = value;
-	}
-	return string(static_cast<char *>(hashedData.data()), hashedData.length());
 }
 
 OSStatus
@@ -467,12 +422,12 @@ RuleImpl::evaluateAuthorization(const AuthItemRef &inRight, const Rule &inRule,
     uint32 tries;
     SecurityAgent::Reason reason = SecurityAgent::noReason;
 
-    Process &cltProc = Server::process();
+	Process &cltProc = Server::process();
     // Authorization preserves creator's UID in setuid processes
     uid_t cltUid = (cltProc.uid() != 0) ? cltProc.uid() : auth.creatorUid();
     secdebug("AuthEvalMech", "Mechanism invocation by process %d (UID %d)", cltProc.pid(), cltUid);
-    
-    AgentMechanismEvaluator eval(cltUid, cltProc.session(), mEvalDef);
+ 
+    AgentMechanismEvaluator eval(cltUid, auth.session(), mEvalDef);
         
     for (tries = 0; tries < mTries; tries++)
     {
@@ -481,7 +436,7 @@ RuleImpl::evaluateAuthorization(const AuthItemRef &inRight, const Rule &inRule,
 		AuthItemRef triesHint(AGENT_HINT_TRIES, AuthValueOverlay(sizeof(tries), &tries));
 		environmentToClient.erase(triesHint); environmentToClient.insert(triesHint); // replace
 
-        status = eval.run(AuthValueVector(), environmentToClient, auth.infoSet());
+        status = eval.run(AuthValueVector(), environmentToClient, auth);
 
         if ((status == errAuthorizationSuccess) ||
             (status == errAuthorizationCanceled)) // @@@ can only pass back sideband through context
@@ -496,11 +451,9 @@ RuleImpl::evaluateAuthorization(const AuthItemRef &inRight, const Rule &inRule,
             // deny is the default
             status = errAuthorizationDenied;
             
-            // fetch context and construct a credential to be tested
-            AuthItemSet inContext = auth.infoSet();
-            CredentialSet newCredentials = makeCredentials(inContext);
+            CredentialSet newCredentials = makeCredentials(auth);
             // clear context after extracting credentials
-            auth.clearInfoSet(); 
+            auth.scrubInfoSet(); 
             
             for (CredentialSet::const_iterator it = newCredentials.begin(); it != newCredentials.end(); ++it)
             {
@@ -520,13 +473,14 @@ RuleImpl::evaluateAuthorization(const AuthItemRef &inRight, const Rule &inRule,
                 }
             
                 // verify that this credential authorizes right
-                status = evaluateCredentialForRight(inRight, inRule, environmentToClient, now, newCredential, true);
+                status = evaluateCredentialForRight(auth, inRight, inRule, environmentToClient, now, newCredential, true);
 
                 if (status == errAuthorizationSuccess)
                 {
 					// whack an equivalent credential, so it gets updated to a later achieved credential which must have been more stringent
                     credentials.erase(newCredential); credentials.insert(newCredential);
                     // use valid credential to set context info
+					// XXX/cs keeping this for now, such that the uid is passed back
                     auth.setCredentialInfo(newCredential);
                     secdebug("SSevalMech", "added valid credential for user %s", newCredential->username().c_str());
                     status = errAuthorizationSuccess;
@@ -543,9 +497,13 @@ RuleImpl::evaluateAuthorization(const AuthItemRef &inRight, const Rule &inRule,
             if ((status == errAuthorizationCanceled) ||
 		(status == errAuthorizationInternal))
                 {
-                    auth.clearInfoSet();
+                    auth.scrubInfoSet();
                     break;
                 }
+            else // last mechanism is now authentication - fail
+                if (status == errAuthorizationDenied)
+                    reason = SecurityAgent::invalidPassphrase;
+
     }
 
     // If we fell out of the loop because of too many tries, notify user
@@ -556,9 +514,12 @@ RuleImpl::evaluateAuthorization(const AuthItemRef &inRight, const Rule &inRule,
 		environmentToClient.erase(retryHint); environmentToClient.insert(retryHint); // replace
 		AuthItemRef triesHint(AGENT_HINT_TRIES, AuthValueOverlay(sizeof(tries), &tries));
 		environmentToClient.erase(triesHint); environmentToClient.insert(triesHint); // replace
-        eval.run(AuthValueVector(), environmentToClient, auth.infoSet());
+        eval.run(AuthValueVector(), environmentToClient, auth);
         // XXX/cs is this still necessary?
-        auth.clearInfoSet();
+        auth.scrubInfoSet();
+		
+		CommonCriteria::AuditRecord auditrec(auth.creatorAuditToken());
+		auditrec.submit(AUE_ssauthorize, CommonCriteria::errTooManyTries, inRight->name());
     }
 
     return status;
@@ -567,8 +528,10 @@ RuleImpl::evaluateAuthorization(const AuthItemRef &inRight, const Rule &inRule,
 // create externally verified credentials on the basis of 
 // mechanism-provided information
 CredentialSet
-RuleImpl::makeCredentials(const AuthItemSet &context) const
+RuleImpl::makeCredentials(const AuthorizationToken &auth) const
 {
+    // fetch context and construct a credential to be tested
+    const AuthItemSet &context = const_cast<AuthorizationToken &>(auth).infoSet();
     CredentialSet newCredentials;
 
     do {    
@@ -607,7 +570,13 @@ RuleImpl::makeCredentials(const AuthItemSet &context) const
                 secdebug("AuthEvalMech", "found password");
                 string password = (**found).stringValue();
                 secdebug("AuthEvalMech", "falling back on username/password credential if valid");
-                newCredentials.insert(Credential(username, password, mShared));
+				Credential newCred(username, password, mShared);
+                newCredentials.insert(newCred);
+				CommonCriteria::AuditRecord auditrec(auth.creatorAuditToken());
+				if (newCred->isValid())
+					auditrec.submit(AUE_ssauthorize, CommonCriteria::errNone, name().c_str());
+				else
+					auditrec.submit(AUE_ssauthorize, CommonCriteria::errInvalidCredential, name().c_str());
             }
         }
     } while(0);
@@ -627,18 +596,26 @@ RuleImpl::evaluateSessionOwner(const AuthItemRef &inRight, const Rule &inRule,
 	OSStatus status = noErr;
 	// @@@ we have no access to current requester uid here and the process uid is only taken when the authorization is created
 	// meaning that a process like loginwindow that drops privs later is screwed.
-	uid_t uid = auth.creatorUid();
+	
+	uid_t uid;
+	Session &session = auth.session();
+	
+	if (session.haveOriginatorUid())
+		uid = session.originatorUid();
+	else
+		uid = auth.creatorUid();
 	
 	Server::active().longTermActivity();
 	struct passwd *pw = getpwuid(uid);
 	if (pw != NULL)
 	{
-		// avoid hinting a locked account (ie. root)
+		// avoid hinting a locked account
 		if ( (pw->pw_passwd == NULL) ||
 				strcmp(pw->pw_passwd, "*") ) {
 			// Check if username will authorize the request and set username to
 			// be used as a hint to the user if so
-			status = evaluateCredentialForRight(inRight, inRule, environment, now, Credential(pw->pw_name, pw->pw_uid, pw->pw_gid, mShared), true);
+			secdebug("AuthEvalMech", "preflight credential from current user, result follows:");
+			status = evaluateCredentialForRight(auth, inRight, inRule, environment, now, Credential(pw->pw_name, pw->pw_uid, pw->pw_gid, mShared), true);
 			
 			if (status == errAuthorizationSuccess) 
 				usernamehint = pw->pw_name;
@@ -653,7 +630,7 @@ RuleImpl::evaluateSessionOwner(const AuthItemRef &inRight, const Rule &inRule,
 // Return errAuthorizationSuccess if this rule allows access based on the specified credential,
 // return errAuthorizationDenied otherwise.
 OSStatus
-RuleImpl::evaluateCredentialForRight(const AuthItemRef &inRight, const Rule &inRule, const AuthItemSet &environment, CFAbsoluteTime now, const Credential &credential, bool ignoreShared) const
+RuleImpl::evaluateCredentialForRight(const AuthorizationToken &auth, const AuthItemRef &inRight, const Rule &inRule, const AuthItemSet &environment, CFAbsoluteTime now, const Credential &credential, bool ignoreShared) const
 {
 	assert(mType == kUser);
 
@@ -687,14 +664,13 @@ RuleImpl::evaluateCredentialForRight(const AuthItemRef &inRight, const Rule &inR
 		return errAuthorizationSuccess;
 	}
 
-    // XXX/cs replace with remembered session-owner once that functionality is added to SecurityServer
     if (mSessionOwner)
     {
-        uid_t console_user;
-        struct stat console_stat;
-        if (!lstat("/dev/console", &console_stat))
-        {
-            console_user = console_stat.st_uid;
+		Session &session = auth.session();
+		if (session.haveOriginatorUid())
+		{
+			uid_t console_user = session.originatorUid();
+
             if (credential->uid() == console_user)
             {
                 secdebug("autheval", "user %s is session-owner(uid: %d), granting right %s", user, console_user, inRight->name());
@@ -709,35 +685,36 @@ RuleImpl::evaluateCredentialForRight(const AuthItemRef &inRight, const Rule &inR
 	{
 		const char *groupname = mGroupName.c_str();
 		Server::active().longTermActivity();
-		struct group *gr = getgrnam(groupname);
-		if (!gr)
+
+		if (!groupname)
 			return errAuthorizationDenied;
-	
-		// Is this the default group of this user?
-		// PR-2875126 <grp.h> declares gr_gid int, as opposed to advertised (getgrent(3)) gid_t
-		// When this is fixed this warning should go away.
-		if (credential->gid() == gr->gr_gid)
+			
+		do 
 		{
-			secdebug("autheval", "user %s has group %s(%d) as default group, granting right %s",
-				user, groupname, gr->gr_gid, inRight->name());
-			endgrent();
-			return errAuthorizationSuccess;
-		}
-	
-		for (char **group = gr->gr_mem; *group; ++group)
-		{
-			if (!strcmp(*group, user))
+			uuid_t group_uuid, user_uuid;
+			int is_member;
+			
+			if (mbr_group_name_to_uuid(groupname, group_uuid))
+				break;
+				
+			if (mbr_uid_to_uuid(credential->uid(), user_uuid))
+				break;
+
+			if (mbr_check_membership(user_uuid, group_uuid, &is_member))
+				break;
+				
+			if (is_member)
 			{
 				secdebug("autheval", "user %s is a member of group %s, granting right %s",
 					user, groupname, inRight->name());
-				endgrent();
 				return errAuthorizationSuccess;
 			}
+				
 		}
-	
+		while (0);
+
 		secdebug("autheval", "user %s is not a member of group %s, denying right %s",
 			user, groupname, inRight->name());
-		endgrent();
 	}
 	
 	return errAuthorizationDenied;
@@ -763,19 +740,22 @@ RuleImpl::evaluateUser(const AuthItemRef &inRight, const Rule &inRule,
 		return errAuthorizationSuccess;
 	}
 	
-	// if this is a "is-admin" rule check that and return
-	// XXX/cs add way to specify is-admin class of rule: if (mNoVerify)
-	if (name() == kAuthorizationRuleIsAdmin)
+	// if we're not supposed to authenticate evaluate the session-owner against the group
+	if (!mAuthenticateUser)
 	{
 		string username;
-		if (!evaluateSessionOwner(inRight, inRule, environmentToClient, now, auth, username))
+		OSStatus status = evaluateSessionOwner(inRight, inRule, environmentToClient, now, auth, username);
+
+		if (!status)
 			return errAuthorizationSuccess;
+
+		return errAuthorizationDenied;
 	}
 
 	// First -- go though the credentials we either already used or obtained during this authorize operation.
 	for (CredentialSet::const_iterator it = credentials.begin(); it != credentials.end(); ++it)
 	{
-		OSStatus status = evaluateCredentialForRight(inRight, inRule, environmentToClient, now, *it, true);
+		OSStatus status = evaluateCredentialForRight(auth, inRight, inRule, environmentToClient, now, *it, true);
 		if (status != errAuthorizationDenied)
 		{
 			// add credential to authinfo
@@ -789,7 +769,7 @@ RuleImpl::evaluateUser(const AuthItemRef &inRight, const Rule &inRule,
 	{
 		for (CredentialSet::const_iterator it = inCredentials->begin(); it != inCredentials->end(); ++it)
 		{
-			OSStatus status = evaluateCredentialForRight(inRight, inRule, environmentToClient, now, *it, false);
+			OSStatus status = evaluateCredentialForRight(auth, inRight, inRule, environmentToClient, now, *it, false);
 			if (status == errAuthorizationSuccess)
 			{
 				// Add the credential we used to the output set.
@@ -835,13 +815,13 @@ RuleImpl::evaluateMechanismOnly(const AuthItemRef &inRight, const Rule &inRule, 
 	uint32 tries = 0; 
 	OSStatus status;
 
-    Process &cltProc = Server::process();
+	Process &cltProc = Server::process();
     // Authorization preserves creator's UID in setuid processes
     uid_t cltUid = (cltProc.uid() != 0) ? cltProc.uid() : auth.creatorUid();
     secdebug("AuthEvalMech", "Mechanism invocation by process %d (UID %d)", cltProc.pid(), cltUid);
 
     {
-        AgentMechanismEvaluator eval(cltUid, cltProc.session(), mEvalDef);
+        AgentMechanismEvaluator eval(cltUid, auth.session(), mEvalDef);
         
         do
         {
@@ -849,7 +829,7 @@ RuleImpl::evaluateMechanismOnly(const AuthItemRef &inRight, const Rule &inRule, 
             AuthItemRef triesHint(AGENT_HINT_TRIES, AuthValueOverlay(sizeof(tries), &tries));
             environmentToClient.erase(triesHint); environmentToClient.insert(triesHint); // replace
                 
-            status = eval.run(AuthValueVector(), environmentToClient, auth.infoSet());
+            status = eval.run(AuthValueVector(), environmentToClient, auth);
             
             if ((status == errAuthorizationSuccess) ||
                 (status == errAuthorizationCanceled)) // @@@ can only pass back sideband through context
@@ -858,7 +838,7 @@ RuleImpl::evaluateMechanismOnly(const AuthItemRef &inRight, const Rule &inRule, 
                 auth.setInfoSet(eval.context());
                 if (status == errAuthorizationSuccess)
                 {
-                    outCredentials = makeCredentials(eval.context());
+                    outCredentials = makeCredentials(auth);
                 }
             }
                 
@@ -869,13 +849,16 @@ RuleImpl::evaluateMechanismOnly(const AuthItemRef &inRight, const Rule &inRule, 
                         || ((mTries > 0) 			// mTries > 0 means we try up to mTries times
                             && (tries < mTries))));
     }
+	
+    // HACK kill all hosts to free pages for low memory systems
+	if (name() == "system.login.console")
+	{
+		QueryInvokeMechanism query(securityAgent, auth.session());
+		query.terminateAgent();
+		QueryInvokeMechanism query2(privilegedAuthHost, auth.session());
+		query2.terminateAgent();
+	}
     
-    if (name() == "system.login.console")
-    {
-        QueryInvokeMechanism query(cltUid, cltProc.session());
-        query.terminateAgent();
-    }
-
 	return status;
 }
 

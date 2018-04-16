@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -50,62 +48,10 @@ PortMap<Session> Session::mSessions;
 //
 Session::Session(Bootstrap bootstrap, Port servicePort, SessionAttributeBits attrs) 
     : mBootstrap(bootstrap), mServicePort(servicePort),
-	  mAttributes(attrs), mDying(false)
+	  mAttributes(attrs), mSecurityAgent(NULL), mAuthHost(NULL)
 {
     secdebug("SSsession", "%p CREATED: handle=0x%lx bootstrap=%d service=%d attrs=0x%lx",
         this, handle(), mBootstrap.port(), mServicePort.port(), mAttributes);
-}
-
-
-void Session::release()
-{
-	// nothing by default
-}
-
-
-//
-// The root session inherits the startup bootstrap and service port
-//
-RootSession::RootSession(Port servicePort, SessionAttributeBits attrs)
-    : Session(Bootstrap(), servicePort, sessionIsRoot | sessionWasInitialized | attrs)
-{
-	ref();  // eternalize
-
-    // self-install (no thread safety issues here)
-	mSessions[mServicePort] = this;
-}
-
-
-//
-// Dynamic sessions use the given bootstrap and re-register in it
-//
-DynamicSession::DynamicSession(const Bootstrap &bootstrap)
-	: ReceivePort(Server::active().bootstrapName(), bootstrap),
-	  Session(bootstrap, *this)
-{
-	// tell the server to listen to our port
-	Server::active().add(*this);
-	
-	// register for port notifications
-    Server::active().notifyIfDead(bootstrapPort());	//@@@??? still needed?
-	Server::active().notifyIfUnused(*this);
-
-	// self-register
-	StLock<Mutex> _(mSessions);
-	assert(!mSessions[*this]);  // can't be registered already (we just made it)
-	mSessions[*this] = this;
-}
-
-DynamicSession::~DynamicSession()
-{
-	// remove our service port from the server
-	Server::active().remove(*this);
-}
-
-
-void DynamicSession::release()
-{
-	mBootstrap.destroy();
 }
 
 
@@ -152,20 +98,22 @@ void Session::destroy(Port servPort)
     StLock<Mutex> _(mSessions);
     PortMap<Session>::iterator it = mSessions.find(servPort);
     assert(it != mSessions.end());
-    Session *session = it->second;
-	session->kill();
+	RefPointer<Session> session = it->second;
     mSessions.erase(it);
+	session->kill();
 }
 
 void Session::kill()
 {
-	release();
-
-    StLock<Mutex> _(mLock);
-    
-    // this session is now officially dying
-    mDying = true;
-    
+    StLock<Mutex> _(*this);
+	
+	// release authorization host objects
+	{
+		StLock<Mutex> _(mAuthHostLock);
+		mSecurityAgent = NULL;
+		mAuthHost = NULL;
+	}
+	
     // invalidate shared credentials
     {
         StLock<Mutex> _(mCredsLock);
@@ -183,13 +131,141 @@ void Session::kill()
 
 
 //
-// Relay lockAllDatabases to all known sessions
+// On system sleep, call sleepProcessing on all DbCommons of all Sessions
 //
 void Session::processSystemSleep()
 {
 	StLock<Mutex> _(mSessions);
 	for (PortMap<Session>::const_iterator it = mSessions.begin(); it != mSessions.end(); it++)
-		it->second->allReferences<DbCommon>(&DbCommon::sleepProcessing);
+		it->second->allReferences(&DbCommon::sleepProcessing);
+}
+
+
+//
+// On "lockAll", call sleepProcessing on all DbCommons of this session (only)
+//
+void Session::processLockAll()
+{
+	allReferences(&DbCommon::lockProcessing);
+}
+
+
+//
+// The root session inherits the startup bootstrap and service port
+//
+RootSession::RootSession(Server &server, SessionAttributeBits attrs)
+    : Session(Bootstrap(), server.primaryServicePort(),
+		sessionIsRoot | sessionWasInitialized | attrs)
+{
+	parent(server);		// the Server is our parent
+	ref();				// eternalize
+
+    // self-install (no thread safety issues here)
+	mSessions[mServicePort] = this;
+}
+
+uid_t RootSession::originatorUid() const
+{
+	return 0;	// it's root, obviously
+}
+
+CFDataRef RootSession::copyUserPrefs()
+{
+	return NULL;
+}
+
+//
+// Dynamic sessions use the given bootstrap and re-register in it
+//
+DynamicSession::DynamicSession(TaskPort taskPort)
+	: ReceivePort(Server::active().bootstrapName(), taskPort.bootstrap()),
+	  Session(taskPort.bootstrap(), *this),
+	  mOriginatorTask(taskPort), mHaveOriginatorUid(false)
+{
+	// link to Server as the global nexus in the object mesh
+	parent(Server::active());
+	
+	// tell the server to listen to our port
+	Server::active().add(*this);
+	
+	// register for port notifications
+    Server::active().notifyIfDead(bootstrapPort());	//@@@??? still needed?
+	Server::active().notifyIfUnused(*this);
+
+	// self-register
+	StLock<Mutex> _(mSessions);
+	assert(!mSessions[*this]);  // can't be registered already (we just made it)
+	mSessions[*this] = this;
+	
+	secdebug("SSsession", "%p dynamic session originator=%d (pid=%d)",
+		this, mOriginatorTask.port(), taskPort.pid());
+}
+
+DynamicSession::~DynamicSession()
+{
+	// remove our service port from the server
+	Server::active().remove(*this);
+}
+
+
+void DynamicSession::kill()
+{
+	StLock<Mutex> _(*this);
+	mBootstrap.destroy();		// release our bootstrap port
+	Session::kill();			// continue with parent kill
+}
+
+
+//
+// Set up a DynamicSession.
+// This call must be made from a process within the session, and it must be the first
+// such process to make the call.
+//
+void DynamicSession::setupAttributes(SessionCreationFlags flags, SessionAttributeBits attrs)
+{
+	StLock<Mutex> _(*this);
+    secdebug("SSsession", "%p setup flags=0x%lx attrs=0x%lx", this, flags, attrs);
+    if (attrs & ~settableAttributes)
+        MacOSError::throwMe(errSessionInvalidAttributes);
+	checkOriginator();
+    if (attribute(sessionWasInitialized))
+        MacOSError::throwMe(errSessionAuthorizationDenied);
+    setAttributes(attrs | sessionWasInitialized);
+}
+
+
+//
+// Check whether the calling process is the session originator.
+// If it's not, throw.
+//
+void DynamicSession::checkOriginator()
+{
+	if (mOriginatorTask != Server::process().taskPort())
+		MacOSError::throwMe(errSessionAuthorizationDenied);
+}
+
+
+//
+// The "originator uid" is a uid value that can be provided by the session originator
+// and retrieved by anyone. Securityd places no semantic meaning on this value.
+//
+uid_t DynamicSession::originatorUid() const
+{
+	if (mHaveOriginatorUid)
+		return mOriginatorUid;
+	else
+		MacOSError::throwMe(errSessionValueNotSet);
+}
+
+
+void DynamicSession::originatorUid(uid_t uid)
+{
+	checkOriginator();
+	if (mHaveOriginatorUid)		// must not re-set this
+		MacOSError::throwMe(errSessionAuthorizationDenied);
+	mHaveOriginatorUid = true;
+	mOriginatorUid = uid;
+	secdebug("SSsession", "%p session uid set to %d", this, uid);
 }
 
 
@@ -200,13 +276,13 @@ OSStatus Session::authCreate(const AuthItemSet &rights,
 	const AuthItemSet &environment,
 	AuthorizationFlags flags,
 	AuthorizationBlob &newHandle,
-	const security_token_t &securityToken)
+	const audit_token_t &auditToken)
 {
 	// invoke the authorization computation engine
 	CredentialSet resultCreds;
 	
-	// this will acquire mLock, so we delay acquiring it
-	auto_ptr<AuthorizationToken> auth(new AuthorizationToken(*this, resultCreds, securityToken));
+	// this will acquire the object lock, so we delay acquiring it (@@@ no longer needed)
+	auto_ptr<AuthorizationToken> auth(new AuthorizationToken(*this, resultCreds, auditToken));
 
     // Make a copy of the mSessionCreds
     CredentialSet sessionCreds;
@@ -214,7 +290,7 @@ OSStatus Session::authCreate(const AuthItemSet &rights,
         StLock<Mutex> _(mCredsLock);
         sessionCreds = mSessionCreds;
     }
-        
+	
 	AuthItemSet outRights;
 	OSStatus result = Server::authority().authorize(rights, environment, flags,
         &sessionCreds, &resultCreds, outRights, *auth);
@@ -297,7 +373,7 @@ OSStatus Session::authExternalize(const AuthorizationBlob &authBlob,
 	AuthorizationExternalForm &extForm)
 {
 	const AuthorizationToken &auth = authorization(authBlob);
-	StLock<Mutex> _(mLock);
+	StLock<Mutex> _(*this);
 	if (auth.mayExternalize(Server::process())) {
 		memset(&extForm, 0, sizeof(extForm));
         AuthorizationExternalBlob &extBlob =
@@ -322,7 +398,7 @@ OSStatus Session::authInternalize(const AuthorizationExternalForm &extForm,
     
 	// check for permission and do it
 	if (sourceAuth.mayInternalize(Server::process(), true)) {
-		StLock<Mutex> _(mLock);
+		StLock<Mutex> _(*this);
 		authBlob = extBlob.blob;
         Server::process().addAuthorization(&sourceAuth);
         secdebug("SSauth", "Authorization %p internalized", &sourceAuth);
@@ -333,29 +409,18 @@ OSStatus Session::authInternalize(const AuthorizationExternalForm &extForm,
 
 
 //
-// Set up a (new-ish) Session.
-// This call must be made from a process within the session, and it must be the first
-// such process to make the call.
+// The default session setup operation always fails.
+// Subclasses can override this to support session setup calls.
 //
-void Session::setup(SessionCreationFlags flags, SessionAttributeBits attrs)
+void Session::setupAttributes(SessionCreationFlags flags, SessionAttributeBits attrs)
 {
-    // check current process object - it may have been cached before the client's bootstrap switch
-    Process *process = &Server::process();
-    process->session().setupAttributes(attrs);
+	MacOSError::throwMe(errSessionAuthorizationDenied);
 }
 
 
-void Session::setupAttributes(SessionAttributeBits attrs)
-{
-    secdebug("SSsession", "%p setup attrs=0x%lx", this, attrs);
-    if (attrs & ~settableAttributes)
-        MacOSError::throwMe(errSessionInvalidAttributes);
-    if (attribute(sessionWasInitialized))
-        MacOSError::throwMe(errSessionAuthorizationDenied);
-    setAttributes(attrs | sessionWasInitialized);
-}
-
-
+//
+// Authorization database I/O
+//
 OSStatus Session::authorizationdbGet(AuthorizationString inRightName, CFDictionaryRef *rightDict)
 {
 	string rightName(inRightName);
@@ -445,6 +510,48 @@ AuthorizationToken &Session::authorization(const AuthorizationBlob &blob)
 	return auth;
 }
 
+RefPointer<AuthHostInstance> 
+Session::authhost(const AuthHostType hostType, const bool restart)
+{
+	StLock<Mutex> _(mAuthHostLock);
+
+	if (hostType == privilegedAuthHost)
+	{
+		if (restart || !mAuthHost || (mAuthHost->state() != Security::UnixPlusPlus::Child::alive))
+		{
+			if (mAuthHost)
+				PerSession::kill(*mAuthHost);
+			mAuthHost = new AuthHostInstance(*this, hostType);	
+		}
+		return mAuthHost;
+	}
+	else /* if (hostType == securityAgent) */
+	{
+		if (restart || !mSecurityAgent || (mSecurityAgent->state() != Security::UnixPlusPlus::Child::alive))
+		{
+			if (mSecurityAgent)
+				PerSession::kill(*mSecurityAgent);
+			mSecurityAgent = new AuthHostInstance(*this, hostType);
+		}
+		return mSecurityAgent;
+	}
+}
+
+void DynamicSession::setUserPrefs(CFDataRef userPrefsDict)
+{
+	checkOriginator();
+	StLock<Mutex> _(*this);
+	mSessionAgentPrefs = userPrefsDict;
+}
+
+CFDataRef DynamicSession::copyUserPrefs()
+{
+	StLock<Mutex> _(*this);
+	if (mSessionAgentPrefs)
+		CFRetain(mSessionAgentPrefs);
+	return mSessionAgentPrefs;
+}
+
 
 //
 // Debug dumping
@@ -454,10 +561,8 @@ AuthorizationToken &Session::authorization(const AuthorizationBlob &blob)
 void Session::dumpNode()
 {
 	PerSession::dumpNode();
-	if (mDying)
-		Debug::dump(" DYING");
-	Debug::dump(" boot=%d service=%d attrs=0x%lx",
-		mBootstrap.port(), mServicePort.port(), mAttributes);
+	Debug::dump(" boot=%d service=%d attrs=0x%lx authhost=%p securityagent=%p",
+		mBootstrap.port(), mServicePort.port(), mAttributes, mAuthHost, mSecurityAgent);
 }
 
 #endif //DEBUGDUMP

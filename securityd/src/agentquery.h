@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,29 +28,24 @@
 #ifndef _H_AGENTQUERY
 #define _H_AGENTQUERY
 
-#include "securityserver.h"
 #include <security_agent_client/agentclient.h>
 #include <security_cdsa_utilities/AuthorizationData.h>
 #include <Security/AuthorizationPlugin.h>
 #include "kcdatabase.h"
 #include "AuthorizationEngine.h"
+#include "authhost.h"
+#include "server.h"
+#include "session.h"
 
 using Authorization::AuthItemSet;
 using Authorization::AuthValueVector;
-using Security::CodeSigning::OSXCode;
-//
-// The common machinery of retryable SecurityAgent queries
-//
-class Session;
+using Security::OSXCode;
 
-class SecurityAgentQuery : protected SecurityAgent::Client {
+class SecurityAgentQuery : public SecurityAgent::Client {
 public:
 	typedef SecurityAgent::Reason Reason;
 	
-	static const char defaultName[];
-
-	SecurityAgentQuery();
-	SecurityAgentQuery(uid_t clientUID, const Session &clientSession, const char *agentName = defaultName);
+	SecurityAgentQuery(const AuthHostType type = securityAgent, Session &session = Server::session());
 	
 	void inferHints(Process &thisProcess);
 
@@ -60,17 +53,21 @@ public:
 
 	virtual void activate();
 	virtual void terminate();
+	void create(const char *pluginId, const char *mechanismId, const SessionId inSessionId);
 
 public:
 	void readChoice();
 
 	bool allow;
 	bool remember;
+	AuthHostType mAuthHostType;
+	RefPointer<AuthHostInstance> mHostInstance;
 
 protected:
 	AuthItemSet mClientHints;
 private:
-	const Session &mClientSession;
+	Port mPort;
+    const RefPointer<Connection> mConnection;
 };
 
 //
@@ -98,20 +95,45 @@ public:
 //
 // A query for an existing passphrase
 //
-class QueryUnlock : public SecurityAgentQuery {
+class QueryOld : public SecurityAgentQuery {
 	static const int maxTries = kMaximumAuthorizationTries;
 public:
-	QueryUnlock(KeychainDatabase &db) : database(db) { }
+	QueryOld(Database &db) : database(db) { }
 	
-	KeychainDatabase &database;
+	Database &database;
 	
 	Reason operator () ();
 	
 protected:
 	Reason query();
-	void queryInteractive(CssmOwnedData &passphrase);
-	void retryInteractive(CssmOwnedData &passphrase, Reason reason);
+	virtual Reason accept(CssmManagedData &) = 0;
+};
+
+
+class QueryUnlock : public QueryOld {
+public:
+	QueryUnlock(KeychainDatabase &db) : QueryOld(db) { }
+	
+protected:
 	Reason accept(CssmManagedData &passphrase);
+};
+
+
+//
+// Repurpose QueryUnlock for PIN prompting
+// Not very clean - but this stuff is an outdated hack as it is...
+//
+class QueryPIN : public QueryOld {
+public:
+	QueryPIN(Database &db);
+	
+	const CssmData &pin() const { return mPin; }
+
+protected:
+	Reason accept(CssmManagedData &pin);
+	
+private:
+	CssmAutoData mPin;		// PIN obtained
 };
 
 
@@ -121,18 +143,18 @@ protected:
 class QueryNewPassphrase : public SecurityAgentQuery {
 	static const int maxTries = 7;
 public:
-	QueryNewPassphrase(KeychainDatabase &db, Reason reason) :
+	QueryNewPassphrase(Database &db, Reason reason) :
 	    database(db), initialReason(reason),
 	    mPassphrase(Allocator::standard(Allocator::sensitive)),
 	    mPassphraseValid(false) { }
 
-	KeychainDatabase &database;
+	Database &database;
 	
 	Reason operator () (CssmOwnedData &passphrase);
 	
 protected:
 	Reason query();
-	Reason accept(CssmManagedData &passphrase, CssmData *oldPassphrase);
+	virtual Reason accept(CssmManagedData &passphrase, CssmData *oldPassphrase);
 	
 private:
 	Reason initialReason;
@@ -155,16 +177,33 @@ protected:
 };
 
 
-class QueryInvokeMechanism : public RefCount, SecurityAgentQuery {
+//
+// Generic secret query (not associated with a database)
+//
+class QueryDBBlobSecret : public SecurityAgentQuery {
+	static const int maxTries = kMaximumAuthorizationTries;
 public:
-    QueryInvokeMechanism();
-    QueryInvokeMechanism(uid_t clientUID, const Session &session, const char *agentName = NULL);
-    void initialize(const string &inPluginId, const string &inMechanismId, const SessionId inSessionId = 0);
+    QueryDBBlobSecret()    { }
+    Reason operator () (DatabaseCryptoCore &dbCore, const DbBlob *secretsBlob);
+    
+    void addHint(const char *name, const void *value = NULL, UInt32 valueLen = 0, UInt32 flags = 0);
+    
+protected:
+    Reason query(DatabaseCryptoCore &dbCore, const DbBlob *secretsBlob);
+	Reason accept(CssmManagedData &passphrase, DatabaseCryptoCore &dbCore, const DbBlob *secretsBlob);
+};
+
+class QueryInvokeMechanism : public SecurityAgentQuery, public RefCount {
+public:
+	QueryInvokeMechanism(const AuthHostType type, Session &session);
+    void initialize(const string &inPluginId, const string &inMechanismId, const AuthValueVector &arguments, const SessionId inSessionId = 0);
     void run(const AuthValueVector &inArguments, AuthItemSet &inHints, AuthItemSet &inContext, AuthorizationResult *outResult);
 
     bool operator () (const string &inPluginId, const string &inMechanismId, const Authorization::AuthValueVector &inArguments, AuthItemSet &inHints, AuthItemSet &inContext, AuthorizationResult *outResult);
     void terminateAgent();
     //~QueryInvokeMechanism();
+
+    AuthValueVector mArguments;
 };
 
 #endif //_H_AGENTQUERY

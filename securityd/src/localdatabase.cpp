@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -60,10 +58,10 @@ static inline LocalKey &myKey(Key &key)
 //
 // Key inquiries
 //
-CSSM_KEY_SIZE LocalDatabase::queryKeySize(Key &key)
+void LocalDatabase::queryKeySizeInBits(Key &key, CssmKeySize &result)
 {
     CssmClient::Key theKey(Server::csp(), myKey(key));
-    return theKey.sizeInBits();
+    result = theKey.sizeInBits();
 }
 
 
@@ -160,10 +158,10 @@ void LocalDatabase::generateKey(const Context &context,
 	// generate key
 	// @@@ turn "none" return into reference if permanent (only)
 	CssmKey key;
-	generate(key, Key::KeySpec(usage, attrs));
+	generate(key, LocalKey::KeySpec(usage, attrs));
 		
 	// register and return the generated key
-    newKey = makeKey(key, attrs & Key::managedAttributes, owner);
+    newKey = makeKey(key, attrs & LocalKey::managedAttributes, owner);
 }
 
 void LocalDatabase::generateKey(const Context &context,
@@ -181,33 +179,12 @@ void LocalDatabase::generateKey(const Context &context,
 	// generate keys
 	// @@@ turn "none" return into reference if permanent (only)
 	CssmKey pubKey, privKey;
-	generate(pubKey, Key::KeySpec(pubUsage, pubAttrs),
-		privKey, Key::KeySpec(privUsage, privAttrs));
+	generate(pubKey, LocalKey::KeySpec(pubUsage, pubAttrs),
+		privKey, LocalKey::KeySpec(privUsage, privAttrs));
 		
 	// register and return the generated keys
-	publicKey = makeKey(pubKey, pubAttrs & Key::managedAttributes, owner);
-	privateKey = makeKey(privKey, privAttrs & Key::managedAttributes, owner);
-}
-
-RefPointer<Key> LocalDatabase::deriveKey(const Context &context, Key *baseKey,
-		const AccessCredentials *cred, const AclEntryPrototype *owner,
-        CssmData *param, uint32 usage, uint32 attrs)
-{
-	// prepare a key-derivation context
-    if (baseKey) {
-		baseKey->validate(CSSM_ACL_AUTHORIZATION_DERIVE, cred);
-        context.replace(CSSM_ATTRIBUTE_KEY, myKey(*baseKey).cssmKey());
-	}
-	CssmClient::DeriveKey derive(Server::csp(), context.algorithm(), CSSM_ALGID_NONE);
-	derive.override(context);
-	
-	// derive key
-	// @@@ turn "none" return into reference if permanent (only)
-	CssmKey key;
-	derive(param, Key::KeySpec(usage, attrs), key);
-		
-	// register and return the generated key
-    return makeKey(key, attrs & Key::managedAttributes, owner);
+	publicKey = makeKey(pubKey, pubAttrs & LocalKey::managedAttributes, owner);
+	privateKey = makeKey(privKey, privAttrs & LocalKey::managedAttributes, owner);
 }
 
 
@@ -217,73 +194,86 @@ RefPointer<Key> LocalDatabase::deriveKey(const Context &context, Key *baseKey,
 // case of "cleartext" (null algorithm) wrapping for import/export.
 //
 
-void LocalDatabase::wrapKey(const Context &context, Key *key,
-    Key &keyToBeWrapped, const AccessCredentials *cred,
-    const CssmData &descriptiveData, CssmKey &wrappedKey)
+void LocalDatabase::wrapKey(const Context &context, const AccessCredentials *cred,
+	Key *wrappingKey, Key &keyToBeWrapped,
+	const CssmData &descriptiveData, CssmKey &wrappedKey)
 {
     keyToBeWrapped.validate(context.algorithm() == CSSM_ALGID_NONE ?
             CSSM_ACL_AUTHORIZATION_EXPORT_CLEAR : CSSM_ACL_AUTHORIZATION_EXPORT_WRAPPED,
         cred);
-	if(!(keyToBeWrapped.attributes() & CSSM_KEYATTR_EXTRACTABLE)) {
-		CssmError::throwMe(CSSMERR_CSP_INVALID_KEYATTR_MASK);
-	}
-    if (key) {
-        context.replace(CSSM_ATTRIBUTE_KEY, myKey(*key).cssmKey());
-		key->validate(CSSM_ACL_AUTHORIZATION_ENCRYPT, context);
+    if (wrappingKey) {
+        context.replace(CSSM_ATTRIBUTE_KEY, myKey(*wrappingKey).cssmKey());
+		wrappingKey->validate(CSSM_ACL_AUTHORIZATION_ENCRYPT, context);
 	}
     CssmClient::WrapKey wrap(Server::csp(), context.algorithm());
     wrap.override(context);
-    wrap.cred(const_cast<AccessCredentials *>(cred));	//@@@ const madness - fix in client/pod
+    wrap.cred(cred);
     wrap(myKey(keyToBeWrapped), wrappedKey, &descriptiveData);
 }
 
-RefPointer<Key> LocalDatabase::unwrapKey(const Context &context, Key *key,
+void LocalDatabase::unwrapKey(const Context &context,
 	const AccessCredentials *cred, const AclEntryPrototype *owner,
-	uint32 usage, uint32 attrs, const CssmKey wrappedKey,
-    Key *publicKey, CssmData *descriptiveData)
+	Key *wrappingKey, Key *publicKey, CSSM_KEYUSE usage, CSSM_KEYATTR_FLAGS attrs,
+	const CssmKey wrappedKey, RefPointer<Key> &unwrappedKey, CssmData &descriptiveData)
 {
-    if (key) {
-        context.replace(CSSM_ATTRIBUTE_KEY, myKey(*key).cssmKey());
-		key->validate(CSSM_ACL_AUTHORIZATION_DECRYPT, context);
+    if (wrappingKey) {
+        context.replace(CSSM_ATTRIBUTE_KEY, myKey(*wrappingKey).cssmKey());
+		wrappingKey->validate(CSSM_ACL_AUTHORIZATION_DECRYPT, context);
 	}
+	// we are not checking access on the public key, if any
+	
     CssmClient::UnwrapKey unwrap(Server::csp(), context.algorithm());
     unwrap.override(context);
-    CssmKey unwrappedKey;
-    unwrap.cred(const_cast<AccessCredentials *>(cred));	//@@@ const madness - fix in client/pod
+    unwrap.cred(cred);
+	
+	// the AclEntryInput will have to live until unwrap is done
+	AclEntryInput ownerInput;
     if (owner) {
-        AclEntryInput ownerInput(*owner);	//@@@ const trouble - fix in client/pod
-        unwrap.aclEntry(ownerInput);
-    }
+		ownerInput.proto() = *owner;
+        unwrap.owner(ownerInput);
+	}
+	
+    CssmKey result;
+	unwrap(wrappedKey, LocalKey::KeySpec(usage, attrs), result, &descriptiveData,
+		publicKey ? &myKey(*publicKey).cssmKey() : NULL);
+    unwrappedKey = makeKey(result, attrs & LocalKey::managedAttributes, owner);
+}
 
-    // @@@ Invoking conversion operator to CssmKey & on *publicKey and take the address of the result.
-    unwrap(wrappedKey, Key::KeySpec(usage, attrs), unwrappedKey,
-        descriptiveData, publicKey ? &static_cast<const CssmKey &>(myKey(*publicKey)) : NULL);
 
-    return makeKey(unwrappedKey, attrs & Key::managedAttributes, owner);
+//
+// Key derivation
+//
+void LocalDatabase::deriveKey(const Context &context, Key *key,
+	const AccessCredentials *cred, const AclEntryPrototype *owner,
+	CssmData *param, uint32 usage, uint32 attrs, RefPointer<Key> &derivedKey)
+{
+    if (key) {
+		key->validate(CSSM_ACL_AUTHORIZATION_DERIVE, cred);
+        context.replace(CSSM_ATTRIBUTE_KEY, myKey(*key).cssmKey());
+	}
+	CssmClient::DeriveKey derive(Server::csp(), context.algorithm(), CSSM_ALGID_NONE);
+	derive.override(context);
+	
+	// derive key
+	// @@@ turn "none" return into reference if permanent (only)
+	CssmKey dKey;
+	derive(param, LocalKey::KeySpec(usage, attrs), dKey);
+
+	// register and return the generated key
+    derivedKey = makeKey(dKey, attrs & LocalKey::managedAttributes, owner);
 }
 
 
 //
 // Miscellaneous CSSM functions
 //
-uint32 LocalDatabase::getOutputSize(const Context &context, Key &key, uint32 inputSize, bool encrypt)
+void LocalDatabase::getOutputSize(const Context &context, Key &key, uint32 inputSize,
+	bool encrypt, uint32 &result)
 {
     // We're fudging here somewhat, since the context can be any type.
     // ctx.override will fix the type, and no-one's the wiser.
 	context.replace(CSSM_ATTRIBUTE_KEY, myKey(key).cssmKey());
     CssmClient::Digest ctx(Server::csp(), context.algorithm());
     ctx.override(context);
-    return ctx.getOutputSize(inputSize, encrypt);
-}
-
-
-//
-// (Re-)Authenticate the database. This changes the stored credentials.
-//
-void LocalDatabase::authenticate(const AccessCredentials *cred)
-{
-	StLock<Mutex> _(common());
-	AccessCredentials *newCred = DataWalkers::copy(cred, Allocator::standard());
-    Allocator::standard().free(mCred);
-    mCred = newCred;
+    result = ctx.getOutputSize(inputSize, encrypt);
 }

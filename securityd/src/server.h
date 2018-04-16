@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -25,15 +23,15 @@
 
 
 //
-// server - the actual Server object
+// server - securityd main server object
 //
 #ifndef _H_SERVER
 #define _H_SERVER
 
-#include "securityserver.h"
 #include "structure.h"
 #include <security_utilities/machserver.h>
 #include <security_utilities/powerwatch.h>
+#include <security_utilities/ccaudit.h>
 #include <security_cdsa_client/cssmclient.h>
 #include <security_cdsa_client/cspclient.h>
 #include <security_cdsa_client/osxsigner.h>
@@ -51,6 +49,7 @@
 
 #define EQUIVALENCEDBPATH "/var/db/CodeEquivalenceDatabase"
 
+
 //
 // The authority itself. You will usually only have one of these.
 //
@@ -60,6 +59,17 @@ public:
 	~Authority();
 };
 
+//
+// The server object itself. This is the "go to" object for anyone who wants
+// to access the server's global state. It runs the show.
+// There is only one Server, and its name is Server::active().
+//
+// Server also acts as the global-scope nexus of securityd's object mesh.
+// Sessions have Server as their parent, and global-scope objects have it
+// as their referent. The Server is never kill()ed; though kill(globalObject)
+// may make sense. Also, we can search for global-scope objects by using the
+// findFirst/allReferences feature of Node<>.
+//
 class Server : public PerGlobal,
 			   public MachPlusPlus::MachServer,
                public UniformRandomBlobs<DevRandomGenerator> {
@@ -76,24 +86,55 @@ public:
     //
 	static Server &active() { return safer_cast<Server &>(MachServer::active()); }
 	static const char *bootstrapName() { return active().mBootstrapName.c_str(); }
+
+	//
+	// Each thread has at most one "active connection". If the server is currently
+	// servicing a request received through a Connection, that's it. Otherwise
+	// there is none.
+	//
+	static Connection &connection(mach_port_t replyPort);	// find by reply port and make active
+	static Connection &connection(bool tolerant = false);	// return active (or fail unless tolerant)
+	static void requestComplete();							// de-activate active connection
 	
-	static Connection &connection(mach_port_t replyPort);
-	static Connection &connection(bool tolerant = false);
-	static void requestComplete();
-	
+	//
+	// Process and session of the active Connection
+	//
 	static Process &process();
 	static Session &session();
 	
+	//
+	// Find objects from their client handles.
+	// These will all throw on invalid handles, and the RefPointer<> results are always non-NULL.
+	//
 	static RefPointer<Key> key(KeyHandle key);
     static RefPointer<Key> optionalKey(KeyHandle k) { return (k == noKey) ? NULL : key(k); }
 	static RefPointer<Database> database(DbHandle db);
 	static RefPointer<KeychainDatabase> keychain(DbHandle db);
-	static RefPointer<Database> optionalDatabase(DbHandle db);
+	static RefPointer<Database> optionalDatabase(DbHandle db, bool persistent = true);
+	static AclSource &aclBearer(AclKind kind, CSSM_HANDLE handle);
+	
+	// Generic version of handle lookup
+	template <class Type>
+	static RefPointer<Type> find(CSSM_HANDLE handle, CSSM_RETURN notFoundError)
+	{
+		RefPointer<Type> object = 
+			HandleObject::findRef<Type>(handle, notFoundError);
+		if (object->process() != Server::process())
+			CssmError::throwMe(notFoundError);
+		return object;
+	}
+
+	//
+	// publicly accessible components of the active server
+	//
     static Authority &authority() { return active().mAuthority; }
 	static CodeSignatures &codeSignatures() { return active().mCodeSignatures; }
-	static SecurityServerAcl &aclBearer(AclKind kind, CSSM_HANDLE handle);
-	static CssmClient::CSP &csp() { return active().getCsp(); }
+	static CssmClient::CSP &csp() { return active().mCSP; }
 
+public:
+	//
+	// Initialize CSSM and MDS
+	//
 	void loadCssm();
 	
 public:
@@ -104,7 +145,7 @@ public:
 		connectNewThread
 	};
 	void setupConnection(ConnectLevel type, Port servicePort, Port replyPort, Port taskPort,
-        const security_token_t &securityToken,
+        const audit_token_t &auditToken,
 		const ClientSetupInfo *info = NULL, const char *executablePath = NULL);
 		
 	void endConnection(Port replyPort);
@@ -119,14 +160,29 @@ protected:
 	boolean_t handle(mach_msg_header_t *in, mach_msg_header_t *out);
 	void notifyDeadName(Port port);
 	void notifyNoSenders(Port port, mach_port_mscount_t);
-    
+	void threadLimitReached(UInt32 count);
+
 private:
-    class SleepWatcher : public MachPlusPlus::PortPowerWatcher {
-    public:
-        void systemWillSleep();
-    };
-    SleepWatcher sleepWatcher;
+	class SleepWatcher : public MachPlusPlus::PortPowerWatcher {
+	public:
+		void systemWillSleep();
+		void systemIsWaking();
+		
+		void add(PowerWatcher *client);
+		void remove(PowerWatcher *client);
+
+	private:
+		set<PowerWatcher *> mPowerClients;
+	};
+
+	SleepWatcher sleepWatcher;
 	
+public:
+	using MachServer::add;
+	using MachServer::remove;
+	void add(MachPlusPlus::PowerWatcher *client)	{ StLock<Mutex> _(*this); sleepWatcher.add(client); }
+	void remove(MachPlusPlus::PowerWatcher *client)	{ StLock<Mutex> _(*this); sleepWatcher.remove(client); }
+    
 private:
 	// mach bootstrap registration name
 	std::string mBootstrapName;
@@ -146,10 +202,12 @@ private:
     CssmClient::Cssm mCssm;				// CSSM instance
     CssmClient::Module mCSPModule;		// CSP module
 	CssmClient::CSP mCSP;				// CSP attachment
-    CssmClient::CSP &getCsp();			// lazily initialize, then return CSP attachment
     
 	Authority &mAuthority;
 	CodeSignatures &mCodeSignatures;
+    
+    // Per-process audit initialization
+    CommonCriteria::AuditSession mAudit;
 };
 
 #endif //_H_SERVER

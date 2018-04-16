@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -121,7 +119,6 @@ void ProcessListener::notifyMe(NotificationDomain domain,
     
     // send mach message (via MIG simpleroutine)
     if (IFDEBUG(kern_return_t rc =) ucsp_notify_sender_notify(mPort,
-        MACH_SEND_TIMEOUT, 0,
         domain, event, data.data(), data.length(),
         0 /*@@@ placeholder for sender ID */))
         secdebug("notify", "%p send failed (error=%d)", this, rc);

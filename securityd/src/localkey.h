@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -39,22 +37,29 @@ class LocalDatabase;
 
 
 //
-// A Key object represents a CSSM_KEY known to the SecurityServer.
-// We give each Key a handle that allows our clients to access it, while we use
-// the Key's ACL to control such accesses.
-// A Key can be used by multiple Connections. Whether more than one Key can represent
-// the same actual key object is up to the CSP we use, so let's be tolerant about that.
+// A LocalKey object represents a CssmKey known to securityd. This subclass of Key is the
+// parent of all Key objects that rely on local storage of the raw key matter. Cryptographic
+// operations are performed by a local CSP within securityd's address space.
 //
-// A note on key attributes: We keep two sets of attribute bits. The internal bits are used
-// when talking to our CSP; the external bits are used when negotiating with our client(s).
-// The difference is the bits in managedAttributes, which relate to persistent key storage
-// and are not digestible by our CSP. The internal attributes are kept in mKey. The external
-// ones are kept in mAttributes.
+// LocalKeys are paired with LocalDatabases; LocalKey subclasses must be produced by, and must
+// belong to, subclasses of LocalDatabase.
+//
+// LocalKeys implement their ACLs with a local evaluation machine that does not rely on an outside
+// agent for evaluation. It is still possible for different subclasses of LocalDatabase to host
+// their ObjectAcl instances at different globality layers.
+//
+// Since the local CSP refuses to deal with storage-related key attributes, we split the keys's
+// CSSM_KEY_ATTRBITS into two parts:
+//  (*) The KeyHeader.attributes() contain attributes as seen by the local CSP.
+//  (*) The local mAttributes member contains attributes as seen by the client.
+// The two are related by a simple formula: take the external attributes, remove the global-storage
+// bits, add the EXTRACTABLE bit (so securityd itself can get at the key matter), and use that in
+// the CssmKey. The reverse transition is done on the way out. A local subclass of KeySpec is used
+// to make this more consistent. Just follow the pattern.
 //
 class LocalKey : public Key {
 public:
-	LocalKey(Database &db, const CssmKey &newKey, uint32 moreAttributes,
-		const AclEntryPrototype *owner = NULL);
+	LocalKey(Database &db, const CssmKey &newKey, uint32 moreAttributes);
 	virtual ~LocalKey();
     
 	LocalDatabase &database() const;
@@ -72,14 +77,31 @@ public:
 	// generate the canonical key digest
 	const CssmData &canonicalDigest();
     
-	CSSM_KEYATTR_FLAGS attributes() { return mAttributes; }
+	CSSM_KEYATTR_FLAGS attributes();
+	
+public:
+    // key attributes that should not be passed on to the CSP
+    static const CSSM_KEYATTR_FLAGS managedAttributes = KeyBlob::managedAttributes;
+	// these attributes are "forced on" in internal keys (but not always in external attributes)
+	static const CSSM_KEYATTR_FLAGS forcedAttributes = KeyBlob::forcedAttributes;
+	// these attributes are internally generated, and invalid on input
+	static const CSSM_KEYATTR_FLAGS generatedAttributes =
+		CSSM_KEYATTR_ALWAYS_SENSITIVE | CSSM_KEYATTR_NEVER_EXTRACTABLE;
+	
+	// a version of KeySpec that self-checks and masks for CSP operation
+	class KeySpec : public CssmClient::KeySpec {
+	public:
+		KeySpec(CSSM_KEYUSE usage, CSSM_KEYATTR_FLAGS attrs);
+		KeySpec(CSSM_KEYUSE usage, CSSM_KEYATTR_FLAGS attrs, const CssmData &label);
+	};
 	
 private:
-	void setup(const CssmKey &newKey, uint32 attrs);
+	void setup(const CssmKey &newKey, CSSM_KEYATTR_FLAGS attrs);
 	CssmClient::Key keyValue();
 	
 protected:
-	LocalKey(Database &db);
+	LocalKey(Database &db, CSSM_KEYATTR_FLAGS attributes);
+	void setOwner(const AclEntryPrototype *owner);
 	
 	virtual void getKey();				// decode into mKey or throw
 	virtual void getHeader(CssmKey::Header &hdr); // get header (only) without mKey

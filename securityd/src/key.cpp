@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -25,39 +23,14 @@
 
 
 //
-// key - representation of SecurityServer key objects
+// key - representation of securityd key objects
 //
 #include "key.h"
 #include "server.h"
-#include "database.h"
 #include <security_cdsa_utilities/acl_any.h>
 
 
-Key::Key()
-	: SecurityServerAcl(keyAcl, Allocator::standard())
+Key::Key(Database &db)
+	: Database::Subsidiary(db)
 {
-}
-
-
-Database &Key::database() const
-{
-	return referent<Database>();
-}
-
-
-//
-// Form a KeySpec with checking and masking
-//
-Key::KeySpec::KeySpec(uint32 usage, uint32 attrs)
-	: CssmClient::KeySpec(usage, (attrs & ~managedAttributes) | forcedAttributes)
-{
-	if (attrs & generatedAttributes)
-		CssmError::throwMe(CSSMERR_CSP_INVALID_KEYATTR_MASK);
-}
-
-Key::KeySpec::KeySpec(uint32 usage, uint32 attrs, const CssmData &label)
-	: CssmClient::KeySpec(usage, (attrs & ~managedAttributes) | forcedAttributes, label)
-{
-	if (attrs & generatedAttributes)
-		CssmError::throwMe(CSSMERR_CSP_INVALID_KEYATTR_MASK);
 }

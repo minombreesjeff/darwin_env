@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,10 +28,10 @@
 #ifndef _H_SESSION
 #define _H_SESSION
 
-#include "securityserver.h"
 #include "structure.h"
 #include "acls.h"
 #include "authority.h"
+#include "authhost.h"
 #include <Security/AuthSession.h>
 #include <security_cdsa_utilities/handleobject.h>
 #include <security_cdsa_utilities/cssmdb.h>
@@ -48,7 +46,8 @@ using __gnu_cxx::hash_map;
 
 class Key;
 class Connection;
-
+class Server;
+class AuthHostInstance;
 
 //
 // A Session object represents one or more Connections that are known to
@@ -68,8 +67,6 @@ public:
     Bootstrap bootstrapPort() const		{ return mBootstrap; }
 	Port servicePort() const			{ return mServicePort; }
     
-	virtual void release();
-	
 	IFDUMP(virtual void dumpNode());
     
 public:
@@ -78,10 +75,12 @@ public:
 
     SessionAttributeBits attributes() const			{ return mAttributes; }
     bool attribute(SessionAttributeBits bits) const	{ return mAttributes & bits; }
-    
-    static void setup(SessionCreationFlags flags, SessionAttributeBits attrs);
-    void setupAttributes(SessionAttributeBits attrs);
-    
+	
+    virtual void setupAttributes(SessionCreationFlags flags, SessionAttributeBits attrs);
+	virtual bool haveOriginatorUid() const = 0;
+	virtual uid_t originatorUid() const = 0;
+	virtual CFDataRef copyUserPrefs() = 0;
+
 protected:
     void setAttributes(SessionAttributeBits attrs)	{ mAttributes |= attrs; }
     
@@ -89,7 +88,7 @@ public:
 	const CredentialSet &authCredentials() const	{ return mSessionCreds; }
 
 	OSStatus authCreate(const AuthItemSet &rights, const AuthItemSet &environment,
-		AuthorizationFlags flags, AuthorizationBlob &newHandle, const security_token_t &securityToken);
+		AuthorizationFlags flags, AuthorizationBlob &newHandle, const audit_token_t &auditToken);
 	void authFree(const AuthorizationBlob &auth, AuthorizationFlags flags);
 	OSStatus authGetRights(const AuthorizationBlob &auth,
 		const AuthItemSet &requestedRights, const AuthItemSet &environment,
@@ -116,26 +115,42 @@ protected:
 public:
     static Session &find(Port servPort);
     static Session &find(SecuritySessionId id);
+	template <class SessionType> static SessionType &find(SecuritySessionId id);
     static void destroy(Port servPort);
 	
 	static void processSystemSleep();
-    
+	void processLockAll();
+
+	RefPointer<AuthHostInstance> authhost(const AuthHostType hostType = securityAgent, const bool restart = false);
+
 protected:
-	mutable Mutex mLock;			// object lock
-    
     Bootstrap mBootstrap;			// session bootstrap port
 	Port mServicePort;				// SecurityServer service port for this session
     SessionAttributeBits mAttributes; // attribute bits (see AuthSession.h)
-    bool mDying;					// session is dying
 
     mutable Mutex mCredsLock;	// lock for mSessionCreds
 	CredentialSet mSessionCreds;	// shared session authorization credentials
 
+	mutable Mutex mAuthHostLock;
+	AuthHostInstance *mSecurityAgent;
+	AuthHostInstance *mAuthHost;
+
+	CFRef<CFDataRef> mSessionAgentPrefs;
+	
 	void kill();
 	
 private:
 	static PortMap<Session> mSessions;
 };
+
+template <class SessionType>
+SessionType &Session::find(SecuritySessionId id)
+{
+	if (SessionType *ssn = dynamic_cast<SessionType *>(&find(id)))
+		return *ssn;
+	else
+		MacOSError::throwMe(errSessionInvalidId);
+}
 
 
 //
@@ -147,7 +162,11 @@ private:
 //
 class RootSession : public Session {
 public:
-    RootSession(Port servicePort, SessionAttributeBits attrs = 0);
+    RootSession(Server &server, SessionAttributeBits attrs = 0);
+	
+	bool haveOriginatorUid() const		{ return true; }
+	uid_t originatorUid() const;
+	CFDataRef copyUserPrefs();
 };
 
 
@@ -159,11 +178,25 @@ public:
 //
 class DynamicSession : private ReceivePort, public Session {
 public:
-    DynamicSession(const Bootstrap &bootstrap);
+    DynamicSession(TaskPort taskPort);
 	~DynamicSession();
 	
+	void setupAttributes(SessionCreationFlags flags, SessionAttributeBits attrs);
+
+	bool haveOriginatorUid() const					{ return mHaveOriginatorUid; }
+	uid_t originatorUid() const;
+	void originatorUid(uid_t uid);
+	void setUserPrefs(CFDataRef userPrefsDict);
+	CFDataRef copyUserPrefs();
+	
 protected:
-	void release();
+	void checkOriginator();			// fail unless current process is originator
+	void kill();					// augment parent's kill
+
+private:
+	Port mOriginatorTask;			// originating process's task port
+	bool mHaveOriginatorUid;		// originator uid was set by session originator
+	uid_t mOriginatorUid;			// uid as set by session originator
 };
 
 

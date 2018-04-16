@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -37,14 +35,17 @@
 #include <security_cdsa_client/wrapkey.h>
 #include <security_cdsa_utilities/cssmendian.h>
 
-
 using namespace CssmClient;
+using LowLevelMemoryUtilities::fieldOffsetOf;
 
 
+//
+// The CryptoCore constructor doesn't do anything interesting.
+// It just initializes us to "empty".
+//
 DatabaseCryptoCore::DatabaseCryptoCore() : mHaveMaster(false), mIsValid(false)
 {
 }
-
 
 DatabaseCryptoCore::~DatabaseCryptoCore()
 {
@@ -217,11 +218,11 @@ DbBlob *DatabaseCryptoCore::encodeCore(const DbBlob &blobTemplate,
     
     // sign the blob
     CssmData signChunk[] = {
-		CssmData(blob->data(), offsetof(DbBlob, blobSignature)),
+		CssmData(blob->data(), fieldOffsetOf(&DbBlob::blobSignature)),
 		CssmData(blob->publicAclBlob(), publicAcl.length() + cryptoBlob.length())
 	};
     CssmData signature(blob->blobSignature, sizeof(blob->blobSignature));
-    GenerateMac signer(Server::csp(), CSSM_ALGID_SHA1HMAC_LEGACY);	//@@@!!! CRUD
+    GenerateMac signer(Server::csp(), CSSM_ALGID_SHA1HMAC_LEGACY);
     signer.key(mSigningKey);
     signer.sign(signChunk, 2, signature);
     assert(signature.length() == sizeof(blob->blobSignature));
@@ -262,7 +263,7 @@ void DatabaseCryptoCore::decodeCore(DbBlob *blob, void **privateAclBlob)
     
     // verify signature on the whole blob
     CssmData signChunk[] = {
-		CssmData(blob->data(), offsetof(DbBlob, blobSignature)),
+		CssmData(blob->data(), fieldOffsetOf(&DbBlob::blobSignature)),
     	CssmData(blob->publicAclBlob(), blob->publicAclBlobLength() + blob->cryptoBlobLength())
 	};
     CSSM_ALGORITHMS verifyAlgorithm = CSSM_ALGID_SHA1HMAC;
@@ -275,8 +276,6 @@ void DatabaseCryptoCore::decodeCore(DbBlob *blob, void **privateAclBlob)
     verifier.verify(signChunk, 2, CssmData(blob->blobSignature, sizeof(blob->blobSignature)));
     
     // all checks out; start extracting fields
-    this->mEncryptionKey = mEncryptionKey;
-    this->mSigningKey = mSigningKey;
     if (privateAclBlob) {
         // extract private ACL blob as a separately allocated area
         uint32 blobLength = decryptedBlob.length() - sizeof(DbBlob::PrivateBlob);
@@ -289,6 +288,19 @@ void DatabaseCryptoCore::decodeCore(DbBlob *blob, void **privateAclBlob)
     Allocator::standard().free(privateBlob);
 }
 
+
+//
+// Make another DatabaseCryptoCore's operational secrets our own.  
+// Intended for keychain synchronization.  
+//
+void DatabaseCryptoCore::importSecrets(const DatabaseCryptoCore &src)
+{
+	assert(src.isValid());	// must have called src.decodeCore() first
+	assert(hasMaster());
+	mEncryptionKey = src.mEncryptionKey;
+	mSigningKey = src.mSigningKey;
+    mIsValid = true;
+}
 
 //
 // Encode a key blob
@@ -344,7 +356,7 @@ KeyBlob *DatabaseCryptoCore::encodeKeyCore(const CssmKey &inKey,
     
     // sign the blob
     CssmData signChunk[] = {
-		CssmData(blob->data(), offsetof(KeyBlob, blobSignature)),
+		CssmData(blob->data(), fieldOffsetOf(&KeyBlob::blobSignature)),
     	CssmData(blob->publicAclBlob(), blob->publicAclBlobLength() + blob->cryptoBlobLength())
 	};
     CssmData signature(blob->blobSignature, sizeof(blob->blobSignature));
@@ -379,7 +391,7 @@ void DatabaseCryptoCore::decodeKeyCore(KeyBlob *blob,
 	
     // verify signature (check against corruption)
     CssmData signChunk[] = {
-    	CssmData::wrap(blob, offsetof(KeyBlob, blobSignature)),
+    	CssmData::wrap(blob, fieldOffsetOf(&KeyBlob::blobSignature)),
     	CssmData(blob->publicAclBlob(), blob->publicAclBlobLength() + blob->cryptoBlobLength())
 	};
     CSSM_ALGORITHMS verifyAlgorithm = CSSM_ALGID_SHA1HMAC;
@@ -441,7 +453,8 @@ CssmClient::Key DatabaseCryptoCore::deriveDbMasterKey(const CssmData &passphrase
     CssmClient::DeriveKey makeKey(Server::csp(),
         CSSM_ALGID_PKCS5_PBKDF2, CSSM_ALGID_3DES_3KEY_EDE, 24 * 8);
     makeKey.iterationCount(1000);
-    makeKey.salt(CssmData::wrap(mSalt));
+	CssmData salt = CssmData::wrap(mSalt);
+    makeKey.salt(salt);
     CSSM_PKCS5_PBKDF2_PARAMS params;
     params.Passphrase = passphrase;
     params.PseudoRandomFunction = CSSM_PKCS5_PBKDF2_PRF_HMAC_SHA1;

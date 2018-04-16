@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,10 +28,10 @@
 #ifndef _H_READER
 #define _H_READER
 
-#include "securityserver.h"
 #include "structure.h"
 #include "token.h"
-#include "pcsc++.h"
+#include "tokencache.h"
+#include <security_utilities/pcsc++.h>
 
 
 //
@@ -42,12 +40,15 @@
 //
 class Reader : public PerGlobal {
 public:
-	Reader(const PCSC::ReaderState &state);
+	Reader(TokenCache &cache, const PCSC::ReaderState &state);
 	~Reader();
+	
+	TokenCache &cache;
 	
 	void kill();
 	
 	string name() const { return mName; }
+	string printName() const { return mPrintName; }
 	const PCSC::ReaderState &pcscState() const { return mState; }
 	
 	void update(const PCSC::ReaderState &state);
@@ -55,14 +56,14 @@ public:
 	IFDUMP(void dumpNode());
 	
 protected:
-	void transit(const PCSC::ReaderState &state);
 	void insertToken();
 	void removeToken();
 	
 private:
-	string mName;		// PCSC reader name
+	string mName;			// PCSC reader name
+	string mPrintName;		// human readable name of reader
 	PCSC::ReaderState mState; // name field not valid (use mName)
-	Token *mToken;		// token inserted here (also in references)
+	Token *mToken;			// token inserted here (also in references)
 };
 
 

@@ -1,5 +1,0 @@
-#!/bin/sh
-
-. /etc/rc.common
-
-ConsoleMessage "No longer starting SecurityServer via StartupItems"

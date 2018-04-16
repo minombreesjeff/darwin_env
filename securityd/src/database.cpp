@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -37,6 +35,8 @@
 #include <security_cdsa_client/wrapkey.h>
 #include <security_utilities/endian.h>
 
+using namespace UnixPlusPlus;
+
 
 //
 // DbCommon basics
@@ -56,7 +56,6 @@ Session &DbCommon::session() const
 // Database basics
 //
 Database::Database(Process &proc)
-	: SecurityServerAcl(dbAcl, Allocator::standard())
 {
 	referent(proc);
 }
@@ -76,10 +75,130 @@ void DbCommon::sleepProcessing()
 	// nothing
 }
 
+void DbCommon::lockProcessing()
+{
+	// nothing
+}
+
 
 void Database::releaseKey(Key &key)
 {
-	removeReference(key);
+	kill(key);
+}
+
+void Database::releaseSearch(Search &search)
+{
+	kill(search);
+}
+
+void Database::releaseRecord(Record &record)
+{
+	kill(record);
+}
+
+void Database::dbName(const char *name)
+{
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+
+//
+// Functions that aren't implemented at the Database level but can stay that way
+//
+void Database::findFirst(const CssmQuery &query,
+	CssmDbRecordAttributeData *inAttributes, mach_msg_type_number_t inAttributesLength,
+	CssmData *data, RefPointer<Key> &key, RefPointer<Search> &search, RefPointer<Record> &record,
+	CssmDbRecordAttributeData * &outAttributes, mach_msg_type_number_t &outAttributesLength)
+{
+	secdebug("database", "%p calling unimplemented findFirst", this);
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+void Database::findNext(Search *search,
+	CssmDbRecordAttributeData *inAttributes, mach_msg_type_number_t inAttributesLength,
+	CssmData *data, RefPointer<Key> &key, RefPointer<Record> &record,
+	CssmDbRecordAttributeData * &outAttributes, mach_msg_type_number_t &outAttributesLength)
+{
+	secdebug("database", "%p calling unimplemented findNext", this);
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+void Database::findRecordHandle(Record *record,
+	CssmDbRecordAttributeData *inAttributes, mach_msg_type_number_t inAttributesLength,
+	CssmData *data, RefPointer<Key> &key,
+	CssmDbRecordAttributeData * &outAttributes, mach_msg_type_number_t &outAttributesLength)
+{
+	secdebug("database", "%p calling unimplemented findRecordHandle", this);
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+void Database::insertRecord(CSSM_DB_RECORDTYPE recordtype,
+	const CssmDbRecordAttributeData *attributes, mach_msg_type_number_t inAttributesLength,
+	const CssmData &data, RecordHandle &record)
+{
+	secdebug("database", "%p calling unimplemented insertRecord", this);
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+void Database::modifyRecord(CSSM_DB_RECORDTYPE recordtype, Record *record,
+	const CssmDbRecordAttributeData *attributes, mach_msg_type_number_t inAttributesLength,
+	const CssmData *data, CSSM_DB_MODIFY_MODE modifyMode)
+{
+	secdebug("database", "%p calling unimplemented modifyRecord", this);
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+void Database::deleteRecord(Database::Record *record)
+{
+	secdebug("database", "%p calling unimplemented deleteRecord", this);
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+void Database::authenticate(CSSM_DB_ACCESS_TYPE, const AccessCredentials *)
+{
+	secdebug("database", "%p calling unimplemented authenticate", this);
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+SecurityServerAcl &Database::acl()
+{
+	secdebug("database", "%p has no ACL implementation", this);
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+bool Database::isLocked() const
+{
+	secdebug("database", "%p calling unimplemented isLocked", this);
+	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+}
+
+
+//
+// SecurityServerAcl personality implementation.
+// This is the trivial (type coding) stuff. The hard stuff is virtually mixed in.
+//
+Database *Database::relatedDatabase()
+{
+	return this;
+}
+
+AclKind Database::aclKind() const
+{
+	return dbAcl;
+}
+
+GenericHandle Database::aclHandle() const
+{
+	return HandleObject::handle();
+}
+
+
+//
+// Remote validation is not, by default, supported
+//
+bool Database::validateSecret(const AclSubject *, const AccessCredentials *)
+{
+	return false;
 }
 
 
@@ -87,7 +206,7 @@ void Database::releaseKey(Key &key)
 // Implementation of a "system keychain unlock key store"
 //
 SystemKeychainKey::SystemKeychainKey(const char *path)
-	: mPath(path)
+	: mPath(path), mValid(false)
 {
 	// explicitly set up a key header for a raw 3DES key
 	CssmKey::Header &hdr = mKey.header();

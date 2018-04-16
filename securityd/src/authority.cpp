@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -35,6 +33,8 @@
 
 #include <security_cdsa_utilities/AuthorizationWalkers.h>
 
+#include <security_utilities/ccaudit.h>		// AuditToken
+
 using Authorization::AuthItemSet;
 using Authorization::AuthItemRef;
 using Authorization::AuthValue;
@@ -43,7 +43,9 @@ using Authorization::AuthValueOverlay;
 //
 // The global dictionary of extant AuthorizationTokens
 //
-AuthorizationToken::AuthMap AuthorizationToken::authMap; // set of extant authorizations
+//AuthorizationToken::AuthMap AuthorizationToken::authMap; // set of extant authorizations
+//@@@ Workaround ONLY! Don't destruct this map on termination
+AuthorizationToken::AuthMap &AuthorizationToken::authMap = *new AuthMap; // set of extant authorizations
 Mutex AuthorizationToken::authMapLock; // lock for mAuthorizations (only)
 
 
@@ -51,12 +53,16 @@ Mutex AuthorizationToken::authMapLock; // lock for mAuthorizations (only)
 //
 // Create an authorization token.
 //
-AuthorizationToken::AuthorizationToken(Session &ssn, const CredentialSet &base, const security_token_t &securityToken)
+AuthorizationToken::AuthorizationToken(Session &ssn, const CredentialSet &base, 
+const audit_token_t &auditToken)
 	: mBaseCreds(base), mTransferCount(INT_MAX), 
-	mCreatorUid(securityToken.val[0]),
     mCreatorCode(Server::process().clientCode()),
-	mCreatorPid(Server::process().pid())
+	mCreatorPid(Server::process().pid()), 
+	mCreatorAuditToken(auditToken)
 {
+	mCreatorUid = mCreatorAuditToken.euid();
+	mCreatorGid = mCreatorAuditToken.egid();
+		
 	// link to session
 	referent(ssn);
 	
@@ -262,3 +268,17 @@ AuthorizationToken::clearInfoSet()
     setInfoSet(dstInfoSet);
 }
 
+void
+AuthorizationToken::scrubInfoSet()
+{
+	AuthItemSet srcInfoSet = infoSet(), dstInfoSet;
+	AuthItemSet::const_iterator end = srcInfoSet.end();
+	for (AuthItemSet::const_iterator it = srcInfoSet.begin(); it != end; ++it)
+	{
+		const AuthItemRef &item = *it;
+		if (item->flags() == kAuthorizationContextFlagExtractable)
+			dstInfoSet.insert(item);
+	}
+    secdebug("SSauth", "Authorization %p scrubbing context", this);
+    setInfoSet(dstInfoSet);
+}

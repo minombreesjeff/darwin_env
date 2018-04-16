@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -39,19 +37,18 @@ class KeychainDatabase;
 
 
 //
-// A Key object represents a CSSM_KEY known to the SecurityServer.
-// We give each Key a handle that allows our clients to access it, while we use
-// the Key's ACL to control such accesses.
-// A Key can be used by multiple Connections. Whether more than one Key can represent
-// the same actual key object is up to the CSP we use, so let's be tolerant about that.
+// A KeychainKey object represents a CssmKey that is stored in a KeychainDatabase.
 //
-// A note on key attributes: We keep two sets of attribute bits. The internal bits are used
-// when talking to our CSP; the external bits are used when negotiating with our client(s).
-// The difference is the bits in managedAttributes, which relate to persistent key storage
-// and are not digestible by our CSP. The internal attributes are kept in mKey. The external
-// ones are kept in mAttributes.
+// This is a LocalKey with deferred instantiation. A KeychainKey always exists in one of
+// two states:
+//  (*) Decoded: The CssmKey is valid; the blob may or may not be.
+//  (*) Encoded: The blob is valid, the CssmKey may or may not be.
+// One of (blob, CssmKey) is always valid. The process of decoding the CssmKey from the
+// blob (and vice versa) requires keychain cryptography, which unlocks the keychain
+// (implicitly as needed).
+// Other than that, this is just a LocalKey.
 //
-class KeychainKey : public LocalKey {
+class KeychainKey : public LocalKey, public SecurityServerAcl {
 public:
 	KeychainKey(Database &db, const KeyBlob *blob);
 	KeychainKey(Database &db, const CssmKey &newKey, uint32 moreAttributes,
@@ -62,12 +59,19 @@ public:
     
     // we can also yield an encoded KeyBlob *if* we belong to a database	
 	KeyBlob *blob();
+	
+	void invalidateBlob();
     
     // ACL state management hooks
 	void instantiateAcl();
 	void changedAcl();
-    const Database *relatedDatabase() const;
-	CSSM_KEYATTR_FLAGS attributes() { return mAttributes; }
+    Database *relatedDatabase();
+
+public:
+	// SecurityServerAcl personality
+	AclKind aclKind() const;
+	
+	SecurityServerAcl &acl();
 	
 private:
     void decode();

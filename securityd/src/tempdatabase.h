@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -38,29 +36,31 @@
 
 
 //
-// A Database object represents an Apple CSP/DL open database (DL/DB) object.
-// It maintains its protected semantic state (including keys) and provides controlled
-// access.
+// A TempDatabase is simply a container of (a subclass of) LocalKey.
+// When it dies, all its contents irretrievably vanish. There is no DbCommon
+// or global object; each TempDatabase is completely distinct.
+// Database ACLs are not (currently) supported on TempDatabases.
 //
 class TempDatabase : public LocalDatabase {
 public:
 	TempDatabase(Process &proc);
 
 	const char *dbName() const;
+	bool transient() const;
+	
+	RefPointer<Key> makeKey(const CssmKey &newKey, uint32 moreAttributes,
+		const AclEntryPrototype *owner);
 	
 	void generateKey(const Context &context,
-			 const AccessCredentials *cred, 
-			 const AclEntryPrototype *owner, uint32 usage, 
-			 uint32 attrs, RefPointer<Key> &newKey);
+		 const AccessCredentials *cred, 
+		 const AclEntryPrototype *owner, uint32 usage, 
+		 uint32 attrs, RefPointer<Key> &newKey);
 	
 protected:
 	void getSecurePassphrase(const Context &context, string &passphrase);
 	void makeSecurePassphraseKey(const Context &context, const AccessCredentials *cred, 
 								 const AclEntryPrototype *owner, uint32 usage, 
 								 uint32 attrs, RefPointer<Key> &newKey);
-
-	RefPointer<Key> makeKey(const CssmKey &newKey, uint32 moreAttributes,
-		const AclEntryPrototype *owner);
 };
 
 #endif //_H_TEMPDATABASE

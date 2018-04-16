@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -25,7 +23,7 @@
 
 
 //
-// key - representation of SecurityServer key objects
+// key - representation of securityd key objects
 //
 #include "kckey.h"
 #include "server.h"
@@ -38,7 +36,7 @@
 // Note that this doesn't decode the blob (yet).
 //
 KeychainKey::KeychainKey(Database &db, const KeyBlob *blob)
-	: LocalKey(db)
+	: LocalKey(db, n2h(blob->header.attributes()))
 {
     // perform basic validation on the incoming blob
 	assert(blob);
@@ -68,9 +66,10 @@ KeychainKey::KeychainKey(Database &db, const KeyBlob *blob)
 //
 KeychainKey::KeychainKey(Database &db, const CssmKey &newKey, uint32 moreAttributes,
 	const AclEntryPrototype *owner)
-	: LocalKey(db, newKey, moreAttributes, owner)
+	: LocalKey(db, newKey, moreAttributes)
 {
 	assert(moreAttributes & CSSM_KEYATTR_PERMANENT);
+	setOwner(owner);
     mBlob = NULL;
 	mValidBlob = false;
 	db.addReference(*this);
@@ -121,7 +120,7 @@ void KeychainKey::decode()
 		CssmKey key;
         database().decodeKey(mBlob, key, publicAcl, privateAcl);
 		mKey = CssmClient::Key(Server::csp(), key);
-        importBlob(publicAcl, privateAcl);
+        acl().importBlob(publicAcl, privateAcl);
         // publicAcl points into the blob; privateAcl was allocated for us
         Allocator::standard().free(privateAcl);
         
@@ -145,11 +144,10 @@ KeyBlob *KeychainKey::blob()
 {
 	if (!mValidBlob) {
         assert(mValidKey);		// must have valid key to encode
-		//@@@ release mBlob memory here
 
         // export Key ACL to blob form
         CssmData pubAcl, privAcl;
-        exportBlob(pubAcl, privAcl);
+		acl().exportBlob(pubAcl, privAcl);
         
         // assemble external key form
         CssmKey externalKey = mKey;
@@ -163,15 +161,22 @@ KeyBlob *KeychainKey::blob()
         mValidBlob = true;
     
         // clean up and go
-        database().allocator.free(pubAcl);
-        database().allocator.free(privAcl);
+        acl().allocator.free(pubAcl);
+        acl().allocator.free(privAcl);
 	}
 	return mBlob;
 }
 
+void KeychainKey::invalidateBlob()
+{
+	mValidBlob = false;
+}
+
 
 //
-// Intercept ACL change requests and reset blob validity
+// Override ACL-related methods and events.
+// Decode the key before ACL activity; invalidate the stored blob on ACL edits;
+// and return the key's database as "related".
 //
 void KeychainKey::instantiateAcl()
 {
@@ -180,8 +185,25 @@ void KeychainKey::instantiateAcl()
 
 void KeychainKey::changedAcl()
 {
-	mValidBlob = false;
+	invalidateBlob();
 }
 
-const Database *KeychainKey::relatedDatabase() const
-{ return &database(); }
+
+//
+// We're a key (duh)
+//
+AclKind KeychainKey::aclKind() const
+{
+	return keyAcl;
+}
+
+
+Database *KeychainKey::relatedDatabase()
+{
+	return &database();
+}
+
+SecurityServerAcl &KeychainKey::acl()
+{
+	return *this;
+}

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -101,7 +99,7 @@ bool KeychainPromptAclSubject::validate(const AclValidationContext &context,
 		}
 		
 		// does the user need to type in the passphrase?
-        const Database *db = env->database();
+        const Database *db = env->database;
         bool needPassphrase = db && (selector.flags & CSSM_ACL_KEYCHAIN_PROMPT_REQUIRE_PASSPHRASE);
 
 		// ask the user
@@ -187,8 +185,8 @@ KeychainPromptAclSubject *KeychainPromptAclSubject::Maker::make(Version version,
 		break;
 	case jaguarVersion:
 		pub(selector);
-		selector.version = n2h (selector.version);
-		selector.flags = n2h (selector.flags);
+		selector.version = n2h(selector.version);
+		selector.flags = n2h(selector.flags);
 		pub(description);
 		break;
 	}
@@ -197,7 +195,7 @@ KeychainPromptAclSubject *KeychainPromptAclSubject::Maker::make(Version version,
 
 KeychainPromptAclSubject::KeychainPromptAclSubject(string descr,
 	const CSSM_ACL_KEYCHAIN_PROMPT_SELECTOR &sel)
-	: SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_KEYCHAIN_PROMPT, CSSM_SAMPLE_TYPE_KEYCHAIN_PROMPT),
+	: SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_KEYCHAIN_PROMPT),
 	selector(sel), description(descr)
 {
 	// check selector version

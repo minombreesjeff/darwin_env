@@ -3,8 +3,6 @@
  *
  *  @APPLE_LICENSE_HEADER_START@
  *  
- *  Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- *  
  *  This file contains Original Code and/or Modifications of Original Code
  *  as defined in and that are subject to the Apple Public Source License
  *  Version 2.0 (the 'License'). You may not use this file except in
@@ -57,10 +55,8 @@ private:
 // internal machinery
 
 	// evaluate credential for right
-	OSStatus evaluateCredentialForRight(const AuthItemRef &inRight, const Rule &inRule, 
-		const AuthItemSet &environment,
-		CFAbsoluteTime now, const Credential &credential, bool ignoreShared) const;
-		
+	OSStatus evaluateCredentialForRight(const AuthorizationToken &auth, const AuthItemRef &inRight, const Rule &inRule, 
+		const AuthItemSet &environment, CFAbsoluteTime now, const Credential &credential, bool ignoreShared) const;
 
 	OSStatus evaluateRules(const AuthItemRef &inRight, const Rule &inRule,
     AuthItemSet &environmentToClient, AuthorizationFlags flags,
@@ -72,8 +68,6 @@ private:
 	// perform authorization based on running specified mechanisms (see evaluateMechanism)
 	OSStatus evaluateAuthorization(const AuthItemRef &inRight, const Rule &inRule, AuthItemSet &environmentToClient, AuthorizationFlags flags, CFAbsoluteTime now, const CredentialSet *inCredentials, CredentialSet &credentials, AuthorizationToken &auth) const;
 
-	OSStatus evaluateAuthorizationOld(const AuthItemRef &inRight, const Rule &inRule, AuthItemSet &environmentToClient, AuthorizationFlags flags, CFAbsoluteTime now, const CredentialSet *inCredentials, CredentialSet &credentials, AuthorizationToken &auth) const;
-
 	OSStatus evaluateUser(const AuthItemRef &inRight, const Rule &inRule,
 		AuthItemSet &environmentToClient, AuthorizationFlags flags,
 		CFAbsoluteTime now, const CredentialSet *inCredentials, CredentialSet &credentials,
@@ -84,8 +78,7 @@ private:
 	// find username hint based on session owner
 	OSStatus evaluateSessionOwner(const AuthItemRef &inRight, const Rule &inRule, const AuthItemSet &environment, const CFAbsoluteTime now, const AuthorizationToken &auth, string& usernamehint) const;
 
-	string agentNameForAuth(const AuthorizationToken &auth) const;
-	CredentialSet makeCredentials(const AuthItemSet &context) const;
+	CredentialSet makeCredentials(const AuthorizationToken &auth) const;
 	
 	map<string,string> localizedPrompts() const { return mLocalizedPrompts; }
 	
@@ -112,6 +105,7 @@ private:
 	vector<Rule> mRuleDef;
 	uint32_t mKofN;
 	mutable uint32_t mTries;
+	bool mAuthenticateUser;
 	map<string,string> mLocalizedPrompts;
 
 private:
@@ -123,9 +117,6 @@ private:
 		static double getDouble(CFDictionaryRef config, CFStringRef key, bool required, double defaultValue);
 		static string getString(CFDictionaryRef config, CFStringRef key, bool required, char *defaultValue);
 		static vector<string> getVector(CFDictionaryRef config, CFStringRef key, bool required);
-		static void setString(CFMutableDictionaryRef config, CFStringRef key, string &value);
-		static void setDouble(CFMutableDictionaryRef config, CFStringRef key, double value);
-		static void setBool(CFMutableDictionaryRef config, CFStringRef key, bool value);
 		static bool getLocalizedPrompts(CFDictionaryRef config, map<string,string> &localizedPrompts);
 	};
 
@@ -147,7 +138,7 @@ private:
 	static CFStringRef kRuleUserID;
 	static CFStringRef kRuleDelegateID;
 	static CFStringRef kRuleMechanismsID;
-
+	static CFStringRef kRuleAuthenticateUserID;
 };
 
 class Rule : public RefPointer<RuleImpl>

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -155,9 +153,9 @@ Engine::authorize(const AuthItemSet &inRights, const AuthItemSet &environment,
 		secdebug("autheval", "evaluate rule %s for right %s returned %ld.", toplevelRule->name().c_str(), (*it)->name(), result);
 
 		{
-			CodeSigning::OSXCode *processCode = Server::process().clientCode();
+			RefPointer<OSXCode> processCode = Server::process().clientCode();
 			string processName = processCode ? processCode->canonicalPath() : "unknown";
-			CodeSigning::OSXCode *authCreatorCode = auth.creatorCode();
+			RefPointer<OSXCode> authCreatorCode = auth.creatorCode();
 			string authCreatorName = authCreatorCode ? authCreatorCode->canonicalPath() : "unknown";
 			
 			if (result == errAuthorizationSuccess)

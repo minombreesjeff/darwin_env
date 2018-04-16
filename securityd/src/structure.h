@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,9 +28,12 @@
 #ifndef _H_STRUCTURE
 #define _H_STRUCTURE
 
-#include "securityserver.h"
 #include <security_utilities/refcount.h>
+#include <security_utilities/mach++.h>
 #include <security_cdsa_utilities/handleobject.h>
+#include <map>
+
+using MachPlusPlus::Port;
 
 
 //
@@ -73,28 +74,39 @@ public:
 	NodeCore() : Mutex(Mutex::recursive) { }
 #endif
 	virtual ~NodeCore();
-	
-	bool hasParent() const { return mParent; }
-	bool hasReferent() const { return mReferent; }
+
+	void addReference(NodeCore &p);
+	void removeReference(NodeCore &p);
 
 	// reference set operations
 	template <class Sub>
 	void allReferences(void (Sub::*func)());
 	template <class Sub, class Value>
-	Sub *findFirst(Value (Sub::*func)() const, Value compare);
+	RefPointer<Sub> findFirst(Value (Sub::*func)() const, Value compare);
 	void clearReferences();
 
-	virtual void kill();	// always invoke NodeCore's in your override
+	virtual void kill();				// kill all references and self
+	virtual void kill(NodeCore &ref);	// kill ref from my references()
 
 	// for STL ordering (so we can have sets of RefPointers of NodeCores)
 	bool operator < (const NodeCore &other) const
 	{ return this < &other; }
+	
+protected:
+	void parent(NodeCore &p);			// set parent
+	void referent(NodeCore &r);			// set referent
+	void clearReferent();				// clear referent
+	
+	bool hasParent() const { return mParent; }
+	bool hasReferent() const { return mReferent; }
 
 private:
 	RefPointer<NodeCore> mParent;
 	RefPointer<NodeCore> mReferent;
 	typedef set<RefPointer<NodeCore> > ReferenceSet;
 	ReferenceSet mReferences;
+	
+	IFDEBUG(bool hasReference(NodeCore &p));
 	
 #if defined(DEBUGDUMP)
 public: // dump support
@@ -110,17 +122,31 @@ public: // dump support
 };
 
 
+//
+// Call a member on each reference of a Node<> object.
+// The object lock is held throughout, and we keep a RefPointer to each object
+// as it's being processed. Thus it's safe for a reference to self-unlink in
+// the object mesh; it'll get destroyed after its method returns.
+//
 template <class Sub>
 void NodeCore::allReferences(void (Sub::*func)())
 {
 	StLock<Mutex> _(*this);
 	for (ReferenceSet::const_iterator it = mReferences.begin(); it != mReferences.end(); it++)
-		if (Sub *sub = dynamic_cast<Sub *>(it->get()))
+		if (RefPointer<Sub> sub = dynamic_cast<Sub *>(it->get()))
 			(sub->*func)();
 }
 
+
+//
+// Find a reference of a Node<> object that satisfies a simple "method returns value"
+// condition. There is no defined order of the scan, so if the condition is not unique,
+// any one reference may be returned. If none are found, we return NULL.
+// This returns a RefPointer: lifetime of the returned instance (if any) is ensured even
+// if it is asynchronously removed from the references set.
+//
 template <class Sub, class Value>
-Sub *NodeCore::findFirst(Value (Sub::*func)() const, Value compare)
+RefPointer<Sub> NodeCore::findFirst(Value (Sub::*func)() const, Value compare)
 {
 	StLock<Mutex> _(*this);
 	for (ReferenceSet::const_iterator it = mReferences.begin(); it != mReferences.end(); it++)
@@ -138,17 +164,9 @@ Sub *NodeCore::findFirst(Value (Sub::*func)() const, Value compare)
 template <class Base, class Glob>
 class Node : public NodeCore {
 protected:
-	void parent(Glob &p)
-	{ StLock<Mutex> _(*this); mParent = &p; }
-	
-	virtual void referent(Base &r)
-	{ StLock<Mutex> _(*this); mReferent = &r; }
-	
-	void clearReferent()
-	{
-		StLock<Mutex> _(*this);
-		mReferent = NULL;
-	}
+	// type-safer versions of node mesh setters
+	void parent(Glob &p)				{ NodeCore::parent(p); }
+	void referent(Base &r)				{ NodeCore::referent(r); }
 	
 public:
 	template <class T>
@@ -160,9 +178,8 @@ public:
 	{ assert(mReferent); return safer_cast<T &>(*mReferent); }
 	
 public:
-	void addReference(Base &p)
-	{ StLock<Mutex> _(*this); assert(p.mReferent == this); mReferences.insert(&p); }
-	void removeReference(Base &p) { StLock<Mutex> _(*this); mReferences.erase(&p); }
+	void addReference(Base &p)			{ NodeCore::addReference(p); }
+	void removeReference(Base &p)		{ NodeCore::removeReference(p); }
 };
 
 

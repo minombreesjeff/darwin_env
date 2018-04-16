@@ -3,8 +3,6 @@
  *
  *  @APPLE_LICENSE_HEADER_START@
  *  
- *  Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- *  
  *  This file contains Original Code and/or Modifications of Original Code
  *  as defined in and that are subject to the Apple Public Source License
  *  Version 2.0 (the 'License'). You may not use this file except in
@@ -41,15 +39,14 @@ namespace Authorization {
 class AgentMechanismRef : public RefPointer<QueryInvokeMechanism>
 {
 public:
-    AgentMechanismRef(uid_t clientUID, const Session &session);
-    AgentMechanismRef();
+    AgentMechanismRef(const AuthHostType type, Session &session);
 };
     
 class AgentMechanismEvaluator
 {
 public:
-    AgentMechanismEvaluator(uid_t uid, const Session &session, const vector<string>& inMechanisms);
-    OSStatus run(const AuthValueVector &arguments, const AuthItemSet &hints, const AuthItemSet &context);
+    AgentMechanismEvaluator(uid_t uid, Session &session, const vector<string>& inMechanisms);
+    OSStatus run(const AuthValueVector &inArguments, const AuthItemSet &inHints, const AuthorizationToken &auth);
 
     AuthorizationResult AgentMechanismEvaluator::authinternal(AuthItemSet &context);
     
@@ -62,7 +59,7 @@ private:
     ClientMap mClients;
     
     uid_t mClientUid;
-    const Session &mSession;
+    Session &mSession;
     
     AuthItemSet mHints;
     AuthItemSet mContext;

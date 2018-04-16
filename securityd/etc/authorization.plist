@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>comment</key>
-	<string>The name of the requested right is matched against the keys.  An exact match has priority, otherwise the longest match from the start is used.  Note that the right will only match wildcard rules (ending in a ".") during this reduction.
+	<string>The name of the requested right is matched against the keys.  An exact match has priority, otherwise the longest match from the start is used.	Note that the right will only match wildcard rules (ending in a ".") during this reduction.
 
 allow rule: this is always allowed
 &lt;key&gt;com.apple.TestApp.benign&lt;/key&gt;
@@ -30,10 +30,7 @@ See remaining rules for examples.
 			<key>class</key>
 			<string>rule</string>
 			<key>comment</key>
-			<string>All other rights will be matched by this rule.
-Credentials remain valid 5 minutes after they've been obtained.
-An acquired credential is shared amongst all clients.
-			</string>
+			<string>All other rights will be matched by this rule.</string>
 			<key>rule</key>
 			<string>default</string>
 		</dict>
@@ -56,18 +53,28 @@ An acquired credential is shared amongst all clients.
 			<key>class</key>
 			<string>rule</string>
 			<key>comment</key>
-			<string>wildcard right for modifying rights.  Admins are allowed to modify any (non-wildcard) rights</string>
+			<string>wildcard right for modifying rights.  Admins are allowed to modify any (non-wildcard) rights.  Root does not require authentication.</string>
+			<key>k-of-n</key>
+			<integer>1</integer>
 			<key>rule</key>
-			<string>authenticate-admin</string>
+			<array>
+				<string>is-root</string>
+				<string>authenticate-admin</string>
+			</array>
 		</dict>
 		<key>config.remove.</key>
 		<dict>
 			<key>class</key>
 			<string>rule</string>
 			<key>comment</key>
-			<string>wildcard right for deleting rights.  Admins are allowed to delete any (non-wildcard) rights</string>
+			<string>wildcard right for deleting rights.  Admins are allowed to delete any (non-wildcard) rights.  Root does not require authentication.</string>
+			<key>k-of-n</key>
+			<integer>1</integer>
 			<key>rule</key>
-			<string>authenticate-admin</string>
+			<array>
+				<string>is-root</string>
+				<string>authenticate-admin</string>
+			</array>
 		</dict>
 		<key>config.remove.system.</key>
 		<dict>
@@ -84,10 +91,6 @@ An acquired credential is shared amongst all clients.
 			<string>See authopen(1) for information on the use of this right.</string>
 			<key>group</key>
 			<string>admin</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>builtin:authenticate</string>
-                        </array>
 			<key>shared</key>
 			<false/>
 			<key>timeout</key>
@@ -103,10 +106,6 @@ Credentials remain valid indefinitely after they've been obtained.
 An acquired credential is shared amongst all clients.</string>
 			<key>group</key>
 			<string>admin</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>builtin:authenticate</string>
-                        </array>
 			<key>shared</key>
 			<true/>
 		</dict>
@@ -120,14 +119,17 @@ builtin:krb5authenticate can be used to hinge local authentication on a successf
 builtin:krb5authnoverify skips the kdc verification.  Both fall back on local authentication.</string>
 			<key>mechanisms</key>
 			<array>
+				<string>builtin:auto-login,privileged</string>
 				<string>loginwindow_builtin:login</string>
+				<string>builtin:reset-password,privileged</string>
 				<string>authinternal</string>
-				<string>HomeDirMechanism:login</string>
+				<string>builtin:getuserinfo,privileged</string>
+				<string>builtin:sso,privileged</string>
+				<string>HomeDirMechanism:login,privileged</string>
+				<string>HomeDirMechanism:status</string>
 				<string>MCXMechanism:login</string>
 				<string>loginwindow_builtin:success</string>
-				<string>builtin:getuserinfo</string>
-				<string>builtin:sso</string>
-                                <string>loginwindow_builtin:done</string>
+				<string>loginwindow_builtin:done</string>
 			</array>
 		</dict>
 		<key>system.login.done</key>
@@ -144,8 +146,8 @@ builtin:krb5authnoverify skips the kdc verification.  Both fall back on local au
 		<dict>
 			<key>class</key>
 			<string>evaluate-mechanisms</string>
-            <key>tries</key>
-            <integer>1</integer>
+			<key>tries</key>
+			<integer>1</integer>
 			<key>mechanisms</key>
 			<array>
 				<string>push_hints_to_context</string>
@@ -165,8 +167,8 @@ builtin:krb5authnoverify skips the kdc verification.  Both fall back on local au
 		<dict>
 			<key>class</key>
 			<string>evaluate-mechanisms</string>
-            <key>tries</key>
-            <integer>1</integer>
+			<key>tries</key>
+			<integer>1</integer>
 			<key>mechanisms</key>
 			<array>
 				<string>push_hints_to_context</string>
@@ -192,23 +194,19 @@ builtin:krb5authnoverify skips the kdc verification.  Both fall back on local au
 			<key>shared</key>
 			<false/>
 		</dict>
-	        <key>system.keychain.modify</key>
-	        <dict>
-	                <key>class</key>
-	                <string>user</string>
-	                <key>comment</key>
-	                <string>Used by Keychain Access when editing a system keychain.</string>
-	                <key>group</key>
-	                <string>admin</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>builtin:authenticate</string>
-                        </array>
-	                <key>shared</key>
-	                <false/>
-	                <key>timeout</key>
-	                <integer>300</integer>
-	        </dict>
+		<key>system.keychain.modify</key>
+		<dict>
+			<key>class</key>
+			<string>user</string>
+			<key>comment</key>
+			<string>Used by Keychain Access when editing a system keychain.</string>
+			<key>group</key>
+			<string>admin</string>
+			<key>shared</key>
+			<false/>
+			<key>timeout</key>
+			<integer>300</integer>
+		</dict>
 		<key>system.preferences</key>
 		<dict>
 			<key>allow-root</key>
@@ -216,18 +214,24 @@ builtin:krb5authnoverify skips the kdc verification.  Both fall back on local au
 			<key>class</key>
 			<string>user</string>
 			<key>comment</key>
-			<string>This right is checked by the Admin framework when making changes to the system preferences.
-Credentials remain valid forever.
-An acquired credential is shared amongst all clients.
-If the proccess that created the AuthorizationRef has uid = 0 this right will automatically be granted.</string>
+			<string>This right is checked by the Admin framework when making changes to the system preferences.</string>
 			<key>group</key>
 			<string>admin</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:authenticate</string>
-			</array>
 			<key>shared</key>
 			<true/>
+		</dict>
+		<key>system.preferences.accounts</key>
+		<dict>
+			<key>allow-root</key>
+			<true/>
+			<key>class</key>
+			<string>user</string>
+			<key>comment</key>
+			<string>This right is checked by the Admin framework when making changes to the accounts preference pane</string>
+			<key>group</key>
+			<string>admin</string>
+			<key>shared</key>
+			<false/>
 		</dict>
 		<key>system.printingmanager</key>
 		<dict>
@@ -237,6 +241,49 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 			<string>The following right is checked for printing to locked printers.</string>
 			<key>rule</key>
 			<string>authenticate-admin</string>
+		</dict>
+		<key>system.preferences.accessibility</key>
+		<dict>
+			<key>allow-root</key>
+			<true/>
+			<key>class</key>
+			<string>user</string>
+			<key>comment</key>
+			<string>This right is checked by the Admin framework when enabling or disabling the Accessibility APIs</string>
+			<key>group</key>
+			<string>admin</string>
+			<key>shared</key>
+			<false/>
+			<key>timeout</key>
+			<integer>0</integer>
+		</dict>
+		<key>com.apple.activitymonitor.kill</key>
+		<dict>
+			<key>class</key>
+			<string>user</string>
+			<key>comment</key>
+			<string>Used by Activity Monitor to authorize killing processes not owned by the user</string>
+			<key>group</key>
+			<string>admin</string>
+			<key>shared</key>
+			<false/>
+			<key>timeout</key>
+			<integer>0</integer>
+		</dict>
+		<key>com.apple.Safari.parental-controls</key>
+		<dict>
+			<key>allow-root</key>
+			<true/>
+			<key>class</key>
+			<string>user</string>
+			<key>comment</key>
+			<string>This right is checked when changing parental controls for Safari</string>
+			<key>group</key>
+			<string>admin</string>
+			<key>shared</key>
+			<false/>
+			<key>timeout</key>
+			<integer>0</integer>
 		</dict>
 		<key>system.privilege.admin</key>
 		<dict>
@@ -254,114 +301,113 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 			</string>
 			<key>group</key>
 			<string>admin</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>builtin:authenticate</string>
-                        </array>
 			<key>shared</key>
 			<false/>
 			<key>timeout</key>
 			<integer>300</integer>
 		</dict>
-                <key>system.restart</key>
-                <dict>
+		<key>system.restart</key>
+		<dict>
 			<key>class</key>
-                        <string>evaluate-mechanisms</string>
-                        <key>comment</key>
+			<string>evaluate-mechanisms</string>
+			<key>comment</key>
 			<string>Multisession restart mechanisms</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>RestartAuthorization:restart</string>
-                                <string>RestartAuthorization:authenticate</string>
-                                <string>RestartAuthorization:success</string>
-                        </array>
+			<key>mechanisms</key>
+			<array>
+				<string>RestartAuthorization:restart</string>
+				<string>RestartAuthorization:authenticate</string>
+				<string>RestartAuthorization:success</string>
+			</array>
 		</dict>
-        	<key>system.shutdown</key>
-                <dict>
+		<key>system.shutdown</key>
+		<dict>
 			<key>class</key>
-                        <string>evaluate-mechanisms</string>
-                        <key>comment</key>
+			<string>evaluate-mechanisms</string>
+			<key>comment</key>
 			<string>Multisession shutdown mechanisms</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>RestartAuthorization:shutdown</string>
-                                <string>RestartAuthorization:authenticate</string>
-                                <string>RestartAuthorization:success</string>
-                        </array>
+			<key>mechanisms</key>
+			<array>
+					<string>RestartAuthorization:shutdown</string>
+					<string>RestartAuthorization:authenticate</string>
+					<string>RestartAuthorization:success</string>
+			</array>
 		</dict>
-        	<key>system.burn</key>
-                <dict>
+		<key>system.burn</key>
+		<dict>
 			<key>class</key>
-                        <string>allow</string>
-                        <key>comment</key>
+			<string>allow</string>
+			<key>comment</key>
 			<string>authorization to burn media</string>
 		</dict>
-        	<key>com.apple.server.admin.streaming</key>
-        	<dict>
+		<key>system.services.directory.configure</key>
+		<dict>
+			<key>class</key>
+			<string>user</string>
+			<key>group</key>
+			<string>admin</string>
+			<key>allow-root</key>
+			<true/>
+			<key>shared</key>
+			<true/>
+			<key>timeout</key>
+			<integer>300</integer>
+			<key>comment</key>
+			<string>authorization to make directory service changes</string>
+		</dict>
+		<key>com.apple.server.admin.streaming</key>
+		<dict>
 			<key>class</key>
 			<string>user</string>	
 			<key>comment</key>
 			<string>Used for admin requests with the QuickTime Streaming Server.</string>
-                	<key>group</key>
-                	<string>admin</string>
-                	<key>shared</key>
-                	<false/>
-                	<key>allow-root</key>
-                	<true/>
-                	<key>timeout</key>
-                	<integer>0</integer>
-        	</dict>
-	        <key>system.install.admin.user</key>
-	        <dict>
+			<key>group</key>
+			<string>admin</string>
+			<key>shared</key>
+			<false/>
+			<key>allow-root</key>
+			<true/>
+			<key>timeout</key>
+			<integer>0</integer>
+		</dict>
+		<key>system.install.admin.user</key>
+		<dict>
 			<key>class</key>
 			<string>user</string>	
 			<key>comment</key>
 			<string>Used by installer tool: user installling in admin domain (/Applications)</string>	
-	                <key>group</key>
-	                <string>admin</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>builtin:authenticate</string>
-                        </array>
-	                <key>shared</key>
-	                <false/>
-	                <key>timeout</key>
-	                <integer>300</integer>
-	        </dict>
-	        <key>system.install.root.user</key>
-	        <dict>
+			<key>group</key>
+			<string>admin</string>
+			<key>shared</key>
+			<false/>
+			<key>timeout</key>
+			<integer>300</integer>
+		</dict>
+		<key>system.install.root.user</key>
+		<dict>
 			<key>class</key>
 			<string>user</string>	
 			<key>comment</key>
 			<string>Used by installer tool: user installling in root domain (/System)</string>	
-	                <key>group</key>
-	                <string>admin</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>builtin:authenticate</string>
-                        </array>
-	                <key>shared</key>
-	                <false/>
-	                <key>timeout</key>
-	                <integer>300</integer>
-	        </dict>
-	        <key>system.install.root.admin</key>
-	        <dict>
+			<key>group</key>
+			<string>admin</string>
+			<key>shared</key>
+			<false/>
+			<key>timeout</key>
+			<integer>300</integer>
+		</dict>
+		<key>system.install.root.admin</key>
+		<dict>
 			<key>class</key>
 			<string>user</string>	
 			<key>comment</key>
 			<string>Used by installer tool: admin installling in root domain (/System)</string>	
-	                <key>group</key>
-	                <string>admin</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>builtin:authenticate</string>
-                        </array>
-	                <key>shared</key>
-	                <false/>
-	                <key>timeout</key>
-	                <integer>300</integer>
-	        </dict>
+			<key>group</key>
+			<string>admin</string>
+			<key>shared</key>
+			<false/>
+			<key>timeout</key>
+			<integer>300</integer>
+		</dict>
 		<key>com.apple.appserver.privilege.admin</key>
 		<dict>
 			<key>class</key>
@@ -393,10 +439,6 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 			<string>authorize privileged file operations from the finder</string>
 			<key>group</key>
 			<string>admin</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:authenticate</string>
-			</array>
 			<key>shared</key>
 			<false/>
 			<key>timeout</key>
@@ -420,6 +462,24 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 				<string>builtin:generic-unlock</string>
 			</array>
 		</dict>
+		<key>com.apple.builtin.confirm-access</key>
+		<dict>
+			<key>class</key>
+			<string>evaluate-mechanisms</string>
+			<key>mechanisms</key>
+			<array>
+				<string>builtin:confirm-access</string>
+			</array>
+		</dict>
+		<key>com.apple.builtin.confirm-access-password</key>
+		<dict>
+			<key>class</key>
+			<string>evaluate-mechanisms</string>
+			<key>mechanisms</key>
+			<array>
+				<string>builtin:confirm-access-password</string>
+			</array>
+		</dict>
 	</dict>
 	<key>rules</key>
 	<dict>
@@ -438,14 +498,19 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 			<string>require the user asking for authorization to authenticate as an admin</string>
 			<key>group</key>
 			<string>admin</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:authenticate</string>
-			</array>
 			<key>shared</key>
 			<true/>
 			<key>timeout</key>
 			<integer>0</integer>
+		</dict>
+		<key>authenticate-session-user</key>
+		<dict>
+			<key>class</key>
+			<string>user</string>
+			<key>comment</key>
+			<string>authenticate session owner</string>
+			<key>session-owner</key>
+			<true/>
 		</dict>
 		<key>authenticate-session-owner</key>
 		<dict>
@@ -453,10 +518,6 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 			<string>user</string>
 			<key>comment</key>
 			<string>authenticate session owner</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:authenticate</string>
-			</array>
 			<key>session-owner</key>
 			<true/>
 		</dict>
@@ -470,10 +531,6 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 			<string>the owner as well as any admin can authorize</string>
 			<key>group</key>
 			<string>admin</string>
-			<key>mechanisms</key>
-			<array>
-				<string>builtin:authenticate</string>
-			</array>
 			<key>session-owner</key>
 			<true/>
 			<key>shared</key>
@@ -487,6 +544,8 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 			<string>verify the user asking for authorization is an admin</string>
 			<key>group</key>
 			<string>admin</string>
+			<key>authenticate-user</key>
+			<false/>
 			<key>shared</key>
 			<string>true</string>
 		</dict>
@@ -496,10 +555,10 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 			<true/>
 			<key>class</key>
 			<string>user</string>
+			<key>authenticate-user</key>
+			<false/>
 			<key>comment</key>
 			<string>verify the process that created this authref is root</string>
-			<key>group</key>
-			<string>nogroup</string>
 		</dict>
 		<key>appserver-user</key>
 		<dict>
@@ -520,19 +579,25 @@ If the proccess that created the AuthorizationRef has uid = 0 this right will au
 			<key>class</key>
 			<string>user</string>
 			<key>comment</key>
-			<string>All other rights will be matched by this rule.  Credentials remain valid 5 minutes after they've been obtained.
+			<string>All other rights will be matched by this rule.	Credentials remain valid 5 minutes after they've been obtained.
 An acquired credential is shared amongst all clients.
 			</string>
 			<key>group</key>
 			<string>admin</string>
-                        <key>mechanisms</key>
-                        <array>
-                                <string>builtin:authenticate</string>
-                        </array>
 			<key>shared</key>
 			<true/>
 			<key>timeout</key>
 			<integer>300</integer>
+		</dict>
+		<key>authenticate</key>
+		<dict>
+			<key>class</key>
+			<string>evaluate-mechanisms</string>
+			<key>mechanisms</key>
+			<array>
+				<string>builtin:authenticate</string>
+				<string>authinternal</string>
+			</array>
 		</dict>
 	</dict>
 </dict>

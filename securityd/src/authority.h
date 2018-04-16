@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,21 +28,22 @@
 #ifndef _H_AUTHORITY
 #define _H_AUTHORITY
 
-#include "securityserver.h"
 #include <security_cdsa_utilities/AuthorizationData.h>
-#include <security_cdsa_client/osxsigning.h>
+#include <security_utilities/osxcode.h>
+#include <security_utilities/ccaudit.h>
 #include "database.h"
 
 using Authorization::Credential;
 using Authorization::CredentialSet;
 using Authorization::AuthItemSet;
+using Security::CommonCriteria::AuditToken;
 
 class Process;
 class Session;
 
 class AuthorizationToken : public PerSession {
 public:
-	AuthorizationToken(Session &ssn, const CredentialSet &base, const security_token_t &securityToken);
+	AuthorizationToken(Session &ssn, const CredentialSet &base, const audit_token_t &auditToken);
 	~AuthorizationToken();
 
     Session &session() const;
@@ -69,13 +68,17 @@ public:
 	bool mayInternalize(Process &proc, bool countIt = true);
 
 	uid_t creatorUid() const	{ return mCreatorUid; }
-    CodeSigning::OSXCode *creatorCode() const { return mCreatorCode; }
+	gid_t creatorGid() const	{ return mCreatorGid; }
+    OSXCode *creatorCode() const { return mCreatorCode; }
 	pid_t creatorPid() const	{ return mCreatorPid; }
+	
+	const AuditToken &creatorAuditToken() const { return mCreatorAuditToken; }
 	
 	AuthItemSet infoSet(AuthorizationString tag = NULL);
     void setInfoSet(AuthItemSet &newInfoSet);
     void setCredentialInfo(const Credential &inCred);
     void clearInfoSet();
+	void scrubInfoSet();
 
 public:
 	static AuthorizationToken &find(const AuthorizationBlob &blob);
@@ -102,15 +105,18 @@ private:
 	typedef set<Process *> ProcessSet;
 	ProcessSet mUsingProcesses;		// set of process objects using this token
 
-	uid_t mCreatorUid;				// Uid of proccess that created this authorization
-    RefPointer<CodeSigning::OSXCode> mCreatorCode; // code id of creator
+	uid_t mCreatorUid;				// Uid of process that created this authorization
+	gid_t mCreatorGid;				// Gid of process that created this authorization
+    RefPointer<OSXCode> mCreatorCode; // code id of creator
 	pid_t mCreatorPid;				// Pid of processs that created this authorization
+	
+	AuditToken mCreatorAuditToken;	// Audit token of the process that created this authorization
 
     AuthItemSet mInfoSet;			// Side band info gathered from evaluations in this session
 
 private:
 	typedef map<AuthorizationBlob, RefPointer<AuthorizationToken> > AuthMap;
-	static AuthMap authMap;			// set of extant authorizations
+	static AuthMap &authMap;			// set of extant authorizations
     static Mutex authMapLock;		// lock for mAuthorizations (only)
 };
 

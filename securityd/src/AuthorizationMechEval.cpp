@@ -3,8 +3,6 @@
  *
  *  @APPLE_LICENSE_HEADER_START@
  *  
- *  Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- *  
  *  This file contains Original Code and/or Modifications of Original Code
  *  as defined in and that are subject to the Apple Public Source License
  *  Version 2.0 (the 'License'). You may not use this file except in
@@ -26,27 +24,28 @@
  *  securityd
  *
  */
-
 #include "AuthorizationMechEval.h"
+#include <security_utilities/logging.h>
+#include <bsm/audit_uevents.h>
+#include <security_utilities/ccaudit.h>
 
 namespace Authorization {
 
-AgentMechanismRef::AgentMechanismRef(uid_t clientUID, const Session &session) : 
-    RefPointer<QueryInvokeMechanism>(new QueryInvokeMechanism(clientUID, session)) {}
-
-AgentMechanismRef::AgentMechanismRef() : 
-    RefPointer<QueryInvokeMechanism>(new QueryInvokeMechanism()) {}
+AgentMechanismRef::AgentMechanismRef(const AuthHostType type, Session &session) : 
+    RefPointer<QueryInvokeMechanism>(new QueryInvokeMechanism(type, session)) {}
 
 // we need the vector<string> of mechanisms
-AgentMechanismEvaluator::AgentMechanismEvaluator(uid_t uid, const Session& session, const vector<string>& inMechanisms) : 
+AgentMechanismEvaluator::AgentMechanismEvaluator(uid_t uid, Session& session, const vector<string>& inMechanisms) : 
     mMechanisms(inMechanisms), mClientUid(uid), mSession(session)
 {
     //set up environment
 }
 
 OSStatus
-AgentMechanismEvaluator::run(const AuthValueVector &inArguments, const AuthItemSet &inHints, const AuthItemSet &inContext)
+AgentMechanismEvaluator::run(const AuthValueVector &inArguments, const AuthItemSet &inHints, const AuthorizationToken &auth)
 {
+    const AuthItemSet &inContext = const_cast<AuthorizationToken &>(auth).infoSet();
+    
     // add process specifics to context?
 
     vector<std::string>::const_iterator currentMechanism = mMechanisms.begin();
@@ -55,7 +54,7 @@ AgentMechanismEvaluator::run(const AuthValueVector &inArguments, const AuthItemS
     
     AuthItemSet hints = inHints;
     AuthItemSet context = inContext;
-        
+	
     while ( (result == kAuthorizationResultAllow)  &&
             (currentMechanism != mMechanisms.end()) ) // iterate mechanisms
     {
@@ -67,72 +66,112 @@ AgentMechanismEvaluator::run(const AuthValueVector &inArguments, const AuthItemS
             {
                 // no whitespace removal
                 string pluginIn(currentMechanism->substr(0, extPlugin));
-                string mechanismIn(currentMechanism->substr(extPlugin + 1));
-                secdebug("AuthEvalMech", "external mech %s:%s", pluginIn.c_str(), mechanismIn.c_str());
+				string mechanismIn, authhostIn;
+				
+				string::size_type extMechanism = currentMechanism->rfind(',');
+				AuthHostType hostType = securityAgent;
+				
+				if (extMechanism != string::npos)
+				{
+					if (extMechanism < extPlugin)
+						return errAuthorizationInternal;
+						
+					mechanismIn = currentMechanism->substr(extPlugin + 1, extMechanism - extPlugin - 1);
+					authhostIn = currentMechanism->substr(extMechanism + 1);
+					if (authhostIn == "privileged")
+						hostType = privilegedAuthHost;
+				}
+				else
+					mechanismIn = currentMechanism->substr(extPlugin + 1);
+					
+                secdebug("AuthEvalMech", "external mechanism %s:%s", pluginIn.c_str(), mechanismIn.c_str());
                 
-                AgentMechanismRef client(mClientUid, mSession);
-                client->initialize(pluginIn, mechanismIn);
-// XXX/cs                client->inferHints(Server::process());
-                mClients[*currentMechanism] = client;
+                AgentMechanismRef client(hostType, mSession);
+                client->initialize(pluginIn, mechanismIn, inArguments);
+                mClients.insert(ClientMap::value_type(*currentMechanism, client));
             }
             else if (*currentMechanism == "authinternal")
             {
                 secdebug("AuthEvalMech", "performing authentication");
                 result = authinternal(context);
+
+                AuthItem *rightItem = hints.find(AGENT_HINT_AUTHORIZE_RIGHT);
+                string right = (rightItem == NULL) ? string("<unknown right>") : rightItem->stringValue();
+				CommonCriteria::AuditRecord auditrec(auth.creatorAuditToken());
+				if (kAuthorizationResultAllow == result)
+					auditrec.submit(AUE_ssauthint, CommonCriteria::errNone, right.c_str());
+				else	// kAuthorizationResultDeny
+					auditrec.submit(AUE_ssauthint, CommonCriteria::errInvalidCredential, right.c_str());
             }
             else if (*currentMechanism == "push_hints_to_context")
             {
                 secdebug("AuthEvalMech", "evaluate push_hints_to_context");
-                result = kAuthorizationResultAllow; // snarfcredential doesn't block evaluation, ever, it may restart
-                                                    // create out context from input hints, no merge
-                                                    // @@@ global copy template not being invoked...
+				// doesn't block evaluation, ever
+                result = kAuthorizationResultAllow; 
                 context = hints;
             }
-#if 0
-            else if (*currentMechanism == "switch_to_user")
-            {
-                AgentMechanismRef client(mClientUid, mSession);
-                client->terminate();
-            }
-#endif
             else
                 return errAuthorizationInternal;
         }
 
         iter = mClients.find(*currentMechanism);
-
         if (iter != mClients.end())
         {
             try
             {
-                iter->second->run(inArguments, hints, context, &result);
-                secdebug("AuthEvalMech", "evaluate(%s) succeeded with result: %lu.", (iter->first).c_str(), result);
+                AgentMechanismRef &client = iter->second;
+                client->run(inArguments, hints, context, &result);
+
+				bool interrupted = false;
+				while (client->state() == client->current)
+				{
+					// check for interruption
+					vector<std::string>::const_iterator checkMechanism = mMechanisms.begin();
+					while (*checkMechanism != *currentMechanism) {
+						ClientMap::iterator iter2 = mClients.find(*checkMechanism);
+						if (iter2->second->state() == iter2->second->interrupting)
+						{
+							client->deactivate();
+							// nothing can happen until the client mechanism returns control to us
+							while (client->state() == client->deactivating)
+								client->receive();
+								
+							secdebug("AuthEvalMech", "evaluate(%s) interrupted by %s.", (iter->first).c_str(), (iter2->first).c_str());
+
+							interrupted = true;
+							hints = iter2->second->inHints();
+							context = iter2->second->inContext();
+							currentMechanism = checkMechanism;
+							break;
+						}
+						else
+							checkMechanism++;
+					}
+					if (client->state() == client->current)
+						client->receive();
+				} 
+				
+                if (interrupted)
+                {
+					// clear reason for restart from interrupt
+					uint32_t reason = SecurityAgent::worldChanged;
+					AuthItemRef retryHint(AGENT_HINT_RETRY_REASON, AuthValueOverlay(sizeof(reason), &reason));
+					hints.erase(retryHint); hints.insert(retryHint); // replace
+
+                    result = kAuthorizationResultAllow;
+                    continue;
+                }
+				else
+					secdebug("AuthEvalMech", "evaluate(%s) with result: %lu.", (iter->first).c_str(), result);
             }
             catch (...) {
-                secdebug("AuthEvalMech", "exception from mech eval or client death");
+                secdebug("AuthEvalMech", "exception during evaluate(%s).", (iter->first).c_str());
                 result = kAuthorizationResultUndefined;
             }
         }
     
-        // we own outHints and outContext
-        switch(result)
-        {
-            case kAuthorizationResultAllow:
-                secdebug("AuthEvalMech", "result allow");
-                currentMechanism++;
-                break;
-            case kAuthorizationResultDeny:
-                secdebug("AuthEvalMech", "result deny");
-                break;
-            case kAuthorizationResultUndefined:
-                secdebug("AuthEvalMech", "result undefined");
-                break; // abort evaluation
-            case kAuthorizationResultUserCanceled:
-                secdebug("AuthEvalMech", "result canceled");
-                break; // stop evaluation, return some sideband
-            default:
-                break; // abort evaluation
-        }
+        if (result == kAuthorizationResultAllow)
+            currentMechanism++;
     }
     
     if ((result == kAuthorizationResultUserCanceled) ||

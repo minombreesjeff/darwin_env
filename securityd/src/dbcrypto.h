@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,9 +28,11 @@
 #ifndef _H_DBCRYPTO
 #define _H_DBCRYPTO
 
-#include "securityserver.h"
+#include <securityd_client/ssblob.h>
 #include <security_cdsa_client/cspclient.h>
 #include <security_cdsa_client/keyclient.h>
+
+using namespace SecurityServer;
 
 
 //
@@ -58,6 +58,7 @@ public:
     void decodeCore(DbBlob *blob, void **privateAclBlob = NULL);
     DbBlob *encodeCore(const DbBlob &blobTemplate,
         const CssmData &publicAcl, const CssmData &privateAcl) const;
+	void importSecrets(const DatabaseCryptoCore &src);
         
     KeyBlob *encodeKeyCore(const CssmKey &key,
         const CssmData &publicAcl, const CssmData &privateAcl) const;

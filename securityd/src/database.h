@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -34,7 +32,6 @@
 #ifndef _H_DATABASE
 #define _H_DATABASE
 
-#include "securityserver.h"
 #include "structure.h"
 #include "acls.h"
 #include "dbcrypto.h"
@@ -69,7 +66,8 @@ public:
 	
 	Session &session() const;
 	
-	virtual void sleepProcessing();
+	virtual void sleepProcessing();		// generic action on system sleep
+	virtual void lockProcessing();		// generic action on "lock" requests
 };
 
 
@@ -78,7 +76,7 @@ public:
 // It maintains its protected semantic state (including keys) and provides controlled
 // access.
 //
-class Database : public PerProcess, public SecurityServerAcl {
+class Database : public PerProcess, public AclSource {
     static const NotificationEvent lockedEvent = kNotificationEventLocked;
     static const NotificationEvent unlockedEvent = kNotificationEventUnlocked;
     static const NotificationEvent passphraseChangedEvent = kNotificationEventPassphraseChanged;
@@ -88,11 +86,31 @@ protected:
 	
 public:
 	Process& process() const;
-
-	virtual void releaseKey(Key &key);
-    virtual CSSM_KEY_SIZE queryKeySize(Key &key) = 0;
 	
-	// service calls
+	virtual bool transient() const = 0;			// is transient store (reboot clears)
+	
+public:
+	//
+	// A common class for objects that "belong" to a Database and
+	// don't have parents up the global stack. These will die along with
+	// the Database when it goes.
+	//
+	class Subsidiary : public PerProcess {
+	public:
+		Subsidiary(Database &db) { referent(db); }
+		Database &database() const { return referent<Database>(); }
+		Process &process() const { return database().process(); }
+	};
+	
+	//
+	// Cryptographic service calls.
+	// These must be supported by any type of database.
+	//
+	virtual void releaseKey(Key &key);
+    virtual void queryKeySizeInBits(Key &key, CssmKeySize &result) = 0;
+    virtual void getOutputSize(const Context &context, Key &key,
+		uint32 inputSize, bool encrypt, uint32 &result) = 0;
+
 	virtual void generateSignature(const Context &context, Key &key,
 		CSSM_ALGORITHMS signOnlyAlgorithm, const CssmData &data, CssmData &signature) = 0;
 	virtual void verifySignature(const Context &context, Key &key,
@@ -112,22 +130,68 @@ public:
 		const AccessCredentials *cred, const AclEntryPrototype *owner,
 		uint32 pubUsage, uint32 pubAttrs, uint32 privUsage, uint32 privAttrs,
 		RefPointer<Key> &publicKey, RefPointer<Key> &privateKey) = 0;
-	virtual RefPointer<Key> deriveKey(const Context &context, Key *key,
-		const AccessCredentials *cred, const AclEntryPrototype *owner,
-		CssmData *param, uint32 usage, uint32 attrs) = 0;
 
-    virtual void wrapKey(const Context &context, Key *key,
-        Key &keyToBeWrapped, const AccessCredentials *cred,
+    virtual void wrapKey(const Context &context, const AccessCredentials *cred,
+		Key *wrappingKey, Key &keyToBeWrapped,
         const CssmData &descriptiveData, CssmKey &wrappedKey) = 0;
-	virtual RefPointer<Key> unwrapKey(const Context &context, Key *key,
+	virtual void unwrapKey(const Context &context,
 		const AccessCredentials *cred, const AclEntryPrototype *owner,
-		uint32 usage, uint32 attrs, const CssmKey wrappedKey,
-        Key *publicKey, CssmData *descriptiveData) = 0;
-        
-    virtual uint32 getOutputSize(const Context &context, Key &key,
-		uint32 inputSize, bool encrypt = true) = 0;
+		Key *wrappingKey, Key *publicKey, CSSM_KEYUSE usage, CSSM_KEYATTR_FLAGS attrs,
+		const CssmKey wrappedKey, RefPointer<Key> &unwrappedKey, CssmData &descriptiveData) = 0;
+	virtual void deriveKey(const Context &context, Key *key,
+		const AccessCredentials *cred, const AclEntryPrototype *owner,
+		CssmData *param, uint32 usage, uint32 attrs, RefPointer<Key> &derivedKey) = 0;
 
-	virtual void authenticate(const AccessCredentials *cred) = 0;
+	virtual void authenticate(CSSM_DB_ACCESS_TYPE mode, const AccessCredentials *cred);
+	virtual SecurityServerAcl &acl();
+
+	virtual bool isLocked() const;
+
+public:
+	class Search : public Subsidiary {
+	public:
+		Search(Database &db) : Subsidiary(db) { }
+	};
+
+	class Record : public Subsidiary {
+	public:
+		Record(Database &db) : Subsidiary(db) { }
+	};
+
+	virtual void findFirst(const CssmQuery &query,
+		CssmDbRecordAttributeData *inAttributes, mach_msg_type_number_t inAttributesLength,
+		CssmData *data, RefPointer<Key> &key, RefPointer<Search> &search,
+		RefPointer<Record> &record,
+		CssmDbRecordAttributeData * &outAttributes, mach_msg_type_number_t &outAttributesLength);
+	virtual void findNext(Search *search,
+		CssmDbRecordAttributeData *inAttributes, mach_msg_type_number_t inAttributesLength,
+		CssmData *data, RefPointer<Key> &key, RefPointer<Record> &record,
+		CssmDbRecordAttributeData * &outAttributes, mach_msg_type_number_t &outAttributesLength);
+	virtual void findRecordHandle(Record *record,
+		CssmDbRecordAttributeData *inAttributes, mach_msg_type_number_t inAttributesLength,
+		CssmData *data, RefPointer<Key> &key,
+		CssmDbRecordAttributeData * &outAttributes, mach_msg_type_number_t &outAttributesLength);
+	
+	virtual void insertRecord(CSSM_DB_RECORDTYPE recordtype,
+		const CssmDbRecordAttributeData *attributes, mach_msg_type_number_t inAttributesLength,
+		const CssmData &data, RecordHandle &record);
+	virtual void modifyRecord(CSSM_DB_RECORDTYPE recordtype, Record *record,
+		const CssmDbRecordAttributeData *attributes, mach_msg_type_number_t inAttributesLength,
+		const CssmData *data, CSSM_DB_MODIFY_MODE modifyMode);
+	virtual void deleteRecord(Database::Record *record);
+	
+	virtual void releaseSearch(Search &search);
+	virtual void releaseRecord(Record &record);
+
+public:
+	// SecurityServerAcl personality
+	AclKind aclKind() const;
+	GenericHandle aclHandle() const;
+	Database *relatedDatabase();
+	
+public:
+	// support ACL remote secret validation (default is no support)
+	virtual bool validateSecret(const AclSubject *subject, const AccessCredentials *cred);
 
 public:
 	static const int maxUnlockTryCount = 3;
@@ -135,14 +199,12 @@ public:
 public:
 	DbCommon& common() const			{ return parent<DbCommon>(); }
 	virtual const char *dbName() const = 0;
-
-protected:
-    AccessCredentials *mCred;		// local access credentials (always valid)
+	virtual void dbName(const char *name);
 };
 
 
 //
-// This class implements a "system keychaiin unlock record" store
+// This class implements a "system keychain unlock record" store
 //
 class SystemKeychainKey {
 public:

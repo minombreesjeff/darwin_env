@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -44,6 +42,56 @@ NodeCore::~NodeCore()
 
 
 //
+// Basic object mesh maintainance
+//
+void NodeCore::parent(NodeCore &p)
+{
+	StLock<Mutex> _(*this);
+	mParent = &p;
+}
+
+void NodeCore::referent(NodeCore &r)
+{
+	StLock<Mutex> _(*this);
+	assert(!mReferent);
+	mReferent = &r;
+}
+	
+void NodeCore::clearReferent()
+{
+	StLock<Mutex> _(*this);
+	if (mReferent)
+		assert(!mReferent->hasReference(*this));
+	mReferent = NULL;
+}
+
+
+void NodeCore::addReference(NodeCore &p)
+{
+	StLock<Mutex> _(*this);
+	assert(p.mReferent == this);
+	mReferences.insert(&p);
+}
+
+void NodeCore::removeReference(NodeCore &p)
+{
+	StLock<Mutex> _(*this);
+	assert(hasReference(p));
+	mReferences.erase(&p);
+}
+
+#if !defined(NDEBUG)
+
+bool NodeCore::hasReference(NodeCore &p)
+{
+	assert(p.refCountForDebuggingOnly() > 0);
+	return mReferences.find(&p) != mReferences.end();
+}
+
+#endif //NDEBUG
+
+
+//
 // ClearReferences clears the reference set but does not propagate
 // anything; it is NOT recursive.
 //
@@ -69,6 +117,15 @@ void NodeCore::kill()
 	for (ReferenceSet::const_iterator it = mReferences.begin(); it != mReferences.end(); it++)
 		(*it)->kill();
 	clearReferences();
+}
+
+
+void NodeCore::kill(NodeCore &ref)
+{
+	StLock<Mutex> _(*this);
+	assert(hasReference(ref));
+	ref.kill();
+	removeReference(ref);
 }
 
 
@@ -110,8 +167,11 @@ void NodeCore::dump()
 	dumpNode();
 	if (!mReferences.empty()) {
 		Debug::dump(" {");
-		for (ReferenceSet::const_iterator it = mReferences.begin(); it != mReferences.end(); it++)
+		for (ReferenceSet::const_iterator it = mReferences.begin(); it != mReferences.end(); it++) {
 			Debug::dump(" %p", it->get());
+			if ((*it)->mReferent != this)
+				Debug::dump("!*INVALID*");
+		}
 		Debug::dump(" }");
 	}
 	Debug::dump("\n");

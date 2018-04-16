@@ -13,7 +13,6 @@ AUTHORIZATION_PLIST=$(AUTHORIZATION_LOCATION)/authorization
 VARDB=$(DSTROOT)/private/var/db
 CANDIDATES=$(VARDB)/CodeEquivalenceCandidates
 
-OLD_STARTUP_DST=$(SYSTEM_LIBRARY_DIR)/StartupItems/securityd
 DST=$(ETC_DIR)/mach_init.d
 SRC=$(SRCROOT)/etc
 
@@ -35,18 +34,7 @@ profile:
 #
 install:
 	mkdir -p $(DST)
-	cp $(SRC)/securityd.plist $(DST)
-	# Remove all OLD_STARTUP_DST-related actions when the Disks and 
-	# Loginwindow StartupItems have removed their dependencies on 
-	# "SecurityServer"
-	mkdir -p $(OLD_STARTUP_DST)/Resources/English.lproj
-	cp $(SRC)/StartupParameters.plist $(OLD_STARTUP_DST)
-	sed -e "s:@@@:$(SYSTEM_CORE_SERVICES_DIR):g" $(SRC)/securityd >$(OLD_STARTUP_DST)/securityd
-	cp $(SRC)/Localizable.strings $(OLD_STARTUP_DST)/Resources/English.lproj/Localizable.plist
-	chown -R root:wheel $(OLD_STARTUP_DST)
-	chmod 755 $(OLD_STARTUP_DST)/securityd
-	chmod 644 $(OLD_STARTUP_DST)/StartupParameters.plist
-	chmod 644 $(OLD_STARTUP_DST)/Resources/English.lproj/Localizable.plist
+	cp $(SRC)/securityd.plist $(SRC)/securityd-installCD.plist $(DST)
 	mkdir -p $(AUTHORIZATION_LOCATION)
 	cp $(SRC)/authorization.plist $(AUTHORIZATION_PLIST)
 	chown root:admin $(AUTHORIZATION_PLIST)

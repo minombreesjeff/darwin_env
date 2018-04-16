@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -49,7 +47,7 @@ public:
 	
 public:
 	//void releaseKey(Key &key);
-    CSSM_KEY_SIZE queryKeySize(Key &key);
+	void queryKeySizeInBits(Key &key, CssmKeySize &result);
 	
 	// service calls
 	void generateSignature(const Context &context, Key &key, CSSM_ALGORITHMS signOnlyAlgorithm,
@@ -66,32 +64,29 @@ public:
 	
 	void generateKey(const Context &context,
 		const AccessCredentials *cred, const AclEntryPrototype *owner,
-		uint32 usage, uint32 attrs, RefPointer<Key> &newKey);
+		CSSM_KEYUSE usage, CSSM_KEYATTR_FLAGS attrs, RefPointer<Key> &newKey);
 	void generateKey(const Context &context,
 		const AccessCredentials *cred, const AclEntryPrototype *owner,
-		uint32 pubUsage, uint32 pubAttrs, uint32 privUsage, uint32 privAttrs,
+		CSSM_KEYUSE pubUsage, CSSM_KEYATTR_FLAGS pubAttrs,
+		CSSM_KEYUSE privUsage, CSSM_KEYATTR_FLAGS privAttrs,
 		RefPointer<Key> &publicKey, RefPointer<Key> &privateKey);
-	RefPointer<Key> deriveKey(const Context &context, Key *key,
+	void deriveKey(const Context &context, Key *key,
 		const AccessCredentials *cred, const AclEntryPrototype *owner,
-		CssmData *param, uint32 usage, uint32 attrs);
+		CssmData *param, uint32 usage, uint32 attrs, RefPointer<Key> &derivedKey);
 
-    void wrapKey(const Context &context, Key *key,
-        Key &keyToBeWrapped, const AccessCredentials *cred,
+    void wrapKey(const Context &context, const AccessCredentials *cred,
+		Key *wrappingKey, Key &keyToBeWrapped,
         const CssmData &descriptiveData, CssmKey &wrappedKey);
-	RefPointer<Key> unwrapKey(const Context &context, Key *key,
+	void unwrapKey(const Context &context,
 		const AccessCredentials *cred, const AclEntryPrototype *owner,
-		uint32 usage, uint32 attrs, const CssmKey wrappedKey,
-        Key *publicKey, CssmData *descriptiveData);
+		Key *wrappingKey, Key *publicKey, CSSM_KEYUSE usage, CSSM_KEYATTR_FLAGS attrs,
+		const CssmKey wrappedKey, RefPointer<Key> &unwrappedKey, CssmData &descriptiveData);
         
-    uint32 getOutputSize(const Context &context, Key &key, uint32 inputSize, bool encrypt = true);
-	
+    void getOutputSize(const Context &context, Key &key, uint32 inputSize, bool encrypt, uint32 &result);
+
 protected:
 	virtual RefPointer<Key> makeKey(const CssmKey &newKey, uint32 moreAttributes,
 		const AclEntryPrototype *owner) = 0;
-
-public:
-	// encoding/decoding databases
-    void authenticate(const AccessCredentials *cred);
 };
 
 #endif //_H_LOCALDATABASE

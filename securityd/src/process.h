@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,11 +28,11 @@
 #ifndef _H_PROCESS
 #define _H_PROCESS
 
-#include "securityserver.h"
 #include "structure.h"
 #include <security_agent_client/agentclient.h>
 #include <security_utilities/refcount.h>
-#include "key.h"
+#include <security_utilities/ccaudit.h>
+#include "localkey.h"
 #include "codesigdb.h"
 #include "notifications.h"
 #include <string>
@@ -55,8 +53,12 @@ class Process : public PerProcess, public CodeSignatures::Identity {
 public:
 	Process(Port servicePort, TaskPort tPort,
 		const ClientSetupInfo *info, const char *identity,
-		uid_t uid, gid_t gid);
+		const CommonCriteria::AuditToken &audit);
 	virtual ~Process();
+	
+	void reset(Port servicePort, TaskPort tPort,
+		const ClientSetupInfo *info, const char *identity,
+		const CommonCriteria::AuditToken &audit);
     
     uid_t uid() const			{ return mUid; }
     gid_t gid() const			{ return mGid; }
@@ -64,21 +66,25 @@ public:
     TaskPort taskPort() const	{ return mTaskPort; }
 	bool byteFlipped() const	{ return mByteFlipped; }
 	
-	CodeSigning::OSXCode *clientCode() const { return (mClientIdent == unknown) ? NULL : mClientCode; }
+	OSXCode *clientCode() const { return (mClientIdent == unknown) ? NULL : mClientCode; }
 	
 	void addAuthorization(AuthorizationToken *auth);
 	void checkAuthorization(AuthorizationToken *auth);
 	bool removeAuthorization(AuthorizationToken *auth);
 	
+	using PerProcess::kill;
 	void kill();
-	void changeSession(Port servicePort);
+	
+	void changeSession(Port servicePort);	// very special indeed
     
     void requestNotifications(Port port, NotificationDomain domain, NotificationMask events);
     void stopNotifications(Port port);
     
 	Session& session() const;
 	
-	Database &localStore();
+	LocalDatabase &localStore();
+	Key *makeTemporaryKey(const CssmKey &key, CSSM_KEYATTR_FLAGS moreAttributes,
+		const AclEntryPrototype *owner);
 
 	// aclSequence is taken to serialize ACL validations to pick up mutual changes
 	Mutex aclSequence;
@@ -88,6 +94,8 @@ public:
 protected:
 	std::string getPath() const;
 	const CssmData getHash(CodeSigning::OSXSigner &signer) const;
+
+	void setup(const ClientSetupInfo *info, const char *identity);
 	
 private:
 	// peer state: established during connection startup; fixed thereafter
@@ -97,7 +105,7 @@ private:
     uid_t mUid;							// UNIX uid credential
     gid_t mGid;							// primary UNIX gid credential
 	
-	RefPointer<CodeSigning::OSXCode> mClientCode; // code object for client (NULL if unknown)
+	RefPointer<OSXCode> mClientCode; // code object for client (NULL if unknown)
 	mutable enum { deferred, known, unknown } mClientIdent; // state of client identity
 	mutable auto_ptr<CodeSigning::Signature> mCachedSignature; // cached signature (if already known)
 	
@@ -113,7 +121,7 @@ private:
 //
 // Convenience comparison
 //
-inline bool operator == (Process &p1, Process &p2)
+inline bool operator == (const Process &p1, const Process &p2)
 {
 	return &p1 == &p2;
 }

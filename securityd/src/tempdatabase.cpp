@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -37,20 +35,44 @@
 #include "agentquery.h"
 
 
-class TempKey : public LocalKey {
+//
+// Temporary-space Key objects are almost normal LocalKeys, with the key
+// matter always preloaded (and thus no deferral of instantiation).
+// A TempKey bears its own ACL.
+//
+class TempKey : public LocalKey, public SecurityServerAcl {
 public:
 	TempKey(Database &db, const CssmKey &newKey, uint32 moreAttributes,
 		const AclEntryPrototype *owner = NULL);
-};
 	
+	Database *relatedDatabase();
+	
+	SecurityServerAcl &acl()	{ return *this; }
+
+public:
+	// SecurityServerAcl personality
+	AclKind aclKind() const;
+};
 
 
 TempKey::TempKey(Database &db, const CssmKey &newKey, uint32 moreAttributes,
 		const AclEntryPrototype *owner)
-	: LocalKey(db, newKey, moreAttributes, owner)
+	: LocalKey(db, newKey, moreAttributes)
 {
-	secdebug("SS adhoc", "Creating temporary (local) key");	// XXX/gh
+	setOwner(owner);
 	db.addReference(*this);
+}
+
+
+AclKind TempKey::aclKind() const
+{
+	return keyAcl;
+}
+
+
+Database *TempKey::relatedDatabase()
+{
+	return NULL;
 }
 
 
@@ -71,6 +93,11 @@ TempDatabase::TempDatabase(Process &proc)
 const char *TempDatabase::dbName() const
 {
 	return "(transient)";
+}
+
+bool TempDatabase::transient() const
+{
+	return true;
 }
 
 
@@ -117,9 +144,9 @@ void TempDatabase::makeSecurePassphraseKey(const Context &context,
 	
 	CssmClient::UnwrapKey unwrap(Server::csp(), CSSM_ALGID_NONE);
 	CssmKey cspKey;
-	unwrap(rawKey, Key::KeySpec(usage, attrs), cspKey);
+	unwrap(rawKey, TempKey::KeySpec(usage, attrs), cspKey);
 	
-	newKey = makeKey(cspKey, attrs & Key::managedAttributes, owner);
+	newKey = makeKey(cspKey, attrs & TempKey::managedAttributes, owner);
 }
 
 
@@ -150,5 +177,6 @@ void TempDatabase::generateKey(const Context &context,
 RefPointer<Key> TempDatabase::makeKey(const CssmKey &newKey,
 	uint32 moreAttributes, const AclEntryPrototype *owner)
 {
+	assert(!newKey.attribute(CSSM_KEYATTR_PERMANENT));
 	return new TempKey(*this, newKey, moreAttributes, owner);
 }

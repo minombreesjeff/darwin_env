@@ -27,14 +27,14 @@ open(CPP, ">$out_cpp") || die "$out_cpp: $!";
 # cautionary headings to each file
 print H <<EOH;
 //
-// Flipping bytes for SecurityServer transition.
+// Flipping bytes for securityd transition.
 // $disclaimer
 //
 EOH
 
 print CPP <<EOC;
 //
-// Flipping bytes for SecurityServer transition.
+// Flipping bytes for securityd transition.
 // $disclaimer
 //
 EOC

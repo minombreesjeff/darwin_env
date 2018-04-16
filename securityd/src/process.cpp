@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -39,50 +37,89 @@
 // Construct a Process object.
 //
 Process::Process(Port servicePort, TaskPort taskPort,
-	const ClientSetupInfo *info, const char *identity, uid_t uid, gid_t gid)
- :  mTaskPort(taskPort), mByteFlipped(false), mUid(uid), mGid(gid),
-	mClientIdent(deferred)
+	const ClientSetupInfo *info, const char *identity, const CommonCriteria::AuditToken &audit)
+ :  mTaskPort(taskPort), mByteFlipped(false), mPid(audit.pid()), mUid(audit.euid()), mGid(audit.egid())
 {
-	// examine info passed
-	assert(info);
-	uint32 pversion = info->version;
-	if (pversion == SSPROTOVERSION) {
-		// correct protocol, same byte order, cool
-	} else {
-		Flippers::flip(pversion);
-		if (pversion == SSPROTOVERSION) {
-			// correct protocol, reversed byte order
-			mByteFlipped = true;
-		} else {
-			// unsupported protocol version
-			CssmError::throwMe(CSSM_ERRCODE_INCOMPATIBLE_VERSION);
-		}
-	}
-	
 	// set parent session
 	parent(Session::find(servicePort));
 
     // let's take a look at our wannabe client...
-    mPid = mTaskPort.pid();
+	if (mTaskPort.pid() != mPid) {
+		secdebug("SS", "Task/pid setup mismatch pid=%d task=%d(%d) for %s",
+			mPid, mTaskPort.port(), mTaskPort.pid(),
+			(identity && identity[0]) ? identity : "(unknown)");
+		CssmError::throwMe(CSSMERR_CSSM_ADDIN_AUTHENTICATE_FAILED);	// you lied!
+	}
+
+	setup(info, identity);
 	
 	secdebug("SS", "New process %p(%d) uid=%d gid=%d session=%p TP=%d %sfor %s",
 		this, mPid, mUid, mGid, &session(),
         mTaskPort.port(),
 		mByteFlipped ? "FLIP " : "",
 		(identity && identity[0]) ? identity : "(unknown)");
+}
 
+
+//
+// Screen a process setup request for an existing process.
+// This usually means the client has called exec(2) and forgotten all about itself.
+// Though it could be a nefarious attempt to fool us...
+//
+void Process::reset(Port servicePort, TaskPort taskPort,
+	const ClientSetupInfo *info, const char *identity, const CommonCriteria::AuditToken &audit)
+{
+	if (servicePort != session().servicePort() || taskPort != mTaskPort) {
+		secdebug("SS", "Process %p(%d) reset mismatch (sp %d-%d, tp %d-%d) for %s",
+			this, pid(), servicePort.port(), session().servicePort().port(), taskPort.port(), mTaskPort.port(),
+			(identity && identity[0]) ? identity : "(unknown)");
+		CssmError::throwMe(CSSMERR_CSSM_ADDIN_AUTHENTICATE_FAILED);		// liar
+	}
+
+	setup(info, identity);
+	
+	secdebug("SS", "process %p(%d) has reset; now %sfor %s",
+		this, mPid, mByteFlipped ? "FLIP " : "",
+		(identity && identity[0]) ? identity : "(unknown)");
+}
+
+
+//
+// Common set processing
+//
+void Process::setup(const ClientSetupInfo *info, const char *identity)
+{
+	// process setup info
+	assert(info);
+	uint32 pversion;
+	if (info->order == 0x1234) {	// right side up
+		pversion = info->version;
+	} else if (info->order == 0x34120000) { // flip side up
+		pversion = ntohl(info->version);
+		mByteFlipped = true;
+	} else // non comprende
+		CssmError::throwMe(CSSM_ERRCODE_INCOMPATIBLE_VERSION);
+
+	// check wire protocol version
+	if (pversion != SSPROTOVERSION)
+		CssmError::throwMe(CSSM_ERRCODE_INCOMPATIBLE_VERSION);
+
+	// process identity (if given)
 	try {
-		mClientCode = CodeSigning::OSXCode::decode(identity);
+		mClientCode = OSXCode::decode(identity);
+		mClientIdent = deferred;	// will calculate code identity when needed
 	} catch (...) {
 		secdebug("SS", "process %p(%d) identity decode threw exception", this, pid());
-	}
-	if (!mClientCode) {
+		mClientCode = NULL;
 		mClientIdent = unknown;		// no chance to squeeze a code identity from this
 		secdebug("SS", "process %p(%d) no clientCode - marked anonymous", this, pid());
 	}
 }
 
 
+//
+// Clean up a Process object
+//
 Process::~Process()
 {
 	// tell all our authorizations that we're gone
@@ -123,12 +160,18 @@ Session& Process::session() const
 }
 
 
-Database &Process::localStore()
+LocalDatabase &Process::localStore()
 {
 	StLock<Mutex> _(*this);
 	if (!mLocalStore)
 		mLocalStore = new TempDatabase(*this);
 	return *mLocalStore;
+}
+
+Key *Process::makeTemporaryKey(const CssmKey &key, CSSM_KEYATTR_FLAGS moreAttributes,
+	const AclEntryPrototype *owner)
+{
+	return safer_cast<TempDatabase&>(localStore()).makeKey(key, moreAttributes, owner);
 }
 
 
@@ -210,7 +253,6 @@ bool Process::removeAuthorization(AuthorizationToken *auth)
 	Iter it = mAuthorizations.lower_bound(auth);
 	bool isLast;
 	if (it == mAuthorizations.end() || auth != *it) {
-		Syslog::error("process is missing authorization to remove");	// temp. diagnostic
 		isLast = true;
 	} else {
 		Iter next = it; ++next;			// following element

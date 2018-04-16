@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -87,4 +85,29 @@ void FlipWalker::doFlips(bool active)
 			it->impl->flip();
 		secdebug("flipwalkers", "outbound flips done");
 	}
+}
+
+
+//
+// Choose a Database from a choice of two sources, giving preference
+// to persistent stores and to earlier sources.
+//
+Database *pickDb(Database *db1, Database *db2)
+{
+	// persistent db1 always wins
+	if (db1 && !db1->transient())
+		return db1;
+	
+	// persistent db2 is next choice
+	if (db2 && !db2->transient())
+		return db2;
+	
+	// pick any existing transient database
+	if (db1)
+		return db1;
+	if (db2)
+		return db2;
+	
+	// none at all. use the canonical transient store
+	return Server::optionalDatabase(noDb);
 }

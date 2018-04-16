@@ -1,9 +1,7 @@
 /*
- * Copyright (c) 2000-2001,2004 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2004 Apple Computer, Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
@@ -22,27 +20,33 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
+#ifndef _H_AUTHHOST
+#define _H_AUTHHOST
 
+#include "structure.h"
+#include "child.h"
 
-//
-// yarrowMigTypes.h - type equivalence declarations for Yarrow's MIG 
-// interface
-//
-#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacTypes.h>
+class Session;
 
-// @@@ who forgot that one?
-extern "C" kern_return_t mig_deallocate(vm_address_t addr, vm_size_t size);
+typedef enum {
+	privilegedAuthHost,
+	securityAgent,
+	userAuthHost
+} AuthHostType;
 
-namespace Security
-{
+class AuthHostInstance : public PerSession, public ServerChild {
+public:
+	AuthHostInstance(Session &session, AuthHostType host);
+	virtual ~AuthHostInstance();
 
-typedef void 	*Data;
+	Session &session() const;
+	Port activate();
+		
+protected:
+	void childAction();
 
-//
-// The server's bootstrap name 
-//
-#define YARROW_SERVER_NAME	"YarrowServer"
+private:
+	AuthHostType mHostType;
+};
 
-} // end namespace Security
-
-using namespace Security;
+#endif /* _H_AUTHHOST */

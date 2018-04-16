@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -36,35 +34,26 @@
 //
 // Create a Key from an explicit CssmKey.
 //
-LocalKey::LocalKey(Database &db, const CssmKey &newKey, uint32 moreAttributes,
-	const AclEntryPrototype *owner)
-	: mDigest(Server::csp().allocator())
+LocalKey::LocalKey(Database &db, const CssmKey &newKey, CSSM_KEYATTR_FLAGS moreAttributes)
+	: Key(db), mDigest(Server::csp().allocator())
 {
-	referent(db);
 	mValidKey = true;
 	setup(newKey, moreAttributes);
-	
-	// establish initial ACL; reinterpret empty (null-list) owner as NULL for resilence's sake
-	if (owner && !owner->subject().empty())
-		cssmSetInitial(*owner);					// specified
-	else
-		cssmSetInitial(new AnyAclSubject());	// defaulted
     secdebug("SSkey", "%p (handle 0x%lx) created from key alg=%ld use=0x%lx attr=0x%lx db=%p",
         this, handle(), mKey.header().algorithm(), mKey.header().usage(), mAttributes, &db);
 }
 
 
-LocalKey::LocalKey(Database &db)
-	: mValidKey(false), mAttributes(0), mDigest(Server::csp().allocator())
+LocalKey::LocalKey(Database &db, CSSM_KEYATTR_FLAGS attributes)
+	: Key(db), mValidKey(false), mAttributes(attributes), mDigest(Server::csp().allocator())
 {
-	referent(db);
 }
 
 
 //
 // Set up the CssmKey part of this Key according to instructions.
 //
-void LocalKey::setup(const CssmKey &newKey, uint32 moreAttributes)
+void LocalKey::setup(const CssmKey &newKey, CSSM_KEYATTR_FLAGS moreAttributes)
 {
 	mKey = CssmClient::Key(Server::csp(), newKey, false);
     CssmKey::Header &header = mKey->header();
@@ -90,6 +79,16 @@ LocalKey::~LocalKey()
 }
 
 
+void LocalKey::setOwner(const AclEntryPrototype *owner)
+{
+	// establish initial ACL; reinterpret empty (null-list) owner as NULL for resilence's sake
+	if (owner && !owner->subject().empty())
+		acl().cssmSetInitial(*owner);					// specified
+	else
+		acl().cssmSetInitial(new AnyAclSubject());		// defaulted
+}
+
+
 LocalDatabase &LocalKey::database() const
 {
 	return referent<LocalDatabase>();
@@ -111,12 +110,21 @@ CssmClient::Key LocalKey::keyValue()
 
 
 //
+// Return external key attributees
+//
+CSSM_KEYATTR_FLAGS LocalKey::attributes()
+{
+	return mAttributes;
+}
+
+
+//
 // Return a key's handle and header in external form
 //
 void LocalKey::returnKey(Handle &h, CssmKey::Header &hdr)
 {
     // return handle
-    h = handle();
+    h = this->handle();
 	
 	// obtain the key header, from the valid key or the blob if no valid key
 	if (mValidKey) {
@@ -161,4 +169,22 @@ void LocalKey::getKey()
 void LocalKey::getHeader(CssmKey::Header &)
 {
 	assert(false);
+}
+
+
+//
+// Form a KeySpec with checking and masking
+//
+LocalKey::KeySpec::KeySpec(CSSM_KEYUSE usage, CSSM_KEYATTR_FLAGS attrs)
+	: CssmClient::KeySpec(usage, (attrs & ~managedAttributes) | forcedAttributes)
+{
+	if (attrs & generatedAttributes)
+		CssmError::throwMe(CSSMERR_CSP_INVALID_KEYATTR_MASK);
+}
+
+LocalKey::KeySpec::KeySpec(CSSM_KEYUSE usage, CSSM_KEYATTR_FLAGS attrs, const CssmData &label)
+	: CssmClient::KeySpec(usage, (attrs & ~managedAttributes) | forcedAttributes, label)
+{
+	if (attrs & generatedAttributes)
+		CssmError::throwMe(CSSMERR_CSP_INVALID_KEYATTR_MASK);
 }
