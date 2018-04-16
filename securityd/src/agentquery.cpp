@@ -109,25 +109,20 @@ SecurityAgentQuery::activate()
 void
 SecurityAgentQuery::inferHints(Process &thisProcess)
 {
-	RefPointer<OSXCode> clientCode = thisProcess.clientCode();
-	SecurityAgent::RequestorType requestorType = SecurityAgent::unknown;
-	string bundlePath;
-	
-	if (clientCode)
-	{
-		string encodedBundle = clientCode->encode();
-		char bundleType = (encodedBundle.c_str())[0]; // yay, no accessor
-		switch(bundleType)
-		{
-		   case 'b': requestorType = SecurityAgent::bundle; break;
-		   case 't': requestorType = SecurityAgent::tool; break;
-		}
-		bundlePath = clientCode->canonicalPath();
-	}
-
-	AuthItemSet processHints = clientHints(requestorType, bundlePath, thisProcess.pid(), thisProcess.uid());
-    mClientHints.insert(processHints.begin(), processHints.end());
+    string guestPath;
+	if (SecCodeRef clientCode = thisProcess.currentGuest())
+		guestPath = codePath(clientCode);
+	AuthItemSet processHints = clientHints(SecurityAgent::bundle, guestPath,
+		thisProcess.pid(), thisProcess.uid());
+	mClientHints.insert(processHints.begin(), processHints.end());
 }
+
+void SecurityAgentQuery::addHint(const char *name, const void *value, UInt32 valueLen, UInt32 flags)
+{
+    AuthorizationItem item = { name, valueLen, const_cast<void *>(value), flags };
+    mClientHints.insert(AuthItemRef(item));
+}
+
 
 void
 SecurityAgentQuery::readChoice()
@@ -230,7 +225,7 @@ Reason QueryKeychainUse::queryUser (const char *database, const char *descriptio
 	hints.insert(mClientHints.begin(), mClientHints.end());
 	
 	// put action/operation (sint32) into hints
-	hints.insert(AuthItemRef(AGENT_HINT_ACL_TAG, AuthValueOverlay(sizeof(action), static_cast<SInt32*>(&action))));
+	hints.insert(AuthItemRef(AGENT_HINT_ACL_TAG, AuthValueOverlay(sizeof(action), static_cast<sint32*>(&action))));
 	
 	// item name into hints
 
@@ -623,13 +618,6 @@ Reason QueryGenericPassphrase::query(const char *prompt, bool verify,
 // 
 // Get a DB blob's passphrase--keychain synchronization
 // 
-
-void QueryDBBlobSecret::addHint(const char *name, const void *value, UInt32 valueLen, UInt32 flags)
-{
-    AuthorizationItem item = { name, valueLen, const_cast<void *>(value), flags };
-    mClientHints.insert(AuthItemRef(item));
-}
-
 Reason QueryDBBlobSecret::operator () (DatabaseCryptoCore &dbCore, const DbBlob *secretsBlob)
 {
     return query(dbCore, secretsBlob);

@@ -56,7 +56,7 @@ KeychainKey::KeychainKey(Database &db, const KeyBlob *blob)
     mBlob = blob->copy(Allocator::standard());
 	mValidBlob = true;
 	db.addReference(*this);
-    secdebug("SSkey", "%p (handle 0x%lx) created from blob version %lx",
+    secdebug("SSkey", "%p (handle 0x%lx) created from blob version %x",
 		this, handle(), blob->version());
 }
 
@@ -195,9 +195,13 @@ void KeychainKey::changedAcl()
 void KeychainKey::validate(AclAuthorization auth, const AccessCredentials *cred,
 	Database *relatedDatabase)
 {
-	if (KeychainDatabase *db = dynamic_cast<KeychainDatabase *>(relatedDatabase))
-		db->unlockDb();
+	if(!mBlob->isClearText()) {
+		/* unlock not needed for cleartext keys */
+		if (KeychainDatabase *db = dynamic_cast<KeychainDatabase *>(relatedDatabase))
+			db->unlockDb();
+	}
 	SecurityServerAcl::validate(auth, cred, relatedDatabase);
+	database().activity();		// upon successful validation
 }
 
 

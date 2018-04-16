@@ -61,13 +61,14 @@ public:
 	void importSecrets(const DatabaseCryptoCore &src);
         
     KeyBlob *encodeKeyCore(const CssmKey &key,
-        const CssmData &publicAcl, const CssmData &privateAcl) const;
+        const CssmData &publicAcl, const CssmData &privateAcl,
+		bool inTheClear) const;
     void decodeKeyCore(KeyBlob *blob,
         CssmKey &key, void * &pubAcl, void * &privAcl) const;
 
     static const uint32 managedAttributes = KeyBlob::managedAttributes;
 	static const uint32 forcedAttributes = KeyBlob::forcedAttributes;
-
+	
 public:
 	bool validatePassphrase(const CssmData &passphrase);
 	
