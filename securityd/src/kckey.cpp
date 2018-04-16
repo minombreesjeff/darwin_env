@@ -43,10 +43,10 @@ KeychainKey::KeychainKey(Database &db, const KeyBlob *blob)
     blob->validate(CSSMERR_APPLEDL_INVALID_KEY_BLOB);
     switch (blob->version()) {
 #if defined(COMPAT_OSX_10_0)
-    case blob->version_MacOS_10_0:
+    case KeyBlob::version_MacOS_10_0:
         break;
 #endif
-    case blob->version_MacOS_10_1:
+    case KeyBlob::version_MacOS_10_1:
         break;
     default:
         CssmError::throwMe(CSSMERR_APPLEDL_INCOMPATIBLE_KEY_BLOB);

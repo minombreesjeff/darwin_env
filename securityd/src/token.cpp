@@ -149,8 +149,8 @@ void Token::resetAcls()
 	mResetLevel++;
 	secdebug("token", "%p reset (level=%d, propagating to %ld common(s)",
 		this, mResetLevel, mCommons.size());
-	for (CommonSet::const_iterator it = mCommons.begin(); it != mCommons.end(); it++)
-		RefPointer<TokenDbCommon>(*it)->resetAcls();
+	for (CommonSet::const_iterator it = mCommons.begin(); it != mCommons.end(); )
+		RefPointer<TokenDbCommon>(*it++)->resetAcls();
 }
 
 void Token::addCommon(TokenDbCommon &dbc)

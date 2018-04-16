@@ -41,6 +41,7 @@
 //
 class FaultRelay {
 public:
+	virtual ~FaultRelay();
 	virtual void relayFault(bool async) = 0;
 };
 
