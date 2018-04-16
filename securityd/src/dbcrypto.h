@@ -55,7 +55,7 @@ public:
 	void setup(const DbBlob *blob, const CssmData &passphrase);
 	void setup(const DbBlob *blob, CssmClient::Key master);
 
-    void decodeCore(DbBlob *blob, void **privateAclBlob = NULL);
+    void decodeCore(const DbBlob *blob, void **privateAclBlob = NULL);
     DbBlob *encodeCore(const DbBlob &blobTemplate,
         const CssmData &publicAcl, const CssmData &privateAcl) const;
 	void importSecrets(const DatabaseCryptoCore &src);

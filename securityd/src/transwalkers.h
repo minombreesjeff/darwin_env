@@ -122,6 +122,17 @@ private:
 
 
 //
+// Fix DBAttributes, which have to be processed specially
+//
+void fixDbAttributes (CssmDbAttributeData &data);
+void fixDbAttributes (CssmQuery &query);
+void fixDbAttributes (CssmDbRecordAttributeData &data);
+
+template<class T>
+void fixDbAttributes(T &n) {} // handle the default case
+
+
+//
 // Process an incoming (IPC) data blob of type T.
 // This relocates pointers to fit in the local address space,
 // and fixes byte order issues as needed.
@@ -135,6 +146,10 @@ void relocate(T *obj, T *base, size_t size)
         CheckingReconstituteWalker relocator(obj, base, size,
 			Server::process().byteFlipped());
         walk(relocator, base);
+
+		// resolve weird type interdependency in DB_ATTRIBUTE_DATA
+		if (Server::process().byteFlipped())
+			fixDbAttributes(*obj);
     }
 }
 
@@ -222,6 +237,8 @@ void flip(T &addr)
 }
 
 
+void flipCssmDbAttributeData (CssmDbRecordAttributeData *value, CssmDbRecordAttributeData **&addr, CssmDbRecordAttributeData **&base);
+
 //
 // Take an object at value, flip it, and return appropriately flipped
 // addr/base pointers ready to be returned through IPC.
@@ -232,13 +249,15 @@ void flips(T *value, T ** &addr, T ** &base)
 {
 	*addr = *base = value;
 	if (flipClient()) {
+		// resolve weird type inter-dependency in DB_ATTRIBUTE_DATA
+		if (value)
+			fixDbAttributes(*value);
 		FlipWalker w;		// collector
 		walk(w, value);		// collect all flippings needed
 		w.doFlips();		// execute flips (flips value but leaves addr alone)
 		Flippers::flip(*base); // flip base (so it arrives right side up)
 	}
 }
-
 
 //
 // Take a DATA type RPC argument purportedly representing a Blob of some kind,

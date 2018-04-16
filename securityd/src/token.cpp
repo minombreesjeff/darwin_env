@@ -149,8 +149,8 @@ void Token::resetAcls()
 	mResetLevel++;
 	secdebug("token", "%p reset (level=%d, propagating to %ld common(s)",
 		this, mResetLevel, mCommons.size());
-	for (CommonSet::const_iterator it = mCommons.begin(); it != mCommons.end(); it++)
-		RefPointer<TokenDbCommon>(*it)->resetAcls();
+	for (CommonSet::const_iterator it = mCommons.begin(); it != mCommons.end(); )
+		RefPointer<TokenDbCommon>(*it++)->resetAcls();
 }
 
 void Token::addCommon(TokenDbCommon &dbc)
@@ -382,8 +382,8 @@ void Token::kill()
 void Token::notify(NotificationEvent event)
 {
     NameValueDictionary nvd;
-	CssmSubserviceUid ssuid(mGuid, NULL, mSubservice,
-		CSSM_SERVICE_DL | CSSM_SERVICE_CSP);
+	CssmSubserviceUid ssuid(mGuid, NULL, h2n (mSubservice),
+		h2n(CSSM_SERVICE_DL | CSSM_SERVICE_CSP));
 	nvd.Insert(new NameValuePair(SSUID_KEY, CssmData::wrap(ssuid)));
     CssmData data;
     nvd.Export(data);
