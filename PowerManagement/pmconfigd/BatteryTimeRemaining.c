@@ -343,7 +343,16 @@ void _packageBatteryInfo(int stillCalc, CFDictionaryRef *ret)
         if(0 != b->maxCap)
         {
             set_capacity = 100;
-            set_charge = (int)((double)b->currentCap*100.0/(double)b->maxCap);
+            set_charge = (int)lround((double)b->currentCap*100.0/(double)b->maxCap);
+
+            if( (100 == set_charge) && b->isCharging)
+            {
+                // We will artificially cap the percentage to 99% while charging
+                // Batteries may take 10-20 min beyond 100% of charging to
+                // relearn their absolute maximum capacity. Leave cap at 99%
+                // to indicate we're not done charging. (4482296, 3285870)
+                set_charge = 99;
+            }
         } else {
             // Bad battery or bad reading => 0 capacity
             set_capacity = set_charge = 0;
