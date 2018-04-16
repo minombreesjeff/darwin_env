@@ -111,3 +111,80 @@ Database *pickDb(Database *db1, Database *db2)
 	// none at all. use the canonical transient store
 	return Server::optionalDatabase(noDb);
 }
+
+
+
+void fixDbAttributes (CssmDbAttributeData &data)
+{
+	/*
+		NOTE TO FUTURE MAINTAINERS OF THIS CODE:
+		
+		This code is called by two different routines; the relocation walker on the input attributes, and flips
+		on the output attributtes.  This is bad, because the relocation walker flips the Info data structure,
+		and flips does not.  We could fix this in flips, but flips is a template and does different things
+		depending on what its parameters are.  As a result, the best place to do this is here.
+	*/
+
+	// pull this data out first, so that it is unperverted once the flip occurs
+	unsigned limit = data.size ();
+	unsigned format = data.format ();
+	CssmData* values = data.values ();
+	
+	// flip if it is safe to do so
+	if (format > CSSM_DB_ATTRIBUTE_FORMAT_COMPLEX) // is the format screwed up?
+	{
+		flip (data.info ());
+		limit = data.size ();
+		format = data.format ();
+		values = data.values ();
+	}
+	
+	unsigned i;
+
+	for (i = 0; i < limit; ++i)
+	{
+		switch (format)
+		{
+			case CSSM_DB_ATTRIBUTE_FORMAT_UINT32:
+				Flippers::flip(*(uint32*) values[i].data ());
+				break;
+			
+			case CSSM_DB_ATTRIBUTE_FORMAT_MULTI_UINT32:
+			{
+				CssmData& d = values[i];
+				int numValues = d.length() / sizeof (UInt32);
+				int j;
+				UInt32* v = (UInt32*) d.data();
+				for (j = 0; j < numValues; ++j)
+				{
+					Flippers::flip (v[j]);
+				}
+			}
+			break;
+		}
+	}
+}
+
+
+
+void fixDbAttributes (CssmQuery &query)
+{
+	unsigned i;
+	unsigned numItems = query.size ();
+	for (i = 0; i < numItems; ++i)
+	{
+		fixDbAttributes(query.predicates()[i].attribute());
+	}
+}
+
+
+
+void fixDbAttributes (CssmDbRecordAttributeData &data)
+{
+	unsigned i;
+	unsigned numItems = data.size ();
+	for (i = 0; i < numItems; ++i)
+	{
+		fixDbAttributes(data.attributes()[i]);
+	}
+}

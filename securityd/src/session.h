@@ -139,7 +139,7 @@ protected:
 	
 	void kill();
 	
-private:
+protected:
 	static PortMap<Session> mSessions;
 };
 
