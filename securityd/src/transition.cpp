@@ -189,8 +189,8 @@ kern_return_t ucsp_server_findFirst(UCSP_ARGS, DbHandle db,
 	DATA_OUT(data), KeyHandle *hKey, SearchHandle *hSearch, RecordHandle *hRecord)
 {
 	BEGIN_IPC
-	relocate (query, queryBase, queryLength);
-	relocate (inAttributes, inAttributesBase, inAttributesLength);
+	relocate(query, queryBase, queryLength);
+	relocate(inAttributes, inAttributesBase, inAttributesLength);
 
 	RefPointer<Database::Search> search;
 	RefPointer<Database::Record> record;
@@ -212,16 +212,11 @@ kern_return_t ucsp_server_findFirst(UCSP_ARGS, DbHandle db,
 		*hKey = key ? key->handle() : noKey;
 
 		// return attributes (assumes relocated flat blob)
-		flips(outAttrs, outAttributes, outAttributesBase); 
-		// flipCssmDbAttributeData(outAttrs, outAttributes, outAttributesBase); 
+		flips(outAttrs, outAttributes, outAttributesBase);
 		*outAttributesLength = outAttrsLength;
 
 		// return data (temporary fix)
 		if (getData) {
-			if (key) {
-				flip (*outData.interpretedAs<CssmKey>());
-			}
-			
 			*data = outData.data();
 			*dataLength = outData.length();
 		}
@@ -261,10 +256,6 @@ kern_return_t ucsp_server_findNext(UCSP_ARGS, SearchHandle hSearch,
 
 		// return data (temporary fix)
 		if (getData) {
-			if (key) {
-				flip (*outData.interpretedAs<CssmKey>());
-			}
-			
 			*data = outData.data();
 			*dataLength = outData.length();
 		}
@@ -296,10 +287,6 @@ kern_return_t ucsp_server_findRecordHandle(UCSP_ARGS, RecordHandle hRecord,
 
 	// return data (temporary fix)
 	if (getData) {
-		if (key) {
-			flip (*outData.interpretedAs<CssmKey>());
-		}
-			
 		*data = outData.data();
 		*dataLength = outData.length();
 	}

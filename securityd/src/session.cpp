@@ -485,7 +485,7 @@ OSStatus Session::authorizationdbRemove(const AuthorizationBlob &authBlob, Autho
 void Session::mergeCredentials(CredentialSet &creds)
 {
     secdebug("SSsession", "%p merge creds @%p", this, &creds);
-	CredentialSet updatedCredentials = creds;
+    CredentialSet updatedCredentials = creds;
 	for (CredentialSet::const_iterator it = creds.begin(); it != creds.end(); it++)
 		if (((*it)->isShared() && (*it)->isValid())) {
 			CredentialSet::iterator old = mSessionCreds.find(*it);
@@ -498,7 +498,7 @@ void Session::mergeCredentials(CredentialSet &creds)
                 updatedCredentials.insert(*old);
             }
 		}
-	creds.swap(updatedCredentials);
+    creds.swap(updatedCredentials);
 }
 
 

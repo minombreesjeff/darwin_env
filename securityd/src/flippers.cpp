@@ -33,6 +33,13 @@ using namespace LowLevelMemoryUtilities;
 
 namespace Flippers {
 
+
+//
+// Automatically generated flippers
+//
+#include "flip_gen.cpp"
+
+
 //
 // The raw byte reversal flipper
 //
@@ -73,43 +80,6 @@ void flip(CSSM_CONTEXT_ATTRIBUTE &obj)
 		break;
 	}
 }
-
-
-//
-// Flip a CSSM_DB_ATTRIBUTE_INFO, also very polymorphic
-//
-void flip(CSSM_DB_ATTRIBUTE_INFO &obj)
-{
-	bool flippedAttributeNameFormat = false;
-	// check and see if obj is in host byte order.  If not, flip it now
-	if (obj.AttributeNameFormat > CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER)
-	{
-		flip(obj.AttributeNameFormat);
-		flippedAttributeNameFormat = true;
-	}
-
-	switch (obj.AttributeNameFormat)
-	{
-		case CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER:
-		{
-			flip(obj.Label.AttributeID);
-		}
-		break;
-	}
-	
-	flip (obj.AttributeFormat);
-
-	if (!flippedAttributeNameFormat)
-	{
-		flip(obj.AttributeNameFormat);
-	}
-	
-}
-
-//
-// Automatically generated flippers
-//
-#include "flip_gen.cpp"
 
 
 }	// end namespace Flippers

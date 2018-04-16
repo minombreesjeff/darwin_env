@@ -238,7 +238,7 @@ DbBlob *DatabaseCryptoCore::encodeCore(const DbBlob &blobTemplate,
 // Throws exceptions if decoding fails.
 // Memory returned in privateAclBlob is allocated and becomes owned by caller.
 //
-void DatabaseCryptoCore::decodeCore(const DbBlob *blob, void **privateAclBlob)
+void DatabaseCryptoCore::decodeCore(DbBlob *blob, void **privateAclBlob)
 {
 	assert(mHaveMaster);	// must have master key installed
     
@@ -247,8 +247,8 @@ void DatabaseCryptoCore::decodeCore(const DbBlob *blob, void **privateAclBlob)
     decryptor.mode(CSSM_ALGMODE_CBCPadIV8);
     decryptor.padding(CSSM_PADDING_PKCS1);
     decryptor.key(mMasterKey);
-    CssmData ivd = CssmData::wrap(blob->iv); decryptor.initVector(ivd);
-    CssmData cryptoBlob = CssmData::wrap(blob->cryptoBlob(), blob->cryptoBlobLength());
+    CssmData ivd(blob->iv, sizeof(blob->iv)); decryptor.initVector(ivd);
+    CssmData cryptoBlob(blob->cryptoBlob(), blob->cryptoBlobLength());
     CssmData decryptedBlob, remData;
     decryptor.decrypt(cryptoBlob, decryptedBlob, remData);
     DbBlob::PrivateBlob *privateBlob = decryptedBlob.interpretedAs<DbBlob::PrivateBlob>();
@@ -263,8 +263,8 @@ void DatabaseCryptoCore::decodeCore(const DbBlob *blob, void **privateAclBlob)
     
     // verify signature on the whole blob
     CssmData signChunk[] = {
-		CssmData::wrap(blob->data(), fieldOffsetOf(&DbBlob::blobSignature)),
-    	CssmData::wrap(blob->publicAclBlob(), blob->publicAclBlobLength() + blob->cryptoBlobLength())
+		CssmData(blob->data(), fieldOffsetOf(&DbBlob::blobSignature)),
+    	CssmData(blob->publicAclBlob(), blob->publicAclBlobLength() + blob->cryptoBlobLength())
 	};
     CSSM_ALGORITHMS verifyAlgorithm = CSSM_ALGID_SHA1HMAC;
 #if defined(COMPAT_OSX_10_0)
@@ -273,7 +273,7 @@ void DatabaseCryptoCore::decodeCore(const DbBlob *blob, void **privateAclBlob)
 #endif
     VerifyMac verifier(Server::csp(), verifyAlgorithm);
     verifier.key(mSigningKey);
-    verifier.verify(signChunk, 2, CssmData::wrap(blob->blobSignature));
+    verifier.verify(signChunk, 2, CssmData(blob->blobSignature, sizeof(blob->blobSignature)));
     
     // all checks out; start extracting fields
     if (privateAclBlob) {
