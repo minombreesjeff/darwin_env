@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -466,6 +464,14 @@ DLDbIdentifier DLDbListCFPref::JaguarLoginDLDbIdentifier()
 	}
 }
 
+DLDbIdentifier DLDbListCFPref::makeDLDbIdentifier (const CSSM_GUID &guid, const CSSM_VERSION &version,
+												   uint32 subserviceId, CSSM_SERVICE_TYPE subserviceType,
+												   const char* dbName, CSSM_NET_ADDRESS *dbLocation)
+{
+	CssmSubserviceUid ssuid (guid, &version, subserviceId, subserviceType);
+	return DLDbIdentifier (ssuid, ExpandTildesInPath (dbName).c_str (), dbLocation);
+}
+
 DLDbIdentifier DLDbListCFPref::cfDictionaryRefToDLDbIdentifier(CFDictionaryRef theDict)
 {
     // We must get individual values from the dictionary and store in basic types
@@ -500,10 +506,7 @@ DLDbIdentifier DLDbListCFPref::cfDictionaryRefToDLDbIdentifier(CFDictionaryRef t
     // jch Get DbLocation from dictionary
 	CssmNetAddress *dbLocation=NULL;
     
-    // Create a local CssmSubserviceUid
-    CssmSubserviceUid ssuid(guid,&theVersion,subserviceId,subserviceType);
-        
-    return DLDbIdentifier(ssuid,ExpandTildesInPath(dbName).c_str(),dbLocation);
+	return makeDLDbIdentifier (guid, theVersion, subserviceId, subserviceType, dbName.c_str (), dbLocation);
 }
 
 void DLDbListCFPref::clearPWInfo ()
@@ -517,6 +520,21 @@ void DLDbListCFPref::clearPWInfo ()
 
 string DLDbListCFPref::getPwInfo(PwInfoType type)
 {
+    const char *value;
+    switch (type)
+    {
+    case kHomeDir:
+        value = getenv("HOME");
+        if (value)
+            return value;
+        break;
+    case kUsername:
+        value = getenv("USER");
+        if (value)
+            return value;
+        break;
+    }
+
 	// Get our effective uid
 	uid_t uid = geteuid();
 	// If we are setuid root use the real uid instead
@@ -623,7 +641,7 @@ CFDictionaryRef DLDbListCFPref::dlDbIdentifierToCFDictionaryRef(const DLDbIdenti
 	const char *dbName=dldbIdentifier.dbName();
     if (dbName)
     {
-        CFRef<CFStringRef> theDbName(::CFStringCreateWithCString(kCFAllocatorDefault,AbbreviatedPath(dbName).c_str(),kCFStringEncodingMacRoman));
+        CFRef<CFStringRef> theDbName(::CFStringCreateWithCString(kCFAllocatorDefault,AbbreviatedPath(dbName).c_str(),kCFStringEncodingUTF8));
         ::CFDictionarySetValue(aDict,kKeyDbName,theDbName);
     }
     // Put DbLocation in dictionary
@@ -653,11 +671,8 @@ bool DLDbListCFPref::revert(bool force)
 void
 DLDbListCFPref::add(const DLDbIdentifier &dldbIdentifier)
 {
-    for (vector<DLDbIdentifier>::const_iterator ix = searchList().begin(); ix != mSearchList.end(); ++ix)
-	{
-        if (*ix==dldbIdentifier)		// already in list
-            return;
-	}
+	if (member(dldbIdentifier))
+		return;
 
     mSearchList.push_back(dldbIdentifier);
     changed(true);
@@ -677,6 +692,41 @@ DLDbListCFPref::remove(const DLDbIdentifier &dldbIdentifier)
 			break;
 		}
 	}
+}
+
+void
+DLDbListCFPref::rename(const DLDbIdentifier &oldId, const DLDbIdentifier &newId)
+{
+    // Make sure mSearchList is set
+    searchList();
+    for (vector<DLDbIdentifier>::iterator ix = mSearchList.begin();
+		ix != mSearchList.end(); ++ix)
+	{
+		if (*ix==oldId)
+		{
+			// replace oldId with newId
+			*ix = newId;
+			changed(true);
+		}
+		else if (*ix==newId)
+		{
+			// remove newId except where we just inserted it
+			mSearchList.erase(ix);
+			changed(true);
+		}
+	}
+}
+
+bool
+DLDbListCFPref::member(const DLDbIdentifier &dldbIdentifier)
+{
+    for (vector<DLDbIdentifier>::const_iterator ix = searchList().begin(); ix != mSearchList.end(); ++ix)
+	{
+        if (*ix==dldbIdentifier)		// already in list
+            return true;
+	}
+
+	return false;
 }
 
 const vector<DLDbIdentifier> &

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -38,7 +36,7 @@
 #include "KCEventNotifier.h"
 #include "cssmdatetime.h"
 #include <security_cdsa_client/keychainacl.h>
-#include <security_cdsa_client/osxsigning.h>
+#include <security_utilities/osxcode.h>
 #include <security_utilities/trackingallocator.h>
 #include <Security/SecKeychainItemPriv.h>
 
@@ -52,11 +50,12 @@ using namespace CSSMDateTimeUtils;
 //
 
 // NewItemImpl constructor
-ItemImpl::ItemImpl(SecItemClass itemClass, OSType itemCreator, UInt32 length, const void* data)
-: mDbAttributes(new DbAttributes())
+ItemImpl::ItemImpl(SecItemClass itemClass, OSType itemCreator, UInt32 length, const void* data, bool dontDoAttributes)
+	: mDbAttributes(new DbAttributes()), mDoNotEncrypt(false),
+	mInCache(false)
 {
 	if (length && data)
-		mData.reset(new CssmDataContainer(data, length));
+		mData = new CssmDataContainer(data, length);
 
 	mDbAttributes->recordType(Schema::recordTypeFor(itemClass));
 
@@ -65,10 +64,11 @@ ItemImpl::ItemImpl(SecItemClass itemClass, OSType itemCreator, UInt32 length, co
 }
 
 ItemImpl::ItemImpl(SecItemClass itemClass, SecKeychainAttributeList *attrList, UInt32 length, const void* data)
-: mDbAttributes(new DbAttributes())
+	: mDbAttributes(new DbAttributes()), mDoNotEncrypt(false),
+	mInCache(false)
 {
 	if (length && data)
-		mData.reset(new CssmDataContainer(data, length));
+		mData = new CssmDataContainer(data, length);
 
 
 	mDbAttributes->recordType(Schema::recordTypeFor(itemClass));
@@ -84,14 +84,16 @@ ItemImpl::ItemImpl(SecItemClass itemClass, SecKeychainAttributeList *attrList, U
 
 // DbItemImpl constructor
 ItemImpl::ItemImpl(const Keychain &keychain, const PrimaryKey &primaryKey, const DbUniqueRecord &uniqueId)
-: mUniqueId(uniqueId), mKeychain(keychain), mPrimaryKey(primaryKey)
+	: mUniqueId(uniqueId), mKeychain(keychain), mPrimaryKey(primaryKey),
+	mDoNotEncrypt(false), mInCache(false)
 {
 	mKeychain->addItem(mPrimaryKey, this);
 }
 
 // PrimaryKey ItemImpl constructor
 ItemImpl::ItemImpl(const Keychain &keychain, const PrimaryKey &primaryKey)
-: mKeychain(keychain), mPrimaryKey(primaryKey)
+	: mKeychain(keychain), mPrimaryKey(primaryKey), mDoNotEncrypt(false),
+	mInCache(false)
 {
 	mKeychain->addItem(mPrimaryKey, this);
 }
@@ -100,7 +102,8 @@ ItemImpl::ItemImpl(const Keychain &keychain, const PrimaryKey &primaryKey)
 
 ItemImpl::ItemImpl(ItemImpl &item) :
     mData(item.modifiedData() ? NULL : new CssmDataContainer()),
-    mDbAttributes(new DbAttributes())
+    mDbAttributes(new DbAttributes()), mDoNotEncrypt(false),
+	mInCache(false)
 {
 	mDbAttributes->recordType(item.recordType());
 	CSSM_DB_RECORD_ATTRIBUTE_INFO *schemaAttributes = NULL;
@@ -129,20 +132,21 @@ ItemImpl::ItemImpl(ItemImpl &item) :
 	
 	if (item.modifiedData())
 		// the copied data comes from the source item
-		mData.reset(new CssmDataContainer(item.modifiedData()->Data,
-			item.modifiedData()->Length));
+		mData = new CssmDataContainer(item.modifiedData()->Data,
+			item.modifiedData()->Length);
 }
 
 ItemImpl::~ItemImpl() throw()
 {
+	// SecCFRuntime is already holding globals().apiLock for us.
 	if (mKeychain && *mPrimaryKey)
-		mKeychain->removeItem(*mPrimaryKey, this);
+		mKeychain->removeItem(mPrimaryKey, this);
 }
 
 void
 ItemImpl::didModify()
 {
-	mData.reset(NULL);
+	mData = NULL;
 	mDbAttributes.reset(NULL);
 }
 
@@ -178,7 +182,7 @@ ItemImpl::defaultAttributeValue(const CSSM_DB_ATTRIBUTE_INFO &info)
 
 
 PrimaryKey
-ItemImpl::add(Keychain &keychain)
+ItemImpl::add (Keychain &keychain)
 {
 	// If we already have a Keychain we can't be added.
 	if (mKeychain)
@@ -207,8 +211,9 @@ ItemImpl::add(Keychain &keychain)
 	}
 
     // If the label (PrintName) attribute isn't specified, set a default label.
-    if (!mDbAttributes->find(Schema::attributeInfo(kSecLabelItemAttr)))
+    if (!mDoNotEncrypt && !mDbAttributes->find(Schema::attributeInfo(kSecLabelItemAttr)))
     {
+		// if doNotEncrypt was set all of the attributes are wrapped in the data blob.  Don't calculate here.
         CssmDbAttributeData *label = NULL;
         switch (recordType)
         {
@@ -246,21 +251,28 @@ ItemImpl::add(Keychain &keychain)
 	typedef set<CssmDbAttributeInfo> InfoSet;
 	InfoSet infoSet;
 
-	// make a set of all the attributes in the key
-	for (uint32 i = 0; i < attributes->size(); i++)
-		infoSet.insert(attributes->at(i).Info);
+	if (!mDoNotEncrypt)
+	{
+		// make a set of all the attributes in the key
+		for (uint32 i = 0; i < attributes->size(); i++)
+			infoSet.insert(attributes->at(i).Info);
 
-	for (uint32 i = 0; i < primaryKeyInfos.size(); i++) { // check to make sure all required attributes are in the key
-		InfoSet::const_iterator it = infoSet.find(primaryKeyInfos.at(i));
+		for (uint32 i = 0; i < primaryKeyInfos.size(); i++) { // check to make sure all required attributes are in the key
+			InfoSet::const_iterator it = infoSet.find(primaryKeyInfos.at(i));
 
-		if (it == infoSet.end()) { // not in the key?  add the default
-			// we need to add a default value to the item attributes
-			attributes->add(primaryKeyInfos.at(i), defaultAttributeValue(primaryKeyInfos.at(i)));
+			if (it == infoSet.end()) { // not in the key?  add the default
+				// we need to add a default value to the item attributes
+				attributes->add(primaryKeyInfos.at(i), defaultAttributeValue(primaryKeyInfos.at(i)));
+			}
 		}
 	}
 	
 	Db db(keychain->database());
-	if (useSecureStorage(db))
+	if (mDoNotEncrypt)
+	{
+		mUniqueId = db->insertWithoutEncryption (recordType, NULL, mData.get());
+	}
+	else if (useSecureStorage(db))
 	{
 		// Add the item to the secure storage db
 		SSDb ssDb(safe_cast<SSDbImpl *>(&(*db)));
@@ -292,28 +304,63 @@ ItemImpl::add(Keychain &keychain)
 				}
 			}
 		}
-		
-		// Create a new SSGroup with temporary access controls
-		Access::Maker maker;
-		ResourceControlContext prototype;
-		maker.initialOwner(prototype, nullCred);
-		SSGroup ssGroup(ssDb, &prototype);
-		
+
+		// Get the handle of the DL underlying this CSPDL.
+		CSSM_DL_DB_HANDLE dldbh;
+		db->passThrough(CSSM_APPLECSPDL_DB_GET_HANDLE, NULL,
+			reinterpret_cast<void **>(&dldbh));
+
+		// Turn off autocommit on the underlying DL and remember the old state.
+		CSSM_BOOL autoCommit = CSSM_TRUE;
+		ObjectImpl::check(CSSM_DL_PassThrough(dldbh,
+			CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
+			0, reinterpret_cast<void **>(&autoCommit)));
+
 		try
 		{
-			// Insert the record using the newly created group.
-			mUniqueId = ssDb->insert(recordType, mDbAttributes.get(),
-									 mData.get(), ssGroup, maker.cred());
+			// Create a new SSGroup with temporary access controls
+			Access::Maker maker;
+			ResourceControlContext prototype;
+			maker.initialOwner(prototype, nullCred);
+			SSGroup ssGroup(ssDb, &prototype);
+			
+			try
+			{
+				// Insert the record using the newly created group.
+				mUniqueId = ssDb->insert(recordType, mDbAttributes.get(),
+										 mData.get(), ssGroup, maker.cred());
+			}
+			catch(...)
+			{
+				ssGroup->deleteKey(nullCred);
+				throw;
+			}
+
+			// now finalize the access controls on the group
+			access->setAccess(*ssGroup, maker);
+			mAccess = NULL;	// use them and lose them
+			if (autoCommit)
+			{
+				// autoCommit was on so commit now that we are done and turn
+				// it back on.
+				ObjectImpl::check(CSSM_DL_PassThrough(dldbh,
+					CSSM_APPLEFILEDL_COMMIT, NULL, NULL));
+				CSSM_DL_PassThrough(dldbh, CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
+					reinterpret_cast<const void *>(autoCommit), NULL);
+			}
 		}
-		catch(...)
+		catch (...)
 		{
-			ssGroup->deleteKey(nullCred);
+			if (autoCommit)
+			{
+				// autoCommit was off so rollback since we failed and turn
+				// autoCommit back on.
+				CSSM_DL_PassThrough(dldbh, CSSM_APPLEFILEDL_ROLLBACK, NULL, NULL);
+				CSSM_DL_PassThrough(dldbh, CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
+					reinterpret_cast<const void *>(autoCommit), NULL);
+			}
 			throw;
 		}
-
-		// now finalize the access controls on the group
-		access->setAccess(*ssGroup, maker);
-		mAccess = NULL;	// use them and lose them
 	}
 	else
 	{
@@ -325,7 +372,7 @@ ItemImpl::add(Keychain &keychain)
     mKeychain = keychain;
 
 	// Forget our data and attributes.
-	mData.reset(NULL);
+	mData = NULL;
 	mDbAttributes.reset(NULL);
 
 	return mPrimaryKey;
@@ -376,7 +423,18 @@ ItemImpl::update()
 	// Make sure that we have mUniqueId
 	dbUniqueRecord();
 	Db db(mUniqueId->database());
-	if (useSecureStorage(db))
+	if (mDoNotEncrypt)
+	{
+		CSSM_DB_RECORD_ATTRIBUTE_DATA attrData;
+		memset (&attrData, 0, sizeof (attrData));
+		attrData.DataRecordType = aRecordType;
+		
+		mUniqueId->modifyWithoutEncryption(aRecordType,
+										   &attrData,
+										   mData.get(),
+										   CSSM_DB_MODIFY_ATTRIBUTE_REPLACE);
+	}
+	else if (useSecureStorage(db))
 	{
 		// Add the item to the secure storage db
 		SSDbUniqueRecord ssUniqueId(safe_cast<SSDbUniqueRecordImpl *>
@@ -401,15 +459,18 @@ ItemImpl::update()
 						  CSSM_DB_MODIFY_ATTRIBUTE_REPLACE);
 	}
 
-	PrimaryKey oldPK = mPrimaryKey;
-	mPrimaryKey = mKeychain->makePrimaryKey(aRecordType, mUniqueId);
+	if (!mDoNotEncrypt)
+	{
+		PrimaryKey oldPK = mPrimaryKey;
+		mPrimaryKey = mKeychain->makePrimaryKey(aRecordType, mUniqueId);
 
-	// Forget our data and attributes.
-	mData.reset(NULL);
-	mDbAttributes.reset(NULL);
+		// Forget our data and attributes.
+		mData = NULL;
+		mDbAttributes.reset(NULL);
 
-	// Let the Keychain update what it needs to.
-	mKeychain->didUpdate(this, oldPK, mPrimaryKey);
+		// Let the Keychain update what it needs to.
+		mKeychain->didUpdate(this, oldPK, mPrimaryKey);
+	}
 }
 
 void
@@ -455,7 +516,7 @@ ItemImpl::modifiedData() const
 void
 ItemImpl::setData(UInt32 length,const void *data)
 {
-	mData.reset(new CssmDataContainer(data, length));
+	mData = new CssmDataContainer(data, length);
 }
 
 void
@@ -507,18 +568,15 @@ ItemImpl::keychain() const
 }
 
 bool
-ItemImpl::operator <(const ItemImpl &other) const
+ItemImpl::operator < (const ItemImpl &other) const
 {
-
-	if (*mData)
+	if (mData && *mData)
 	{
 		// Pointer compare
 		return this < &other;
 	}
 
-	// XXX Deal with not having a mPrimaryKey
-	return *mPrimaryKey < *(other.mPrimaryKey);
-
+	return mPrimaryKey < other.mPrimaryKey;
 }
 
 void
@@ -575,7 +633,7 @@ ItemImpl::modifyContent(const SecKeychainAttributeList *attrList, UInt32 dataLen
 	
 	if(inData)
 	{
-		mData.reset(new CssmDataContainer(inData, dataLength));
+		mData = new CssmDataContainer(inData, dataLength);
 	}
 	
 	update();
@@ -588,29 +646,24 @@ ItemImpl::getContent(SecItemClass *itemClass, SecKeychainAttributeList *attrList
     // If the data hasn't been set we can't return it.
     if (!mKeychain && outData)
     {
-            CssmData *data = mData.get();
-            if (!data)
-                    MacOSError::throwMe(errSecDataNotAvailable);
+		CssmData *data = mData.get();
+		if (!data)
+			MacOSError::throwMe(errSecDataNotAvailable);
     }
     // TODO: need to check and make sure attrs are valid and handle error condition
 
 
-    if(itemClass)
-            *itemClass = Schema::itemClassFor(recordType());
+    if (itemClass)
+		*itemClass = Schema::itemClassFor(recordType());
     
     bool getDataFromDatabase = mKeychain && mPrimaryKey;
-    
     if (getDataFromDatabase) // are we attached to a database?
-    
     {
         dbUniqueRecord();
-    }
 
-    // get the number of attributes requested by the caller
-    UInt32 attrCount = attrList ? attrList->count : 0;
+		// get the number of attributes requested by the caller
+		UInt32 attrCount = attrList ? attrList->count : 0;
     
-    if (getDataFromDatabase)
-    {
         // make a DBAttributes structure and populate it
         DbAttributes dbAttributes(mUniqueId->database(), attrCount);
         for (UInt32 ix = 0; ix < attrCount; ++ix)
@@ -620,11 +673,8 @@ ItemImpl::getContent(SecItemClass *itemClass, SecKeychainAttributeList *attrList
         
         // request the data from the database (since we are a reference "item" and the data is really stored there)
         CssmDataContainer itemData;
-        if (getDataFromDatabase)
-        {
-            getContent(&dbAttributes, outData ? &itemData : NULL);
-        }
-        
+		getContent(&dbAttributes, outData ? &itemData : NULL);
+
         // retrieve the data from result
         for (UInt32 ix = 0; ix < attrCount; ++ix)
         {
@@ -647,21 +697,20 @@ ItemImpl::getContent(SecItemClass *itemClass, SecKeychainAttributeList *attrList
 		// clean up
 		if (outData)
 		{
-				*outData=itemData.data();
-				itemData.Data=NULL;
-				
-				if (length) *length=itemData.length();
-				itemData.Length=0;
+			*outData=itemData.data();
+			itemData.Data = NULL;
+			
+			if (length)
+				*length=itemData.length();
+			itemData.Length = 0;
 		}
     }
-    else if (attrList != NULL)
+    else
     {
-		getLocalContent (*attrList);
-		if (outData) *outData = NULL;
-		if (length) *length = 0;
+		getLocalContent(attrList, length, outData);
 	}
-    
-    // inform anyone interested that we are doing this
+
+	// Inform anyone interested that we are doing this
 #if SENDACCESSNOTIFICATIONS
     if (outData)
     {
@@ -678,7 +727,7 @@ ItemImpl::freeContent(SecKeychainAttributeList *attrList, void *data)
 {
     Allocator &allocator = Allocator::standard(); // @@@ This might not match the one used originally
     if (data)
-            allocator.free(data);
+		allocator.free(data);
 
     UInt32 attrCount = attrList ? attrList->count : 0;
     for (UInt32 ix = 0; ix < attrCount; ++ix)
@@ -694,36 +743,40 @@ ItemImpl::modifyAttributesAndData(const SecKeychainAttributeList *attrList, UInt
 	if (!mKeychain)
 		MacOSError::throwMe(errSecNoSuchKeychain);
 
-	if (!mDbAttributes.get())
+	if (!mDoNotEncrypt)
 	{
-		mDbAttributes.reset(new DbAttributes());
-		mDbAttributes->recordType(mPrimaryKey->recordType());
-	}
+		if (!mDbAttributes.get())
+		{
+			mDbAttributes.reset(new DbAttributes());
+			mDbAttributes->recordType(mPrimaryKey->recordType());
+		}
 
-	CSSM_DB_RECORDTYPE recordType = mDbAttributes->recordType();
-    UInt32 attrCount = attrList ? attrList->count : 0;
-	for (UInt32 ix = 0; ix < attrCount; ix++)
-	{
-		CssmDbAttributeInfo info=mKeychain->attributeInfoFor(recordType, attrList->attr[ix].tag);
-						
-		if (attrList->attr[ix].length || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_STRING  || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_BLOB
-		 || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_STRING  || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_BIG_NUM
-		 || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_MULTI_UINT32)
-			mDbAttributes->add(info, CssmData(attrList->attr[ix].data, attrList->attr[ix].length));
-		else
-			mDbAttributes->add(info);
+		CSSM_DB_RECORDTYPE recordType = mDbAttributes->recordType();
+		UInt32 attrCount = attrList ? attrList->count : 0;
+		for (UInt32 ix = 0; ix < attrCount; ix++)
+		{
+			CssmDbAttributeInfo info=mKeychain->attributeInfoFor(recordType, attrList->attr[ix].tag);
+							
+			if (attrList->attr[ix].length || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_STRING  || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_BLOB
+			 || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_STRING  || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_BIG_NUM
+			 || info.AttributeFormat==CSSM_DB_ATTRIBUTE_FORMAT_MULTI_UINT32)
+				mDbAttributes->add(info, CssmData(attrList->attr[ix].data, attrList->attr[ix].length));
+			else
+				mDbAttributes->add(info);
+		}
 	}
 	
 	if(inData)
 	{
-		mData.reset(new CssmDataContainer(inData, dataLength));
+		mData = new CssmDataContainer(inData, dataLength);
 	}
 	
 	update();
 }
 
 void
-ItemImpl::getAttributesAndData(SecKeychainAttributeInfo *info, SecItemClass *itemClass, SecKeychainAttributeList **attrList, UInt32 *length, void **outData)
+ItemImpl::getAttributesAndData(SecKeychainAttributeInfo *info, SecItemClass *itemClass,
+							   SecKeychainAttributeList **attrList, UInt32 *length, void **outData)
 {
 	// If the data hasn't been set we can't return it.
 	if (!mKeychain && outData)
@@ -734,10 +787,10 @@ ItemImpl::getAttributesAndData(SecKeychainAttributeInfo *info, SecItemClass *ite
 	}
 	// TODO: need to check and make sure attrs are valid and handle error condition
 
-
-	if(itemClass)
+	if (itemClass)
 		*itemClass = Schema::itemClassFor(recordType());
-		
+
+	// @@@ This call won't work for floating items (like certificates).
 	dbUniqueRecord();
 
     UInt32 attrCount = info ? info->count : 0;
@@ -752,7 +805,7 @@ ItemImpl::getAttributesAndData(SecKeychainAttributeInfo *info, SecItemClass *ite
 	CssmDataContainer itemData;
     getContent(&dbAttributes, outData ? &itemData : NULL);
 
-	if(info && attrList)
+	if (info && attrList)
 	{
 		SecKeychainAttributeList *theList=reinterpret_cast<SecKeychainAttributeList *>(malloc(sizeof(SecKeychainAttributeList)));
 		SecKeychainAttribute *attr=reinterpret_cast<SecKeychainAttribute *>(malloc(sizeof(SecKeychainAttribute)*attrCount));
@@ -807,7 +860,7 @@ ItemImpl::freeAttributesAndData(SecKeychainAttributeList *attrList, void *data)
 	if (data)
 		allocator.free(data);
 
-	if(attrList)
+	if (attrList)
 	{
 		for (UInt32 ix = 0; ix < attrList->count; ++ix)
 		{
@@ -932,7 +985,7 @@ ItemImpl::getAttributeFrom(CssmDbAttributeData *data, SecKeychainAttribute &attr
     if (length)
     {
         if (attr.length < length)
-            MacOSError::throwMe(errSecBufferTooSmall);
+			MacOSError::throwMe(errSecBufferTooSmall);
 
         memcpy(attr.data, buf, length);
     }
@@ -978,36 +1031,49 @@ ItemImpl::group()
 	return group;
 }
 
-void ItemImpl::getLocalContent(SecKeychainAttributeList &attributeList)
+void ItemImpl::getLocalContent(SecKeychainAttributeList *attributeList, UInt32 *outLength, void **outData)
 {
+	willRead();
     Allocator &allocator = Allocator::standard(); // @@@ This might not match the one used originally
+	if (outData)
+	{
+		CssmData *data = mData.get();
+		if (!data)
+			MacOSError::throwMe(errSecDataNotAvailable);
 
-    // pull attributes out of a "floating" item, i.e. one that isn't attached to a database
-    unsigned int i;
-    for (i = 0; i < attributeList.count; ++i)
-    {
-        // get the size of the attribute
-        UInt32 actualLength;
-        SecKeychainAttribute attribute;
-        attribute.tag = attributeList.attr[i].tag;
-        attribute.length = 0;
-        attribute.data = NULL;
-        getAttribute (attribute, &actualLength);
-        
-        // if we didn't get the actual length, mark zeros.
-        if (actualLength == 0)
-        {
-            attributeList.attr[i].length = 0;
-            attributeList.attr[i].data = NULL;
-        }
-        else
-        {
-            // make room in the item data
-            attributeList.attr[i].length = actualLength;
-            attributeList.attr[i].data = allocator.malloc(actualLength);
-            getAttribute(attributeList.attr[i], &actualLength);
-        }
-    }
+		// Copy the data out of our internal cached copy.
+		uint32 length = data->Length;
+		*outData = allocator.malloc(length);
+		memcpy(*outData, data->Data, length);
+		if (outLength)
+			*outLength = length;
+	}
+
+	if (attributeList)
+	{
+		if (!mDbAttributes.get())
+			MacOSError::throwMe(errSecDataNotAvailable);
+
+		// Pull attributes out of a "floating" item, i.e. one that isn't attached to a database
+		for (UInt32 ix = 0; ix < attributeList->count; ++ix)
+		{
+			SecKeychainAttribute &attribute = attributeList->attr[ix];
+			CssmDbAttributeData *data = mDbAttributes->find(Schema::attributeInfo(attribute.tag));
+			if (data && data->NumberOfValues > 0)
+			{
+				// Copy the data out of our internal cached copy.
+				uint32 length = data->Value[0].Length;
+				attribute.data = allocator.malloc(length);
+				memcpy(attribute.data, data->Value[0].Data, length);
+				attribute.length = length;
+			}
+			else
+			{
+				attribute.length = 0;
+				attribute.data = NULL;
+			}
+		}
+	}
 }
 
 void
@@ -1018,7 +1084,12 @@ ItemImpl::getContent(DbAttributes *dbAttributes, CssmDataContainer *itemData)
     if (itemData)
     {
             Db db(mUniqueId->database());
-            if (useSecureStorage(db))
+			if (mDoNotEncrypt)
+			{
+				mUniqueId->getWithoutEncryption (dbAttributes, itemData);
+				return;
+			}
+			else if (useSecureStorage(db))
             {
                     SSDbUniqueRecord ssUniqueId(safe_cast<SSDbUniqueRecordImpl *>(&(*mUniqueId)));
                     const AccessCredentials *autoPrompt = globals().credentials();
@@ -1047,6 +1118,16 @@ ItemImpl::useSecureStorage(const Db &db)
 	return false;
 }
 
+void ItemImpl::willRead()
+{
+}
+
+
+void ItemImpl::copyRecordIdentifier(CSSM_DATA &data)
+{
+	CssmClient::DbUniqueRecord uniqueRecord = dbUniqueRecord ();
+	uniqueRecord->getRecordIdentifier(data);
+}
 
 //
 // Item -- This class is here to magically create the right subclass of ItemImpl
@@ -1060,25 +1141,22 @@ Item::Item(ItemImpl *impl) : SecPointer<ItemImpl>(impl)
 {
 }
 
-Item::Item(SecItemClass itemClass, OSType itemCreator, UInt32 length, const void* data)
+Item::Item(SecItemClass itemClass, OSType itemCreator, UInt32 length, const void* data, bool inhibitCheck)
 {
-	if (itemClass == CSSM_DL_DB_RECORD_X509_CERTIFICATE
-		|| itemClass == CSSM_DL_DB_RECORD_PUBLIC_KEY
-		|| itemClass == CSSM_DL_DB_RECORD_PRIVATE_KEY
-		|| itemClass == CSSM_DL_DB_RECORD_SYMMETRIC_KEY)
-		MacOSError::throwMe(errSecNoSuchClass); /* @@@ errSecInvalidClass */
-
-	*this = new ItemImpl(itemClass, itemCreator, length, data);
+	if (!inhibitCheck)
+	{
+		if (itemClass == CSSM_DL_DB_RECORD_X509_CERTIFICATE
+			|| itemClass == CSSM_DL_DB_RECORD_PUBLIC_KEY
+			|| itemClass == CSSM_DL_DB_RECORD_PRIVATE_KEY
+			|| itemClass == CSSM_DL_DB_RECORD_SYMMETRIC_KEY)
+			MacOSError::throwMe(errSecNoSuchClass); /* @@@ errSecInvalidClass */
+	}
+	
+	*this = new ItemImpl(itemClass, itemCreator, length, data, inhibitCheck);
 }
 
 Item::Item(SecItemClass itemClass, SecKeychainAttributeList *attrList, UInt32 length, const void* data)
 {
-	if (itemClass == CSSM_DL_DB_RECORD_X509_CERTIFICATE
-		|| itemClass == CSSM_DL_DB_RECORD_PUBLIC_KEY
-		|| itemClass == CSSM_DL_DB_RECORD_PRIVATE_KEY
-		|| itemClass == CSSM_DL_DB_RECORD_SYMMETRIC_KEY)
-		MacOSError::throwMe(errSecNoSuchClass); /* @@@ errSecInvalidClass */
-
 	*this = new ItemImpl(itemClass, attrList, length, data);
 }
 

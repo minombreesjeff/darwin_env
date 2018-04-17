@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -34,13 +32,24 @@
 #include <Security/cssmtype.h>
 #include <Security/SecAccess.h>
 #include <Security/SecKeychain.h>
+#include <Security/SecImportExport.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <security_cdsa_utilities/cssmdata.h>
 #include <stdint.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
+/* 
+ * Post notification of a "new key added" event.
+ * If you know of another way to do this, other than a dlclient-based lookup of the
+ * existing key in order to get a KeychainCore::Item, by all means have at it. 
+ */
+OSStatus impExpKeyNotify(
+	SecKeychainRef	importKeychain,
+	const CssmData	&keyLabel,		// stored with this, we use it to do a lookup
+	const CSSM_KEY	&cssmKey);		// unwrapped key in CSSM format
 
 /*
  * Attempt to import a raw key. This can be used as a lightweight

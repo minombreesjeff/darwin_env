@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -32,6 +30,7 @@
 #define _SECURITY_SECTRUST_PRIV_H_
 
 #include <Security/SecTrust.h>
+#include <CoreFoundation/CFString.h>
 
 
 #if defined(__cplusplus)
@@ -73,6 +72,38 @@ OSStatus SecTrustGetCssmResultCode(SecTrustRef trust, OSStatus *result);
 */
 /* CSSM_TP_HANDLE SecGetAppleTPHandle();
 */
+
+/*
+ * Preference-related strings for Revocation policies.
+ */
+ 
+/* 
+ * Preference domain, i.e., the name of a plist in ~/Library/Preferences or in
+ * /Library/Preferences
+ */
+#define kSecRevocationDomain		"com.apple.security.revocation"
+
+/* OCSP and CRL style keys, followed by values used for both of them */
+#define kSecRevocationOcspStyle				CFSTR("OCSPStyle")
+#define kSecRevocationCrlStyle				CFSTR("CRLStyle")
+  #define kSecRevocationOff					CFSTR("None")	/* default for each one */
+  #define kSecRevocationBestAttempt			CFSTR("BestAttempt")
+  #define kSecRevocationRequireIfPresent	CFSTR("RequireIfPresent")
+  #define kSecRevocationRequireForAll		CFSTR("RequireForAll")
+  
+/* Which first if both enabled? */
+#define kSecRevocationWhichFirst			CFSTR("RevocationFirst")
+  #define kSecRevocationOcspFirst			CFSTR("OCSP")
+  #define kSecRevocationCrlFirst			CFSTR("CRL")
+  
+/* boolean: A "this policy is sufficient per cert" for each */
+#define kSecRevocationOCSPSufficientPerCert	CFSTR("OCSPSufficientPerCert")
+#define kSecRevocationCRLSufficientPerCert	CFSTR("CRLSufficientPerCert")
+
+/* local OCSP responder URI, value arbitrary string value */
+#define kSecOCSPLocalResponder				CFSTR("OCSPLocalResponder")
+
+
 #if defined(__cplusplus)
 }
 #endif

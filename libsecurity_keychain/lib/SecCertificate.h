@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -105,15 +103,6 @@ OSStatus SecCertificateAddToKeychain(SecCertificateRef certificate, SecKeychainR
 	@result A result code.  See "Security Error Codes" (SecBase.h).
 */
 OSStatus SecCertificateGetData(SecCertificateRef certificate, CSSM_DATA_PTR data);
-
-/*!
-	@function SecCertificateGetItem
-	@abstract Retrieves the keychain item reference for a given certificate.
-    @param certificate A reference to the certificate from which to obtain the keychain item reference.
-    @param item On return, a pointer to the keychain item reference of the certificate specified. If the certificate is not based on a keychain item, the value of item is NULL.
-	@result A result code.  See "Security Error Codes" (SecBase.h).
-*/
-OSStatus SecCertificateGetItem(SecCertificateRef certificate, SecKeychainItemRef *item);
 
 /*!
 	@function SecCertificateGetType

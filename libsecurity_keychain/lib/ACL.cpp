@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -28,7 +26,7 @@
 //
 #include <security_keychain/ACL.h>
 #include <security_keychain/SecCFTypes.h>
-#include <security_cdsa_client/osxsigning.h>
+#include <security_utilities/osxcode.h>
 #include <security_cdsa_client/osxsigner.h>
 #include <security_utilities/trackingallocator.h>
 #include <security_keychain/TrustedApplication.h>
@@ -62,7 +60,7 @@ ACL::ACL(Access &acc, const AclEntryInfo &info, Allocator &alloc)
 	const AclEntryPrototype &proto = info.proto();
 	mAuthorizations = proto.authorization();
 	mDelegate = proto.delegate();
-	mEntryTag = proto.tag();
+	mEntryTag = proto.s_tag();
 
 	// take CSSM entry handle from info layer
 	mCssmHandle = info.handle();
@@ -202,8 +200,7 @@ void ACL::remove()
 
 //
 // Produce CSSM-layer form (ACL prototype) copies of our content.
-// Note that the result is chunk-allocated, and becomes the responsibility
-// of the caller.
+// Note that the result is chunk-allocated, and becomes owned by the caller.
 //
 void ACL::copyAclEntry(AclEntryPrototype &proto, Allocator &alloc)
 {
@@ -217,8 +214,7 @@ void ACL::copyAclEntry(AclEntryPrototype &proto, Allocator &alloc)
 	walk(w, proto.subject());	// copy subject in-place
 	
 	// the rest of a prototype
-	assert(mEntryTag.size() <= CSSM_MODULE_STRING_SIZE);	// no kidding
-	strcpy(proto.tag(), mEntryTag.c_str());
+	proto.tag(mEntryTag);
 	AuthorizationGroup tags(mAuthorizations, allocator);
 	proto.authorization() = tags;
 }
@@ -289,8 +285,7 @@ void ACL::setAccess(AclBearer &target, bool update,
 	makeSubject();
 	assert(mSubjectForm);
 	AclEntryPrototype proto(*mSubjectForm, mDelegate);
-	assert(mEntryTag.size() <= CSSM_MODULE_STRING_SIZE);	// no kidding
-	strcpy(proto.tag(), mEntryTag.c_str());
+	proto.tag(mEntryTag);
 	AutoAuthorizationGroup tags(mAuthorizations, allocator);
 	proto.authorization() = tags;
 	AclEntryInput input(proto);

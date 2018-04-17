@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -31,9 +29,12 @@
 #include <security_keychain/Item.h>
 #include <security_keychain/Certificate.h>
 #include <security_keychain/KeyItem.h>
+#include <security_keychain/Globals.h>
 #include <security_cdsa_utilities/Schema.h>
 #include <security_cdsa_utilities/KeySchema.h>
 #include <Security/oidsalg.h>
+#include <Security/SecKeychainItemPriv.h>
+#include <sys/param.h>
 
 using namespace KeychainCore;
 
@@ -41,8 +42,60 @@ IdentityCursorPolicyAndID::IdentityCursorPolicyAndID(const StorageManager::Keych
 	IdentityCursor(searchList, keyUsage),
 	mPolicy(policy),
 	mIDString(idString),
-	mReturnOnlyValidIdentities(returnOnlyValidIdentities)
+	mReturnOnlyValidIdentities(returnOnlyValidIdentities),
+	mPreferredIdentityChecked(false),
+	mPreferredIdentity(nil)
 {
+}
+
+IdentityCursorPolicyAndID::~IdentityCursorPolicyAndID() throw()
+{
+}
+
+void
+IdentityCursorPolicyAndID::findPreferredIdentity()
+{
+	char idUTF8[MAXPATHLEN];
+	if (!mIDString || !CFStringGetCString(mIDString, idUTF8, sizeof(idUTF8)-1, kCFStringEncodingUTF8))
+		idUTF8[0] = (char)'\0';
+	SecKeychainAttribute sAttrs[] = {
+		{ kSecTypeItemAttr, sizeof(FourCharCode), (char *)"iprf" },
+		{ kSecServiceItemAttr, strlen(idUTF8), (char *)idUTF8 }
+	};
+	SecKeychainAttributeList sAttrList = { sizeof(sAttrs) / sizeof(sAttrs[0]), sAttrs };
+
+//	StorageManager::KeychainList keychains;
+//	globals().storageManager.optionalSearchList((CFTypeRef)nil, keychains);
+
+	Item item;
+	KCCursor cursor(mSearchList /*keychains*/, kSecGenericPasswordItemClass, &sAttrList);
+	if (!cursor->next(item))
+		return;
+
+	// get persistent certificate reference
+	SecKeychainAttribute itemAttrs[] = { { kSecGenericItemAttr, 0, NULL } };
+	SecKeychainAttributeList itemAttrList = { sizeof(itemAttrs) / sizeof(itemAttrs[0]), itemAttrs };
+	item->getContent(NULL, &itemAttrList, NULL, NULL);
+
+	// find certificate, given persistent reference data
+	CFDataRef pItemRef = CFDataCreateWithBytesNoCopy(NULL, (const UInt8 *)itemAttrs[0].data, itemAttrs[0].length, kCFAllocatorNull);
+	SecKeychainItemRef certItemRef = nil;
+	OSStatus status = SecKeychainItemCopyFromPersistentReference(pItemRef, &certItemRef);
+	if (pItemRef)
+		CFRelease(pItemRef);
+	item->freeContent(&itemAttrList, NULL);
+	if (status || !certItemRef)
+		return;
+
+	// create identity reference, given certificate
+	Item certItem = ItemImpl::required(SecKeychainItemRef(certItemRef));
+	SecPointer<Certificate> certificate(static_cast<Certificate *>(certItem.get()));
+	SecPointer<Identity> identity(new Identity(mSearchList /*keychains*/, certificate));
+
+	mPreferredIdentity = identity;
+	
+	if (certItemRef)
+		CFRelease(certItemRef);
 }
 
 bool
@@ -50,109 +103,118 @@ IdentityCursorPolicyAndID::next(SecPointer<Identity> &identity)
 {
 	SecPointer<Identity> currIdentity;
 	Boolean identityOK = true;
+
+	if (!mPreferredIdentityChecked)
+	{
+		findPreferredIdentity();
+		mPreferredIdentityChecked = true;
+		if (mPreferredIdentity)
+		{
+			identity = mPreferredIdentity;
+			return true;
+		}
+	}
+
 	for (;;)
 	{
 		bool result = IdentityCursor::next(currIdentity);   // base class finds the next identity by keyUsage
 		if ( result )
 		{
-			// To reduce the number of trust evaluation calls for the cert, we need
-			// to do some pre-preocessing to weed-out certs that don't match the search criteria.
-			//
-			
-			//%%%for better performance, if 'mReturnOnlyValidIdentities' is set, 
-			// do some special processing with the CL to weed out invalid certs
-			
+			if (mPreferredIdentity && (currIdentity == mPreferredIdentity))
+			{
+				identityOK = false;	// we already returned this one, move on to the next
+				continue;
+			}
+
+			// If there was no policy specified, we're done.
+			if ( !mPolicy )
+			{
+				identityOK = true; // return this identity
+				break;
+			}
+
+			// To reduce the number of (potentially expensive) trust evaluations performed, we need
+			// to do some pre-processing to filter out certs that don't match the search criteria.
+			// Rather than try to duplicate the TP's policy logic here, we'll just call the TP with
+			// a single-element certificate array, no anchors, and no keychains to search.
+
 			SecPointer<Certificate> certificate = currIdentity->certificate();
-			CSSM_OID policyOID;
-			SecPolicyGetOID(mPolicy, &policyOID);//%%%err? %%%use Policy object
-			//
-			// Deal with Policy to determine what the idString means for the search.
-			// Check the subjectAltName field if we're dealing with the the S/MIME policy.
-			// Check the 'otherName' field of the cert if we're dealing with the AppleID policy.
-			//
-			CFComparisonResult compareResult = kCFCompareGreaterThan;  // Assume mismatch.
-			if ( 0/*CSSMOID_APPLE_TP_APPLEID ?*/ && mIDString )
+			CFRef<SecCertificateRef> certRef(certificate->handle());
+			CFRef<CFMutableArrayRef> anchorsArray(CFArrayCreateMutable(NULL, 1, NULL));
+			CFRef<CFMutableArrayRef> certArray(CFArrayCreateMutable(NULL, 1, NULL));
+			if ( !certArray || !anchorsArray )
 			{
-				// For AppleID policy, we check the otherName (already part of cStruct?)
-				// portion of the certificate to look for ID string.
-				// or maybe in the 'alis' attr or other as defined by Michael?
+				identityOK = false; // skip this and move on to the next one
+				continue;
 			}
-			else
+			CFArrayAppendValue(certArray, certRef);
+
+			SecPointer<Trust> trustLite = new Trust(certArray, mPolicy);
+			StorageManager::KeychainList emptyList;
+			// Set the anchors and keychain search list to be empty
+			trustLite->anchors(anchorsArray);
+			trustLite->searchLibs(emptyList);
+			trustLite->evaluate();
+			SecTrustResultType trustResult = trustLite->result();
+
+			if (trustResult == kSecTrustResultRecoverableTrustFailure ||
+				trustResult == kSecTrustResultFatalTrustFailure)
 			{
-				CssmOid oid1 = CssmOid::overlay(CSSMOID_APPLE_TP_SMIME);
-				CssmOid oid2 = CssmOid::overlay(policyOID);
-				if ( oid1 == oid2 )
-				{
-					// For S/MIME policy, we check the subjectAltName RFC 822 Name (1 or more email addresses)
-					// portion of the certificate and compare against mIDString.
-					//
-					CFArrayRef emailAddressArray = NULL;
-					emailAddressArray = certificate->copyEmailAddresses();
-					if ( !emailAddressArray )
-					{
-						identityOK = false;
-						break;
-					}
-					else
-					{
-						short arrayIndex = 0;
-						CFIndex emailArraySize = CFArrayGetCount(emailAddressArray);
-						for (arrayIndex = 0;arrayIndex < emailArraySize; arrayIndex++)
-						{
-							CFStringRef compareToStr = (CFStringRef)CFArrayGetValueAtIndex(emailAddressArray, arrayIndex);
-							compareResult = CFStringCompare(mIDString, compareToStr, 0);
-							if ( compareResult == kCFCompareEqualTo )
-								break;  // break from array loop; we found it.
-						}
-						CFRelease(emailAddressArray);
-					}
-				}
-				else
-					;//%%%other policies: we do what?
+				CFArrayRef certChain = NULL;
+				CSSM_TP_APPLE_EVIDENCE_INFO *statusChain = NULL, *evInfo = NULL;
+				trustLite->buildEvidence(certChain, TPEvidenceInfo::overlayVar(statusChain));
+				if (statusChain)
+					evInfo = &statusChain[0];
+				if (!evInfo || evInfo->NumStatusCodes > 0) // per-cert codes means we can't use this cert for this policy
+					trustResult = kSecTrustResultInvalid; // handled below
+				if (certChain)
+					CFRelease(certChain);
 			}
-			if ( compareResult == kCFCompareEqualTo )
+			if (trustResult == kSecTrustResultInvalid)
 			{
-				// Perform trust evaluation if they wanted and if they specified a policy.
-				//
-				if ( mReturnOnlyValidIdentities && mPolicy )
-				{
-					// Perform the trust evaluation on the cert with the specified policy.
-					//
-					CFMutableArrayRef certArray = CFArrayCreateMutable(NULL, 1, NULL);
-					if ( !certArray )
-					{
-						identityOK = false; 
-						break;  // can't create the cert array for evaluation.
-					}
-					CFArrayAppendValue(certArray, (void*)(certificate->handle()));
-					Trust* trust = new Trust(certArray, mPolicy);
-					trust->evaluate();
-					SecTrustResultType trustResult = trust->result();
-					delete trust;
-					CFRelease(certArray);   // done with cert array
-					if ( trustResult == kSecTrustResultInvalid )
-						identityOK = false; // nope, on to the next one.
-					else
-						break;  // this one was OK! break from for(;;)
-					//
-					// Trust evaluated OK...
-				}
+				identityOK = false; // move on to the next one
+				continue;
 			}
+
+			// If trust evaluation isn't requested, we're done.
+			if ( !mReturnOnlyValidIdentities )
+			{
+				identityOK = true; // return this identity
+				break;
+			}
+
+			// Perform a full trust evaluation on the certificate with the specified policy.
+			SecPointer<Trust> trust = new Trust(certArray, mPolicy);
+			trust->evaluate();
+			trustResult = trust->result();
+
+			if (trustResult == kSecTrustResultInvalid ||
+				trustResult == kSecTrustResultRecoverableTrustFailure ||
+				trustResult == kSecTrustResultFatalTrustFailure)
+			{
+				identityOK = false; // move on to the next one
+				continue;
+			}
+
+			identityOK = true; // this one was OK; return it.
+			break;
 		}
 		else
 		{
-			identityOK = false;
-			break;  // no more left.
+			identityOK = false; // no more left.
+			break;
 		}
-	}   // for
+	}   // for(;;)
 	
 	if ( identityOK )
 	{
-		identity = currIdentity;//%%%they release?<currIdentity is autoreleased?!>
+		identity = currIdentity; // caller will release the identity
 		return true;
 	}
 	else
+	{
 		return false;
+	}
 }
 
 

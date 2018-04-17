@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -49,7 +47,8 @@ UserTrustItem::UserTrustItem(Certificate *cert, Policy *policy, const TrustData 
 		reinterpret_cast<const void *>(&trustData)),
 	mCertificate(cert), mPolicy(policy)
 {
-	secdebug("usertrust", "create %p (%p,%p) = %d", this, cert, policy, trustData.trust);
+	secdebug("usertrust", "%p create(%p,%p) = %d",
+		this, cert, policy, SecTrustUserSetting(trustData.trust));
 }
 
 
@@ -58,7 +57,7 @@ UserTrustItem::UserTrustItem(Certificate *cert, Policy *policy, const TrustData 
 //
 UserTrustItem::~UserTrustItem() throw()
 {
-	secdebug("usertrust", "destroy %p", this);
+	secdebug("usertrust", "%p destroyed", this);
 }
 
 
@@ -100,14 +99,20 @@ PrimaryKey UserTrustItem::add(Keychain &keychain)
 		if (e.osStatus() != CSSMERR_DL_INVALID_RECORDTYPE)
 			throw;
 
-		// Create the cert relation and try again.
+		// Create the trust relation and try again.
 		secdebug("usertrust", "adding schema relation for user trusts");
 		db->createRelation(CSSM_DL_DB_RECORD_USER_TRUST, "CSSM_DL_DB_RECORD_USER_TRUST",
 			Schema::UserTrustSchemaAttributeCount,
 			Schema::UserTrustSchemaAttributeList,
 			Schema::UserTrustSchemaIndexCount,
 			Schema::UserTrustSchemaIndexList);
-		keychain->resetSchema();
+		keychain->keychainSchema()->didCreateRelation(
+			CSSM_DL_DB_RECORD_USER_TRUST,
+			"CSSM_DL_DB_RECORD_USER_TRUST",
+			Schema::UserTrustSchemaAttributeCount,
+			Schema::UserTrustSchemaAttributeList,
+			Schema::UserTrustSchemaIndexCount,
+			Schema::UserTrustSchemaIndexList);
 
 		mUniqueId = db->insert(recordType, mDbAttributes.get(), mData.get());
 		secdebug("usertrust", "%p inserted now", this);

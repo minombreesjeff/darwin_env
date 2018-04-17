@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -42,6 +40,9 @@
 #include <security_utilities/trackingallocator.h>
 #include <security_keychain/SecCFTypes.h>
 
+#include <Security/SecKeychainItemPriv.h>
+
+
 using namespace KeychainCore;
 using namespace CssmClient;
 
@@ -62,10 +63,12 @@ KeychainSchemaImpl::KeychainSchemaImpl(const Db &db)
 		DbUniqueRecord uniqueId(db);
 
 		uint32 relationID = relationRecord.at(0);
-		if (CSSM_DB_RECORDTYPE_SCHEMA_START <= relationID && relationID < CSSM_DB_RECORDTYPE_SCHEMA_END)
+		if (CSSM_DB_RECORDTYPE_SCHEMA_START <= relationID
+			&& relationID < CSSM_DB_RECORDTYPE_SCHEMA_END)
 			continue;
 
-		// Create a cursor on the SCHEMA_ATTRIBUTES table for records with RelationID == relationID
+		// Create a cursor on the SCHEMA_ATTRIBUTES table for records with
+		// RelationID == relationID
 		DbCursor attributes(db);
 		attributes->recordType(CSSM_DL_DB_SCHEMA_ATTRIBUTES);
 		attributes->add(CSSM_DB_EQUAL, Schema::RelationID, relationID);
@@ -73,38 +76,37 @@ KeychainSchemaImpl::KeychainSchemaImpl(const Db &db)
 		// Set up a record for retriving the SCHEMA_ATTRIBUTES
 		DbAttributes attributeRecord(db, 2);
 		attributeRecord.add(Schema::AttributeFormat);
-		attributeRecord.add(Schema::AttributeID);
-		attributeRecord.add(Schema::AttributeNameFormat);
-	
-	
+		attributeRecord.add(Schema::AttributeID);	
+
 		RelationInfoMap &rim = mDatabaseInfoMap[relationID];
 		while (attributes->next(&attributeRecord, NULL, uniqueId))
-		{
-			// @@@ this if statement was blocking tags of different naming conventions
-			//if(CSSM_DB_ATTRIBUTE_FORMAT(attributeRecord.at(2))==CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER)
-				rim[attributeRecord.at(1)] = attributeRecord.at(0);
-		}
+			rim[attributeRecord.at(1)] = attributeRecord.at(0);
 		
-		// Create a cursor on the CSSM_DL_DB_SCHEMA_INDEXES table for records with RelationID == relationID
+		// Create a cursor on the CSSM_DL_DB_SCHEMA_INDEXES table for records
+		// with RelationID == relationID
 		DbCursor indexes(db);
 		indexes->recordType(CSSM_DL_DB_SCHEMA_INDEXES);
 		indexes->conjunctive(CSSM_DB_AND);
 		indexes->add(CSSM_DB_EQUAL, Schema::RelationID, relationID);
-		indexes->add(CSSM_DB_EQUAL, Schema::IndexType, uint32(CSSM_DB_INDEX_UNIQUE));
+		indexes->add(CSSM_DB_EQUAL, Schema::IndexType,
+			uint32(CSSM_DB_INDEX_UNIQUE));
 
 		// Set up a record for retriving the SCHEMA_INDEXES
 		DbAttributes indexRecord(db, 1);
 		indexRecord.add(Schema::AttributeID);
 
-		CssmAutoDbRecordAttributeInfo &infos = *new CssmAutoDbRecordAttributeInfo();
-		mPrimaryKeyInfoMap.insert(PrimaryKeyInfoMap::value_type(relationID, &infos));
+		CssmAutoDbRecordAttributeInfo &infos =
+			*new CssmAutoDbRecordAttributeInfo();
+		mPrimaryKeyInfoMap.
+			insert(PrimaryKeyInfoMap::value_type(relationID, &infos));
 		infos.DataRecordType = relationID;
 		while (indexes->next(&indexRecord, NULL, uniqueId))
 		{
 			CssmDbAttributeInfo &info = infos.add();
 			info.AttributeNameFormat = CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER;
 			info.Label.AttributeID = indexRecord.at(0);
-			info.AttributeFormat = rim[info.Label.AttributeID]; // @@@ Might insert bogus value if DB is corrupt
+			// @@@ Might insert bogus value if DB is corrupt
+			info.AttributeFormat = rim[info.Label.AttributeID];
 		}
 	}
 }
@@ -123,6 +125,12 @@ KeychainSchemaImpl::relationInfoMapFor(CSSM_DB_RECORDTYPE recordType) const
 	return dit->second;
 }
 
+bool KeychainSchemaImpl::hasRecordType (CSSM_DB_RECORDTYPE recordType) const
+{
+	DatabaseInfoMap::const_iterator it = mDatabaseInfoMap.find(recordType);
+	return it != mDatabaseInfoMap.end();
+}
+	
 bool
 KeychainSchemaImpl::hasAttribute(CSSM_DB_RECORDTYPE recordType, uint32 attributeId) const
 {
@@ -210,24 +218,57 @@ KeychainSchemaImpl::operator ==(const KeychainSchemaImpl &other) const
 	return mDatabaseInfoMap == other.mDatabaseInfoMap;
 }
 
+void
+KeychainSchemaImpl::didCreateRelation(CSSM_DB_RECORDTYPE relationID,
+	const char *inRelationName,
+	uint32 inNumberOfAttributes,
+	const CSSM_DB_SCHEMA_ATTRIBUTE_INFO *pAttributeInfo,
+	uint32 inNumberOfIndexes,
+	const CSSM_DB_SCHEMA_INDEX_INFO *pIndexInfo)
+{
+	if (CSSM_DB_RECORDTYPE_SCHEMA_START <= relationID
+		&& relationID < CSSM_DB_RECORDTYPE_SCHEMA_END)
+		return;
+
+	RelationInfoMap &rim = mDatabaseInfoMap[relationID];
+	for (uint32 ix = 0; ix < inNumberOfAttributes; ++ix)
+		rim[pAttributeInfo[ix].AttributeId] = pAttributeInfo[ix].DataType;
+
+	CssmAutoDbRecordAttributeInfo &infos =
+		*new CssmAutoDbRecordAttributeInfo();
+	mPrimaryKeyInfoMap.
+		insert(PrimaryKeyInfoMap::value_type(relationID, &infos));
+	infos.DataRecordType = relationID;
+	for (uint32 ix = 0; ix < inNumberOfIndexes; ++ix)
+		if (pIndexInfo[ix].IndexType == CSSM_DB_INDEX_UNIQUE)
+		{
+			CssmDbAttributeInfo &info = infos.add();
+			info.AttributeNameFormat = CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER;
+			info.Label.AttributeID = pIndexInfo[ix].AttributeId;
+			info.AttributeFormat = rim[info.Label.AttributeID];
+		}
+}
+
 
 //
 // KeychainImpl
 //
 KeychainImpl::KeychainImpl(const Db &db)
-: mDb(db)
+	: mInCache(false), mDb(db), mCustomUnlockCreds (this)
 {
+	mDb->defaultCredentials(this);	// install activation hook
 }
 
 KeychainImpl::~KeychainImpl() throw()
 {
-	globals().storageManager.removeKeychain(dLDbIdentifier(), this);
+	// Remove ourselves from the cache if we are in it.
+	globals().storageManager.removeKeychain(dlDbIdentifier(), this);
 }
 
 bool
 KeychainImpl::operator ==(const KeychainImpl &keychain) const
 {
-	return dLDbIdentifier() == keychain.dLDbIdentifier();
+	return dlDbIdentifier() == keychain.dlDbIdentifier();
 }
 
 KCCursor
@@ -256,7 +297,7 @@ KeychainImpl::create(UInt32 passwordLength, const void *inPassword)
 	}
 
 	Allocator &alloc = Allocator::standard();
-        
+
 	// @@@ Share this instance
 
 	const CssmData password(const_cast<void *>(inPassword), passwordLength);
@@ -354,7 +395,8 @@ void
 KeychainImpl::changePassphrase(UInt32 oldPasswordLength, const void *oldPassword,
 	UInt32 newPasswordLength, const void *newPassword)
 {
-	// @@@ When AutoCredentials is actually finished we should no logner use a tracking allocator.
+	// @@@ When AutoCredentials is actually finished we should no longer use a
+	// tracking allocator.
 	TrackingAllocator allocator(Allocator::standard());
 	AutoCredentials cred = AutoCredentials(allocator);
 	if (oldPassword)
@@ -421,9 +463,11 @@ KeychainImpl::authenticate(const CSSM_ACCESS_CREDENTIALS *cred)
 UInt32
 KeychainImpl::status() const
 {
-	// @@@ We should figure out the read/write status though a DL passthrough or some other way.
-	// @@@ Also should locked be unlocked read only or just read-only?
-	return (mDb->isLocked() ? 0 : kSecUnlockStateStatus | kSecWritePermStatus) | kSecReadPermStatus;
+	// @@@ We should figure out the read/write status though a DL passthrough
+	// or some other way. Also should locked be unlocked read only or just
+	// read-only?
+	return (mDb->isLocked() ? 0 : kSecUnlockStateStatus | kSecWritePermStatus)
+		| kSecReadPermStatus;
 }
 
 bool
@@ -456,28 +500,85 @@ KeychainImpl::add(Item &inItem)
 {
 	Keychain keychain(this);
 	PrimaryKey primaryKey = inItem->add(keychain);
+
 	{
-		StLock<Mutex> _(mDbItemMapLock);
-		mDbItemMap[primaryKey] = inItem.get();
+		StLock<Mutex> stAPILock(globals().apiLock);
+		// The inItem shouldn't be in the cache yet
+		assert(!inItem->inCache());
+
+		// Insert inItem into mDbItemMap with key primaryKey.  p.second will be
+		// true if it got inserted. If not p.second will be false and p.first
+		// will point to the current entry with key primaryKey.
+		pair<DbItemMap::iterator, bool> p =
+			mDbItemMap.insert(DbItemMap::value_type(primaryKey, inItem.get()));
+		if (!p.second)
+		{
+			// There was already an ItemImpl * in mDbItemMap with key
+			// primaryKey.  Get a ref to the pointer to it so we can assign a
+			// new value to it below.
+			ItemImpl *&oldItem = p.first->second;
+
+			// @@@ If this happens we are breaking our API contract of 
+			// uniquifying items.  We really need to insert the item into the
+			// map before we start the add.  And have the item be in an
+			// "is being added" state.
+			assert(oldItem->inCache());
+			secdebug("keychain", "add of new item %p somehow replaced %p",
+				inItem.get(), oldItem);
+			oldItem->inCache(false);
+			oldItem = inItem.get();
+		}
+
+		inItem->inCache(true);
 	}
 
-    KCEventNotifier::PostKeychainEvent(kSecAddEvent, this, inItem);
+    KCEventNotifier::PostKeychainEvent(kSecAddEvent, keychain, inItem);
 }
 
 void
-KeychainImpl::didUpdate(ItemImpl *inItemImpl, PrimaryKey &oldPK,
+KeychainImpl::didUpdate(const Item &inItem, PrimaryKey &oldPK,
 						PrimaryKey &newPK)
 {
-	// Make sure we only hold mDbItemMapLock as long as we need to.
+	// If the primary key hasn't changed we don't need to update mDbItemMap.
+	if (oldPK != newPK)
 	{
-		StLock<Mutex> _(mDbItemMapLock);
-		DbItemMap::iterator it = mDbItemMap.find(oldPK);
-		if (it != mDbItemMap.end() && it->second == inItemImpl)
-			mDbItemMap.erase(it);
-		mDbItemMap[newPK] = inItemImpl;
+		StLock<Mutex> stAPILock(globals().apiLock);
+		// If inItem isn't in the cache we don't need to update mDbItemMap.
+		assert(inItem->inCache());
+		if (inItem->inCache())
+		{
+			// First remove the entry for inItem in mDbItemMap with key oldPK.
+			DbItemMap::iterator it = mDbItemMap.find(oldPK);
+			assert(it != mDbItemMap.end() && it->second == inItem.get());
+			if (it != mDbItemMap.end() && it->second == inItem.get())
+				mDbItemMap.erase(it);
+
+			// Insert inItem into mDbItemMap with key newPK.  p.second will be
+			// true if it got inserted. If not p.second will be false and
+			// p.first will point to the current entry with key newPK.
+			pair<DbItemMap::iterator, bool> p =
+				mDbItemMap.insert(DbItemMap::value_type(newPK, inItem.get()));
+			if (!p.second)
+			{
+				// There was already an ItemImpl * in mDbItemMap with key
+				// primaryKey.  Get a ref to the pointer to it so we can assign
+				// a new value to it below.
+				ItemImpl *&oldItem = p.first->second;
+
+				// @@@ If this happens we are breaking our API contract of 
+				// uniquifying items.  We really need to insert the item into
+				// the map with the new primary key before we start the update.
+				// And have the item be in an "is being updated" state.
+				assert(oldItem->inCache());
+				secdebug("keychain", "update of item %p somehow replaced %p",
+					inItem.get(), oldItem);
+				oldItem->inCache(false);
+				oldItem = inItem.get();
+			}
+		}
 	}
 
-    KCEventNotifier::PostKeychainEvent( kSecUpdateEvent, this, inItemImpl );
+    KCEventNotifier::PostKeychainEvent(kSecUpdateEvent, this, inItem);
 }
 
 void
@@ -491,14 +592,15 @@ KeychainImpl::deleteItem(Item &inoutItem)
 	PrimaryKey primaryKey = inoutItem->primaryKey();
 	uniqueId->deleteRecord();
 
-	// Don't kill the ref or clear the Item() since this potentially
-	// messes up things for the receiver of the kSecDeleteEvent notification.
-	//inoutItem->killRef();
-	//inoutItem = Item();
+	// Don't remove the item from the mDbItemMap here since this would cause
+	// us to report a new item to our caller when we receive the
+	// kSecDeleteEvent notification.
+	// It will be removed before we post the notification, because
+	// CCallbackMgr will call didDeleteItem() 
 
     // Post the notification for the item deletion with
 	// the primaryKey obtained when the item still existed
-	KCEventNotifier::PostKeychainEvent(kSecDeleteEvent, dLDbIdentifier(), primaryKey);
+	KCEventNotifier::PostKeychainEvent(kSecDeleteEvent, dlDbIdentifier(), primaryKey);
 }
 
 
@@ -525,10 +627,14 @@ KeychainImpl::makePrimaryKey(CSSM_DB_RECORDTYPE recordType, DbUniqueRecord &uniq
 const CssmAutoDbRecordAttributeInfo &
 KeychainImpl::primaryKeyInfosFor(CSSM_DB_RECORDTYPE recordType)
 {
-	try {
+	try
+	{
 		return keychainSchema()->primaryKeyInfosFor(recordType);
-	} catch (const CommonError &error) {
-		switch (error.osStatus()) {
+	}
+	catch (const CommonError &error)
+	{
+		switch (error.osStatus())
+		{
 		case errSecNoSuchClass:
 		case CSSMERR_DL_INVALID_RECORDTYPE:
 			resetSchema();
@@ -549,34 +655,49 @@ void KeychainImpl::gatherPrimaryKeyAttributes(DbAttributes& primaryKeyAttrs)
 		primaryKeyAttrs.add(infos.at(i));
 }
 
-Item
-KeychainImpl::item(const PrimaryKey& primaryKey)
+ItemImpl *
+KeychainImpl::_lookupItem(const PrimaryKey &primaryKey)
 {
-	// @@@ This retry code isn't really the right way to do this,
-	// we need to redo the locking structure here in the future.
-	bool tried = false;
-	for (;;)
-	{
-		{
-			StLock<Mutex> _(mDbItemMapLock);
-			DbItemMap::iterator it = mDbItemMap.find(primaryKey);
-			if (it != mDbItemMap.end())
-			{
-				return Item(it->second);
-			}
-		}
+	DbItemMap::iterator it = mDbItemMap.find(primaryKey);
+	if (it != mDbItemMap.end())
+		return it->second;
 
-		try
+	return NULL;
+}
+
+Item
+KeychainImpl::item(const PrimaryKey &primaryKey)
+{
+	{
+		// Lookup the item in the map while holding the apiLock.
+		StLock<Mutex> stAPILock(globals().apiLock);
+		ItemImpl *itemImpl = _lookupItem(primaryKey);
+		if (itemImpl)
+			return Item(itemImpl);
+	}
+
+	try
+	{
+		// We didn't find it so create a new item with just a keychain and
+		// a primary key.  However since we aren't holding
+		// globals().apiLock anymore some other thread might of beat
+		// us to creating this item and adding it to the cache.  If that
+		// happens we retry to lookup.
+		return Item(this, primaryKey);
+	}
+	catch (const MacOSError &e)
+	{
+		// If the item creation failed because some other thread already
+		// inserted this item into the cache we retry the lookup.
+		if (e.osStatus() == errSecDuplicateItem)
 		{
-			// Create an item with just a primary key
-			return Item(this, primaryKey);
+			// Lookup the item in the map while holding the apiLock.
+			StLock<Mutex> stAPILock(globals().apiLock);
+			ItemImpl *itemImpl = _lookupItem(primaryKey);
+			if (itemImpl)
+				return Item(itemImpl);
 		}
-		catch (const MacOSError &e)
-		{
-			if (tried || e.osStatus() != errSecDuplicateItem)
-				throw;
-			tried = true;
-		}
+		throw;
 	}
 }
 
@@ -585,26 +706,43 @@ KeychainImpl::item(CSSM_DB_RECORDTYPE recordType, DbUniqueRecord &uniqueId)
 {
 	PrimaryKey primaryKey = makePrimaryKey(recordType, uniqueId);
 	{
-		StLock<Mutex> _(mDbItemMapLock);
-		DbItemMap::iterator it = mDbItemMap.find(primaryKey);
-		if (it != mDbItemMap.end())
-		{
-			return Item(it->second);
-		}
+		// Lookup the item in the map while holding the apiLock.
+		StLock<Mutex> stAPILock(globals().apiLock);
+		ItemImpl *itemImpl = _lookupItem(primaryKey);
+		if (itemImpl)
+			return Item(itemImpl);
 	}
 
-	// Create a new item
-    return Item(this, primaryKey, uniqueId);
+	try
+	{
+		// We didn't find it so create a new item with a keychain, a primary key
+		// and a DbUniqueRecord. However since we aren't holding
+		// globals().apiLock anymore some other thread might of beat
+		// us to creating this item and adding it to the cache.  If that
+		// happens we retry the lookup.
+		return Item(this, primaryKey, uniqueId);
+	}
+	catch (const MacOSError &e)
+	{
+		// If the item creation failed because some other thread already
+		// inserted this item into the cache we retry the lookup.
+		if (e.osStatus() == errSecDuplicateItem)
+		{
+			// Lookup the item in the map while holding the apiLock.
+			StLock<Mutex> stAPILock(globals().apiLock);
+			ItemImpl *itemImpl = _lookupItem(primaryKey);
+			if (itemImpl)
+				return Item(itemImpl);
+		}
+		throw;
+	}
 }
 
 KeychainSchema
 KeychainImpl::keychainSchema()
 {
 	if (!mKeychainSchema)
-	{
-		// @@@ Use cache in storageManager
 		mKeychainSchema = KeychainSchema(mDb);
-	}
 
 	return mKeychainSchema;
 }
@@ -615,54 +753,70 @@ void KeychainImpl::resetSchema()
 }
 
 
-// Called from DbItemImpl's constructor (so it is only paritally constructed), add it to the map. 
+// Called from DbItemImpl's constructor (so it is only paritally constructed),
+// add it to the map. 
 void
 KeychainImpl::addItem(const PrimaryKey &primaryKey, ItemImpl *dbItemImpl)
 {
-	StLock<Mutex> _(mDbItemMapLock);
-	DbItemMap::iterator it = mDbItemMap.find(primaryKey);
-	if (it != mDbItemMap.end())
+	StLock<Mutex> stAPILock(globals().apiLock);
+	// The dbItemImpl shouldn't be in the cache yet
+	assert(!dbItemImpl->inCache());
+
+	// Insert dbItemImpl into mDbItemMap with key primaryKey.  p.second will
+	// be true if it got inserted. If not p.second will be false and p.first
+	// will point to the current entry with key primaryKey.
+	pair<DbItemMap::iterator, bool> p =
+		mDbItemMap.insert(DbItemMap::value_type(primaryKey, dbItemImpl));
+	if (!p.second)
 	{
-		// @@@ There is a race condition here when being called in multiple threads
-		// We might have added an item using add and received a notification at the same time
-		//assert(true);
+		// There was already an ItemImpl * in mDbItemMap with key primaryKey.
+		// There is a race condition here when being called in multiple threads
+		// We might have added an item using add and received a notification at
+		// the same time.
 		MacOSError::throwMe(errSecDuplicateItem);
-		//mDbItemMap.erase(it);
-		// @@@ What to do here?
 	}
 
-	mDbItemMap.insert(DbItemMap::value_type(primaryKey, dbItemImpl));
+	dbItemImpl->inCache(true);
 }
 
 void
-KeychainImpl::didDeleteItem(const ItemImpl *inItemImpl)
+KeychainImpl::didDeleteItem(ItemImpl *inItemImpl)
 {
-	// Sent sent by CCallbackMgr.
+	// Called by CCallbackMgr
     secdebug("kcnotify", "%p notified that item %p was deleted", this, inItemImpl);
-	PrimaryKey primaryKey = inItemImpl->primaryKey();
-	StLock<Mutex> _(mDbItemMapLock);
-	DbItemMap::iterator it = mDbItemMap.find(primaryKey);
-	if (it != mDbItemMap.end())
-		mDbItemMap.erase(it);
+	removeItem(inItemImpl->primaryKey(), inItemImpl);
 }
 
 void
-KeychainImpl::removeItem(const PrimaryKey &primaryKey, const ItemImpl *inItemImpl)
+KeychainImpl::removeItem(const PrimaryKey &primaryKey, ItemImpl *inItemImpl)
 {
-	// Sent from DbItemImpl's destructor, remove it from the map. 
-	StLock<Mutex> _(mDbItemMapLock);
+	StLock<Mutex> stAPILock(globals().apiLock);
+
+	// If inItemImpl isn't in the cache to begin with we are done.
+	if (!inItemImpl->inCache())
+		return;
+
 	DbItemMap::iterator it = mDbItemMap.find(primaryKey);
+	assert(it != mDbItemMap.end() && it->second == inItemImpl);
 	if (it != mDbItemMap.end() && it->second == inItemImpl)
 		mDbItemMap.erase(it);
+
+	inItemImpl->inCache(false);
 }
 
 void
-KeychainImpl::getAttributeInfoForItemID(CSSM_DB_RECORDTYPE itemID, SecKeychainAttributeInfo **Info)
+KeychainImpl::getAttributeInfoForItemID(CSSM_DB_RECORDTYPE itemID,
+	SecKeychainAttributeInfo **Info)
 {
-	try {
+	// @@@ Locking.
+	try
+	{
 		keychainSchema()->getAttributeInfoForRecordType(itemID, Info);
-	} catch (const CommonError &error) {
-		switch (error.osStatus()) {
+	}
+	catch (const CommonError &error)
+	{
+		switch (error.osStatus())
+		{
 		case errSecNoSuchClass:
 		case CSSMERR_DL_INVALID_RECORDTYPE:
 			resetSchema();
@@ -684,10 +838,15 @@ KeychainImpl::freeAttributeInfo(SecKeychainAttributeInfo *Info)
 CssmDbAttributeInfo
 KeychainImpl::attributeInfoFor(CSSM_DB_RECORDTYPE recordType, UInt32 tag)
 {
-	try {
+	// @@@ Locking.
+	try
+	{
 		return keychainSchema()->attributeInfoFor(recordType, tag);
-	} catch (const CommonError &error) {
-		switch (error.osStatus()) {
+	}
+	catch (const CommonError &error)
+	{
+		switch (error.osStatus())
+		{
 		case errSecNoSuchClass:
 		case CSSMERR_DL_INVALID_RECORDTYPE:
 			resetSchema();
@@ -696,7 +855,18 @@ KeychainImpl::attributeInfoFor(CSSM_DB_RECORDTYPE recordType, UInt32 tag)
 			throw;
 		}
 	}
+}
 
+void
+KeychainImpl::recode(const CssmData &data, const CssmData &extraData)
+{
+	mDb->recode(data, extraData);
+}
+
+void
+KeychainImpl::copyBlob(CssmData &data)
+{
+	mDb->copyBlob(data);
 }
 
 Keychain
@@ -708,3 +878,27 @@ Keychain::optional(SecKeychainRef handle)
 		return globals().storageManager.defaultKeychain();
 }
 
+
+//
+// Create default credentials for this keychain.
+// This is triggered upon default open (i.e. a Db::activate() with no set credentials).
+//
+// This function embodies the "default credentials" logic for Keychain-layer databases.
+//
+const AccessCredentials *
+KeychainImpl::makeCredentials()
+{
+	return defaultCredentials();
+}
+
+
+const AccessCredentials *
+KeychainImpl::defaultCredentials()
+{
+	// Use custom unlock credentials for file keychains which have a referral
+	// record and the standard credentials for all others.
+	if (mDb->dl()->guid() == gGuidAppleCSPDL && mCustomUnlockCreds(mDb))
+		return &mCustomUnlockCreds;
+	else
+		return globals().credentials();
+}

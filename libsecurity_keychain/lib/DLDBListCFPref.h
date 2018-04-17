@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -70,12 +68,18 @@ public:
     void save();
     vector<DLDbIdentifier>& list() { return mSearchList; }
 
-    static DLDbIdentifier cfDictionaryRefToDLDbIdentifier(CFDictionaryRef theDict);
+    static DLDbIdentifier makeDLDbIdentifier (const CSSM_GUID &guid, const CSSM_VERSION &version,
+											  uint32 subserviceId, CSSM_SERVICE_TYPE subserviceType,
+											  const char* dbName, CSSM_NET_ADDRESS *dbLocation);
+
+	static DLDbIdentifier cfDictionaryRefToDLDbIdentifier(CFDictionaryRef theDict);
     static CFDictionaryRef dlDbIdentifierToCFDictionaryRef(const DLDbIdentifier& dldbIdentifier);
 	bool revert(bool force);
 
 	void add(const DLDbIdentifier &);
 	void remove(const DLDbIdentifier &);
+	void rename(const DLDbIdentifier &oldId, const DLDbIdentifier &newId);
+	bool member(const DLDbIdentifier &);
 	const vector<DLDbIdentifier> &searchList();
 	void searchList(const vector<DLDbIdentifier> &);
 	void defaultDLDbIdentifier(const DLDbIdentifier &);
@@ -176,7 +180,7 @@ CFStringRef CFStringCreateWithBytes(CFAllocatorRef alloc, const UInt8 *bytes, CF
 
     operator const string() const { return getString(); }
 
-    const string getString(CFStringEncoding encoding=kCFStringEncodingMacRoman) const
+    const string getString(CFStringEncoding encoding=kCFStringEncodingUTF8) const
     {
         if (!mRef)
             throw std::logic_error("missing string in property list");

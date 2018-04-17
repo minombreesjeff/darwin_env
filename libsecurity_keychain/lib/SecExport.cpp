@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,7 +28,7 @@
 #include "SecImportExportPem.h"
 #include "SecExternalRep.h"
 #include "SecImportExportUtils.h"
-#include <CoreServices.framework/Frameworks/CarbonCore.framework/Headers/MacErrors.h>
+#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
 #include <security_utilities/errors.h>
 #include <Security/SecIdentity.h>
 

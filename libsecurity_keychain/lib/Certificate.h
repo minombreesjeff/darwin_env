@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -55,10 +53,10 @@ public:
 	// new item constructor
     Certificate(const CSSM_DATA &data, CSSM_CERT_TYPE type, CSSM_CERT_ENCODING encoding);
 
-	// db item contstructor
+	// db item constructor
     Certificate(const Keychain &keychain, const PrimaryKey &primaryKey, const CssmClient::DbUniqueRecord &uniqueId);
 
-	// PrimaryKey item contstructor
+	// PrimaryKey item constructor
     Certificate(const Keychain &keychain, const PrimaryKey &primaryKey);
 
 	Certificate(Certificate &certificate);
@@ -86,6 +84,7 @@ public:
 	static KCCursor cursorForSubjectKeyID(const StorageManager::KeychainList &keychains, const CssmData &subjectKeyID);
 	static KCCursor cursorForEmail(const StorageManager::KeychainList &keychains, const char *emailAddress);
 
+	SecPointer<Certificate> findInKeychain(const StorageManager::KeychainList &keychains);
 	static SecPointer<Certificate> findByIssuerAndSN(const StorageManager::KeychainList &keychains, const CssmData &issuer, const CssmData &serialNumber);
 	static SecPointer<Certificate> findBySubjectKeyID(const StorageManager::KeychainList &keychains, const CssmData &subjectKeyID);
 	static SecPointer<Certificate> findByEmail(const StorageManager::KeychainList &keychains, const char *emailAddress);
@@ -104,6 +103,7 @@ public:
 	void releaseFieldValues(const CSSM_OID &field, CSSM_DATA_PTR *fieldValues);
 
 protected:
+	virtual void willRead();
 	virtual PrimaryKey add(Keychain &keychain);
 	CSSM_HANDLE certHandle();
 
@@ -114,6 +114,7 @@ protected:
 
 private:
 	bool mHaveTypeAndEncoding;
+	bool mPopulated;
     CSSM_CERT_TYPE mType;
 	CSSM_CERT_ENCODING mEncoding;
     CssmClient::CL mCL;

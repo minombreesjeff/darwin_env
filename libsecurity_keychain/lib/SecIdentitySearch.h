@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -66,7 +64,7 @@ OSStatus SecIdentitySearchCreate(CFTypeRef keychainOrArray, CSSM_KEYUSE keyUsage
     
 /*!
 	@function SecIdentitySearchCopyNext
-    @abstract Finds the next identity matching the given search criteria, as previously specified by a call to SecKeychainIdentitySearchCreate.
+    @abstract Finds the next identity matching the given search criteria, as previously specified by a call to SecIdentitySearchCreate.
 	@param searchRef A reference to the current identity search.  You create the identity search reference by calling the SecIdentitySearchCreate function.
 	@param identity On return, a pointer to an identity reference of the next matching identity, if any. You must call the CFRelease function when finished with the identity search reference.
 	@result A result code.  When there are no more identities that match the parameters specified to SecPolicySearchCreate, errSecItemNotFound is returned. See "Security Error Codes" (SecBase.h).

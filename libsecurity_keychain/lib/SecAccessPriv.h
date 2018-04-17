@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -56,6 +54,19 @@ extern "C" {
 
 OSStatus SecKeychainAddIToolsPassword(SecKeychainRef keychain, UInt32 accountNameLength, const char *accountName,
     UInt32 passwordLength, const void *passwordData, SecKeychainItemRef *itemRef);
+
+/*!
+	@function SecAccessCreateWithTrustedApplications
+	@abstract Creates a SecAccess object with the specified trusted applications.
+    @param SecAccessCreateWithPList A full path to the .plist file that contains the trusted applications. The extension must end in ".plist".
+	@param accessLabel The access label for the new SecAccessRef.
+	@param allowAny Flag that determines allow access to any application.
+	@param returnedAccess On return, a new SecAccessRef.
+	@result A result code.  See "Security Error Codes" (SecBase.h).
+	@discussion The SecAccessCreateWithPList creates a SecAccess with the provided list of trusted applications. 
+*/
+
+OSStatus SecAccessCreateWithTrustedApplications(CFStringRef trustedApplicationsPListPath, CFStringRef accessLabel, Boolean allowAny, SecAccessRef* returnedAccess);
 
 #if defined(__cplusplus)
 }

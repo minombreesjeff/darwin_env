@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -39,9 +37,7 @@
 
 #include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacTypes.h>
 #include "Globals.h"
-#include <security_keychain/DLDBListCFPref.h>
 #include <security_keychain/SecCFTypes.h>
-//#include <security_keychain/Keychain.h>
 
 using namespace KeychainCore;
 using namespace CssmClient;
@@ -200,7 +196,7 @@ void CCallbackMgr::Event (SecurityServer::NotificationDomain domain, SecuritySer
 	list<CallbackInfo> eventCallbacks;
 	{
 		// Lock the global API lock before doing stuff with StorageManager.
-		StLock<Mutex> _(globals().apiLock);
+		StLock<Mutex> stAPILock(globals().apiLock);
 
 		// make sure we have a database identifier
 		if (dictionary.FindByName (SSUID_KEY) != 0)

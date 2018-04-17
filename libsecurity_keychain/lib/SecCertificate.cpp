@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -188,6 +186,47 @@ SecCertificateCopyEmailAddresses(SecCertificateRef certificate, CFArrayRef *emai
     BEGIN_SECAPI
 
 	Required(emailAddresses) = Certificate::required(certificate)->copyEmailAddresses();
+
+    END_SECAPI
+}
+
+OSStatus
+SecCertificateCopyFieldValues(SecCertificateRef certificate, const CSSM_OID *field, CSSM_DATA_PTR **fieldValues)
+{
+/* Return a zero terminated list of CSSM_DATA_PTR's with the values of the field specified by field.  Caller must call releaseFieldValues to free the storage allocated by this call.  */
+    BEGIN_SECAPI
+
+	Required(fieldValues) = Certificate::required(certificate)->copyFieldValues(Required(field));
+
+    END_SECAPI
+}
+
+OSStatus
+SecCertificateReleaseFieldValues(SecCertificateRef certificate, const CSSM_OID *field, CSSM_DATA_PTR *fieldValues)
+{
+    BEGIN_SECAPI
+
+	Certificate::required(certificate)->releaseFieldValues(Required(field), fieldValues);
+
+    END_SECAPI
+}
+
+OSStatus
+SecCertificateCopyFirstFieldValue(SecCertificateRef certificate, const CSSM_OID *field, CSSM_DATA_PTR *fieldValue)
+{
+    BEGIN_SECAPI
+
+	Required(fieldValue) = Certificate::required(certificate)->copyFirstFieldValue(Required(field));
+
+    END_SECAPI
+}
+
+OSStatus
+SecCertificateReleaseFirstFieldValue(SecCertificateRef certificate, const CSSM_OID *field, CSSM_DATA_PTR fieldValue)
+{
+    BEGIN_SECAPI
+
+	Certificate::required(certificate)->releaseFieldValue(Required(field), fieldValue);
 
     END_SECAPI
 }

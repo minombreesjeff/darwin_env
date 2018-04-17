@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -121,15 +119,8 @@ SecPasswordAction(SecPasswordRef itemRef, CFTypeRef message, UInt32 flags, UInt3
         OSStatus status = AuthorizationCreate(NULL,NULL,0,&authRef);
         AuthorizationItem right = { NULL, 0, NULL, 0 };
         AuthorizationItemSet rightSet = { 1, &right };
-
-        uint32_t reason, tries, keychain, addToKeychain;
-        AuthorizationItem envRights[5] = { { AGENT_HINT_RETRY_REASON, sizeof(reason), &reason, 0 },
-                                            { AGENT_HINT_TRIES, sizeof(tries), &tries, 0 },
-                                            { AGENT_HINT_CUSTOM_PROMPT, messageData ? strlen(messageData) : 0, const_cast<char*>(messageData), 0 },
-                                            { AGENT_HINT_SHOW_ADD_TO_KEYCHAIN, sizeof(keychain), &keychain, 0 },
-                                            { AGENT_ADD_TO_KEYCHAIN, sizeof(addToKeychain), &addToKeychain, 0 } };
-                                            
-        AuthorizationItemSet envSet = { sizeof(envRights) / sizeof(*envRights), envRights };
+        uint32_t reason, tries;
+        bool keychain, addToKeychain;
 
         if (passwordRef->useKeychain())
         {
@@ -159,7 +150,15 @@ SecPasswordAction(SecPasswordRef itemRef, CFTypeRef message, UInt32 flags, UInt3
             right.name = "com.apple.builtin.generic-new-passphrase";
         else
             right.name = "com.apple.builtin.generic-unlock";
-        
+
+        AuthorizationItem envRights[5] = { { AGENT_HINT_RETRY_REASON, sizeof(reason), &reason, 0 },
+                                            { AGENT_HINT_TRIES, sizeof(tries), &tries, 0 },
+                                            { AGENT_HINT_CUSTOM_PROMPT, messageData ? strlen(messageData) : 0, const_cast<char*>(messageData), 0 },
+                                            { AGENT_HINT_SHOW_ADD_TO_KEYCHAIN, keychain ? strlen("YES") : strlen("NO"), const_cast<char *>(keychain ? "YES" : "NO"), 0 },
+                                            { AGENT_ADD_TO_KEYCHAIN, addToKeychain ? strlen("YES") : strlen("NO"), const_cast<char *>(addToKeychain ? "YES" : "NO"), 0 } };
+                                            
+        AuthorizationItemSet envSet = { sizeof(envRights) / sizeof(*envRights), envRights };
+
         status = AuthorizationCopyRights(authRef, &rightSet, &envSet, kAuthorizationFlagDefaults|kAuthorizationFlagInteractionAllowed|kAuthorizationFlagExtendRights, NULL);
         
         if (status)
@@ -204,7 +203,7 @@ SecPasswordAction(SecPasswordRef itemRef, CFTypeRef message, UInt32 flags, UInt3
                 }
                 else if (!strcmp(AGENT_ADD_TO_KEYCHAIN, item.name))
                 {
-                    if (item.value && item.valueLength && !strcmp("YES", static_cast<char *>(item.value)))
+                    if (item.value && item.valueLength == strlen("YES") && !memcmp("YES", static_cast<char *>(item.value), item.valueLength))
                         passwordRef->setRememberInKeychain(true);
                     else
                         passwordRef->setRememberInKeychain(false);

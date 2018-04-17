@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -400,10 +398,10 @@ OSStatus SecKeychainSetSearchList(CFArrayRef searchList);
  *	These calls subsume the old forms with domain == kPreferenceDomainUser.
  */
 typedef enum {
-	kSecPreferencesDomainUser,			// user domain
-	kSecPreferencesDomainSystem,		// system (daemon) domain
-	kSecPreferencesDomainCommon,		// preferences to be merged to everyone
-	kSecPreferencesDomainAlternate		// alternate user
+	kSecPreferencesDomainUser,			/* user domain */
+	kSecPreferencesDomainSystem,		/* system (daemon) domain */
+	kSecPreferencesDomainCommon,		/* preferences to be merged to everyone */
+	kSecPreferencesDomainDynamic		/* dynamic searchlist (typically removable keychains like smartcards) */
 } SecPreferencesDomain;
 
 OSStatus SecKeychainCopyDomainDefault(SecPreferencesDomain domain, SecKeychainRef *keychain);

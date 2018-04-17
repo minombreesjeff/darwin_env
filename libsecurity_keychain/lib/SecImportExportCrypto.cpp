@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,13 +28,20 @@
 #include "SecImportExport.h"
 #include "SecImportExportCrypto.h"
 #include "SecImportExportUtils.h"
+#include "Keychains.h"
+#include "Access.h"
+#include "Item.h"
+#include "SecKeyPriv.h"
+#include "KCEventNotifier.h"
 #include <security_cdsa_utilities/cssmacl.h>
-#include <security_keychain/Access.h>
-#include <Security/cssmapi.h>
+#include <security_cdsa_utilities/KeySchema.h>
+#include <security_cdsa_utilities/cssmdata.h>
 #include <security_cdsa_utils/cuCdsaUtils.h>
 #include <security_utilities/devrandom.h>
-#include <Security/SecKeyPriv.h>
-#include <CoreServices.framework/Frameworks/CarbonCore.framework/Headers/MacErrors.h>
+#include <security_cdsa_client/securestorage.h>
+#include <security_cdsa_client/dlclient.h>
+#include <Security/cssmapi.h>
+#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
 
 /*
  * Key attrribute names and values.
@@ -56,6 +61,11 @@
 #define SEC_KEY_PRINT_NAME_ATTR_VALUE   "Imported Private Key"
 
 /*
+ * Label and PrintName for imported keys other than private keys.
+ */
+#define SEC_PUBKEY_PRINT_NAME_ATTR_VALUE "Imported Key"
+
+/*
  * Set private key's Label and PrintName attributes. On entry Label 
  * is typically a random string to faciliate finding the key in a DL; 
  * the PrintName is currently set to the same value by the DL. We
@@ -67,7 +77,8 @@ static CSSM_RETURN impExpSetPrivKeyLabel(
 	CSSM_DL_DB_HANDLE 	dlDbHand,		// ditto
 	CSSM_KEY_PTR		key,	
 	const CSSM_DATA		*existKeyLabel,	// existing label, a random string
-	const CSSM_DATA		*newPrintName)
+	const CSSM_DATA		*newPrintName,
+	CssmOwnedData		&newLabel)		// RETURNED as what we set
 {
 	CSSM_QUERY						query;
 	CSSM_SELECTION_PREDICATE		predicate;
@@ -80,7 +91,10 @@ static CSSM_RETURN impExpSetPrivKeyLabel(
 	if(crtn) {
 		return crtn;
 	}
-
+	
+	/* caller needs this for subsequent DL lookup */
+	newLabel.copy(keyDigest);
+	
 	/*
 	 * Look up the private key in the DL.
 	 */
@@ -250,6 +264,63 @@ OSStatus impExpImportRawKey(
 		outArray);
 }
 
+using namespace KeychainCore;
+
+/* 
+ * Post notification of a "new key added" event.
+ * If you know of another way to do this, other than a dlclient-based lookup of the
+ * existing key in order to get a KeychainCore::Item, by all means have at it. 
+ */
+OSStatus impExpKeyNotify(
+	SecKeychainRef	importKeychain,
+	const CssmData	&keyLabel,		// stored with this, we use it to do a lookup
+	const CSSM_KEY	&cssmKey)		// unwrapped key in CSSM format
+{
+	/* 
+	 * Look up key in the DLDB by label, key class, algorithm, and key size.
+	 */
+	CSSM_DB_RECORDTYPE recordType;
+	const CSSM_KEYHEADER &hdr = cssmKey.KeyHeader;
+	
+	switch(hdr.KeyClass) {
+		case CSSM_KEYCLASS_PUBLIC_KEY:
+			recordType = CSSM_DL_DB_RECORD_PUBLIC_KEY;
+			break;
+		case CSSM_KEYCLASS_PRIVATE_KEY:
+			recordType = CSSM_DL_DB_RECORD_PRIVATE_KEY;
+			break;
+		case CSSM_KEYCLASS_SESSION_KEY:
+			recordType = CSSM_DL_DB_RECORD_SYMMETRIC_KEY;
+			break;
+		default:
+			return paramErr;
+	}
+	assert(importKeychain != NULL);
+	Keychain keychain = KeychainImpl::required(importKeychain);
+	CssmClient::SSDb ssDb(safe_cast<CssmClient::SSDbImpl *>(&(*keychain->database())));
+	
+	CssmClient::DbAttributes dbAttributes;
+	CssmClient::DbUniqueRecord uniqueId;
+	CssmClient::SSDbCursor dbCursor(ssDb, 3);		// three attributes
+	dbCursor->recordType(recordType);
+	dbCursor->add(CSSM_DB_EQUAL, KeySchema::Label, keyLabel);
+	dbCursor->add(CSSM_DB_EQUAL, KeySchema::KeyType, hdr.AlgorithmId);
+	dbCursor->add(CSSM_DB_EQUAL, KeySchema::KeySizeInBits, hdr.LogicalKeySizeInBits);
+	CssmClient::Key key;
+	if (!dbCursor->nextKey(&dbAttributes, key, uniqueId)) {
+		SecImpExpDbg("impExpKeyNotify: key not found");
+		return errSecItemNotFound;
+	}
+	
+	/* 
+	 * Get a Keychain-style Item, post notification. 
+	 */
+	Item keyItem = keychain->item(recordType, uniqueId);
+	KCEventNotifier::PostKeychainEvent(kSecAddEvent, keychain, keyItem);
+
+	return noErr;
+}
+
 /*
  * Size of random label string in ASCII chars to facilitate DL lookup.
  */
@@ -288,7 +359,8 @@ OSStatus impExpImportKeyCommon(
 	ResourceControlContext rcc;
 	Security::KeychainCore::Access::Maker maker;
 	ResourceControlContext *rccPtr = NULL;
-	SecAccessRef		accessRef = NULL;
+	SecAccessRef		accessRef = keyParams ? keyParams->accessRef : NULL;
+	CssmAutoData		keyLabel(Allocator::standard());
 	
 	assert(unwrapParams != NULL);
 	assert(cspHand != 0);
@@ -345,10 +417,12 @@ OSStatus impExpImportKeyCommon(
 		}
 		labelData.Data = randLabel;
 		labelData.Length = SEC_RANDOM_LABEL_LEN;
+		/* actual keyLabel value set later */
 	}
 	else {
-		labelData.Data = (uint8 *)"Imported Key";
-		labelData.Length = 13;
+		labelData.Data = (uint8 *)SEC_PUBKEY_PRINT_NAME_ATTR_VALUE;
+		labelData.Length = strlen(SEC_PUBKEY_PRINT_NAME_ATTR_VALUE);
+		keyLabel.copy(labelData);
 	}
 	
 	/*
@@ -379,23 +453,15 @@ OSStatus impExpImportKeyCommon(
 	}
 		
 	if( (dlDbPtr != NULL) &&							// not permanent, no ACL
-	    (hdr.KeyClass == CSSM_KEYCLASS_PRIVATE_KEY) &   // ACLs only for private key
+	    (hdr.KeyClass == CSSM_KEYCLASS_PRIVATE_KEY) &&	// ACLs only for private key
 		( (keyParams == NULL) ||						// NULL --> default ACL
 		  !(keyParams->flags & kSecKeyNoAccessControl)  // explicity request no ACL
 		)
 	  ) {
 		/* 
-		 * Set up either a default ACL or one provided by caller via
+		 * Prepare to set up either a default ACL or one provided by caller via
 		 * keyParams->accessRef.
 		 */
-		if(keyParams != NULL) {
-			accessRef = keyParams->accessRef;		// may still be NULL
-			if(accessRef != NULL) {
-				printf("Hey! I don't know how to use a SecAccessRef yet.\n");
-				crtn = unimpErr;
-				goto errOut;
-			}
-		}	
 		memset(&rcc, 0, sizeof(rcc));
 		maker.initialOwner(rcc);
 		rccPtr = &rcc;
@@ -481,7 +547,7 @@ OSStatus impExpImportKeyCommon(
 		newPrintName.Data = (uint8 *)SEC_KEY_PRINT_NAME_ATTR_VALUE;
 		newPrintName.Length = strlen((char *)newPrintName.Data);
 		crtn = impExpSetPrivKeyLabel(cspHand, *dlDbPtr, unwrappedKey, 
-			&labelData, &newPrintName);
+			&labelData, &newPrintName, keyLabel);
 		if(crtn) {
 			goto errOut;
 		}
@@ -489,12 +555,12 @@ OSStatus impExpImportKeyCommon(
 	
 	/* Private key: adjust ACL as appropriate */
 	if(rccPtr != NULL) {
-		/* FIXME - SecAccessRef stuff here */
+		SecPointer<KeychainCore::Access> theAccess(accessRef ? 
+			KeychainCore::Access::required(accessRef) : 
+			new KeychainCore::Access("Imported Private Key"));
 		try {
-			CssmClient::KeyAclBearer 
-				bearer(cspHand, *unwrappedKey, Allocator::standard());
-			KeychainCore::Access initialAccess("privateKey");
-			initialAccess.setAccess(bearer, maker);
+			CssmClient::KeyAclBearer bearer(cspHand, *unwrappedKey, Allocator::standard());
+			theAccess->setAccess(bearer, maker);
 		}
 		catch (const CssmError &e) {
 			/* not implemented means we're talking to the raw CSP which does
@@ -524,6 +590,11 @@ OSStatus impExpImportKeyCommon(
 		}
 		CFArrayAppendValue(outArray, keyRef);
 	}
+	
+	if(importKeychain) {
+		impExpKeyNotify(importKeychain, keyLabel.get(), *unwrappedKey);
+	}
+	
 errOut:
 	if(ccHand != 0) {
 		CSSM_DeleteContext(ccHand);

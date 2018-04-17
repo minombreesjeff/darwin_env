@@ -36,6 +36,15 @@
 				);
 			};
 		};
+		05086AB4079088DC00E1151D = {
+			fileRef = 05012D49060B94B200C044CB;
+			isa = PBXBuildFile;
+			settings = {
+				ATTRIBUTES = (
+					Public,
+				);
+			};
+		};
 		051A034705D9A68C00E02A64 = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
@@ -124,6 +133,20 @@
 				ATTRIBUTES = (
 					Private,
 				);
+			};
+		};
+		055EA6B006AC5C13005079CE = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = TrustRevocation.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		055EA6B106AC5C13005079CE = {
+			fileRef = 055EA6B006AC5C13005079CE;
+			isa = PBXBuildFile;
+			settings = {
 			};
 		};
 		056CDA3805FD573B00820BC3 = {
@@ -383,10 +406,11 @@
 				C2AA2B82052E099D006D0211,
 				C2AA2B83052E099D006D0211,
 				C2AA2B8F052E099D006D0211,
+				527067DB070246B300C5D30E,
 				C2AA2BAA052E099D006D0211,
-				C2AA2BAB052E099D006D0211,
 				C2AA2BAC052E099D006D0211,
 				C2AA2BAD052E099D006D0211,
+				055EA6B006AC5C13005079CE,
 				C2AA2BAE052E099D006D0211,
 				C2AA2BAF052E099D006D0211,
 			);
@@ -401,22 +425,29 @@
 				C2AA2B47052E099D006D0211,
 				C2AA2B4D052E099D006D0211,
 				C2AA2B4E052E099D006D0211,
+				C2FD26370731CEE60027896A,
+				C2FD262F0731CEB40027896A,
 				C2AA2B4F052E099D006D0211,
 				C2AA2B50052E099D006D0211,
+				4CFDC28306CD9C6A007BEE7E,
+				4CFDC28406CD9C6A007BEE7E,
 				C2AA2B60052E099D006D0211,
 				C2AA2B61052E099D006D0211,
 				C2AA2B62052E099D006D0211,
 				C2AA2B63052E099D006D0211,
 				C2AA2B64052E099D006D0211,
 				C429431C053B2F8B00470431,
-				C429431D053B2F8B00470431,
 				4C868429058A55A10072F261,
+				C2AA2BAB052E099D006D0211,
+				C429431D053B2F8B00470431,
 				C2AA2B6F052E099D006D0211,
 				C2AA2B70052E099D006D0211,
 				C2AA2BB0052E099D006D0211,
 				C2AA2BB1052E099D006D0211,
 				C2AA2BB2052E099D006D0211,
 				C2AA2BB3052E099D006D0211,
+				C26BA9FE072580AE0049AF3C,
+				C2975B9B072580DC00AFECAD,
 				4CCB00430580089000981D43,
 				C2AA2B55052E099D006D0211,
 			);
@@ -635,6 +666,16 @@
 //4C2
 //4C3
 //4C4
+		4C0D977C06E7D99600F77A4A = {
+			buildSettings = {
+				BUILD_VARIANTS = normal;
+				OTHER_ASFLAGS_normal = "$(OTHER_CFLAGS)";
+				OTHER_CFLAGS_normal = "$(OTHER_CFLAGS) -O0 -fno-inline";
+				OTHER_CPLUSPLUSFLAGS_normal = "$(OTHER_CFLAGS) -O0 -fno-inline";
+			};
+			isa = PBXBuildStyle;
+			name = "normal with debug";
+		};
 		4C21181A058A75B000014C42 = {
 			fileEncoding = 4;
 			isa = PBXFileReference;
@@ -923,6 +964,7 @@
 				4C52ABD90540AD5800536F78,
 				4C52ABDA0540AD5800536F78,
 				4C52ABDB0540AD5800536F78,
+				4CFDC28806CD9CA1007BEE7E,
 				4C52ABDC0540AD5800536F78,
 				4C52ABDD0540AD5800536F78,
 				4C52ABDE0540AD5800536F78,
@@ -945,6 +987,8 @@
 				4C52ABF00540AD5800536F78,
 				4C52ABF10540AD5800536F78,
 				4066743B066E366B0054765F,
+				C2975BA00725818400AFECAD,
+				05086AB4079088DC00E1151D,
 			);
 			isa = PBXHeadersBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -956,6 +1000,8 @@
 				4CCBFF950580027700981D43,
 				4CCBFF960580027A00981D43,
 				4CCBFF980580027E00981D43,
+				527067B7070244E700C5D30E,
+				527067C50702459300C5D30E,
 			);
 			buildSettings = {
 				FRAMEWORK_VERSION = A;
@@ -995,7 +1041,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>14</string>
+	<string>78</string>
 </dict>
 </plist>
 ";
@@ -1053,8 +1099,6 @@
 			sourceTree = "<group>";
 		};
 		4CA1FEA9052A3C3800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = debug;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -1066,8 +1110,6 @@
 			name = Development;
 		};
 		4CA1FEAA052A3C3800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				ZERO_LINK = NO;
@@ -1081,6 +1123,7 @@
 			buildStyles = (
 				4CA1FEA9052A3C3800F22E42,
 				4CA1FEAA052A3C3800F22E42,
+				4C0D977C06E7D99600F77A4A,
 			);
 			hasScannedForEncodings = 1;
 			isa = PBXProject;
@@ -1101,7 +1144,9 @@
 				C2AA2BBA052E099D006D0211,
 				C2AA2BBC052E099D006D0211,
 				C2AA2BBF052E099D006D0211,
+				C2FD26380731CEFB0027896A,
 				C2AA2BC1052E099D006D0211,
+				4CFDC28506CD9C6A007BEE7E,
 				C2AA2BC7052E099D006D0211,
 				C2AA2BC9052E099D006D0211,
 				C2AA2BCB052E099D006D0211,
@@ -1151,6 +1196,8 @@
 				056CDA6505FD5B3400820BC3,
 				052AF723060A3472003FEB8D,
 				05012D46060B94A000C044CB,
+				055EA6B106AC5C13005079CE,
+				C26BA9FF072580AE0049AF3C,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1171,23 +1218,27 @@
 				4CD0D46F055B0D85001715CB,
 			);
 			buildSettings = {
-				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 14;
+				BUILD_VARIANTS = "normal debug";
+				CURRENT_PROJECT_VERSION = 78;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks /usr/local/SecurityPieces/Components/Security";
 				HEADER_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers\" \"$(BUILT_PRODUCTS_DIR)/SecurityPieces/PrivateHeaders\"";
 				LIBRARY_STYLE = STATIC;
+				OPT_CFLAGS = "-DNDEBUG -Os $(OPT_INLINEFLAGS)";
+				OPT_CPPFLAGS = "$(OPT_CFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_INLINEFLAGS = "-finline-functions --param max-inline-insns-single=100 --param max-inline-insns-auto=150 --param max-inline-insns=180 --param min-inline-insns=60";
+				OPT_LDFLAGS = "";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
 				OTHER_CFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CFLAGS_normal = "$(OPT_CFLAGS)  $(OTHER_CFLAGS)";
+				OTHER_CFLAGS_profile = "$(OPT_CFLAGS)  $(OTHER_CFLAGS) -pg";
 				OTHER_CPLUSPLUSFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CPLUSPLUSFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CPLUSPLUSFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CPLUSPLUSFLAGS_normal = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS)";
+				OTHER_CPLUSPLUSFLAGS_profile = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS) -pg";
 				OTHER_LDFLAGS_debug = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_normal = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_profile = "$(OTHER_LDFLAGS) -pg";
+				OTHER_LDFLAGS_normal = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS)";
+				OTHER_LDFLAGS_profile = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS) -pg";
 				PRIVATE_HEADER_DIR = "$(DSTROOT)/usr/local/SecurityPieces/PrivateHeaders/Security";
 				PRODUCT_NAME = security_keychain;
 				PUBLIC_HEADER_DIR = "$(DSTROOT)/usr/local/SecurityPieces/Headers/Security";
@@ -1245,6 +1296,7 @@
 			dstSubfolderSpec = 16;
 			files = (
 				4CCB004A0580091300981D43,
+				527067DC070246B300C5D30E,
 			);
 			isa = PBXCopyFilesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1782,16 +1834,137 @@
 				);
 			};
 		};
+		4CFDC28306CD9C6A007BEE7E = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = DynamicDLDBList.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		4CFDC28406CD9C6A007BEE7E = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = DynamicDLDBList.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		4CFDC28506CD9C6A007BEE7E = {
+			fileRef = 4CFDC28306CD9C6A007BEE7E;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		4CFDC28806CD9CA1007BEE7E = {
+			fileRef = 4CFDC28406CD9C6A007BEE7E;
+			isa = PBXBuildFile;
+			settings = {
+				ATTRIBUTES = (
+					Public,
+				);
+			};
+		};
 //4C0
 //4C1
 //4C2
 //4C3
 //4C4
+//520
+//521
+//522
+//523
+//524
+		527067B7070244E700C5D30E = {
+			buildActionMask = 2147483647;
+			dstPath = SecurityPieces/Resources/Security;
+			dstSubfolderSpec = 16;
+			files = (
+				527067DD070246BD00C5D30E,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		527067C50702459300C5D30E = {
+			buildActionMask = 8;
+			dstPath = /usr/local/SecurityPieces/Resources/Security;
+			dstSubfolderSpec = 0;
+			files = (
+				527067DE070246C400C5D30E,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		527067DB070246B300C5D30E = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = text.xml;
+			name = iToolsTrustedApps.plist;
+			path = plist/iToolsTrustedApps.plist;
+			refType = 2;
+			sourceTree = SOURCE_ROOT;
+		};
+		527067DC070246B300C5D30E = {
+			fileRef = 527067DB070246B300C5D30E;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		527067DD070246BD00C5D30E = {
+			fileRef = 527067DB070246B300C5D30E;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		527067DE070246C400C5D30E = {
+			fileRef = 527067DB070246B300C5D30E;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+//520
+//521
+//522
+//523
+//524
 //C20
 //C21
 //C22
 //C23
 //C24
+		C26BA9FE072580AE0049AF3C = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			name = UnlockReferralItem.cpp;
+			path = lib/UnlockReferralItem.cpp;
+			refType = 2;
+			sourceTree = SOURCE_ROOT;
+		};
+		C26BA9FF072580AE0049AF3C = {
+			fileRef = C26BA9FE072580AE0049AF3C;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		C2975B9B072580DC00AFECAD = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			name = UnlockReferralItem.h;
+			path = lib/UnlockReferralItem.h;
+			refType = 2;
+			sourceTree = SOURCE_ROOT;
+		};
+		C2975BA00725818400AFECAD = {
+			fileRef = C2975B9B072580DC00AFECAD;
+			isa = PBXBuildFile;
+			settings = {
+				ATTRIBUTES = (
+					Public,
+				);
+			};
+		};
 		C2AA2B41052E099D006D0211 = {
 			children = (
 				05FB014005E5436B00A5194C,
@@ -2791,6 +2964,30 @@
 		};
 		C2AA2C22052E099D006D0211 = {
 			fileRef = C2AA2BB2052E099D006D0211;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		C2FD262F0731CEB40027896A = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			name = defaultcreds.h;
+			path = lib/defaultcreds.h;
+			refType = 2;
+			sourceTree = SOURCE_ROOT;
+		};
+		C2FD26370731CEE60027896A = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			name = defaultcreds.cpp;
+			path = lib/defaultcreds.cpp;
+			refType = 2;
+			sourceTree = SOURCE_ROOT;
+		};
+		C2FD26380731CEFB0027896A = {
+			fileRef = C2FD26370731CEE60027896A;
 			isa = PBXBuildFile;
 			settings = {
 			};

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -132,8 +130,31 @@ void Trust::evaluate()
     if (mActionData)
         context.actionData() = cfData(mActionData);
     
-    // policies (one at least, please)
-    CFToVector<CssmField, SecPolicyRef, cfField> policies(mPolicies);
+    /*
+	 * Policies (one at least, please).
+	 * For revocation policies, see if any have been explicitly specifed...
+	 */
+	CFMutableArrayRef allPolicies = NULL;
+	uint32 numSpecAdded = 0;
+	uint32 numPrefAdded = 0;
+	if(!(revocationPolicySpecified(mPolicies))) {
+		/* 
+		 * None specified in mPolicies; see if any specified via SPI.
+		 */
+		allPolicies = addSpecifiedRevocationPolicies(numSpecAdded, context.allocator);
+		if(allPolicies == NULL) {
+			/* 
+			 * None there; try preferences. 
+			 */
+			allPolicies = Trust::addPreferenceRevocationPolicies(numPrefAdded,
+				context.allocator);
+		}
+
+	}
+	if(allPolicies == NULL) {
+		allPolicies = CFMutableArrayRef(CFArrayRef(mPolicies));
+	}	
+    CFToVector<CssmField, SecPolicyRef, cfField> policies(allPolicies);
     if (policies.empty())
         MacOSError::throwMe(CSSMERR_TP_INVALID_POLICY_IDENTIFIERS);
     context.setPolicies(policies, policies);
@@ -168,6 +189,10 @@ void Trust::evaluate()
         context.time(timeString);
     }
 
+	// to avoid keychain open/close thrashing, hold a copy of the search list
+	StorageManager::KeychainList holdSearchList;
+	globals().storageManager.getSearchList(holdSearchList);
+
     // Go TP!
     try {
         mTP->certGroupVerify(subjectCertGroup, context, &mTpResult);
@@ -190,6 +215,14 @@ void Trust::evaluate()
         // unexpected evidence information. Can't use it
         secdebug("trusteval", "unexpected evidence ignored");
     }
+	
+	/* Clean up Policies we created implicitly */
+	if(numSpecAdded) {
+		freeSpecifiedRevocationPolicies(allPolicies, numSpecAdded, context.allocator);
+	}
+	if(numPrefAdded) {
+		Trust::freePreferenceRevocationPolicies(allPolicies, numPrefAdded, context.allocator);
+	}
 }
 
 
@@ -346,7 +379,12 @@ void Trust::buildEvidence(CFArrayRef &certChain, TPEvidenceInfo * &statusChain)
 		MacOSError::throwMe(errSecTrustNotAvailable);
     certChain = mEvidenceReturned =
         makeCFArray(convert, mCertChain);
-    statusChain = mTpResult[2].as<TPEvidenceInfo>();
+	if(mTpResult.count() >= 3) {
+		statusChain = mTpResult[2].as<TPEvidenceInfo>();
+	}
+	else {
+		statusChain = NULL;
+	}
 }
 
 

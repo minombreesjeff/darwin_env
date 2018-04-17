@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -35,7 +33,7 @@ extern "C" {
 #endif
 
 /*!
-	@function SecCertificateGetPublicKey
+	@function SecCertificateCopyPublicKey
 	@abstract Retrieves the public key for a given certificate.
     @param certificate A reference to the certificate from which to retrieve the data.
     @param data On return, a pointer to the data for the certificate specified.  The caller must allocate the space for a CSSM_DATA structure before calling this function.  This data pointer is only guaranteed to remain valid as long as the certificate remains unchanged and valid.
@@ -67,6 +65,55 @@ OSStatus SecCertificateInferLabel(SecCertificateRef certificate, CFStringRef *la
  */
 const CSSM_DATA *SecInferLabelFromX509Name(
 	const CSSM_X509_NAME *x509Name);
+
+/* Accessors for fields in the cached certificate */
+
+/*!
+	@function SecCertificateCopyFieldValues
+	@abstract Retrieves the values for a particular field in a given certificate.
+    @param certificate A valid SecCertificateRef to the certificate.
+    @param field Pointer to the OID whose values should be returned.
+    @param fieldValues On return, a zero terminated list of CSSM_DATA_PTR's.
+	@result A result code.  See "Security Error Codes" (SecBase.h).
+	@discussion Return a zero terminated list of CSSM_DATA_PTR's with the
+	values of the field specified by field.  Caller must call
+	SecCertificateReleaseFieldValues to free the storage allocated by this call.
+*/
+OSStatus SecCertificateCopyFieldValues(SecCertificateRef certificate, const CSSM_OID *field, CSSM_DATA_PTR **fieldValues);
+
+/*!
+	@function SecCertificateReleaseFieldValues
+	@abstract Release the storage associated with the values returned by SecCertificateCopyFieldValues.
+    @param certificate A valid SecCertificateRef to the certificate.
+    @param field Pointer to the OID whose values were returned by SecCertificateCopyFieldValues.
+    @param fieldValues Pointer to a zero terminated list of CSSM_DATA_PTR's.
+	@result A result code.  See "Security Error Codes" (SecBase.h).
+	@discussion Release the storage associated with the values returned by SecCertificateCopyFieldValues.
+*/
+OSStatus SecCertificateReleaseFieldValues(SecCertificateRef certificate, const CSSM_OID *field, CSSM_DATA_PTR *fieldValues);
+
+/*!
+	@function SecCertificateCopyFirstFieldValue
+	@abstract Return a CSSM_DATA_PTR with the value of the first field specified by field.
+    @param certificate A valid SecCertificateRef to the certificate.
+    @param field Pointer to the OID whose value should be returned.
+    @param fieldValue On return, a CSSM_DATA_PTR to the field data.
+	@result A result code.  See "Security Error Codes" (SecBase.h).
+	@discussion Return a CSSM_DATA_PTR with the value of the first field specified by field.  Caller must call
+	SecCertificateReleaseFieldValue to free the storage allocated by this call.
+*/
+OSStatus SecCertificateCopyFirstFieldValue(SecCertificateRef certificate, const CSSM_OID *field, CSSM_DATA_PTR *fieldValue);
+
+/*!
+	@function SecCertificateReleaseFirstFieldValue
+	@abstract Release the storage associated with the values returned by SecCertificateCopyFirstFieldValue.
+    @param certificate A valid SecCertificateRef to the certificate.
+    @param field Pointer to the OID whose values were returned by SecCertificateCopyFieldValue.
+    @param fieldValue The field data to release.
+	@result A result code.  See "Security Error Codes" (SecBase.h).
+	@discussion Release the storage associated with the values returned by SecCertificateCopyFieldValue.
+*/
+OSStatus SecCertificateReleaseFirstFieldValue(SecCertificateRef certificate, const CSSM_OID *field, CSSM_DATA_PTR fieldValue);
 
 /*	Convenience functions for searching
 */

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -32,6 +30,7 @@
 
 #include "Item.h"
 #include <security_cdsa_utilities/Schema.h>
+#include <security_cdsa_utilities/KeySchema.h>
 #include "cssmdatetime.h"
 #include "Globals.h"
 #include "StorageManager.h"
@@ -41,6 +40,16 @@
 using namespace KeychainCore;
 using namespace CssmClient;
 using namespace CSSMDateTimeUtils;
+
+using namespace KeySchema;
+
+// define a table of our attributes for easy lookup
+static const CSSM_DB_ATTRIBUTE_INFO* gKeyAttributeLookupTable[] =
+{
+	&KeyClass, &PrintName, &Alias, &Permanent, &Private, &Modifiable, &Label, &ApplicationTag, &KeyCreator,
+	&KeyType, &KeySizeInBits, &EffectiveKeySize, &StartDate, &EndDate, &Sensitive, &AlwaysSensitive, &Extractable,
+	&NeverExtractable, &Encrypt, &Decrypt, &Derive, &Sign, &Verify, &SignRecover, &VerifyRecover, &Wrap, &Unwrap
+};
 
 //
 // KCCursorImpl
@@ -60,7 +69,17 @@ KCCursorImpl::KCCursorImpl(const StorageManager::KeychainList &searchList, SecIt
 	// Add all the attrs in attrs list to the cursor.
 	for (const SecKeychainAttribute *attr=attrList->attr; attr != end; ++attr)
 	{
-        const CssmDbAttributeInfo &info = Schema::attributeInfo(attr->tag);
+		const CSSM_DB_ATTRIBUTE_INFO *temp;
+		
+		if (attr->tag <'    ') // ok, is this a key schema?  Handle differently, just because we can...
+		{
+			temp = gKeyAttributeLookupTable[attr->tag];
+		}
+		else
+		{
+			temp = &Schema::attributeInfo(attr->tag);
+		}
+        const CssmDbAttributeInfo &info = *temp;
         void *buf = attr->data;
         UInt32 length = attr->length;
         uint8 timeString[16];

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -33,11 +31,11 @@
 #include <security_cdsa_client/dlclient.h>
 #include <security_utilities/refcount.h>
 #include <security_utilities/seccfobject.h>
-#include <security_keychain/DLDBListCFPref.h>
 #include <Security/SecKeychain.h>
 #include <Security/SecKeychainItem.h>
 #include <memory>
 #include "SecCFTypes.h"
+#include "defaultcreds.h"
 
 namespace Security
 {
@@ -70,6 +68,14 @@ public:
 	void getAttributeInfoForRecordType(CSSM_DB_RECORDTYPE recordType, SecKeychainAttributeInfo **Info) const;
 	CssmDbAttributeInfo attributeInfoFor(CSSM_DB_RECORDTYPE recordType, uint32 attributeId) const;
 	bool hasAttribute(CSSM_DB_RECORDTYPE recordType, uint32 attributeId) const;
+	bool hasRecordType(CSSM_DB_RECORDTYPE recordType) const;
+
+	void didCreateRelation(CSSM_DB_RECORDTYPE inRelationID,
+		const char *inRelationName,
+		uint32 inNumberOfAttributes,
+		const CSSM_DB_SCHEMA_ATTRIBUTE_INFO *pAttributeInfo,
+		uint32 inNumberOfIndexes,
+		const CSSM_DB_SCHEMA_INDEX_INFO *pIndexInfo);
 
 private:
 	typedef map<CSSM_DB_RECORDTYPE, CssmAutoDbRecordAttributeInfo *> PrimaryKeyInfoMap;
@@ -100,7 +106,7 @@ private:
 };
 
 
-class KeychainImpl : public SecCFObject
+class KeychainImpl : public SecCFObject, private CssmClient::Db::DefaultCredentialsMaker
 {
     NOCOPY(KeychainImpl)
 public:
@@ -113,8 +119,8 @@ protected:
 
 protected:
 	// Methods called by ItemImpl;
-	void didUpdate(ItemImpl *inItemImpl, PrimaryKey &oldPK,
-						PrimaryKey &newPK);
+	void didUpdate(const Item &inItem, PrimaryKey &oldPK,
+		PrimaryKey &newPK);
 
 public:
     virtual ~KeychainImpl() throw();
@@ -122,7 +128,7 @@ public:
 	bool operator ==(const KeychainImpl &) const;
 
     // Item calls
-    void add(Item &item); // item must not be persistant.  Item will change.
+	void add(Item &item);
     void deleteItem(Item &item); // item must be persistant.
 
     // Keychain calls
@@ -130,7 +136,7 @@ public:
     void create(ConstStringPtr inPassword);
     void create();
     void create(const ResourceControlContext *rcc);
-    void open(); // There is no close since the client lib deals with that itself. might throw
+    void open();
 
 	// Locking and unlocking a keychain.
     void lock();
@@ -158,7 +164,7 @@ public:
 	KCCursor createCursor(const SecKeychainAttributeList *attrList);
 	KCCursor createCursor(SecItemClass itemClass, const SecKeychainAttributeList *attrList);
 	CssmClient::Db database() { return mDb; }
-	DLDbIdentifier dLDbIdentifier() const { return mDb->dlDbIdentifier(); }
+	DLDbIdentifier dlDbIdentifier() const { return mDb->dlDbIdentifier(); }
 
 	CssmClient::CSP csp();
 
@@ -169,24 +175,47 @@ public:
 
     Item item(const PrimaryKey& primaryKey);
     Item item(CSSM_DB_RECORDTYPE recordType, CssmClient::DbUniqueRecord &uniqueId);
-	
+
 	CssmDbAttributeInfo attributeInfoFor(CSSM_DB_RECORDTYPE recordType, UInt32 tag);
 	void getAttributeInfoForItemID(CSSM_DB_RECORDTYPE itemID, SecKeychainAttributeInfo **Info);
 	static void freeAttributeInfo(SecKeychainAttributeInfo *Info);
 	KeychainSchema keychainSchema();
 	void resetSchema();
-	void didDeleteItem(const ItemImpl *inItemImpl);
+	void didDeleteItem(ItemImpl *inItemImpl);
+	
+	void recode(const CssmData &dbBlob, const CssmData &data);
+	void copyBlob(CssmData &dbBlob);
+	
+	// yield default open() credentials for this keychain (as of now)
+	const AccessCredentials *defaultCredentials();
+
+	// Only call these functions while holding globals().apiLock.
+	bool inCache() const throw() { return mInCache; }
+	void inCache(bool inCache) throw() { mInCache = inCache; }
 
 private:
 	void addItem(const PrimaryKey &primaryKey, ItemImpl *dbItemImpl);
-	void removeItem(const PrimaryKey &primaryKey, const ItemImpl *inItemImpl); 
+	void removeItem(const PrimaryKey &primaryKey, ItemImpl *inItemImpl);
+	ItemImpl *_lookupItem(const PrimaryKey &primaryKey);
+
+	const AccessCredentials *makeCredentials();
+
+	// mDbItemMap and mInCache are protected by
+	// globals().apiLock
+
+    typedef map<PrimaryKey, ItemImpl *> DbItemMap;
+	// Weak reference map of all items we know about that have a primaryKey
+    DbItemMap mDbItemMap;
+	// True iff we are in the cache of keychains in StorageManager
+	bool mInCache;
 
     CssmClient::Db mDb;
-	Mutex mDbItemMapLock;
-    typedef map<PrimaryKey, ItemImpl *> DbItemMap;
-    DbItemMap mDbItemMap;
 
 	KeychainSchema mKeychainSchema;
+	
+	// Data for auto-unlock credentials
+	DefaultCredentials mCustomUnlockCreds;
+
 };
 
 

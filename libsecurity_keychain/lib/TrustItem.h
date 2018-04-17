@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -29,6 +27,7 @@
 #ifndef _SECURITY_TRUSTITEM_H_
 #define _SECURITY_TRUSTITEM_H_
 
+#include <security_keychain/Item.h>
 #include <security_keychain/Certificate.h>
 #include <security_keychain/Policies.h>
 #include <Security/SecTrustPriv.h>
@@ -50,8 +49,8 @@ class UserTrustItem : public ItemImpl {
 	NOCOPY(UserTrustItem)
 public:	
 	struct TrustData {
-		uint32 version;					// version mark
-		SecTrustUserSetting trust;		// user's trust choice
+		Endian<uint32> version;					// version mark
+		Endian<SecTrustUserSetting> trust;		// user's trust choice
 	};
 	static const uint32 currentVersion = 0x101;
 

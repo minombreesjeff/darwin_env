@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -28,7 +26,7 @@
 //
 #include <security_keychain/TrustedApplication.h>
 #include <security_keychain/ACL.h>
-#include <security_cdsa_client/osxsigning.h>
+#include <security_utilities/osxcode.h>
 #include <security_cdsa_client/osxsigner.h>
 #include <security_utilities/trackingallocator.h>
 #include <sys/syslimits.h>
@@ -117,7 +115,7 @@ void
 TrustedApplication::calcSignature(const char *path, CssmOwnedData &signature)
 {
 	// generate a signature for the given object
-    RefPointer<CodeSigning::OSXCode> objToVerify(CodeSigning::OSXCode::at(path));
+    RefPointer<OSXCode> objToVerify(OSXCode::at(path));
 	CodeSigning::OSXSigner signer;
     auto_ptr<CodeSigning::OSXSigner::OSXSignature> osxSignature(signer.sign(*objToVerify));
     signature.copy(osxSignature->data(), osxSignature->length());
@@ -165,8 +163,9 @@ PathDatabase::PathDatabase(const char *path)
 }
 
 
-bool PathDatabase::lookup(const string &path)
+bool PathDatabase::lookup(const string &inPath)
 {
+	string path = inPath;
 	string::size_type lastSlash = path.rfind('/');
 	string::size_type bundleCore = path.find("/Contents/MacOS/");
 	if (lastSlash != string::npos && bundleCore != string::npos)

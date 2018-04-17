@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -49,7 +47,7 @@ SecKeychainSearchCreateFromAttributes(CFTypeRef keychainOrArray, SecItemClass it
 
 	secdebug("kcsearch", "SecKeychainSearchCreateFromAttributes(%p, %lu, %p, %p)",
 		keychainOrArray, itemClass, attrList, searchRef);
-	Required(searchRef); // Make sure that searchRef is an invalid SearchRef
+	Required(searchRef);
 
 	StorageManager::KeychainList keychains;
 	globals().storageManager.optionalSearchList(keychainOrArray, keychains);

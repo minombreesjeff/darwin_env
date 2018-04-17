@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -33,6 +31,7 @@
 #include <list>
 #include <set>
 #include <security_keychain/DLDBListCFPref.h>
+#include <security_keychain/DynamicDLDBList.h>
 #include <security_keychain/Keychains.h>
 #include <security_keychain/KeyItem.h>
 #include <Security/Authorization.h>
@@ -60,7 +59,7 @@ public:
     // These will call addAndNotify() if the specified keychain already exists
 	Keychain make(const char *fullPathName);
     Keychain make(const char *fullPathName, bool add);
-    Keychain makeLoginAuthUI(Item &item);
+    Keychain makeLoginAuthUI(const Item *item);
     void created(const Keychain &keychain); // Be notified a Keychain just got created.
 
 	// Misc
@@ -76,12 +75,17 @@ public:
 	KCCursor createCursor(const SecKeychainAttributeList *attrList);
 	KCCursor createCursor(SecItemClass itemClass, const SecKeychainAttributeList *attrList);
 
-	// Create KC if it doesn't exist, add to cache, but don't modify search list.	
+	// Lookup a keychain object in the cache.  If it doesn't exist, create a
+	// new one and add to cache. Doesn't modify search lists.
+	// Note this doesn't create an actual database just a reference to one
+	// that may or may not exist.
     Keychain keychain(const DLDbIdentifier &dLDbIdentifier);
 
-	// Same as keychain(const DLDbIdentifier &) but assumes mLock is already held.
-    Keychain _keychain(const DLDbIdentifier &dLDbIdentifier);
-
+	// Remove a keychain from the cache if it's in it.
+	void removeKeychain(const DLDbIdentifier &dLDbIdentifier, KeychainImpl *keychainImpl);
+	// Be notified a (smart card) keychain was removed.
+	void didRemoveKeychain(const DLDbIdentifier &dLDbIdentifier);
+	
 	// Create KC if it doesn't exist, add it to the search list if it exists and is not already on it.
     Keychain makeKeychain(const DLDbIdentifier &dLDbIdentifier, bool add = true);
 
@@ -134,28 +138,30 @@ public:
 	SecPreferencesDomain domain() { return mDomain; }
 	void domain(SecPreferencesDomain newDomain);
 
-	// To be called by KeychainImpl destructor only.
-	void removeKeychain(const DLDbIdentifier &dLDbIdentifier, KeychainImpl *keychainImpl); 
-
+	// non-file based Keychain manipulation
+	void addToDomainList(SecPreferencesDomain domain, const char* dbName, const CSSM_GUID &guid, uint32 subServiceType);
+	void isInDomainList(SecPreferencesDomain domain, const char* dbName, const CSSM_GUID &guid, uint32 subServiceType);
+	void removeFromDomainList(SecPreferencesDomain domain, const char* dbName, const CSSM_GUID &guid, uint32 subServiceType);
+	
 private:
-    typedef map<DLDbIdentifier, KeychainImpl *> KeychainMap;
-
 	static void convertList(DLDbList &ids, const KeychainList &kcs);
 	void convertList(KeychainList &kcs, const DLDbList &ids);
 
     // Only add if not there yet.  Writes out CFPref and broadcasts KCPrefListChanged notification
 	void addAndNotify(const Keychain& keychainToAdd);
 
-#if 0
-	// set default credentials for opening a keychain
-	void setDefaultCredentials(const CssmClient::Db &db);
-#endif
+	// mKeychains is protected by globals().apiLock
+    typedef map<DLDbIdentifier, KeychainImpl *> KeychainMap;
+	// Weak reference map of all keychains we know about that aren't deleted
+	// or removed
+    KeychainMap mKeychains;
+
+	// The dynamic search list.
+	DynamicDLDBList mDynamicList;
 
 	DLDbListCFPref mSavedList;
 	DLDbListCFPref mCommonList;
 	SecPreferencesDomain mDomain; // current domain (in mSavedList and cache fields)
-    KeychainMap mKeychains;		// the cache of Keychains
-	Mutex mLock;
 };
 
 } // end namespace KeychainCore

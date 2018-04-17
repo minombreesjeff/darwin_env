@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,7 +28,7 @@
 #include "SecImportExportUtils.h"
 #include <security_cdsa_utils/cuEnc64.h>
 #include <security_cdsa_utils/cuPem.h>
-#include <CoreServices.framework/Frameworks/CarbonCore.framework/Headers/MacErrors.h>
+#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -190,7 +188,7 @@ static OSStatus impExpImportSinglePEM(
 			/* somehow got here with no data */
 			assert(lenToGo == 0);
 			SecImpInferDbg("impExpImportSinglePEM empty data");
-			ortn = kSecFormatUnknown;
+			ortn = errSecUnsupportedFormat;
 			goto errOut;
 		}
 		assert(consumed <= lenToGo);
@@ -229,7 +227,7 @@ static OSStatus impExpImportSinglePEM(
 		if(currLine == NULL) {
 			/* out of data */
 			SecImpInferDbg("impExpImportSinglePEM out of data after START line");
-			ortn = kSecFormatUnknown;
+			ortn = errSecUnsupportedFormat;
 			goto errOut;
 		}
 		bool skipThis = false;
@@ -277,7 +275,7 @@ static OSStatus impExpImportSinglePEM(
 	}
 	if(lenToGo == 0) {
 		SecImpInferDbg("impExpImportSinglePEM no valid base64 data");
-		ortn = kSecFormatUnknown;
+		ortn = errSecUnsupportedFormat;
 		goto errOut;
 	}
 
@@ -292,7 +290,7 @@ static OSStatus impExpImportSinglePEM(
 		if(end64 == start64) {
 			/* Empty, nothing between START and END */
 			SecImpInferDbg("impExpImportSinglePEM no base64 between terminators");
-			ortn = kSecFormatUnknown;
+			ortn = errSecUnsupportedFormat;
 			goto errOut;
 		}
 		base64Len = end64 - start64;
@@ -303,7 +301,7 @@ static OSStatus impExpImportSinglePEM(
 	decData = cuDec64((const unsigned char *)start64, base64Len, &decDataLen);
 	if(decData == NULL) {
 		SecImpInferDbg("impExpImportSinglePEM bad base64 data");
-		ortn = kSecFormatUnknown;
+		ortn = errSecUnsupportedFormat;
 		goto errOut;
 	}
 	

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -49,11 +47,14 @@ public:
     Identity(const StorageManager::KeychainList &keychains, const SecPointer<Certificate> &certificate);
     virtual ~Identity() throw();
 
-    SecPointer<KeyItem> privateKey() const;
+	SecPointer<KeyItem> privateKey() const;
 	SecPointer<Certificate> certificate() const;
 
+	bool operator < (const Identity &other) const;
+	bool operator == (const Identity &other) const;
+
 private:
-    SecPointer<KeyItem> mPrivateKey;
+	SecPointer<KeyItem> mPrivateKey;
 	SecPointer<Certificate> mCertificate;
 };
 

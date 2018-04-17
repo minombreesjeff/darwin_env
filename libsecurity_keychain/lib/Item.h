@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -54,7 +52,7 @@ public:
 protected:
 
 	// new item constructors
-    ItemImpl(SecItemClass itemClass, OSType itemCreator, UInt32 length, const void* data);
+    ItemImpl(SecItemClass itemClass, OSType itemCreator, UInt32 length, const void* data, bool inhibitCheck = false);
 	
 	ItemImpl(SecItemClass itemClass, SecKeychainAttributeList *attrList, UInt32 length, const void* data);
 
@@ -63,9 +61,10 @@ protected:
 
 	// PrimaryKey item contstructor
     ItemImpl(const Keychain &keychain, const PrimaryKey &primaryKey);
-	
+
 	ItemImpl(ItemImpl &item);
 
+	// Return true if we got the attribute, false if we only got the actualLength.
 	void getAttributeFrom(CssmDbAttributeData *data, SecKeychainAttribute &attr,  UInt32 *actualLength);
 	void getClass(SecKeychainAttribute &attr,  UInt32 *actualLength);
 
@@ -74,7 +73,7 @@ protected:
 
 	// Add the receiver to keychain
 	virtual PrimaryKey add(Keychain &keychain);
-		
+
 	// Get the default value for an attribute
 	static const CSSM_DATA &defaultAttributeValue(const CSSM_DB_ATTRIBUTE_INFO &info);
 
@@ -98,7 +97,7 @@ public:
 
 	Keychain keychain() const;
 	PrimaryKey primaryKey() const;
-	bool operator <(const ItemImpl &other) const;
+	bool operator < (const ItemImpl &other) const;
 
 	void getAttribute(SecKeychainAttribute& attr,  UInt32 *actualLength);
 	void getData(CssmDataContainer& outData);
@@ -108,24 +107,33 @@ public:
 	static void freeContent(SecKeychainAttributeList *attrList, void *data);
 	static void freeAttributesAndData(SecKeychainAttributeList *attrList, void *data);
 
-	void getAttributesAndData(SecKeychainAttributeInfo *info, SecItemClass *itemClass, SecKeychainAttributeList **attrList, UInt32 *length, void **outData);
+	void getAttributesAndData(SecKeychainAttributeInfo *info, SecItemClass *itemClass,
+							  SecKeychainAttributeList **attrList, UInt32 *length, void **outData);
 	void modifyAttributesAndData(const SecKeychainAttributeList *attrList, UInt32 dataLength, const void *inData);
 
 	void setAttribute(SecKeychainAttribute& attr);
 	void setAttribute(const CssmDbAttributeInfo &info, const CssmPolyData &data);
 	void setData(UInt32 length,const void *data);
 	void setAccess(Access *newAccess);
-
+	void copyRecordIdentifier(CSSM_DATA &data);
 	SSGroup group();
 
-protected:
     void getContent(DbAttributes *dbAttributes, CssmDataContainer *itemData);
-    void getLocalContent(SecKeychainAttributeList &attributeList);
+    void getLocalContent(SecKeychainAttributeList *attributeList, UInt32 *outLength, void **outData);
 
     bool useSecureStorage(const CssmClient::Db &db);
+	virtual void willRead();
 
+	// for keychain syncing
+	void doNotEncrypt () {mDoNotEncrypt = true;}
+
+	// Only call these functions while holding globals().apiLock.
+	bool inCache() const throw() { return mInCache; }
+	void inCache(bool inCache) throw() { mInCache = inCache; }
+
+protected:
 	// new item members
-    auto_ptr<CssmDataContainer> mData;
+    RefPointer<CssmDataContainer> mData;
     auto_ptr<CssmClient::DbAttributes> mDbAttributes;
 	SecPointer<Access> mAccess;
 
@@ -133,6 +141,14 @@ protected:
     CssmClient::DbUniqueRecord mUniqueId;
 	Keychain mKeychain;
     PrimaryKey mPrimaryKey;
+	
+private:
+	// keychain syncing flags
+	bool mDoNotEncrypt;
+
+	// mInCache is protected by globals().apiLock
+	// True iff we are in the cache of items in mKeychain
+	bool mInCache;
 };
 
 
@@ -141,7 +157,7 @@ class Item : public SecPointer<ItemImpl>
 public:
     Item();
     Item(ItemImpl *impl);
-    Item(SecItemClass itemClass, OSType itemCreator, UInt32 length, const void* data);
+    Item(SecItemClass itemClass, OSType itemCreator, UInt32 length, const void* data, bool inhibitCheck);
 	Item(SecItemClass itemClass, SecKeychainAttributeList *attrList, UInt32 length, const void* data);
     Item(const Keychain &keychain, const PrimaryKey &primaryKey, const CssmClient::DbUniqueRecord &uniqueId);
     Item(const Keychain &keychain, const PrimaryKey &primaryKey);

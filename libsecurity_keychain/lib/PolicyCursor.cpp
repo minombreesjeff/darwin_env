@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -50,7 +48,11 @@ static const CssmOid *theOidList[] = {
 	static_cast<const CssmOid *>(&CSSMOID_APPLE_TP_SSL),
 	static_cast<const CssmOid *>(&CSSMOID_APPLE_TP_SMIME),
 	static_cast<const CssmOid *>(&CSSMOID_APPLE_TP_EAP),
+	static_cast<const CssmOid *>(&CSSMOID_APPLE_TP_CODE_SIGN),
+	static_cast<const CssmOid *>(&CSSMOID_APPLE_TP_IP_SEC),
+	static_cast<const CssmOid *>(&CSSMOID_APPLE_TP_ICHAT),
 	static_cast<const CssmOid *>(&CSSMOID_APPLE_TP_REVOCATION_CRL),
+	static_cast<const CssmOid *>(&CSSMOID_APPLE_TP_REVOCATION_OCSP),
     NULL	// sentinel
 };
 

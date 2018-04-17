@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -26,7 +24,9 @@
 #include <Security/SecCertificateRequest.h>
 
 #include "SecBridge.h"
-
+#include "CertificateRequest.h"
+#include "SecImportExport.h"
+#include "SecCertificate.h"
 
 CFTypeID
 SecCertificateRequestGetTypeID(void)
@@ -39,98 +39,130 @@ SecCertificateRequestGetTypeID(void)
 }
 
 
-OSStatus
-SecCertificateRequestCreate(
-        SecPolicyRef policy,
+OSStatus SecCertificateRequestCreate(
+        const CSSM_OID *policy,
         CSSM_CERT_TYPE certificateType,
         CSSM_TP_AUTHORITY_REQUEST_TYPE requestType,
+	    SecKeyRef privateKeyItemRef,
+	    SecKeyRef publicKeyItemRef,
+	    const SecCertificateRequestAttributeList* attributeList,
+        SecCertificateRequestRef* certRequest)
+{
+	BEGIN_SECAPI
+	Required(certRequest);
+	Required(policy);
+	*certRequest = (new CertificateRequest(*policy, certificateType, requestType,
+		privateKeyItemRef, publicKeyItemRef, attributeList))->handle();
+	END_SECAPI
+}
+
+
+OSStatus SecCertificateRequestSubmit(
+        SecCertificateRequestRef certRequest,
+        sint32* estimatedTime)
+{
+	BEGIN_SECAPI
+
+	CertificateRequest::required(certRequest)->submit(estimatedTime);
+
+	END_SECAPI
+}
+
+
+OSStatus SecCertificateRequestGetType(
+        SecCertificateRequestRef certRequestRef,
+        CSSM_TP_AUTHORITY_REQUEST_TYPE *requestType)
+{
+	BEGIN_SECAPI
+
+	Required(requestType);
+	*requestType = CertificateRequest::required(certRequestRef)->reqType();
+
+	END_SECAPI
+}
+
+OSStatus SecCertificateRequestGetResult(
+        SecCertificateRequestRef certRequestRef,
+        SecKeychainRef keychain,
+        sint32 *estimatedTime,
+        SecCertificateRef *certificateRef)
+{
+	BEGIN_SECAPI
+
+	CssmData certData;
+	*certificateRef = NULL;
+	CertificateRequest::required(certRequestRef)->getResult(estimatedTime, certData);
+	if(certData.data() != NULL) {
+		/*
+		 * Convert to SecCertifcateRef, optionally import. 
+		 */
+		CFDataRef cfCert = CFDataCreate(NULL, (UInt8 *)certData.data(), certData.Length);
+		SecExternalItemType itemType = kSecItemTypeCertificate;
+		CFArrayRef outItems = NULL;
+		OSStatus ortn = SecKeychainItemImport(cfCert, NULL,
+			NULL,			// format, don't care
+			&itemType,
+			0,				// flags
+			NULL,			// keyParams
+			keychain,		// optional, like ours
+			&outItems);
+		CFRelease(cfCert);
+		if(ortn) {
+			certReqDbg("SecCertificateRequestGetResult: SecKeychainItemImport failure");
+			MacOSError::throwMe(ortn);
+		}
+		CFIndex numItems = CFArrayGetCount(outItems);
+		switch(numItems) {
+			case 0:
+				certReqDbg("SecCertificateRequestGetResult: import zero items");
+				MacOSError::throwMe(internalComponentErr);
+			default:
+				certReqDbg("SecCertificateRequestGetResult: import %d items", 
+					(int)numItems);
+				/* but drop thru anyway, take the first one */
+			case 1:
+				SecCertificateRef certRef = 
+					(SecCertificateRef)(CFArrayGetValueAtIndex(outItems, 0));
+				if(CFGetTypeID(certRef) != SecCertificateGetTypeID()) {
+					certReqDbg("SecCertificateRequestGetResult: bad type");
+				}
+				else {
+					CFRetain(certRef);
+					*certificateRef = certRef;
+				}
+		}
+		CFRelease(outItems);
+	}	
+	END_SECAPI
+}
+
+OSStatus SecCertificateFindRequest(
+        const CSSM_OID *policy,
+        CSSM_CERT_TYPE certificateType,
+        CSSM_TP_AUTHORITY_REQUEST_TYPE requestType,
+		SecKeyRef publicKeyItemRef,				
+		SecKeyRef privateKeyItemRef,				
+		const SecCertificateRequestAttributeList* attributeList,
         SecCertificateRequestRef* certRequest)
 {
 	BEGIN_SECAPI
 
-	MacOSError::throwMe(unimpErr);//%%%for now
-
+	Required(certRequest);
+	Required(policy);
+	*certRequest = (new CertificateRequest(*policy, certificateType, requestType,
+		privateKeyItemRef, publicKeyItemRef, attributeList, false))->handle();
 	END_SECAPI
 }
 
 
-OSStatus
-SecCertificateRequestSetPrivateKey(
-        SecCertificateRequestRef certRequest,
-        SecKeychainItemRef privateKeyItemRef)
+OSStatus SecCertificateRequestGetData(
+	SecCertificateRequestRef	certRequestRef,
+	CSSM_DATA					*data)
 {
 	BEGIN_SECAPI
 
-	MacOSError::throwMe(unimpErr);//%%%for now
-
-	END_SECAPI
-}
-
-
-OSStatus
-SecCertificateRequestSetAttribute(
-        SecCertificateRequestRef certRequest,
-        const CSSM_OID* oid,
-        const CSSM_DATA* value)
-{
-	BEGIN_SECAPI
-
-	MacOSError::throwMe(unimpErr);//%%%for now
-
-	END_SECAPI
-}
-
-
-OSStatus
-SecCertificateRequestSubmit(
-        SecCertificateRequestRef certRequest,
-        SecKeychainRef keychain,
-        sint32* estimatedTime,
-        SecKeychainItemRef* certRequestItemRef)
-{
-	BEGIN_SECAPI
-
-	MacOSError::throwMe(unimpErr);//%%%for now
-
-	END_SECAPI
-}
-
-
-OSStatus
-SecCertificateRequestCreateFromItem(
-        SecKeychainItemRef certRequestItemRef,
-        SecCertificateRequestRef* certRequestRef)
-{
-	BEGIN_SECAPI
-
-	MacOSError::throwMe(unimpErr);//%%%for now
-
-	END_SECAPI
-}
-
-
-OSStatus
-SecCertificateRequestGetType(
-        SecCertificateRequestRef certRequestRef,
-        CSSM_TP_AUTHORITY_REQUEST_TYPE* requestType)
-{
-	BEGIN_SECAPI
-
-	MacOSError::throwMe(unimpErr);//%%%for now
-
-	END_SECAPI
-}
-
-
-OSStatus
-SecCertificateRequestGetResult(
-        SecCertificateRequestRef certRequestRef,
-        sint32* estimatedTime,
-        SecCertificateRef* certificateRef)
-{
-	BEGIN_SECAPI
-
-	MacOSError::throwMe(unimpErr);//%%%for now
+	Required(data);
+	CertificateRequest::required(certRequestRef)->getReturnData(CssmData::overlay(*data));
 
 	END_SECAPI
 }

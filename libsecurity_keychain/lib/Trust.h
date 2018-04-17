@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -66,6 +64,7 @@ public:
     void time(CFDateRef verifyTime)				{ mVerifyTime = verifyTime; }
     void anchors(CFArrayRef anchorList)			{ mAnchors.take(cfArrayize(anchorList)); }
     StorageManager::KeychainList &searchLibs()	{ return mSearchLibs; }
+    void searchLibs(StorageManager::KeychainList &libs)	{ mSearchLibs = libs; }
     
 	// perform evaluation
     void evaluate();
@@ -91,6 +90,19 @@ private:
 	
 	Keychain keychainByDLDb(const CSSM_DL_DB_HANDLE &handle) const;
 
+	/* revocation policy support */
+	CFMutableArrayRef	addSpecifiedRevocationPolicies(uint32 &numAdded, 
+							Allocator &alloc);
+	void				freeSpecifiedRevocationPolicies(CFArrayRef policies,
+							uint32 numAdded, 
+							Allocator &alloc);
+	CFMutableArrayRef	addPreferenceRevocationPolicies(uint32 &numAdded,
+							Allocator &alloc);
+	void				freePreferenceRevocationPolicies(CFArrayRef policies,
+							uint32 numAdded, 
+							Allocator &alloc);
+	bool				revocationPolicySpecified(CFArrayRef policies);
+	
 private:
     TP mTP;							// our TP
     

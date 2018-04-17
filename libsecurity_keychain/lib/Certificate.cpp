@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -50,6 +48,7 @@ Certificate::clForType(CSSM_CERT_TYPE type)
 Certificate::Certificate(const CSSM_DATA &data, CSSM_CERT_TYPE type, CSSM_CERT_ENCODING encoding) :
 	ItemImpl(CSSM_DL_DB_RECORD_X509_CERTIFICATE, reinterpret_cast<SecKeychainAttributeList *>(NULL), UInt32(data.Length), reinterpret_cast<const void *>(data.Data)),
 	mHaveTypeAndEncoding(true),
+	mPopulated(false),
     mType(type),
     mEncoding(encoding),
     mCL(clForType(type)),
@@ -62,6 +61,7 @@ Certificate::Certificate(const CSSM_DATA &data, CSSM_CERT_TYPE type, CSSM_CERT_E
 Certificate::Certificate(const Keychain &keychain, const PrimaryKey &primaryKey, const CssmClient::DbUniqueRecord &uniqueId) :
 	ItemImpl(keychain, primaryKey, uniqueId),
 	mHaveTypeAndEncoding(false),
+	mPopulated(false),
     mCL(NULL),
 	mCertHandle(0),
 	mV1SubjectPublicKeyCStructValue(NULL)
@@ -72,6 +72,7 @@ Certificate::Certificate(const Keychain &keychain, const PrimaryKey &primaryKey,
 Certificate::Certificate(const Keychain &keychain, const PrimaryKey &primaryKey) :
 	ItemImpl(keychain, primaryKey),
 	mHaveTypeAndEncoding(false),
+	mPopulated(false),
     mCL(NULL),
 	mCertHandle(0),
 	mV1SubjectPublicKeyCStructValue(NULL)
@@ -82,6 +83,7 @@ Certificate::Certificate(const Keychain &keychain, const PrimaryKey &primaryKey)
 Certificate::Certificate(Certificate &certificate) :
 	ItemImpl(certificate),
 	mHaveTypeAndEncoding(certificate.mHaveTypeAndEncoding),
+	mPopulated(false /* certificate.mPopulated */),
     mType(certificate.mType),
     mEncoding(certificate.mEncoding),
     mCL(certificate.mCL),
@@ -401,8 +403,10 @@ Certificate::inferLabel(bool addLabel, CFStringRef *rtnString)
             /* Don't ever use "Thawte Freemail Member" as the label for a cert.  Instead force
                a fall back on the email address. */
             const char tfm[] = "Thawte Freemail Member";
-            if (printName->Length == sizeof(tfm) - 1 && !memcmp(printName->Data, tfm, sizeof(tfm - 1)))
+            if ( (printName->Length == sizeof(tfm) - 1) && 
+			      !memcmp(printName->Data, tfm, sizeof(tfm) - 1)) {
                 printName = NULL;
+			}
         }
 	}
 
@@ -464,6 +468,9 @@ Certificate::inferLabel(bool addLabel, CFStringRef *rtnString)
 void
 Certificate::populateAttributes()
 {
+	if (mPopulated)
+		return;
+
 	addParsedAttribute(Schema::attributeInfo(kSecSubjectItemAttr), CSSMOID_X509V1SubjectName);
 	addParsedAttribute(Schema::attributeInfo(kSecIssuerItemAttr), CSSMOID_X509V1IssuerName);
 	addParsedAttribute(Schema::attributeInfo(kSecSerialNumberItemAttr), CSSMOID_X509V1SerialNumber);
@@ -488,6 +495,8 @@ Certificate::populateAttributes()
 	mDbAttributes->add(Schema::attributeInfo(kSecCertEncodingItemAttr), mEncoding);
 	mDbAttributes->add(Schema::attributeInfo(kSecPublicKeyHashItemAttr), publicKeyHash());
 	inferLabel(true);
+
+	mPopulated = true;
 }
 
 const CssmData &
@@ -498,9 +507,13 @@ Certificate::data()
 	{
 	    // Make sure mUniqueId is set.
 		dbUniqueRecord();
-		data = new CssmDataContainer();
-		mData.reset(data);
-		mUniqueId->get(NULL, data); 
+		CssmDataContainer _data;
+		mData = NULL;
+		/* new data allocated by CSPDL, implicitly freed by CssmDataContainer */
+		mUniqueId->get(NULL, &_data); 
+		/* this saves a copy to be freed at destruction and to be passed to caller */
+		setData(_data.length(), _data.data());
+		return *mData.get();
 	}
 
 	// If the data hasn't been set we can't return it.
@@ -671,12 +684,16 @@ Certificate::clHandle()
 bool
 Certificate::operator < (Certificate &other)
 {
+	// Certificates in different keychains are considered equal if data is equal
+	// Note that the Identity '<' operator relies on this assumption.
 	return data() < other.data();
 }
 
 bool
 Certificate::operator == (Certificate &other)
 {
+	// Certificates in different keychains are considered equal if data is equal
+	// Note that the Identity '==' operator relies on this assumption.
 	return data() == other.data();
 }
 
@@ -726,12 +743,19 @@ Certificate::add(Keychain &keychain)
 			throw;
 
 		// Create the cert relation and try again.
-		db->createRelation(CSSM_DL_DB_RECORD_X509_CERTIFICATE, "CSSM_DL_DB_RECORD_X509_CERTIFICATE",
+		db->createRelation(CSSM_DL_DB_RECORD_X509_CERTIFICATE,
+			"CSSM_DL_DB_RECORD_X509_CERTIFICATE",
 			Schema::X509CertificateSchemaAttributeCount,
 			Schema::X509CertificateSchemaAttributeList,
 			Schema::X509CertificateSchemaIndexCount,
 			Schema::X509CertificateSchemaIndexList);
-		keychain->resetSchema();
+		keychain->keychainSchema()->didCreateRelation(
+			CSSM_DL_DB_RECORD_X509_CERTIFICATE,
+			"CSSM_DL_DB_RECORD_X509_CERTIFICATE",
+			Schema::X509CertificateSchemaAttributeCount,
+			Schema::X509CertificateSchemaAttributeList,
+			Schema::X509CertificateSchemaIndexCount,
+			Schema::X509CertificateSchemaIndexList);
 
 		mUniqueId = db->insert(recordType, mDbAttributes.get(), mData.get());
 	}
@@ -816,6 +840,30 @@ Certificate::cursorForEmail(const StorageManager::KeychainList &keychains, const
 	}
 
 	return cursor;
+}
+
+SecPointer<Certificate>
+Certificate::findInKeychain(const StorageManager::KeychainList &keychains)
+{
+	const CSSM_OID &issuerOid = CSSMOID_X509V1IssuerName;
+	CSSM_DATA_PTR issuerPtr = copyFirstFieldValue(issuerOid);
+	CssmData issuer(issuerPtr->Data, issuerPtr->Length);
+
+	const CSSM_OID &serialOid = CSSMOID_X509V1SerialNumber;
+	CSSM_DATA_PTR serialPtr = copyFirstFieldValue(serialOid);
+	CssmData serial(serialPtr->Data, serialPtr->Length);
+
+	SecPointer<Certificate> foundCert = NULL;
+	try {
+		foundCert = findByIssuerAndSN(keychains, issuer, serial);
+	} catch (...) {
+		foundCert = NULL;
+	}
+
+	releaseFieldValue(issuerOid, issuerPtr);
+	releaseFieldValue(serialOid, serialPtr); 
+
+	return foundCert;
 }
 
 SecPointer<Certificate>
@@ -935,4 +983,9 @@ Certificate::getEmailAddresses(CSSM_DATA_PTR *sanValues, CSSM_DATA_PTR snValue, 
 			}	/* for each pair */
 		}		/* for each RDN */
 	}
+}
+
+void Certificate::willRead()
+{
+	populateAttributes();
 }

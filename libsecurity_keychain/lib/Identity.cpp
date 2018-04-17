@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -69,4 +67,20 @@ SecPointer<Certificate>
 Identity::certificate() const
 {
 	return mCertificate;
+}
+
+bool
+Identity::operator < (const Identity &other) const
+{
+	// Certificates in different keychains are considered equal if data is equal
+	return (mCertificate < other.mCertificate);
+}
+
+bool
+Identity::operator == (const Identity &other) const
+{
+	// Certificates in different keychains are considered equal if data is equal;
+	// however, if their keys are in different keychains, the identities should
+	// not be considered equal (according to mb)
+	return (mCertificate == other.mCertificate && mPrivateKey == other.mPrivateKey);
 }

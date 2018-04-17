@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -29,21 +27,20 @@
 
 using namespace Security;
 
-void Observer::EventReceived (SecurityServer::NotificationDomain domain, SecurityServer::NotificationEvent event, const void* data, size_t dataLength)
+void Observer::consume (SecurityServer::NotificationDomain domain, SecurityServer::NotificationEvent event, const CssmData &data)
 {
     secdebug("kcnotify", "Security::Observer::EventReceived got event %u", (unsigned int) event);
 
 	// make a NameValueDictionary from the data we received
-	CssmData dt ((void*) data, dataLength);
-	NameValueDictionary nvd (dt);
+	NameValueDictionary nvd (data);
 	Event (domain, event, nvd);
 }
 
 
 
 Observer::Observer (SecurityServer::NotificationDomain whichDomain, SecurityServer::NotificationMask whichEvents)
+	: SecurityServer::EventListener(whichDomain, whichEvents)
 {
-	RequestEvents (whichDomain, whichEvents);
 }
 
 

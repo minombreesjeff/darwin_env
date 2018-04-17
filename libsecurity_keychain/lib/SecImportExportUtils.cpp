@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -29,7 +27,7 @@
 #include "SecImportExportAgg.h"
 #include "SecImportExportCrypto.h"
 #include <security_cdsa_utils/cuCdsaUtils.h>
-#include <CoreServices.framework/Frameworks/CarbonCore.framework/Headers/MacErrors.h>
+#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
 
 #pragma mark --- Debug support ---
 
@@ -81,6 +79,10 @@ bool impExpImportParseFileExten(
 	SecExternalFormat   *inputFormat,   // RETURNED
 	SecExternalItemType	*itemType)		// RETURNED
 {
+	if(fstr == NULL) {
+		/* nothing to work with */
+		return false;
+	}
 	if(CFStringHasSuffix(fstr, CFSTR(".cer")) || 
 	   CFStringHasSuffix(fstr, CFSTR(".crt"))) {
 		*inputFormat = kSecFormatX509Cert;
@@ -136,7 +138,7 @@ CFStringRef impExpImportDeleteExtension(
 	CFStringRef			fileStr)
 {
 	CFURLRef urlRef = CFURLCreateWithString(NULL, fileStr, NULL);
-	CFURLRef rtnUrl = CFURLCreateCopyDeletingLastPathComponent(NULL, urlRef);
+	CFURLRef rtnUrl = CFURLCreateCopyDeletingPathExtension(NULL, urlRef);
 	CFRelease(urlRef);
 	CFStringRef rtnStr = CFURLGetString(rtnUrl);
 	CFRetain(rtnStr);

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -49,13 +47,37 @@ TrustStore::TrustStore(Allocator &alloc)
 TrustStore::~TrustStore()
 { }
 
-
 //
 // Retrieve the trust setting for a (certificate, policy) pair.
 //
 SecTrustUserSetting TrustStore::find(Certificate *cert, Policy *policy)
 {
 	if (Item item = findItem(cert, policy)) {
+		// Make sure that the certificate is available in some keychain,
+		// to provide a basis for editing the trust setting that we're returning.
+		if (cert->keychain() == NULL) {
+			StorageManager::KeychainList keychains;
+			globals().storageManager.optionalSearchList((CFTypeRef)nil, keychains);
+			if (cert->findInKeychain(keychains) == NULL) {
+				Keychain defaultKeychain = Keychain::optional(NULL);
+				if (Keychain location = item->keychain()) {
+					try {
+						cert->copyTo(location);	// add cert to the trust item's keychain
+					} catch (...) {
+						secdebug("trusteval", "failed to add certificate %p to keychain \"%s\"",
+							cert, location->name());
+						try {
+							if (&*location != &*defaultKeychain)
+								cert->copyTo(defaultKeychain);	// try the default (if it's not the same)
+						} catch (...) {
+							// unable to add the certificate
+							secdebug("trusteval", "failed to add certificate %p to keychain \"%s\"",
+								cert, defaultKeychain->name());
+						}
+					}
+				}
+			}
+		}
 		CssmDataContainer data;
 		item->getData(data);
 		if (data.length() != sizeof(TrustData))
@@ -76,8 +98,11 @@ SecTrustUserSetting TrustStore::find(Certificate *cert, Policy *policy)
 void TrustStore::assign(Certificate *cert, Policy *policy, SecTrustUserSetting trust)
 {
 	TrustData trustData = { UserTrustItem::currentVersion, trust };
+	Keychain defaultKeychain = Keychain::optional(NULL);
+	Keychain trustLocation = defaultKeychain;	// default keychain, unless trust entry found
 	if (Item item = findItem(cert, policy)) {
 		// user has a trust setting in a keychain - modify that
+		trustLocation = item->keychain();
 		if (trust == kSecTrustResultUnspecified)
 			item->keychain()->deleteItem(item);
 		else
@@ -86,10 +111,40 @@ void TrustStore::assign(Certificate *cert, Policy *policy, SecTrustUserSetting t
 		// no trust entry: make one
 		if (trust != kSecTrustResultUnspecified) {
 			Item item = new UserTrustItem(cert, policy, trustData);
-			if (Keychain location = cert->keychain())
-				location->add(item);					// in the cert's keychain
-			else
-				Keychain::optional(NULL)->add(item);	// in the default keychain
+			if (Keychain location = cert->keychain()) {
+				try {
+					location->add(item);				// try the cert's keychain first
+					trustLocation = location;
+				} catch (...) {
+					if (&*location != &*defaultKeychain)
+						defaultKeychain->add(item);		// try the default (if it's not the same)
+				}
+			} else {
+				defaultKeychain->add(item);				// raw cert - use default keychain
+			}
+		}
+	}
+
+	// Make sure that the certificate is available in some keychain,
+	// to provide a basis for editing the trust setting that we're assigning.
+	if (cert->keychain() == NULL) {
+		StorageManager::KeychainList keychains;
+		globals().storageManager.optionalSearchList((CFTypeRef)nil, keychains);
+		if (cert->findInKeychain(keychains) == NULL) {
+			try {
+				cert->copyTo(trustLocation);	// add cert to the trust item's keychain
+			} catch (...) {
+				secdebug("trusteval", "failed to add certificate %p to keychain \"%s\"",
+					cert, trustLocation->name());
+				try {
+					if (&*trustLocation != &*defaultKeychain)
+						cert->copyTo(defaultKeychain);	// try the default (if it's not the same)
+				} catch (...) {
+					// unable to add the certificate
+					secdebug("trusteval", "failed to add certificate %p to keychain \"%s\"",
+						cert, defaultKeychain->name());
+				}
+			}
 		}
 	}
 }
@@ -121,9 +176,7 @@ Item TrustStore::findItem(Certificate *cert, Policy *policy)
 		else
 			return NULL;
 	} catch (const CommonError &error) {
-		if (error.osStatus() == CSSMERR_DL_INVALID_RECORDTYPE)
-			return NULL;	// no trust schema, no records, no error
-		throw;
+		return NULL;	// no trust schema, no records, no error
 	}
 }
 

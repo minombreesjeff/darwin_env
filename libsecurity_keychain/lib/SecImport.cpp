@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -31,7 +29,7 @@
 #include "SecImportExportUtils.h"
 #include <security_cdsa_utils/cuCdsaUtils.h>
 
-#include <CoreServices.framework/Frameworks/CarbonCore.framework/Headers/MacErrors.h>
+#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
 
 #define SecImpInferDbg(args...)	secdebug("SecImpInfer", ## args)
 
@@ -223,10 +221,19 @@ OSStatus SecKeychainItemImport(
 		}
 	}
 	else {
-		/* strip off the extension in case there's another one in front of it */
+		/* 
+		 * Strip off possible .pem extension in case there's another one in 
+		 * front of it 
+		 */
 		assert(CFArrayGetCount(importReps) >= 1);
 		if(fileNameOrExtension) {
-			ourFileStr = impExpImportDeleteExtension(fileNameOrExtension);
+			if(CFStringHasSuffix(fileNameOrExtension, CFSTR(".pem"))) {
+				ourFileStr = impExpImportDeleteExtension(fileNameOrExtension);
+			}
+			else {
+				ourFileStr = fileNameOrExtension;
+				CFRetain(ourFileStr);
+			}
 		}
 	}
 	

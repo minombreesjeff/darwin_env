@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -28,6 +26,7 @@
 #include <security_keychain/KCCursor.h>
 #include <security_cdsa_utilities/cssmdata.h>
 #include <security_keychain/KCExceptions.h>
+#include <securityd_client/ssblob.h>
 #include "SecBridge.h"
 #include "CCallbackMgr.h"
 #include <security_cdsa_utilities/Schema.h>
@@ -65,6 +64,28 @@ SecKeychainOpen(const char *pathName, SecKeychainRef *keychainRef)
 
 	secdebug("kc", "SecKeychainOpen(\"%s\", %p)", pathName, keychainRef);
 	RequiredParam(keychainRef)=globals().storageManager.make(pathName, false)->handle();
+
+	END_SECAPI
+}
+
+
+OSStatus
+SecKeychainOpenWithGuid(const CSSM_GUID *guid, uint32 subserviceId, uint32 subserviceType, const char* dbName,
+						const CSSM_NET_ADDRESS *dbLocation, SecKeychainRef *keychain)
+{
+    BEGIN_SECAPI
+
+	// range check parameters
+	RequiredParam (guid);
+	RequiredParam (dbName);
+	
+	// create a DLDbIdentifier that describes what should be opened
+    const CSSM_VERSION *version = NULL;
+    const CssmSubserviceUid ssuid(*guid, version, subserviceId, subserviceType);
+	DLDbIdentifier dLDbIdentifier(ssuid, dbName, dbLocation);
+	
+	// make a keychain from the supplied info
+	RequiredParam(keychain) = globals().storageManager.makeKeychain(dLDbIdentifier, false)->handle ();
 
 	END_SECAPI
 }
@@ -194,7 +215,6 @@ SecKeychainLockAll(void)
 OSStatus SecKeychainResetLogin(UInt32 passwordLength, const void* password, Boolean resetSearchList)
 {
 	BEGIN_SECAPI
-        KCThrowParamErrIf_(password==NULL);
         //
         // Get the current user (using fallback method if necessary)
         //
@@ -211,16 +231,30 @@ OSStatus SecKeychainResetLogin(UInt32 passwordLength, const void* password, Bool
         }
         if ( userName.length() == 0 )	// did we ultimately get one?
             MacOSError::throwMe(errAuthorizationInternal);
-        //
-        // Clears the plist and moves aside (renames) an existing login.keychain
-        //
-        globals().storageManager.resetKeychain(resetSearchList);
-        //
-        // Creates a login keychain and sets it to the default.
-        //
-        globals().storageManager.login(userName.length(), userName.c_str(), passwordLength, password);	
-        Keychain keychain = globals().storageManager.loginKeychain();
-        globals().storageManager.defaultKeychain(keychain);
+		
+		if (password)
+		{
+			// Clear the plist and move aside (rename) the existing login.keychain
+			globals().storageManager.resetKeychain(resetSearchList);
+
+			// Create the login keychain without UI
+			globals().storageManager.login(userName.length(), userName.c_str(), passwordLength, password);
+			
+			// Set it as the default
+			Keychain keychain = globals().storageManager.loginKeychain();
+			globals().storageManager.defaultKeychain(keychain);
+		}
+		else
+		{
+			// Create the login keychain, prompting for password
+			// (implicitly calls resetKeychain, login, and defaultKeychain)
+			globals().storageManager.makeLoginAuthUI(NULL);
+		}
+
+		// Post a "list changed" event after a reset, so apps can refresh their list.
+		// Make sure we are not holding mLock when we post this event.
+		KCEventNotifier::PostKeychainEvent(kSecKeychainListChangedEvent);
+
 	END_SECAPI
 }
 
@@ -478,7 +512,7 @@ SecKeychainAddInternetPassword(SecKeychainRef keychainRef, UInt32 serverNameLeng
 	secdebug("kc", "SecKeychainAddInternetPassword(%p)", keychainRef);
 	KCThrowParamErrIf_(passwordLength!=0 && passwordData==NULL);
 	// @@@ Get real itemClass
-	Item item(kSecInternetPasswordItemClass, 'aapl', passwordLength, passwordData);
+	Item item(kSecInternetPasswordItemClass, 'aapl', passwordLength, passwordData, false);
 	
 	if (serverName && serverNameLength)
 	{
@@ -611,14 +645,23 @@ SecKeychainAddGenericPassword(SecKeychainRef keychainRef, UInt32 serviceNameLeng
 	secdebug("kc", "SecKeychainAddGenericPassword(%p)", keychainRef);
 	KCThrowParamErrIf_(passwordLength!=0 && passwordData==NULL);
 	// @@@ Get real itemClass
-	Item item(kSecGenericPasswordItemClass, 'aapl', passwordLength, passwordData);
+	Item item(kSecGenericPasswordItemClass, 'aapl', passwordLength, passwordData, false);
 
 	if (serviceName && serviceNameLength)
 	{
 		CssmData service(const_cast<void *>(reinterpret_cast<const void *>(serviceName)), serviceNameLength);
 		item->setAttribute(Schema::attributeInfo(kSecServiceItemAttr), service);
-		// use service name as default label
-		item->setAttribute(Schema::attributeInfo(kSecLabelItemAttr), service);
+		// use service name as default label (UNLESS the service is iTools and we have an account name [3787371])
+		const char *iTools = "iTools";
+		if (accountNameLength && serviceNameLength==strlen(iTools) && !memcmp(serviceName, iTools, serviceNameLength))
+		{
+			CssmData account(const_cast<void *>(reinterpret_cast<const void *>(accountName)), accountNameLength);
+			item->setAttribute(Schema::attributeInfo(kSecLabelItemAttr), account);
+		}
+		else
+		{
+			item->setAttribute(Schema::attributeInfo(kSecLabelItemAttr), service);
+		}
 	}
 
 	if (accountName && accountNameLength)
@@ -852,18 +895,18 @@ OSStatus SecKeychainIsValid(SecKeychainRef keychainRef, Boolean* isValid)
 {
     BEGIN_SECAPI
         *isValid = false;
-        if (KeychainImpl::optional(keychainRef)->dLDbIdentifier().ssuid().guid() == gGuidAppleCSPDL)
+        if (KeychainImpl::optional(keychainRef)->dlDbIdentifier().ssuid().guid() == gGuidAppleCSPDL)
             *isValid = true;
 	END_SECAPI
 }
 
 /* Removes a keychain from the keychain search list for legacy "KC" CoreServices APIs.
 */
-OSStatus SecKeychainRemoveFromSearchList(SecKeychainRef keychain)
+OSStatus SecKeychainRemoveFromSearchList(SecKeychainRef keychainRef)
 {
     BEGIN_SECAPI
         StorageManager::KeychainList singleton;
-        singleton.push_back(KeychainImpl::required(keychain));
+        singleton.push_back(KeychainImpl::required(keychainRef));
         globals().storageManager.remove(singleton);
 	END_SECAPI
 }
@@ -877,3 +920,107 @@ OSStatus SecKeychainCreateNew(SecKeychainRef keychainRef, UInt32 passwordLength,
         KeychainImpl::required(keychainRef)->create(passwordLength, inPassword);
 	END_SECAPI
 }
+
+/* Modify a keychain so that it can be synchronized.
+*/
+OSStatus SecKeychainRecodeKeychain(SecKeychainRef keychainRef, CFDataRef dbBlob, CFDataRef extraData)
+{
+	BEGIN_SECAPI
+
+	// do error checking for required parameters
+	RequiredParam(dbBlob);
+	RequiredParam(extraData);
+
+	// convert from CF standards to CDSA standards
+	const CssmData data(const_cast<UInt8 *>(CFDataGetBytePtr(dbBlob)),
+		CFDataGetLength(dbBlob));
+	const CssmData extraCssmData(const_cast<UInt8 *>(CFDataGetBytePtr(extraData)),
+		CFDataGetLength(extraData));
+
+	// do the work
+	Keychain keychain = Keychain::optional(keychainRef);
+	keychain->recode(data, extraCssmData);
+
+	END_SECAPI
+}
+
+OSStatus SecKeychainCopySignature(SecKeychainRef keychainRef, CFDataRef *keychainSignature) 
+{
+	BEGIN_SECAPI
+
+	// do error checking for required parameters
+	RequiredParam(keychainSignature);
+
+	// make a keychain object "wrapper" for this keychain ref
+	Keychain keychain = Keychain::optional(keychainRef);
+	CssmAutoData data(keychain->database()->allocator());
+	keychain->copyBlob(data.get());
+
+	// get the cssmDBBlob
+	const SecurityServer::DbBlob *cssmDBBlob =
+		data.get().interpretedAs<const SecurityServer::DbBlob>();
+
+	// convert from CDSA standards to CF standards
+	*keychainSignature = CFDataCreate(kCFAllocatorDefault,
+		cssmDBBlob->randomSignature.bytes,
+		sizeof(SecurityServer::DbBlob::Signature));
+
+	END_SECAPI
+}
+
+OSStatus SecKeychainCopyBlob(SecKeychainRef keychainRef, CFDataRef *dbBlob)
+{
+	BEGIN_SECAPI
+
+	// do error checking for required parameters
+	RequiredParam(dbBlob);
+
+	// make a keychain object "wrapper" for this keychain ref
+	Keychain keychain = Keychain::optional(keychainRef);
+	CssmAutoData data(keychain->database()->allocator());
+	keychain->copyBlob(data.get());
+
+	// convert from CDSA standards to CF standards
+	*dbBlob = CFDataCreate(kCFAllocatorDefault, data, data.length());
+
+	END_SECAPI
+}
+
+// add a non-file based DB to the keychain list
+OSStatus SecKeychainAddDBToKeychainList (SecPreferencesDomain domain, const char* dbName,
+										 const CSSM_GUID *guid, uint32 subServiceType)
+{
+	BEGIN_SECAPI
+
+	secdebug("kc", "SecKeychainAddDBToKeychainList(%d, %s)", domain, dbName);
+	RequiredParam(dbName);
+	StorageManager &smr = globals().storageManager;
+	smr.addToDomainList(domain, dbName, *guid, subServiceType);
+
+	END_SECAPI
+}
+
+// determine if a non-file based DB is in the keychain list
+OSStatus SecKeychainDBIsInKeychainList (SecPreferencesDomain domain, const char* dbName,
+										const CSSM_GUID *guid, uint32 subServiceType)
+{
+	BEGIN_SECAPI
+	secdebug("kc", "SecKeychainDBIsInKeychainList(%d, %s)", domain, dbName);
+	RequiredParam(dbName);
+	StorageManager &smr = globals().storageManager;
+	smr.isInDomainList(domain, dbName, *guid, subServiceType);
+	END_SECAPI
+}
+
+// remove a non-file based DB from the keychain list
+OSStatus SecKeychainRemoveDBFromKeychainList (SecPreferencesDomain domain, const char* dbName,
+											  const CSSM_GUID *guid, uint32 subServiceType)
+{
+	BEGIN_SECAPI
+	secdebug("kc", "SecKeychainRemoveDBFromKeychainList(%d, %s)", domain, dbName);
+	RequiredParam(dbName);
+	StorageManager &smr = globals().storageManager;
+	smr.removeFromDomainList(domain, dbName, *guid, subServiceType);
+	END_SECAPI
+}
+

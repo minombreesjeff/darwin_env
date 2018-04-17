@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -37,55 +35,65 @@ static CFStringRef copyErrorMessageFromBundle(OSStatus status,CFStringRef tableN
 CFStringRef
 SecCopyErrorMessageString(OSStatus status, void *reserved)
 {
-	BEGIN_SECAPI
-
-	return copyErrorMessageFromBundle(status,CFSTR("SecErrorMessages"));
-        
-	END_SECAPI1(NULL)
+	try
+	{
+		return copyErrorMessageFromBundle(status,CFSTR("SecErrorMessages"));
+	}
+	catch (...)
+	{
+		return NULL;
+	}
 }
 
 
 void
 cssmPerror(const char *how, CSSM_RETURN error)
 {
-	BEGIN_SECAPI
-	
-	string err;
-	if (CFStringRef errs = copyErrorMessageFromBundle(error, CFSTR("SecErrorMessages"))) {
-		err = cfString(errs);
-		CFRelease(errs);
+	try
+	{
+		string err;
+		if (CFStringRef errs = copyErrorMessageFromBundle(error, CFSTR("SecErrorMessages")))
+		{
+			err = cfString(errs);
+			CFRelease(errs);
+		}
+
+		if (err.empty())
+		{
+			fprintf(stderr, "%s: %ld\n", how ? how : "error", error);
+		}
+		else
+		{
+			fprintf(stderr, "%s: %s\n", how ? how : "error", err.c_str());
+		}
 	}
-	if (err.empty()) {
-		fprintf(stderr, "%s: %ld\n", how ? how : "error", error);
-	} else {
-		fprintf(stderr, "%s: %s\n", how ? how : "error", err.c_str());
+	catch (...)
+	{
+		fprintf(stderr, "failed to print error: %ld\n", error);
 	}
-	
-	END_SECAPI0
 }
 
 
 const char *
 cssmErrorString(CSSM_RETURN error)
 {
-	BEGIN_SECAPI
+	try {
+		string err = cfString(copyErrorMessageFromBundle(error, CFSTR("SecErrorMessages")), true);
+		if (err.empty())
+		{
+			char buf[200];
+			snprintf(buf, sizeof(buf), "unknown error %ld=%lx", error, error);
+			err = buf;
+		}
 
-	string err;
-	if (CFStringRef errs = copyErrorMessageFromBundle(error, CFSTR("SecErrorMessages"))) {
-		err = cfString(errs);
-		CFRelease(errs);
+		static ThreadNexus<string> lastError;
+		lastError() = err;
+		return lastError().c_str();
 	}
-	if (err.empty()) {
-		char buf[200];
-		snprintf(buf, sizeof(buf), "unknown error %ld=%lx", error, error);
-		err = buf;
+	catch (...)
+	{
+		return "cannot translate error code";
 	}
-
-	static ThreadNexus<string> lastError;
-	lastError() = err;
-	return lastError().c_str();
-
-	END_SECAPI1("cannot interprete error code")
 }
 
 
@@ -109,8 +117,6 @@ copyErrorMessageFromBundle(OSStatus status,CFStringRef tableName)
 	errorString = CFCopyLocalizedStringFromTableInBundle(keyString,tableName,secBundle,NULL);
     
 xit:
-    if (secBundle)
-        CFRelease(secBundle);	
     if (keyString)
         CFRelease(keyString);	
 

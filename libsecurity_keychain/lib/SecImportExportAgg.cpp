@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,7 +28,7 @@
 #include "SecExternalRep.h"
 #include "SecImportExportUtils.h"
 #include "SecNetscapeTemplates.h"
-#include <CoreServices.framework/Frameworks/CarbonCore.framework/Headers/MacErrors.h>
+#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
 #include <security_pkcs12/SecPkcs12.h>
 #include <Security/SecCmsDecoder.h>
 #include <Security/SecCmsEncoder.h>
@@ -473,6 +471,11 @@ OSStatus impExpPkcs12Import(
 		}
 		/* subsequent errors in this loop to loopEnd: */
 		
+		if(importKeychain == NULL) {
+			/* Skip the Identity match - just return keys and certs */
+			goto loopEnd;
+		}
+	
 		/* Get digest of this cert's public key */
 		ortn = SecCertificateGetData(certRef, &certData);
 		if(ortn) {
@@ -492,6 +495,7 @@ OSStatus impExpPkcs12Import(
 		/* 
 		 * Now search for a private key with this same digest
 		 */
+		numKeys = CFArrayGetCount(privKeys);
 		for(CFIndex privDex=0; privDex<numKeys; privDex++) {
 			privKey = (CSSM_KEY_PTR)CFArrayGetValueAtIndex(privKeys, privDex);
 			assert(privKey != NULL);

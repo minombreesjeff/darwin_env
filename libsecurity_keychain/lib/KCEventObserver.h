@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -35,18 +33,20 @@
 #include <securityd_client/ssclient.h>
 
 
-namespace Security
-{
+namespace Security {
+
 
 class Observer : private SecurityServer::EventListener
 {
-protected:
-	void EventReceived (SecurityServer::NotificationDomain domain, SecurityServer::NotificationEvent event, const void* data, size_t dataLength);
-
 public:
-    Observer (SecurityServer::NotificationDomain whichDomain, SecurityServer::NotificationMask whichEvents);
+    Observer(SecurityServer::NotificationDomain whichDomain,
+		SecurityServer::NotificationMask whichEvents);
     virtual	~Observer ();
     virtual void Event (SecurityServer::NotificationDomain domain, SecurityServer::NotificationEvent whichEvent, NameValueDictionary &dictionary) = 0;
+
+protected:
+	void consume (SecurityServer::NotificationDomain domain,
+		SecurityServer::NotificationEvent event, const CssmData &data);
 };
 
 } // end namespace Security

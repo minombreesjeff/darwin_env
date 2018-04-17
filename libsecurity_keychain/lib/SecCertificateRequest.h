@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -40,6 +38,20 @@
 extern "C" {
 #endif
 
+struct SecCertificateRequestAttribute /* for optional oids */
+{
+	CSSM_OID	oid;
+	CSSM_DATA	value;
+};
+typedef struct SecCertificateRequestAttribute SecCertificateRequestAttribute;
+
+struct SecCertificateRequestAttributeList 
+{
+    UInt32 count;
+    SecCertificateRequestAttribute *attr;
+};
+typedef struct SecCertificateRequestAttributeList  SecCertificateRequestAttributeList;
+
 /*!
     @typedef SecCertificateRequestRef
     @abstract Contains information about a certificate request.
@@ -54,70 +66,54 @@ CFTypeID SecCertificateRequestGetTypeID(void);
 
 /*!
 	@function SecCertificateRequestCreate
-	Create a certificate request operation based on a policy and certificate type.  If a policy is not specified, one will be chosen for the caller. Once the requeste is created, a request reference is returned. For this request reference, you can set attributes for it by using SecCertificateRequestSetAttribute(). To submit the request call SecCertificateRequestSubmit(). 
-    @param certificateType The certificate type (i.e. X509, PGP, etc). These types are in cssmtype.h
-    @param requestType The identifier to the type of request to submit (i.e. issue, verify, revoke, etc.). These are defined in cssmtype.h
-    @param certRequest A returned reference to the certificate request.
+	
+	Create a certificate request operation based on a policy and certificate 
+	type.  If a policy is not specified, one will be chosen for the caller. 
+	Once the requeste is created, a request reference is returned.
+	To submit the request call SecCertificateRequestSubmit(). 
+    
+	@param policy A policy.
+	@param certificateType The certificate type (i.e. X509, PGP, etc). 
+	   These types are in cssmtype.h
+	@param requestType The identifier to the type of request to submit (i.e. 
+	   issue, verify, revoke, etc.). These are defined in cssmtype.h
+	@param privateKeyItemRef The keychain item private key to be used for this
+	   certificate request. The private key item must be of class type 
+	   kSecAppleKeyItemClass.
+	@param attributeList An optional list of OIDs for the certificate request.
+	@param certRequest A returned reference to the certificate request.
 	@result noErr 0 No error.
 */
 OSStatus SecCertificateRequestCreate(
-        SecPolicyRef policy,
+        const CSSM_OID *policy,
         CSSM_CERT_TYPE certificateType,
         CSSM_TP_AUTHORITY_REQUEST_TYPE requestType,
+	    SecKeyRef privateKeyItemRef,
+	    SecKeyRef publicKeyItemRef,
+	    const SecCertificateRequestAttributeList* attributeList,
         SecCertificateRequestRef* certRequest);
 
 /*!
-	@function SecCertificateRequestSetPrivateKey
-	For a given certificate request, set the private key for which the assocaited public key will be certified.
-    @param certRequest A reference to the certificate request.
-	@param privateKeyItemRef The keychain item private key to be used for this certificate request. The private key item must be of class type kSecAppleKeyItemClass.
-    @result noErr 0 No error.
-*/
-OSStatus SecCertificateRequestSetPrivateKey(
-        SecCertificateRequestRef certRequest,
-        SecKeychainItemRef privateKeyItemRef);
-        
-/*!
-	@function SecCertificateRequestSetAttribute
-	For a given certificate request, set an optional attribute for the request. For example, an attribute can be the caller credentials or any other attribute needed for the certificate request operation. 
-    @param oid An BER-encoded oid that defines the attribute (i.e. CSSMOID_CommonName, CSSMOID_SerialNumber, etc.)
-	@param value The value for the attribute.
-    @result noErr 0 No error.
-*/
-OSStatus SecCertificateRequestSetAttribute(
-        SecCertificateRequestRef certRequest,
-        const CSSM_OID* oid,
-        const CSSM_DATA* value);
-
-/*!
 	@function SecCertificateRequestSubmit
-	Submit a certificate request to be processed by the Security framework. Once the request is submitted, an estimated time is returned indicating when the request results can be retrieved. Once the estimated time has elapsed, obtain the result by calling SecCertificateRequestGetResult(). 
-    @param certRequest A reference to the certificate request.
-    @param keychain The keychain in which to store the new certificate (for a new cert request) and the cert request item reference.
-    @param estimatedTime The number of estimated seconds before the result can be retrieved.
-    @param certRequestItemRef The returned persistent reference for the submitted request. This item is stored in the keychain specified by the keychain parameter. This item can be viewed as an certificate request operation that is still pending.
+	
+	Submit a certificate request to be processed by the Security framework. 
+	Once the request is submitted, an estimated time is returned indicating 
+	when the request results can be retrieved. Once the estimated time has 
+	elapsed, obtain the result by calling SecCertificateRequestGetResult(). 
+    
+	@param certRequest A reference to the certificate request.
+	@param estimatedTime The number of estimated seconds before the result 
+	   can be retrieved.
 	@result noErr 0 No error.
 */
 OSStatus SecCertificateRequestSubmit(
         SecCertificateRequestRef certRequest,
-        SecKeychainRef keychain,
-        sint32* estimatedTime,
-        SecKeychainItemRef* certRequestItemRef);
-
-/*!
-	@function SecCertificateRequestCreateFromItem
-	Given a keychain item reference (a persistent reference for a certificate request), create a certificate request reference to be used by subsuequent calls that take a SecCertificateRequestRef. The keychain item must be obtained by calling SecKeychainSearchCreateFromAttributes() and SecKeychainCopySearchNextItem() for an item with the class of kSecAppleCertificateRequestItemClass. 
-    @param certRequestItemRef A keychain item reference for the certificate request(%%%kSecGenericPasswordItemClass?)
-	@param certRequestRef The returned certificate request reference.
-    @result noErr 0 No error.
-*/
-OSStatus SecCertificateRequestCreateFromItem(
-        SecKeychainItemRef certRequestItemRef,
-        SecCertificateRequestRef* certRequestRef);
+        sint32* estimatedTime);
 
 /*!
 	@function SecCertificateRequestGetType
-	Returns the certificate request type (i.e. issue, revoke, etc) for a given certificate request item reference.
+	Returns the certificate request type (i.e. issue, revoke, etc) for a given 
+	certificate request item reference.
     @param certRequestRef A reference to a submitted request.
 	@param requestType The returned request type.
     @result noErr 0 No error.
@@ -128,16 +124,65 @@ OSStatus SecCertificateRequestGetType(
 
 /*!
 	@function SecCertificateRequestGetResult
-	Get the results of a certificate request. If the request is still pending, the estimated time will be returned which indicates when to call this function again.
+	Get the results of a certificate request. If the request is still 
+	pending, the estimated time will be returned which indicates when to 
+	call this function again.
     @param certRequestRef A reference for the submitted request.
-    @param estimatedTime The number of estimated seconds before the result can be retrieved.
-	@param certficateRef The returned certificate reference for a CSSM_TP_AUTHORITY_REQUEST_CERTISSUE only. All other request types return NULL here.
+    @param keychain The keychain in which to store the new certificate (for 
+	   a new cert request) and the cert request item reference. Pass NULL 
+	   to specify the default keychain.
+    @param estimatedTime The number of estimated seconds before the result can 
+	   be retrieved.
+	@param certficateRef The returned certificate reference for a 
+	   CSSM_TP_AUTHORITY_REQUEST_CERTISSUE only. All other request types return 
+	   NULL here.
     @result noErr 0 No error.
 */
 OSStatus SecCertificateRequestGetResult(
         SecCertificateRequestRef certRequestRef,
+        SecKeychainRef keychain,
         sint32* estimatedTime,
         SecCertificateRef* certificateRef);
+
+/*!
+	@function SecCertificateFindRequest
+	Find a pending certificate request and return a reference object 
+	   for it. The search criteria is based on the input parameters.
+    @param policy A policy.
+    @param certificateType The certificate type (i.e. X509, PGP, etc). 
+	   These types are in cssmtype.h
+    @param requestType The identifier to the type of request to find (i.e. 
+	   issue, verify, revoke, etc.). These are defined in cssmtype.h
+	@param privateKeyItemRef Optional private key to be used 
+	   for the certificate request. Matches the same argument as passed to
+	   SecCertificateRequestCreate().
+	@param publicKeyItemRef Optional public key to be used 
+	   for the certificate request. Matches the same argument as passed to
+	   SecCertificateRequestCreate().
+    @param attributeList An optional list of OID/value pairs for finding the 
+	   certificate request.
+    @param certRequest A returned reference to the certificate request.
+*/
+OSStatus SecCertificateFindRequest(
+        const CSSM_OID *policy,
+        CSSM_CERT_TYPE certificateType,
+        CSSM_TP_AUTHORITY_REQUEST_TYPE requestType,
+		SecKeyRef privateKeyItemRef,				
+		SecKeyRef publicKeyItemRef,				
+		const SecCertificateRequestAttributeList* attributeList,
+        SecCertificateRequestRef* certRequest);
+
+/*!
+	@function SecCertificateRequestGetData
+	Get policy-specific data following a SecCertificateRequestSubmit.
+    @param certRequestRef A reference for the submitted request.
+    @param data Policy-specific data.
+    @result noErr 0 No error.
+*/
+
+OSStatus SecCertificateRequestGetData(
+	SecCertificateRequestRef	certRequestRef,
+	CSSM_DATA					*data);
 
 #if defined(__cplusplus)
 }

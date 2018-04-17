@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -27,6 +25,7 @@
 // Policy.cpp - Working with Policies
 //
 #include <security_keychain/Policies.h>
+#include <security_utilities/debugging.h>
 
 using namespace KeychainCore;
 
@@ -36,10 +35,12 @@ Policy::Policy(TP supportingTp, const CssmOid &policyOid)
       mValue(Allocator::standard())
 {
     // value is as yet unimplemented
+	secdebug("policy", "Policy() this %p", this);
 }
 
 Policy::~Policy() throw()
 {
+	secdebug("policy", "~Policy() this %p", this);
 }
 
 bool Policy::operator < (const Policy& other) const

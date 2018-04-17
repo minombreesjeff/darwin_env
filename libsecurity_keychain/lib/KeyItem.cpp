@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -38,9 +36,9 @@
 #include "KCEventNotifier.h"
 
 // @@@ This needs to be shared.
-static CSSM_DB_NAME_ATTR(kSecKeyPrintName, 1, "PrintName", 0, NULL, BLOB);
-static CSSM_DB_NAME_ATTR(kSecKeyLabel, 6, "Label", 0, NULL, BLOB);
-static CSSM_DB_NAME_ATTR(kSecApplicationTag, 7, "ApplicationTag", 0, NULL, BLOB);
+static CSSM_DB_NAME_ATTR(kInfoKeyPrintName, kSecKeyPrintName, "PrintName", 0, NULL, BLOB);
+static CSSM_DB_NAME_ATTR(kInfoKeyLabel, kSecKeyLabel, "Label", 0, NULL, BLOB);
+static CSSM_DB_NAME_ATTR(kInfoKeyApplicationTag, kSecKeyApplicationTag, "ApplicationTag", 0, NULL, BLOB);
 
 using namespace KeychainCore;
 
@@ -111,6 +109,11 @@ KeyItem::copyTo(const Keychain &keychain, Access *newAccess)
 	CssmClient::GenerateKey genKey(csp(), CSSM_ALGID_3DES_3KEY, 192);
 	CssmClient::Key wrappingKey(genKey(KeySpec(CSSM_KEYUSE_WRAP | CSSM_KEYUSE_UNWRAP,
 		CSSM_KEYATTR_EXTRACTABLE /* | CSSM_KEYATTR_RETURN_DATA */)));
+	
+	/* make a random IV */
+	uint8 ivBytes[8];
+	CssmData iv(ivBytes, sizeof(ivBytes));
+	random.generate(iv, iv.length());
 
 	/* Extract the key by wrapping it with the wrapping key. */
 	CssmClient::WrapKey wrap(csp(), CSSM_ALGID_3DES_3KEY_EDE);
@@ -118,6 +121,7 @@ KeyItem::copyTo(const Keychain &keychain, Access *newAccess)
 	wrap.cred(getCredentials(CSSM_ACL_AUTHORIZATION_EXPORT_WRAPPED, kSecCredentialTypeDefault));
 	wrap.mode(CSSM_ALGMODE_ECBPad);
 	wrap.padding(CSSM_PADDING_PKCS7);
+	wrap.initVector(iv);
 	CssmClient::Key wrappedKey(wrap(mKey));
 
 	/* Unwrap the new key into the new Keychain. */
@@ -125,6 +129,7 @@ KeyItem::copyTo(const Keychain &keychain, Access *newAccess)
 	unwrap.key(wrappingKey);
 	unwrap.mode(CSSM_ALGMODE_ECBPad);
 	unwrap.padding(CSSM_PADDING_PKCS7);
+	unwrap.initVector(iv);
 
 	/* Setup the dldbHandle in the context. */
 	unwrap.add(CSSM_ATTRIBUTE_DL_DB_HANDLE, ssDb->handle());
@@ -133,7 +138,7 @@ KeyItem::copyTo(const Keychain &keychain, Access *newAccess)
 	Access::Maker maker;
 	ResourceControlContext rcc;
 	maker.initialOwner(rcc, NULL);
-	unwrap.aclEntry(rcc.input());
+	unwrap.owner(rcc.input());
 
 	/* Unwrap the key. */
 	uint32 usage = mKey->usage();
@@ -149,7 +154,7 @@ KeyItem::copyTo(const Keychain &keychain, Access *newAccess)
 	DbUniqueRecord uniqueId;
 	SSDbCursor dbCursor(ssDb, 1);
 	dbCursor->recordType(recordType());
-	dbCursor->add(CSSM_DB_EQUAL, kSecKeyLabel, label);
+	dbCursor->add(CSSM_DB_EQUAL, kInfoKeyLabel, label);
 	CssmClient::Key copiedKey;
 	if (!dbCursor->nextKey(NULL, copiedKey, uniqueId))
 		MacOSError::throwMe(errSecItemNotFound);
@@ -157,12 +162,21 @@ KeyItem::copyTo(const Keychain &keychain, Access *newAccess)
 	/* Copy the Label, PrintName and ApplicationTag attributes from the old key to the new one. */
 	dbUniqueRecord();
 	DbAttributes oldDbAttributes(mUniqueId->database(), 3);
-	oldDbAttributes.add(kSecKeyLabel);
-	oldDbAttributes.add(kSecKeyPrintName);
-	oldDbAttributes.add(kSecApplicationTag);
+	oldDbAttributes.add(kInfoKeyLabel);
+	oldDbAttributes.add(kInfoKeyPrintName);
+	oldDbAttributes.add(kInfoKeyApplicationTag);
 	mUniqueId->get(&oldDbAttributes, NULL);
-	uniqueId->modify(recordType(), &oldDbAttributes, NULL, CSSM_DB_MODIFY_ATTRIBUTE_REPLACE);
-
+	try
+	{
+		uniqueId->modify(recordType(), &oldDbAttributes, NULL, CSSM_DB_MODIFY_ATTRIBUTE_REPLACE);
+	}
+	catch (CssmError e)
+	{
+		// clean up after trying to insert a duplicate key
+		uniqueId->deleteRecord ();
+		throw;
+	}
+	
 	/* Set the acl and owner on the unwrapped key. */
 	access->setAccess(*unwrappedKey, maker);
 
@@ -277,6 +291,20 @@ KeyItem::getCredentials(
 	}
 }
 
+bool
+KeyItem::operator == (const KeyItem &other) const
+{
+	if (mKey && *mKey)
+	{
+		// Pointer compare
+		return this == &other;
+	}
+
+	// If keychains are different, then keys are different
+	Keychain otherKeychain = other.keychain();
+	return (mKeychain && otherKeychain && (*mKeychain == *otherKeychain));
+}
+
 void 
 KeyItem::createPair(
 	Keychain keychain,
@@ -358,7 +386,7 @@ KeyItem::createPair(
 		DbUniqueRecord pubUniqueId;
 		SSDbCursor dbPubCursor(ssDb, 1);
 		dbPubCursor->recordType(CSSM_DL_DB_RECORD_PUBLIC_KEY);
-		dbPubCursor->add(CSSM_DB_EQUAL, kSecKeyLabel, label);
+		dbPubCursor->add(CSSM_DB_EQUAL, kInfoKeyLabel, label);
 		CssmClient::Key publicKey;
 		if (!dbPubCursor->nextKey(&pubDbAttributes, publicKey, pubUniqueId))
 			MacOSError::throwMe(errSecItemNotFound);
@@ -368,7 +396,7 @@ KeyItem::createPair(
 		DbUniqueRecord privUniqueId;
 		SSDbCursor dbPrivCursor(ssDb, 1);
 		dbPrivCursor->recordType(CSSM_DL_DB_RECORD_PRIVATE_KEY);
-		dbPrivCursor->add(CSSM_DB_EQUAL, kSecKeyLabel, label);
+		dbPrivCursor->add(CSSM_DB_EQUAL, kInfoKeyLabel, label);
 		CssmClient::Key privateKey;
 		if (!dbPrivCursor->nextKey(&privDbAttributes, privateKey, privUniqueId))
 			MacOSError::throwMe(errSecItemNotFound);
@@ -394,17 +422,28 @@ KeyItem::createPair(
 		cssmData = reinterpret_cast<CssmData *>(outData);
 		CssmData &pubKeyHash = *cssmData;
 
-		std::string description(initialAccess->promptDescription());
+		auto_ptr<string>privDescription;
+		auto_ptr<string>pubDescription;
+		try {
+			privDescription.reset(new string(initialAccess->promptDescription()));
+			pubDescription.reset(new string(initialAccess->promptDescription()));
+		}
+		catch(...) {
+			/* this path taken if no promptDescription available, e.g., for complex ACLs */
+			privDescription.reset(new string("Private key"));
+			pubDescription.reset(new string("Public key"));
+		}
+
 		// Set the label of the public key to the public key hash.
 		// Set the PrintName of the public key to the description in the acl.
-		pubDbAttributes.add(kSecKeyLabel, pubKeyHash);
-		pubDbAttributes.add(kSecKeyPrintName, description);
+		pubDbAttributes.add(kInfoKeyLabel, pubKeyHash);
+		pubDbAttributes.add(kInfoKeyPrintName, *pubDescription);
 		pubUniqueId->modify(CSSM_DL_DB_RECORD_PUBLIC_KEY, &pubDbAttributes, NULL, CSSM_DB_MODIFY_ATTRIBUTE_REPLACE);
 
 		// Set the label of the private key to the public key hash.
 		// Set the PrintName of the private key to the description in the acl.
-		privDbAttributes.add(kSecKeyLabel, pubKeyHash);
-		privDbAttributes.add(kSecKeyPrintName, description);
+		privDbAttributes.add(kInfoKeyLabel, pubKeyHash);
+		privDbAttributes.add(kInfoKeyPrintName, *privDescription);
 		privUniqueId->modify(CSSM_DL_DB_RECORD_PRIVATE_KEY, &privDbAttributes, NULL, CSSM_DB_MODIFY_ATTRIBUTE_REPLACE);
 
 		// @@@ Not exception safe!
@@ -415,8 +454,8 @@ KeyItem::createPair(
 		initialAccess->setAccess(*privateKey, maker);
 
 		// Make the public key acl completely open
-		Access pubKeyAccess;
-		pubKeyAccess.setAccess(*publicKey, maker);
+		SecPointer<Access> pubKeyAccess(new Access());
+		pubKeyAccess->setAccess(*publicKey, maker);
 
 		// Create keychain items which will represent the keys.
 		publicKeyItem = keychain->item(CSSM_DL_DB_RECORD_PUBLIC_KEY, pubUniqueId);
@@ -572,7 +611,7 @@ KeyItem::importPair(
 		DbUniqueRecord pubUniqueId;
 		SSDbCursor dbPubCursor(ssDb, 1);
 		dbPubCursor->recordType(CSSM_DL_DB_RECORD_PUBLIC_KEY);
-		dbPubCursor->add(CSSM_DB_EQUAL, kSecKeyLabel, pubKeyHash);
+		dbPubCursor->add(CSSM_DB_EQUAL, kInfoKeyLabel, pubKeyHash);
 		CssmClient::Key publicKey;
 		if (!dbPubCursor->nextKey(&pubDbAttributes, publicKey, pubUniqueId))
 			MacOSError::throwMe(errSecItemNotFound);
@@ -582,7 +621,7 @@ KeyItem::importPair(
 		DbUniqueRecord privUniqueId;
 		SSDbCursor dbPrivCursor(ssDb, 1);
 		dbPrivCursor->recordType(CSSM_DL_DB_RECORD_PRIVATE_KEY);
-		dbPrivCursor->add(CSSM_DB_EQUAL, kSecKeyLabel, pubKeyHash);
+		dbPrivCursor->add(CSSM_DB_EQUAL, kInfoKeyLabel, pubKeyHash);
 		CssmClient::Key privateKey;
 		if (!dbPrivCursor->nextKey(&privDbAttributes, privateKey, privUniqueId))
 			MacOSError::throwMe(errSecItemNotFound);
@@ -591,23 +630,34 @@ KeyItem::importPair(
 		csp.allocator().free(cssmData->Data);
 		csp.allocator().free(cssmData);
 
-		std::string description(initialAccess->promptDescription());
+		auto_ptr<string>privDescription;
+		auto_ptr<string>pubDescription;
+		try {
+			privDescription.reset(new string(initialAccess->promptDescription()));
+			pubDescription.reset(new string(initialAccess->promptDescription()));
+		}
+		catch(...) {
+			/* this path taken if no promptDescription available, e.g., for complex ACLs */
+			privDescription.reset(new string("Private key"));
+			pubDescription.reset(new string("Public key"));
+		}
+
 		// Set the label of the public key to the public key hash.
 		// Set the PrintName of the public key to the description in the acl.
-		pubDbAttributes.add(kSecKeyPrintName, description);
+		pubDbAttributes.add(kInfoKeyPrintName, *pubDescription);
 		pubUniqueId->modify(CSSM_DL_DB_RECORD_PUBLIC_KEY, &pubDbAttributes, NULL, CSSM_DB_MODIFY_ATTRIBUTE_REPLACE);
 
 		// Set the label of the private key to the public key hash.
 		// Set the PrintName of the private key to the description in the acl.
-		privDbAttributes.add(kSecKeyPrintName, description);
+		privDbAttributes.add(kInfoKeyPrintName, *privDescription);
 		privUniqueId->modify(CSSM_DL_DB_RECORD_PRIVATE_KEY, &privDbAttributes, NULL, CSSM_DB_MODIFY_ATTRIBUTE_REPLACE);
 
 		// Finally fix the acl and owner of the private key to the specified access control settings.
 		initialAccess->setAccess(*privateKey, maker);
 
 		// Make the public key acl completely open
-		Access pubKeyAccess;
-		pubKeyAccess.setAccess(*publicKey, maker);
+		SecPointer<Access> pubKeyAccess(new Access());
+		pubKeyAccess->setAccess(*publicKey, maker);
 
 		// Create keychain items which will represent the keys.
 		publicKeyItem = keychain->item(CSSM_DL_DB_RECORD_PUBLIC_KEY, pubUniqueId);
@@ -743,7 +793,7 @@ KeyItem::generate(Keychain keychain,
 			DbUniqueRecord uniqueId;
 			SSDbCursor dbCursor(ssDb, 1);
 			dbCursor->recordType(CSSM_DL_DB_RECORD_SYMMETRIC_KEY);
-			dbCursor->add(CSSM_DB_EQUAL, kSecKeyLabel, label);
+			dbCursor->add(CSSM_DB_EQUAL, kInfoKeyLabel, label);
 			CssmClient::Key key;
 			if (!dbCursor->nextKey(&dbAttributes, key, uniqueId))
 				MacOSError::throwMe(errSecItemNotFound);

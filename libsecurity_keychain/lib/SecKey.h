@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -40,6 +38,106 @@
 #if defined(__cplusplus)
 extern "C" {
 #endif
+
+/*!
+	@enum KeyItemAttributeConstants
+	@abstract Specifies keychain item attributes for keys.
+    @constant kSecKeyKeyClass type uint32 (CSSM_KEYCLASS), value
+    is one of CSSM_KEYCLASS_PUBLIC_KEY, CSSM_KEYCLASS_PRIVATE_KEY
+    or CSSM_KEYCLASS_SESSION_KEY.
+    @constant kSecKeyPrintName type blob, human readable name of
+    the key.  Same as kSecLabelItemAttr for normal keychain items.
+    @constant kSecKeyAlias type blob, currently unused.
+    @constant kSecKeyPermanent type uint32, value is nonzero iff
+    this key is permanent (stored in some keychain).  This is always
+    1.
+    @constant kSecKeyPrivate type uint32, value is nonzero iff this
+    key is protected by a user login or a password, or both.
+    @constant kSecKeyModifiable type uint32, value is nonzero iff
+    attributes of this key can be modified.
+    @constant kSecKeyLabel type blob, for private and public keys
+    this contains the hash of the public key.  This is used to
+    associate certificates and keys.  It's value matches the value
+    of the kSecPublicKeyHashItemAttr of a certificate and it's used
+    to construct an identity from a certificate and a key.
+    For symmetric keys this is whatever the creator of the key
+    passed in during the generate key call.
+    @constant kSecKeyApplicationTag type blob, currently unused.
+    @constant kSecKeyKeyCreator type data, the data points to a
+    CSSM_GUID structure representing the moduleid of the csp owning
+    this key.
+    @constant kSecKeyKeyType type uint32, value a CSSM_ALGORITHMS
+    representing the algorithm associated with this key.
+    @constant kSecKeyKeySizeInBits type uint32, value is the number
+    of bits in this key.
+    @constant kSecKeyEffectiveKeySize type uint32, value is the
+    effective number of bits in this key.  For example a des key
+    has a kSecKeyKeySizeInBits of 64 but a kSecKeyEffectiveKeySize
+    of 56.
+    @constant kSecKeyStartDate type CSSM_DATE.  Earliest date from
+    which this key may be used.  If the value is all zeros or not
+    present, no restriction applies.
+    @constant kSecKeyEndDate type CSSM_DATE.  Latest date at
+    which this key may be used.  If the value is all zeros or not
+    present, no restriction applies.
+    @constant kSecKeySensitive type uint32, iff value is nonzero
+    this key cannot be wrapped with CSSM_ALGID_NONE.
+    @constant kSecKeyAlwaysSensitive type uint32, value is nonzero
+    iff this key has always been marked sensitive.
+    @constant kSecKeyExtractable type uint32, value is nonzero iff
+    this key can be wrapped.
+    @constant kSecKeyNeverExtractable type uint32, value is nonzero
+    iff this key was never marked extractable.
+    @constant kSecKeyEncrypt type uint32, value is nonzero iff this
+    key can be used in an encrypt operation.
+    @constant kSecKeyDecrypt type uint32, value is nonzero iff this
+    key can be used in a decrypt operation.
+    @constant kSecKeyDerive type uint32, value is nonzero iff this
+    key can be used in a deriveKey operation.
+    @constant kSecKeySign type uint32, value is nonzero iff this
+    key can be used in a sign operation.
+    @constant kSecKeyVerify type uint32, value is nonzero iff this
+    key can be used in a verify operation.
+    @constant kSecKeySignRecover type uint32.
+    @constant kSecKeyVerifyRecover type uint32.
+    key can unwrap other keys.
+    @constant kSecKeyWrap type uint32, value is nonzero iff this 
+    key can wrap other keys.
+    @constant kSecKeyUnwrap type uint32, value is nonzero iff this
+    key can unwrap other keys.
+	@discussion @@@.
+*/
+enum
+{
+    kSecKeyKeyClass =          0,
+    kSecKeyPrintName =         1,
+    kSecKeyAlias =             2,
+    kSecKeyPermanent =         3,
+    kSecKeyPrivate =           4,
+    kSecKeyModifiable =        5,
+    kSecKeyLabel =             6,
+    kSecKeyApplicationTag =    7,
+    kSecKeyKeyCreator =        8,
+    kSecKeyKeyType =           9,
+    kSecKeyKeySizeInBits =    10,
+    kSecKeyEffectiveKeySize = 11,
+    kSecKeyStartDate =        12,
+    kSecKeyEndDate =          13,
+    kSecKeySensitive =        14,
+    kSecKeyAlwaysSensitive =  15,
+    kSecKeyExtractable =      16,
+    kSecKeyNeverExtractable = 17,
+    kSecKeyEncrypt =          18,
+    kSecKeyDecrypt =          19,
+    kSecKeyDerive =           20,
+    kSecKeySign =             21,
+    kSecKeyVerify =           22,
+    kSecKeySignRecover =      23,
+    kSecKeyVerifyRecover =    24,
+    kSecKeyWrap =             25,
+    kSecKeyUnwrap =           26
+};
+
 
 /*!
 	@function SecKeyGetTypeID
