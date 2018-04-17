@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2001,2003-2004 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2005 Apple Computer, Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -19,32 +19,40 @@
  * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
- *
- * KCEventObserver.cpp -- OS X CF Observer for Keychain Events
  */
 
-#include "KCEventObserver.h"
+/*
+ * TrustSettingsUtils.h - Utility routines for TrustSettings module
+ */
+ 
+#ifndef	_TRUST_SETTINGS_UTILS_H_
+#define _TRUST_SETTINGS_UTILS_H_
 
-using namespace Security;
+#include <security_keychain/TrustSettings.h>
+#include <security_keychain/SecTrustSettingsPriv.h>
+#include <security_utilities/alloc.h>
+#include <string>
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
 
-void Observer::consume (SecurityServer::NotificationDomain domain, SecurityServer::NotificationEvent event, const CssmData &data)
+#define CFRELEASE(cf)		if(cf) { CFRelease(cf); }
+
+#define TS_REQUIRED(arg)	if(arg == NULL) { return paramErr; }
+
+namespace Security
 {
-    secdebug("kcnotify", "Security::Observer::EventReceived got event %u", (unsigned int) event);
 
-	// make a NameValueDictionary from the data we received
-	NameValueDictionary nvd (data);
-	Event (domain, event, nvd);
-}
-
-
-
-Observer::Observer (SecurityServer::NotificationDomain whichDomain, SecurityServer::NotificationMask whichEvents)
-	: SecurityServer::EventListener(whichDomain, whichEvents)
+namespace KeychainCore
 {
-}
 
+/* Read entire file. */
+int tsReadFile(
+	const char		*fileName,
+	Allocator		&alloc,
+	CSSM_DATA		&fileData);		// mallocd via alloc and RETURNED
 
+} /* end namespace KeychainCore */
 
-Observer::~Observer ()
-{
-}
+} /* end namespace Security */
+
+#endif	/* _TRUST_SETTINGS_UTILS_H_ */
