@@ -339,7 +339,7 @@ OSStatus impExpPkcs12Import(
 		return CSSMERR_CSSM_ADDIN_LOAD_FAILED;
 	}
 	
-	assert(cspHand != 0);
+	assert(cspHand != CSSM_INVALID_HANDLE);
 	if(importKeychain != NULL) {
 		ortn = SecPkcs12SetKeychain(p12Coder, importKeychain);
 		if(ortn) {
@@ -348,7 +348,7 @@ OSStatus impExpPkcs12Import(
 		}
 	}
 	else {
-		if(cspHand == NULL) {
+		if(cspHand == CSSM_INVALID_HANDLE) {
 			ortn = paramErr;
 			goto errOut;
 		}
