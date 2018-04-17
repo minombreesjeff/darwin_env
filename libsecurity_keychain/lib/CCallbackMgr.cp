@@ -180,7 +180,7 @@ void CCallbackMgr::Event (SecurityServer::NotificationDomain domain, SecuritySer
     // Decode from userInfo the event type, 'keychain' CFDict, and 'item' CFDict
 	SecKeychainEvent thisEvent = whichEvent;
 
-    Endian<pid_t> thisPid;
+    pid_t thisPid;
 	const NameValuePair* pidRef = dictionary.FindByName(PID_KEY);
 	if (pidRef == 0)
 	{

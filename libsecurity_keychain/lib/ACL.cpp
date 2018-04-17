@@ -48,12 +48,6 @@ const CSSM_ACL_KEYCHAIN_PROMPT_SELECTOR ACL::defaultSelector = {
 
 
 //
-// ACL static constants
-//
-const CSSM_ACL_HANDLE ACL::ownerHandle;
-
-
-//
 // Create an ACL object from the result of a CSSM ACL query
 //
 ACL::ACL(Access &acc, const AclEntryInfo &info, Allocator &alloc)

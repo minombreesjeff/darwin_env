@@ -259,7 +259,7 @@ KeyItem::strengthInBits(const CSSM_X509_ALGORITHM_IDENTIFIER *algid)
 	// @@@ Make a context with key based on algid and use that to get the effective keysize and not just the logical one.
 	CSSM_KEY_SIZE keySize = {};
 	CSSM_RETURN rv = CSSM_QueryKeySizeInBits (csp()->handle(),
-                         CSSM_INVALID_HANDLE,
+                         NULL,
                          key(),
                          &keySize);
 	if (rv)

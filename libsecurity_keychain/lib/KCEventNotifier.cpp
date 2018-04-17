@@ -51,7 +51,7 @@ void KCEventNotifier::PostKeychainEvent(SecKeychainEvent whichEvent,
 {
 	NameValueDictionary nvd;
 
-	Endian<pid_t> thePid = getpid();
+	pid_t thePid = getpid();
 	nvd.Insert (new NameValuePair (PID_KEY, CssmData (reinterpret_cast<void*>(&thePid), sizeof (pid_t))));
 
 	if (dlDbIdentifier)

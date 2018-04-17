@@ -61,6 +61,7 @@ OSStatus
 SecKeychainOpen(const char *pathName, SecKeychainRef *keychainRef)
 {
     BEGIN_SECAPI
+
 	secdebug("kc", "SecKeychainOpen(\"%s\", %p)", pathName, keychainRef);
 	RequiredParam(keychainRef)=globals().storageManager.make(pathName, false)->handle();
 

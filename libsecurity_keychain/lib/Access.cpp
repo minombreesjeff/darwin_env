@@ -37,12 +37,6 @@ using namespace CssmClient;
 
 
 //
-// Access static constants
-//
-const CSSM_ACL_HANDLE Access::ownerHandle;
-
-
-//
 // Create a completely open Access (anyone can do anything)
 // Note that this means anyone can *change* the ACL at will, too.
 // These ACL entries contain no descriptor names.

@@ -239,7 +239,7 @@ OSStatus impExpImportRawKey(
 	if(rawCspHand == 0) {
 		return CSSMERR_CSSM_ADDIN_LOAD_FAILED;
 	}
-	crtn = CSSM_QueryKeySizeInBits(rawCspHand, CSSM_INVALID_HANDLE, &wrappedKey, &keySize);
+	crtn = CSSM_QueryKeySizeInBits(rawCspHand, NULL, &wrappedKey, &keySize);
 	cuCspDetachUnload(rawCspHand, CSSM_TRUE);
 	if(crtn) {
 		SecImpExpDbg("CSSM_QueryKeySizeInBits error");
