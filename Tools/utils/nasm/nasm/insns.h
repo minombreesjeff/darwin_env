@@ -1,5 +1,5 @@
 /* insns.h   header file for insns.c
- * $Id: insns.h,v 1.1.1.1 2005/10/13 22:21:48 echristo Exp $
+ * $Id: insns.h,v 1.2 2006/03/01 01:38:08 echristo Exp $
  *
  * The Netwide Assembler is copyright (C) 1996 Simon Tatham and
  * Julian Hall. All rights reserved. The software is
@@ -78,6 +78,7 @@ struct itemplate {
 #define IF_SSE    0x00010000UL  /* it's a SSE (KNI, MMX2) instruction */
 #define IF_SSE2   0x00020000UL  /* it's a SSE2 instruction */
 #define IF_SSE3   0x00040000UL  /* it's a SSE3 (PNI) instruction */
+#define IF_VMX	  0x00080000UL  /* it's a VMX instruction */
 #define IF_PMASK  0xFF000000UL  /* the mask for processor types */
 #define IF_PLEVEL 0x0F000000UL  /* the mask for processor instr. level */
                                         /* also the highest possible processor */

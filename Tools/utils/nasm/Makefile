@@ -14,7 +14,7 @@ GnuAfterInstall       = post-install install-plist
 # It's a GNU Source project
 include ./GNUSource.make
 
-Install_Target = install
+Install_Target = install_everything
 
 # Extract the source.
 install_source::

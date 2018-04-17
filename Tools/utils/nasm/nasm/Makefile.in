@@ -1,4 +1,4 @@
-# $Id: Makefile.in,v 1.2 2005/10/14 01:25:13 echristo Exp $
+# $Id: Makefile.in,v 1.4 2006/02/08 01:35:21 echristo Exp $
 #
 # Auto-configuring Makefile for the Netwide Assembler.
 #
@@ -24,8 +24,8 @@ LIBS		= @LIBS@
 PERL		= perl
 
 INSTALL		= $(srcdir)/install-sh -c
-INSTALL_PROGRAM	= @INSTALL_PROGRAM@
-INSTALL_DATA	= @INSTALL_DATA@
+INSTALL_PROGRAM	= ${INSTALL}
+INSTALL_DATA	= ${INSTALL} -m 644
 DESTDIR         = @DESTDIR@
 
 NROFF		= @NROFF@
@@ -160,9 +160,9 @@ doc:
 doc_install install_doc:
 	cd doc && $(MAKE) install
 
-everything: all doc rdf
+everything: all doc
 
-install_everything: everything install install_doc install_rdf
+install_everything: everything install install_doc
 
 dist: spotless perlreq spec
 	autoheader
