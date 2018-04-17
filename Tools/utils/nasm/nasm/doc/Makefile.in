@@ -1,4 +1,4 @@
-# $Id: Makefile.in,v 1.4 2006/04/05 00:38:47 echristo Exp $
+# $Id: Makefile.in,v 1.6 2007/03/29 01:33:11 echristo Exp $
 #
 # UNIX Makefile for NASM documentation
 #
@@ -11,7 +11,7 @@ bindir		= @bindir@
 mandir		= @mandir@
 docdir		= $(prefix)/share/doc/nasm
 infodir		= @infodir@
-htmldir		= "/Developer/ADC Reference Library/documentation/DeveloperTools/nasm"
+htmldir		= "/Developer/Documentation/DocSets/com.apple.ADC_Reference_Library.DeveloperTools.docset/Contents/Resources/Documents/documentation/DeveloperTools/nasm/"
 
 INSTALL		= $(srcdir)/../install-sh -c
 INSTALL_PROGRAM	= ${INSTALL}

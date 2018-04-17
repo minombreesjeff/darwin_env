@@ -1,8 +1,24 @@
+--- Tagged nasm-13 ---
+
+2007-03-28  Eric Christopher  <echristo@apple.com>
+
+	* nasm/doc/Makefile.in (install): Move the html documentation
+	a bit more.
+
+--- Tagged nasm-12 ---
+
+2007-02-28  Eric Christopher  <echristo@apple.com>
+
+	* nasm/doc/Makefile.in (install): Move the html documentation
+	in the new apple standard place.
+
+--- Tagged nasm-11 ---
+
 2006-06-25  Eric Christopher  <echristo@apple.com>
 
 	Import from mainline:
 	2006-06-25  Eric Christopher  <echristo@apple.com>
-
+	            Hector Chu  <hkcc2@cantab.net>
 	* output/outmacho.c (macho_section): Default align to -1.
 	Update check for alignment.
 	(macho_write_segment): If alignment is still -1, reset to
@@ -12,6 +28,7 @@
 
 	Import from mainline:
 	2006-06-25  Eric Christopher  <echristo@apple.com>
+	            Hector Chu  <hkcc2@cantab.net>
 
 	* output/outmacho.c (macho_write_section): Don't depend on
 	S_ZEROFILL when adding sizes.
@@ -20,6 +37,7 @@
 
 	Import from mainline:
 	2006-06-25  Eric Christopher  <echristo@apple.com>
+	            Hector Chu  <hkcc2@cantab.net>
 
 	* output/outmacho.c (macho_fixup_relocs): Break if we've
 	found the sym we're looking for.
