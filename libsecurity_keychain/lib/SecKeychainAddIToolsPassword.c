@@ -45,7 +45,7 @@ OSStatus SecKeychainAddIToolsPassword(SecKeychainRef keychain, UInt32 accountNam
 	const int allowAny = 0;
 	
 	// create the initial ACL label string (use the account name, not "iTools") [3787371]
-	itemLabel = CFStringCreateWithBytes(kCFAllocatorDefault, accountName, accountNameLength, kCFStringEncodingUTF8, FALSE);
+	itemLabel = CFStringCreateWithBytes(kCFAllocatorDefault, (const UInt8 *)accountName, accountNameLength, kCFStringEncodingUTF8, FALSE);
     
 	// create initial access control settings for the item
 	SecAccessRef access = NULL;
