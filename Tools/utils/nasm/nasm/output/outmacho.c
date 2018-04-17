@@ -539,7 +539,7 @@ static long macho_section(char *name, int pass, int *bits)
                 s->data = saa_init(1L);
                 s->index = seg_alloc();
                 s->relocs = NULL;
-                s->align = DEFAULT_SECTION_ALIGNMENT;
+                s->align = -1;
 
                 xstrncpy(s->segname, sm->segname);
                 xstrncpy(s->sectname, sm->sectname);
@@ -579,7 +579,8 @@ static long macho_section(char *name, int pass, int *bits)
                         }
 
                         if ((-1 != originalIndex)
-                            && (s->align != newAlignment)) {
+                            && (s->align != newAlignment)
+			    && (s->align != -1)) {
                             error(ERR_PANIC,
                                   "section \"%s\" has already been specified "
                                       "with alignment %d, conflicts with new "
@@ -889,6 +890,8 @@ static unsigned long macho_write_segment (unsigned long offset)
 	    fwritelong(offset, machofp);
 	    /* Write out section alignment, as a power of two.
 	       e.g. 32-bit word alignment would be 2 (2^^2 = 4).  */
+	    if (s->align == -1)
+		s->align = DEFAULT_SECTION_ALIGNMENT;
 	    fwritelong(s->align, machofp);
 	    /* To be compatible with cctools as we emit
 	       a zero reloff if we have no relocations.  */
@@ -981,8 +984,7 @@ static void macho_write_section (void)
 	    /* add sizes of previous sections to current offset */
 	    for (s2 = sects, fi = 1;
 		 s2 != NULL && fi < r->snum; s2 = s2->next, fi++)
-		if ((s2->flags & SECTION_TYPE) != S_ZEROFILL)
-		    l += s2->size;
+		l += s2->size;
 	    }
 
 	    /* write new offset back */
@@ -1088,6 +1090,7 @@ static void macho_fixup_relocs (struct reloc *r)
 		sym = undefsyms[i];
 		if (sym->initial_snum == r->snum) {
 		    r->snum = sym->snum;
+		    break;
 		}
 	    }
 	}
