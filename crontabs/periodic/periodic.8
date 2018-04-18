@@ -22,7 +22,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.\" $FreeBSD: src/usr.sbin/periodic/periodic.8,v 1.11.2.13 2001/12/14 16:48:11 ru Exp $
+.\" $FreeBSD: src/usr.sbin/periodic/periodic.8,v 1.30 2005/01/18 20:02:40 ru Exp $
 .\"
 .Dd November 28, 2001
 .Os
@@ -36,7 +36,7 @@
 .Sh DESCRIPTION
 The
 .Nm
-program is intended to be called by
+utility is intended to be called by
 .Xr cron 8
 to execute shell scripts
 located in the specified directory.
@@ -67,7 +67,7 @@ setting in
 .Pp
 The
 .Nm
-program will run each executable file in the directory or directories
+utility will run each executable file in the directory or directories
 specified.
 If a file does not have the executable bit set, it is silently ignored.
 .Pp
@@ -114,6 +114,15 @@ setting.
 If this is set to a path name (beginning with a
 .Ql /
 character), output is simply logged to that file.
+.Xr newsyslog 8
+knows about the files
+.Pa /var/log/daily.log , /var/log/weekly.log
+and
+.Pa /var/log/monthly.log ,
+and if they exist, it will rotate them at the appropriate times.
+These are therefore good values if you wish to log
+.Nm
+output.
 .Pp
 If the
 .Ao Ar basedir Ac Ns Va _output
@@ -128,7 +137,7 @@ is not set or is empty, output is sent to standard output.
 .Sh ENVIRONMENT
 The
 .Nm
-command sets the
+utility sets the
 .Ev PATH
 environment to include all standard system directories, but no additional
 directories, such as
@@ -136,22 +145,22 @@ directories, such as
 If executables are added which depend upon other path components, each
 executable must be responsible for configuring its own appropriate environment.
 .Sh FILES
-.Bl -tag -width ".Pa /etc/periodic.conf"
+.Bl -tag -width ".Pa /etc/defaults/periodic.conf"
 .It Pa /etc/crontab
-The
+the
 .Nm
-program is typically called via entries in the system default
+utility is typically called via entries in the system default
 .Xr cron 8
-table.
+table
 .It Pa /etc/periodic
-The top level directory containing
+the top level directory containing
 .Pa daily ,
 .Pa weekly ,
 and
 .Pa monthly
-subdirectories which contain standard system periodic executables.
+subdirectories which contain standard system periodic executables
 .It Pa /etc/defaults/periodic.conf
-The
+the
 .Pa periodic.conf
 system registry contains variables that control the behaviour of
 .Nm
@@ -159,12 +168,14 @@ and the standard
 .Pa daily , weekly ,
 and
 .Pa monthly
-scripts.
+scripts
 .It Pa /etc/periodic.conf
-This file contains local overrides for the default
+this file contains local overrides for the default
 .Nm
-configuration.
+configuration
 .El
+.Sh EXIT STATUS
+Exit status is 0 on success and 1 if the command fails.
 .Sh EXAMPLES
 The system crontab should have entries for
 .Nm
@@ -202,14 +213,8 @@ daily_show_success=NO
 daily_show_info=NO
 daily_show_badconfig=NO
 .Ed
-.Sh SEE ALSO
-.Xr sh 1 ,
-.Xr crontab 5 ,
-.Xr periodic.conf 5 ,
-.Xr cron 8
 .Sh DIAGNOSTICS
-Exit status is 0 on success and 1 if the command
-fails for one of the following reasons:
+The command may fail for one of the following reasons:
 .Bl -diag
 .It usage: periodic <directory of files to execute>
 No directory path argument was passed to
@@ -218,6 +223,20 @@ to specify where the script fragments reside.
 .It <directory> not found
 Self explanatory.
 .El
+.Sh SEE ALSO
+.Xr sh 1 ,
+.Xr crontab 5 ,
+.Xr periodic.conf 5 ,
+.Xr cron 8 ,
+.Xr newsyslog 8
+.Sh HISTORY
+The
+.Nm
+utility first appeared in
+.Fx 3.0 .
+.Sh AUTHORS
+.An Paul Traina Aq pst@FreeBSD.org
+.An Brian Somers Aq brian@Awfulhak.org
 .Sh BUGS
 Since one specifies information about a directory using shell
 variables containing the string,
@@ -227,6 +246,3 @@ must only contain characters that are valid within a
 .Xr sh 1
 variable name, alphanumerics and underscores, and the first character
 may not be numeric.
-.Sh AUTHORS
-.An Paul Traina Aq pst@FreeBSD.org
-.An Brian Somers Aq brian@Awfulhak.org

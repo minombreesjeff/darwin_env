@@ -1,6 +1,6 @@
 #!/bin/sh -
 #
-# $FreeBSD: src/usr.sbin/periodic/periodic.sh,v 1.9.2.7 2000/11/26 06:06:18 kris Exp $
+# $FreeBSD: src/usr.sbin/periodic/periodic.sh,v 1.20 2002/05/14 01:15:35 brian Exp $
 #
 # Run nightly periodic scripts
 #
@@ -68,9 +68,9 @@ do
     esac
 
     {
-	# Print the date at the beginning of all logs.
-	echo
-	date
+        # Print the date at the beginning of all logs (3086063).
+        echo
+        date
 
         empty=TRUE
         processed=0
@@ -101,6 +101,9 @@ do
         then
           [ $processed = 1 ] && plural= || plural=s
           echo "No output from the $processed file$plural processed"
+        else
+          echo ""
+          echo "-- End of $arg output --"
         fi
     } | eval $pipe
 done
