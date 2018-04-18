@@ -44,6 +44,7 @@
 #include <netat/pap.h>
 #include <netat/atp.h>
 
+
 #define	SET_ERRNO(e) errno = e
 
 /*#define MSGSTR(num,str)		catgets(catd, MS_PAP, num,str)*/
@@ -236,6 +237,7 @@ void
 pap_timeout(n) {
 	struct pap_state *papp = paps[papm[papfd]];
 	
+	
 	if (papp == NULL)
 	    return;		/* stream is already closed */
 	/*
@@ -304,7 +306,7 @@ pap_send_request(fd, papp, function, xo, seqno)
 		papp->pap_send_count++;
 		if (papp->pap_send_count == 0)
 		    papp->pap_send_count = 1;
-		*(u_short *)&puserdata[2] = papp->pap_send_count;
+		*(u_short *)&puserdata[2] = htons(papp->pap_send_count);
 	} else
 		*(u_short *)&puserdata[2] = 0;
 

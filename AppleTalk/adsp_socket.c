@@ -491,6 +491,7 @@ ADSPsocket(int domain, int type, int protocol)
 {
 	int fd, namelen, tmp_errno;
 	at_inet_t name;
+	
 
 	if ((domain != PF_APPLETALK) || (type != SOCK_STREAM) || (protocol != 0)) {
 		SET_ERRNO(EINVAL);
