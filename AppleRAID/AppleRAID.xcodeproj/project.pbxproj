@@ -142,7 +142,7 @@
 		59532CCF068261AC00CA9D0A /* libAppleRAID.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libAppleRAID.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		59532CEB0682647300CA9D0A /* AppleRAIDUserLib.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = AppleRAIDUserLib.c; sourceTree = "<group>"; };
 		59532D0D0682683E00CA9D0A /* AppleRAIDUserLib.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = AppleRAIDUserLib.h; sourceTree = "<group>"; };
-		59532D260682697700CA9D0A /* artest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = artest; sourceTree = BUILT_PRODUCTS_DIR; };
+		59532D260682697700CA9D0A /* artest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "compiled.mach-o.executable"; path = artest; sourceTree = BUILT_PRODUCTS_DIR; };
 		59532D2D068269D800CA9D0A /* artest.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = artest.c; sourceTree = "<group>"; };
 		59532D5506826BE100CA9D0A /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = /System/Library/Frameworks/CoreFoundation.framework; sourceTree = "<absolute>"; };
 		59532D9506826BFE00CA9D0A /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = /System/Library/Frameworks/IOKit.framework; sourceTree = "<absolute>"; };

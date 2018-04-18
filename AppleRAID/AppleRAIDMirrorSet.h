@@ -35,6 +35,9 @@ class AppleRAIDMirrorSet : public AppleRAIDSet
  private:
     UInt32			arExpectingLiveAdd;
     thread_call_t		arSetCompleteThreadCall;
+
+    UInt64 *			arLastSeek;			
+    UInt64 *			arSkippedIOCount;
     
     AppleRAIDMember *		arRebuildingMember;
     thread_call_t		arRebuildThreadCall;
@@ -70,6 +73,8 @@ public:
     virtual bool bumpOnError(void);
     virtual UInt32 nextSetState(void);
 
+    virtual void activeReadMembers(AppleRAIDMember ** activeMembers, UInt64 byteStart, UInt32 byteCount);
+
     virtual void completeRAIDRequest(AppleRAIDStorageRequest *storageRequest);
     
     virtual AppleRAIDMemoryDescriptor * allocateMemoryDescriptor(AppleRAIDStorageRequest *storageRequest, UInt32 memberIndex);
@@ -82,7 +87,6 @@ class AppleRAIDMirrorMemoryDescriptor : public AppleRAIDMemoryDescriptor
     OSDeclareDefaultStructors(AppleRAIDMirrorMemoryDescriptor);
     
 private:
-    UInt32		mdMemberCount;
     UInt32		mdSetBlockSize;
     UInt32		mdSetBlockStart;
     UInt32		mdSetBlockOffset;
@@ -94,6 +98,7 @@ protected:
 public:
     static AppleRAIDMemoryDescriptor *withStorageRequest(AppleRAIDStorageRequest *storageRequest, UInt32 memberIndex);
     virtual IOPhysicalAddress getPhysicalSegment(IOByteCount offset, IOByteCount *length);
+    virtual addr64_t getPhysicalSegment64(IOByteCount offset, IOByteCount *length);
 };
 
 #endif /* ! _APPLERAIDMIRRORSET_H */

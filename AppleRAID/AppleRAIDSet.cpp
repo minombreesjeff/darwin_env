@@ -21,6 +21,7 @@
  */
 
 #include "AppleRAID.h"
+#include <IOKit/IOPolledInterface.h>
 
 #define super AppleRAIDMember
 OSDefineMetaClassAndAbstractStructors(AppleRAIDSet, AppleRAIDMember);
@@ -69,6 +70,8 @@ bool AppleRAIDSet::init()
     
     arSetState = kAppleRAIDSetStateInitializing;
     setProperty(kAppleRAIDStatusKey, kAppleRAIDStatusOffline);
+    // this will disable the writing of hibernation data on RAID volumes
+    setProperty(kIOPolledInterfaceSupportKey, kOSBooleanFalse);
     
     arMemberCount	= 0;
     arLastAllocCount	= 0;
@@ -82,6 +85,7 @@ bool AppleRAIDSet::init()
     arSetCompleteTimeout = kARSetCompleteTimeoutNone;
     arSetBlockCount	= 0;
     arSetMediaSize	= 0;
+    arMaxReadRequestFactor = 0;
 
     arMembers		= 0;
     arSpareMembers	= OSSet::withCapacity(10);
@@ -435,7 +439,7 @@ bool AppleRAIDSet::resizeSet(UInt32 newMemberCount)
     
     UInt32 oldMemberCount = arMemberCount;
 
-    // if downsizing, just hold on the extra space
+    // if downsizing, just hold on to the extra space
     if (arLastAllocCount && (arLastAllocCount >= newMemberCount)) {
 	arMemberCount = newMemberCount;
 	// zero out the deleted stuff;
@@ -487,6 +491,52 @@ UInt32 AppleRAIDSet::nextSetState(void)
     }
 
     return kAppleRAIDSetStateInitializing;
+}
+
+
+void AppleRAIDSet::setSmallest64BitMemberPropertyFor(char * key, UInt32 multiplier)
+{
+    UInt64 minimum = UINT64_MAX;
+
+    for (UInt32 cnt = 0; cnt < arMemberCount; cnt++) {
+	AppleRAIDMember * target = arMembers[cnt];
+	if (target) {
+	    OSNumber * number = OSDynamicCast(OSNumber, target->getProperty(key, gIOServicePlane));
+            if (number) {
+		UInt64 newMinimum = number->unsigned64BitValue();
+		if (newMinimum) minimum = min(minimum, newMinimum);
+	    }
+	}
+    }
+
+    if (minimum < UINT64_MAX) {
+	setProperty(key, minimum * multiplier, 64);
+    } else {
+	removeProperty(key);
+    }
+}
+
+
+void AppleRAIDSet::setLargest64BitMemberPropertyFor(char * key, UInt32 multiplier)
+{
+    UInt64 maximum = 0;
+
+    for (UInt32 cnt = 0; cnt < arMemberCount; cnt++) {
+	AppleRAIDMember * target = arMembers[cnt];
+	if (target) {
+	    OSNumber * number = OSDynamicCast(OSNumber, target->getProperty(key, gIOServicePlane));
+            if (number) {
+		UInt64 newMaximum = number->unsigned64BitValue();
+		if (newMaximum) maximum = max(maximum, newMaximum);
+	    }
+	}
+    }
+
+    if (maximum > 0) {
+	setProperty(key, maximum * multiplier, 64);
+    } else {
+	removeProperty(key);
+    }
 }
 
 
@@ -553,10 +603,28 @@ bool AppleRAIDSet::startSet(void)
 	    if (!arMembers[cnt]->isWritable())  arIsWritable  = false;
 	}
     }
+
+    setSmallest64BitMemberPropertyFor(kIOMaximumBlockCountReadKey, 1);
+    setSmallest64BitMemberPropertyFor(kIOMaximumBlockCountWriteKey, 1);
+    setSmallest64BitMemberPropertyFor(kIOMaximumByteCountReadKey, 1);
+    setSmallest64BitMemberPropertyFor(kIOMaximumByteCountWriteKey, 1);
+
+    setSmallest64BitMemberPropertyFor(kIOMaximumSegmentCountReadKey, 1);
+    setSmallest64BitMemberPropertyFor(kIOMaximumSegmentCountWriteKey, 1);
+    setSmallest64BitMemberPropertyFor(kIOMaximumSegmentByteCountReadKey, 1);		// don't scale this
+    setSmallest64BitMemberPropertyFor(kIOMaximumSegmentByteCountWriteKey, 1);		// don't scale this
+
+#ifdef kIOMinimumSegmentAlignmentByteCountKey
+    setLargest64BitMemberPropertyFor(kIOMinimumSegmentAlignmentByteCountKey, 1);	// don't scale this
+#endif    
+#ifdef kIOMaximumSegmentAddressableBitCountKey
+    setSmallest64BitMemberPropertyFor(kIOMaximumSegmentAddressableBitCountKey, 1);	// don't scale this
+#endif    
     
     IOLog1("AppleRAIDSet::startSet %p was successful.\n", this);
     return true;
 }
+
 
 bool AppleRAIDSet::publishSet(void)
 {
@@ -722,24 +790,25 @@ bool AppleRAIDSet::destroySet(void)
 bool AppleRAIDSet::reconfigureSet(OSDictionary * updateInfo)
 {
     bool updateHeader = false;
-    UInt32 newMemberCount = 0;
+    UInt32 newMemberCount = arMemberCount;
     
     IOLog1("AppleRAIDSet::reconfigureSet(%p) entered.\n", this);
 
     OSString * deleted = OSString::withCString(kAppleRAIDDeletedUUID);
     if (!deleted) return false;
 
-    // XXX need to guard against v1 sets getting here?
-    
     OSArray * oldMemberList = OSDynamicCast(OSArray, getProperty(kAppleRAIDMembersKey));
     OSArray * newMemberList = OSDynamicCast(OSArray, updateInfo->getObject(kAppleRAIDMembersKey));
+
     if (oldMemberList && newMemberList) {
 
 	IOLog1("AppleRAIDSet::reconfigureSet(%p) updating member list.\n", this);
+
+	assert(arMemberCount == oldMemberList->getCount());
 	
 	// look for kAppleRAIDDeletedUUID
-	newMemberCount = arMemberCount;
 	for (UInt32 i = 0; i < newMemberCount; i++) {
+
 	    OSString * uuid = OSDynamicCast(OSString, newMemberList->getObject(i));
 
 	    if (uuid && (uuid->isEqualTo(deleted))) {
@@ -755,9 +824,12 @@ bool AppleRAIDSet::reconfigureSet(OSDictionary * updateInfo)
 			    arSetCommandGate->runAction(OSMemberFunctionCast(IOCommandGate::Action, this, &AppleRAIDSet::pauseSet), (void *)false);
 			}
 		    } else {
-			arMembers[i]->stop(NULL);
+			if (arMembers[i]->isRAIDSet()) {
+			    arController->oldMember(arMembers[i]);
+			} else {
+			    arMembers[i]->stop(NULL);
+			}
 		    }
-
 		} else {
 		    // if the member is broken it might be in the spare list
 		    OSString * olduuid = OSDynamicCast(OSString, oldMemberList->getObject(i));
@@ -767,7 +839,11 @@ bool AppleRAIDSet::reconfigureSet(OSDictionary * updateInfo)
 		    while (AppleRAIDMember * spare = (AppleRAIDMember *)iter->getNextObject()) {
 			if (spare->getUUID()->isEqualTo(olduuid)) {
 			    spare->zeroRAIDHeader();
-			    spare->stop(NULL);
+			    if (spare->isRAIDSet()) {
+				arController->oldMember(spare);
+			    } else {
+				spare->stop(NULL);
+			    }
 			    break;
 			}
 		    }
@@ -779,11 +855,14 @@ bool AppleRAIDSet::reconfigureSet(OSDictionary * updateInfo)
 		newMemberList->removeObject(i);
 		for (UInt32 j = i; j < newMemberCount; j++) {
 		    arMembers[j] = arMembers[j + 1];
-		    arMembers[j]->setHeaderProperty(kAppleRAIDMemberIndexKey, j, 32);
+		    if (arMembers[j]) arMembers[j]->setHeaderProperty(kAppleRAIDMemberIndexKey, j, 32);
 		}
+                                             
+		break;	// XXX this can only delete one member, the interface allows for more
 	    }
 	}
 
+	// this catches new member adds, resizeSet() fixes arMemberCount below
 	newMemberCount = newMemberList->getCount();
 
 	setProperty(kAppleRAIDMembersKey, newMemberList);
@@ -818,13 +897,17 @@ bool AppleRAIDSet::reconfigureSet(OSDictionary * updateInfo)
 	    while (AppleRAIDMember * spare = (AppleRAIDMember *)iter->getNextObject()) {
 		if (spare->getUUID()->isEqualTo(olduuid)) {
 		    spare->zeroRAIDHeader();
-		    spare->stop(NULL);
+		    if (spare->isRAIDSet()) {
+			arController->oldMember(spare);
+		    } else {
+			spare->stop(NULL);
+		    }
 		    break;
 		}
 	    }
 	    iter->release();
 	    
-	    break;	// XXX this can only do one delete, the UI allows more
+	    break;	// XXX this can only delete one spare, the interface allows for more
 	}
 	setProperty(kAppleRAIDSparesKey, newSpareList);
 	updateInfo->removeObject(kAppleRAIDSparesKey);
@@ -838,7 +921,8 @@ bool AppleRAIDSet::reconfigureSet(OSDictionary * updateInfo)
 	updateHeader = true;
     }
 
-    if (newMemberCount) {
+    // newMemberCount will be zero when deleting last member
+    if (newMemberCount != arMemberCount) {
 
 	resizeSet(newMemberCount);
 	
@@ -1169,11 +1253,6 @@ OSDictionary * AppleRAIDSet::getSetProperties(void)
     // not from header
     
     props->setObject(kAppleRAIDStatusKey, getProperty(kAppleRAIDStatusKey));
-    props->setObject(kIOMaximumBlockCountReadKey, getProperty(kIOMaximumBlockCountReadKey));
-    props->setObject(kIOMaximumSegmentCountReadKey, getProperty(kIOMaximumSegmentCountReadKey));
-    props->setObject(kIOMaximumBlockCountWriteKey, getProperty(kIOMaximumBlockCountWriteKey));
-    props->setObject(kIOMaximumSegmentCountWriteKey, getProperty(kIOMaximumSegmentCountWriteKey));
-
     props->setObject(kIOBSDNameKey, getDiskName());
     
     // set up the members array, only v2 headers contain a list of the members
@@ -1527,6 +1606,34 @@ void AppleRAIDSet::write(IOService *client, UInt64 byteStart,
     } else {
 	IOLogRW("AppleRAIDSet::write(%p, 0x%llx) could not allocate a storage request\n", client, byteStart);
         IOStorage::complete(completion, kIOReturnNoMedia, 0);
+    }
+}
+
+void AppleRAIDSet::activeReadMembers(AppleRAIDMember ** activeMembers, UInt64 byteStart, UInt32 byteCount)
+{
+    // XXX the default code should be able to cache this, maybe in the storage request?
+
+    for (UInt32 index = 0; index < arMemberCount; index++) {
+	AppleRAIDMember * member = arMembers[index];
+	if (member && member->getMemberState() >= kAppleRAIDMemberStateClosing) {
+	    activeMembers[index] = arMembers[index];
+	} else {
+	    activeMembers[index] = (AppleRAIDMember *)index;
+	}
+    }
+}
+
+void AppleRAIDSet::activeWriteMembers(AppleRAIDMember ** activeMembers, UInt64 byteStart, UInt32 byteCount)
+{
+    // XXX the default code should be able to cache this, maybe in the storage request?
+
+    for (UInt32 index = 0; index < arMemberCount; index++) {
+	AppleRAIDMember * member = arMembers[index];
+	if (member && member->getMemberState() >= kAppleRAIDMemberStateClosing) {
+	    activeMembers[index] = arMembers[index];
+	} else {
+	    activeMembers[index] = (AppleRAIDMember *)index;
+	}
     }
 }
 

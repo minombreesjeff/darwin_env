@@ -484,7 +484,6 @@ IOReturn AppleRAID::updateSet(char * setInfoBuffer, char * retBuffer, IOByteCoun
 // *****************************************************************************
 
 
-
 IOReturn AppleRAID::getListOfSets(UInt32 inFlags, char * outList, IOByteCount * outListSize)
 {
     OSCollectionIterator * iter = 0;

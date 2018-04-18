@@ -39,7 +39,7 @@ class AppleRAIDStorageRequest : public IOCommand
 private:
     AppleRAIDSet		*srRAIDSet;
     AppleRAIDEventSource	*srEventSource;
-    AppleRAIDMemoryDescriptor   **srMemberMemoryDescriptors;
+    AppleRAIDMemoryDescriptor	**srMemberMemoryDescriptors;
     IOReturn			srStatus;
     
     virtual void free(void);
@@ -49,20 +49,22 @@ protected:
     UInt64			srMemberBaseOffset;
     UInt32			srActiveCount;
     UInt32			srMemberCount;
-    IOReturn                    *srMemberStatus;
+    IOReturn			*srMemberStatus;
     UInt64			*srMemberByteCounts;
     UInt32			srCompletedCount;
     UInt64			srByteStart;
     UInt64			srByteCount;
+    AppleRAIDMember		**srActiveMembers;
+    UInt32			srNearestMember;
     IOService			*srClient;
     IOStorageCompletion		srCompletion;
     IOMemoryDescriptor		*srMemoryDescriptor;
     IODirection			srMemoryDescriptorDirection;
     
     virtual void read(IOService *client, UInt64 byteStart, IOMemoryDescriptor * buffer,
-                      IOStorageCompletion completion);
+		      IOStorageCompletion completion);
     virtual void write(IOService *client, UInt64 byteStart, IOMemoryDescriptor * buffer,
-                       IOStorageCompletion completion);
+		       IOStorageCompletion completion);
 
 public:
     static AppleRAIDStorageRequest *withAppleRAIDSet(AppleRAIDSet * xsset);

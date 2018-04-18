@@ -656,7 +656,6 @@ getMemberInfo(CFStringRef partitionName)
 
 	mi->isRAID = (CFBooleanRef)CFDictionaryGetValue(properties, CFSTR(kAppleRAIDIsRAIDKey)) == kCFBooleanTrue;
 
-#define kIOMediaUUIDKey "UUID"
 	mi->uuidString = (CFStringRef)CFDictionaryGetValue(properties, CFSTR(kIOMediaUUIDKey));
 	if (mi->uuidString) CFRetain(mi->uuidString);
 
@@ -1292,6 +1291,14 @@ AppleRAIDRemoveHeaders(CFStringRef partitionName)
 bool
 AppleRAIDRemoveMember(CFMutableDictionaryRef setInfo, AppleRAIDMemberRef member)
 {
+    // make sure we support this operation
+    UInt32 version;
+    CFNumberRef number = (CFNumberRef)CFDictionaryGetValue(setInfo, CFSTR(kAppleRAIDHeaderVersionKey));
+    if (!number || !CFNumberGetValue(number, kCFNumberSInt32Type, &version) || version < 0x00020000) {
+	printf("AppleRAID: This operation is not supported on earlier RAID set revisions.\n");
+	return NULL;
+    }
+
     // find the member or spare
     CFMutableArrayRef uuidArray = (CFMutableArrayRef)CFDictionaryGetValue(setInfo, CFSTR(kAppleRAIDMembersKey));
     CFMutableArrayRef uuidArray2 = 0;

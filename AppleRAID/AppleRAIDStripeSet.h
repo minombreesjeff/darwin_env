@@ -64,6 +64,7 @@ protected:
  public:
     static AppleRAIDMemoryDescriptor *withStorageRequest(AppleRAIDStorageRequest *storageRequest, UInt32 memberIndex);
     virtual IOPhysicalAddress getPhysicalSegment(IOByteCount offset, IOByteCount *length);
+    virtual addr64_t getPhysicalSegment64(IOByteCount offset, IOByteCount *length);
 };
 
 #endif /* ! _APPLERAIDSTRIPESET_H */

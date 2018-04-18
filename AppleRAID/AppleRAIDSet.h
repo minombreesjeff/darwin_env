@@ -63,6 +63,7 @@ protected:
     UInt32			arSetIsPaused;
     bool			arSetWasBlockedByPause;
     UInt32			arStorageRequestsPending;
+    UInt32			arMaxReadRequestFactor;
 
     thread_call_t		arRecoveryThreadCall;
     IOCommandGate::Action	arAllocateRequestMethod;
@@ -132,6 +133,8 @@ protected:
     virtual IOWorkLoop *getWorkLoop(void);
     virtual bool changeSetState(UInt32 newState);
     virtual UInt32 nextSetState(void);
+    virtual void setSmallest64BitMemberPropertyFor(char * key, UInt32 multiplier);
+    virtual void setLargest64BitMemberPropertyFor(char * key, UInt32 multiplier);
 
     inline  UInt32 getActiveCount(void) const	{ return arActiveCount; };
     inline  UInt32 getMemberCount(void)	const	{ return arMemberCount; };
@@ -143,6 +146,8 @@ protected:
     
     virtual void read(IOService * client, UInt64 byteStart, IOMemoryDescriptor* buffer, IOStorageCompletion completion);
     virtual void write(IOService * client, UInt64 byteStart, IOMemoryDescriptor* buffer, IOStorageCompletion completion);
+    virtual void activeReadMembers(AppleRAIDMember ** activeMembers, UInt64 byteStart, UInt32 byteCount);
+    virtual void activeWriteMembers(AppleRAIDMember ** activeMembers, UInt64 byteStart, UInt32 byteCount);
 
     virtual IOReturn synchronizeCache(IOService* client);
     virtual IOReturn synchronizeCacheGated(IOService *client);

@@ -795,11 +795,6 @@ bool AppleRAIDMember::isWritable() const
     return arIsWritable;
 }
 
-UInt64 AppleRAIDMember::getPreferredBlockSize() const
-{
-    return arNativeBlockSize;
-}
-
 UInt64 AppleRAIDMember::getBase() const
 {
     return arBaseOffset;

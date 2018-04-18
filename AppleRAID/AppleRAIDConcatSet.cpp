@@ -265,10 +265,20 @@ bool AppleRAIDConcatMemoryDescriptor::configureForMemoryDescriptor(IOMemoryDescr
 
 IOPhysicalAddress AppleRAIDConcatMemoryDescriptor::getPhysicalSegment(IOByteCount offset, IOByteCount *length)
 {
-    IOByteCount		raidOffset = offset + mdMemberOffset;
+    IOByteCount		setOffset = offset + mdMemberOffset;
     IOPhysicalAddress	physAddress;
     
-    physAddress = mdMemoryDescriptor->getPhysicalSegment(raidOffset, length);
+    physAddress = mdMemoryDescriptor->getPhysicalSegment(setOffset, length);
+    
+    return physAddress;
+}
+
+addr64_t AppleRAIDConcatMemoryDescriptor::getPhysicalSegment64(IOByteCount offset, IOByteCount *length)
+{
+    IOByteCount		setOffset = offset + mdMemberOffset;
+    addr64_t		physAddress;
+    
+    physAddress = mdMemoryDescriptor->getPhysicalSegment64(setOffset, length);
     
     return physAddress;
 }

@@ -148,7 +148,6 @@ public:
 
     virtual bool isEjectable(void) const;
     virtual bool isWritable(void) const;
-    virtual UInt64 getPreferredBlockSize(void) const;
     virtual UInt64 getBase(void) const;
 
     virtual bool addBootDeviceInfo(OSArray * bootArray);
