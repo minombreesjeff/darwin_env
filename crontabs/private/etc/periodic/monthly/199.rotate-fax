@@ -1,10 +1,12 @@
 #!/bin/sh -
-#
-#	@(#)monthly	8.1 (Berkeley) 6/9/93
-#
 
-PATH=/bin:/usr/bin:/sbin:/usr/sbin
-host=`hostname -s`
+# If there is a global system configuration file, suck it in.
+#
+if [ -r /etc/defaults/periodic.conf ]
+then
+    . /etc/defaults/periodic.conf
+    source_periodic_confs
+fi
 
 echo ""
 printf %s "Rotating fax log files:"
