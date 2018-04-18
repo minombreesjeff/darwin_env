@@ -200,7 +200,7 @@ IOPhysicalAddress AppleRAIDStripeMemoryDescriptor::getPhysicalSegment(IOByteCoun
     physAddress = mdMemoryDescriptor->getPhysicalSegment(setOffset, length);
     
     memberBlockOffset = mdSetBlockSize - memberBlockOffset;
-    if (*length > memberBlockOffset) *length = memberBlockOffset;
+    if (length && *length > memberBlockOffset) *length = memberBlockOffset;
     
     return physAddress;
 }
@@ -216,7 +216,7 @@ addr64_t AppleRAIDStripeMemoryDescriptor::getPhysicalSegment64(IOByteCount offse
     physAddress = mdMemoryDescriptor->getPhysicalSegment64(setOffset, length);
     
     memberBlockOffset = mdSetBlockSize - memberBlockOffset;
-    if (*length > memberBlockOffset) *length = memberBlockOffset;
+    if (length && *length > memberBlockOffset) *length = memberBlockOffset;
     
     return physAddress;
 }
