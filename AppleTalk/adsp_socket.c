@@ -51,6 +51,7 @@
 
 #include "at_proto.h"
 
+
 #define	SET_ERRNO(e) errno = e
 
 static int at_sndcmd();
@@ -606,6 +607,7 @@ ASYNCread(int fd, char *buf, int len)
 int
 ASYNCread_complete(int fd, char *buf, int len)
 {
+	int	actual_len;
 	struct adspcmd cmd;
 
 	if (len == 0)
@@ -621,7 +623,16 @@ ASYNCread_complete(int fd, char *buf, int len)
 		SET_ERRNO(EPROTOTYPE);
 		return -1;
 	}
-	len = cmd.u.ioParams.actCount;
+	
+	actual_len = cmd.u.ioParams.actCount;
+	if (actual_len > len) {
+		/* len mismatch, buffer not big enough */
+		SET_ERRNO(EINVAL);
+		return -1;
+	}
+	
+	len = actual_len;
+
 	if (len > 0)
 		len = read(fd, buf, len);
 

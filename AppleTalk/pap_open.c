@@ -164,14 +164,12 @@ long wait_time;
 					  &rdata[5], rdata[4]&0xff);
 			error = ECONNREFUSED;
 			SET_ERRNO(ECONNREFUSED);
-			if (rdata[1] == 8) {
-				sleep(1);
-				i = time(NULL) - tm + wait_time;
-				data[2] = i>>8;
-				data[3] = i & 0xff;
-				continue;
-			}
-			goto bad;
+
+			sleep(1);
+			i = time(NULL) - tm + wait_time;
+			data[2] = i>>8;
+			data[3] = i & 0xff;
+			continue;
 		}
 		/* Connection established okay, just for the sake of our
 		 * sanity, check the other fields in the packet
