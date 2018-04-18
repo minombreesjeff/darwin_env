@@ -87,6 +87,12 @@ void load(CFBundleRef bundle, Boolean bundleVerbose)
     CFMutableArrayRef		arrayRef;
     Boolean			ok;
     
+    // Return immediately if not on PowerPC.
+#ifndef __ppc__
+    return;
+#endif
+    
+    
     if( !IOPMFeatureIsAvailable(CFSTR(kIOPMDynamicPowerStepKey), NULL)
      && !IOPMFeatureIsAvailable(CFSTR(kIOPMReduceSpeedKey), NULL) )
     {
