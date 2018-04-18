@@ -97,8 +97,11 @@ for i in system.log; do
 	if [ -f "${i}.2${gzext}" ]; then mv -f "${i}.2${gzext}" "${i}.3${gzext}"; fi
 	if [ -f "${i}.1${gzext}" ]; then mv -f "${i}.1${gzext}" "${i}.2${gzext}"; fi
 	if [ -f "${i}.0${gzext}" ]; then mv -f "${i}.0${gzext}" "${i}.1${gzext}"; fi
-	if [ -f "${i}" ]; then mv -f "${i}" "${i}.0" && if [ -x /usr/bin/gzip ]; then gzip -9 "${i}.0"; fi; fi
-	touch "${i}" && chmod 640 "${i}" && chown root:admin "${i}"
+        if [ -f "${i}" ]; then
+              touch "${i}.$$" && chmod 640 "${i}.$$" && chown root:admin "${i}.$$"
+              mv -f "${i}" "${i}.0" && mv "${i}.$$" "${i}" && if [ -x /usr/bin/gzip ]; then 
+		gzip -9 "${i}.0"; fi
+        fi
     fi
 done
 if [ -f /var/run/syslog.pid ]; then kill -HUP $(cat /var/run/syslog.pid | head -1); fi
