@@ -20,29 +20,24 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
+#ifndef _APPLELVMSTORAGEREQUEST_H
+#define _APPLELVMSTORAGEREQUEST_H
 
-#ifndef _APPLERAIDGLOBALS_H
-#define _APPLERAIDGLOBALS_H
-
-class AppleRAIDGlobals
+class AppleLVMStorageRequest : public AppleRAIDStorageRequest
 {
-private:
-    IORecursiveLock *     raidGlobalLock;
-    AppleRAID *		  raidController;
-    UInt32		  raidControllerReferences;
+    OSDeclareDefaultStructors(AppleLVMStorageRequest);
     
-public:
-    AppleRAIDGlobals();
-    ~AppleRAIDGlobals();
-    void lock(void);
-    void unlock(void);
-    bool islocked(void);
+    friend class AppleRAIDSet;					// XXX remove this
+    friend class AppleRAIDEventSource;				// XXX remove this
+    friend class AppleLVMMemoryDescriptor;			// XXX remove this
+    
+    virtual void read(IOService *client, UInt64 byteStart, IOMemoryDescriptor * buffer,
+		      IOStorageCompletion completion);
+    virtual void write(IOService *client, UInt64 byteStart, IOMemoryDescriptor * buffer,
+		       IOStorageCompletion completion);
 
-    AppleRAID * getController(void);
-    void releaseController(void);
-    
+public:
+    static AppleLVMStorageRequest *withAppleRAIDSet(AppleRAIDSet * xsset);
 };
 
-extern AppleRAIDGlobals gAppleRAIDGlobals;
-
-#endif /* ! _APPLERAIDGLOBALS_H */
+#endif  /* ! _APPLELVMSTORAGEREQUEST_H */

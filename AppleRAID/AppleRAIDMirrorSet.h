@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -26,8 +26,8 @@
 
 #define kAppleRAIDLevelNameMirror "Mirror"
 
-extern const OSSymbol * gAppleRAIDMirrorName;
-    
+#ifdef KERNEL
+
 class AppleRAIDMirrorSet : public AppleRAIDSet
 {
     OSDeclareDefaultStructors(AppleRAIDMirrorSet);
@@ -49,6 +49,9 @@ class AppleRAIDMirrorSet : public AppleRAIDSet
     virtual bool init(void);
     virtual bool initWithHeader(OSDictionary * header, bool firstTime);
     virtual void free();
+
+    virtual IOBufferMemoryDescriptor * readPrimaryMetaData(AppleRAIDMember * member);
+    virtual IOReturn writePrimaryMetaData(IOBufferMemoryDescriptor * primaryBuffer);
 
     virtual void rebuildStart(void);
     virtual void rebuild(void);
@@ -72,6 +75,7 @@ public:
     virtual bool isSetComplete(void);
     virtual bool bumpOnError(void);
     virtual UInt32 nextSetState(void);
+    virtual OSDictionary * getSetProperties(void);
 
     virtual void activeReadMembers(AppleRAIDMember ** activeMembers, UInt64 byteStart, UInt32 byteCount);
 
@@ -100,5 +104,7 @@ public:
     virtual IOPhysicalAddress getPhysicalSegment(IOByteCount offset, IOByteCount *length);
     virtual addr64_t getPhysicalSegment64(IOByteCount offset, IOByteCount *length);
 };
+
+#endif KERNEL
 
 #endif /* ! _APPLERAIDMIRRORSET_H */

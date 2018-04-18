@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -22,8 +22,6 @@
 
 #include "AppleRAID.h"
 
-const OSSymbol * gAppleRAIDStripeName;
-
 #define super AppleRAIDSet
 OSDefineMetaClassAndStructors(AppleRAIDStripeSet, AppleRAIDSet);
 
@@ -33,8 +31,6 @@ AppleRAIDSet * AppleRAIDStripeSet::createRAIDSet(AppleRAIDMember * firstMember)
 
     IOLog1("AppleRAIDStripeSet::createRAIDSet(%p) called, new set = %p  *********\n", firstMember, raidSet);
 
-    if (!gAppleRAIDStripeName) gAppleRAIDStripeName = OSSymbol::withCString(kAppleRAIDLevelNameStripe);  // XXX free
-            
     while (raidSet){
 
 	if (!raidSet->init()) break;
@@ -200,7 +196,7 @@ IOPhysicalAddress AppleRAIDStripeMemoryDescriptor::getPhysicalSegment(IOByteCoun
     physAddress = mdMemoryDescriptor->getPhysicalSegment(setOffset, length);
     
     memberBlockOffset = mdSetBlockSize - memberBlockOffset;
-    if (length && *length > memberBlockOffset) *length = memberBlockOffset;
+    if (length && (*length > memberBlockOffset)) *length = memberBlockOffset;
     
     return physAddress;
 }
@@ -216,7 +212,8 @@ addr64_t AppleRAIDStripeMemoryDescriptor::getPhysicalSegment64(IOByteCount offse
     physAddress = mdMemoryDescriptor->getPhysicalSegment64(setOffset, length);
     
     memberBlockOffset = mdSetBlockSize - memberBlockOffset;
-    if (length && *length > memberBlockOffset) *length = memberBlockOffset;
+    if (length && (*length > memberBlockOffset)) *length = memberBlockOffset;
     
     return physAddress;
 }
+

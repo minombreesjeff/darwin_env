@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -22,8 +22,6 @@
 
 #include "AppleRAID.h"
 
-const OSSymbol * gAppleRAIDMirrorName;
-
 #define super AppleRAIDSet
 OSDefineMetaClassAndStructors(AppleRAIDMirrorSet, AppleRAIDSet);
 
@@ -33,8 +31,6 @@ AppleRAIDSet * AppleRAIDMirrorSet::createRAIDSet(AppleRAIDMember * firstMember)
 
     IOLog1("AppleRAIDMirrorSet::createRAIDSet(%p) called, new set = %p  *********\n", firstMember, raidSet);
 
-    if (!gAppleRAIDMirrorName) gAppleRAIDMirrorName = OSSymbol::withCString(kAppleRAIDLevelNameMirror);  // XXX free
-            
     while (raidSet){
 
 	if (!raidSet->init()) break;
@@ -73,6 +69,11 @@ bool AppleRAIDMirrorSet::initWithHeader(OSDictionary * header, bool firstTime)
 {
     if (super::initWithHeader(header, firstTime) == false) return false;
 
+    setProperty(kAppleRAIDSetAutoRebuildKey, header->getObject(kAppleRAIDSetAutoRebuildKey));
+    setProperty(kAppleRAIDSetTimeoutKey, header->getObject(kAppleRAIDSetTimeoutKey));
+
+    //	arQuickRebuildBitSize = 0;  //XXX 
+
     // schedule a timeout to start up degraded sets
     if (firstTime) startSetCompleteTimer();
 
@@ -92,6 +93,27 @@ void AppleRAIDMirrorSet::free(void)
     assert(queue_empty(&arFailedRequestQueue));
 
     super::free();
+}
+
+//8888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
+//8888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
+//8888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
+
+IOBufferMemoryDescriptor * AppleRAIDMirrorSet::readPrimaryMetaData(AppleRAIDMember * member)
+{
+    IOBufferMemoryDescriptor * primaryBuffer = super::readPrimaryMetaData(member);
+
+    // XXX
+    
+    return primaryBuffer;
+}
+
+IOReturn AppleRAIDMirrorSet::writePrimaryMetaData(IOBufferMemoryDescriptor * primaryBuffer)
+{
+
+    // XXX
+    
+    return super::writePrimaryMetaData(primaryBuffer);
 }
 
 //8888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888888
@@ -169,8 +191,24 @@ UInt32 AppleRAIDMirrorSet::nextSetState(void)
     return nextState;
 }
 
+OSDictionary * AppleRAIDMirrorSet::getSetProperties(void)
+{
+    OSDictionary * props = super::getSetProperties();
+
+    if (props) {
+	props->setObject(kAppleRAIDSetAutoRebuildKey, getProperty(kAppleRAIDSetAutoRebuildKey));
+	props->setObject(kAppleRAIDSetTimeoutKey, getProperty(kAppleRAIDSetTimeoutKey));
+//	props->setObject(kAppleRAIDSetQuickRebuildKey, kOSBooleanTrue);  // XXX
+    }
+
+    return props;
+}
+    
 bool AppleRAIDMirrorSet::startSet(void)
 {
+    IOLog1("AppleRAIDMirrorSet::startSet() - parallel read request max %lld bytes.\n", getSmallestMaxByteCount());
+    arMaxReadRequestFactor = getSmallestMaxByteCount() / arSetBlockSize;
+		
     if (super::startSet() == false) return false;
 
     if (getSetState() == kAppleRAIDSetStateDegraded) {
@@ -245,7 +283,7 @@ void AppleRAIDMirrorSet::activeReadMembers(AppleRAIDMember ** activeMembers, UIn
 //		UInt64 distance = (arLastSeek[index] <= byteStart) ? (byteStart - arLastSeek[index]) : 0xfffffffffffffffeULL;  // elevator
 		UInt64 distance = max(arLastSeek[index], byteStart) - min(arLastSeek[index], byteStart);
 //		if (arSkippedIOCount[index] >= (arMaxReadRequestFactor / 2)) distance = 0;
-		if (arSkippedIOCount[index] >= 12) distance = 0;
+		if (arSkippedIOCount[index] >= 12) distance = 1;
 		
 		UInt32 sort = index;
 		while (sort) {
@@ -337,17 +375,17 @@ void AppleRAIDMirrorSet::completeRAIDRequest(AppleRAIDStorageRequest *storageReq
 	if (arMembers[cnt]->getMemberState() == kAppleRAIDMemberStateRebuilding) {
 
 	    if (!isWrite) {
-		assert(storageRequest->srMemberByteCounts[cnt] == 0);
+		assert(storageRequest->srRequestByteCounts[cnt] == 0);
 		continue;
 	    }
 	    
-	    if (storageRequest->srMemberStatus[cnt] != kIOReturnSuccess ||
-		storageRequest->srMemberByteCounts[cnt] != storageRequest->srByteCount) {
+	    if (storageRequest->srRequestStatus[cnt] != kIOReturnSuccess ||
+		storageRequest->srRequestByteCounts[cnt] != storageRequest->srByteCount) {
 		
 		// This will terminate the rebuild thread
 		arMembers[cnt]->changeMemberState(kAppleRAIDMemberStateBroken);
 		IOLog("AppleRAID::completeRAIDRequest - write error %u detected during rebuild for set \"%s\" (%s) on target member %s, set byte offset = %llu.\n",
-		      storageRequest->srMemberStatus[cnt], getSetNameString(), getUUIDString(),
+		      storageRequest->srRequestStatus[cnt], getSetNameString(), getUUIDString(),
 		      arMembers[cnt]->getUUIDString(), storageRequest->srByteStart);
 	    }
 	    continue;
@@ -356,7 +394,7 @@ void AppleRAIDMirrorSet::completeRAIDRequest(AppleRAIDStorageRequest *storageReq
 	// offline members
 	if (arMembers[cnt]->getMemberState() != kAppleRAIDMemberStateOpen) {
 	    IOLogRW("AppleRAIDMirrorSet::completeRAIDRequest - [%lu] tbc 0x%llx, sbc 0x%llx bc 0x%llx, member %p, member state %lu\n",
-		    cnt, storageRequest->srByteCount, storageRequest->srMemberByteCounts[cnt],
+		    cnt, storageRequest->srByteCount, storageRequest->srRequestByteCounts[cnt],
 		    byteCount, arMembers[cnt], arMembers[cnt]->getMemberState());
 
 	    status = kIOReturnIOError;
@@ -365,22 +403,22 @@ void AppleRAIDMirrorSet::completeRAIDRequest(AppleRAIDStorageRequest *storageReq
 	}
         
         // failing members
-        if (storageRequest->srMemberStatus[cnt] != kIOReturnSuccess) {
+        if (storageRequest->srRequestStatus[cnt] != kIOReturnSuccess) {
 	    IOLog("AppleRAID::completeRAIDRequest - error 0x%x detected for set \"%s\" (%s), member %s, set byte offset = %llu.\n",
-		  storageRequest->srMemberStatus[cnt], getSetNameString(), getUUIDString(),
+		  storageRequest->srRequestStatus[cnt], getSetNameString(), getUUIDString(),
 		  arMembers[cnt]->getUUIDString(), storageRequest->srByteStart);
 
-            status = storageRequest->srMemberStatus[cnt];
+            status = storageRequest->srRequestStatus[cnt];
 
 	    // mark this member to be removed
 	    arMembers[cnt]->changeMemberState(kAppleRAIDMemberStateClosing);
 	    continue;
         }
 
-	byteCount += storageRequest->srMemberByteCounts[cnt];
+	byteCount += storageRequest->srRequestByteCounts[cnt];
 
 	IOLogRW("AppleRAIDMirrorSet::completeRAIDRequest - [%lu] tbc 0x%llx, sbc 0x%llx bc 0x%llx, member %p\n",
-		cnt, storageRequest->srByteCount, storageRequest->srMemberByteCounts[cnt],
+		cnt, storageRequest->srByteCount, storageRequest->srRequestByteCounts[cnt],
 		byteCount, arMembers[cnt]);
     }
 
@@ -667,8 +705,8 @@ void AppleRAIDMirrorSet::rebuildStart(void)
 	    }
 	}
     }
-	    
-    target->setHeaderProperty(kAppleRAIDMemberIndexKey, memberIndex, 32);
+
+    target->setMemberIndex(memberIndex);
     target->setHeaderProperty(kAppleRAIDSequenceNumberKey, getSequenceNumber(), 32);
     
     IOLog1("AppleRAIDMirrorSet::rebuildStart(%p) - found a target %p for index = %d\n", this, target, (int)memberIndex);
@@ -676,6 +714,7 @@ void AppleRAIDMirrorSet::rebuildStart(void)
     arRebuildingMember = target;
 
     // add member to set at the index we are rebuilding
+    // note that arActiveCount is not bumped
     if (memberUUIDs) {
 	memberUUIDs->replaceObject(memberIndex, target->getUUID());
 	setProperty(kAppleRAIDMembersKey, memberUUIDs);
@@ -746,7 +785,7 @@ void AppleRAIDMirrorSet::rebuild()
 	target->writeRAIDHeader();
 
 	offset = arBaseOffset;
-	UInt32 percentDone = 99, currentDone = 0x99;
+	uint32_t oldTime = 0;
 	while (offset < arSetMediaSize) {
 
 	    IOLog2("AppleRAIDMirrorSet::rebuild(%p) - offset = %llu bs=%llu\n", this, offset, arSetBlockSize);
@@ -794,14 +833,15 @@ void AppleRAIDMirrorSet::rebuild()
 
 	    arSetCommandGate->runAction(OSMemberFunctionCast(IOCommandGate::Action, this, &AppleRAIDMirrorSet::unpauseSet));
 
-	    // calculate % done
-	    currentDone = ((offset / arSetBlockSize) * 100) / arSetBlockCount;
-	    if (percentDone != currentDone) {
-		percentDone = currentDone;
-                OSNumber * percent = OSNumber::withNumber(percentDone, 32);
-                if (percent) {
-		    target->setProperty(kAppleRAIDRebuildStatus, percent);
-                    percent->release();
+	    // update rebuild status once a second
+	    uint32_t newTime, dontcare;	
+	    clock_get_system_microtime(&newTime, &dontcare);
+	    if (newTime != oldTime) {	
+		oldTime = newTime;
+                OSNumber * bytesCompleted = OSNumber::withNumber(offset, 64);
+                if (bytesCompleted) {
+		    target->setProperty(kAppleRAIDRebuildStatus, bytesCompleted);
+                    bytesCompleted->release();
                 }
 	    }
 
@@ -832,6 +872,7 @@ void AppleRAIDMirrorSet::rebuild()
     if (arSetIsPaused) arSetCommandGate->runAction(OSMemberFunctionCast(IOCommandGate::Action, this, &AppleRAIDMirrorSet::unpauseSet));
 
     if (aborting) {
+	// calling rebuildComplete hangs on the global lock, just bail out
 	arRebuildingMember = 0;
     } else {
 	bool success = offset >= arSetMediaSize;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -40,6 +40,7 @@ class AppleRAIDSet : public AppleRAIDMember
     OSDeclareAbstractStructors(AppleRAIDSet)
 
     friend class AppleRAIDStorageRequest;
+    friend class AppleLVMStorageRequest;
     friend class AppleRAID;
 
 protected:
@@ -51,19 +52,21 @@ protected:
     UInt64			arSetMediaSize;
     UInt32			arSequenceNumber;
 
-    UInt32			arSetCompleteTimeout;	    // for degradeable sets
+    UInt32			arSetCompleteTimeout;		// for degradeable sets
 
     IOStorageAccess		arOpenLevel;
     OSSet *			arOpenReaders;
-    IOService *			arOpenReaderWriter;
+    OSSet *			arOpenReaderWriters;
 
     IOMedia *			arMedia;
-    UInt32			arPublishedSetState;
 
     UInt32			arSetIsPaused;
     bool			arSetWasBlockedByPause;
     UInt32			arStorageRequestsPending;
     UInt32			arMaxReadRequestFactor;
+
+    UInt64			arPrimaryMetaDataUsed;		// mirror rebuild, lvg toc
+    UInt64			arPrimaryMetaDataMax;		// mirror rebuild, lvg toc
 
     thread_call_t		arRecoveryThreadCall;
     IOCommandGate::Action	arAllocateRequestMethod;
@@ -119,7 +122,12 @@ protected:
     virtual UInt32 getSequenceNumber(void);
     virtual void bumpSequenceNumber(void);
     virtual IOReturn writeRAIDHeader(void);
-    
+
+    virtual IOBufferMemoryDescriptor * readPrimaryMetaData(AppleRAIDMember * member);
+    virtual IOReturn writePrimaryMetaData(IOBufferMemoryDescriptor * primaryBuffer);
+    virtual bool readIntoBuffer(AppleRAIDMember * member, IOBufferMemoryDescriptor * buffer, UInt64 offset);
+    virtual IOReturn writeFromBuffer(AppleRAIDMember * member, IOBufferMemoryDescriptor * buffer, UInt64 offset);
+
     virtual const OSString * getSetName(void);
     virtual const OSString * getUUID(void);
     virtual const OSString * getSetUUID(void);
@@ -133,6 +141,7 @@ protected:
     virtual IOWorkLoop *getWorkLoop(void);
     virtual bool changeSetState(UInt32 newState);
     virtual UInt32 nextSetState(void);
+    virtual UInt64 getSmallestMaxByteCount(void);
     virtual void setSmallest64BitMemberPropertyFor(char * key, UInt32 multiplier);
     virtual void setLargest64BitMemberPropertyFor(char * key, UInt32 multiplier);
 
@@ -140,6 +149,7 @@ protected:
     inline  UInt32 getMemberCount(void)	const	{ return arMemberCount; };
     inline  UInt32 getSpareCount(void) const	{ return arSpareMembers->getCount(); };
     inline  UInt32 getSetState(void) const	{ return arSetState; };
+    virtual UInt32 getMaxRequestCount(void) const { return arMemberCount; };
 
     virtual bool addBootDeviceInfo(OSArray * bootArray);
     virtual OSDictionary * getSetProperties(void);
