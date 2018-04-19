@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004, 2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -104,6 +104,7 @@ typedef struct {
 
 	// [SCPreferences] interface entity information
 	CFStringRef		entity_device;		// interface device
+	CFStringRef		entity_hardware;	// interface hardware
 	CFStringRef		entity_type;		// interface type
 	CFStringRef		entity_subtype;		// interface subtype
 
@@ -116,8 +117,7 @@ typedef struct {
 	Boolean			builtin;
 	CFStringRef		location;
 	CFStringRef		path;
-	CFStringRef		modemCCL;
-	Boolean			modemIsV92;
+	Boolean			supportsDeviceOnHold;
 	Boolean			supportsBond;
 	Boolean			supportsVLAN;
 
@@ -156,9 +156,6 @@ __SCNetworkInterfaceCreatePrivate		(CFAllocatorRef		allocator,
 						 SCNetworkServiceRef	service,
 						 io_string_t		path);
 
-CFDictionaryRef
-__SCNetworkInterfaceCopyInterfaceEntity		(SCNetworkInterfaceRef	interface);
-
 SCNetworkInterfaceRef
 __SCNetworkInterfaceCreateWithEntity		(CFAllocatorRef		allocator,
 						 CFDictionaryRef	interface_entity,
@@ -166,12 +163,6 @@ __SCNetworkInterfaceCreateWithEntity		(CFAllocatorRef		allocator,
 
 CFArrayRef
 __SCNetworkInterfaceCopyDeepConfiguration       (SCNetworkInterfaceRef  interface);
-
-CFStringRef
-__SCNetworkInterfaceGetModemCCL			(SCNetworkInterfaceRef	interface);
-
-Boolean
-__SCNetworkInterfaceIsModemV92			(SCNetworkInterfaceRef	interface);
 
 Boolean
 __SCNetworkInterfaceSetConfiguration		(SCNetworkInterfaceRef  interface,

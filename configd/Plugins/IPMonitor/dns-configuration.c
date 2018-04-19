@@ -108,8 +108,6 @@ add_supplemental(CFMutableArrayRef supplemental, CFDictionaryRef dns, uint32_t d
 			num = CFNumberCreate(NULL, kCFNumberIntType, &defaultOrder);
 			CFDictionarySetValue(match_resolver, kSCPropNetDNSSearchOrder, num);
 			CFRelease(num);
-
-			defaultOrder++;		// if multiple domains, maintain ordering
 		}
 
 		match_order = CFDictionaryGetValue(match_resolver, kSCPropNetDNSSearchOrder);
@@ -293,42 +291,6 @@ compareBySearchOrder(const void *val1, const void *val2, void *context)
 }
 
 
-static CFStringRef
-trimDomain(CFStringRef domain)
-{
-	CFIndex	length;
-	CFRange	range;
-	Boolean	trimmed	= FALSE;
-
-	if (!isA_CFString(domain)) {
-		return NULL;
-	}
-
-	// remove trailing dots
-	length = CFStringGetLength(domain);
-	while (CFStringFindWithOptions(domain,
-				       CFSTR("."),
-				       CFRangeMake(0, length),
-				       kCFCompareAnchored|kCFCompareBackwards,
-				       &range)) {
-		trimmed = TRUE;
-		length = range.location;
-	}
-
-	if (length == 0) {
-		return NULL;
-	}
-
-	if (trimmed) {
-		domain = CFStringCreateWithSubstring(NULL, domain, CFRangeMake(0, length));
-	} else {
-		CFRetain(domain);
-	}
-
-	return domain;
-}
-
-
 static void
 update_search_domains(CFMutableDictionaryRef *defaultDomain, CFArrayRef supplemental)
 {
@@ -337,13 +299,13 @@ update_search_domains(CFMutableDictionaryRef *defaultDomain, CFArrayRef suppleme
 	CFArrayRef		defaultSearchDomains	= NULL;
 	CFIndex			defaultSearchIndex	= 0;
 	CFIndex			i;
+	CFIndex			n;
 	CFMutableArrayRef	mySearchDomains;
 	CFMutableArrayRef	mySupplemental		= (CFMutableArrayRef)supplemental;
-	CFIndex			n_supplemental;
 	Boolean			searchDomainAdded	= FALSE;
 
-	n_supplemental = CFArrayGetCount(supplemental);
-	if (n_supplemental == 0) {
+	n = CFArrayGetCount(supplemental);
+	if (n == 0) {
 		// if no supplemental domains
 		return;
 	}
@@ -361,36 +323,20 @@ update_search_domains(CFMutableDictionaryRef *defaultDomain, CFArrayRef suppleme
 		defaultSearchDomains = CFDictionaryGetValue(*defaultDomain, kSCPropNetDNSSearchDomains);
 	}
 
-	mySearchDomains = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-
 	if (isA_CFArray(defaultSearchDomains)) {
-		CFIndex	n_search;
-
-		n_search = CFArrayGetCount(defaultSearchDomains);
-		for (i = 0; i < n_search; i++) {
-			CFStringRef	search;
-
-			search = CFArrayGetValueAtIndex(defaultSearchDomains, i);
-			search = trimDomain(search);
-			if (search != NULL) {
-				CFArrayAppendValue(mySearchDomains, search);
-				CFRelease(search);
-			}
-		}
+		mySearchDomains = CFArrayCreateMutableCopy(NULL, 0, defaultSearchDomains);
 	} else {
-		defaultDomainName = trimDomain(defaultDomainName);
-		if (defaultDomainName != NULL) {
+		mySearchDomains = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+		if (isA_CFString(defaultDomainName)) {
 			char	*domain;
-			int	domain_parts	= 1;
-			char	*dp;
+			int     domain_parts    = 1;
+			char    *dp;
 
 			domain = _SC_cfstring_to_cstring(defaultDomainName,
 							 NULL,
 							 0,
 							 kCFStringEncodingUTF8);
-			CFRelease(defaultDomainName);
 
-			// count domain parts
 			for (dp = domain; *dp != '\0'; dp++) {
 				if (*dp == '.') {
 					domain_parts++;
@@ -399,13 +345,13 @@ update_search_domains(CFMutableDictionaryRef *defaultDomain, CFArrayRef suppleme
 
 			dp = domain;
 			for (i = LOCALDOMAINPARTS; i <= domain_parts; i++) {
-				CFStringRef	search;
+				CFStringRef    searchDomain;
 
-				search = CFStringCreateWithCString(NULL,
-								   dp,
-								   kCFStringEncodingUTF8);
-				CFArrayAppendValue(mySearchDomains, search);
-				CFRelease(search);
+				searchDomain = CFStringCreateWithCString(NULL,
+									 dp,
+									 kCFStringEncodingUTF8);
+				CFArrayAppendValue(mySearchDomains, searchDomain);
+				CFRelease(searchDomain);
 
 				dp = strchr(dp, '.') + 1;
 			}
@@ -414,17 +360,16 @@ update_search_domains(CFMutableDictionaryRef *defaultDomain, CFArrayRef suppleme
 		}
 	}
 
-	if (n_supplemental > 1) {
+	if (n > 1) {
 		mySupplemental = CFArrayCreateMutableCopy(NULL, 0, supplemental);
 		CFArraySortValues(mySupplemental,
-				  CFRangeMake(0, n_supplemental),
+				  CFRangeMake(0, n),
 				  compareBySearchOrder,
 				  NULL);
 	}
 
-	for (i = 0; i < n_supplemental; i++) {
+	for (i = 0; i < n; i++) {
 		CFDictionaryRef dns;
-		CFIndex		domainIndex;
 		CFNumberRef	num;
 		CFStringRef	supplementalDomain;
 		uint32_t	supplementalOrder;
@@ -432,20 +377,12 @@ update_search_domains(CFMutableDictionaryRef *defaultDomain, CFArrayRef suppleme
 		dns = CFArrayGetValueAtIndex(mySupplemental, i);
 
 		supplementalDomain = CFDictionaryGetValue(dns, kSCPropNetDNSDomainName);
-		supplementalDomain = trimDomain(supplementalDomain);
-		if (supplementalDomain == NULL) {
+		if (CFArrayContainsValue(mySearchDomains,
+					 CFRangeMake(0, CFArrayGetCount(mySearchDomains)),
+					 supplementalDomain)) {
+			// if supplemental domain is already in the search list
 			continue;
 		}
-
-		if (CFStringHasSuffix(supplementalDomain, CFSTR(".in-addr.arpa")) ||
-		    CFStringHasSuffix(supplementalDomain, CFSTR(".ip6.arpa"    ))) {
-			CFRelease(supplementalDomain);
-			continue;
-		}
-
-		domainIndex = CFArrayGetFirstIndexOfValue(mySearchDomains,
-							  CFRangeMake(0, CFArrayGetCount(mySearchDomains)),
-							  supplementalDomain);
 
 		num = CFDictionaryGetValue(dns, kSCPropNetDNSSearchOrder);
 		if (!isA_CFNumber(num) ||
@@ -454,27 +391,15 @@ update_search_domains(CFMutableDictionaryRef *defaultDomain, CFArrayRef suppleme
 		}
 
 		if (supplementalOrder < defaultOrder) {
-			if (domainIndex != kCFNotFound) {
-				// if supplemental domain is already in the search list
-				CFArrayRemoveValueAtIndex(mySearchDomains, domainIndex);
-				if (domainIndex < defaultSearchIndex) {
-					defaultSearchIndex--;
-				}
-			}
 			CFArrayInsertValueAtIndex(mySearchDomains,
 						  defaultSearchIndex,
 						  supplementalDomain);
 			defaultSearchIndex++;
-			searchDomainAdded = TRUE;
 		} else {
-			if (domainIndex == kCFNotFound) {
-				// add to the (end of the) search list
-				CFArrayAppendValue(mySearchDomains, supplementalDomain);
-				searchDomainAdded = TRUE;
-			}
+			CFArrayAppendValue(mySearchDomains, supplementalDomain);
 		}
 
-		CFRelease(supplementalDomain);
+		searchDomainAdded = TRUE;
 	}
 
 	if (searchDomainAdded) {
@@ -567,7 +492,7 @@ create_resolver(CFDictionaryRef dns)
 
 				p = strchr(buf, '%');
 				if (p != NULL) {
-					addr.sin6.sin6_scope_id = if_nametoindex(p + 1);
+					addr.sin6.sin6_scope_id = if_nametoindex(p+1);
 				}
 
 				addr.sin6.sin6_len    = sizeof(addr.sin6);

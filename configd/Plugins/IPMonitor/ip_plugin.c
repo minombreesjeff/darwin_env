@@ -1697,16 +1697,20 @@ update_dnsinfo(CFStringRef primary, CFArrayRef service_order, keyChangeListRef k
 {
     CFDictionaryRef		dict = NULL;
 
-    if (primary == NULL) {
-	dns_configuration_set(NULL, NULL, NULL);
-    } else {
+    if (primary != NULL) {
 	CFDictionaryRef		service_dict;
 
 	service_dict = CFDictionaryGetValue(S_service_state_dict, primary);
 	if (service_dict != NULL) {
 	    dict = CFDictionaryGetValue(service_dict, kSCEntNetDNS);
 	}
-
+    }
+    if (dict == NULL) {
+	/* update DNS configuration */
+	dns_configuration_set(NULL, NULL, NULL);
+    }
+    else {
+	/* update DNS configuration */
 	dns_configuration_set(dict, S_service_state_dict, service_order);
     }
     keyChangeListNotifyKey(keys, S_notify_dnsinfo);

@@ -61,6 +61,8 @@
 #include <ppp/ppp_msg.h>
 
 
+
+
 #define kSCNetworkFlagsFirstResolvePending	(1<<31)
 
 
@@ -1696,24 +1698,12 @@ _SC_checkResolverReachability(SCDynamicStoreRef		*storeP,
 			}
 		} else if (default_resolver->domain != NULL) {
 			char	*dp;
-			int	domain_parts	= 0;
+			int	domain_parts	= 1;
 
-			// count domain parts
 			for (dp = default_resolver->domain; *dp != '\0'; dp++) {
 				if (*dp == '.') {
 					domain_parts++;
 				}
-			}
-
-			// remove trailing dots
-			for (dp--; (dp >= default_resolver->domain) && (*dp == '.'); dp--) {
-				*dp = '\0';
-				domain_parts--;
-			}
-
-			if (dp >= default_resolver->domain) {
-				// dots are separators, bump # of components
-				domain_parts++;
 			}
 
 			dp = default_resolver->domain;
@@ -2069,6 +2059,7 @@ SCNetworkReachabilityGetFlags(SCNetworkReachabilityRef	target,
 		return TRUE;
 	}
 
+
 	ok = __SCNetworkReachabilityGetFlags(&store, target, flags, NULL, FALSE);
 	*flags &= ~kSCNetworkFlagsFirstResolvePending;
 	if (store != NULL)	CFRelease(store);
@@ -2281,6 +2272,7 @@ rlsPerform(void *info)
 	SCNetworkReachabilityPrivateRef	targetPrivate	= (SCNetworkReachabilityPrivateRef)target;
 
 	SCLog(_sc_debug, LOG_DEBUG, CFSTR("process reachability change"));
+
 
 	pthread_mutex_lock(&targetPrivate->lock);
 
