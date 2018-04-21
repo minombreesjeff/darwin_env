@@ -26,6 +26,7 @@
 #include <TargetConditionals.h>
 #endif
 #include <sys/cdefs.h>
+#include <sys/types.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -33,11 +34,15 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#if defined(__linux__) && defined(__DISPATCH_BUILDING_SWIFT_MODULE__)
+#include <stdio.h> // for off_t
+#endif
+
 #ifndef __OSX_AVAILABLE_STARTING
 #define __OSX_AVAILABLE_STARTING(x, y)
 #endif
 
-#define DISPATCH_API_VERSION 20141121
+#define DISPATCH_API_VERSION 20160612
 
 #ifndef __DISPATCH_BUILDING_DISPATCH__
 

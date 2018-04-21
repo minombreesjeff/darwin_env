@@ -31,7 +31,7 @@
 #define _dispatch_fd_debug(msg, fd, args...)
 #endif
 
-#if USE_OBJC
+#if DISPATCH_DATA_IS_BRIDGED_TO_NSDATA
 #define _dispatch_io_data_retain(x) _dispatch_objc_retain(x)
 #define _dispatch_io_data_release(x) _dispatch_objc_release(x)
 #else
@@ -132,6 +132,8 @@ static TAILQ_HEAD(, dispatch_fd_entry_s) _dispatch_io_fds[DIO_HASH_SIZE];
 static dispatch_once_t  _dispatch_io_devs_lockq_pred;
 static dispatch_queue_t _dispatch_io_devs_lockq;
 static dispatch_queue_t _dispatch_io_fds_lockq;
+
+static char const * const _dispatch_io_key = "io";
 
 static void
 _dispatch_io_fds_lockq_init(void *context DISPATCH_UNUSED)
@@ -314,7 +316,7 @@ dispatch_io_create(dispatch_io_type_t type, dispatch_fd_t fd,
 		dispatch_queue_t queue, void (^cleanup_handler)(int))
 {
 	if (type != DISPATCH_IO_STREAM && type != DISPATCH_IO_RANDOM) {
-		return NULL;
+		return DISPATCH_BAD_INPUT;
 	}
 	_dispatch_fd_debug("io create", fd);
 	dispatch_io_t channel = _dispatch_io_create(type);
@@ -365,12 +367,12 @@ dispatch_io_create_with_path(dispatch_io_type_t type, const char *path,
 {
 	if ((type != DISPATCH_IO_STREAM && type != DISPATCH_IO_RANDOM) ||
 			!(*path == '/')) {
-		return NULL;
+		return DISPATCH_BAD_INPUT;
 	}
 	size_t pathlen = strlen(path);
 	dispatch_io_path_data_t path_data = malloc(sizeof(*path_data) + pathlen+1);
 	if (!path_data) {
-		return NULL;
+		return DISPATCH_OUT_OF_MEMORY;
 	}
 	_dispatch_fd_debug("io create with path %s", -1, path);
 	dispatch_io_t channel = _dispatch_io_create(type);
@@ -387,9 +389,11 @@ dispatch_io_create_with_path(dispatch_io_type_t type, const char *path,
 		int err = 0;
 		struct stat st;
 		_dispatch_io_syscall_switch_noerr(err,
-			(path_data->oflag & O_NOFOLLOW) == O_NOFOLLOW ||
-					(path_data->oflag & O_SYMLINK) == O_SYMLINK ?
-					lstat(path_data->path, &st) : stat(path_data->path, &st),
+			(path_data->oflag & O_NOFOLLOW) == O_NOFOLLOW
+#ifndef __linux__
+					|| (path_data->oflag & O_SYMLINK) == O_SYMLINK
+#endif
+					? lstat(path_data->path, &st) : stat(path_data->path, &st),
 			case 0:
 				err = _dispatch_io_validate_type(channel, st.st_mode);
 				break;
@@ -455,7 +459,7 @@ dispatch_io_create_with_io(dispatch_io_type_t type, dispatch_io_t in_channel,
 		dispatch_queue_t queue, void (^cleanup_handler)(int error))
 {
 	if (type != DISPATCH_IO_STREAM && type != DISPATCH_IO_RANDOM) {
-		return NULL;
+		return DISPATCH_BAD_INPUT;
 	}
 	_dispatch_fd_debug("io create with io %p", -1, in_channel);
 	dispatch_io_t channel = _dispatch_io_create(type);
@@ -622,10 +626,12 @@ dispatch_io_get_descriptor(dispatch_io_t channel)
 		return -1;
 	}
 	dispatch_fd_t fd = channel->fd_actual;
-	if (fd == -1 && _dispatch_thread_getspecific(dispatch_io_key) == channel &&
-			!_dispatch_io_get_error(NULL, channel, false)) {
-		dispatch_fd_entry_t fd_entry = channel->fd_entry;
-		(void)_dispatch_fd_entry_open(fd_entry, channel);
+	if (fd == -1 && !_dispatch_io_get_error(NULL, channel, false)) {
+		dispatch_thread_context_t ctxt =
+				_dispatch_thread_context_find(_dispatch_io_key);
+		if (ctxt && ctxt->dtc_io_in_barrier == channel) {
+			(void)_dispatch_fd_entry_open(channel->fd_entry, channel);
+		}
 	}
 	return channel->fd_actual;
 }
@@ -637,7 +643,7 @@ static void
 _dispatch_io_stop(dispatch_io_t channel)
 {
 	_dispatch_fd_debug("io stop", channel->fd);
-	(void)dispatch_atomic_or2o(channel, atomic_flags, DIO_STOPPED, relaxed);
+	(void)os_atomic_or2o(channel, atomic_flags, DIO_STOPPED, relaxed);
 	_dispatch_retain(channel);
 	dispatch_async(channel->queue, ^{
 		dispatch_async(channel->barrier_queue, ^{
@@ -693,7 +699,7 @@ dispatch_io_close(dispatch_io_t channel, unsigned long flags)
 			_dispatch_object_debug(channel, "%s", __func__);
 			_dispatch_fd_debug("io close", channel->fd);
 			if (!(channel->atomic_flags & (DIO_CLOSED|DIO_STOPPED))) {
-				(void)dispatch_atomic_or2o(channel, atomic_flags, DIO_CLOSED,
+				(void)os_atomic_or2o(channel, atomic_flags, DIO_CLOSED,
 						relaxed);
 				dispatch_fd_entry_t fd_entry = channel->fd_entry;
 				if (fd_entry) {
@@ -719,10 +725,15 @@ dispatch_io_barrier(dispatch_io_t channel, dispatch_block_t barrier)
 		dispatch_async(barrier_queue, ^{
 			dispatch_suspend(barrier_queue);
 			dispatch_group_notify(barrier_group, io_q, ^{
+				dispatch_thread_context_s io_ctxt = {
+					.dtc_key = _dispatch_io_key,
+					.dtc_io_in_barrier = channel,
+				};
+
 				_dispatch_object_debug(channel, "%s", __func__);
-				_dispatch_thread_setspecific(dispatch_io_key, channel);
+				_dispatch_thread_context_push(&io_ctxt);
 				barrier();
-				_dispatch_thread_setspecific(dispatch_io_key, NULL);
+				_dispatch_thread_context_pop(&io_ctxt);
 				dispatch_resume(barrier_queue);
 				_dispatch_release(channel);
 			});
@@ -1477,10 +1488,10 @@ open:
 		if (err == EINTR) {
 			goto open;
 		}
-		(void)dispatch_atomic_cmpxchg2o(fd_entry, err, 0, err, relaxed);
+		(void)os_atomic_cmpxchg2o(fd_entry, err, 0, err, relaxed);
 		return err;
 	}
-	if (!dispatch_atomic_cmpxchg2o(fd_entry, fd, -1, fd, relaxed)) {
+	if (!os_atomic_cmpxchg2o(fd_entry, fd, -1, fd, relaxed)) {
 		// Lost the race with another open
 		_dispatch_fd_entry_guarded_close(fd_entry, fd);
 	} else {
@@ -1599,7 +1610,8 @@ _dispatch_disk_init(dispatch_fd_entry_t fd_entry, dev_t dev)
 	TAILQ_INIT(&disk->operations);
 	disk->cur_rq = TAILQ_FIRST(&disk->operations);
 	char label[45];
-	snprintf(label, sizeof(label), "com.apple.libdispatch-io.deviceq.%d", dev);
+	snprintf(label, sizeof(label), "com.apple.libdispatch-io.deviceq.%d",
+			(int)dev);
 	disk->pick_queue = dispatch_queue_create(label, NULL);
 	TAILQ_INSERT_TAIL(&_dispatch_io_devs[hash], disk, disk_list);
 out:
@@ -2064,6 +2076,14 @@ _dispatch_disk_perform(void *ctxt)
 static void
 _dispatch_operation_advise(dispatch_operation_t op, size_t chunk_size)
 {
+#ifdef __linux__
+	// linux does not support fcntl (F_RDAVISE)
+	// define necessary datastructure and use readahead
+	struct radvisory {
+		off_t ra_offset;
+		int   ra_count;
+	};
+#endif
 	int err;
 	struct radvisory advise;
 	// No point in issuing a read advise for the next chunk if we are already
@@ -2083,6 +2103,13 @@ _dispatch_operation_advise(dispatch_operation_t op, size_t chunk_size)
 	}
 	advise.ra_offset = op->advise_offset;
 	op->advise_offset += advise.ra_count;
+#ifdef __linux__
+	_dispatch_io_syscall_switch(err,
+		readahead(op->fd_entry->fd, advise.ra_offset, advise.ra_count),
+		case EINVAL: break; // fd does refer to a non-supported filetype
+		default: (void)dispatch_assume_zero(err); break;
+	);
+#else
 	_dispatch_io_syscall_switch(err,
 		fcntl(op->fd_entry->fd, F_RDADVISE, &advise),
 		case EFBIG: break; // advised past the end of the file rdar://10415691
@@ -2090,6 +2117,7 @@ _dispatch_operation_advise(dispatch_operation_t op, size_t chunk_size)
 		// TODO: set disk status on error
 		default: (void)dispatch_assume_zero(err); break;
 	);
+#endif
 }
 
 static int
@@ -2215,7 +2243,7 @@ error:
 	case ECANCELED:
 		return DISPATCH_OP_ERR;
 	case EBADF:
-		(void)dispatch_atomic_cmpxchg2o(op->fd_entry, err, 0, err, relaxed);
+		(void)os_atomic_cmpxchg2o(op->fd_entry, err, 0, err, relaxed);
 		return DISPATCH_OP_FD_ERR;
 	default:
 		return DISPATCH_OP_COMPLETE;
@@ -2349,7 +2377,7 @@ _dispatch_io_debug_attr(dispatch_io_t channel, char* buf, size_t bufsiz)
 			channel->barrier_group, channel->err, channel->params.low,
 			channel->params.high, channel->params.interval_flags &
 			DISPATCH_IO_STRICT_INTERVAL ? "(strict)" : "",
-			channel->params.interval);
+			(unsigned long long) channel->params.interval);
 }
 
 size_t
@@ -2380,10 +2408,11 @@ _dispatch_operation_debug_attr(dispatch_operation_t op, char* buf,
 			"write", op->fd_entry ? op->fd_entry->fd : -1, op->fd_entry,
 			op->channel, op->op_q, oqtarget && oqtarget->dq_label ?
 			oqtarget->dq_label : "", oqtarget, target && target->dq_label ?
-			target->dq_label : "", target, op->offset, op->length, op->total,
-			op->undelivered + op->buf_len, op->flags, op->err, op->params.low,
-			op->params.high, op->params.interval_flags &
-			DISPATCH_IO_STRICT_INTERVAL ? "(strict)" : "", op->params.interval);
+			target->dq_label : "", target, (long long)op->offset, op->length,
+			op->total, op->undelivered + op->buf_len, op->flags, op->err,
+			op->params.low, op->params.high, op->params.interval_flags &
+			DISPATCH_IO_STRICT_INTERVAL ? "(strict)" : "",
+			(unsigned long long)op->params.interval);
 }
 
 size_t
