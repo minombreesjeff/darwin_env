@@ -22,11 +22,14 @@
 /*
  * Copyright (c) 1999-2003 Apple Computer, Inc.  All rights reserved.
  *
- *  File: $Id: Core99.cpp,v 1.23 2003/08/16 22:34:54 galcher Exp $
+ *  File: $Id: Core99.cpp,v 1.24 2005/05/13 17:09:32 bwpang Exp $
  *
  *  DRI: Bill Galcher
  *
  *      $Log: Core99.cpp,v $
+ *      Revision 1.24  2005/05/13 17:09:32  bwpang
+ *      [3955343] remove references to deprecated IOPMPagingPlexus; verion changed to 1.3.0d1
+ *
  *      Revision 1.23  2003/08/16 22:34:54  galcher
  *      [3258963] Modify ::platformAdjustService() to add a property to 'cpu' nodes
  *      so that when passive matching happens, this won't match against the generic
@@ -59,7 +62,6 @@ static unsigned long core99Speed[] = { 0, 1 };
 #include <IOKit/pwr_mgt/RootDomain.h>
 #include "IOPMSlots99.h"
 #include "IOPMUSB99.h"
-#include <IOKit/pwr_mgt/IOPMPagingPlexus.h>
 
 //#include "Core99PowerTree.cpp"
 extern char * gIOCore99PMTree;
@@ -466,23 +468,9 @@ const OSSymbol	* PTDescription = OSSymbol::withCString( kPOWER_TREE_DESCRIPTION_
         kprintf( "%s::PMInstantiatePowerDomains - unable to retrieve '%s' property\n",
                     this->getName(), kPOWER_TREE_DESCRIPTION_PROPERTY_NAME );
 
-#if CREATE_PLEXUS
-	plexus = new IOPMPagingPlexus;
-	if ( plexus )
-    {
-        plexus->init();
-        plexus->attach(this);
-        plexus->start(this);
-    }
-#endif
-         
 	root = IOPMrootDomain::construct();
 	root->attach(this);
 	root->start(this);
-
-    if ( plexus ) {
-        root->addPowerChild(plexus);
-    }
 
     root->setSleepSupported(kRootDomainSleepSupported);
    
@@ -499,9 +487,6 @@ const OSSymbol	* PTDescription = OSSymbol::withCString( kPOWER_TREE_DESCRIPTION_
      usb99->attach (this);
      usb99->start (this);
      PMRegisterDevice (root, usb99);
-     if ( plexus ) {
-        plexus->addPowerChild (usb99);
-     }
    }
 
    slots99 = new IOPMSlots99;
@@ -510,9 +495,6 @@ const OSSymbol	* PTDescription = OSSymbol::withCString( kPOWER_TREE_DESCRIPTION_
      slots99->attach (this);
      slots99->start (this);
      PMRegisterDevice (root, slots99);
-     if ( plexus ) {
-        plexus->addPowerChild (slots99);
-     }
    }
 }
 
@@ -566,9 +548,6 @@ void Core99PE::PMRegisterDevice(IOService * theNub, IOService * theDevice)
   // XML-derived tree and only if the device we're registering is not the root).
   if ((err != IOPMNoErr) && (0 == numInstancesRegistered) && (theDevice != root)) {
      root->addPowerChild (theDevice);
-     if ( plexus ) {
-        plexus->addPowerChild (theDevice);
-    }
   }
   
   // in addition, if it's in a PCI slot, give it to the Aux Power Supply driver

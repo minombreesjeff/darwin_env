@@ -158,7 +158,9 @@ bool Core99CPU::start(IOService *provider)
   }
   else
   {
+#if !defined(__i386__)   
     l2crValue = mfl2cr() & 0x7FFFFFFF;
+#endif
   }
   
   // Wait for KeyLargo to show up.
@@ -189,7 +191,7 @@ bool Core99CPU::start(IOService *provider)
   tmpArray->release();
   
   setCPUState(kIOCPUStateUninitalized);
-  
+ 
   if (physCPU < numCPUs)
   {
     processor_info.cpu_id           = (cpu_id_t)this;
@@ -197,16 +199,19 @@ bool Core99CPU::start(IOService *provider)
     processor_info.start_paddr      = 0x0100;
     processor_info.l2cr_value       = l2crValue;
     processor_info.supports_nap     = !flushOnLock;
-    processor_info.time_base_enable = (time_base_enable_t)&Core99CPU::enableCPUTimeBase;
-    
+
+	processor_info.time_base_enable = OSMemberFunctionCast(time_base_enable_t, this, &Core99CPU::enableCPUTimeBase);	// [4091865]
+		
     // Register this CPU with mach.
+#if !defined(__i386__)
     result = ml_processor_register(&processor_info, &machProcessor, &ipi_handler);
+	
     if (result == KERN_FAILURE)
-	return false;
-    
+		return false;
+#endif	
     processor_start(machProcessor);
   }
-
+ 
   // Before to go to sleep we wish to disable the napping mode so that the PMU
   // will not shutdown the system while going to sleep:
   service = waitForService(serviceMatching("IOPMrootDomain"));
@@ -216,9 +221,9 @@ bool Core99CPU::start(IOService *provider)
       kprintf("Register Core99CPU %d to acknowledge power changes\n", getCPUNumber());
       pmRootDomain->registerInterestedDriver(this);
   }
-  
+ 
   registerService();
-  
+
   return true;
 }
 
@@ -233,7 +238,9 @@ IOReturn Core99CPU::powerStateWillChangeTo ( IOPMPowerFlags theFlags, unsigned l
         kprintf("Core99CPU %d powerStateWillChangeTo to acknowledge power changes (DOWN) we set napping %d\n",
 			getCPUNumber(), false);
         // Disable napping (the function returns the previous state)
+#if !defined(__i386__)
         rememberNap = ml_enable_nap(getCPUNumber(), false);
+#endif
     }
     else
     {
@@ -241,7 +248,9 @@ IOReturn Core99CPU::powerStateWillChangeTo ( IOPMPowerFlags theFlags, unsigned l
         kprintf("Core99CPU %d powerStateWillChangeTo to acknowledge power changes (UP) we set napping %d\n",
 			getCPUNumber(), rememberNap);
         // Re-set the nap as it was before.
+#if !defined(__i386__)
         ml_enable_nap(getCPUNumber(), rememberNap);
+#endif
     }
     return IOPMAckImplied;
 }
@@ -282,7 +291,7 @@ void Core99CPU::initCPU(bool boot)
     gCPUIC->enableCPUInterrupt(this);
     
     // Register and enable IPIs.
-    cpuNub->registerInterrupt(0, this, (IOInterruptAction)&Core99CPU::ipiHandler, 0);
+	cpuNub->registerInterrupt(0, this, OSMemberFunctionCast(IOInterruptAction, this, &Core99CPU::ipiHandler), 0);	// [4091865]
     cpuNub->enableInterrupt(0);
   }
   else
@@ -330,8 +339,9 @@ void Core99CPU::quiesceCPU(void)
         // Tell Uni-N to enter sleep mode.
         core99PE->writeUniNReg(kUniNPowerMngmnt, kUniNSleep);
     }
-
+#if !defined(__i386__)
     ml_ppc_sleep();
+#endif
 }
 
 kern_return_t Core99CPU::startCPU(vm_offset_t /*start_paddr*/, vm_offset_t /*arg_paddr*/)
@@ -346,11 +356,11 @@ kern_return_t Core99CPU::startCPU(vm_offset_t /*start_paddr*/, vm_offset_t /*arg
   case 3 : gpioOffset = 0x68; break;
   default : return KERN_FAILURE;
   }
-  
+
   // Strobe the reset line for this CPU.
   keyLargo->callPlatformFunction(keyLargo_writeRegUInt8, false, (void *)&gpioOffset, (void *)4, 0, 0);
   keyLargo->callPlatformFunction(keyLargo_writeRegUInt8, false, (void *)&gpioOffset, (void *)5, 0, 0);
-  
+
   return KERN_SUCCESS;
 }
 
