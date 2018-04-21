@@ -67,7 +67,10 @@ void *(*_dispatch_begin_NSAutoReleasePool)(void);
 void (*_dispatch_end_NSAutoReleasePool)(void *);
 #endif
 
-#if !DISPATCH_USE_DIRECT_TSD
+#if DISPATCH_USE_THREAD_LOCAL_STORAGE
+__thread struct dispatch_tsd __dispatch_tsd;
+pthread_key_t __dispatch_tsd_key;
+#elif !DISPATCH_USE_DIRECT_TSD
 pthread_key_t dispatch_queue_key;
 pthread_key_t dispatch_frame_key;
 pthread_key_t dispatch_cache_key;
@@ -82,7 +85,7 @@ pthread_key_t dispatch_bcounter_key;
 pthread_key_t dispatch_sema4_key;
 pthread_key_t dispatch_voucher_key;
 pthread_key_t dispatch_deferred_items_key;
-#endif // !DISPATCH_USE_DIRECT_TSD
+#endif // !DISPATCH_USE_DIRECT_TSD && !DISPATCH_USE_THREAD_LOCAL_STORAGE
 
 #if VOUCHER_USE_MACH_VOUCHER
 dispatch_once_t _voucher_task_mach_voucher_pred;
@@ -184,10 +187,6 @@ const struct dispatch_tsd_indexes_s dispatch_tsd_indexes = {
 	.dti_voucher_index = dispatch_voucher_key,
 	.dti_qos_class_index = dispatch_priority_key,
 };
-#else // DISPATCH_USE_DIRECT_TSD
-#ifndef __LINUX_PORT_HDD__
-#error Not implemented on this platform
-#endif
 #endif // DISPATCH_USE_DIRECT_TSD
 
 // 6618342 Contact the team that owns the Instrument DTrace probe before
@@ -486,6 +485,7 @@ const struct dispatch_continuation_vtable_s _dispatch_continuation_vtables[] = {
 	DC_VTABLE_ENTRY(ASYNC_REDIRECT,
 		.do_kind = "dc-redirect",
 		.do_invoke = _dispatch_async_redirect_invoke),
+#if HAVE_MACH
 	DC_VTABLE_ENTRY(MACH_SEND_BARRRIER_DRAIN,
 		.do_kind = "dc-mach-send-drain",
 		.do_invoke = _dispatch_mach_send_barrier_drain_invoke),
@@ -495,6 +495,7 @@ const struct dispatch_continuation_vtable_s _dispatch_continuation_vtables[] = {
 	DC_VTABLE_ENTRY(MACH_RECV_BARRIER,
 		.do_kind = "dc-mach-recv-barrier",
 		.do_invoke = _dispatch_mach_barrier_invoke),
+#endif
 #if HAVE_PTHREAD_WORKQUEUE_QOS
 	DC_VTABLE_ENTRY(OVERRIDE_STEALING,
 		.do_kind = "dc-override-stealing",
@@ -578,12 +579,14 @@ _dispatch_bug_client(const char* msg)
 	_dispatch_bug_log("BUG in libdispatch client: %s", msg);
 }
 
+#if HAVE_MACH
 void
 _dispatch_bug_mach_client(const char* msg, mach_msg_return_t kr)
 {
 	_dispatch_bug_log("BUG in libdispatch client: %s %s - 0x%x", msg,
 			mach_error_string(kr), kr);
 }
+#endif
 
 void
 _dispatch_bug_kevent_client(const char* msg, const char* filter,
@@ -1194,8 +1197,10 @@ dispatch_source_type_readwrite_init(dispatch_source_t ds,
 	dispatch_queue_t q DISPATCH_UNUSED)
 {
 	ds->ds_is_level = true;
+#ifdef HAVE_DECL_NOTE_LOWAT
 	// bypass kernel check for device kqueue support rdar://19004921
 	ds->ds_dkev->dk_kevent.fflags = NOTE_LOWAT;
+#endif
 	ds->ds_dkev->dk_kevent.data = 1;
 }
 
@@ -1308,6 +1313,14 @@ const struct dispatch_source_type_s _dispatch_source_type_vm = {
 
 #endif // DISPATCH_USE_VM_PRESSURE
 
+const struct dispatch_source_type_s _dispatch_source_type_signal = {
+	.ke = {
+		.filter = EVFILT_SIGNAL,
+		.flags = EV_UDATA_SPECIFIC,
+	},
+};
+
+#if !defined(__linux__)
 static void
 dispatch_source_type_proc_init(dispatch_source_t ds,
 	dispatch_source_type_t type DISPATCH_UNUSED,
@@ -1332,13 +1345,6 @@ const struct dispatch_source_type_s _dispatch_source_type_proc = {
 #endif
 			,
 	.init = dispatch_source_type_proc_init,
-};
-
-const struct dispatch_source_type_s _dispatch_source_type_signal = {
-	.ke = {
-		.filter = EVFILT_SIGNAL,
-		.flags = EV_UDATA_SPECIFIC,
-	},
 };
 
 const struct dispatch_source_type_s _dispatch_source_type_vnode = {
@@ -1397,6 +1403,7 @@ const struct dispatch_source_type_s _dispatch_source_type_sock = {
 		,
 #endif // EVFILT_SOCK
 };
+#endif // !defined(__linux__)
 
 static void
 dispatch_source_type_data_init(dispatch_source_t ds,

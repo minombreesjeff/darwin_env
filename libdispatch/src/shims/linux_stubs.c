@@ -18,7 +18,12 @@
 
 #include <stdint.h>
 #include <syscall.h>
+
+#if __has_include(<config/config_ac.h>)
+#include <config/config_ac.h>
+#else
 #include <config/config.h>
+#endif
 
 #include "pthread.h"
 #include "os/linux_base.h"
@@ -28,23 +33,6 @@
 #undef LINUX_PORT_ERROR
 #define LINUX_PORT_ERROR()  do { printf("LINUX_PORT_ERROR_CALLED %s:%d: %s\n",__FILE__,__LINE__,__FUNCTION__); abort(); } while (0)
 
-unsigned long _dispatch_runloop_queue_probe(dispatch_queue_t dq) {
-  LINUX_PORT_ERROR();
-}
-void _dispatch_runloop_queue_xref_dispose() { LINUX_PORT_ERROR();  }
-
-void _dispatch_runloop_queue_dispose() { LINUX_PORT_ERROR();  }
-char* mach_error_string(mach_msg_return_t x) {
-  LINUX_PORT_ERROR();
-}
-void mach_vm_deallocate() { LINUX_PORT_ERROR();  }
-
-mach_port_t pthread_mach_thread_np(void) {
-  return (pid_t)syscall(SYS_gettid);
-}
-mach_port_t mach_task_self(void) {
-  return (mach_port_t)pthread_self();
-}
 
 /*
  * Stubbed out static data

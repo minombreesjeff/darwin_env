@@ -87,6 +87,9 @@ _dispatch_lock_has_failed_trylock(dispatch_lock lock_value)
 }
 
 #elif defined(__linux__)
+#include <linux/futex.h>
+#include <unistd.h>
+#include <sys/syscall.h>   /* For SYS_xxx definitions */
 
 typedef uint32_t dispatch_lock;
 typedef pid_t dispatch_lock_owner;
@@ -95,7 +98,8 @@ typedef pid_t dispatch_lock_owner;
 #define DLOCK_OWNER_MASK			((dispatch_lock)FUTEX_TID_MASK)
 #define DLOCK_WAITERS_BIT			((dispatch_lock)FUTEX_WAITERS)
 #define DLOCK_FAILED_TRYLOCK_BIT	((dispatch_lock)FUTEX_OWNER_DIED)
-#define _dispatch_tid_self()		/* FIXME cached in TSD in the swift port */
+#define _dispatch_tid_self() \
+		((dispatch_lock_owner)(_dispatch_get_tsd_base()->tid))
 
 DISPATCH_ALWAYS_INLINE
 static inline bool
@@ -157,7 +161,7 @@ _dispatch_lock_has_failed_trylock(dispatch_lock lock_value)
 #endif // HAVE_UL_UNFAIR_LOCK
 
 #ifndef DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK
-#define DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK (!HAVE_UL_COMPARE_AND_WAIT)
+#define DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK (!HAVE_UL_COMPARE_AND_WAIT && !HAVE_FUTEX)
 #endif
 
 #ifndef HAVE_FUTEX
@@ -235,6 +239,7 @@ typedef struct dispatch_thread_event_s {
 #endif
 } dispatch_thread_event_s, *dispatch_thread_event_t;
 
+#if DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK
 semaphore_t _dispatch_thread_semaphore_create(void);
 void _dispatch_thread_semaphore_dispose(void *);
 
@@ -262,6 +267,7 @@ _dispatch_put_thread_semaphore(semaphore_t sema)
 		return _dispatch_thread_semaphore_dispose((void *)(uintptr_t)old_sema);
 	}
 }
+#endif
 
 DISPATCH_NOT_TAIL_CALLED
 void _dispatch_thread_event_wait_slow(dispatch_thread_event_t);
@@ -271,10 +277,12 @@ DISPATCH_ALWAYS_INLINE
 static inline void
 _dispatch_thread_event_init(dispatch_thread_event_t dte)
 {
+#if DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK
 	if (DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK) {
 		dte->dte_semaphore = _dispatch_get_thread_semaphore();
 		return;
 	}
+#endif
 #if HAVE_UL_COMPARE_AND_WAIT || HAVE_FUTEX
 	dte->dte_value = 0;
 #elif USE_POSIX_SEM
@@ -287,10 +295,12 @@ DISPATCH_ALWAYS_INLINE
 static inline void
 _dispatch_thread_event_signal(dispatch_thread_event_t dte)
 {
+#if DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK
 	if (DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK) {
 		_dispatch_thread_event_signal_slow(dte);
 		return;
 	}
+#endif
 #if HAVE_UL_COMPARE_AND_WAIT || HAVE_FUTEX
 	if (os_atomic_inc_orig(&dte->dte_value, release) == 0) {
 		// 0 -> 1 transition doesn't need a signal
@@ -309,10 +319,12 @@ DISPATCH_ALWAYS_INLINE
 static inline void
 _dispatch_thread_event_wait(dispatch_thread_event_t dte)
 {
+#if DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK
 	if (DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK) {
 		_dispatch_thread_event_wait_slow(dte);
 		return;
 	}
+#endif
 #if HAVE_UL_COMPARE_AND_WAIT || HAVE_FUTEX
 	if (os_atomic_dec(&dte->dte_value, acquire) == 0) {
 		// 1 -> 0 is always a valid transition, so we can return
@@ -329,10 +341,12 @@ DISPATCH_ALWAYS_INLINE
 static inline void
 _dispatch_thread_event_destroy(dispatch_thread_event_t dte)
 {
+#if DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK
 	if (DISPATCH_LOCK_USE_SEMAPHORE_FALLBACK) {
 		_dispatch_put_thread_semaphore(dte->dte_semaphore);
 		return;
 	}
+#endif
 #if HAVE_UL_COMPARE_AND_WAIT || HAVE_FUTEX
 	// nothing to do
 	dispatch_assert(dte->dte_value == 0);
@@ -428,7 +442,7 @@ _dispatch_unfair_lock_unlock_had_failed_trylock(dispatch_unfair_lock_t l)
 #if HAVE_FUTEX
 	if (likely(os_atomic_cmpxchgv(&l->dul_lock,
 			tid_self, DLOCK_OWNER_NULL, &tid_cur, release))) {
-		return;
+		return false;
 	}
 #else
 	tid_cur = os_atomic_xchg(&l->dul_lock, DLOCK_OWNER_NULL, release);
@@ -483,12 +497,8 @@ _dispatch_gate_tryenter(dispatch_gate_t l)
 			DLOCK_GATE_UNLOCKED, tid_self, acquire));
 }
 
-DISPATCH_ALWAYS_INLINE
-static inline void
-_dispatch_gate_wait(dispatch_gate_t l, dispatch_lock_options_t flags)
-{
-	_dispatch_gate_wait_slow(l, DLOCK_GATE_UNLOCKED, flags);
-}
+#define _dispatch_gate_wait(l, flags) \
+	_dispatch_gate_wait_slow(l, DLOCK_GATE_UNLOCKED, flags)
 
 DISPATCH_ALWAYS_INLINE
 static inline void
@@ -509,13 +519,9 @@ _dispatch_once_gate_tryenter(dispatch_once_gate_t l)
 			DLOCK_ONCE_UNLOCKED, tid_self, acquire));
 }
 
-DISPATCH_ALWAYS_INLINE
-static inline void
-_dispatch_once_gate_wait(dispatch_once_gate_t l)
-{
-	_dispatch_gate_wait_slow(&l->dgo_gate, (dispatch_lock)DLOCK_ONCE_DONE,
-			DLOCK_LOCK_NONE);
-}
+#define _dispatch_once_gate_wait(l) \
+	_dispatch_gate_wait_slow(&(l)->dgo_gate, (dispatch_lock)DLOCK_ONCE_DONE, \
+			DLOCK_LOCK_NONE)
 
 DISPATCH_ALWAYS_INLINE
 static inline void

@@ -6,7 +6,7 @@ AC_PREREQ(2.69)
 AC_INIT([libdispatch], [1.3], [libdispatch@macosforge.org], [libdispatch], [http://libdispatch.macosforge.org])
 AC_REVISION([$$])
 AC_CONFIG_AUX_DIR(config)
-AC_CONFIG_HEADER([config/config.h])
+AC_CONFIG_HEADER([config/config_ac.h])
 AC_CONFIG_MACRO_DIR([m4])
 ac_clean_files=a.out.dSYM
 AM_MAINTAINER_MODE
@@ -94,6 +94,8 @@ AS_IF([test "x$enable_apple_tsd_optimizations" = "xyes"],
     [Define to use non-portable pthread TSD optimizations for Mac OS X)])]
 )
 
+AC_CANONICAL_TARGET
+
 #
 # Enable building Swift overlay support into libdispatch
 #
@@ -102,11 +104,49 @@ AC_ARG_WITH([swift-toolchain],
   [swift_toolchain_path=${withval}
    AC_DEFINE(HAVE_SWIFT, 1, [Define if building for Swift])
    SWIFTC="$swift_toolchain_path/bin/swiftc"
+   case $target_os in
+      linux*)
+	    os_string="linux"
+	    ;;
+	  *)
+        os_string=$target_os
+		;;
+	esac
+   SWIFT_LIBDIR="$swift_toolchain_path/lib/swift/$os_string/$target_cpu"
    have_swift=true],
   [have_swift=false]
 )
 AM_CONDITIONAL(HAVE_SWIFT, $have_swift)
 AC_SUBST([SWIFTC])
+AC_SUBST([SWIFT_LIBDIR])
+
+#
+# Enable use of gold linker when building the Swift overlay
+# to avoid a symbol relocation issue.
+# Ultimately the request to use gold should be passed in as an arg
+#
+AC_CHECK_PROG(use_gold_linker, ld.gold, true, false)
+AM_CONDITIONAL(USE_GOLD_LINKER, $use_gold_linker)
+
+#
+# Enable __thread based TSD on platforms where it is efficient
+# Allow override based on command line argument to configure
+#
+AC_ARG_ENABLE([thread-local-storage],
+  [AS_HELP_STRING([--enable-thread-local-storage],
+    [Enable usage of thread local storage via __thread])],,
+  [case $target_os in
+      linux*)
+        enable_thread_local_storage=yes
+	    ;;
+      *)
+        enable_thread_local_storage=no
+   esac]
+)
+AS_IF([test "x$enable_thread_local_storage" = "xyes"],
+  [AC_DEFINE(DISPATCH_USE_THREAD_LOCAL_STORAGE, 1,
+    [Enable usage of thread local storage via __thread])]
+)
 
 AC_USE_SYSTEM_EXTENSIONS
 AM_INIT_AUTOMAKE([foreign no-dependencies subdir-objects])
@@ -267,7 +307,7 @@ AC_CHECK_FUNCS([mach_port_construct])
 #
 AC_CHECK_DECLS([CLOCK_UPTIME, CLOCK_MONOTONIC], [], [],
   [[#include <time.h>]])
-AC_CHECK_DECLS([NOTE_NONE, NOTE_REAP, NOTE_REVOKE, NOTE_SIGNAL], [], [],
+AC_CHECK_DECLS([NOTE_NONE, NOTE_REAP, NOTE_REVOKE, NOTE_SIGNAL, NOTE_LOWAT], [], [],
   [[#include <sys/event.h>]])
 AC_CHECK_DECLS([FD_COPY], [], [], [[#include <sys/select.h>]])
 AC_CHECK_DECLS([SIGEMT], [], [], [[#include <signal.h>]])

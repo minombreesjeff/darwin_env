@@ -108,9 +108,16 @@ const dispatch_block_t _dispatch_data_destructor_none = ^{
 	DISPATCH_INTERNAL_CRASH(0, "none destructor called");
 };
 
+#if !HAVE_MACH
+const dispatch_block_t _dispatch_data_destructor_munmap = ^{
+	DISPATCH_INTERNAL_CRASH(0, "munmap destructor called");
+};
+#else
+// _dispatch_data_destructor_munmap is a linker alias to the following
 const dispatch_block_t _dispatch_data_destructor_vm_deallocate = ^{
 	DISPATCH_INTERNAL_CRASH(0, "vmdeallocate destructor called");
 };
+#endif
 
 const dispatch_block_t _dispatch_data_destructor_inline = ^{
 	DISPATCH_INTERNAL_CRASH(0, "inline destructor called");
@@ -155,10 +162,12 @@ _dispatch_data_destroy_buffer(const void* buffer, size_t size,
 		free((void*)buffer);
 	} else if (destructor == DISPATCH_DATA_DESTRUCTOR_NONE) {
 		// do nothing
+#if HAVE_MACH
 	} else if (destructor == DISPATCH_DATA_DESTRUCTOR_VM_DEALLOCATE) {
 		mach_vm_size_t vm_size = size;
 		mach_vm_address_t vm_addr = (uintptr_t)buffer;
 		mach_vm_deallocate(mach_task_self(), vm_addr, vm_size);
+#endif
 	} else {
 		if (!queue) {
 			queue = dispatch_get_global_queue(
@@ -245,7 +254,9 @@ dispatch_data_create_f(const void *buffer, size_t size, dispatch_queue_t queue,
 	if (destructor != DISPATCH_DATA_DESTRUCTOR_DEFAULT &&
 			destructor != DISPATCH_DATA_DESTRUCTOR_FREE &&
 			destructor != DISPATCH_DATA_DESTRUCTOR_NONE &&
+#if HAVE_MACH
 			destructor != DISPATCH_DATA_DESTRUCTOR_VM_DEALLOCATE &&
+#endif
 			destructor != DISPATCH_DATA_DESTRUCTOR_INLINE) {
 		destructor = ^{ destructor_function((void*)buffer); };
 	}

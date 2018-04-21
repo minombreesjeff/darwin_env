@@ -24,7 +24,20 @@
 #ifdef __APPLE__
 #include <Availability.h>
 #include <TargetConditionals.h>
-#endif
+#else
+#define __OSX_AVAILABLE_STARTING(x, y)
+#define __OSX_AVAILABLE_BUT_DEPRECATED(...)
+#define __OSX_AVAILABLE_BUT_DEPRECATED_MSG(...)
+#define __OSX_AVAILABLE(...)
+#define __IOS_AVAILABLE(...)
+#define __TVOS_AVAILABLE(...)
+#define __WATCHOS_AVAILABLE(...)
+#define __OSX_DEPRECATED(...)
+#define __IOS_DEPRECATED(...)
+#define __TVOS_DEPRECATED(...)
+#define __WATCHOS_DEPRECATED(...)
+#endif // __APPLE__
+
 #include <sys/cdefs.h>
 #include <sys/types.h>
 #include <stddef.h>
@@ -34,15 +47,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#if defined(__linux__) && defined(__DISPATCH_BUILDING_SWIFT_MODULE__)
-#include <stdio.h> // for off_t
+#if defined(__linux__) && defined(__has_feature)
+#if __has_feature(modules)
+#include <stdio.h> // for off_t (to match Glibc.modulemap)
+#endif
 #endif
 
-#ifndef __OSX_AVAILABLE_STARTING
-#define __OSX_AVAILABLE_STARTING(x, y)
-#endif
-
-#define DISPATCH_API_VERSION 20160612
+#define DISPATCH_API_VERSION 20160712
 
 #ifndef __DISPATCH_BUILDING_DISPATCH__
 
