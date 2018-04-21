@@ -49,8 +49,8 @@
 
 #include "AppleMacRiscPCI.h"
 
-#define NO_FASTWRITE		0
-#define NO_NVIDIA_FASTWRITE	0
+#define NO_FASTWRITE		1
+#define NO_NVIDIA_FASTWRITE	1
 
 #define ALLOC_AGP_RANGE		0
 
@@ -802,9 +802,6 @@ IOReturn AppleMacRiscAGP::createAGPSpace( IOAGPDevice * master,
     if (isU3)
 	agpCommandMask &= ~kIOAGPFastWrite;
 
-#if NO_FASTWRITE
-    agpCommandMask &= ~kIOAGPFastWrite;
-#else	/* NO_FASTWRITE */
     {
 	// There's an nVidia NV11 ROM (revision 1017) that says that it can do fast writes,
 	// but can't, and can often lock the machine up when fast writes are enabled.
@@ -816,7 +813,11 @@ IOReturn AppleMacRiscAGP::createAGPSpace( IOAGPDevice * master,
 #if NO_NVIDIA_FASTWRITE
 
 	if( 0 == strncmp( kNVIDIAEntryName, master->getName(), strlen(kNVIDIAEntryName)))
-	    agpCommandMask &= ~kIOAGPFastWrite;
+        {
+	    agpCommandMask &= ~kIOAGPFastWrite;			// NV34 systems (Q26B/Q54) has issues with this
+	    if (!isU3)
+		agpCommandMask &= ~kIOAGPSideBandAddresssing;	// NV34 systems (Q26B/Q54) has issues with this
+        }
 
 #else	/* NO_NVIDIA_FASTWRITE */
 
@@ -829,6 +830,9 @@ IOReturn AppleMacRiscAGP::createAGPSpace( IOAGPDevice * master,
 
 #endif	/* !NO_NVIDIA_FASTWRITE */
     }
+
+#if NO_FASTWRITE
+    agpCommandMask &= ~kIOAGPFastWrite;
 #endif	/* !NO_FASTWRITE */
 
     if ((data = OSDynamicCast(OSData, getProvider()->getProperty("AAPL,agp-clear"))))
