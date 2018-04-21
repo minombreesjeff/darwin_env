@@ -161,7 +161,7 @@ CFStringRef _FSCopyLocalizedNameForVolumeFormatAtURL(CFURLRef url)
     if ((NULL != url) && CFURLGetFileSystemRepresentation(url, true, buffer, MAXPATHLEN)) {
 	struct statfs fsInfo;
 
-        if (statfs(buffer, &fsInfo) == 0) {
+        if (statfs((char *)buffer, &fsInfo) == 0) {
             CFStringRef fsType = CFStringCreateWithCString(NULL, fsInfo.f_fstypename, kCFStringEncodingASCII);
 
             formatName = FSCopyFormatNameForFSType(fsType, fsInfo.f_reserved1, true);
@@ -181,7 +181,7 @@ CFStringRef _FSCopyNameForVolumeFormatAtURL(CFURLRef url)
     if ((NULL != url) && CFURLGetFileSystemRepresentation(url, true, buffer, MAXPATHLEN)) {
 	struct statfs fsInfo;
 
-        if (statfs(buffer, &fsInfo) == 0) {
+        if (statfs((char *)buffer, &fsInfo) == 0) {
             CFStringRef fsType = CFStringCreateWithCString(NULL, fsInfo.f_fstypename, kCFStringEncodingASCII);
 
             formatName = FSCopyFormatNameForFSType(fsType, fsInfo.f_reserved1, false);
