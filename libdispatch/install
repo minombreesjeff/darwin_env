@@ -1,81 +1,81 @@
-#!/bin/bash
+Grand Central Dispatch (GCD)
 
-if [ $EUID -ne 0 ]; then
-	echo "install script must be run as root" 2>&1
-	exit 1
-fi
+GCD is a concurrent programming framework first shipped with Mac OS X Snow
+Leopard.  This package is an open source bundling of libdispatch, the core
+user space library implementing GCD.  At the time of writing, support for
+the BSD kqueue API, and specifically extensions introduced in Mac OS X Snow
+Leopard and FreeBSD 9-CURRENT, are required to use libdispatch.  Other
+systems are currently unsupported.
 
-## Copy Libsystem pieces from ~rc
-copylibs=0
-## Install results in /
-noinstall=0
-build=$(sw_vers -buildVersion)
-train=$(~rc/bin/getTrainForBuild --quiet "$build")
+  Configuring and installing libdispatch
 
-while [ $# -gt 0 ]; do
-	if [ "${1/=*/}" = "--build" ]; then
-		build="${1/*=/}"
-	elif [ "$1" = "--noinstall" ]; then
-		noinstall=1
-	elif [ "$1" = "--copylibs" ]; then
-		copylibs=1
-	else
-		echo "install: [--build=10A400] [--noinstall] [--copylibs]" 2>&1
-		exit 1
-	fi
-	shift
-done
+GCD is built using autoconf, automake, and libtool, and has a number of
+compile-time configuration options that should be reviewed before starting.
+An uncustomized install requires:
 
-ROOTS=/var/tmp/GCDRoots."$build"
+	sh autogen.sh
+	./configure
+	make
+	make install
 
-# Building for another version implies copylibs and noinstall
-if [ "$build" != "$(sw_vers -buildVersion)" ]; then
-	copylibs=1
-	noinstall=1
-fi
+The following configure options may be of general interest:
 
-set -ex
-mkdir -p "$ROOTS"
+--with-apple-libc-source
 
-function BUILDIT() {
-	~rc/bin/buildit -arch i386 -arch ppc -arch x86_64 -arch armv6 \
-		-release "$train" -rootsDirectory "$ROOTS" "$@" .
-}
+	Specify the path to Apple's Libc package, so that appropriate headers
+	can be found and used.
 
-BUILDIT -project libdispatch -merge / -noverify
+--with-apple-libclosure-source
 
-if [ $copylibs = 1 ]; then
-	ALTUSRLOCALLIBSYSTEM="$ROOTS"/system
-	mkdir -p "$ALTUSRLOCALLIBSYSTEM"
-	export ALTUSRLOCALLIBSYSTEM
-	./install_Libsystem_pieces "$build"
-	cp /usr/local/lib/system/libdispatch* "$ALTUSRLOCALLIBSYSTEM"
-fi
+	Specify the path to Apple's Libclosure package, so that appropriate headers
+	can be found and used.
 
-LIBSYSTEM=$(~rc/bin/getvers "$train$build" Libsystem)
-if [ -z "$LIBSYSTEM" ]; then
-	exit 1
-fi
-SRCROOT="/var/tmp/$LIBSYSTEM"
-if [ ! -e "$SRCROOT" ]; then
-	cd $(dirname "$SRCROOT")
-	svn co http://src.apple.com/svn/BSD/Libsystem/tags/"$LIBSYSTEM"
-fi
-cd "$SRCROOT"
-BUILDIT
+--with-apple-xnu-source
 
-if [ $noinstall -eq 1 ]; then
-	exit 0
-fi
+	Specify the path to Apple's XNU package, so that appropriate headers
+	can be found and used.
 
-if [ ! -e /usr/lib/libSystem.B.dylib.orig ]; then
-	cp /usr/lib/libSystem.B.dylib /usr/lib/libSystem.B.dylib.orig
-fi
-if [ ! -e /usr/lib/libSystem.B_debug.dylib.orig ] ; then
-	cp /usr/lib/libSystem.B_debug.dylib /usr/lib/libSystem.B_debug.dylib.orig
-fi
-if [ ! -e /usr/lib/libSystem.B_profile.dylib.orig ] ; then
-	cp /usr/lib/libSystem.B_profile.dylib /usr/lib/libSystem.B_profile.dylib.orig
-fi
-cp -R "$ROOTS"/"$LIBSYSTEM".roots/"$LIBSYSTEM"~sym/libSystem* /usr/lib/
-update_dyld_shared_cache
+--with-blocks-runtime
+
+	On systems where -fblocks is supported, specify an additional library
+	path in which libBlocksRuntime can be found.  This is not required on
+	Mac OS X, where the Blocks runtime is included in libSystem, but is
+	required on FreeBSD.
+
+The following options are likely to only be useful when building libdispatch
+on Mac OS X as a replacement for /usr/lib/system/libdispatch.dylib:
+
+--disable-libdispatch-init-constructor
+
+	Do not tag libdispatch's init routine as __constructor, in which case
+	it must be run manually before libdispatch routines can be called.
+	For the libdispatch library in /usr/lib/system, the init routine is called
+	automatically during process start.
+
+--enable-apple-tsd-optimizations
+
+	Use a non-portable allocation scheme for pthread per-thread data (TSD)
+	keys when building libdispatch for /usr/lib/system on Mac OS X.  This
+	should not be used on other OS's, or on Mac OS X when building a
+	stand-alone library.
+
+  Typical configuration commands
+
+The following command lines create the configuration required to build
+libdispatch for /usr/lib/system on Mac OS X Lion:
+
+	sh autogen.sh
+	./configure CFLAGS='-arch x86_64 -arch i386' \
+		--prefix=/usr --libdir=/usr/lib/system \
+		--disable-dependency-tracking --disable-static \
+		--disable-libdispatch-init-constructor \
+		--enable-apple-tsd-optimizations \
+		--with-apple-libc-source=/path/to/10.7.0/Libc-763.11 \
+		--with-apple-libclosure-source=/path/to/10.7.0/libclosure-53 \
+		--with-apple-xnu-source=/path/to/10.7.0/xnu-1699.22.73
+
+Typical configuration line for FreeBSD 8.x and 9.x to build libdispatch with
+clang and blocks support:
+
+	sh autogen.sh
+	./configure CC=clang --with-blocks-runtime=/usr/local/lib
