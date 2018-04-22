@@ -91,6 +91,15 @@ __ZTIb
 __ZTIPb
 __ZTIPKv
 __ZTIPv
+__ZTIDi
+__ZTIPDi
+__ZTIPKDi
+__ZTIDs
+__ZTIPDs
+__ZTIPKDs
+__ZTIDn
+__ZTIPDn
+__ZTIPKDn
 
 # type info names for built in types
 __ZTSv
