@@ -225,9 +225,9 @@ public:
     typedef chrono::time_point<system_clock> time_point;
     static const bool is_steady =            false;
 
-    static time_point now();
-    static time_t     to_time_t  (const time_point& __t);
-    static time_point from_time_t(time_t __t);
+    static time_point now() noexcept;
+    static time_t     to_time_t  (const time_point& __t) noexcept;
+    static time_point from_time_t(time_t __t) noexcept;
 };
 
 class steady_clock
@@ -239,7 +239,7 @@ public:
     typedef chrono::time_point<steady_clock, duration>    time_point;
     static const bool is_steady =                         true;
 
-    static time_point now();
+    static time_point now() noexcept;
 };
 
 typedef steady_clock high_resolution_clock;
@@ -407,7 +407,7 @@ public:
                 (ratio_divide<_Period2, period>::type::den == 1 &&
                  !treat_as_floating_point<_Rep2>::value)
             >::type* = 0)
-                : __rep_(_STD::chrono::duration_cast<duration>(__d).count()) {}
+                : __rep_(_VSTD::chrono::duration_cast<duration>(__d).count()) {}
 
     // observer
 
@@ -726,7 +726,7 @@ inline _LIBCPP_INLINE_VISIBILITY
 time_point<_Clock, _ToDuration>
 time_point_cast(const time_point<_Clock, _Duration>& __t)
 {
-    return time_point<_Clock, _ToDuration>(_STD::chrono::duration_cast<_ToDuration>(__t.time_since_epoch()));
+    return time_point<_Clock, _ToDuration>(_VSTD::chrono::duration_cast<_ToDuration>(__t.time_since_epoch()));
 }
 
 // time_point ==
@@ -845,9 +845,9 @@ public:
     typedef chrono::time_point<system_clock> time_point;
     static const bool is_steady =            false;
 
-    static time_point now();
-    static time_t     to_time_t  (const time_point& __t);
-    static time_point from_time_t(time_t __t);
+    static time_point now() _NOEXCEPT;
+    static time_t     to_time_t  (const time_point& __t) _NOEXCEPT;
+    static time_point from_time_t(time_t __t) _NOEXCEPT;
 };
 
 class _LIBCPP_VISIBLE steady_clock
@@ -859,7 +859,7 @@ public:
     typedef chrono::time_point<steady_clock, duration>    time_point;
     static const bool is_steady =                         true;
 
-    static time_point now();
+    static time_point now() _NOEXCEPT;
 };
 
 typedef steady_clock high_resolution_clock;

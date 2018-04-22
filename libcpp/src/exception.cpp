@@ -24,17 +24,18 @@
 #endif  // __APPLE__
 
 std::unexpected_handler
-std::set_unexpected(std::unexpected_handler func) throw()
+std::set_unexpected(std::unexpected_handler func) _NOEXCEPT
 {
     return __sync_lock_test_and_set(&__unexpected_handler, func);
 }
 
 std::unexpected_handler
-std::get_unexpected() throw()
+std::get_unexpected() _NOEXCEPT
 {
     return __sync_fetch_and_add(&__unexpected_handler, (std::unexpected_handler)0);
 }
 
+_ATTRIBUTE(noreturn)
 void
 std::unexpected()
 {
@@ -44,19 +45,20 @@ std::unexpected()
 }
 
 std::terminate_handler
-std::set_terminate(std::terminate_handler func) throw()
+std::set_terminate(std::terminate_handler func) _NOEXCEPT
 {
     return __sync_lock_test_and_set(&__terminate_handler, func);
 }
 
 std::terminate_handler
-std::get_terminate() throw()
+std::get_terminate() _NOEXCEPT
 {
     return __sync_fetch_and_add(&__terminate_handler, (std::terminate_handler)0);
 }
 
+_ATTRIBUTE(noreturn)
 void
-std::terminate()
+std::terminate() _NOEXCEPT
 {
 #ifndef _LIBCPP_NO_EXCEPTIONS
     try
@@ -75,7 +77,7 @@ std::terminate()
 #endif  // _LIBCPP_NO_EXCEPTIONS
 }
 
-bool std::uncaught_exception() throw()
+bool std::uncaught_exception() _NOEXCEPT
 {
 #if __APPLE__
     // on Darwin, there is a helper function so __cxa_get_globals is private
@@ -92,25 +94,25 @@ bool std::uncaught_exception() throw()
 namespace std
 {
 
-exception::~exception() throw()
+exception::~exception() _NOEXCEPT
 {
 }
 
-bad_exception::~bad_exception() throw()
+bad_exception::~bad_exception() _NOEXCEPT
 {
 }
 
-const char* exception::what() const throw()
+const char* exception::what() const _NOEXCEPT
 {
   return "std::exception";
 }
 
-const char* bad_exception::what() const throw()
+const char* bad_exception::what() const _NOEXCEPT
 {
   return "std::bad_exception";
 }
 
-exception_ptr::~exception_ptr()
+exception_ptr::~exception_ptr() _NOEXCEPT
 {
 #if __APPLE__
     __cxxabiapple::__cxa_decrement_exception_refcount(__ptr_);
@@ -120,7 +122,7 @@ exception_ptr::~exception_ptr()
 #endif  // __APPLE__
 }
 
-exception_ptr::exception_ptr(const exception_ptr& other)
+exception_ptr::exception_ptr(const exception_ptr& other) _NOEXCEPT
     : __ptr_(other.__ptr_)
 {
 #if __APPLE__
@@ -131,7 +133,7 @@ exception_ptr::exception_ptr(const exception_ptr& other)
 #endif  // __APPLE__
 }
 
-exception_ptr& exception_ptr::operator=(const exception_ptr& other)
+exception_ptr& exception_ptr::operator=(const exception_ptr& other) _NOEXCEPT
 {
 #if __APPLE__
     if (__ptr_ != other.__ptr_)
@@ -147,17 +149,18 @@ exception_ptr& exception_ptr::operator=(const exception_ptr& other)
 #endif  // __APPLE__
 }
 
-nested_exception::nested_exception()
+nested_exception::nested_exception() _NOEXCEPT
     : __ptr_(current_exception())
 {
 }
 
-nested_exception::~nested_exception()
+nested_exception::~nested_exception() _NOEXCEPT
 {
 }
 
+_ATTRIBUTE(noreturn)
 void
-nested_exception::rethrow_nested /*[[noreturn]]*/ () const
+nested_exception::rethrow_nested() const
 {
     if (__ptr_ == nullptr)
         terminate();
@@ -166,7 +169,7 @@ nested_exception::rethrow_nested /*[[noreturn]]*/ () const
 
 } // std
 
-std::exception_ptr std::current_exception()
+std::exception_ptr std::current_exception() _NOEXCEPT
 {
 #if __APPLE__
     // be nicer if there was a constructor that took a ptr, then

@@ -177,11 +177,13 @@ public:
     virtual ~basic_istream();
 protected:
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
+    _LIBCPP_INLINE_VISIBILITY
     basic_istream(basic_istream&& __rhs);
 #endif
 
     // 27.7.1.1.2 Assign/swap:
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
+    _LIBCPP_INLINE_VISIBILITY
     basic_istream& operator=(basic_istream&& __rhs);
 #endif
     void swap(basic_istream& __rhs);
@@ -321,7 +323,7 @@ inline _LIBCPP_INLINE_VISIBILITY
 void
 basic_istream<_CharT, _Traits>::swap(basic_istream& __rhs)
 {
-    _STD::swap(__gc_, __rhs.__gc_);
+    _VSTD::swap(__gc_, __rhs.__gc_);
     basic_ios<char_type, traits_type>::swap(__rhs);
 }
 
@@ -1273,7 +1275,7 @@ basic_istream<_CharT, _Traits>::readsome(char_type* __s, streamsize __n)
             case 0:
                 break;
             default:
-                __c = _STD::min(__c, __n);
+                __c = _VSTD::min(__c, __n);
                 for (streamsize __k = 0; __k < __c; ++__k, ++__s, ++__i)
                     *__s = *__i;
             }
@@ -1504,11 +1506,13 @@ public:
     virtual ~basic_iostream();
 protected:
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
+    _LIBCPP_INLINE_VISIBILITY
     basic_iostream(basic_iostream&& __rhs);
 #endif
 
     // assign/swap
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
+    _LIBCPP_INLINE_VISIBILITY
     basic_iostream& operator=(basic_iostream&& __rhs);
 #endif
     void swap(basic_iostream& __rhs);
@@ -1527,7 +1531,7 @@ basic_iostream<_CharT, _Traits>::basic_iostream(basic_streambuf<char_type, trait
 template <class _CharT, class _Traits>
 inline _LIBCPP_INLINE_VISIBILITY
 basic_iostream<_CharT, _Traits>::basic_iostream(basic_iostream&& __rhs)
-    : basic_istream<_CharT, _Traits>(_STD::move(__rhs))
+    : basic_istream<_CharT, _Traits>(_VSTD::move(__rhs))
 {
 }
 

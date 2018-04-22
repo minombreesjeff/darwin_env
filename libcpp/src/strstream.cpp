@@ -100,41 +100,6 @@ strstreambuf::strstreambuf(const unsigned char* __gnext, streamsize __n)
     __init((char*)__gnext, __n, nullptr);
 }
 
-#ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
-
-strstreambuf::strstreambuf(strstreambuf&& __rhs)
-    : streambuf(__rhs),
-      __strmode_(__rhs.__strmode_),
-      __alsize_(__rhs.__alsize_),
-      __palloc_(__rhs.__palloc_),
-      __pfree_(__rhs.__pfree_)
-{
-    __rhs.setg(nullptr, nullptr, nullptr);
-    __rhs.setp(nullptr, nullptr);
-}
-
-strstreambuf&
-strstreambuf::operator=(strstreambuf&& __rhs)
-{
-    if (eback() && (__strmode_ & __allocated) != 0 && (__strmode_ & __frozen) == 0)
-    {
-        if (__pfree_)
-            __pfree_(eback());
-        else
-            delete [] eback();
-    }
-    streambuf::operator=(__rhs);
-    __strmode_ = __rhs.__strmode_;
-    __alsize_ = __rhs.__alsize_;
-    __palloc_ = __rhs.__palloc_;
-    __pfree_ = __rhs.__pfree_;
-    __rhs.setg(nullptr, nullptr, nullptr);
-    __rhs.setp(nullptr, nullptr);
-    return *this;
-}
-
-#endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
-
 strstreambuf::~strstreambuf()
 {
     if (eback() && (__strmode_ & __allocated) != 0 && (__strmode_ & __frozen) == 0)
@@ -150,10 +115,10 @@ void
 strstreambuf::swap(strstreambuf& __rhs)
 {
     streambuf::swap(__rhs);
-    _STD::swap(__strmode_, __rhs.__strmode_);
-    _STD::swap(__alsize_, __rhs.__alsize_);
-    _STD::swap(__palloc_, __rhs.__palloc_);
-    _STD::swap(__pfree_, __rhs.__pfree_);
+    _VSTD::swap(__strmode_, __rhs.__strmode_);
+    _VSTD::swap(__alsize_, __rhs.__alsize_);
+    _VSTD::swap(__palloc_, __rhs.__palloc_);
+    _VSTD::swap(__pfree_, __rhs.__pfree_);
 }
 
 void
@@ -302,7 +267,7 @@ strstreambuf::seekoff(off_type __off, ios_base::seekdir __way, ios_base::openmod
         {
             char* newpos = eback() + newoff;
             if (pos_in)
-                setg(eback(), newpos, _STD::max(newpos, egptr()));
+                setg(eback(), newpos, _VSTD::max(newpos, egptr()));
             if (pos_out)
             {
                 // min(pbase, newpos), newpos, epptr()
@@ -332,7 +297,7 @@ strstreambuf::seekpos(pos_type __sp, ios_base::openmode __which)
             {
                 char* newpos = eback() + newoff;
                 if (pos_in)
-                    setg(eback(), newpos, _STD::max(newpos, egptr()));
+                    setg(eback(), newpos, _VSTD::max(newpos, egptr()));
                 if (pos_out)
                 {
                     // min(pbase, newpos), newpos, epptr()

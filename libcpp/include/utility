@@ -29,11 +29,19 @@ namespace rel_ops
     template<class T> bool operator>=(const T&, const T&);
 }
 
-template<class T> void swap(T& a, T& b);
-template <class T, size_t N> void swap(T (&a)[N], T (&b)[N]);
+template<class T>
+void
+swap(T& a, T& b) noexcept(is_nothrow_move_constructible<T>::value &&
+                          is_nothrow_move_assignable<T>::value);
 
-template <class T, class U> T&& forward(U&&);
-template <class T> typename remove_reference<T>::type&& move(T&&);
+template <class T, size_t N>
+void
+swap(T (&a)[N], T (&b)[N]) noexcept(noexcept(swap(*a, *b)));
+
+template <class T> T&& forward(typename remove_reference<T>::type& t) noexcept;
+template <class T> T&& forward(typename remove_reference<T>::type&& t) noexcept;
+
+template <class T> typename remove_reference<T>::type&& move(T&&) noexcept;
 
 template <class T>
     typename conditional
@@ -42,7 +50,7 @@ template <class T>
         const T&,
         T&&
     >::type
-    move_if_noexcept(T& x);
+    move_if_noexcept(T& x) noexcept;
 
 template <class T> typename add_rvalue_reference<T>::type declval() noexcept;
 
@@ -56,6 +64,7 @@ struct pair
     T2 second;
 
     pair(const pair&) = default;
+    pair(pair&&) = default;
     constexpr pair();
     pair(const T1& x, const T2& y);
     template <class U, class V> pair(U&& x, V&& y);
@@ -66,10 +75,12 @@ struct pair
              tuple<Args2...> second_args);
 
     template <class U, class V> pair& operator=(const pair<U, V>& p);
-    pair& operator=(pair&& p);
+    pair& operator=(pair&& p) noexcept(is_nothrow_move_assignable<T1>::value &&
+                                       is_nothrow_move_assignable<T2>::value);
     template <class U, class V> pair& operator=(pair<U, V>&& p);
 
-    void swap(pair& p);
+    void swap(pair& p) noexcept(noexcept(swap(first, p.first)) &&
+                                noexcept(swap(second, p.second)));
 };
 
 template <class T1, class T2> bool operator==(const pair<T1,T2>&, const pair<T1,T2>&);
@@ -80,7 +91,9 @@ template <class T1, class T2> bool operator>=(const pair<T1,T2>&, const pair<T1,
 template <class T1, class T2> bool operator<=(const pair<T1,T2>&, const pair<T1,T2>&);
 
 template <class T1, class T2> pair<V1, V2> make_pair(T1&&, T2&&);
-template <class T1, class T2> void swap(pair<T1, T2>& x, pair<T1, T2>& y);
+template <class T1, class T2>
+void
+swap(pair<T1, T2>& x, pair<T1, T2>& y) noexcept(noexcept(x.swap(y)));
 
 struct piecewise_construct_t { };
 constexpr piecewise_construct_t piecewise_construct = piecewise_construct_t();
@@ -94,15 +107,15 @@ template <class T1, class T2> struct tuple_element<1, std::pair<T1, T2> >;
 
 template<size_t I, class T1, class T2>
     typename tuple_element<I, std::pair<T1, T2> >::type&
-    get(std::pair<T1, T2>&);
+    get(std::pair<T1, T2>&) noexcept;
 
 template<size_t I, class T1, class T2>
     const typename const tuple_element<I, std::pair<T1, T2> >::type&
-    get(const std::pair<T1, T2>&);
+    get(const std::pair<T1, T2>&) noexcept;
 
 template<size_t I, class T1, class T2>
     typename tuple_element<I, std::pair<T1, T2> >::type&&
-    get(std::pair<T1, T2>&&);
+    get(std::pair<T1, T2>&&) noexcept;
 
 }  // std
 
@@ -168,9 +181,9 @@ swap_ranges(_ForwardIterator1 __first1, _ForwardIterator1 __last1, _ForwardItera
 template<class _Tp, size_t _N>
 inline _LIBCPP_INLINE_VISIBILITY
 void
-swap(_Tp (&__a)[_N], _Tp (&__b)[_N])
+swap(_Tp (&__a)[_N], _Tp (&__b)[_N]) _NOEXCEPT_(__is_nothrow_swappable<_Tp>::value)
 {
-    _STD::swap_ranges(__a, __a + _N, __b);
+    _VSTD::swap_ranges(__a, __a + _N, __b);
 }
 
 template <class _Tp>
@@ -185,17 +198,14 @@ typename conditional
 #else  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
 const _Tp&
 #endif
-move_if_noexcept(_Tp& __x)
+move_if_noexcept(_Tp& __x) _NOEXCEPT
 {
-    return _STD::move(__x);
+    return _VSTD::move(__x);
 }
 
 struct _LIBCPP_VISIBLE piecewise_construct_t { };
 //constexpr
 extern const piecewise_construct_t piecewise_construct;// = piecewise_construct_t();
-
-template <class _T1, class _T2> struct pair;
-template <class _T1, class _T2> void swap(pair<_T1, _T2>&, pair<_T1, _T2>&);
 
 template <class _T1, class _T2>
 struct _LIBCPP_VISIBLE pair
@@ -206,6 +216,9 @@ struct _LIBCPP_VISIBLE pair
     _T1 first;
     _T2 second;
 
+    // pair(const pair&) = default;
+    // pair(pair&&) = default;
+
     _LIBCPP_INLINE_VISIBILITY pair() : first(), second() {}
 
     _LIBCPP_INLINE_VISIBILITY pair(const _T1& __x, const _T2& __y)
@@ -213,29 +226,69 @@ struct _LIBCPP_VISIBLE pair
 
     template<class _U1, class _U2>
         _LIBCPP_INLINE_VISIBILITY
-        pair(const pair<_U1, _U2>& __p,
-                 typename enable_if<is_convertible<_U1, _T1>::value &&
-                                    is_convertible<_U2, _T2>::value>::type* = 0)
+        pair(const pair<_U1, _U2>& __p
+#ifndef _LIBCPP_HAS_NO_ADVANCED_SFINAE
+                 ,typename enable_if<is_constructible<_T1, _U1>::value &&
+                                    is_constructible<_T2, _U2>::value>::type* = 0
+#endif
+                                      )
             : first(__p.first), second(__p.second) {}
+
+    _LIBCPP_INLINE_VISIBILITY
+    pair(const pair& __p)
+        _NOEXCEPT_(is_nothrow_copy_constructible<first_type>::value &&
+                   is_nothrow_copy_constructible<second_type>::value)
+        : first(__p.first),
+          second(__p.second)
+    {
+    }
+
+    _LIBCPP_INLINE_VISIBILITY
+    pair& operator=(const pair& __p)
+        _NOEXCEPT_(is_nothrow_copy_assignable<first_type>::value &&
+                   is_nothrow_copy_assignable<second_type>::value)
+    {
+        first = __p.first;
+        second = __p.second;
+        return *this;
+    }
 
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
 
     template <class _U1, class _U2,
-              class = typename enable_if<is_convertible<_U1, first_type >::value &&
-                                         is_convertible<_U2, second_type>::value>::type>
+              class = typename enable_if<is_constructible<first_type, _U1 >::value &&
+                                         is_constructible<second_type, _U2>::value>::type>
         _LIBCPP_INLINE_VISIBILITY
         pair(_U1&& __u1, _U2&& __u2)
-            : first(_STD::forward<_U1>(__u1)),
-              second(_STD::forward<_U2>(__u2))
+            : first(_VSTD::forward<_U1>(__u1)),
+              second(_VSTD::forward<_U2>(__u2))
             {}
 
     template<class _U1, class _U2>
         _LIBCPP_INLINE_VISIBILITY
         pair(pair<_U1, _U2>&& __p,
-                 typename enable_if<is_convertible<_U1, _T1>::value &&
-                                    is_convertible<_U2, _T2>::value>::type* = 0)
-            : first(_STD::forward<_U1>(__p.first)),
-              second(_STD::forward<_U2>(__p.second)) {}
+                 typename enable_if<is_constructible<_T1, _U1>::value &&
+                                    is_constructible<_T2, _U2>::value>::type* = 0)
+            : first(_VSTD::forward<_U1>(__p.first)),
+              second(_VSTD::forward<_U2>(__p.second)) {}
+
+    _LIBCPP_INLINE_VISIBILITY
+    pair(pair&& __p) _NOEXCEPT_(is_nothrow_move_constructible<first_type>::value &&
+                                is_nothrow_move_constructible<second_type>::value)
+        : first(_VSTD::forward<first_type>(__p.first)),
+          second(_VSTD::forward<second_type>(__p.second))
+    {
+    }
+
+    _LIBCPP_INLINE_VISIBILITY
+    pair&
+    operator=(pair&& __p) _NOEXCEPT_(is_nothrow_move_assignable<first_type>::value &&
+                                     is_nothrow_move_assignable<second_type>::value)
+    {
+        first = _VSTD::forward<first_type>(__p.first);
+        second = _VSTD::forward<second_type>(__p.second);
+        return *this;
+    }
 
 #ifndef _LIBCPP_HAS_NO_VARIADICS
 
@@ -243,9 +296,9 @@ struct _LIBCPP_VISIBLE pair
              class = typename enable_if<__tuple_convertible<_Tuple, pair>::value>::type>
         _LIBCPP_INLINE_VISIBILITY
         pair(_Tuple&& __p)
-            : first(_STD::forward<typename tuple_element<0,
+            : first(_VSTD::forward<typename tuple_element<0,
                                   typename __make_tuple_types<_Tuple>::type>::type>(get<0>(__p))),
-              second(_STD::forward<typename tuple_element<1,
+              second(_VSTD::forward<typename tuple_element<1,
                                    typename __make_tuple_types<_Tuple>::type>::type>(get<1>(__p)))
             {}
 
@@ -269,15 +322,22 @@ struct _LIBCPP_VISIBLE pair
             typedef typename __make_tuple_types<_Tuple>::type _TupleRef;
             typedef typename tuple_element<0, _TupleRef>::type _U0;
             typedef typename tuple_element<1, _TupleRef>::type _U1;
-            first  = _STD::forward<_U0>(_STD::get<0>(__p));
-            second = _STD::forward<_U1>(_STD::get<1>(__p));
+            first  = _VSTD::forward<_U0>(_VSTD::get<0>(__p));
+            second = _VSTD::forward<_U1>(_VSTD::get<1>(__p));
             return *this;
         }
 
 #endif  // _LIBCPP_HAS_NO_VARIADICS
 
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
-    void _LIBCPP_INLINE_VISIBILITY swap(pair& __p) {_STD::swap(*this, __p);}
+    _LIBCPP_INLINE_VISIBILITY
+    void
+    swap(pair& __p) _NOEXCEPT_(__is_nothrow_swappable<first_type>::value &&
+                               __is_nothrow_swappable<second_type>::value)
+    {
+        _VSTD::iter_swap(&first, &__p.first);
+        _VSTD::iter_swap(&second, &__p.second);
+    }
 private:
 
 #ifndef _LIBCPP_HAS_NO_VARIADICS
@@ -339,11 +399,17 @@ operator<=(const pair<_T1,_T2>& __x, const pair<_T1,_T2>& __y)
 
 template <class _T1, class _T2>
 inline _LIBCPP_INLINE_VISIBILITY
-void
+typename enable_if
+<
+    __is_swappable<_T1>::value &&
+    __is_swappable<_T2>::value,
+    void
+>::type
 swap(pair<_T1, _T2>& __x, pair<_T1, _T2>& __y)
+                     _NOEXCEPT_((__is_nothrow_swappable<_T1>::value &&
+                                 __is_nothrow_swappable<_T2>::value))
 {
-    swap(__x.first, __y.first);
-    swap(__x.second, __y.second);
+    __x.swap(__y);
 }
 
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
@@ -374,7 +440,7 @@ pair<typename __make_pair_return<_T1>::type, typename __make_pair_return<_T2>::t
 make_pair(_T1&& __t1, _T2&& __t2)
 {
     return pair<typename __make_pair_return<_T1>::type, typename __make_pair_return<_T2>::type>
-               (_STD::forward<_T1>(__t1), _STD::forward<_T2>(__t2));
+               (_VSTD::forward<_T1>(__t1), _VSTD::forward<_T2>(__t2));
 }
 
 #else  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
@@ -436,13 +502,13 @@ struct __get_pair<0>
     static
     _LIBCPP_INLINE_VISIBILITY
     _T1&
-    get(pair<_T1, _T2>& __p) {return __p.first;}
+    get(pair<_T1, _T2>& __p) _NOEXCEPT {return __p.first;}
 
     template <class _T1, class _T2>
     static
     _LIBCPP_INLINE_VISIBILITY
     const _T1&
-    get(const pair<_T1, _T2>& __p) {return __p.first;}
+    get(const pair<_T1, _T2>& __p) _NOEXCEPT {return __p.first;}
 
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
 
@@ -450,7 +516,7 @@ struct __get_pair<0>
     static
     _LIBCPP_INLINE_VISIBILITY
     _T1&&
-    get(pair<_T1, _T2>&& __p) {return _STD::forward<_T1>(__p.first);}
+    get(pair<_T1, _T2>&& __p) _NOEXCEPT {return _VSTD::forward<_T1>(__p.first);}
 
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
 };
@@ -462,13 +528,13 @@ struct __get_pair<1>
     static
     _LIBCPP_INLINE_VISIBILITY
     _T2&
-    get(pair<_T1, _T2>& __p) {return __p.second;}
+    get(pair<_T1, _T2>& __p) _NOEXCEPT {return __p.second;}
 
     template <class _T1, class _T2>
     static
     _LIBCPP_INLINE_VISIBILITY
     const _T2&
-    get(const pair<_T1, _T2>& __p) {return __p.second;}
+    get(const pair<_T1, _T2>& __p) _NOEXCEPT {return __p.second;}
 
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
 
@@ -476,7 +542,7 @@ struct __get_pair<1>
     static
     _LIBCPP_INLINE_VISIBILITY
     _T2&&
-    get(pair<_T1, _T2>&& __p) {return _STD::forward<_T2>(__p.second);}
+    get(pair<_T1, _T2>&& __p) _NOEXCEPT {return _VSTD::forward<_T2>(__p.second);}
 
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
 };
@@ -484,7 +550,7 @@ struct __get_pair<1>
 template <size_t _Ip, class _T1, class _T2>
 _LIBCPP_INLINE_VISIBILITY inline
 typename tuple_element<_Ip, pair<_T1, _T2> >::type&
-get(pair<_T1, _T2>& __p)
+get(pair<_T1, _T2>& __p) _NOEXCEPT
 {
     return __get_pair<_Ip>::get(__p);
 }
@@ -492,7 +558,7 @@ get(pair<_T1, _T2>& __p)
 template <size_t _Ip, class _T1, class _T2>
 _LIBCPP_INLINE_VISIBILITY inline
 const typename tuple_element<_Ip, pair<_T1, _T2> >::type&
-get(const pair<_T1, _T2>& __p)
+get(const pair<_T1, _T2>& __p) _NOEXCEPT
 {
     return __get_pair<_Ip>::get(__p);
 }
@@ -502,9 +568,9 @@ get(const pair<_T1, _T2>& __p)
 template <size_t _Ip, class _T1, class _T2>
 _LIBCPP_INLINE_VISIBILITY inline
 typename tuple_element<_Ip, pair<_T1, _T2> >::type&&
-get(pair<_T1, _T2>&& __p)
+get(pair<_T1, _T2>&& __p) _NOEXCEPT
 {
-    return __get_pair<_Ip>::get(_STD::move(__p));
+    return __get_pair<_Ip>::get(_VSTD::move(__p));
 }
 
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES

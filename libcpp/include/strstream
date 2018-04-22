@@ -150,7 +150,9 @@ public:
     strstreambuf(const unsigned char* __gnext, streamsize __n);
 
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
+    _LIBCPP_INLINE_VISIBILITY
     strstreambuf(strstreambuf&& __rhs);
+    _LIBCPP_INLINE_VISIBILITY
     strstreambuf& operator=(strstreambuf&& __rhs);
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
 
@@ -187,6 +189,43 @@ private:
     void __init(char* __gnext, streamsize __n, char* __pbeg);
 };
 
+#ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
+
+inline _LIBCPP_INLINE_VISIBILITY
+strstreambuf::strstreambuf(strstreambuf&& __rhs)
+    : streambuf(__rhs),
+      __strmode_(__rhs.__strmode_),
+      __alsize_(__rhs.__alsize_),
+      __palloc_(__rhs.__palloc_),
+      __pfree_(__rhs.__pfree_)
+{
+    __rhs.setg(nullptr, nullptr, nullptr);
+    __rhs.setp(nullptr, nullptr);
+}
+
+inline _LIBCPP_INLINE_VISIBILITY
+strstreambuf&
+strstreambuf::operator=(strstreambuf&& __rhs)
+{
+    if (eback() && (__strmode_ & __allocated) != 0 && (__strmode_ & __frozen) == 0)
+    {
+        if (__pfree_)
+            __pfree_(eback());
+        else
+            delete [] eback();
+    }
+    streambuf::operator=(__rhs);
+    __strmode_ = __rhs.__strmode_;
+    __alsize_ = __rhs.__alsize_;
+    __palloc_ = __rhs.__palloc_;
+    __pfree_ = __rhs.__pfree_;
+    __rhs.setg(nullptr, nullptr, nullptr);
+    __rhs.setp(nullptr, nullptr);
+    return *this;
+}
+
+#endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
+
 class _LIBCPP_VISIBLE istrstream
     : public istream
 {
@@ -207,8 +246,8 @@ public:
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
     _LIBCPP_INLINE_VISIBILITY
     istrstream(istrstream&& __rhs)
-        : istream(_STD::move(__rhs)),
-          __sb_(_STD::move(__rhs.__sb_))
+        : istream(_VSTD::move(__rhs)),
+          __sb_(_VSTD::move(__rhs.__sb_))
     {
         istream::set_rdbuf(&__sb_);
     }
@@ -216,8 +255,8 @@ public:
     _LIBCPP_INLINE_VISIBILITY
     istrstream& operator=(istrstream&& __rhs)
     {
-        istream::operator=(_STD::move(__rhs));
-        __sb_ = _STD::move(__rhs.__sb_);
+        istream::operator=(_VSTD::move(__rhs));
+        __sb_ = _VSTD::move(__rhs.__sb_);
         return *this;
     }
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
@@ -256,8 +295,8 @@ public:
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
     _LIBCPP_INLINE_VISIBILITY
     ostrstream(ostrstream&& __rhs)
-        : ostream(_STD::move(__rhs)),
-          __sb_(_STD::move(__rhs.__sb_))
+        : ostream(_VSTD::move(__rhs)),
+          __sb_(_VSTD::move(__rhs.__sb_))
     {
         ostream::set_rdbuf(&__sb_);
     }
@@ -265,8 +304,8 @@ public:
     _LIBCPP_INLINE_VISIBILITY
     ostrstream& operator=(ostrstream&& __rhs)
     {
-        ostream::operator=(_STD::move(__rhs));
-        __sb_ = _STD::move(__rhs.__sb_);
+        ostream::operator=(_VSTD::move(__rhs));
+        __sb_ = _VSTD::move(__rhs.__sb_);
         return *this;
     }
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
@@ -316,8 +355,8 @@ public:
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
     _LIBCPP_INLINE_VISIBILITY
     strstream(strstream&& __rhs)
-        : iostream(_STD::move(__rhs)),
-          __sb_(_STD::move(__rhs.__sb_))
+        : iostream(_VSTD::move(__rhs)),
+          __sb_(_VSTD::move(__rhs.__sb_))
     {
         iostream::set_rdbuf(&__sb_);
     }
@@ -325,8 +364,8 @@ public:
     _LIBCPP_INLINE_VISIBILITY
     strstream& operator=(strstream&& __rhs)
     {
-        iostream::operator=(_STD::move(__rhs));
-        __sb_ = _STD::move(__rhs.__sb_);
+        iostream::operator=(_VSTD::move(__rhs));
+        __sb_ = _VSTD::move(__rhs.__sb_);
         return *this;
     }
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES

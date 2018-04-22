@@ -488,7 +488,7 @@ next(_ForwardIter __x,
      typename iterator_traits<_ForwardIter>::difference_type __n = 1,
      typename enable_if<__is_forward_iterator<_ForwardIter>::value>::type* = 0)
 {
-    _STD::advance(__x, __n);
+    _VSTD::advance(__x, __n);
     return __x;
 }
 
@@ -499,7 +499,7 @@ prev(_BidiretionalIter __x,
      typename iterator_traits<_BidiretionalIter>::difference_type __n = 1,
      typename enable_if<__is_bidirectional_iterator<_BidiretionalIter>::value>::type* = 0)
 {
-    _STD::advance(__x, -__n);
+    _VSTD::advance(__x, -__n);
     return __x;
 }
 
@@ -628,7 +628,7 @@ public:
         {container->push_back(__value); return *this;}
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
     _LIBCPP_INLINE_VISIBILITY back_insert_iterator& operator=(typename _Container::value_type&& __value)
-        {container->push_back(_STD::move(__value)); return *this;}
+        {container->push_back(_VSTD::move(__value)); return *this;}
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
     _LIBCPP_INLINE_VISIBILITY back_insert_iterator& operator*()     {return *this;}
     _LIBCPP_INLINE_VISIBILITY back_insert_iterator& operator++()    {return *this;}
@@ -661,7 +661,7 @@ public:
         {container->push_front(__value); return *this;}
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
     _LIBCPP_INLINE_VISIBILITY front_insert_iterator& operator=(typename _Container::value_type&& __value)
-        {container->push_front(_STD::move(__value)); return *this;}
+        {container->push_front(_VSTD::move(__value)); return *this;}
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
     _LIBCPP_INLINE_VISIBILITY front_insert_iterator& operator*()     {return *this;}
     _LIBCPP_INLINE_VISIBILITY front_insert_iterator& operator++()    {return *this;}
@@ -696,7 +696,7 @@ public:
         {iter = container->insert(iter, __value); ++iter; return *this;}
 #ifndef _LIBCPP_HAS_NO_RVALUE_REFERENCES
     _LIBCPP_INLINE_VISIBILITY insert_iterator& operator=(typename _Container::value_type&& __value)
-        {iter = container->insert(iter, _STD::move(__value)); ++iter; return *this;}
+        {iter = container->insert(iter, _VSTD::move(__value)); ++iter; return *this;}
 #endif  // _LIBCPP_HAS_NO_RVALUE_REFERENCES
     _LIBCPP_INLINE_VISIBILITY insert_iterator& operator*()        {return *this;}
     _LIBCPP_INLINE_VISIBILITY insert_iterator& operator++()       {return *this;}
@@ -1007,35 +1007,35 @@ template <class _Iter> class __wrap_iter;
 
 template <class _Iter1, class _Iter2>
 bool
-operator==(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+operator==(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
 template <class _Iter1, class _Iter2>
 bool
-operator<(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+operator<(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
 template <class _Iter1, class _Iter2>
 bool
-operator!=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+operator!=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
 template <class _Iter1, class _Iter2>
 bool
-operator>(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+operator>(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
 template <class _Iter1, class _Iter2>
 bool
-operator>=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+operator>=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
 template <class _Iter1, class _Iter2>
 bool
-operator<=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+operator<=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
 template <class _Iter1, class _Iter2>
 typename __wrap_iter<_Iter1>::difference_type
-operator-(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+operator-(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
 template <class _Iter>
 __wrap_iter<_Iter>
-operator+(typename __wrap_iter<_Iter>::difference_type, const __wrap_iter<_Iter>&);
+operator+(typename __wrap_iter<_Iter>::difference_type, const __wrap_iter<_Iter>&) _NOEXCEPT;
 
 template <class _I, class _O> _O copy(_I, _I, _O);
 template <class _B1, class _B2> _B2 copy_backward(_B1, _B1, _B2);
@@ -1063,33 +1063,33 @@ public:
 private:
     iterator_type __i;
 public:
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter() {}
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter() _NOEXCEPT {}
     template <class _Up> _LIBCPP_INLINE_VISIBILITY __wrap_iter(const __wrap_iter<_Up>& __u,
-        typename enable_if<is_convertible<_Up, iterator_type>::value>::type* = 0)
+        typename enable_if<is_convertible<_Up, iterator_type>::value>::type* = 0) _NOEXCEPT
         : __i(__u.base()) {}
-    _LIBCPP_INLINE_VISIBILITY reference operator*() const {return *__i;}
-    _LIBCPP_INLINE_VISIBILITY pointer  operator->() const {return &(operator*());}
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter& operator++() {++__i; return *this;}
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter  operator++(int)
+    _LIBCPP_INLINE_VISIBILITY reference operator*() const _NOEXCEPT {return *__i;}
+    _LIBCPP_INLINE_VISIBILITY pointer  operator->() const _NOEXCEPT {return &(operator*());}
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter& operator++() _NOEXCEPT {++__i; return *this;}
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter  operator++(int) _NOEXCEPT
         {__wrap_iter __tmp(*this); ++__i; return __tmp;}
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter& operator--() {--__i; return *this;}
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter  operator--(int)
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter& operator--() _NOEXCEPT {--__i; return *this;}
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter  operator--(int) _NOEXCEPT
         {__wrap_iter __tmp(*this); --__i; return __tmp;}
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter  operator+ (difference_type __n) const
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter  operator+ (difference_type __n) const _NOEXCEPT
         {return __wrap_iter(__i + __n);}
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter& operator+=(difference_type __n)
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter& operator+=(difference_type __n) _NOEXCEPT
         {__i += __n; return *this;}
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter  operator- (difference_type __n) const
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter  operator- (difference_type __n) const _NOEXCEPT
         {return __wrap_iter(__i - __n);}
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter& operator-=(difference_type __n)
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter& operator-=(difference_type __n) _NOEXCEPT
         {__i -= __n; return *this;}
-    _LIBCPP_INLINE_VISIBILITY reference        operator[](difference_type __n) const
+    _LIBCPP_INLINE_VISIBILITY reference        operator[](difference_type __n) const _NOEXCEPT
         {return __i[__n];}
 
-    _LIBCPP_INLINE_VISIBILITY iterator_type base() const {return __i;}
+    _LIBCPP_INLINE_VISIBILITY iterator_type base() const _NOEXCEPT {return __i;}
 
 private:
-    _LIBCPP_INLINE_VISIBILITY __wrap_iter(iterator_type __x) : __i(__x) {}
+    _LIBCPP_INLINE_VISIBILITY __wrap_iter(iterator_type __x) _NOEXCEPT : __i(__x) {}
 
     template <class _Up> friend class __wrap_iter;
     template <class _CharT, class _Traits, class _Alloc> friend class basic_string;
@@ -1098,42 +1098,42 @@ private:
     template <class _Iter1, class _Iter2>
     friend
     bool
-    operator==(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+    operator==(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
     template <class _Iter1, class _Iter2>
     friend
     bool
-    operator<(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+    operator<(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
     template <class _Iter1, class _Iter2>
     friend
     bool
-    operator!=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+    operator!=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
     template <class _Iter1, class _Iter2>
     friend
     bool
-    operator>(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+    operator>(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
     template <class _Iter1, class _Iter2>
     friend
     bool
-    operator>=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+    operator>=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
     template <class _Iter1, class _Iter2>
     friend
     bool
-    operator<=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+    operator<=(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
     template <class _Iter1, class _Iter2>
     friend
     typename __wrap_iter<_Iter1>::difference_type
-    operator-(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&);
+    operator-(const __wrap_iter<_Iter1>&, const __wrap_iter<_Iter2>&) _NOEXCEPT;
 
     template <class _Iter1>
     friend
     __wrap_iter<_Iter1>
-    operator+(typename __wrap_iter<_Iter1>::difference_type, const __wrap_iter<_Iter1>&);
+    operator+(typename __wrap_iter<_Iter1>::difference_type, const __wrap_iter<_Iter1>&) _NOEXCEPT;
 
     template <class _I, class _O> friend _O copy(_I, _I, _O);
     template <class _B1, class _B2> friend _B2 copy_backward(_B1, _B1, _B2);
@@ -1153,7 +1153,7 @@ private:
 template <class _Iter1, class _Iter2>
 inline _LIBCPP_INLINE_VISIBILITY
 bool
-operator==(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
+operator==(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y) _NOEXCEPT
 {
     return __x.base() == __y.base();
 }
@@ -1161,7 +1161,7 @@ operator==(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
 template <class _Iter1, class _Iter2>
 inline _LIBCPP_INLINE_VISIBILITY
 bool
-operator<(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
+operator<(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y) _NOEXCEPT
 {
     return __x.base() < __y.base();
 }
@@ -1169,7 +1169,7 @@ operator<(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
 template <class _Iter1, class _Iter2>
 inline _LIBCPP_INLINE_VISIBILITY
 bool
-operator!=(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
+operator!=(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y) _NOEXCEPT
 {
     return __x.base() != __y.base();
 }
@@ -1177,7 +1177,7 @@ operator!=(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
 template <class _Iter1, class _Iter2>
 inline _LIBCPP_INLINE_VISIBILITY
 bool
-operator>(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
+operator>(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y) _NOEXCEPT
 {
     return __x.base() > __y.base();
 }
@@ -1185,7 +1185,7 @@ operator>(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
 template <class _Iter1, class _Iter2>
 inline _LIBCPP_INLINE_VISIBILITY
 bool
-operator>=(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
+operator>=(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y) _NOEXCEPT
 {
     return __x.base() >= __y.base();
 }
@@ -1193,7 +1193,7 @@ operator>=(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
 template <class _Iter1, class _Iter2>
 inline _LIBCPP_INLINE_VISIBILITY
 bool
-operator<=(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
+operator<=(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y) _NOEXCEPT
 {
     return __x.base() <= __y.base();
 }
@@ -1201,7 +1201,7 @@ operator<=(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
 template <class _Iter1, class _Iter2>
 inline _LIBCPP_INLINE_VISIBILITY
 typename __wrap_iter<_Iter1>::difference_type
-operator-(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y)
+operator-(const __wrap_iter<_Iter1>& __x, const __wrap_iter<_Iter2>& __y) _NOEXCEPT
 {
     return __x.base() - __y.base();
 }
@@ -1210,7 +1210,7 @@ template <class _Iter>
 inline _LIBCPP_INLINE_VISIBILITY
 __wrap_iter<_Iter>
 operator+(typename __wrap_iter<_Iter>::difference_type __n,
-          const __wrap_iter<_Iter>& __x)
+          const __wrap_iter<_Iter>& __x) _NOEXCEPT
 {
     return __wrap_iter<_Iter>(__x.base() + __n);
 }
