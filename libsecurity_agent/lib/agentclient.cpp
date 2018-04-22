@@ -123,169 +123,23 @@ extern "C" boolean_t secagentreply_server(mach_msg_header_t *, mach_msg_header_t
 
 #pragma mark administrative operations
 
-Client::Client() : 
-	mActive(false), mState(init), mDesktopUid(0), mKeepAlive(false), mAgentName("com.apple.SecurityAgent")
+Client::Client() : mState(init)
 {
+	// create reply port
+	mClientPort.allocate(); //implicit MACH_PORT_RIGHT_RECEIVE
+		
+	// register with agentclients
+	Clients::gClients().insert(this);
 }
 
-Client::Client(uid_t clientUID, Bootstrap clientBootstrap, const char *name) : 
-	mActive(false), mState(init), mDesktopUid(clientUID), mKeepAlive(false), mAgentName(name), 
-	mClientBootstrap(clientBootstrap)
-{
-}
-
-//
-// Get the port for the SecurityAgent.
-// Start it if necessary (and possible). Throw an exception if we can't get to it.
-// Sets mServerPort on success.
-//
 void
-Client::establishServer()
+Client::activate(Port serverPort)
 {
-    // if the server is already running, we're done
-	if (mServerPort = mClientBootstrap.lookupOptional(mAgentName.c_str()))
-		return;
-    
-#if defined(AGENTNAME) && defined(AGENTPATH)
-    // switch the bootstrap port to that of the logged-in user
-	
-    Security::MachPlusPlus::StBootstrap bootSaver(mClientBootstrap);
-	
-    // try to start the agent
-    switch (pid_t pid = fork()) {
-		case 0:		// child
-		{
-			// Setup the environment for the SecurityAgent
-			unsetenv("USER");
-			unsetenv("LOGNAME");
-			unsetenv("HOME");
-			
-			// tell agent which name to register
-			setenv("AGENTNAME", mAgentName.c_str(), 1);
-			
-			if (mDesktopUid) // if the user is running as root, or we're not told what uid to use, we stick with what we are
-			{
-				struct group *grent = getgrnam("nobody");
-				gid_t desktopGid = grent ? grent->gr_gid : unsigned(-2);	//@@@ questionable
-				endgrent();
-				secdebug("SAclnt", "setgid(%d)", desktopGid);
-				setgid(desktopGid);	// switch to login-user gid
-				secdebug("SAclnt", "setuid(%d)", mDesktopUid);
-				// Must be setuid and not seteuid since we do not want the agent to be able
-				// to call seteuid(0) successfully.
-				setuid(mDesktopUid);	// switch to login-user uid
-			}
-			// close down any files that might have been open at this point
-			int maxDescriptors = getdtablesize ();
-			int i;
-			
-			for (i = 3; i < maxDescriptors; ++i)
-			{
-				// XXX/cs should dup(2) to /dev/null
-				close (i);
-			}
-			
-			// construct path to SecurityAgent
-			char agentExecutable[PATH_MAX + 1];
-			const char *path = getenv("SECURITYAGENT");
-			if (!path)
-				path = AGENTPATH;
-			snprintf(agentExecutable, sizeof(agentExecutable), "%s/Contents/MacOS/" AGENTNAME, path);
-			secdebug("SAclnt", "execl(%s)", agentExecutable);
-			execl(agentExecutable, agentExecutable, NULL);
-			secdebug("SAclnt", "execl of SecurityAgent failed, errno=%d", errno);
-			
-			// Unconditional suicide follows.
-			// See comments below on why we can't use abort()
-#if 1
-			_exit(1);
-#else
-			// NOTE: OS X abort() is implemented as kill(getuid()), which fails
-			// for a setuid-root process that has setuid'd. Go back to root to die...
-			setuid(0);
-			abort();
-#endif
-		}
-		case -1:	// error (in parent)
-			UnixError::throwMe();
-		default:	// parent
-        {
-			static const int timeout = 300;
-			
-            secdebug("SAclnt", "Starting security agent (%d seconds timeout)", timeout);
-			struct timespec rqtp;
-			memset(&rqtp, 0, sizeof(rqtp));
-			rqtp.tv_nsec = 100000000; /* 10^8 nanaseconds = 1/10th of a second */
-            for (int n = timeout; n > 0; nanosleep(&rqtp, NULL), n--) {
-                if (mServerPort = mClientBootstrap.lookupOptional(mAgentName.c_str()))
-                    break;
-                int status;
-                switch (IFDEBUG(pid_t rc =) waitpid(pid, &status, WNOHANG)) {
-					case 0:	// child still running
-						continue;
-					case -1:	// error
-						switch (errno) {
-							case EINTR:
-							case EAGAIN:	// transient
-								continue;
-							case ECHILD:	// no such child (dead; already reaped elsewhere)
-								secdebug("SAclnt", "child is dead (reaped elsewhere)");
-								CssmError::throwMe(CSSM_ERRCODE_NO_USER_INTERACTION);
-							default:
-								secdebug("SAclnt", "waitpid failed: errno=%d", errno);
-								UnixError::throwMe();
-						}
-					default:
-						assert(rc == pid);
-						secdebug("SAclnt", "child died without claiming the SecurityAgent port");
-						CssmError::throwMe(CSSM_ERRCODE_NO_USER_INTERACTION);
-                }
-            }
-			
-            if (mServerPort == 0) {		// couldn't contact Security Agent
-				secdebug("SAclnt", "Autolaunch failed");
-                CssmError::throwMe(CSSM_ERRCODE_NO_USER_INTERACTION);
-			}
-            secdebug("SAclnt", "SecurityAgent located");
-            return;
-        }
-    }
-#endif
-	
-    // well, this didn't work. Too bad
-	secdebug("SAclnt", "Cannot contact SecurityAgent");
-    CssmError::throwMe(CSSM_ERRCODE_NO_USER_INTERACTION);	//@@@ or INTERNAL_ERROR?
-}
+	if (!serverPort)
+		MacOSError::throwMe(errAuthorizationInternal);
 
-
-
-OSStatus
-Client::activate()
-{
-	if (!mActive) 
-	{
-		// set mServerPort
-		establishServer();
-				
-		if (!mServerPort)
-			MacOSError::throwMe(errAuthorizationInternal);
-		
-		// create reply port
-		mClientPort.allocate(); //implicit MACH_PORT_RIGHT_RECEIVE
-		
-		// we need the send right for passing it to the agent to talk back
-		mClientPort.insertRight(MACH_MSG_TYPE_MAKE_SEND);
-		
-		// get notified if the server dies (shouldn't happen, but...)
-		mServerPort.requestNotify(mClientPort, MACH_NOTIFY_DEAD_NAME, true);
-		
-		// register with agentclients
-		Clients::gClients().insert(this);
-		
-		// ready
-		mActive = true;
-	}
-	return noErr;
+	secdebug("agentclient", "using server at port %d", serverPort.port());
+	mServerPort = serverPort;
 }
 
 
@@ -297,48 +151,30 @@ Client::~Client()
 void Client::setState(PluginState inState)
 {
 	// validate state transition: might be more useful where change is requested if that implies anything to interpreting what to do.
-	
-{
 	// Mutex
 	mState = inState;
-}
-}
-
-int Client::state()
-{
-	return mState;
 }
 
 void Client::teardown() throw()
 {
 	Clients::gClients().remove(this);
-	if (mActive) {
-		mServerPort.deallocate();
-		mStagePort.deallocate();
-		mClientPort.destroy();
-		mActive = false;
-	}
+
+	try {
+		if (mStagePort)
+			mStagePort.destroy();
+		if (mClientPort)
+			mClientPort.destroy();
+	} catch (...) { secdebug("agentclient", "ignoring problems tearing down ports for client %p", this); }
 }
 
 
 AuthItemSet
-Client::clientHints(CodeSigning::OSXCode *clientCode, pid_t clientPid, uid_t clientUid)
+Client::clientHints(SecurityAgent::RequestorType type, std::string &path, pid_t clientPid, uid_t clientUid)
 {
     AuthItemSet clientHints;
-	string encodedBundle = clientCode->encode();
-	char bundleType = (encodedBundle.c_str())[0]; // yay, no accessor
-	SecurityAgent::RequestorType requestorType;
-	string bundlePath = clientCode->canonicalPath();
 	
-	switch(bundleType)
-	{
-	   case 'b': requestorType = SecurityAgent::bundle; break;
-	   case 't': requestorType = SecurityAgent::tool; break;
-	   default: requestorType = SecurityAgent::unknown; break;
-	}
-	
-	clientHints.insert(AuthItemRef(AGENT_HINT_CLIENT_TYPE, AuthValueOverlay(sizeof(requestorType), &requestorType)));
-	clientHints.insert(AuthItemRef(AGENT_HINT_CLIENT_PATH, AuthValueOverlay(bundlePath)));
+	clientHints.insert(AuthItemRef(AGENT_HINT_CLIENT_TYPE, AuthValueOverlay(sizeof(type), &type)));
+	clientHints.insert(AuthItemRef(AGENT_HINT_CLIENT_PATH, AuthValueOverlay(path)));
 	clientHints.insert(AuthItemRef(AGENT_HINT_CLIENT_PID, AuthValueOverlay(sizeof(clientPid), &clientPid)));
 	clientHints.insert(AuthItemRef(AGENT_HINT_CLIENT_UID, AuthValueOverlay(sizeof(clientUid), &clientUid)));
 
@@ -349,29 +185,33 @@ Client::clientHints(CodeSigning::OSXCode *clientCode, pid_t clientPid, uid_t cli
 #pragma mark request operations
 
 
-OSStatus Client::create(const char *inPluginId, const char *inMechanismId, const SessionId inSessionId )
+OSStatus Client::create(const char *inPluginId, const char *inMechanismId, const SessionId inSessionId)
 {
-	activate();
-	
+	// securityd is already notified when the agent/authhost dies through SIGCHILD, and we only really care about the stage port, but we will track if dying happens during create with a DPN.  If two threads are both in the time between the create message and the didcreate answer and the host dies, one will be stuck - too risky and I will win the lottery before that: Chablis.
+	{
+		kern_return_t ret;
+		mach_port_t old_port = MACH_PORT_NULL;
+		ret = mach_port_request_notification(mach_task_self(), mServerPort, MACH_NOTIFY_DEAD_NAME, 0, mClientPort, MACH_MSG_TYPE_MAKE_SEND_ONCE, &old_port);
+		if (!ret && (MACH_PORT_NULL != old_port))
+			mach_port_deallocate(mach_task_self(), old_port);
+	}
+
 	secdebug("agentclient", "asking server at port %d to create %s:%s; replies to %d", mServerPort.port(), inPluginId, inMechanismId, mClientPort.port()); // XXX/cs
 	kern_return_t ret = sa_request_client_create(mServerPort, mClientPort, inSessionId, inPluginId, inMechanismId);
 
 	if (ret)
-	{
-		// XXX/cs any conditions we could handle from here?
-		
 		return ret;
-	}
 	
 	// wait for message (either didCreate, reportError)
-	try {
-		receive();
-	}
-	catch (...)
+	do
 	{
-		return errAuthorizationInternal;
+		// one scenario that could happen here (and only here) is:
+		// host died before create finished - in which case we'll get a DPN
+		try { receive(); } catch (...) { setState(dead); }
 	}
-    
+	while ((state() != created) && 
+			(state() != dead));
+	
     // verify that we got didCreate
 	if (state() == created)
 		return noErr;
@@ -386,30 +226,34 @@ OSStatus Client::create(const char *inPluginId, const char *inMechanismId, const
 }
 
 // client maintains their own copy of the current data
-OSStatus Client::invoke(
-	const Authorization::AuthValueVector& inArguments, 
-	const Authorization::AuthItemSet& inHints, 
-	const Authorization::AuthItemSet& inContext)
+OSStatus Client::invoke()
 {
 	if ((state() != created) &&
-        (state() != active))
+        (state() != active) &&
+        (state() != interrupting))
 		return errAuthorizationInternal;
 	
     AuthorizationValueVector *arguments;
     AuthorizationItemSet *hints, *context;
     size_t argumentSize, hintSize, contextSize;
 
-    inHints.copy(hints, hintSize);
-    inContext.copy(context, contextSize);
-    inArguments.copy(&arguments, &argumentSize);
+    mInHints.copy(hints, hintSize);
+    mInContext.copy(context, contextSize);
+    mArguments.copy(&arguments, &argumentSize);
         
+    setState(current);
+    
     check(sa_request_client_invoke(mStagePort.port(), 
                     arguments, argumentSize, arguments, // data, size, offset
                     hints, hintSize, hints,
                     context, contextSize, context));
-            
+	
     receive();
     
+	free (arguments);
+	free (hints);
+	free (context);
+	
     switch(state())
     {
         case active: 
@@ -422,6 +266,10 @@ OSStatus Client::invoke(
             }
         case dead: 
             return mErrorState;
+        case current:
+            return noErr;
+        default:
+            break;
     }
     return errAuthorizationInternal;
 }
@@ -441,10 +289,6 @@ Client::deactivate()
 	setState(deactivating);
 	
 	receive(); 
-	// didDeactivate?
-	// setResult?
-	// server died?
-	// reportError?
 	
 	// if failed destroy it
 	return noErr;
@@ -453,16 +297,13 @@ Client::deactivate()
 OSStatus
 Client::destroy()
 {
-	// check state is active or created
-	if ((state() == current) && deactivate())
-		return errAuthorizationInternal;
-	
-	if (state() == active || state() == created)
+	if (state() == active || state() == created || state() == current)
 	{
 		secdebug("agentclient", "destroying mechanism at request port %d", mStagePort.port());
 		// tell mechanism to destroy
-		check(sa_request_client_destroy(mStagePort.port()));
-
+		if (mStagePort)
+			sa_request_client_destroy(mStagePort.port());
+		
 		setState(dead);
 	
 		return noErr;
@@ -484,43 +325,20 @@ Client::terminate()
 void
 Client::receive()
 {
-	try 
-	{
-		// maximum known message size (variable sized elements are already forced OOL)
-		Message in(sizeof(union __ReplyUnion__sa_reply_client_secagentreply_subsystem));
-		Message out(sizeof(union __ReplyUnion__sa_reply_client_secagentreply_subsystem));
-
-		in.receive(mClientPort, 0, 0);
-
-        // got the message, now demux it; call secagentreply_server to handle any call
-        // this is asynchronous, so no reply message, although not apparent
-        if (!secagentreply_server(in, out))
-        {
-    		// @@@ port death notification? -> (can't talk to user error)
-
-            // message not recognized, chances of the right message coming back are zero
-            MacOSError::throwMe(errAuthorizationInternal);		
-        }
-    } 
-    catch (Security::MachPlusPlus::Error &e) 
-    {
-        secdebug("agentclient", "interpret error %ul", e.error);
-		check(e.error);
-    }
-    catch (...)
-    {
-        MacOSError::throwMe(errAuthorizationInternal);
-    }
-        
+    bool gotReply = false;
+    while (!gotReply)
+	gotReply = Clients::gClients().receive();
 }
 
 #pragma mark result operations
 
 void Client::setResult(const AuthorizationResult inResult, const AuthorizationItemSet *inHints, const AuthorizationItemSet *inContext)
 {
+    if (state() != current)
+		return;
     // construct AuthItemSet for hints and context (deep copy - previous contents are released)
-	mHints = (*inHints);
-	mContext = (*inContext);
+	mOutHints = (*inHints);
+	mOutContext = (*inContext);
     mResult = inResult;
     setState(active);
 }
@@ -530,7 +348,6 @@ void Client::setError(const OSStatus inMechanismError)
 	setState(dead);
 
     mErrorState = inMechanismError; 
-    // setMessageType(reportError); setError(mechanismError);
 }
 
 OSStatus Client::getError()
@@ -540,34 +357,42 @@ OSStatus Client::getError()
 
 void Client::requestInterrupt()
 {
-	// check state for active
-	// change state
+	if (state() != active)
+		return;
+
 	setState(interrupting);
-	// hint at engine that it's time to stop
-    
-    // XXX add a callback to report this
-    
-	// if successfully stopped
-	setState(created);
-	// if not able to restart, abort the evaluation - we'll be expecting the destroy
 }
 
 void Client::didDeactivate()
 {
+	if (state() != deactivating)
+		return;
+
 	// check state for deactivating
 	// change state
 	setState(active);
 }
 
+void Client::setStagePort(const mach_port_t inStagePort)
+{
+    mStagePort = Port(inStagePort); 
+    mStagePort.requestNotify(mClientPort, MACH_NOTIFY_DEAD_NAME, 0);
+}
+
+
 void Client::didCreate(const mach_port_t inStagePort)
 {
+	// it can be dead, because the host died, we'll always try to revive it once
+	if ((state() != init) && (state() != dead))
+		return;
+
 	setStagePort(inStagePort);
 	setState(created);
 }
 
 #pragma mark client instances
 
-ModuleNexus<Clients> Clients::gClients;
+ThreadNexus<Clients> Clients::gClients;
 
 bool
 Clients::compare(const Client * client, mach_port_t instance)
@@ -594,13 +419,59 @@ Clients::find(mach_port_t instanceReplyPort) const
 	MacOSError::throwMe(errAuthorizationInternal);
 }
 
+bool
+Clients::receive()
+{
+	try 
+	{
+		// maximum known message size (variable sized elements are already forced OOL)
+		Message in(sizeof(union __ReplyUnion__sa_reply_client_secagentreply_subsystem));
+		Message out(sizeof(union __ReplyUnion__sa_reply_client_secagentreply_subsystem));
+
+		in.receive(mClientPortSet, 0, 0);
+
+        // got the message, now demux it; call secagentreply_server to handle any call
+        // this is asynchronous, so no reply message, although not apparent
+        if (!secagentreply_server(in, out))
+        {
+    		// port death notification
+            if (MACH_NOTIFY_DEAD_NAME == in.msgId())
+            {
+                find(in.remotePort()).setError(errAuthorizationInternal);
+                return true;
+            }
+	    return false;
+
+        }
+	else
+		return true;
+    } 
+    catch (Security::MachPlusPlus::Error &e) 
+    {
+        secdebug("agentclient", "interpret error %ul", e.error);
+        switch (e.error) {
+			case MACH_MSG_SUCCESS:				// peachy
+				break;
+			case MIG_SERVER_DIED:			// explicit can't-send-it's-dead
+				CssmError::throwMe(CSSM_ERRCODE_NO_USER_INTERACTION);
+			default:						// some random Mach error
+				MachPlusPlus::Error::throwMe(e.error);
+		}
+    }
+    catch (...)
+    {
+        MacOSError::throwMe(errAuthorizationInternal);
+    }
+       return false; 
+}
+
+
 
 #pragma mark demux requests replies
 // external C symbols for the mig message handling code to call into
 extern "C" {
 
 #define COPY_IN(type,name)	type *name, mach_msg_type_number_t name##Length, type *name##Base
-//#define COPY_OUT(type,name)	type **name, mach_msg_type_number_t *name##Length, type **name##Base
 
 // callbacks that key off instanceReplyPort to find the right agentclient instance
 // to deliver the message to.

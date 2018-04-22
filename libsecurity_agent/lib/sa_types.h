@@ -28,8 +28,6 @@ extern "C" {
 #endif // C++
 
 #include <mach/mach.h>
-// @@@ who forgot that one?
-kern_return_t mig_deallocate(vm_address_t addr, vm_size_t size);
 
 
 typedef u_int32_t SessionId;

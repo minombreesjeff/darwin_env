@@ -34,7 +34,7 @@ type AuthorizationValueVectorPtr = unsigned32;
 // Staged SecurityAgent reply protocol
 //
 simpleroutine didCreate(requestport instanceReplyPort: mach_port_t;
-	instanceRequestPort: mach_port_copy_send_t); //mach_port_make_send_t); // give client send rights to mechanism request port
+	instanceRequestPort: mach_port_make_send_t); // give client send rights to mechanism request port
 
 simpleroutine setResult(requestport instanceReplyPort: mach_port_t;
 	status: AuthorizationResult;

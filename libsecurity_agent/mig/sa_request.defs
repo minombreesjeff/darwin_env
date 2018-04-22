@@ -32,7 +32,7 @@ type Choice = struct[2] of unsigned32;
 // Staged SecurityAgent request protocol
 //
 simpleroutine create(requestport agentPort: mach_port_t;
-	instanceReplyPort: mach_port_copy_send_t; //mach_port_make_send_t; // give agent send rights for replies
+	instanceReplyPort: mach_port_make_send_t; // give agent send rights for replies
 	sessionId: SessionId;
 	pluginId: AuthorizationString;
 	mechanismId: AuthorizationString);

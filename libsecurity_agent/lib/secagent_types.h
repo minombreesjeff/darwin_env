@@ -23,8 +23,6 @@
 #include <Security/AuthorizationPlugin.h>
 #include <security_agent_client/SecurityAgentClient.h>
 
-// @@@ who forgot that one?
-extern "C" kern_return_t mig_deallocate(vm_address_t addr, vm_size_t size);
 
 namespace Security
 {

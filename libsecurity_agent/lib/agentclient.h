@@ -21,7 +21,6 @@
 #include <string>
 #include <security_utilities/mach++.h>
 #include <security_cdsa_utilities/AuthorizationData.h>
-#include <security_cdsa_client/osxsigning.h>
 
 namespace SecurityAgent {
 #endif /* __cplusplus__ */
@@ -58,7 +57,9 @@ enum Reason {
     tooManyTries = 61,              // too many failed attempts to get it right
     noLongerNeeded,                 // the queried item is no longer needed
     keychainAddFailed,              // the requested itemed couldn't be added to the keychain
-    generalErrorCancel              // something went wrong so we have to give up now
+    generalErrorCancel,              // something went wrong so we have to give up now
+	
+	worldChanged = 101
 };
 
 typedef enum {
@@ -70,10 +71,12 @@ typedef enum {
 #if defined(__cplusplus)
 
 using MachPlusPlus::Port;
+using MachPlusPlus::PortSet;
 using MachPlusPlus::Bootstrap;
 using MachPlusPlus::ReceivePort;
 using MachPlusPlus::Message;
 using Authorization::AuthItemSet;
+using Authorization::AuthValueVector;
 
 class Clients;
 
@@ -85,22 +88,20 @@ enum MessageType { requestInterruptMessage, didDeactivateMessage, reportErrorMes
 
 public:
 	Client();
-	Client(uid_t clientUID, Bootstrap clientBootstrap, const char *name);
-
 	virtual ~Client();
 
-    static AuthItemSet clientHints(CodeSigning::OSXCode *clientCode, pid_t clientPid, uid_t clientUid);
+    static AuthItemSet clientHints(SecurityAgent::RequestorType type, std::string &path, pid_t clientPid, uid_t clientUid);
 	
 protected:
 	void establishServer();
 	
 public:
-// client requests
-	bool isActive() { return mActive; }
-	OSStatus activate();
+	void activate(Port serverPort);
 
 	OSStatus create(const char *pluginId, const char *mechanismId, const SessionId inSessionId);
-    OSStatus invoke(const Authorization::AuthValueVector& inArguments, const Authorization::AuthItemSet& inHints, const Authorization::AuthItemSet& inContext);
+    void setArguments(const Authorization::AuthValueVector& inArguments) { mArguments = inArguments; }
+    void setInput(const Authorization::AuthItemSet& inHints, const Authorization::AuthItemSet& inContext) { mInHints = inHints; mInContext = inContext; }
+    OSStatus invoke();
 	OSStatus deactivate();
 	OSStatus destroy();
 	OSStatus terminate();
@@ -115,10 +116,21 @@ public:
     OSStatus getError();
     AuthorizationResult result() { return mResult; }
 
+	typedef enum _PluginState {
+		init,
+		created,
+		current,
+		deactivating,
+		active,
+		interrupting,
+		dead
+	} PluginState;
+    PluginState state() { return mState; }
+
 protected:
 	void setMessageType(const MessageType inMessageType);
 	// allow didCreate to set stagePort 
-	void setStagePort(const mach_port_t inStagePort) { mStagePort = Port(inStagePort); }
+	void setStagePort(const mach_port_t inStagePort);
 	// allow server routines to use request port to find instance 
 
 	// @@@ implement lessThan operator for set in terms of instance	
@@ -127,58 +139,37 @@ protected:
 	void setup();
 	void teardown() throw();
 
-	// agent default port
     Port mServerPort;
-	// session port on agent for one mechanism to talk to
 	Port mStagePort;
-	// session port on client for sending to agent
     Port mClientPort;
-	bool mActive;
 
 	MessageType mMessageType;
-    //uid_t mUid;
-    //gid_t mGid;
-    //mach_port_t mSessionBootstrap;
-	//bool mKeepAlive;
     
     OSStatus mErrorState;
 
     AuthorizationResult mResult;
-    AuthItemSet mHints;
-    AuthItemSet mContext;
+    AuthValueVector mArguments;
+    AuthItemSet mInHints;
+    AuthItemSet mInContext;
+    AuthItemSet mOutHints;
+    AuthItemSet mOutContext;
 	
-	enum PluginState {
-		init,
-		created,
-		current,
-		deactivating,
-		active,
-		interrupting,
-		dead
-	};
 	PluginState mState;
 	void setState(PluginState mState);
-	int state();
 
 public:
 	mach_port_t instance() const { return mClientPort; }
 //	bool operator == (const Client &other) const { return this->instance() == other.instance(); }
 	bool operator < (const Client &other) const { return this->instance() < other.instance(); }
 
-    AuthItemSet &hints() { return mHints; }
-    AuthItemSet &context() { return mContext; }
+    AuthItemSet &inHints() { return mInHints; }
+    AuthItemSet &inContext() { return mInContext; }
+    AuthItemSet &outHints() { return mOutHints; }
+    AuthItemSet &outContext() { return mOutContext; }
 
 public:
 		void check(mach_msg_return_t returnCode);
         void checkResult();
-
-private:
-
-	uid_t mDesktopUid;
-	bool mKeepAlive;
-	string mAgentName;
-    Bootstrap mClientBootstrap;
-	
 };
 
 class Clients
@@ -187,16 +178,18 @@ friend class Client;
 
 protected:
 	set<Client*> mClients;
+    PortSet mClientPortSet;
 public:
     Clients() {}
 	void create(); // create an agentclient
-	void insert(Client *agent) { StLock<Mutex> _(mLock); mClients.insert(agent); }
-	void remove(Client *agent) { StLock<Mutex> _(mLock); mClients.erase(agent); }
+	void insert(Client *agent) { StLock<Mutex> _(mLock); mClients.insert(agent); mClientPortSet += agent->instance(); }
+	void remove(Client *agent) { StLock<Mutex> _(mLock); mClientPortSet -= agent->instance(); mClients.erase(agent); }
 	Client &find(const mach_port_t instance) const;
+    bool receive();
 	bool compare(const Client * client, mach_port_t instance);
 
 	mutable Mutex mLock;
-	static ModuleNexus<Clients> gClients;
+	static ThreadNexus<Clients> gClients;
 };
 
 } // end namespace Authorization
