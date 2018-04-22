@@ -22,17 +22,15 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+int mountWithoutConsoleUser(void);
+int canMountRemovableDisks(void);
+int consoleDevicesAreOwnedByMountingUser(void);
+int shouldFsckReadOnlyMedia(void);
+int strictRemovableMediaSettings(void);
 
-#include <IOKit/IOKitLib.h>
-
-void GetDisksFromRegistry(io_iterator_t iter, int initialRun);
-int shouldAutomount(io_registry_entry_t media);
-int shouldEjectOnLogout(io_registry_entry_t media);
-int ownerUIDForMedia(io_registry_entry_t media);
-
-#ifdef __cplusplus
-}
-#endif
+int attemptMountRemovableMediaSuid(void);
+int attemptMountFixedMediaSuid(void);
+int attemptMountRemovableMediaDev(void);
+int attemptMountFixedMediaDev(void);
+int attemptMountRemovableMediaExe(void);
+int attemptMountFixedMediaExe(void);
