@@ -21,4 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include "../diskarbitrationd/DAServer.defs"
+#include "DAAgent.h"
+
+__private_extern__ const char * _kDAAgentActionKey = "DAAgentAction";
+__private_extern__ const char * _kDAAgentDiskKey   = "DAAgentDisk";

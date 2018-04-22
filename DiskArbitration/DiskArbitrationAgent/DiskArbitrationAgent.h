@@ -21,4 +21,17 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include "../diskarbitrationd/DAServer.defs"
+#ifndef __DISKARBITRATIONAGENT_DISKARBITRATIONAGENT__
+#define __DISKARBITRATIONAGENT_DISKARBITRATIONAGENT__
+
+#include <CoreFoundation/CoreFoundation.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+
+#endif /* !__DISKARBITRATIONAGENT_DISKARBITRATIONAGENT__ */

@@ -21,4 +21,23 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include "../diskarbitrationd/DAServer.defs"
+#ifndef __DISKARBITRATIONAGENT_DADIALOG__
+#define __DISKARBITRATIONAGENT_DADIALOG__
+
+#include <CoreFoundation/CoreFoundation.h>
+#include <DiskArbitration/DiskArbitration.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
+extern void DADialogInitialize( void );
+extern void DADialogShowDeviceRemoval( DADiskRef disk );
+extern void DADialogShowDeviceUnreadable( DADiskRef disk );
+extern void DADialogShowDeviceUnrepairable( DADiskRef disk );
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+
+#endif /* !__DISKARBITRATIONAGENT_DADIALOG__ */

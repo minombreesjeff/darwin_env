@@ -21,4 +21,32 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include "../diskarbitrationd/DAServer.defs"
+#ifndef __DISKARBITRATIOND_DAAGENT__
+#define __DISKARBITRATIOND_DAAGENT__
+
+#include <CoreFoundation/CoreFoundation.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
+#define _kDAAgentName "com.apple.DiskArbitration.DiskArbitrationAgent"
+
+enum
+{
+    _kDAAgentActionNone,
+    _kDAAgentActionShowDeviceRemoval,
+    _kDAAgentActionShowDeviceUnreadable,
+    _kDAAgentActionShowDeviceUnrepairable
+};
+
+typedef UInt32 _DAAgentAction;
+
+const char * _kDAAgentActionKey;
+const char * _kDAAgentDiskKey;
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+
+#endif /* !__DISKARBITRATIOND_DAAGENT__ */
