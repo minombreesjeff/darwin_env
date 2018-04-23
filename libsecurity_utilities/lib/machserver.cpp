@@ -205,10 +205,13 @@ void MachServer::runServerThread(bool doTimeout)
 			
 			// determine next timeout (if any)
             bool indefinite = false;
-			Time::Interval timeout = workerTimeout;
+			Time::Interval timeout;
 			{	StLock<Mutex> _(managerLock);
 				if (timers.empty()) {
-					indefinite = !doTimeout;
+                    if (doTimeout)
+                        timeout = workerTimeout;
+                    else
+                        indefinite = true;
 				} else {
 					timeout = max(Time::Interval(0), timers.next() - Time::now());
 					if (doTimeout && workerTimeout < timeout)
@@ -251,9 +254,7 @@ void MachServer::runServerThread(bool doTimeout)
 				secdebug("machsrv", "receive interrupted; continuing");
                 continue;
 			default:
-				// we got an error, but terminating at this point is suicidal.  Pretend it never happened.
-				secdebug("machsrv", "Got an unknown mach message status %X", mr);
- 				continue;
+				Error::throwMe(mr);
 			}
 			
 			// process received message
@@ -320,15 +321,13 @@ void MachServer::runServerThread(bool doTimeout)
                           0, MACH_PORT_NULL, NULL, 0)) {
 			case MACH_MSG_SUCCESS:
 				break;
+			case MACH_SEND_INVALID_DEST:
 			case MACH_SEND_TIMED_OUT:
-				secdebug("machsrv", "reply port full; dropping reply");
-				bufReply.destroy();
+				/* the reply can't be delivered, so destroy it */
+				mach_msg_destroy(bufRequest);
 				break;
 			default:
-				secdebug("machsrv", "error 0x%x sending reply to port %d",
-						 mr, bufReply.remotePort().port());
-				bufReply.destroy();
-				break;
+				Error::throwMe(mr);
 			}
         }
 		perThread().server = NULL;
@@ -359,13 +358,6 @@ void MachServer::remove(Handler &handler)
     mHandlers.erase(&handler);
     mPortSet -= handler.port();
 }
-
-
-//
-// Abstract auxiliary message handlers
-//
-MachServer::Handler::~Handler()
-{ /* virtual */ }
 
 
 //

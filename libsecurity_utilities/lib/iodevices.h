@@ -125,8 +125,6 @@ public:
 	
 	class Receiver {
 	public:
-		virtual ~Receiver();
-		
 		virtual void ioChange(DeviceIterator &iterator) = 0;
 	};
 	

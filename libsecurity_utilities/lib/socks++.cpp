@@ -47,13 +47,6 @@ ModuleNexus<SocksServer::Global> SocksServer::global;
 
 
 //
-// SocksServer destruction
-//
-SocksServer::~SocksServer()
-{ /* virtual */ }
-
-
-//
 // Create a SocksServer object
 //
 SocksServer *SocksServer::make(Version version, const IPSockAddress &addr)
