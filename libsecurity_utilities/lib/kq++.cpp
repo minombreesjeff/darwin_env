@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2010 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2009 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,33 +21,49 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-//
-// Fast hasing support
-//
-#include "hashing.h"
-#include "unix++.h"
 
+//
+// kq++ - kqueue/kevent interface
+//
+#include <security_utilities/kq++.h>
 
 namespace Security {
+namespace UnixPlusPlus {
 
 
-//
-// Basic DynamicHash infrastructure
-//
-DynamicHash::~DynamicHash()
+KQueue::KQueue()
 {
-	// virtual
+	UnixError::check(mQueue = ::kqueue());
+}
+
+KQueue::~KQueue()
+{
+	UnixError::check(::close(mQueue));
 }
 
 
-//
-// CommonCrypto-based DynamicHash instances
-//
-CCHashInstance::CCHashInstance(CCDigestAlg alg)
+unsigned KQueue::operator () (const KEvent *updates, unsigned updateCount,
+	KEvent *events, unsigned eventCount, const timespec *timeout)
 {
-	if (!(mDigest = CCDigestCreate(alg)))
-		UnixError::throwMe(ENOMEM);
+	int rc = ::kevent64(mQueue, updates, updateCount, events, eventCount, 0, timeout);
+	UnixError::check(rc);
+	assert(rc >= 0);
+	return rc;
 }
 
 
-}	// Security
+void KQueue::update(const KEvent &event, unsigned flags)
+{
+	KEvent ev = event;
+	ev.flags = flags;
+	(*this)(&event, 1, NULL, NULL);
+}
+
+bool KQueue::receive(KEvent &event, const timespec *timeout)
+{
+	return (*this)(&event, 1, timeout) > 0;
+}
+
+
+} // end namespace UnixPlusPlus
+} // end namespace Security
