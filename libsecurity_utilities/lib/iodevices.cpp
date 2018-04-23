@@ -94,8 +94,9 @@ CFTypeRef Device::property(const char *name) const
 //
 DeviceIterator::~DeviceIterator()
 {
-	while (!mAtEnd)
-		(*this)();
+	// drain the iterator to avoid port leakage
+	while (Device dev = (*this)())
+		;
 }
 
 
