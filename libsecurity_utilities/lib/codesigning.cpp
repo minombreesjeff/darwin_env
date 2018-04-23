@@ -31,5 +31,13 @@
 namespace Security {
 namespace CodeSigning {
 
+
+//
+// Abstract Signer::State
+//
+Signer::State::~State()
+{ /* virtual */ }
+
+
 } // end namespace CodeSigning
 } // end namespace Security

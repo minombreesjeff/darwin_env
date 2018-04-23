@@ -203,6 +203,13 @@ void NotificationPort::ioNotify(void *refCon, io_iterator_t iterator)
 
 
 //
+// Abstract NotificationPort::Receivers
+//
+NotificationPort::Receiver::~Receiver()
+{ /* virtual */ }
+
+
+//
 // MachPortNotificationPorts
 //
 MachPortNotificationPort::MachPortNotificationPort()

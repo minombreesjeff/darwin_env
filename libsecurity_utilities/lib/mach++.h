@@ -212,7 +212,6 @@ public:
     { check(task_set_bootstrap_port(mPort, boot)); }
 
     pid_t pid() const;
-    static TaskPort forPid(pid_t pid);
 };
 
 
