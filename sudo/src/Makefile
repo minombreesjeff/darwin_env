@@ -19,69 +19,69 @@
 # Agency (DARPA) and Air Force Research Laboratory, Air Force
 # Materiel Command, USAF, under agreement number F39502-99-1-0512.
 #
-# @configure_input@
+# Makefile.  Generated from Makefile.in by configure.
 #
 
 #### Start of system configuration section. ####
 
-srcdir = @srcdir@
-devdir = @devdir@
+srcdir = .
+devdir = $(srcdir)
 authdir = $(srcdir)/auth
 top_builddir = .
 
 # Compiler & tools to use
-CC = @CC@
-FLEX = @FLEX@
-YACC = @YACC@
-LIBTOOL = @LIBTOOL@
-AR=@AR@
-RANLIB=@RANLIB@
-SED=@SED@
-TR = @TRPROG@
-MANDOC = @MANDOCPROG@
-MANCOMPRESS = @MANCOMPRESS@
-MANCOMPRESSEXT = @MANCOMPRESSEXT@
+CC = gcc
+FLEX = /usr/bin/flex
+YACC = bison -y
+LIBTOOL = $(SHELL) $(top_builddir)/libtool
+AR=ar
+RANLIB=ranlib
+SED=/usr/bin/sed
+TR = /usr/bin/tr
+MANDOC = mandoc
+MANCOMPRESS = 
+MANCOMPRESSEXT = 
 
 # Our install program supports extra flags...
 INSTALL = $(SHELL) $(srcdir)/install-sh -c
 
 # Libraries
-LIBS = @LIBS@
-NET_LIBS = @NET_LIBS@
-SUDO_LIBS = @SUDO_LIBS@ @AFS_LIBS@ @GETGROUPS_LIB@ $(LIBS) $(NET_LIBS)
+LIBS =  -lbsm
+NET_LIBS = 
+SUDO_LIBS =  -lpam    $(LIBS) $(NET_LIBS)
 
 # C preprocessor flags
-CPPFLAGS = -I. -I$(srcdir) @CPPFLAGS@
+CPPFLAGS = -I. -I$(srcdir) 
 
 # Usually -O and/or -g
-CFLAGS = @CFLAGS@
+CFLAGS = -g -O2
 
 # Flags to pass to the link stage
-LDFLAGS = -L. @LDFLAGS@
-SUDO_LDFLAGS = @SUDO_LDFLAGS@ $(LDFLAGS)
+LDFLAGS = -L. 
+SUDO_LDFLAGS =  $(LDFLAGS)
 
 # PIE flags
-PIE_CFLAGS = @PIE_CFLAGS@
-PIE_LDFLAGS = @PIE_LDFLAGS@
+PIE_CFLAGS = 
+PIE_LDFLAGS = 
 
 # Stack smashing protection flags
-SSP_CFLAGS = @SSP_CFLAGS@
-SSP_LDFLAGS = @SSP_LDFLAGS@
+SSP_CFLAGS = -fstack-protector-all
+SSP_LDFLAGS = -fstack-protector-all
 
 # Where to install things...
-prefix = @prefix@
-exec_prefix = @exec_prefix@
-bindir = @bindir@
-sbindir = @sbindir@
-sysconfdir = @sysconfdir@
-libexecdir = @libexecdir@
-datarootdir = @datarootdir@
-localstatedir = @localstatedir@
-docdir = @docdir@
-mandir = @mandir@
-timedir = @timedir@
-noexecfile = @NOEXECFILE@
-noexecdir = @NOEXECDIR@
+prefix = /usr/local
+exec_prefix = $(prefix)
+bindir = $(exec_prefix)/bin
+sbindir = $(exec_prefix)/sbin
+sysconfdir = /private/etc
+libexecdir = $(exec_prefix)/libexec
+datarootdir = $(prefix)/share
+localstatedir = $(prefix)/var
+docdir = $(datarootdir)/doc/$(PACKAGE_TARNAME)
+mandir = $(prefix)/man
+timedir = /var/db/sudo
+noexecfile = sudo_noexec.dylib
+noexecdir = no
 
 # Directory in which to install sudo.
 sudodir = $(bindir)
@@ -93,33 +93,33 @@ visudodir = $(sbindir)
 sudoersdir = $(sysconfdir)
 
 # Directory in which to install the man page
-mantype = @MANTYPE@
-mansectsu = @mansectsu@
-mansectform = @mansectform@
-mandirsu = $(mandir)/@MANDIRTYPE@$(mansectsu)
-mandirform = $(mandir)/@MANDIRTYPE@$(mansectform)
+mantype = mdoc
+mansectsu = 8
+mansectform = 5
+mandirsu = $(mandir)/man$(mansectsu)
+mandirform = $(mandir)/man$(mansectform)
 
 # User and group ids the installed files should be "owned" by
 install_uid = 0
 install_gid = 0
 
 # User, group, and mode the sudoers file should be "owned" by (configure)
-sudoers_uid = @SUDOERS_UID@
-sudoers_gid = @SUDOERS_GID@
-sudoers_mode = @SUDOERS_MODE@
-shlib_mode = @SHLIB_MODE@
+sudoers_uid = 0
+sudoers_gid = 0
+sudoers_mode = 0440
+shlib_mode = 0644
 
 # Pass in paths and uid/gid + OS dependent defined
-DEFS = @OSDEFS@ -D_PATH_SUDOERS=\"$(sudoersdir)/sudoers\" -DSUDOERS_UID=$(sudoers_uid) -DSUDOERS_GID=$(sudoers_gid) -DSUDOERS_MODE=$(sudoers_mode)
+DEFS =  -D_FORTIFY_SOURCE=2 -D_PATH_SUDOERS=\"$(sudoersdir)/sudoers\" -DSUDOERS_UID=$(sudoers_uid) -DSUDOERS_GID=$(sudoers_gid) -DSUDOERS_MODE=$(sudoers_mode)
 
 # Set to non-empty for development mode
-DEVEL = @DEVEL@
+DEVEL = 
 
 #### End of system configuration section. ####
 
-SHELL = @SHELL@
+SHELL = /bin/sh
 
-PROGS = @PROGS@
+PROGS = sudo visudo sudoreplay
 
 SRCS = aix.c alias.c alloc.c audit.c boottime.c bsm_audit.c check.c \
        closefrom.c def_data.c defaults.c env.c error.c exec.c exec_pty.c \
@@ -146,13 +146,13 @@ HDRS = alloc.h bsm_audit.h def_data.h defaults.h error.h ins_2001.h \
        gram.h toke.h auth/sudo_auth.h emul/charclass.h emul/fnmatch.h \
        emul/glob.h emul/timespec.h emul/utime.h
 
-AUTH_OBJS = sudo_auth.o @AUTH_OBJS@
+AUTH_OBJS = sudo_auth.o pam.o
 
 COMMON_OBJS = alias.o alloc.o defaults.o error.o gram.o list.o match.o \
 	      pwutil.o timestr.o toke.o toke_util.o redblack.o \
-	      secure_path.o term.o zero_bytes.o @COMMON_OBJS@
+	      secure_path.o term.o zero_bytes.o 
 
-SUDO_OBJS = $(AUTH_OBJS) @SUDO_OBJS@ audit.o boottime.o check.o env.o \
+SUDO_OBJS = $(AUTH_OBJS)  exec_pty.o get_pty.o iolog.o audit.o boottime.o check.o env.o \
 	    exec.o gettime.o goodpath.o fileops.o find_path.o \
 	    interfaces.o lbuf.o logging.o logwrap.o parse.o parse_args.o \
 	    set_perms.o sudo.o sudo_edit.o sudo_nss.o tgetpass.o ttyname.o
@@ -163,14 +163,14 @@ REPLAY_OBJS = getdate.o sudoreplay.o ttysize.o
 
 TEST_OBJS = interfaces.o testsudoers.o tsgetgrpw.o
 
-LIB_OBJS = @LIBOBJS@
+LIB_OBJS =  ${LIBOBJDIR}memrchr$U.o ${LIBOBJDIR}closefrom$U.o
 
 ZLIB_OBJS = adler32.o compress.o crc32.o deflate.o gzclose.o gzlib.o \
 	    gzread.o gzwrite.o infback.o inffast.o inflate.o inftrees.o \
 	    trees.o uncompr.o zutil.o
 
-VERSION = @PACKAGE_VERSION@
-PACKAGE_TARNAME = @PACKAGE_TARNAME@
+VERSION = 1.7.10p9
+PACKAGE_TARNAME = sudo
 
 DISTFILES = $(SRCS) $(HDRS) ChangeLog CONTRIBUTORS HISTORY INSTALL \
 	    INSTALL.configure LICENSE Makefile.in NEWS PORTING README \
@@ -234,14 +234,14 @@ libz.a: $(ZLIB_OBJS)
 	$(AR) rv $@ $(ZLIB_OBJS)
 	$(RANLIB) $@
 
-sudo: libsudo.a @ZLIB_DEP@ $(SUDO_OBJS)
-	$(CC) -o $@ $(SUDO_OBJS) $(SUDO_LDFLAGS) $(PIE_LDFLAGS) $(SSP_LDFLAGS) -lsudo $(SUDO_LIBS) @ZLIB@
+sudo: libsudo.a  $(SUDO_OBJS)
+	$(CC) -o $@ $(SUDO_OBJS) $(SUDO_LDFLAGS) $(PIE_LDFLAGS) $(SSP_LDFLAGS) -lsudo $(SUDO_LIBS) -lz
 
 visudo: libsudo.a $(VISUDO_OBJS)
 	$(CC) -o $@ $(VISUDO_OBJS) $(LDFLAGS) $(PIE_LDFLAGS) $(SSP_LDFLAGS) -lsudo $(LIBS) $(NET_LIBS)
 
-sudoreplay: libsudo.a @ZLIB_DEP@ $(REPLAY_OBJS)
-	$(CC) -o $@ $(REPLAY_OBJS) $(LDFLAGS) $(PIE_LDFLAGS) $(SSP_LDFLAGS) -lsudo $(LIBS) @ZLIB@
+sudoreplay: libsudo.a  $(REPLAY_OBJS)
+	$(CC) -o $@ $(REPLAY_OBJS) $(LDFLAGS) $(PIE_LDFLAGS) $(SSP_LDFLAGS) -lsudo $(LIBS) -lz
 
 testsudoers: $(TEST_OBJS)
 	$(CC) -o $@ $(TEST_OBJS) $(LDFLAGS) $(PIE_LDFLAGS) $(SSP_LDFLAGS) -lsudo $(LIBS) $(NET_LIBS)
@@ -533,13 +533,13 @@ $(srcdir)/sudo.man.in: $(srcdir)/sudo.mdoc.in
 	fi
 
 sudo.man.sed: $(srcdir)/fixman.sh
-	BAMAN=@BAMAN@ LCMAN=@LCMAN@ SEMAN=@SEMAN@ PSMAN=@PSMAN@ $(SHELL) $(srcdir)/fixman.sh $@
+	BAMAN=0 LCMAN=0 SEMAN=0 PSMAN=@PSMAN@ $(SHELL) $(srcdir)/fixman.sh $@
 
 sudo.man: $(srcdir)/sudo.man.in sudo.man.sed
 	(cd $(top_builddir) && $(SHELL) config.status --file=-) < $(srcdir)/$@.in | $(SED) -f $@.sed > $@
 
 sudo.mdoc.sed: $(srcdir)/fixmdoc.sh
-	BAMAN=@BAMAN@ LCMAN=@LCMAN@ SEMAN=@SEMAN@ PSMAN=@PSMAN@ $(SHELL) $(srcdir)/fixmdoc.sh $@
+	BAMAN=0 LCMAN=0 SEMAN=0 PSMAN=@PSMAN@ $(SHELL) $(srcdir)/fixmdoc.sh $@
 
 sudo.mdoc: $(srcdir)/sudo.mdoc.in sudo.mdoc.sed
 	(cd $(top_builddir) && $(SHELL) config.status --file=-) < $(srcdir)/$@.in | $(SED) -f $@.sed > $@
@@ -592,13 +592,13 @@ $(srcdir)/sudoers.man.in: $(srcdir)/sudoers.mdoc.in
 	fi
 
 sudoers.man.sed: $(srcdir)/fixman.sh
-	LCMAN=@LCMAN@ SEMAN=@SEMAN@ $(SHELL) $(srcdir)/fixman.sh $@
+	LCMAN=0 SEMAN=0 $(SHELL) $(srcdir)/fixman.sh $@
 
 sudoers.man: $(srcdir)/sudoers.man.in sudoers.man.sed
 	(cd $(top_builddir) && $(SHELL) config.status --file=-) < $(srcdir)/$@.in | $(SED) -f $@.sed > $@
 
 sudoers.mdoc.sed: $(srcdir)/fixmdoc.sh
-	LCMAN=@LCMAN@ SEMAN=@SEMAN@ $(SHELL) $(srcdir)/fixmdoc.sh $@
+	LCMAN=0 SEMAN=0 $(SHELL) $(srcdir)/fixmdoc.sh $@
 
 sudoers.mdoc: $(srcdir)/sudoers.mdoc.in sudoers.mdoc.sed
 	(cd $(top_builddir) && $(SHELL) config.status --file=-) < $(srcdir)/$@.in | $(SED) -f $@.sed > $@
@@ -686,7 +686,7 @@ pre-install:
 	    ./visudo -c -f $(DESTDIR)$(sudoersdir)/sudoers; \
 	fi
 
-install: pre-install install-dirs install-binaries @INSTALL_NOEXEC@ install-sudoers install-doc
+install: pre-install install-dirs install-binaries  install-sudoers install-doc
 
 install-dirs:
 	$(SHELL) $(srcdir)/mkinstalldirs $(DESTDIR)$(sudodir) \
@@ -717,12 +717,12 @@ install-sudoers: install-dirs
 
 install-doc: install-dirs ChangeLog
 	(cd $(srcdir) && for f in ChangeLog HISTORY LICENSE NEWS README TROUBLESHOOTING UPGRADE sample.*; do $(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 $$f $(DESTDIR)$(docdir); done)
-	@LDAP@(cd $(srcdir) && for f in README.LDAP schema.* sudoers2ldif; do $(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 $$f $(DESTDIR)$(docdir); done)
-	$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 @mansrcdir@/sudo.$(mantype) $(DESTDIR)$(mandirsu)/sudo.$(mansectsu)
-	@REPLAY@$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 @mansrcdir@/sudoreplay.$(mantype) $(DESTDIR)$(mandirsu)/sudoreplay.$(mansectsu)
-	$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 @mansrcdir@/visudo.$(mantype) $(DESTDIR)$(mandirsu)/visudo.$(mansectsu)
-	$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 @mansrcdir@/sudoers.$(mantype) $(DESTDIR)$(mandirform)/sudoers.$(mansectform)
-	@LDAP@$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 @mansrcdir@/sudoers.ldap.$(mantype) $(DESTDIR)$(mandirform)/sudoers.ldap.$(mansectform)
+	#(cd $(srcdir) && for f in README.LDAP schema.* sudoers2ldif; do $(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 $$f $(DESTDIR)$(docdir); done)
+	$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 ./sudo.$(mantype) $(DESTDIR)$(mandirsu)/sudo.$(mansectsu)
+	$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 ./sudoreplay.$(mantype) $(DESTDIR)$(mandirsu)/sudoreplay.$(mansectsu)
+	$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 ./visudo.$(mantype) $(DESTDIR)$(mandirsu)/visudo.$(mansectsu)
+	$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 ./sudoers.$(mantype) $(DESTDIR)$(mandirform)/sudoers.$(mansectform)
+	#$(INSTALL) -O $(install_uid) -G $(install_gid) -m 0644 ./sudoers.ldap.$(mantype) $(DESTDIR)$(mandirform)/sudoers.ldap.$(mansectform)
 	@if test -n "$(MANCOMPRESS)"; then \
 	    for f in $(mandirsu)/sudo.$(mansectsu) $(mandirsu)/sudoreplay.$(mansectsu) $(mandirsu)/visudo.$(mansectsu) $(mandirform)/sudoers.$(mansectform) $(mandirform)/sudoers.ldap.$(mansectform); do \
 		if test -f $(DESTDIR)$$f; then \
