@@ -30,7 +30,15 @@ AEP_Version    = 2.61
 AEP_ProjVers   = $(AEP_Project)-$(AEP_Version)
 AEP_Filename   = $(AEP_ProjVers).tar.bz2
 AEP_ExtractDir = $(AEP_ProjVers)
-AEP_Patches    = patch-Makefile.in patch-doc__Makefile.in patch-3505843-glibtoolize.in patch-5828374-lib_autoconf_libs.m4.in patch-5609273-Xcode.in patch-6073314-rm-dSYM.in
+AEP_Patches    = \
+	patch-Makefile.in \
+	patch-doc__Makefile.in \
+	patch-3505843-glibtoolize.in \
+	patch-5828374-lib_autoconf_libs.m4.in \
+	patch-5609273-Xcode.in \
+	patch-6073314-rm-dSYM.in \
+	patch-7293547-status.m4 \
+	patch-8099799-autom4te.in
 
 ifeq ($(suffix $(AEP_Filename)),.bz2)
 AEP_ExtractOption = j
@@ -39,6 +47,8 @@ AEP_ExtractOption = z
 endif
 
 # Extract the source.
+# 8153820: touch the autom4te.1 man page to prevent build failure, since we
+# patched autom4te.in
 install_source::
 ifeq ($(AEP),YES)
 	$(TAR) -C $(SRCROOT) -$(AEP_ExtractOption)xof $(SRCROOT)/$(AEP_Filename)
@@ -48,5 +58,7 @@ ifeq ($(AEP),YES)
 	cd $(SRCROOT)/$(Project) && \
 	for patchfile in $(AEP_Patches); do \
 		patch -p0 -i $(SRCROOT)/patches/$$patchfile || exit 1; \
-	done
+	done && \
+	sleep 2 && \
+	touch man/autom4te.1
 endif
