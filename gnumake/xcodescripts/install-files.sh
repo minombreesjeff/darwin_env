@@ -10,8 +10,8 @@ install -c -o root -g wheel -m 0644 \
 	"$MANDIR"
 ln "$MANDIR"/make.1 "$MANDIR"/gnumake.1
 
-OSV="$DSTROOT"/usr/local/OpenSourceVersions
-OSL="$DSTROOT"/usr/local/OpenSourceLicenses
+OSV="$DSTROOT/$DEVELOPER_DIR"/usr/local/OpenSourceVersions
+OSL="$DSTROOT/$DEVELOPER_DIR"/usr/local/OpenSourceLicenses
 install -d -o root -g wheel -m 0755 "$OSV"
 install -c -o root -g wheel -m 0644 \
 	"$PROJECT_DIR"/gnumake.plist \
