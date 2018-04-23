@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 1996, 1998-2005, 2008
- *	Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2009 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2009 Christian S.J. Peron
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -13,17 +13,12 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Sponsored in part by the Defense Advanced Research Projects
- * Agency (DARPA) and Air Force Research Laboratory, Air Force
- * Materiel Command, USAF, under agreement number F39502-99-1-0512.
- *
- * $Sudo: version.h,v 1.71 2008/11/09 14:13:12 millert Exp $
  */
 
-#ifndef _SUDO_VERSION_H
-#define _SUDO_VERSION_H
+#ifndef _SUDO_BSM_AUDIT_H
+#define	_SUDO_BSM_AUDIT_H
 
-static const char version[] = "1.7.0";
+void	bsm_audit_success(char **);
+void	bsm_audit_failure(char **, char const * const, va_list);
 
-#endif /* _SUDO_VERSION_H */
+#endif /* _SUDO_BSM_AUDIT_H */
