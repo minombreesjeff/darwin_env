@@ -20,6 +20,7 @@
 		<string>Conformance changes.</string>
 		<string>Use old method of handling line continuations. (4339040, 4408688)</string>
 		<string>Add support for posix_spawn()</string>
+		<string>Patch for savanah bug 20033</string>
 	</array>
 	<key>OpenSourceLicense</key>
 	<string>GPL</string>
