@@ -228,7 +228,6 @@ static char   	*shellPath = NULL,		  /* full pathname of
                	*shellName;	      	      	  /* last component of shell */
 
 
-static int  	maxJobs;    	/* The most children we can run at once */
 static int  	maxLocal;    	/* The most local ones we can have */
 STATIC int     	nJobs;	    	/* The number of children currently running */
 STATIC int	nLocal;    	/* The number of local children */
