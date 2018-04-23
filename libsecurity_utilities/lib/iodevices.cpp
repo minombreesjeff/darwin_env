@@ -94,8 +94,9 @@ CFTypeRef Device::property(const char *name) const
 //
 DeviceIterator::~DeviceIterator()
 {
-	while (!mAtEnd)
-		(*this)();
+	// drain the iterator to avoid port leakage
+	while (Device dev = (*this)())
+		;
 }
 
 
@@ -200,6 +201,13 @@ void NotificationPort::ioNotify(void *refCon, io_iterator_t iterator)
 	DeviceIterator it(iterator);
 	reinterpret_cast<Receiver *>(refCon)->ioChange(it);
 }
+
+
+//
+// Abstract NotificationPort::Receivers
+//
+NotificationPort::Receiver::~Receiver()
+{ /* virtual */ }
 
 
 //

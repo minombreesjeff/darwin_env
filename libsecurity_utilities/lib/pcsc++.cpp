@@ -196,7 +196,7 @@ bool Session::check(long rc)
 void Session::listReaders(vector<string> &readers, const char *groups)
 {
 	mReaderBuffer.resize(1000); //@@@ preliminary hack
-	unsigned long size = mReaderBuffer.size();
+	uint32_t size = mReaderBuffer.size();
 	if (check(::SCardListReaders(mContext, groups, &mReaderBuffer[0], &size)))
 		decode(readers, mReaderBuffer, size);
 	else
@@ -246,7 +246,7 @@ void Card::setIOType(unsigned long activeProtocol)
 void Card::connect(Session &session, const char *reader,
 	unsigned long share, unsigned long protocols)
 {
-	DWORD activeProtocol;
+	uint32_t activeProtocol;
 	Error::check(::SCardConnect(session.mContext,
 		reader, share, protocols, &mHandle, &activeProtocol));
 	setIOType(activeProtocol);
@@ -315,9 +315,11 @@ Card::transmit(const unsigned char *pbSendBuffer, size_t cbSendLength,
 
 	IFDUMPING("pcsc", dump("->", pbSendBuffer, cbSendLength));
 
+	uint32_t tmpRecvLength = pcbRecvLength;
 	checkReset(::SCardTransmit(mHandle, mIOType, pbSendBuffer, cbSendLength,
-		NULL, pbRecvBuffer, &pcbRecvLength));
-
+		NULL, pbRecvBuffer, &tmpRecvLength));
+	pcbRecvLength = tmpRecvLength;
+	
 	IFDUMPING("pcsc", dump("<-", pbRecvBuffer, pcbRecvLength));
 }
 
