@@ -28,6 +28,8 @@
 #ifndef _H_ENDIAN
 #define _H_ENDIAN
 
+#include <machine/endian.h>
+#include <libkern/OSByteOrder.h>
 #include <security_utilities/utilities.h>
 #include <security_utilities/memutils.h>
 #include <security_utilities/debugging.h>
@@ -40,19 +42,45 @@ namespace Security {
 // You can use these functions directly, but consider using
 // the higher-level constructs below instead.
 //
-static inline UInt32 h2n(UInt32 v)	{ return htonl(v); }
-static inline SInt32 h2n(SInt32 v)	{ return htonl(v); }
-static inline UInt16 h2n(UInt16 v)	{ return htons(v); }
-static inline SInt16 h2n(SInt16 v)	{ return htons(v); }
-static inline UInt8 h2n(UInt8 v)	{ return v; }
-static inline SInt8 h2n(SInt8 v)	{ return v; }
+#ifdef __LP64__
+static inline unsigned long h2n(unsigned long v) { return OSSwapHostToBigInt64(v); }
+static inline unsigned long n2h(unsigned long v) { return OSSwapBigToHostInt64(v); }
+static inline unsigned long flip(unsigned long v) { return OSSwapInt64(v); }
+static inline signed long h2n(signed long v) { return OSSwapHostToBigInt64(v); }
+static inline signed long n2h(signed long v) { return OSSwapBigToHostInt64(v); }
+static inline signed long flip(signed long v) { return OSSwapInt64(v); }
+#else
+static inline unsigned long h2n(unsigned long v)	{ return htonl(v); }
+static inline unsigned long n2h(unsigned long v)	{ return ntohl(v); }
+static inline unsigned long flip(unsigned long v)	{ return OSSwapInt32(v); }
+static inline signed long h2n(signed long v)		{ return htonl(v); }
+static inline signed long n2h(signed long v)		{ return ntohl(v); }
+static inline signed long flip(signed long v)		{ return OSSwapInt32(v); }
+#endif
 
-static inline UInt32 n2h(UInt32 v)	{ return ntohl(v); }
-static inline SInt32 n2h(SInt32 v)	{ return ntohl(v); }
-static inline UInt16 n2h(UInt16 v)	{ return ntohs(v); }
-static inline SInt16 n2h(SInt16 v)	{ return ntohs(v); }
-static inline UInt8 n2h(UInt8 v)	{ return v; }
-static inline SInt8 n2h(SInt8 v)	{ return v; }
+static inline unsigned long long flip(unsigned long long v)	{ return OSSwapInt64(v); }
+static inline long long flip(long long v)			{ return OSSwapInt64(v); }
+
+static inline unsigned int h2n(unsigned int v)		{ return htonl(v); }
+static inline unsigned int n2h(unsigned int v)		{ return ntohl(v); }
+static inline unsigned int flip(unsigned int v)		{ return OSSwapInt32(v); }
+static inline signed int h2n(int v)					{ return htonl(v); }
+static inline signed int n2h(int v)					{ return ntohl(v); }
+static inline signed int flip(int v)				{ return OSSwapInt32(v); }
+
+static inline unsigned short h2n(unsigned short v)	{ return htons(v); }
+static inline unsigned short n2h(unsigned short v)	{ return ntohs(v); }
+static inline unsigned short flip(unsigned short v)	{ return OSSwapInt16(v); }
+static inline signed short h2n(signed short v)		{ return htons(v); }
+static inline signed short n2h(signed short v)		{ return ntohs(v); }
+static inline signed short flip(signed short v)		{ return OSSwapInt16(v); }
+
+static inline unsigned char h2n(unsigned char v)	{ return v; }
+static inline unsigned char n2h(unsigned char v)	{ return v; }
+static inline unsigned char flip(unsigned char v)	{ return v; }
+static inline signed char h2n(signed char v)		{ return v; }
+static inline signed char n2h(signed char v)		{ return v; }
+static inline signed char flip(signed char v)		{ return v; }
 
 
 //

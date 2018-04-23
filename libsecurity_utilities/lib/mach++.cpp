@@ -199,6 +199,11 @@ bool PortSet::contains(Port member) const
 //
 // Task port features
 //
+TaskPort::TaskPort(pid_t pid)
+{
+	check(::task_for_pid(self(), pid, &mPort));
+}
+
 pid_t TaskPort::pid() const
 {
     pid_t pid;
@@ -266,9 +271,10 @@ Bootstrap Bootstrap::subset(Port requestor)
 //
 // ReceivePorts
 //
-ReceivePort::ReceivePort(const char *name, const Bootstrap &bootstrap)
+ReceivePort::ReceivePort(const char *name, const Bootstrap &bootstrap, bool tryCheckin /* = true */)
 {
-	mPort = bootstrap.checkInOptional(name);
+	if (tryCheckin)
+		mPort = bootstrap.checkInOptional(name);
 	if (!mPort) {
 		allocate();
 		// Bootstrap registration requires a send right to (copy) send.
@@ -441,19 +447,6 @@ void Port::dump(const char *descr)
     }
 }
 
-
-void Bootstrap::dump()
-{
-    name_array_t services, servers;
-    bool_array_t active;
-    mach_msg_type_number_t nServices, nServers, nActive;
-    check(bootstrap_info(mPort, &services, &nServices,
-        &servers, &nServers, &active, &nActive));
-    Port::dump();
-    Debug::dump(" %d services\n", nServices);
-    for (mach_msg_type_number_t n = 0; n < nServices; n++)
-        Debug::dump("%s\n", services[n]);
-}
 
 #endif //DEBUGDUMP
 

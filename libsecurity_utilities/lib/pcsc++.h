@@ -104,6 +104,7 @@ public:
 	virtual ~Session();
 
 	void open();
+	void close();
 	bool isOpen() const { return mIsOpen; }
 	
 	void listReaders(vector<string> &readers, const char *groups = NULL);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2004 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2000-2007 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -70,6 +70,7 @@ void MachServer::setup(const char *name)
 	secdebug("machsrv", "%p preparing service for \"%s\"", this, name);
 	workerTimeout = 60 * 2;	// 2 minutes default timeout
 	maxWorkerCount = 100;	// sanity check limit
+	useFloatingThread = false; // tight thread management
     
     mPortSet += mServerPort;
 }
@@ -154,8 +155,8 @@ void MachServer::run(size_t maxSize, mach_msg_options_t options)
 // This is the core of a server thread at work. It takes over the thread until
 // (a) an error occurs, throwing an exception
 // (b) low-load timeout happens, causing a normal return (doTimeout only)
-// This code is loosely based on mach_msg_server.c, but is drifting away for
-// various reasons of flexibility and resilience.
+// This code was once based on mach_msg_server.c, but it is getting harder to notice
+// the lingering resemblance.
 //
 extern "C" boolean_t cdsa_notify_server(mach_msg_header_t *in, mach_msg_header_t *out);
 
@@ -172,6 +173,9 @@ void MachServer::runServerThread(bool doTimeout)
 		perThread().server = this;
 
 		for (;;) {
+			// progress hook
+			eventDone();
+			
 			// process all pending timers
 			while (processTimer()) ;
 		
@@ -421,11 +425,34 @@ void MachServer::releaseDeferredAllocations()
 // The handler function calls this if it realizes that it might be blocked
 // (or doing something that takes a long time). We respond by ensuring that
 // at least one more thread is ready to serve requests.
-// Returns true unless a new thread was needed but was not created.
+// Calls the threadLimitReached callback in the server object if the thread
+// limit has been exceeded and a needed new thread was not created.
 //
 void MachServer::longTermActivity()
 {
+	if (!useFloatingThread) {
+		StLock<Mutex> _(managerLock);
+		ensureReadyThread();
+	}
+}
+
+void MachServer::busy()
+{
 	StLock<Mutex> _(managerLock);
+	idleCount--;
+	if (useFloatingThread)
+		ensureReadyThread();
+}
+
+void MachServer::idle()
+{
+	StLock<Mutex> _(managerLock);
+	idleCount++;
+}
+
+
+void MachServer::ensureReadyThread()
+{
 	if (idleCount == 0) {
 		if (workerCount >= maxWorkerCount) {
 			secdebug("machsrv", "at maximum thread load (%ld)", workerCount);
@@ -501,6 +528,12 @@ void MachServer::removeThread(Thread *thread)
 MachServer::Timer::~Timer()
 { }
 
+void MachServer::Timer::select()
+{ }
+
+void MachServer::Timer::unselect()
+{ }
+
 bool MachServer::processTimer()
 {
 	Timer *top;
@@ -511,6 +544,8 @@ bool MachServer::processTimer()
 	secdebug("machsrvtime", "%p timer %p executing at %.3f",
         this, top, Time::now().internalForm());
 	try {
+		StLock<MachServer::Timer,
+			&MachServer::Timer::select, &MachServer::Timer::unselect> _t(*top);
 		if (top->longTerm()) {
 			StLock<MachServer, &MachServer::busy, &MachServer::idle> _(*this);
 			top->action();
@@ -543,29 +578,61 @@ void MachServer::clearTimer(Timer *timer)
 // Notification hooks and shims. Defaults do nothing.
 //
 void cdsa_mach_notify_dead_name(mach_port_t, mach_port_name_t port)
-{ MachServer::active().notifyDeadName(port); }
+{
+	try {
+		MachServer::active().notifyDeadName(port);
+	} catch (...) {
+		secdebug("machsrv", "exception thrown in dead port notifier (ignored)");
+	}
+}
 
 void MachServer::notifyDeadName(Port) { }
 
 void cdsa_mach_notify_port_deleted(mach_port_t, mach_port_name_t port)
-{ MachServer::active().notifyPortDeleted(port); }
+{
+	try {
+		MachServer::active().notifyPortDeleted(port);
+	} catch (...) {
+		secdebug("machsrv", "exception thrown in port deleted notififier (ignored)");
+	}
+}
 
 void MachServer::notifyPortDeleted(Port) { }
 
 void cdsa_mach_notify_port_destroyed(mach_port_t, mach_port_name_t port)
-{ MachServer::active().notifyPortDestroyed(port); }
+{
+	try {
+		MachServer::active().notifyPortDestroyed(port);
+	} catch (...) {
+		secdebug("machsrv", "exception thrown in port destroyed notifier (ignored)");
+	}
+}
 
 void MachServer::notifyPortDestroyed(Port) { }
 
 void cdsa_mach_notify_send_once(mach_port_t port)
-{ MachServer::active().notifySendOnce(port); }
+{
+	try {
+		MachServer::active().notifySendOnce(port);
+	} catch (...) {
+		secdebug("machsrv", "exception in send once notifier (ignored)");
+	}
+}
 
 void MachServer::notifySendOnce(Port) { }
 
 void cdsa_mach_notify_no_senders(mach_port_t port, mach_port_mscount_t count)
-{ MachServer::active().notifyNoSenders(port, count); }
+{
+	try {
+		MachServer::active().notifyNoSenders(port, count);
+	} catch (...) {
+		secdebug("machsrv", "exception in no senders notifier (ignored)");
+	}
+}
 
 void MachServer::notifyNoSenders(Port, mach_port_mscount_t) { }
+
+void MachServer::eventDone() { }
 
 
 } // end namespace MachPlusPlus
