@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -107,9 +105,49 @@ inline CFArrayRef cfArrayize(CFTypeRef arrayOrItem)
 
 
 //
-// Translate CFStringRef to (UTF8-encoded) C++ string
+// Translate CFStringRef or CFURLRef to (UTF8-encoded) C++ string.
+// If release==true, a CFRelease will be performed on the CFWhatever argument
+// whether the call succeeds or not(!).
 //
-string cfString(CFStringRef str);
+string cfString(CFStringRef str, bool release = false);	// extract UTF8 string
+string cfString(CFURLRef url, bool release = false);	// path of file: URL (only)
+string cfString(CFBundleRef url, bool release = false);	// path to bundle root
+
+
+//
+// Get the number out of a CFNumber
+//
+uint32_t cfNumber(CFNumberRef number);
+uint32_t cfNumber(CFNumberRef number, uint32_t defaultValue);
+
+
+//
+// Turn a string or const char * into a CFStringRef, yield is as needed, and
+// release it soon thereafter.
+//
+class CFTempString : public CFRef<CFStringRef> {
+public:
+	template <class Source>
+	CFTempString(Source s) : CFRef<CFStringRef>(makeCFString(s)) { }
+};
+
+class CFTempURL : public CFRef<CFURLRef> {
+public:
+	template <class Source>
+	CFTempURL(Source s, bool isDirectory = false) : CFRef<CFURLRef>(makeCFURL(s, isDirectory)) { }
+};
+
+
+
+
+//
+// A temporary CFNumber
+//
+class CFTempNumber : public CFRef<CFNumberRef> {
+public:
+	template <class Value>
+	CFTempNumber(Value value) : CFRef<CFNumberRef>(makeCFNumber(value)) { }
+};
 
 
 //
@@ -127,12 +165,28 @@ inline CFDataRef makeCFData(const Data &source)
 //
 inline CFStringRef makeCFString(const char *s)
 {
-	return CFStringCreateWithCString(NULL, s, kCFStringEncodingUTF8);
+	return s ? CFStringCreateWithCString(NULL, s, kCFStringEncodingUTF8) : NULL;
 }
 
 inline CFStringRef makeCFString(const string &s)
 {
 	return CFStringCreateWithCString(NULL, s.c_str(), kCFStringEncodingUTF8);
+}
+
+CFURLRef makeCFURL(const char *s, bool isDirectory = false);
+
+inline CFURLRef makeCFURL(const string &s, bool isDirectory = false)
+{
+	return makeCFURL(s.c_str(), isDirectory);
+}
+
+
+//
+// Translate numeric values into CFNumbers
+//
+inline CFNumberRef makeCFNumber(uint32_t value)
+{
+	return CFNumberCreate(NULL, kCFNumberSInt32Type, &value);
 }
 
 

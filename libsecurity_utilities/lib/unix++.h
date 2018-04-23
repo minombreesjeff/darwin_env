@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -40,6 +38,7 @@
 #include <sys/mman.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <semaphore.h>
 #include <cstdio>
 #include <cstdarg>
 #include <map>
@@ -52,9 +51,10 @@ namespace UnixPlusPlus {
 //
 // Check system call return and throw on error
 //
-inline void checkError(int result)
+template <class Result>
+inline void checkError(Result result)
 {
-	if (result == -1)
+	if (result == Result(-1))
 		UnixError::throwMe();
 }
 
@@ -115,6 +115,11 @@ public:
     size_t read(void *addr, size_t length);
     size_t write(const void *addr, size_t length);
     bool atEnd() const			{ return mAtEnd; }	// valid after zero-length read only
+	
+	size_t readAll(void *addr, size_t length);
+	size_t readAll(std::string &content);
+	void writeAll(const void *addr, size_t length);
+	void writeAll(const std::string &s) { writeAll(s.data(), s.length()); }
     
     // more convenient I/O
     template <class T> size_t read(T &obj) { return read(&obj, sizeof(obj)); }
@@ -138,6 +143,23 @@ public:
     int openMode() const	{ return flags() & O_ACCMODE; }
     bool isWritable() const	{ return openMode() != O_RDONLY; }
     bool isReadable() const	{ return openMode() != O_WRONLY; }
+	
+	// lock support (fcntl style)
+	struct Pos {
+		Pos(off_t s = 0, int wh = SEEK_SET, off_t siz = 0)
+			: start(s), size(siz), whence(wh) { }
+
+		off_t start;
+		off_t size;
+		int whence;
+	};
+	static Pos lockAll()	{ return Pos(0, SEEK_SET, 0); }
+	
+	void lock(struct flock &args);	// raw form (fill in yourself)
+	
+	void lock(int type = F_WRLCK, const Pos &pos = lockAll());
+	bool tryLock(int type = F_WRLCK, const Pos &pos = lockAll());
+	void unlock(const Pos &pos = lockAll()) { lock(F_UNLCK, pos); }
     
     // ioctl support
     int ioctl(int cmd, void *arg) const;
@@ -158,6 +180,13 @@ public:
 
 private:
     int mFd;				// UNIX file descriptor
+
+private:
+	struct LockArgs : public flock {
+		LockArgs(int type, const Pos &pos)
+		{ l_start = pos.start; l_len = pos.size; l_type = type; l_whence = pos.whence; }
+		IFDEBUG(void debug(int fd, const char *what));
+	};
     
 protected:
     bool mAtEnd;			// end-of-data indicator (after zero read)
@@ -233,6 +262,15 @@ class ForkMonitor : public StaticForkMonitor {
 public:
 	ForkMonitor()		{ mLastPid = getpid(); }
 };
+
+
+//
+// Miscellaneous functions to aid the intrepid UNIX hacker
+//
+void makedir(const char *path, int flags, mode_t mode = 0777);
+
+int ffprintf(const char *path, int flags, mode_t mode, const char *format, ...);
+int ffscanf(const char *path, const char *format, ...);
 
 
 }	// end namespace UnixPlusPlus

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -39,6 +37,7 @@
 //
 #include <security_utilities/debugging.h>
 #include <security_utilities/threading.h>
+#include <security_utilities/globalizer.h>
 #include <cstdarg>
 #include <set>
 
@@ -97,6 +96,10 @@ public:
 		virtual void put(const char *buffer, unsigned int length) = 0;
 		virtual void dump(const char *buffer);
 		virtual void configure(const char *argument);
+		const bool needsDate;
+		
+	protected:
+		Sink(bool nd = true) : needsDate(nd) { }
 	};
 	
 	void to(Sink *sink);
@@ -126,6 +129,17 @@ protected:
 		bool negate;				// negate meaning of enableSet
 		set<Name> enableSet;		// set of names
 	};
+
+protected:
+	class PerThread {
+	public:
+		PerThread() { id = ++lastUsed; }
+		unsigned int id;			// arbitrary (sequential) ID number
+
+	private:
+		static unsigned int lastUsed; // last id used
+	};
+	ThreadNexus<PerThread> perThread;
 	
 protected:
 	static const size_t messageConstructionSize = 512;	// size of construction buffer
@@ -135,9 +149,16 @@ protected:
 	
 	// output option state (from last configure call)
 	bool showScope;					// include scope in output lines
-	bool showThread;				// include #Threadid in output lines
-	bool showPid;					// include [Pid] in output lines
+	bool showScopeRight;			// scope after proc/thread, not before
+	bool showThread;				// include thread and pid in output lines
+	bool showProc;					// include "nice" process/thread id in output lines
+	bool showDate;					// include date in output lines
 	size_t dumpLimit;				// max. # of bytes dumped by dumpData & friends
+	
+	// misc. global state
+	static const size_t maxProgNameLength = 20;  // max. program name remembered
+	static const size_t procLength = 14; // characters for proc/thread column
+	static char progName[];			// (short truncated form of) program name
 
 	// current output support
 	Sink *sink;
@@ -155,21 +176,19 @@ protected:
 //
 class FileSink : public Target::Sink {
 public:
-	FileSink(FILE *f) : file(f), addDate(false), lockIO(true), lock(false) { }
+	FileSink(FILE *f) : Sink(true), file(f) { }
 	void put(const char *, unsigned int);
 	void dump(const char *text);
 	void configure(const char *);
 	
 private:
 	FILE *file;
-	bool addDate;
-	bool lockIO;
-	Mutex lock;
 };
 
 class SyslogSink : public Target::Sink {
 public:
-	SyslogSink(int pri) : priority(pri), dumpBase(dumpBuffer), dumpPtr(dumpBuffer) { }
+	SyslogSink(int pri)
+		: Sink(false), priority(pri), dumpBase(dumpBuffer), dumpPtr(dumpBuffer) { }
 	void put(const char *, unsigned int);
 	void dump(const char *text);
 	void configure(const char *);

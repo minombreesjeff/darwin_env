@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -55,9 +53,9 @@ extern "C" {
 // Mach server object
 //
 class MachServer {
+protected:
 	class LoadThread; friend class LoadThread;
 	
-protected:
 	struct Allocation {
 		void *addr;
 		Allocator *allocator;
@@ -77,6 +75,7 @@ protected:
     static PerThread &perThread()	{ return thread()(); }
     
 public:
+	MachServer();
     MachServer(const char *name);
 	MachServer(const char *name, const Bootstrap &bootstrap);
 	virtual ~MachServer();
@@ -112,13 +111,20 @@ public:
 	class Timer : private ScheduleQueue<Time::Absolute>::Event {
 		friend class MachServer;
 	protected:
-		virtual ~Timer() { }
+		Timer(bool longTerm = false) { mLongTerm = longTerm; }
+		virtual ~Timer();
+
+		bool longTerm() const		{ return mLongTerm; }
+		void longTerm(bool lt)		{ mLongTerm = lt; }
 	
 	public:
 		virtual void action() = 0;
 		
 		Time::Absolute when() const	{ return Event::when(); }
 		bool scheduled() const		{ return Event::scheduled(); }
+	
+	private:
+		bool mLongTerm;				// long-term activity (count as worker thread)
 	};
 	
 	virtual void setTimer(Timer *timer, Time::Absolute when);
@@ -165,10 +171,13 @@ protected:
 	virtual void notifyPortDestroyed(Port port);
 	virtual void notifySendOnce(Port port);
 	virtual void notifyNoSenders(Port port, mach_port_mscount_t);
+	
+	// this will be called if the server wants a new thread but has hit its limit
+	virtual void threadLimitReached(UInt32 limit);
 
 	// don't mess with this unless you know what you're doing
     Bootstrap bootstrap;			// bootstrap port we registered with
-	ReceivePort mServerPort;		// port to receive requests
+	ReceivePort mServerPort;		// registered/primary server port
     PortSet mPortSet;				// joint receiver port set
 	
 	size_t mMaxSize;				// maximum message size
@@ -179,7 +188,11 @@ protected:
 
 protected:	
 	void releaseDeferredAllocations();
-	
+
+protected:
+	void busy() { StLock<Mutex> _(managerLock); idleCount--; }
+	void idle() { StLock<Mutex> _(managerLock); idleCount++; }
+
 protected:
 	class LoadThread : public Thread {
 	public:

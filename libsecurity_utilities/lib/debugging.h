@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -40,6 +38,7 @@
 namespace Security {
 namespace Debug {
 
+
 //
 // Debug logging functions always exist.
 // They may be stubs depending on build options.
@@ -47,6 +46,7 @@ namespace Debug {
 bool debugging(const char *scope);
 void debug(const char *scope, const char *format, ...) __attribute__((format(printf,2,3)));
 void vdebug(const char *scope, const char *format, va_list args);
+
 
 //
 // Ditto with debug dumping functions.
@@ -59,6 +59,13 @@ template <class Data> inline void dumpData(const Data &obj)
 { dumpData(obj.data(), obj.length()); }
 template <class Data> inline void dumpData(const char *title, const Data &obj) 
 { dumpData(title, obj.data(), obj.length()); }
+
+
+//
+// If the file exists, delay (sleep) as many seconds as its first line indicates,
+// to allow attaching with a debugger.
+//
+void delay(const char *file);
 
 
 //
@@ -85,12 +92,17 @@ string typeName()
 //
 // Now for the conditional inline code
 //
+#undef DEBUGGING
 #if !defined(NDEBUG)
+# define DEBUGGING 1
 # define secdebug(scope, format...)	Security::Debug::debug(scope, ## format)
+# define secdelay(file) Security::Debug::delay(file)
 // Enable debug dumping
 # define DEBUGDUMP  1
 #else //NDEBUG
+# define DEBUGGING 0
 # define secdebug(scope, format...)	/* nothing */
+# define secdelay(file) /* nothing */
 #endif //NDEBUG
 
 

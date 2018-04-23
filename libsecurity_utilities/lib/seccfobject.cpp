@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -62,8 +60,12 @@ SecCFObject::allocate(size_t size, const CFClass &cfclass) throw(std::bad_alloc)
 
 	void *q = reinterpret_cast<void *>(reinterpret_cast<uint8_t *>(p) + kAlignedRuntimeSize);
 
-	secdebug("sec", "SecCFObject allocated %p of type %lu", q, cfclass.typeID);
-
+#if !defined(NDEBUG)
+	const CFRuntimeClass *runtimeClass = _CFRuntimeGetClassWithTypeID(cfclass.typeID);
+	secdebug("sec", "allocated: %p: %s(%lu)", q,
+		runtimeClass && runtimeClass->className ? runtimeClass->className
+		: "SecCFObject", cfclass.typeID);
+#endif
 	return q;
 }
 
@@ -77,7 +79,14 @@ SecCFObject::operator delete(void *object) throw()
 
 SecCFObject::~SecCFObject() throw()
 {
-	secdebug("sec", "SecCFObject::~SecCFObject %p", this);
+#if !defined(NDEBUG)
+	CFTypeRef cfType = *this;
+	CFTypeID typeID = CFGetTypeID(cfType);
+	const CFRuntimeClass *runtimeClass = _CFRuntimeGetClassWithTypeID(typeID);
+	secdebug("sec", "destroyed: %p: %s(%lu)", this,
+		runtimeClass && runtimeClass->className ? runtimeClass->className
+		: "SecCFObject", typeID);
+#endif
 }
 
 bool

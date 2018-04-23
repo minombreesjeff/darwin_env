@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -102,6 +100,27 @@ public:
     
     static void check(OSStatus status)	{ if (status != noErr) throwMe(status); }
     static void throwMe(int err) __attribute__((noreturn));
+};
+
+
+//
+// CoreFoundation errors.
+// Since CF prefers not to tell us *why* something didn't work, this
+// is not very useful - but it's better than faking it into one of the other
+// error spaces.
+//
+class CFError : public CommonError {
+protected:
+	CFError();
+public:
+	virtual OSStatus osStatus() const;
+	virtual int unixError() const;
+	virtual const char *what () const throw ();
+	
+	template <class T>
+	static void check(T p)		{ if (!p) throwMe(); }
+
+	static void throwMe() __attribute__((noreturn));
 };
 
 

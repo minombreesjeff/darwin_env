@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -86,7 +84,14 @@ public:
 		}
 		return *reinterpret_cast<Type *>(p);
     }
+	
+	// does the object DEFINITELY exist already?
+	bool exists() const
+	{
+		return pointer != NULL;
+	}
     
+	// destroy the object (if any) and start over
     void reset()
     {
         if (pointer && !(pointer & 0x1)) {
@@ -104,8 +109,9 @@ class CleanModuleNexus : public ModuleNexus<Type> {
 public:
     ~CleanModuleNexus()
     {
-        secdebug("nexus", "ModuleNexus %p destroyed object 0x%x", this, pointer);
-        delete reinterpret_cast<Type *>(pointer);
+        secdebug("nexus", "ModuleNexus %p destroyed object 0x%x",
+			this, ModuleNexus<Type>::pointer);
+        delete reinterpret_cast<Type *>(ModuleNexus<Type>::pointer);
     }
 };
 
@@ -139,8 +145,8 @@ class CleanModuleNexus : public ModuleNexus<Type> {
 public:
     ~CleanModuleNexus()
     {
-        secdebug("nexus", "ModuleNexus %p destroyed object 0x%x", this, mSingleton);
-        delete mSingleton;
+        secdebug("nexus", "ModuleNexus %p destroyed object 0x%x", this, ModuleNexus<Type>::mSingleton);
+        delete ModuleNexus<Type>::mSingleton;
     }
 };
 
@@ -155,8 +161,6 @@ public:
 // NOTE: ThreadNexus is dynamically constructed. If you want static,
 // zero-initialization ThreadNexi, put them inside a ModuleNexus.
 //
-#if _USE_THREADS == _USE_PTHREADS
-
 template <class Type>
 class ThreadNexus : public GlobalNexus {
 public:
@@ -173,8 +177,6 @@ public:
 private:
     PerThreadPointer<Type> mSlot;
 };
-
-#endif //_USE_PTHREADS
 
 
 //

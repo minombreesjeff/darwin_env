@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -119,6 +117,9 @@ public:
     // general helpers for all PodWrappers
     void clearPod()
     { memset(static_cast<POD *>(this), 0, sizeof(POD)); }
+	
+	void assignPod(const POD &source)
+	{ static_cast<POD &>(*this) = source; }
 };
 
 
@@ -134,6 +135,24 @@ template <class U>
 struct Nonconst<const U> {
 	typedef U Type;
 };
+
+template <class U>
+struct Nonconst<const U *> {
+	typedef U *Type;
+};
+
+// cast away pointed-to constness
+template <class T>
+typename Nonconst<T>::Type unconst_cast(T obj)
+{
+	return const_cast<typename Nonconst<T>::Type>(obj);
+}
+
+template <class T>
+typename Nonconst<T>::Type &unconst_ref_cast(T &obj)
+{
+	return const_cast<typename Nonconst<T>::Type &>(obj);
+}
 
 
 // Help with container of something->pointer cleanup
@@ -168,6 +187,32 @@ inline OutIterator copy_second(InIterator first, InIterator last, OutIterator ou
 		*out++ = (first++)->second;
 	return out;
 }
+
+
+// simple safe re-entry blocker
+class RecursionBlock {
+public:
+	RecursionBlock() : mActive(false) { }
+	~RecursionBlock() { assert(!mActive); }
+
+public:
+	class Once {
+	public:
+		Once(RecursionBlock &rb) : block(rb), mActive(false) { }
+		~Once() { block.mActive &= !mActive; }
+		bool operator () ()
+		{ if (block.mActive) return true; mActive = block.mActive = true; return false; }
+		
+		RecursionBlock &block;
+	
+	private:
+		bool mActive;
+	};
+	friend class Once;
+	
+private:
+	bool mActive;
+};
 
 // Quick and dirty template for a (temporary) array of something
 // Usage example auto_array<UInt32> anArray(20);

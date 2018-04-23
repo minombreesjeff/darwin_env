@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -32,10 +30,11 @@
 #include <cstdarg>
 #include <ctype.h>
 
-#define SYSLOG_NAMES	// compile syslog name tables
+#define SYSLOG_NAMES		// compile syslog name tables
 #include <syslog.h>
 
-#include <cxxabi.h>	// for name demangling
+#include <cxxabi.h>			// for name demangling
+#include <mach-o/dyld.h>	// for _NSGetExecutablePath
 
 // enable kernel tracing
 #define ENABLE_SECTRACE 1
@@ -72,6 +71,28 @@ bool debugging(const char *scope)
 #else
     return false;
 #endif
+}
+
+
+//
+// Debug-delay function.
+// If the file indicated exists, read its first line and delay that many
+// seconds.
+//
+void delay(const char *file)
+{
+#if !defined(NDEBUG_CODE)
+	if (FILE *f = fopen(file, "r")) {
+		unsigned int seconds = 0;
+		fscanf(f, "%u", &seconds);
+		if (seconds < 10)
+			seconds = 10;
+		fclose(f);
+		debug("DELAY", "%s pid=%d delaying %d seconds", file, getpid(), seconds);
+		sleep(seconds);
+		debug("DELAY", "%s delay complete", file);
+	}
+#endif //NDEBUG_CODE
 }
 
 
@@ -169,12 +190,16 @@ string makeTypeName(const type_info &type)
 
 
 //
-// Target initialization
+// Target initialization.
+// This where we should do all "first time" initializations.
 //
 #if !defined(NDEBUG_CODE)
 
+char Target::progName[maxProgNameLength + 1];
+unsigned int Target::PerThread::lastUsed;
+
 Target::Target() 
-	: showScope(false), showThread(false), showPid(false),
+	: showScope(false), showThread(false), showProc(false), showDate(false),
 	  sink(NULL)
 {
 	// put into singleton slot if first
@@ -184,10 +209,37 @@ Target::Target()
 	// insert terminate handler
 	if (!previousTerminator)	// first time we do this
 		previousTerminator = set_terminate(terminator);
+	
+	// get program name
+	char execPath[PATH_MAX];
+	uint32_t length = sizeof(execPath);
+	if (_NSGetExecutablePath(execPath, &length)) {
+		strcpy(progName, "unknown");
+	} else {
+		const char *p = strrchr(execPath, '/');
+		if (p)
+			p++;
+		else
+			p = execPath;
+		unsigned plen = strlen(p);
+		if (plen > maxProgNameLength)		// too long
+			p += plen - maxProgNameLength; // take rear
+		strcpy(progName, p);
+	}
 }
 
 Target::~Target()
 {
+}
+
+
+static void addScope(char *&bufp, const char *scope)
+{
+	if (const char *sep = strchr(scope, ',')) {
+		bufp += sprintf(bufp, "%-*s", Name::maxLength, (const char *)Name(scope, sep));
+	} else {    // single scope
+		bufp += sprintf(bufp, "%-*s", Name::maxLength, scope);
+	}
 }
 
 
@@ -200,26 +252,58 @@ void Target::message(const char *scope, const char *format, va_list args)
 		// note: messageConstructionSize is big enough for all prefixes constructed
 		char buffer[messageConstructionSize];	// building the message here
 		char *bufp = buffer;
-		if (showScope && scope) {		// add "scope "
-			if (const char *sep = strchr(scope, ',')) {
-				bufp += sprintf(bufp, "%-*s", Name::maxLength, (const char *)Name(scope, sep));
-			} else {	// single scope
-				bufp += sprintf(bufp, "%-*s", Name::maxLength, scope);
-			}
+
+		// date option
+		if (showDate && sink->needsDate) {
+			time_t now = time(NULL);
+			char *date = ctime(&now);
+			date[19] = '\0';
+			bufp += sprintf(bufp, "%s ", date + 4);	// Nov 24 18:22:48
 		}
-		if (showPid) {		// add "[Pid] "
-			bufp += sprintf(bufp, "[%d] ", getpid());
+
+		// leading scope
+		if (showScope && scope)
+			addScope(bufp, scope);
+		
+		if (showProc || showThread) {
+			char sub[maxProgNameLength + 20];
+			unsigned plen = 0;
+			if (showProc && showThread)
+				plen = sprintf(sub, "%s[%d]", progName, getpid());
+			else if (showProc)
+				plen = sprintf(sub, "%s", progName);
+			else
+				plen = sprintf(sub, "[%d]", getpid());
+			unsigned int id = perThread().id;
+			if (id > 1)
+				plen += sprintf(sub + plen, ":%d", id);
+			if (plen <= procLength)
+				bufp += sprintf(bufp, "%-*s ", int(procLength), sub);
+			else
+				bufp += sprintf(bufp, "%s ", sub + plen - procLength);
 		}
-		if (showThread) {		// add "#Tthreadid "
-			*bufp++ = '#';
-			Thread::Identity::current().getIdString(bufp);
-			bufp += strlen(bufp);
-			*bufp++ = ' ';
-		}
-		vsnprintf(bufp, buffer + sizeof(buffer) - bufp, format, args);
+
+		// scope after proc/thread/pid
+		if (showScopeRight && scope)
+			addScope(bufp, scope);
+
+		// now stuff the message body in, slightly roasted
+		size_t left = buffer + sizeof(buffer) - bufp - 1;	// reserve one
+		size_t written = vsnprintf(bufp, left, format, args);
         for (char *p = bufp; *p; p++)
             if (!isprint(*p))
                 *p = '?';
+		if (written >= left) {	// snprintf overflowed
+			bufp += left;
+			strcpy(bufp - 3, "...");
+		} else
+			bufp += written;
+		
+		// now append a newline and a null
+		bufp[0] = '\n';
+		bufp[1] = '\0';
+
+		// submit to sink (do not count newline and null in count)
 		sink->put(buffer, bufp - buffer);
 	}
 }
@@ -315,8 +399,8 @@ void Target::setFromEnvironment()
 	// Set and configure destination. Currently available:
 	//	/some/where -> that file
 	//	LOG_SOMETHING -> syslog facility
-	//	>&number -> that (already) open file descriptor
-	//	anything else -> try as a filename sight unseen
+	//	>&number -> that (already) open (for write or append) file descriptor
+	//	anything else -> try as a filename sight unseen [may change]
 	//	DEBUGDEST not set -> stderr
 	//	anything in error -> stderr (with an error message on it)
 	//
@@ -355,9 +439,11 @@ void Target::configure()
 void Target::configure(const char *config)
 {
 	// configure global options
-	showScope = config && strstr(config, "scope");
-	showThread = config && strstr(config, "thread");
-	showPid = config && strstr(config, "pid");
+	showScopeRight = config && strstr(config, "rscope");
+	showScope = !showScopeRight && config && strstr(config, "scope");
+	showThread = config && (strstr(config, "thread") || strstr(config, "pid")); // (legacy)
+	showProc = config && strstr(config, "proc");
+	showDate = config && strstr(config, "date");
 
 	// configure sink
 	if (sink)
@@ -440,26 +526,13 @@ void Target::terminator()
 //
 // File sinks (write to file via stdio)
 //
-void FileSink::put(const char *buffer, unsigned int)
+void FileSink::put(const char *inbuf, unsigned int length)
 {
-	StLock<Mutex> locker(lock, false);
-	if (lockIO)
-		locker.lock();
-	if (addDate) {
-		time_t now = time(NULL);
-		char *date = ctime(&now);
-		date[19] = '\0';
-		fprintf(file, "%s ", date + 4);	// Nov 24 18:22:48
-	}
-	fputs(buffer, file);
-	putc('\n', file);
+	fwrite(inbuf, 1, length + 1, file);	// do pick up the trailing newline
 }
 
 void FileSink::dump(const char *text)
 {
-	StLock<Mutex> locker(lock, false);
-	if (lockIO)
-		locker.lock();
 	fputs(text, file);
 }
 
@@ -468,11 +541,7 @@ void FileSink::configure(const char *options)
 	if (options == NULL || !strstr(options, "noflush")) {
 		// we mean "if the file isn't unbuffered", but what's the portable way to say that?
 		if (file != stderr)
-		setlinebuf(file);
-	}
-	if (options) {
-		addDate = strstr(options, "date");
-		lockIO = !strstr(options, "nolock");
+			setlinebuf(file);
 	}
 }
 
@@ -480,9 +549,9 @@ void FileSink::configure(const char *options)
 //
 // Syslog sinks (write to syslog)
 //
-void SyslogSink::put(const char *buffer, unsigned int)
+void SyslogSink::put(const char *buffer, unsigned int length)
 {
-	syslog(priority, "%s", buffer);
+	syslog(priority, "%1.*s", length, buffer); // don't pick up trailing newline
 }
 
 void SyslogSink::dump(const char *text)
@@ -514,6 +583,7 @@ void SyslogSink::dump(const char *text)
 void SyslogSink::configure(const char *options)
 {
 }
+
 
 #endif //NDEBUG_CODE
 

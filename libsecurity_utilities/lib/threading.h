@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -25,7 +23,11 @@
 
 
 //
-// threading - generic thread support
+// threading - multi-threading support
+//
+// Once upon a time, this file provided a system-independent abstraction layer
+// for various thread models. These times are long gone, and we might as well
+// admit that we're sitting on top of pthreads (plus certain other system facilities).
 //
 #ifndef _H_THREADING
 #define _H_THREADING
@@ -33,10 +35,7 @@
 #include <security_utilities/utilities.h>
 #include <security_utilities/errors.h>
 #include <security_utilities/debugging.h>
-
-#if _USE_THREADS == _USE_PTHREADS
 # include <pthread.h>
-#endif
 
 #include <security_utilities/threading_internal.h>
 
@@ -66,8 +65,6 @@ namespace Security {
 // Do not use this in ordinary code; this is for implementing other primitives only.
 // Use a PerThreadPointer or ThreadNexus.
 //
-#if _USE_THREADS == _USE_PTHREADS
-
 class ThreadStoreSlot {
 public:
 	typedef void Destructor(void *);
@@ -86,19 +83,15 @@ private:
     pthread_key_t mKey;
 };
 
-#endif //_USE_PTHREADS
-
 
 //
-// Per-thread pointers are patterned after the pthread TLS (thread local storage)
+// Per-thread pointers are implemented using the pthread TLS (thread local storage)
 // facility.
 // Let's be clear on what gets destroyed when, here. Following the pthread lead,
 // when a thread dies its PerThreadPointer object(s) are properly destroyed.
 // However, if a PerThreadPointer itself is destroyed, NOTHING HAPPENS. Yes, there are
 // reasons for this. This is not (on its face) a bug, so don't yell. But be aware...
 //
-#if _USE_THREADS == _USE_PTHREADS
-
 template <class T>
 class PerThreadPointer : public ThreadStoreSlot {
 public:
@@ -114,39 +107,27 @@ private:
 	{ delete reinterpret_cast<T *>(element); }
 };
 
-#elif _USE_THREADS == _USE_NO_THREADS
 
-template <class T>
-class PerThreadPointer {
-public:
-	PerThreadPointer(bool cleanup = true) : mCleanup(cleanup) { }
-    ~PerThreadPointer()			{ /* no cleanup - see comment above */ }
-	operator bool() const		{ return mValue != NULL; }
-	operator T * () const		{ return mValue; }
-    T *operator -> () const		{ return mValue; }
-    T &operator * () const		{ assert(mValue); return *mValue; }
-    void operator = (T *t)		{ mValue = t; }
+//
+// Pthread Synchronization primitives.
+// These have a common header, strictly for our convenience.
+//
+class LockingPrimitive {
+protected:
+	void init(bool logMe);
 
-private:
-    T *mValue;
-    bool mCleanup;
+	bool debugLog;						// log *this* mutex
+	static bool debugHasInitialized;	// global: debug state set up
+	static bool loggingMutexi;			// global: we are debug-logging mutexi	
 };
 
-#else
-# error Unsupported threading model
-#endif //_USE_THREADS
-
 
 //
-// Basic Mutex operations.
-// This will be some as-cheap-as-feasible locking primitive that only
-// controls one bit (locked/unlocked), plus whatever you contractually
-// put under its control.
+// Mutexi
 //
-#if _USE_THREADS == _USE_PTHREADS
-
-class Mutex {
+class Mutex : public LockingPrimitive {
     NOCOPY(Mutex)
+    friend class Condition;
     
     void check(int err)	{ if (err) UnixError::throwMe(err); }
 
@@ -156,64 +137,67 @@ public:
 		recursive
 	};
 	
-    Mutex(bool log = true);
-	Mutex(Type type, bool log = true);
-	~Mutex();
-    void lock();
-	bool tryLock();
-    void unlock();
+    Mutex(bool log = true);				// normal with optional debug logging
+	Mutex(Type type, bool log = true);	// recursive with optional debug logging
+	~Mutex();							// destroy (must be unlocked)
+    void lock();						// lock and wait
+	bool tryLock();						// lock or return false
+    void unlock();						// unlock (must be locked)
 
 private:
     pthread_mutex_t me;
 	
-	bool debugLog;						// log *this* mutex
-	unsigned long useCount;				// number of locks succeeded
-	unsigned long contentionCount;		// number of contentions (valid only if debugLog)
-	static bool debugHasInitialized;	// global: debug state set up
-	static bool loggingMutexi;			// global: we are debug-logging mutexi
+	unsigned long mUseCount;			// number of locks succeeded
+	unsigned long mContentionCount;		// number of contentions (valid only if debugLog)
+};
+
+
+//
+// Condition variables
+//
+class Condition : public LockingPrimitive {
+    NOCOPY(Condition)
+    
+    void check(int err)	{ if (err) UnixError::throwMe(err); }
+
+public:	
+    Condition(Mutex &mutex);			// create with specific Mutex
+	~Condition();
+    void wait();						// wait for signal
+	void signal();						// signal one
+    void broadcast();					// signal all
+
+    Mutex &mutex;						// associated Mutex
 	
-	void init(Type type, bool log);
+private:
+    pthread_cond_t me;
 };
-
-#elif _USE_THREADS == _USE_NO_THREADS
-
-class Mutex {
-public:
-    void lock(bool = true) { }
-    void unlock() { }
-    bool tryLock() { return true; }
-};
-
-#else
-# error Unsupported threading model
-#endif //_USE_THREADS
 
 
 //
 // A CountingMutex adds a counter to a Mutex.
-// NOTE: This is not officially a semaphore, even if it happens to be implemented with
-//  one on some platforms.
+// NOTE: This is not officially a semaphore - it's an automatically managed
+// counter married to a Mutex.
 //
 class CountingMutex : public Mutex {
-    // note that this implementation works for any system implementing Mutex *somehow*
 public:
     CountingMutex() : mCount(0) { }
     ~CountingMutex() { assert(mCount == 0); }
 
-    void enter();
-    bool tryEnter();
-    void exit();
+    void enter();						// lock, add one, unlock
+    bool tryEnter();					// enter or return false
+    void exit();						// lock, subtract one, unlock
 
     // these methods do not lock - use only while you hold the lock
     unsigned int count() const { return mCount; }
     bool isIdle() const { return mCount == 0; }
 
     // convert Mutex lock to CountingMutex enter/exit. Expert use only
-    void finishEnter();
-	void finishExit();
+    void finishEnter();					// all but the initial lock
+	void finishExit();					// all but the initial lock
    
 private:
-    unsigned int mCount;
+    unsigned int mCount;				// counter level
 };
  
 
@@ -283,7 +267,7 @@ public:
     Integer mValue;
     mutable Mutex mLock;
 public:
-    StaticAtomicCounter(Integer init = 0) : mValue(init), mLock(false) { }
+    StaticAtomicCounter() : mLock(false) { }
     operator Integer() const	{ StLock<Mutex> _(mLock); return mValue; }
     Integer operator ++ ()		{ StLock<Mutex> _(mLock); return ++mValue; }
     Integer operator -- ()		{ StLock<Mutex> _(mLock); return --mValue; }
@@ -297,7 +281,7 @@ public:
 template <class Integer = int>
 class AtomicCounter : public StaticAtomicCounter<Integer> {
 public:
-    AtomicCounter(Integer init = 0)	{ mValue = 0; }
+    AtomicCounter(Integer init = 0)	{ StaticAtomicCounter<Integer>::mValue = init; }
 };
 
 
@@ -306,8 +290,6 @@ public:
 // Do not expect many high-level semantics to be portable. If you can,
 // restrict yourself to expect parallel execution and little else.
 //
-#if _USE_THREADS == _USE_PTHREADS
-
 class Thread {
     NOCOPY(Thread)
 public:
@@ -325,11 +307,6 @@ public:
         
         bool operator != (const Identity &other) const
         { return !(*this == other); }
-        
-		// visible thread identifiers are FOR DEBUGGING ONLY
-		// if you use this for production code, your code will rot after shipment :-)
-        static const int idLength = 10;
-        static void getIdString(char id[idLength]);
     
     private:
         pthread_t mIdent;
@@ -352,43 +329,6 @@ private:
     static void *runner(void *); // argument to pthread_create
 };
 
-#elif _USE_THREADS == _USE_NO_THREADS
-
-class Thread {
-    NOCOPY(Thread)
-public:
-	Thread() { }				// constructor
-    virtual ~Thread() { }		// virtual destructor
-    void run() { action(); }	// just synchronously run the action
-    
-public:
-    class Identity {
-    public:
-        static Identity current() { return Identity(); }
-	
-        bool operator == (const Identity &) const		{ return true; }	// all the same
-        bool operator != (const Identity &) const		{ return false; }
-
-#if !defined(NDEBUG)
-        static const idLength = 9;
-        static void getIdString(char id[idLength]) { memcpy(id, "nothread", idLength); }
-#endif
-        
-    private:
-        Identity() { }
-    };
-	
-public:
-	void yield() { assert(false); }
-
-protected:
-    virtual void action() = 0;	// implement action of thread
-};
-
-#else
-# error Unsupported threading model
-#endif
-
 
 //
 // A "just run this function in a thread" variant of Thread
@@ -405,9 +345,10 @@ private:
 
 
 //
-// A NestingMutex allows recursive re-entry by the same thread.
-// Some pthread implementations support this through a mutex attribute.
-// OSX's doesn't, naturally. This implementation works on all pthread platforms.
+// Once upon a time, pthread mutexi on Mac OS X did not support recursion.
+// In desperation, NestingMutex was born. Things are better now. This class
+// is a historical wart.
+// In today's enlightened age, use Mutex(Mutex::recursive).
 //
 class NestingMutex {
 public:
@@ -423,6 +364,7 @@ private:
     Thread::Identity mIdent;
     UInt32 mCount;
 };
+
 
 } // end namespace Security
 

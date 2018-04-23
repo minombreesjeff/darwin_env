@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -28,6 +26,7 @@
 // CoreFoundation related utilities
 //
 #include <security_utilities/cfutilities.h>
+#include <security_utilities/errors.h>
 #include <security_utilities/debugging.h>
 
 
@@ -35,17 +34,36 @@ namespace Security {
 
 
 //
-// Turn a CFString into a UTF8-encoded C++ string
+// Turn a C(++) string into a CFURLRef indicating a file: path
 //
-string cfString(CFStringRef str)
+CFURLRef makeCFURL(const char *s, bool isDirectory)
 {
+	return CFURLCreateWithFileSystemPath(NULL,
+		CFRef<CFStringRef>(makeCFString(s)),
+		kCFURLPOSIXPathStyle, isDirectory);
+}
+
+
+//
+// Turn a CFString into a UTF8-encoded C++ string.
+// If release==true, the argument will be CFReleased even in case of error.
+//
+string cfString(CFStringRef inStr, bool release)
+{
+	if (!inStr)
+		CFError::throwMe();
+	CFRef<CFStringRef> str(inStr);	// hold ref
+	if (!release)
+		CFRetain(inStr);	// compensate for release on exit
+
 	// NULL translates (cleanly) to empty
 	if (str == NULL)
 		return "";
 
 	// quick path first
-	if (const char *s = CFStringGetCStringPtr(str, kCFStringEncodingUTF8))
+	if (const char *s = CFStringGetCStringPtr(str, kCFStringEncodingUTF8)) {
 		return s;
+	}
 	
 	// need to extract into buffer
 	string ret;
@@ -55,6 +73,54 @@ string cfString(CFStringRef str)
 		ret = buffer;
 	delete[] buffer;
 	return ret;
+}
+
+string cfString(CFURLRef inUrl, bool release)
+{
+	if (!inUrl)
+		CFError::throwMe();
+	CFRef<CFURLRef> url(inUrl);	// hold ref
+	if (!release)
+		CFRetain(inUrl);	// compensate for release on exit
+	
+	UInt8 buffer[PATH_MAX+1];
+	if (CFURLGetFileSystemRepresentation(url, true, buffer, sizeof(buffer)))
+		return string(reinterpret_cast<char *>(buffer));
+	else
+		CFError::throwMe();
+}
+
+string cfString(CFBundleRef inBundle, bool release)
+{
+	if (!inBundle)
+		CFError::throwMe();
+	CFRef<CFBundleRef> bundle(inBundle);
+	if (!release)
+		CFRetain(inBundle);	// compensate for release on exit
+	
+	return cfString(CFBundleCopyBundleURL(bundle), true);
+}
+
+
+//
+// Get numbers ouf of a CFNumber
+//
+uint32_t cfNumber(CFNumberRef number)
+{
+	uint32_t value;
+	if (CFNumberGetValue(number, kCFNumberSInt32Type, &value))
+		return value;
+	else
+		CFError::throwMe();
+}
+
+uint32_t cfNumber(CFNumberRef number, uint32_t defaultValue)
+{
+	uint32_t value;
+	if (CFNumberGetValue(number, kCFNumberSInt32Type, &value))
+		return value;
+	else
+		return defaultValue;
 }
 
 

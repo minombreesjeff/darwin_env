@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -91,7 +89,7 @@ protected:
 	static mach_port_t self() { return mach_task_self(); }	
 
 public:
-	Port() { mPort = 0; }
+	Port() { mPort = MACH_PORT_NULL; }
 	Port(mach_port_t port) { mPort = port; }
 	
 	// devolve to Mach primitive type
@@ -123,13 +121,30 @@ public:
 	mach_port_urefs_t getRefs(mach_port_right_t right);
 
 	// port notification interface
-	mach_port_t requestNotify(mach_port_t notify, mach_msg_id_t type, mach_port_mscount_t sync = 1);
-    mach_port_t cancelNotify(mach_msg_id_t type);
+	mach_port_t requestNotify(mach_port_t notify,
+		mach_msg_id_t type = MACH_NOTIFY_DEAD_NAME, mach_port_mscount_t sync = 1);
+    mach_port_t cancelNotify(mach_msg_id_t type = MACH_NOTIFY_DEAD_NAME);
+
+	// queue state management
+	mach_port_msgcount_t qlimit() const;
+	void qlimit(mach_port_msgcount_t limit);
 	
     IFDUMP(void dump(const char *name = NULL));
 	
 protected:
 	mach_port_t mPort;
+};
+
+
+//
+// A simple Port that deallocates itself on destruction.
+// If you need a subclass of Port, just assign it to a separate AutoPort.
+//
+class AutoPort : public Port {
+public:
+	AutoPort()	{ }
+	AutoPort(mach_port_t port) : Port(port) { }
+	~AutoPort()	{ if (mPort != MACH_PORT_NULL) deallocate(); }
 };
 
 
@@ -188,7 +203,8 @@ protected:
 class TaskPort : public Port {
 public:
     TaskPort() { mPort = self(); }
-    TaskPort(const Port &p) { mPort = p; }
+	TaskPort(mach_port_t p) : Port(p) { }
+    TaskPort(const Port &p) : Port(p) { }
     
     Bootstrap bootstrap() const
     { mach_port_t boot; check(task_get_bootstrap_port(mPort, &boot)); return boot; }
@@ -248,13 +264,20 @@ private:
 
 //
 // Message buffers for Mach messages.
-// This class is for relatively simple uses.
+// The logic here is somewhat inverted from the usual: send/receive
+// are methods on the buffers (rather than buffers being arguments to send/receive).
+// It's rather handy once you get used to that view.
 //
 class Message {
 public:
-    Message(void *buffer, size_t size);
-    Message(size_t size);
+    Message(void *buffer, size_t size);		// use buffer with size
+    Message(size_t size);					// allocate buffer with size
+	Message();								// set buffer later
     virtual ~Message();
+	
+	void setBuffer(void *buffer, size_t size); // use buffer with size
+	void setBuffer(size_t size);			// allocate buffer with size
+	void release();							// discard buffer (if any)
 
     operator mig_reply_error_t & () const	{ return *mBuffer; }
     operator mach_msg_header_t & () const	{ return mBuffer->Head; }
@@ -288,7 +311,7 @@ public:
     
     void destroy()		{ mach_msg_destroy(*this); }
     
-private:
+protected:
     bool check(kern_return_t status);
 
 private:

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -31,16 +29,11 @@
 #define _H_TQUEUE
 
 #include <security_utilities/utilities.h>
-//#include <security_utilities/cssmalloc.h>
 #include <security_utilities/debugging.h>
 
-#ifdef _CPP_CDSA_UTILITIES_TQUEUE
-#pragma export on
-#endif
 
+namespace Security {
 
-namespace Security
-{
 
 //
 // A TimerQueue is a container of elements that have relative "timer" positions.
@@ -106,22 +99,29 @@ inline void ScheduleQueue<Time>::schedule(Event *event, Time when)
 {
 	Event *ev = first.fwd;
 	if (event->scheduled()) {
-		if (when == event->fireTime)	// no change
+		if (when == event->fireTime) {	// no change
+			secdebug("schedq", "%p (%.3f) no change", event, double(when));
 			return;
-		else if (when > event->fireTime)	// forward move
+		}
+		else if (when > event->fireTime && event != first.fwd)	// forward move
 			ev = event->back;
 		event->unschedule();
 	}
 	event->fireTime = when;
 	// newly schedule the event
-	for (; ev != &first; ev = ev->fwd)
+	IFDEBUG(unsigned pos = 0);
+	for (; ev != &first; ev = ev->fwd) {
+		IFDEBUG(pos++);
 		if (ev->fireTime > when) {
 			event->putBefore(ev);
+			secdebug("schedq", "%p (%.3f) scheduled before %p [at %u]", event, double(when), ev, pos);
 			return;
 		}
+	}
+	
 	// hit the end-of-queue; put at end
 	event->putBefore(&first);
-	secdebug("schedq", "event %p set for %.3f", event, double(when));
+	secdebug("schedq", "%p (%.3f) scheduled last [after %u]", event, double(when), pos);
 }
 
 template <class Time>
@@ -139,9 +139,5 @@ inline typename ScheduleQueue<Time>::Event *ScheduleQueue<Time>::pop(Time now)
 }
 
 } // end namespace Security
-
-#ifdef _CPP_CDSA_UTILITIES_TQUEUE
-#pragma export off
-#endif
 
 #endif // _H_TQUEUE

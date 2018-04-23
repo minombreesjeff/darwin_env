@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -61,10 +59,10 @@ inline SInt8 n2h(SInt8 v)	{ return v; }
 // Flip pointers
 //
 template <class Base>
-inline Base *h2n(Base *p)	{ return (Base *)h2n(LowLevelMemoryUtilities::PointerInt(p)); }
+inline Base *h2n(Base *p)	{ return (Base *)h2n(uintptr_t(p)); }
 
 template <class Base>
-inline Base *n2h(Base *p)	{ return (Base *)n2h(LowLevelMemoryUtilities::PointerInt(p)); }
+inline Base *n2h(Base *p)	{ return (Base *)n2h(uintptr_t(p)); }
 
 
 //

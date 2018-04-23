@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -32,8 +30,8 @@
 
 #include <security_utilities/threading.h>
 
-namespace Security
-{
+namespace Security {
+
 
 //
 // RefCount/RefPointer - a simple reference counting facility.
@@ -50,6 +48,10 @@ namespace Security
 // a pointer to a particular RefCount object. Thus there is no (thread safe)
 // way to "demand copy" a RefCount subclass. Trust me; it's been tried. Don't.
 //
+
+#if !defined(DEBUG_REFCOUNTS)
+# define DEBUG_REFCOUNTS 0
+#endif
 
 
 //
@@ -98,14 +100,20 @@ public:
 	RefPointer& operator = (const RefPointer<Sub>& p) { setPointer(p.ptr); return *this; }
 
 	// dereference operations
-    T* get () const				{ return ptr; }	// mimic auto_ptr
-	operator T * () const		{ return ptr; }
-	T * operator -> () const	{ return ptr; }
-	T & operator * () const		{ return *ptr; }
+    T* get () const				{ _check(); return ptr; }	// mimic auto_ptr
+	operator T * () const		{ _check(); return ptr; }
+	T * operator -> () const	{ _check(); return ptr; }
+	T & operator * () const		{ _check(); return *ptr; }
 
 protected:
 	void release() { if (ptr && ptr->unref() == 0) delete ptr; }
 	void setPointer(T *p) { if (p) p->ref(); release(); ptr = p; }
+	
+#if defined(NDEBUG) || !DEBUG_REFCOUNTS
+	void _check() const { }
+#else
+	void _check() const { assert(!ptr || ptr->refCountForDebuggingOnly()); }
+#endif //NDEBUG
 
 	T *ptr;
 };

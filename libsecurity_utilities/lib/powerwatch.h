@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -46,13 +44,22 @@ namespace MachPlusPlus {
 //
 class PowerWatcher {
 public:
-    PowerWatcher();
     virtual ~PowerWatcher();
     
-protected:
+public:
     virtual void systemWillSleep();
     virtual void systemIsWaking();
     virtual void systemWillPowerDown();
+};
+
+
+//
+// A PowerWatcher that is dispatches events from an IOKit message
+//
+class IOPowerWatcher : public PowerWatcher {
+public:
+	IOPowerWatcher();
+	~IOPowerWatcher();
     
 protected:
     io_connect_t mKernelPort;
@@ -67,10 +74,9 @@ protected:
 //
 // Hook into a "raw" MachServer object for event delivery
 //
-class PortPowerWatcher : public PowerWatcher, public MachServer::NoReplyHandler {
+class PortPowerWatcher : public IOPowerWatcher, public MachServer::NoReplyHandler {
 public:
     PortPowerWatcher();
-    ~PortPowerWatcher();
     
     boolean_t handle(mach_msg_header_t *in);    
 };

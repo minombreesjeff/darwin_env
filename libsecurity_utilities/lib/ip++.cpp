@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -208,14 +206,14 @@ void Socket::accept(Socket &s)
 
 void Socket::accept(Socket &s, IPSockAddress &peer)
 {
-    int length = sizeof(IPSockAddress);
+    socklen_t length = sizeof(IPSockAddress);
     s.checkSetFd(::accept(fd(), peer, &length));
     assert(length == sizeof(IPSockAddress));
 }
 
 void Socket::accept(Socket &s, UNSockAddress &peer)
 {
-    int length = sizeof(UNSockAddress);
+    socklen_t length = sizeof(UNSockAddress);
     s.checkSetFd(::accept(fd(), peer, &length));
     assert(length == sizeof(UNSockAddress));
 }
@@ -276,7 +274,7 @@ void Socket::shutdown(int how)
 IPSockAddress Socket::localAddress() const
 {
     IPSockAddress addr;
-    int length = sizeof(addr);
+    socklen_t length = sizeof(addr);
     checkError(::getsockname(fd(), addr, &length));
     assert(length == sizeof(addr));
     return addr;
@@ -285,13 +283,13 @@ IPSockAddress Socket::localAddress() const
 IPSockAddress Socket::peerAddress() const
 {
     IPSockAddress addr;
-    int length = sizeof(addr);
+    socklen_t length = sizeof(addr);
     checkError(::getpeername(fd(), addr, &length));
     assert(length == sizeof(addr));
     return addr;
 }
 
-void Socket::getOption(void *value, int &length, int name, int level /*= SOL_SOCKET*/) const
+void Socket::getOption(void *value, socklen_t &length, int name, int level /*= SOL_SOCKET*/) const
 {
     UnixError::check(::getsockopt(fd(), level, name, value, &length));
 }

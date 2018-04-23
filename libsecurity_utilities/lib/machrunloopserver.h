@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -35,23 +33,25 @@
 #define _H_MACHRUNLOOPSERVER
 
 #include <security_utilities/machserver.h>
+#include <security_utilities/cfmach++.h>
 #include <CoreFoundation/CFRunLoop.h>
 #include <CoreFoundation/CFMachPort.h>
 
 
-namespace Security
-{
+namespace Security {
+namespace MachPlusPlus {
 
-namespace MachPlusPlus
-{
 
 //
-// Mach server object
+// A Mach server object variant for use with CFRunLoops
 //
-class MachRunLoopServer : public MachServer {
+// This currently only supports a subset of full MachServer functionality.
+//
+class MachRunLoopServer : public MachServer, private CFAutoPort {
 public:
-	MachRunLoopServer(const char *name);
-	MachRunLoopServer(const char *name, const Bootstrap &boot);
+	MachRunLoopServer();		// anonymous
+	MachRunLoopServer(const char *name); // register by name
+	MachRunLoopServer(const char *name, const Bootstrap &boot); // register in bootstrap
 	virtual ~MachRunLoopServer();
 
 	void run(size_t maxSize = 4096, mach_msg_options_t options = 0);
@@ -60,23 +60,16 @@ public:
 	{ return safer_cast<MachRunLoopServer &>(MachServer::active()); }
 	
 	void notifyIfDead(Port port) const;
-	
-	void blockNewRequests(bool block = true);
-
-	void alsoListenOn(Port port);
-	void stopListenOn(Port port);
 
 protected:
-    void setup(const char *name, size_t bufferSize);
-	static void cfCallback(CFMachPortRef port, void *msg, CFIndex size, void *info);
-	static void cfInvalidateCallback(CFMachPortRef port, void *info);
-	void oneRequest(mach_msg_header_t *request);
+	void receive(Message &request);
+	void oneRequest(Message &request);
+
+private:
+	static void cfInvalidate(CFMachPortRef port, void *info);
 	
 private:
-	CFRunLoopRef runLoop;
-	CFRunLoopSourceRef runLoopSource;
-	
-	mach_msg_header_t *replyBuffer;
+	Message mReplyMessage;
 };
 
 

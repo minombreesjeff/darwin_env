@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -38,26 +36,48 @@ namespace MachPlusPlus {
 //
 // The obligatory empty virtual destructor
 //
-PowerWatcher::PowerWatcher()
+PowerWatcher::~PowerWatcher()
+{ }
+
+
+//
+// The default NULL implementations of the callback virtuals.
+// We define these (rather than leaving them abstract) since
+// many users want only one of these events.
+//
+void PowerWatcher::systemWillSleep()
+{ }
+
+void PowerWatcher::systemIsWaking()
+{ }
+
+void PowerWatcher::systemWillPowerDown()
+{ }
+
+
+//
+// IOPowerWatchers
+//
+IOPowerWatcher::IOPowerWatcher()
 {
-    if (!(mKernelPort = IORegisterForSystemPower(this, &mPortRef, ioCallback, &mHandle)))
+    if (!(mKernelPort = ::IORegisterForSystemPower(this, &mPortRef, ioCallback, &mHandle)))
         UnixError::throwMe(EINVAL);	// no clue
 }
 
-PowerWatcher::~PowerWatcher()
+IOPowerWatcher::~IOPowerWatcher()
 {
     if (mKernelPort)
-        IODeregisterForSystemPower(&mHandle);
+		::IODeregisterForSystemPower(&mHandle);
 }
 
 
 //
 // The callback dispatcher
 //
-void PowerWatcher::ioCallback(void *refCon, io_service_t service,
+void IOPowerWatcher::ioCallback(void *refCon, io_service_t service,
     natural_t messageType, void *argument)
 {
-    PowerWatcher *me = (PowerWatcher *)refCon;
+    IOPowerWatcher *me = (IOPowerWatcher *)refCon;
     enum { allow, refuse, ignore } reaction;
     switch (messageType) {
     case kIOMessageSystemWillSleep:
@@ -116,30 +136,11 @@ void PowerWatcher::ioCallback(void *refCon, io_service_t service,
 
 
 //
-// The default NULL implementations of the callback virtuals.
-// We define these (rather than leaving them abstract) since
-// many users want only one of these events.
-//
-void PowerWatcher::systemWillSleep()
-{ }
-
-void PowerWatcher::systemIsWaking()
-{ }
-
-void PowerWatcher::systemWillPowerDown()
-{ }
-
-
-//
 // The MachServer hookup
 //
 PortPowerWatcher::PortPowerWatcher()
 {
     port(IONotificationPortGetMachPort(mPortRef));
-}
-
-PortPowerWatcher::~PortPowerWatcher()
-{
 }
 
 boolean_t PortPowerWatcher::handle(mach_msg_header_t *in)

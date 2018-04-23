@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -32,7 +30,6 @@
 #include <security_utilities/alloc.h>
 #include <security_utilities/memutils.h>
 #include <security_utilities/globalizer.h>
-#include <security_utilities/trackingallocator.h>
 #include <stdlib.h>
 #include <errno.h>
 
@@ -124,13 +121,6 @@ void *SensitiveAllocator::realloc(void *addr, size_t newSize) throw(std::bad_all
     if (newSize < oldSize)
         memset(increment(addr, newSize), 0, oldSize - newSize);
     return DefaultAllocator::realloc(addr, newSize);
-}
-
-TrackingAllocator::~TrackingAllocator()
-{
-	AllocSet::iterator first = mAllocSet.begin(), last = mAllocSet.end();
-	for (; first != last; ++first)
-		mAllocator.free(*first);
 }
 
 

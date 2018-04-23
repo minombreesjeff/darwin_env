@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -184,14 +182,14 @@ public:
     
     // socket options
     void setOption(const void *value, int length, int name, int level = SOL_SOCKET) const;
-    void getOption(void *value, int &length, int name, int level = SOL_SOCKET) const;
+    void getOption(void *value, socklen_t &length, int name, int level = SOL_SOCKET) const;
     
     template <class T> void setOption(const T &value, int name, int level = SOL_SOCKET) const
     { setOption(&value, sizeof(value), name, level); }
     
     template <class T> T getOption(int name, int level = SOL_SOCKET) const
     {
-        T value; int length = sizeof(value);
+        T value; socklen_t length = sizeof(value);
         getOption(&value, length, name, level);
         assert(length == sizeof(value));
         return value;

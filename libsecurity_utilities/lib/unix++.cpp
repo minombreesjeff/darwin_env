@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -28,11 +26,15 @@
 // unix++ - C++ layer for basic UNIX facilities
 //
 #include "unix++.h"
+#include <security_utilities/memutils.h>
 #include <security_utilities/debugging.h>
+#include <cstdarg>
 
 
 namespace Security {
 namespace UnixPlusPlus {
+
+using LowLevelMemoryUtilities::increment;
 
 
 //
@@ -91,6 +93,46 @@ size_t FileDesc::write(const void *addr, size_t length)
 
 
 //
+// Waiting (repeating) I/O
+//
+size_t FileDesc::readAll(void *addr, size_t length)
+{
+	size_t total = 0;
+	while (length > 0 && !atEnd()) {
+		size_t size = read(addr, length);
+		addr = increment(addr, size);
+		length -= size;
+		total += size;
+	}
+	return total;
+}
+
+size_t FileDesc::readAll(string &value)
+{
+	string s;
+	while (!atEnd()) {
+		char buffer[256];
+		if (size_t size = read(buffer, sizeof(buffer))) {
+			s += string(buffer, size);
+			continue;
+		}
+	}
+	swap(value, s);
+	return value.length();
+}
+
+
+void FileDesc::writeAll(const void *addr, size_t length)
+{
+	while (length > 0) {
+		size_t size = write(addr, length);
+		addr = increment(addr, size);
+		length -= size;
+	}
+}
+
+
+//
 // Seeking
 //
 off_t FileDesc::seek(off_t position, int whence)
@@ -114,6 +156,9 @@ void *FileDesc::mmap(int prot, size_t length, int flags, off_t offset, void *add
 }
 
 
+//
+// Basic fcntl support
+//
 int FileDesc::fcntl(int cmd, int arg) const
 {
     int rc = ::fcntl(mFd, cmd, arg);
@@ -132,6 +177,10 @@ int FileDesc::fcntl(int cmd, void *arg) const
     return fcntl(cmd, reinterpret_cast<int>(arg));
 }
 
+
+//
+// Nice fcntl forms
+//
 int FileDesc::flags() const
 {
     int flags = fcntl(F_GETFL);
@@ -154,6 +203,47 @@ void FileDesc::setFlag(int flag, bool on) const
     }
 }
 
+
+//
+// Advisory locking, fcntl style
+//
+void FileDesc::lock(int type, const Pos &pos)
+{
+	LockArgs args(type, pos);
+	IFDEBUG(args.debug(fd(), "lock"));
+	checkError(fcntl(F_SETLKW, &args));
+}
+
+bool FileDesc::tryLock(int type, const Pos &pos)
+{
+	LockArgs args(type, pos);
+	IFDEBUG(args.debug(fd(), "tryLock"));
+	try {
+		fcntl(F_SETLK, &args);
+		return true;
+	} catch (const UnixError &err) {
+		if (err.error == EAGAIN)
+			return false;
+		else
+			throw;
+	}
+}
+
+#if !defined(NDEBUG)
+
+void FileDesc::LockArgs::debug(int fd, const char *what)
+{
+	secdebug("fdlock", "%d %s %s:%ld(%ld)", fd, what,
+		(l_whence == SEEK_SET) ? "ABS" : (l_whence == SEEK_CUR) ? "REL" : "END",
+		long(l_start), long(l_len));
+}
+
+#endif //NDEBUG
+
+
+//
+// ioctl support
+//
 int FileDesc::ioctl(int cmd, void *arg) const
 {
     int rc = ::ioctl(mFd, cmd, arg);
@@ -179,6 +269,7 @@ size_t FileDesc::fileSize() const
 
 FILE *FileDesc::fdopen(const char *form)
 {
+	//@@@ pick default value for 'form' based on chracteristics of mFd
     return ::fdopen(mFd, form);
 }
 
@@ -191,6 +282,72 @@ SigSet sigMask(SigSet set, int how /* = SIG_SETMASK */)
 	sigset_t old;
 	checkError(::sigprocmask(how, &set.value(), &old));
 	return old;
+}
+
+
+//
+// Make or use a directory, open-style.
+//
+// Flags are to be interpreted like open(2) flags; particularly
+//	O_CREAT		make the directory if not present
+//	O_EXCL		fail if the directory is present
+// Other open(2) flags are currently ignored.
+//
+// Yes, it's a function.
+//
+void makedir(const char *path, int flags, mode_t mode)
+{
+	struct stat st;
+	if (!stat(path, &st)) {
+		if (flags & O_EXCL)
+			UnixError::throwMe(EEXIST);
+		if (!S_ISDIR(st.st_mode))
+			UnixError::throwMe(ENOTDIR);
+		secdebug("makedir", "%s exists", path);
+		return;
+	}
+
+	// stat failed
+	if (errno != ENOENT || !(flags & O_CREAT))
+		UnixError::throwMe();
+	
+	// ENOENT and creation enabled
+	if (::mkdir(path, mode)) {
+		if (errno == EEXIST && !(flags & O_EXCL))
+			return;		// fine (race condition, resolved)
+		UnixError::throwMe();
+	}
+	secdebug("makedir", "%s created", path);
+}
+
+
+//
+// Open, read/write, close a (small) file on disk
+//
+int ffprintf(const char *path, int flags, mode_t mode, const char *format, ...)
+{
+	FileDesc fd(path, flags, mode);
+	FILE *f = fd.fdopen("w");
+	va_list args;
+	va_start(args, format);
+	int rc = vfprintf(f, format, args);
+	va_end(args);
+	if (fclose(f))
+		UnixError::throwMe();
+	return rc;
+}
+
+int ffscanf(const char *path, const char *format, ...)
+{
+	if (FILE *f = fopen(path, "r")) {
+		va_list args;
+		va_start(args, format);
+		int rc = vfscanf(f, format, args);
+		va_end(args);
+		if (!fclose(f))
+			return rc;
+	}
+	UnixError::throwMe();
 }
 
 

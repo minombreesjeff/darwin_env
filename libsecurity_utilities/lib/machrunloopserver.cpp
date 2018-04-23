@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -40,86 +38,33 @@ namespace MachPlusPlus {
 //
 // Generic Mach server
 //
-MachRunLoopServer::MachRunLoopServer(const char *name) : MachServer(name)
+MachRunLoopServer::MachRunLoopServer(const char *name)
+	: MachServer(name), CFAutoPort(primaryServicePort())
 {
 }
 
 MachRunLoopServer::MachRunLoopServer(const char *name, const Bootstrap &boot)
-: MachServer(name, boot)
+	: MachServer(name, boot), CFAutoPort(primaryServicePort())
 {
 }
 
 void MachRunLoopServer::run(size_t bufferSize, mach_msg_options_t options)
 {
-	// allocate reply buffer (well, try)
-	replyBuffer = Allocator::standard().malloc<mach_msg_header_t>(bufferSize);
-
-	// Now do the CFRunLoop tango...
-	runLoop = CFRunLoopGetCurrent();
-	CFRef<CFMachPortRef> cfPort = CFMachPortCreateWithPort(NULL, mServerPort, cfCallback,
-        NULL, NULL);
-	runLoopSource =
-		CFMachPortCreateRunLoopSource(NULL, cfPort, 10);	//@@@ no idea what order is good
-	if (!runLoop || !runLoopSource || !cfPort)
-		Error::throwMe(MIG_SERVER_DIED);	//@@@ $#!!& CF non-diagnostics!
-	CFRunLoopAddSource(runLoop, runLoopSource, kCFRunLoopDefaultMode);
+	// allocate reply buffer
+	mReplyMessage.setBuffer(bufferSize);
 	
+	// enable reception
+	CFAutoPort::enable();
+
 	// we are it!
 	perThread().server = this;
 }
 
+
 MachRunLoopServer::~MachRunLoopServer()
 {
-	// remove our runloop source
-	CFRunLoopRemoveSource(runLoop, runLoopSource, kCFRunLoopDefaultMode);
-	CFRelease(runLoopSource);
-	
-	// delete the reply buffer
-	Allocator::standard().free(replyBuffer);
-    
-    // no longer tagged
+    // no longer active on this thread
     perThread().server = NULL;
-	
-	// our MachServer parent class will clean up the ports and deregister from our bootstrap
-}
-
-
-//
-// Block/unblock new request reception to serialize the request queue
-//
-void MachRunLoopServer::blockNewRequests(bool block)
-{
-	if (block) {
-		CFRunLoopRemoveSource(runLoop, runLoopSource, kCFRunLoopDefaultMode);
-		secdebug("machsrv", "disabled request reception");
-	} else {
-		CFRunLoopAddSource(runLoop, runLoopSource, kCFRunLoopDefaultMode);
-		secdebug("machsrv", "enabled request reception");
-	}
-}
-
-
-//
-// Add secondary ports to receive on
-//
-void MachRunLoopServer::alsoListenOn(Port port)
-{
-	CFRef<CFMachPortRef> cfPort = CFMachPortCreateWithPort(NULL, port, cfCallback,
-        NULL, NULL);
-	CFRef<CFRunLoopSourceRef> source =
-		CFMachPortCreateRunLoopSource(NULL, cfPort, 10);	//@@@ no idea what order is good
-	CFRunLoopAddSource(runLoop, source, kCFRunLoopDefaultMode);
-	secdebug("machsrv", "also receiving from port %d", port.port());
-}
-
-void MachRunLoopServer::stopListenOn(Port port)
-{
-	CFRef<CFMachPortRef> cfPort = CFMachPortCreateWithPort(NULL, port, cfCallback,
-        NULL, NULL);
-	CFRef<CFRunLoopSourceRef> source =
-		CFMachPortCreateRunLoopSource(NULL, cfPort, 10);	//@@@ no idea what order is good
-	CFRunLoopRemoveSource(runLoop, source, kCFRunLoopDefaultMode);
-	secdebug("machsrv", "no longer receiving from port %d", port.port());
 }
 
 
@@ -130,53 +75,35 @@ void MachRunLoopServer::stopListenOn(Port port)
 //
 void MachRunLoopServer::notifyIfDead(Port port) const
 {
-	//@@@ not clear how to deal with CFRetainCount of cfPort here
-	//    will CF clean up the cfPort when it dies? Or do we have to keep a set?
-	CFMachPortRef cfPort = CFMachPortCreateWithPort(NULL, port, NULL, NULL, NULL);
-	if (cfPort != NULL) // check to make sure that we got a valid port reference back
-	{
-		CFMachPortSetInvalidationCallBack(cfPort, cfInvalidateCallback);
-	}
+	if (CFMachPortRef cfPort = CFMachPortCreateWithPort(NULL, port, NULL, NULL, NULL))
+		CFMachPortSetInvalidationCallBack(cfPort, cfInvalidate);
 }
 
-void MachRunLoopServer::cfInvalidateCallback(CFMachPortRef cfPort, void *)
+void MachRunLoopServer::cfInvalidate(CFMachPortRef cfPort, void *context)
 {
-	active().notifyDeadName(CFMachPortGetPort(cfPort));
+	reinterpret_cast<MachRunLoopServer *>(context)->notifyDeadName(CFMachPortGetPort(cfPort));
+	//@@@ should we CFRelease cfPort here?
 }
 
 
 //
-// The callback triggered from CFRunLoop
+// Reception callback
 //
-void MachRunLoopServer::cfCallback(CFMachPortRef port, void *msg, CFIndex, void *)
+void MachRunLoopServer::receive(Message &request)
 {
-	active().oneRequest(reinterpret_cast<mach_msg_header_t *>(msg));
+	active().oneRequest(request);
 }
 
-void MachRunLoopServer::oneRequest(mach_msg_header_t *request)
+void MachRunLoopServer::oneRequest(Message &request)
 {
-	if (!handle(request, replyBuffer)) {
-		// MIG dispatch did not recognize the request. Ignore/Retry/Fail? :-)
-		//@@@ Should send an error reply back here, I suppose. Later...
+	if (!handle(request, mReplyMessage)) {	// MIG dispatch failed
 		secdebug("machrls", "MachRunLoopServer dispatch failed");
-		return;
-	}
-	
-	// MIG dispatch handled the call. Send reply back to caller.
-	// This boilerplate stolen from mach_msg_server, since MIG can't seem to
-	// generate send-only code for replies (without explicit simpleroutines).
-	if (IFDEBUG(kern_return_t err =) mach_msg_overwrite(replyBuffer,
-		(MACH_MSGH_BITS_REMOTE(replyBuffer->msgh_bits) == MACH_MSG_TYPE_MOVE_SEND_ONCE) ?
-		MACH_SEND_MSG :	MACH_SEND_MSG|MACH_SEND_TIMEOUT,
-		replyBuffer->msgh_size, 0, MACH_PORT_NULL,
-		0, MACH_PORT_NULL, (mach_msg_header_t *) 0, 0)) {
-		//@@@ should at least clean up resources here, I suppose.
-		secdebug("machsrv", "RunloopServer cannot post reply: %s", mach_error_string(err));
-		active().releaseDeferredAllocations();
-		return;
+	} else {
+		// MIG dispatch handled the call. Send reply back to caller.
+		mReplyMessage.send((MACH_MSGH_BITS_REMOTE(mReplyMessage.bits()) == MACH_MSG_TYPE_MOVE_SEND_ONCE) ?
+			MACH_SEND_MSG :	MACH_SEND_MSG|MACH_SEND_TIMEOUT);
 	}
 	active().releaseDeferredAllocations();
-	return;
 }
 
 

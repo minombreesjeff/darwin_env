@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -152,6 +150,24 @@ mach_port_t Port::cancelNotify(mach_msg_id_t type)
 	return requestNotify(MACH_PORT_NULL, type);
 }
 
+mach_port_msgcount_t Port::qlimit() const
+{
+	mach_port_limits_t limits;
+	mach_msg_type_number_t infoCount = 1;
+	check(::mach_port_get_attributes(self(), mPort, MACH_PORT_LIMITS_INFO,
+		mach_port_info_t(&limits), &infoCount));
+	assert(infoCount == 1);
+	return limits.mpl_qlimit;
+}
+
+void Port::qlimit(mach_port_msgcount_t limit)
+{
+	mach_port_limits_t limits;
+	limits.mpl_qlimit = limit;
+	check(::mach_port_set_attributes(self(), mPort, MACH_PORT_LIMITS_INFO,
+		mach_port_info_t(&limits), MACH_PORT_LIMITS_INFO_COUNT));
+}
+
 
 //
 // PortSet features
@@ -296,25 +312,52 @@ StBootstrap::~StBootstrap()
 // Mach message buffers
 //
 Message::Message(void *buffer, size_t size)
-    : mBuffer(reinterpret_cast<mig_reply_error_t *>(buffer)), 
-    mSize(size), mRelease(false)
+	: mBuffer(NULL), mRelease(false)
 {
-    assert(size >= sizeof(mach_msg_header_t));
+	setBuffer(buffer, size);
 }
 
 Message::Message(size_t size)
+	: mBuffer(NULL), mRelease(false)
 {
-    mSize = size + MAX_TRAILER_SIZE;
-    mBuffer = (mig_reply_error_t *)new char[mSize];
-    mRelease = true;
+	setBuffer(size);
 }
+
+Message::Message()
+	: mBuffer(NULL), mRelease(false)
+{ }
+
 
 Message::~Message()
 {
-    if (mRelease)
-        delete[] mBuffer;
+	release();
 }
 
+
+void Message::setBuffer(void *buffer, size_t size)
+{
+	release();
+	mBuffer = reinterpret_cast<mig_reply_error_t *>(buffer);
+	mSize = size;
+	mRelease = false;
+}
+
+void Message::setBuffer(size_t size)
+{
+	assert(size >= sizeof(mach_msg_header_t));
+	release();
+	mSize = size + MAX_TRAILER_SIZE;
+	mBuffer = reinterpret_cast<mig_reply_error_t *>(new char[mSize]);
+	mRelease = true;
+}
+
+
+void Message::release()
+{
+	if (mRelease)
+		delete[] reinterpret_cast<char *>(mBuffer);
+}
+	
 
 bool Message::check(kern_return_t status)
 {

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -43,39 +41,22 @@ namespace Security
 class TrackingAllocator : public Allocator
 {
 public:
-	TrackingAllocator(Allocator &inAllocator) : mAllocator(inAllocator) {}
+	TrackingAllocator(Allocator &inAllocator) : subAllocator(inAllocator) {}
 	virtual ~TrackingAllocator();
+	
+	Allocator &subAllocator;
 
-	void *malloc(size_t inSize) throw(std::bad_alloc)
-	{
-		void *anAddress = mAllocator.malloc(inSize);
-		mAllocSet.insert(anAddress);
-		return anAddress;
-	}
+	// standard Allocator operations
+	void *malloc(size_t inSize) throw(std::bad_alloc);
+	void free(void *inAddress) throw();
+	void *realloc(void *inAddress, size_t inNewSize) throw(std::bad_alloc);
 
-	void free(void *inAddress) throw()
-	{
-		mAllocator.free(inAddress);
-		mAllocSet.erase(inAddress);
-	}
-
-	void *realloc(void *inAddress, size_t inNewSize) throw(std::bad_alloc)
-	{
-		void *anAddress = mAllocator.realloc(inAddress, inNewSize);
-		if (anAddress != inAddress)
-		{
-			mAllocSet.erase(inAddress);
-			mAllocSet.insert(anAddress);
-		}
-
-		return anAddress;
-	}
-
-	void commit() { mAllocSet.clear(); }
+	// reset frees all memory; commit forgets about it all
+	void reset();
+	void commit();
+	
 private:
 	typedef std::set<void *> AllocSet;
-
-	Allocator &mAllocator;
 	AllocSet mAllocSet;
 };
 

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -156,7 +154,7 @@ public:
 	template <class T1> CssmAutoPtr(CssmAutoPtr<T1> &src)
 	: allocator(src.allocator), mine(src.release()) { }
 	template <class T1> CssmAutoPtr(Allocator &alloc, CssmAutoPtr<T1> &src)
-	: allocator(alloc), mine(rc.release()) { assert(allocator == src.allocator); }
+	: allocator(alloc), mine(src.release()) { assert(allocator == src.allocator); }
 	
 	~CssmAutoPtr()				{ allocator.free(mine); }
 	
@@ -183,7 +181,7 @@ public:
 	template <class T1> CssmAutoPtr(CssmAutoPtr<T1> &src)
 	: allocator(src.allocator), mine(src.release()) { }
 	template <class T1> CssmAutoPtr(Allocator &alloc, CssmAutoPtr<T1> &src)
-	: allocator(alloc), mine(rc.release()) { assert(allocator == src.allocator); }
+	: allocator(alloc), mine(src.release()) { assert(allocator == src.allocator); }
 	
 	~CssmAutoPtr()				{ destroy(mine, allocator); }
 	

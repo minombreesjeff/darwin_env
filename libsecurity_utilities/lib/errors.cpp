@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -56,7 +54,8 @@ CommonError::CommonError()
 CommonError::CommonError(const CommonError &source)
 {
 #if !defined(NDEBUG)
-	source.debugDiagnose(this);
+	if (source.mCarrier)
+		source.debugDiagnose(this);
 	mCarrier = source.mCarrier;
 	source.mCarrier = false;
 #endif //NDEBUG
@@ -149,3 +148,31 @@ int MacOSError::unixError() const
 
 void MacOSError::throwMe(int error)
 { throw MacOSError(error); }
+
+
+//
+// CFError exceptions
+//
+CFError::CFError()
+{
+	IFDEBUG(debugDiagnose(this));
+}
+
+const char *CFError::what() const throw ()
+{ return "CoreFoundation error"; }
+
+// can't get this from CarbonCore/MacErrors, but it's too good to pass up
+enum {
+	coreFoundationUnknownErr      = -4960
+};
+
+OSStatus CFError::osStatus() const
+{ return coreFoundationUnknownErr; }
+
+int CFError::unixError() const
+{
+	return EFAULT;		// nothing really matches
+}
+
+void CFError::throwMe()
+{ throw CFError(); }
