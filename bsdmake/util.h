@@ -1,6 +1,8 @@
-/*
+/*-
  * Copyright (c) 1988, 1989, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1989 by Berkeley Softworks
+ * All rights reserved.
  *
  * This code is derived from software contributed to Berkeley by
  * Adam de Boor.
@@ -33,41 +35,82 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#)lstAtFront.c	8.1 (Berkeley) 6/6/93
+ * $FreeBSD: src/usr.bin/make/util.h,v 1.10 2005/05/18 06:50:39 harti Exp $
  */
 
-#ifndef lint
-#include <sys/cdefs.h>
-#endif /* not lint */
+#ifndef util_h_b7020fdb
+#define	util_h_b7020fdb
 
-/*-
- * LstAtFront.c --
- *	Add a node at the front of the list
+#include <sys/types.h>
+#include <stdio.h>
+
+/*
+ * A boolean type is defined as an integer, not an enum. This allows a
+ * boolean argument to be an expression that isn't strictly 0 or 1 valued.
  */
 
-#include	"lstInt.h"
+typedef int Boolean;
+#ifndef TRUE
+#define	TRUE	1
+#define	FALSE	0
+#endif /* TRUE */
 
-/*-
- *-----------------------------------------------------------------------
- * Lst_AtFront --
- *	Place a piece of data at the front of a list
- *
- * Results:
- *	SUCCESS or FAILURE
- *
- * Side Effects:
- *	A new ListNode is created and stuck at the front of the list.
- *	hence, firstPtr (and possible lastPtr) in the list are altered.
- *
- *-----------------------------------------------------------------------
+#define	CONCAT(a,b)	a##b
+
+struct flag2str {
+	u_int		flag;
+	const char	*str;
+};
+
+/*
+ * debug control:
+ *	There is one bit per module.  It is up to the module what debug
+ *	information to print.
  */
-ReturnStatus
-Lst_AtFront (l, d)
-    Lst		l;
-    void *	d;
-{
-    register LstNode	front;
+#define	DEBUG_ARCH	0x0001
+#define	DEBUG_COND	0x0002
+#define	DEBUG_DIR	0x0004
+#define	DEBUG_GRAPH1	0x0008
+#define	DEBUG_GRAPH2	0x0010
+#define	DEBUG_JOB	0x0020
+#define	DEBUG_MAKE	0x0040
+#define	DEBUG_SUFF	0x0080
+#define	DEBUG_TARG	0x0100
+#define	DEBUG_VAR	0x0200
+#define	DEBUG_FOR	0x0400
+#define	DEBUG_LOUD	0x0800
 
-    front = Lst_First (l);
-    return (Lst_Insert (l, front, d));
-}
+#define	DEBUG(module)	(debug & CONCAT(DEBUG_,module))
+#define	DEBUGF(module,args)		\
+do {						\
+	if (DEBUG(module)) {			\
+		Debug args ;			\
+	}					\
+} while (0)
+#define	DEBUGM(module, args) do {		\
+	if (DEBUG(module)) {			\
+		DebugM args;			\
+	}					\
+    } while (0)
+
+#define	ISDOT(c) ((c)[0] == '.' && (((c)[1] == '\0') || ((c)[1] == '/')))
+#define	ISDOTDOT(c) ((c)[0] == '.' && ISDOT(&((c)[1])))
+
+#ifndef MAX
+#define	MAX(a, b)  ((a) > (b) ? (a) : (b))
+#endif
+
+void Debug(const char *, ...);
+void DebugM(const char *, ...);
+void Error(const char *, ...);
+void Fatal(const char *, ...) __dead2;
+void Punt(const char *, ...) __dead2;
+void DieHorribly(void) __dead2;
+void Finish(int) __dead2;
+char *estrdup(const char *);
+void *emalloc(size_t);
+void *erealloc(void *, size_t);
+int eunlink(const char *);
+void print_flags(FILE *, const struct flag2str *, u_int, int);
+
+#endif /* util_h_b7020fdb */

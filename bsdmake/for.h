@@ -1,6 +1,8 @@
-/*
+/*-
  * Copyright (c) 1988, 1989, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1989 by Berkeley Softworks
+ * All rights reserved.
  *
  * This code is derived from software contributed to Berkeley by
  * Adam de Boor.
@@ -33,39 +35,16 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#)lstMember.c	8.1 (Berkeley) 6/6/93
+ * $FreeBSD: src/usr.bin/make/for.h,v 1.3 2005/05/13 08:53:00 harti Exp $
  */
 
-#ifndef lint
-#include <sys/cdefs.h>
-#endif /* not lint */
+#ifndef for_h_9d770f33
+#define	for_h_9d770f33
 
-/*-
- * lstMember.c --
- *	See if a given datum is on a given list.
- */
+#include "util.h"
 
-#include    "lstInt.h"
+Boolean For_For(char *);
+Boolean For_Eval(char *);
+void For_Run(int);
 
-LstNode
-Lst_Member (l, d)
-    Lst	    	  	l;
-    void *	  	d;
-{
-    List    	  	list = (List) l;
-    register ListNode	lNode;
-
-    lNode = list->firstPtr;
-    if (lNode == NULL) {
-	return NULL;
-    }
-
-    do {
-	if (lNode->datum == d) {
-	    return (LstNode)lNode;
-	}
-	lNode = lNode->nextPtr;
-    } while (lNode != NULL && lNode != list->firstPtr);
-
-    return NULL;
-}
+#endif /* for_h_9d770f33 */

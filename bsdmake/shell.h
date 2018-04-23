@@ -36,68 +36,75 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)hash.h	8.1 (Berkeley) 6/6/93
- * $FreeBSD: src/usr.bin/make/hash.h,v 1.20 2005/05/13 08:53:00 harti Exp $
+ * $FreeBSD: src/usr.bin/make/shell.h,v 1.1 2005/05/24 15:30:03 harti Exp $
  */
 
-#ifndef hash_h_f6312f46
-#define	hash_h_f6312f46
+#ifndef shell_h_6002e3b8
+#define	shell_h_6002e3b8
 
-/* hash.h --
- *
- * 	This file contains definitions used by the hash module,
- * 	which maintains hash tables.
- */
+#include <sys/queue.h>
 
+#include "str.h"
 #include "util.h"
 
-/*
- * The following defines one entry in the hash table.
+/**
+ * Shell Specifications:
+ *
+ * Some special stuff goes on if a shell doesn't have error control. In such
+ * a case, errCheck becomes a printf template for echoing the command,
+ * should echoing be on and ignErr becomes another printf template for
+ * executing the command while ignoring the return status. If either of these
+ * strings is empty when hasErrCtl is FALSE, the command will be executed
+ * anyway as is and if it causes an error, so be it.
  */
-typedef struct Hash_Entry {
-	struct Hash_Entry *next;	/* Link entries within same bucket. */
-	void		*clientData;	/* Data associated with key. */
-	unsigned	namehash;	/* hash value of key */
-	char		name[1];	/* key string */
-} Hash_Entry;
+struct Shell {
+	TAILQ_ENTRY(Shell) link;	/* link all shell descriptions */
 
-typedef struct Hash_Table {
-	struct Hash_Entry **bucketPtr;	/* Buckets in the table */
-	int 		size;		/* Actual size of array. */
-	int 		numEntries;	/* Number of entries in the table. */
-	int 		mask;		/* Used to select bits for hashing. */
-} Hash_Table;
+	/*
+	 * the name of the shell. For Bourne and C shells, this is used
+	 * only to find the shell description when used as the single
+	 * source of a .SHELL target.
+	 */
+	char	*name;
 
-/*
- * The following structure is used by the searching routines
- * to record where we are in the search.
- */
-typedef struct Hash_Search {
-	const Hash_Table *tablePtr;	/* Table being searched. */
-	int		nextIndex;	/* Next bucket to check */
-	Hash_Entry 	*hashEntryPtr;	/* Next entry in current bucket */
-} Hash_Search;
+	char	*path;		/* full path to the shell */
 
-/*
- * Macros.
- */
+	/* True if both echoOff and echoOn defined */
+	Boolean	hasEchoCtl;
 
-/*
- * void *Hash_GetValue(const Hash_Entry *h)
- */
-#define	Hash_GetValue(h) ((h)->clientData)
+	char	*echoOff;	/* command to turn off echo */
+	char	*echoOn;	/* command to turn it back on */
 
-/*
- * Hash_SetValue(Hash_Entry *h, void *val);
- */
-#define	Hash_SetValue(h, val) ((h)->clientData = (val))
+	/*
+	 * What the shell prints, and its length, when given the
+	 * echo-off command. This line will not be printed when
+	 * received from the shell. This is usually the command which
+	 * was executed to turn off echoing
+	 */
+	char	*noPrint;
 
-void Hash_InitTable(Hash_Table *, int);
-void Hash_DeleteTable(Hash_Table *);
-Hash_Entry *Hash_FindEntry(const Hash_Table *, const char *);
-Hash_Entry *Hash_CreateEntry(Hash_Table *, const char *, Boolean *);
-void Hash_DeleteEntry(Hash_Table *, Hash_Entry *);
-Hash_Entry *Hash_EnumFirst(const Hash_Table *, Hash_Search *);
-Hash_Entry *Hash_EnumNext(Hash_Search *);
+	/* set if can control error checking for individual commands */
+	Boolean	hasErrCtl;
 
-#endif /* hash_h_f6312f46 */
+	/* string to turn error checking on */
+	char	*errCheck;
+
+	/* string to turn off error checking */
+	char	*ignErr;
+
+	char	*echo;	/* command line flag: echo commands */
+	char	*exit;	/* command line flag: exit on error */
+
+	ArgArray builtins;	/* ordered list of shell builtins */
+	char	*meta;		/* shell meta characters */
+
+	Boolean	unsetenv;	/* unsetenv("ENV") before exec */
+};
+TAILQ_HEAD(Shells, Shell);
+
+extern struct Shell		*commandShell;
+
+void				Shell_Init(void);
+Boolean				Shell_Parse(const char []);
+
+#endif /* shell_h_6002e3b8 */

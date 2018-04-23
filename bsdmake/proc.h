@@ -1,6 +1,6 @@
 /*-
- * Copyright (c) 1990, 1993
- *	The Regents of the University of California.  All rights reserved.
+ * Copyright (C) 2005 Max Okumoto.
+ *	All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -10,14 +10,11 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL AUTHOR OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
@@ -26,31 +23,31 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	@(#)pathnames.h	8.2 (Berkeley) 4/28/95
- * $FreeBSD: src/usr.bin/make/pathnames.h,v 1.14 2005/03/11 13:02:38 harti Exp $
+ * $FreeBSD: src/usr.bin/make/proc.h,v 1.1 2005/05/24 15:41:34 harti Exp $
  */
 
-#ifndef pathnames_h_235b888a
-#define	pathnames_h_235b888a
+#ifndef proc_h_458845848
+#define proc_h_458845848
 
-#ifndef PATH_OBJDIR
-#define	PATH_OBJDIR		"obj"
-#endif /* ! PATH_OBJDIR */
+/**
+ * Information used to create a new process.
+ */
+typedef struct ProcStuff {
+	int	in;	/* stdin for new process */
+	int	out;	/* stdout for new process */
+	int	err;	/* stderr for new process */
 
-#ifndef PATH_OBJDIRPREFIX
-#define	PATH_OBJDIRPREFIX	"/usr/obj"
-#endif /* ! PATH_OBJDIRPREFIX */
+	int	merge_errors;	/* true if stderr is redirected to stdin */
+	int	pgroup;		/* true if new process a process leader */
+	int	searchpath;	/* true if binary should be found via $PATH */
 
-#ifndef PATH_DEFSHELLDIR
-#define	PATH_DEFSHELLDIR	"/bin"
-#endif /* ! PATH_DEFSHELLDIR */
+	char	**argv;
+	int	argv_free;	/* release argv after use */
+	int	errCheck;
 
-#ifndef PATH_DEFSYSMK
-#define	PATH_DEFSYSMK		"sys.mk"
-#endif /* ! PATH_DEFSYSMK */
+	pid_t	child_pid;
+} ProcStuff;
 
-#ifndef PATH_DEFSYSPATH
-#define	PATH_DEFSYSPATH	"/usr/share/mk"
-#endif /* ! PATH_DEFSYSPATH */
+void Proc_Exec(const ProcStuff *) __dead2;
 
-#endif /* pathnames_h_235b888a */
+#endif /* proc_h_458845848 */

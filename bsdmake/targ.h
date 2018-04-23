@@ -1,6 +1,8 @@
-/*
+/*-
  * Copyright (c) 1988, 1989, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1989 by Berkeley Softworks
+ * All rights reserved.
  *
  * This code is derived from software contributed to Berkeley by
  * Adam de Boor.
@@ -33,64 +35,39 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#)lstFindFrom.c	8.1 (Berkeley) 6/6/93
+ * $FreeBSD: src/usr.bin/make/targ.h,v 1.2 2005/02/04 07:51:00 harti Exp $
  */
 
-#ifndef lint
-#include <sys/cdefs.h>
-#endif /* not lint */
+#ifndef targ_h_6ded1830
+#define	targ_h_6ded1830
 
-/*-
- * LstFindFrom.c --
- *	Find a node on a list from a given starting point. Used by Lst_Find.
+#include <time.h>
+
+/*
+ * The TARG_ constants are used when calling the Targ_FindNode and
+ * Targ_FindList functions in targ.c. They simply tell the functions what to
+ * do if the desired node(s) is (are) not found. If the TARG_CREATE constant
+ * is given, a new, empty node will be created for the target, placed in the
+ * table of all targets and its address returned. If TARG_NOCREATE is given,
+ * a NULL pointer will be returned.
  */
+#define	TARG_CREATE	0x01	  /* create node if not found */
+#define	TARG_NOCREATE	0x00	  /* don't create it */
 
-#include	"lstInt.h"
+struct GNode;
+struct Lst;
 
-/*-
- *-----------------------------------------------------------------------
- * Lst_FindFrom --
- *	Search for a node starting and ending with the given one on the
- *	given list using the passed datum and comparison function to
- *	determine when it has been found.
- *
- * Results:
- *	The found node or NULL
- *
- * Side Effects:
- *	None.
- *
- *-----------------------------------------------------------------------
- */
-LstNode
-Lst_FindFrom (l, ln, d, cProc)
-    Lst		      	l;
-    register LstNode    ln;
-    register void * d;
-    register int	(*cProc)(void *, void *);
-{
-    register ListNode	tln;
-    Boolean		found = FALSE;
+void Targ_Init(void);
+struct GNode *Targ_NewGN(const char *);
+struct GNode *Targ_FindNode(const char *, int);
+void Targ_FindList(struct Lst *, struct Lst *, int);
+Boolean Targ_Ignore(struct GNode *);
+Boolean Targ_Silent(struct GNode *);
+Boolean Targ_Precious(struct GNode *);
+void Targ_SetMain(struct GNode *);
+int Targ_PrintCmd(void *, void *);
+char *Targ_FmtTime(time_t);
+void Targ_PrintType(int);
+void Targ_PrintGraph(int);
 
-    if (!LstValid (l) || LstIsEmpty (l) || !LstNodeValid (ln, l)) {
-	return (NULL);
-    }
-
-    tln = (ListNode)ln;
-
-    do {
-	if ((*cProc) (tln->datum, d) == 0) {
-	    found = TRUE;
-	    break;
-	} else {
-	    tln = tln->nextPtr;
-	}
-    } while (tln != (ListNode)ln && tln != NULL);
-
-    if (found) {
-	return ((LstNode)tln);
-    } else {
-	return (NULL);
-    }
-}
-
+#endif /* targ_h_6ded1830 */

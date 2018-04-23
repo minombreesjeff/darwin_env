@@ -1,6 +1,8 @@
-/*
+/*-
  * Copyright (c) 1988, 1989, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1989 by Berkeley Softworks
+ * All rights reserved.
  *
  * This code is derived from software contributed to Berkeley by
  * Adam de Boor.
@@ -33,47 +35,27 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#)lstClose.c	8.1 (Berkeley) 6/6/93
+ * $FreeBSD: src/usr.bin/make/suff.h,v 1.3 2005/03/23 12:56:15 harti Exp $
  */
 
-#ifndef lint
-#include <sys/cdefs.h>
-#endif /* not lint */
+#ifndef suff_h_2d5a821c
+#define	suff_h_2d5a821c
 
-/*-
- * LstClose.c --
- *	Close a list for sequential access.
- *	The sequential functions access the list in a slightly different way.
- *	CurPtr points to their idea of the current node in the list and they
- *	access the list based on it. Because the list is circular, Lst_Next
- *	and Lst_Prev will go around the list forever. Lst_IsAtEnd must be
- *	used to determine when to stop.
- */
+struct GNode;
+struct Path;
 
-#include	"lstInt.h"
+void Suff_ClearSuffixes(void);
+Boolean Suff_IsTransform(char *);
+struct GNode *Suff_AddTransform(char *);
+void Suff_EndTransform(const struct GNode *);
+void Suff_AddSuffix(char *);
+struct Path *Suff_GetPath(char *);
+void Suff_DoPaths(void);
+void Suff_AddInclude(char *);
+void Suff_AddLib(char *);
+void Suff_FindDeps(struct GNode *);
+void Suff_SetNull(char *);
+void Suff_Init(void);
+void Suff_PrintAll(void);
 
-/*-
- *-----------------------------------------------------------------------
- * Lst_Close --
- *	Close a list which was opened for sequential access.
- *
- * Results:
- *	None.
- *
- * Side Effects:
- *	The list is closed.
- *
- *-----------------------------------------------------------------------
- */
-void
-Lst_Close (l)
-    Lst	    l;	  	/* The list to close */
-{
-    register List 	list = (List) l;
-
-    if (LstValid(l) == TRUE) {
-	list->isOpen = FALSE;
-	list->atEnd = Unknown;
-    }
-}
-
+#endif /* suff_h_2d5a821c */

@@ -1,6 +1,8 @@
-/*
+/*-
  * Copyright (c) 1988, 1989, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1989 by Berkeley Softworks
+ * All rights reserved.
  *
  * This code is derived from software contributed to Berkeley by
  * Adam de Boor.
@@ -33,40 +35,47 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#)lstAtEnd.c	8.1 (Berkeley) 6/6/93
+ * $FreeBSD: src/usr.bin/make/str.h,v 1.6 2005/05/23 13:27:52 harti Exp $
  */
 
-#ifndef lint
-#include <sys/cdefs.h>
-#endif /* not lint */
+#ifndef str_h_44db59e6
+#define	str_h_44db59e6
 
-/*-
- * LstAtEnd.c --
- *	Add a node at the end of the list
+#include "util.h"
+
+struct Buffer;
+
+/**
+ * An array of c-strings.  The pointers stored in argv, point to
+ * strings stored in buffer.
  */
+typedef struct ArgArray {
+	int	size;		/* size of argv array */
+	int	argc;		/* strings referenced in argv */
+	char	**argv;		/* array of string pointers */
+	size_t	len;		/* size of buffer */
+	char	*buffer;	/* data buffer */
+} ArgArray;
 
-#include	"lstInt.h"
-
-/*-
- *-----------------------------------------------------------------------
- * Lst_AtEnd --
- *	Add a node to the end of the given list
- *
- * Results:
- *	SUCCESS if life is good.
- *
- * Side Effects:
- *	A new ListNode is created and added to the list.
- *
- *-----------------------------------------------------------------------
+/*
+ * These constants are all used by the Str_Concat function to decide how the
+ * final string should look. If STR_ADDSPACE is given, a space will be
+ * placed between the two strings. If STR_ADDSLASH is given, a '/' will
+ * be used instead of a space. If neither is given, no intervening characters
+ * will be placed between the two strings in the final output.
  */
-ReturnStatus
-Lst_AtEnd (l, d)
-    Lst		l;	/* List to which to add the datum */
-    void *	d;	/* Datum to add */
-{
-    register LstNode	end;
+#define	STR_ADDSPACE	0x01	/* add a space when Str_Concat'ing */
+#define	STR_ADDSLASH	0x04	/* add a slash when Str_Concat'ing */
 
-    end = Lst_Last (l);
-    return (Lst_Append (l, end, d));
-}
+void ArgArray_Init(ArgArray *);
+void ArgArray_Done(ArgArray *);
+
+char *str_concat(const char *, const char *, int);
+void brk_string(ArgArray *, const char [], Boolean);
+char *MAKEFLAGS_quote(const char *);
+void MAKEFLAGS_break(ArgArray *, const char []);
+int Str_Match(const char *, const char *);
+const char *Str_SYSVMatch(const char *, const char *, int *);
+void Str_SYSVSubst(struct Buffer *, const char *, const char *, int);
+
+#endif /* str_h_44db59e6 */

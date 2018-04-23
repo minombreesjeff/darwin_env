@@ -1,6 +1,8 @@
-/*
+/*-
  * Copyright (c) 1988, 1989, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1989 by Berkeley Softworks
+ * All rights reserved.
  *
  * This code is derived from software contributed to Berkeley by
  * Adam de Boor.
@@ -33,51 +35,52 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#)lstOpen.c	8.1 (Berkeley) 6/6/93
+ * $FreeBSD: src/usr.bin/make/parse.h,v 1.6 2005/05/13 08:53:00 harti Exp $
  */
 
-#ifndef lint
-#include <sys/cdefs.h>
-#endif /* not lint */
+#ifndef parse_h_470eeb9a
+#define	parse_h_470eeb9a
 
-/*-
- * LstOpen.c --
- *	Open a list for sequential access. The sequential functions access the
- *	list in a slightly different way. CurPtr points to their idea of the
- *	current node in the list and they access the list based on it.
- *	If the list is circular, Lst_Next and Lst_Prev will go around
- *	the list forever. Lst_IsAtEnd must be used to determine when to stop.
+#include <stdio.h>
+
+#include "util.h"
+
+struct GNode;
+struct Lst;
+
+/*
+ * Error levels for parsing. PARSE_FATAL means the process cannot continue
+ * once the makefile has been parsed. PARSE_WARNING means it can. Passed
+ * as the first argument to Parse_Error.
  */
+#define	PARSE_WARNING	2
+#define	PARSE_FATAL	1
 
-#include	"lstInt.h"
-
-/*-
- *-----------------------------------------------------------------------
- * Lst_Open --
- *	Open a list for sequential access. A list can still be searched,
- *	etc., without confusing these functions.
- *
- * Results:
- *	SUCCESS or FAILURE.
- *
- * Side Effects:
- *	isOpen is set TRUE and curPtr is set to NULL so the
- *	other sequential functions no it was just opened and can choose
- *	the first element accessed based on this.
- *
- *-----------------------------------------------------------------------
+/*
+ * Definitions for the "local" variables. Used only for clarity.
  */
-ReturnStatus
-Lst_Open (l)
-	register Lst	l;
-{
-	if (LstValid (l) == FALSE) {
-		return (FAILURE);
-	}
-	((List) l)->isOpen = TRUE;
-	((List) l)->atEnd = LstIsEmpty (l) ? Head : Unknown;
-	((List) l)->curPtr = NULL;
+#define	TARGET		"@"	/* Target of dependency */
+#define	OODATE		"?"	/* All out-of-date sources */
+#define	ALLSRC		">"	/* All sources */
+#define	IMPSRC		"<"	/* Source implied by transformation */
+#define	PREFIX		"*"	/* Common prefix */
+#define	ARCHIVE		"!"	/* Archive in "archive(member)" syntax */
+#define	MEMBER		"%"	/* Member in "archive(member)" syntax */
 
-	return (SUCCESS);
-}
+#define	FTARGET		"@F"	/* file part of TARGET */
+#define	DTARGET		"@D"	/* directory part of TARGET */
+#define	FIMPSRC		"<F"	/* file part of IMPSRC */
+#define	DIMPSRC		"<D"	/* directory part of IMPSRC */
+#define	FPREFIX		"*F"	/* file part of PREFIX */
+#define	DPREFIX		"*D"	/* directory part of PREFIX */
 
+void Parse_Error(int, const char *, ...);
+Boolean Parse_AnyExport(void);
+Boolean Parse_IsVar(char *);
+void Parse_DoVar(char *, struct GNode *);
+void Parse_AddIncludeDir(char *);
+void Parse_File(const char *, FILE *);
+void Parse_FromString(char *, int);
+void Parse_MainName(struct Lst *);
+
+#endif /* parse_h_470eeb9a */

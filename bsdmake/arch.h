@@ -1,6 +1,8 @@
-/*
+/*-
  * Copyright (c) 1988, 1989, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1989 by Berkeley Softworks
+ * All rights reserved.
  *
  * This code is derived from software contributed to Berkeley by
  * Adam de Boor.
@@ -33,69 +35,27 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#)lstDupl.c	8.1 (Berkeley) 6/6/93
+ * $FreeBSD: src/usr.bin/make/arch.h,v 1.5 2005/05/18 06:50:38 harti Exp $
  */
 
-#ifndef lint
-#include <sys/cdefs.h>
-#endif /* not lint */
+#ifndef arch_h_488adf7a
+#define	arch_h_488adf7a
 
-/*-
- * listDupl.c --
- *	Duplicate a list. This includes duplicating the individual
- *	elements.
- */
+#include "util.h"
 
-#include    "lstInt.h"
+struct GNode;
+struct Lst;
+struct Path;
 
-/*-
- *-----------------------------------------------------------------------
- * Lst_Duplicate --
- *	Duplicate an entire list. If a function to copy a void * is
- *	given, the individual client elements will be duplicated as well.
- *
- * Results:
- *	The new Lst structure or NULL if failure.
- *
- * Side Effects:
- *	A new list is created.
- *-----------------------------------------------------------------------
- */
-Lst
-Lst_Duplicate (l, copyProc)
-    Lst     	  l;	    	 /* the list to duplicate */
-    /* A function to duplicate each void * */
-    void *	  (*copyProc)(void *);
-{
-    register Lst 	nl;
-    register ListNode  	ln;
-    register List 	list = (List)l;
+/* archive errors are fatal */
+extern Boolean arch_fatal;
 
-    if (!LstValid (l)) {
-	return (NULL);
-    }
+Boolean Arch_ParseArchive(char **, struct Lst *, struct GNode *);
+void Arch_Touch(struct GNode *);
+void Arch_TouchLib(struct GNode *);
+int Arch_MTime(struct GNode *);
+int Arch_MemMTime(struct GNode *);
+void Arch_FindLib(struct GNode *, struct Path *);
+Boolean Arch_LibOODate(struct GNode *);
 
-    nl = Lst_Init (list->isCirc);
-    if (nl == NULL) {
-	return (NULL);
-    }
-
-    ln = list->firstPtr;
-    while (ln != NULL) {
-	if (copyProc != NOCOPY) {
-	    if (Lst_AtEnd (nl, (*copyProc) (ln->datum)) == FAILURE) {
-		return (NULL);
-	    }
-	} else if (Lst_AtEnd (nl, ln->datum) == FAILURE) {
-	    return (NULL);
-	}
-
-	if (list->isCirc && ln == list->lastPtr) {
-	    ln = NULL;
-	} else {
-	    ln = ln->nextPtr;
-	}
-    }
-
-    return (nl);
-}
+#endif /* arch_h_488adf7a */

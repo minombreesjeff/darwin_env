@@ -1,6 +1,8 @@
-/*
+/*-
  * Copyright (c) 1988, 1989, 1990, 1993
  *	The Regents of the University of California.  All rights reserved.
+ * Copyright (c) 1989 by Berkeley Softworks
+ * All rights reserved.
  *
  * This code is derived from software contributed to Berkeley by
  * Adam de Boor.
@@ -33,42 +35,39 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * @(#)lstForEach.c	8.1 (Berkeley) 6/6/93
+ * $FreeBSD: src/usr.bin/make/cond.h,v 1.3 2005/04/11 07:20:09 harti Exp $
  */
 
-#ifndef lint
-#include <sys/cdefs.h>
-#endif /* not lint */
+#ifndef cond_h_6e96ad7c
+#define	cond_h_6e96ad7c
 
-/*-
- * LstForeach.c --
- *	Perform a given function on all elements of a list.
+/*
+ * Values returned by Cond_Eval.
  */
+#define	COND_PARSE	0	/* Parse the next lines */
+#define	COND_SKIP	1	/* Skip the next lines */
+#define	COND_INVALID	2	/* Not a conditional statement */
 
-#include	"lstInt.h"
+enum {
+	COND_IF,
+	COND_IFDEF,
+	COND_IFNDEF,
+	COND_IFMAKE,
+	COND_IFNMAKE,
+	COND_ELSE,
+	COND_ELIF,
+	COND_ELIFDEF,
+	COND_ELIFNDEF,
+	COND_ELIFMAKE,
+	COND_ELIFNMAKE,
+	COND_ENDIF,
+};
 
-/*-
- *-----------------------------------------------------------------------
- * Lst_ForEach --
- *	Apply the given function to each element of the given list. The
- *	function should return 0 if Lst_ForEach should continue and non-
- *	zero if it should abort.
- *
- * Results:
- *	None.
- *
- * Side Effects:
- *	Only those created by the passed-in function.
- *
- *-----------------------------------------------------------------------
- */
-/*VARARGS2*/
-void
-Lst_ForEach (l, proc, d)
-    Lst	    	  	l;
-    register int	(*proc)(void *, void *);
-    register void *	d;
-{
-    Lst_ForEachFrom(l, Lst_First(l), proc, d);
-}
+void Cond_If(char *, int, int);
+void Cond_Else(char *, int, int);
+void Cond_Endif(char *, int, int);
+void Cond_End(void);
 
+extern Boolean skipLine;
+
+#endif /* cond_h_6e96ad7c */
