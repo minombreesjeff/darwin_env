@@ -64,10 +64,6 @@
 static const char rcsid[] = "$Sudo: check.c,v 1.226 2004/09/08 15:48:23 millert Exp $";
 #endif /* lint */
 
-#ifdef __APPLE_MEMBERD__
-#include <membership.h>
-#endif
-
 /* Status codes for timestamp_status() */
 #define TS_CURRENT		0
 #define TS_OLD			1
@@ -288,11 +284,6 @@ user_is_exempt()
 {
     struct group *grp;
     char **gr_mem;
-	#ifdef __APPLE_MEMBERD__
-	struct passwd *pw = getpwuid(getuid());
-	uuid_t uu, gu;
-	int ismember = 0;
-	#endif
 
     if (!def_exempt_group)
 	return(FALSE);
@@ -303,16 +294,10 @@ user_is_exempt()
     if (user_gid == grp->gr_gid)
 	return(TRUE);
 
-	#ifdef __APPLE_MEMBERD__
-	if ( 0 == mbr_uid_to_uuid(pw->pw_uid,uu) && 0 == mbr_gid_to_uuid(grp->gr_gid,gu) && 0 == mbr_check_membership(uu,gu,&ismember) ) {
-		if (1 == ismember) return(TRUE);
-	}
-	#else
     for (gr_mem = grp->gr_mem; *gr_mem; gr_mem++) {
 	if (strcmp(user_name, *gr_mem) == 0)
 	    return(TRUE);
     }
-	#endif
 
     return(FALSE);
 }
