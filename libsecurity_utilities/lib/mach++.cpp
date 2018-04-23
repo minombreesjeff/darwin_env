@@ -206,13 +206,6 @@ pid_t TaskPort::pid() const
     return pid;
 }
 
-TaskPort TaskPort::forPid(pid_t pid)
-{
-    TaskPort taskPort;
-    check(::task_for_pid(self(), pid, &taskPort.port()));
-    return taskPort;
-}
-
 
 //
 // Bootstrap port management

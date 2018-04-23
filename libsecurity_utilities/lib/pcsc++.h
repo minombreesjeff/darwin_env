@@ -170,7 +170,7 @@ private:
 		kDisconnected
 	} mConnectedState;
 		
-	long mHandle;
+	int32_t mHandle;
 	int mTransactionNestLevel;
 	SCARD_IO_REQUEST *mIOType;
 };

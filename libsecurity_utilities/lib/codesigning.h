@@ -81,6 +81,8 @@ public:
 public:
 	class State {
 	public:
+		virtual ~State();
+		
 		virtual void enumerateContents(const void *data, size_t length) = 0;
 		
 		Signer &signer;
