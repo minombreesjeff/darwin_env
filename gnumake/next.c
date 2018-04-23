@@ -134,7 +134,6 @@ vpath_expand(line, file)
     char *line;
     struct file *file;
 {
-    struct variable *v;
     char *p, *p1, *o;
     static char *meta = 0;
 
@@ -166,7 +165,6 @@ vpath_expand(line, file)
 	    unsigned int n = p1 - p;
 	    char *buffer = malloc(n + 1);
 	    char *filename = buffer;
-	    struct dep *dep;
 
 	    strncpy(filename, p, n);
 	    filename[n] = 0;

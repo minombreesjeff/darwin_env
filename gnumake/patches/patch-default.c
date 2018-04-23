@@ -1,5 +1,5 @@
---- default.c.orig	2005-06-25 11:57:28.000000000 -0700
-+++ default.c	2005-10-17 16:38:30.000000000 -0700
+--- default.c.orig	2006-02-11 14:16:04.000000000 -0800
++++ default.c	2011-12-05 16:41:05.000000000 -0800
 @@ -45,7 +45,7 @@
  .mod .sym .def .h .info .dvi .tex .texinfo .texi .txinfo \
  .w .ch .web .sh .elc .el .obj .exe .dll .lib";
@@ -39,18 +39,26 @@
      ".F.f",
      "$(PREPROCESS.F) $(OUTPUT_OPTION) $<",
      ".r.f",
-@@ -304,6 +313,10 @@
+@@ -304,6 +313,9 @@
  
  static char *default_variables[] =
    {
 +#if defined(__APPLE__) || defined(NeXT) || defined(NeXT_PDO)
 +    "GNUMAKE", "YES",	/* I'm not sure who uses this.  Dave Payne 8/10/99 */
-+    "MAKEFILEPATH", "/Developer/Makefiles",
 +#endif /* __APPLE__ || NeXT || NeXT_PDO */
  #ifdef VMS
  #ifdef __ALPHA
      "ARCH", "ALPHA",
-@@ -468,6 +481,8 @@
+@@ -400,7 +412,7 @@
+ # endif /* __MSDOS__ */
+ #else
+     "CC", "cc",
+-    "CXX", "g++",
++    "CXX", "c++",
+ #endif
+ 
+     /* This expands to $(CO) $(COFLAGS) $< $@ if $@ does not exist,
+@@ -468,6 +480,8 @@
      "LINK.o", "$(CC) $(LDFLAGS) $(TARGET_ARCH)",
      "COMPILE.c", "$(CC) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c",
      "LINK.c", "$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $(TARGET_ARCH)",
@@ -59,7 +67,7 @@
      "COMPILE.cc", "$(CXX) $(CXXFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c",
      "COMPILE.C", "$(COMPILE.cc)",
      "COMPILE.cpp", "$(COMPILE.cc)",
-@@ -476,6 +491,8 @@
+@@ -476,6 +490,8 @@
      "LINK.cpp", "$(LINK.cc)",
      "YACC.y", "$(YACC) $(YFLAGS)",
      "LEX.l", "$(LEX) $(LFLAGS) -t",

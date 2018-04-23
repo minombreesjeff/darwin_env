@@ -925,6 +925,36 @@ open_tmpfile(char **name, const char *template)
 #endif
 }
 
+#ifdef __APPLE__
+static void
+define_makefilepath_variable(void)
+{
+	uint32_t bufsize;
+	char buf[PATH_MAX], path[PATH_MAX];
+	char *p;
+	struct stat sb;
+
+	/* For $ANY_DIR/usr/bin/make, try $ANY_DIR/Makefiles */
+	bufsize = sizeof(buf);
+	if (_NSGetExecutablePath(buf, &bufsize) == 0 && realpath(buf, path) != NULL) {
+		p = strstr(path, "/usr/bin/gnumake");
+		if (p == NULL) {
+			p = strstr(path, "/usr/bin/make");
+		}
+
+		if (p != NULL && p != path) {
+			strcpy(p, "/Makefiles");
+			if (lstat(path, &sb) == 0 && S_ISDIR(sb.st_mode)) {
+				define_variable("MAKEFILEPATH", 12, path, o_default, 0);
+				return;
+			}
+		}
+	}
+
+	/* Fallback is $DEVELOPER_DIR/Makefiles */
+	define_variable("MAKEFILEPATH", 12, "$(shell /usr/bin/xcode-select -print-path 2>/dev/null || echo /Developer)/Makefiles", o_default, 1);
+}
+#endif /* __APPLE__ */
 
 #ifdef _AMIGA
 int
@@ -1652,6 +1682,10 @@ main (int argc, char **argv, char **envp)
     struct variable *v = define_variable (".DEFAULT_GOAL", 13, "", o_file, 0);
     default_goal_name = &v->value;
   }
+
+#ifdef __APPLE__
+  define_makefilepath_variable ();
+#endif /* __APPLE__ */
 
   /* Read all the makefiles.  */
 

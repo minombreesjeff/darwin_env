@@ -315,7 +315,6 @@ static char *default_variables[] =
   {
 #if defined(__APPLE__) || defined(NeXT) || defined(NeXT_PDO)
     "GNUMAKE", "YES",	/* I'm not sure who uses this.  Dave Payne 8/10/99 */
-    "MAKEFILEPATH", "/Developer/Makefiles",
 #endif /* __APPLE__ || NeXT || NeXT_PDO */
 #ifdef VMS
 #ifdef __ALPHA
@@ -413,7 +412,7 @@ static char *default_variables[] =
 # endif /* __MSDOS__ */
 #else
     "CC", "cc",
-    "CXX", "g++",
+    "CXX", "c++",
 #endif
 
     /* This expands to $(CO) $(COFLAGS) $< $@ if $@ does not exist,

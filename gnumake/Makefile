@@ -56,7 +56,8 @@ AEP_Patches    = patch-Makefile.in \
                  PR-4339040.patch \
                  PR-4482353.patch \
 		 PR-5071266.patch \
-                 PR-6280514.patch
+                 PR-6280514.patch \
+                 PR-10516611.patch
 
 # Extract the source.
 install_source::
