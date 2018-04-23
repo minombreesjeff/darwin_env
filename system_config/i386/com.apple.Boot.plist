@@ -8,7 +8,5 @@
 	<string></string>
 	<key>Boot Graphics</key>
 	<string>Yes</string>
-	<key>APM</key>
-	<string>Yes</string>
 </dict>
 </plist>
