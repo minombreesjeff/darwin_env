@@ -315,7 +315,7 @@ static char *default_variables[] =
   {
 #if defined(__APPLE__) || defined(NeXT) || defined(NeXT_PDO)
     "GNUMAKE", "YES",	/* I'm not sure who uses this.  Dave Payne 8/10/99 */
-    "MAKEFILEPATH", "$(shell xcode-select -print-path 2>/dev/null || echo /Developer)/Makefiles",
+    "MAKEFILEPATH", "/Developer/Makefiles",
 #endif /* __APPLE__ || NeXT || NeXT_PDO */
 #ifdef VMS
 #ifdef __ALPHA

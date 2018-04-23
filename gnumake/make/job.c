@@ -1330,9 +1330,8 @@ start_job_command (struct child *child)
       posix_spawnattr_destroy(&attr);
       posix_spawn_file_actions_destroy(&file_actions);
       if (rc) {
-	errno = rc;
-	perror_with_name ("posix_spawn: ", argv[0]);
-	goto error;
+	error (NILF, _("%s: %s"), argv[0], strerror(rc));
+	rc = posix_spawnp(&child->pid, "/usr/bin/false", NULL, NULL, NULL, NULL);
       }
 #else  /* !USE_POSIX_SPAWN */
       child->pid = vfork ();
