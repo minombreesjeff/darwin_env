@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2004 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2008 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,33 +21,35 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef _CFCLASS_H
-#define _CFCLASS_H
 
-#include <list>
-#include <CoreFoundation/CFRuntime.h>
-#include "threading.h"
+//
+// fdsel - select-style file descriptor set management
+//
+#include "vproc++.h"
+#include <security_utilities/debugging.h>
+#include </usr/local/include/vproc_priv.h>
+
 
 namespace Security {
+namespace VProc {
 
-//
-// CFClass
-//
-class CFClass : protected CFRuntimeClass
+
+void Transaction::activate()
 {
-public:
-    explicit CFClass(const char *name);
+	assert(!active());
+	mTransaction = ::vproc_transaction_begin(mVP);
+}
 
-	CFTypeID typeID;
 
-private:
-	static void finalizeType(CFTypeRef cf) throw();
-    static Boolean equalType(CFTypeRef cf1, CFTypeRef cf2) throw();
-    static CFHashCode hashType(CFTypeRef cf) throw();
-	static CFStringRef copyFormattingDescType(CFTypeRef cf, CFDictionaryRef dict) throw();
-	static CFStringRef copyDebugDescType(CFTypeRef cf) throw();
-};
+//
+// Get the in-process accumulated transaction count.
+// Use for debugging only.
+//
+size_t Transaction::debugCount()
+{
+	return ::_vproc_transaction_count();
+}
 
-} // end namespace Security
 
-#endif
+}	// end namespace VProc
+}	// end namespace Security

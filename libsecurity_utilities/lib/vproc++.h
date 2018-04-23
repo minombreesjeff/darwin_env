@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2004 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2008 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,33 +21,43 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef _CFCLASS_H
-#define _CFCLASS_H
 
-#include <list>
-#include <CoreFoundation/CFRuntime.h>
-#include "threading.h"
+//
+// vproc++ - interface to low-level transaction tracking facility
+//
+#ifndef _H_VPROCPP
+#define _H_VPROCPP
+
+#include <vproc.h>
+
 
 namespace Security {
+namespace VProc {
 
-//
-// CFClass
-//
-class CFClass : protected CFRuntimeClass
-{
+
+class Transaction {
 public:
-    explicit CFClass(const char *name);
-
-	CFTypeID typeID;
-
+	Transaction(vproc_t vp = 0) : mVP(vp) { mTransaction = ::vproc_transaction_begin(vp); }
+	Transaction(bool activate, vproc_t vp = 0) : mVP(vp)
+		{ if (activate) mTransaction = ::vproc_transaction_begin(vp); else mTransaction = 0; }
+	~Transaction() { deactivate(); }
+	
+	// explicit state management
+	void activate();
+	void deactivate()
+		{ if (mTransaction) { ::vproc_transaction_end(mVP, mTransaction); mTransaction = 0; }}
+	bool active() const { return mTransaction != 0; }
+	
+	static size_t debugCount();				// debug use only
+	
 private:
-	static void finalizeType(CFTypeRef cf) throw();
-    static Boolean equalType(CFTypeRef cf1, CFTypeRef cf2) throw();
-    static CFHashCode hashType(CFTypeRef cf) throw();
-	static CFStringRef copyFormattingDescType(CFTypeRef cf, CFDictionaryRef dict) throw();
-	static CFStringRef copyDebugDescType(CFTypeRef cf) throw();
+	vproc_t mVP;
+	vproc_transaction_t mTransaction;
 };
 
-} // end namespace Security
 
-#endif
+}	// end namespace VProc
+}	// end namespace Security
+
+
+#endif //_H_VPROCPP
