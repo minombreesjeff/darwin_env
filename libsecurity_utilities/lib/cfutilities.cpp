@@ -57,7 +57,7 @@ string cfString(CFStringRef inStr, bool release)
 		CFRetain(inStr);	// compensate for release on exit
 
 	// NULL translates (cleanly) to empty
-	if (!str)
+	if (str == NULL)
 		return "";
 
 	// quick path first

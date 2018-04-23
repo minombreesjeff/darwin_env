@@ -138,7 +138,6 @@ public:
     public:
         Handler(mach_port_t p) : mPort(p) { }
         Handler() : mPort(MACH_PORT_NULL) { }
-		virtual ~Handler();
         
         mach_port_t port() const	{ return mPort; }
         

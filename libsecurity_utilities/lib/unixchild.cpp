@@ -27,7 +27,6 @@
 //
 #include "unixchild.h"
 #include <security_utilities/debugging.h>
-#include <signal.h>
 
 
 namespace Security {

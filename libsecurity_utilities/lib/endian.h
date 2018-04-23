@@ -40,43 +40,43 @@ namespace Security {
 // You can use these functions directly, but consider using
 // the higher-level constructs below instead.
 //
-static inline UInt32 h2n(UInt32 v)	{ return htonl(v); }
-static inline SInt32 h2n(SInt32 v)	{ return htonl(v); }
-static inline UInt16 h2n(UInt16 v)	{ return htons(v); }
-static inline SInt16 h2n(SInt16 v)	{ return htons(v); }
-static inline UInt8 h2n(UInt8 v)	{ return v; }
-static inline SInt8 h2n(SInt8 v)	{ return v; }
+inline UInt32 h2n(UInt32 v)	{ return htonl(v); }
+inline SInt32 h2n(SInt32 v)	{ return htonl(v); }
+inline UInt16 h2n(UInt16 v)	{ return htons(v); }
+inline SInt16 h2n(SInt16 v)	{ return htons(v); }
+inline UInt8 h2n(UInt8 v)	{ return v; }
+inline SInt8 h2n(SInt8 v)	{ return v; }
 
-static inline UInt32 n2h(UInt32 v)	{ return ntohl(v); }
-static inline SInt32 n2h(SInt32 v)	{ return ntohl(v); }
-static inline UInt16 n2h(UInt16 v)	{ return ntohs(v); }
-static inline SInt16 n2h(SInt16 v)	{ return ntohs(v); }
-static inline UInt8 n2h(UInt8 v)	{ return v; }
-static inline SInt8 n2h(SInt8 v)	{ return v; }
+inline UInt32 n2h(UInt32 v)	{ return ntohl(v); }
+inline SInt32 n2h(SInt32 v)	{ return ntohl(v); }
+inline UInt16 n2h(UInt16 v)	{ return ntohs(v); }
+inline SInt16 n2h(SInt16 v)	{ return ntohs(v); }
+inline UInt8 n2h(UInt8 v)	{ return v; }
+inline SInt8 n2h(SInt8 v)	{ return v; }
 
 
 //
 // Flip pointers
 //
 template <class Base>
-static inline Base *h2n(Base *p)	{ return (Base *)h2n(uintptr_t(p)); }
+inline Base *h2n(Base *p)	{ return (Base *)h2n(uintptr_t(p)); }
 
 template <class Base>
-static inline Base *n2h(Base *p)	{ return (Base *)n2h(uintptr_t(p)); }
+inline Base *n2h(Base *p)	{ return (Base *)n2h(uintptr_t(p)); }
 
 
 //
 // Generic template - do nothing, issue debug warning
 //
 template <class Type>
-static inline const Type &h2n(const Type &v)
+inline const Type &h2n(const Type &v)
 {
 	secdebug("endian", "generic h2n called for type %s", Debug::typeName(v).c_str());
 	return v;
 }
 
 template <class Type>
-static inline const Type &n2h(const Type &v)
+inline const Type &n2h(const Type &v)
 {
 	secdebug("endian", "generic n2h called for type %s", Debug::typeName(v).c_str());
 	return v;
@@ -87,10 +87,10 @@ static inline const Type &n2h(const Type &v)
 // In-place fix operations
 //
 template <class Type>
-static inline void h2ni(Type &v)	{ v = h2n(v); }
+inline void h2ni(Type &v)	{ v = h2n(v); }
 
 template <class Type>
-static inline void n2hi(Type &v)	{ v = n2h(v); }
+inline void n2hi(Type &v)	{ v = n2h(v); }
 
 
 //
