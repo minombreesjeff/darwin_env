@@ -1,0 +1,11 @@
+--- lib/Automake/Wrap.pm.orig	2006-06-06 11:14:10.000000000 -0700
++++ lib/Automake/Wrap.pm	2010-12-03 17:07:01.000000000 -0800
+@@ -57,7 +57,7 @@
+ {
+   my ($txt) = @_;
+   my $len = length ($txt);
+-  $len += 7 * ($txt =~ tr/\t/\t/d);
++  $len += 7 * ($txt =~ tr/\t/\t/);
+   return $len;
+ }
+ 

@@ -4,7 +4,7 @@
 
 Project        = automake
 ProjectVersion = 1.10
-Patches        = patch-6165353-Xcode.in
+Patches        = patch-6165353-Xcode.in patch-7485479-security.in patch-8695470-warning.in
 
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/Common.make
 
