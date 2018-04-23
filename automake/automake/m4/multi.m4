@@ -1,21 +1,12 @@
-# Copyright 1998, 1999, 2000, 2001 Free Software Foundation, Inc.
+##                                                          -*- Autoconf -*-
+# Copyright (C) 1998, 1999, 2000, 2001, 2003, 2004, 2005, 2006
+# Free Software Foundation, Inc.
+#
+# This file is free software; the Free Software Foundation
+# gives unlimited permission to copy and/or distribute it,
+# with or without modifications, as long as this notice is preserved.
 
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2, or (at your option)
-# any later version.
-
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
-# 02111-1307, USA.
-
-# serial 3
+# serial 6
 
 # AM_ENABLE_MULTILIB([MAKEFILE], [REL-TO-TOP-SRCDIR])
 # ---------------------------------------------------
@@ -23,13 +14,13 @@
 AC_DEFUN([AM_ENABLE_MULTILIB],
 [# Default to --enable-multilib
 AC_ARG_ENABLE(multilib,
-[  --enable-multilib         build many library versions (default)],
+[  --enable-multilib       build many library versions (default)],
 [case "$enableval" in
   yes) multilib=yes ;;
   no)  multilib=no ;;
   *)   AC_MSG_ERROR([bad value $enableval for multilib option]) ;;
  esac],
-              [multilib=yes])
+	      [multilib=yes])
 
 # We may get other options which we leave undocumented:
 # --with-target-subdir, --with-multisrctop, --with-multisubdir
@@ -46,6 +37,13 @@ else
 fi
 AC_SUBST(multi_basedir)
 
+# Even if the default multilib is not a cross compilation,
+# it may be that some of the other multilibs are.
+if test $cross_compiling = no && test $multilib = yes \
+   && test "x${with_multisubdir}" != x ; then
+   cross_compiling=maybe
+fi
+
 AC_OUTPUT_COMMANDS([
 # Only add multilib support code if we just rebuilt the top-level
 # Makefile.
@@ -54,7 +52,7 @@ case " $CONFIG_FILES " in
    ac_file=]m4_default([$1],Makefile)[ . ${multi_basedir}/config-ml.in
    ;;
 esac],
-                   [
+		   [
 srcdir="$srcdir"
 host="$host"
 target="$target"
