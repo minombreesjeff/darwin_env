@@ -8,18 +8,14 @@
 		<string>=0x1F5:0:0</string>
 	</dict>
 	<key>Label</key>
-	<string>com.apple.DirectoryServices</string>
-	<key>ProgramArguments</key>
-	<array>
-		<string>/usr/sbin/DirectoryService</string>
-	</array>
+	<string>com.apple.dspluginhelperd</string>
+	<key>Program</key>
+	<string>/usr/libexec/dspluginhelperd</string>
 	<key>MachServices</key>
 	<dict>
 		<key>com.apple.system.DirectoryService.legacy</key>
 		<true/>
 	</dict>
-	<key>KeepAlive</key>
-	<true/>
 	<key>HopefullyExitsLast</key>
 	<true/>
 	<key>EnableTransactions</key>

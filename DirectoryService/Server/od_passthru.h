@@ -21,44 +21,36 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-/*!
- * @header CContinue
- */
+#include <unistd.h>
+#include <CoreFoundation/CoreFoundation.h>
 
-#ifndef __CContinue_h__
-#define	__CContinue_h__	1
+__BEGIN_DECLS
 
-#include <DirectoryServiceCore/PrivateTypes.h>
-#include <DirectoryServiceCore/DSMutexSemaphore.h>
-#include <map>
+void
+od_passthru_set_node_availability(const char *nodename, bool available);
 
-using namespace std;
+int32_t
+od_passthru_register_node(const char *nodename, bool hidden);
 
-typedef void (*DeallocateProc)( void *inData );
+void
+od_passthru_unregister_node(const char *nodename);
 
-struct sContinueEntry;
+bool
+od_passthru_log_message(int32_t level, const char *message);
 
-class CContinue
-{
-	public:
-						CContinue				( DeallocateProc inProcPtr );
-		virtual		   ~CContinue				( void );
+uid_t
+od_passthru_get_uid(void);
 
-		tContextData	AddPointer				( void *inPointer, UInt32 inRefNum );
-		void			RemovePointer			( void *inPointer );
-		
-		void			RemovePointersForRefNum	( UInt32 inRefNum );
-		
-		tDirStatus		RemoveContext			( tContextData inContextData );
-		void *			GetPointer				( tContextData inContextData );
-		UInt32			GetRefNum				( tContextData inContextData );
+uid_t
+passthru_get_euid(void);
 
-	private:
-		map<tContextData, sContinueEntry *>	fContextMap;
-		uint32_t							fNextContextID;
-		DeallocateProc						fDeallocProcPtr;
-		DSMutexSemaphore					fMutex;
-};
+void
+od_passthru_localonly_exit(void);
 
-#endif
+dispatch_source_t
+od_passthru_create_source(mach_port_t port);
 
+void
+od_passthru_set_plugin_enabled(const char *plugin_name, bool enabled);
+
+__END_DECLS
