@@ -22,7 +22,7 @@
  */
 
 /*
- * appleSession.h - Session storage module, Apple CDSA version.
+ * appleSession.h - Session storage module.
  */
 
 #ifndef	_APPLE_SESSION_H_
@@ -34,19 +34,31 @@
 extern "C" {
 #endif
 
-extern int sslAddSession (
-	const tls_buffer sessionKey,
-	const tls_buffer sessionData,
-	uint32_t timeToLive);			/* optional time-to-live in seconds; 0 ==> default */
+typedef struct SessionCacheEntry SessionCacheEntry;
 
-extern int sslGetSession (
-	const tls_buffer sessionKey,
-	tls_buffer *sessionData);
+typedef struct SessionCache {
+    SessionCacheEntry *head;
+    time_t mTimeToLive;		/* default time-to-live in seconds */
+} SessionCache;
 
-extern int sslDeleteSession (
-	const tls_buffer sessionKey);
+void SessionCacheInit(SessionCache *cache);
+void SessionCacheEmpty(SessionCache *cache);
 
-extern int sslCleanupSession(void);
+
+int SessionCacheAddEntry(SessionCache *cache,
+                         const tls_buffer *sessionKey,
+                         const tls_buffer *sessionData,
+                         time_t timeToLive);			/* optional time-to-live in seconds; 0 ==> default */
+
+int SessionCacheLookupEntry(SessionCache *cache,
+                            const tls_buffer *sessionKey,
+                            tls_buffer *sessionData);
+
+int SessionCacheDeleteEntry(SessionCache *cache,
+                            const tls_buffer *sessionKey);
+
+bool SessionCacheCleanup(SessionCache *cache);
+
 
 #ifdef __cplusplus
 }

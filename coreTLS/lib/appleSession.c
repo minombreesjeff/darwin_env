@@ -51,20 +51,17 @@
 
 #include <tls_types.h>
 #include "sslMemory.h"
-// #include "sslDebug.h"
 #include "appleSession.h"
 
-#include <Security/SecBase.h>
-#include <CoreFoundation/CFDate.h>
-#include <pthread.h>
+#include <time.h>
 #include <string.h>
 
 /* default time-to-live in cache, in seconds */
 #define QUICK_CACHE_TEST	0
 #if		QUICK_CACHE_TEST
-#define SESSION_CACHE_TTL	((CFTimeInterval)5)
+#define SESSION_CACHE_TTL	((time_t)5)
 #else
-#define SESSION_CACHE_TTL	((CFTimeInterval)(10 * 60))
+#define SESSION_CACHE_TTL	((time_t)(10 * 60))
 #endif	/* QUICK_CACHE_TEST */
 
 #define CACHE_PRINT			0
@@ -109,23 +106,17 @@ static void dumpAllCache(void);
 /*
  * One entry (value) in SessionCache.
  */
-typedef struct SessionCacheEntry SessionCacheEntry;
 struct SessionCacheEntry {
     /* Linked list of SessionCacheEntries. */
     SessionCacheEntry *next;
 
-	tls_buffer		mKey;
+	tls_buffer      mKey;
 	tls_buffer		mSessionData;
 
 	/* this entry to be removed from session map at this time */
-	CFAbsoluteTime	mExpiration;
+	time_t          mExpiration;
 };
 
-/*
- * Note: the caller passes in the expiration time solely to accomodate the
- * instantiation of a single const Time::Interval for use in calculating
- * TTL. This const, SessionCache.mTimeToLive, is in the singleton gSession Cache.
- */
 /*
  * This constructor, the only one, allocs copies of the key and value
  * SSLBuffers.
@@ -133,9 +124,9 @@ struct SessionCacheEntry {
 static SessionCacheEntry *SessionCacheEntryCreate(
 	const tls_buffer *key,
 	const tls_buffer *sessionData,
-	CFAbsoluteTime expirationTime)
+	time_t expirationTime)
 {
-    OSStatus serr;
+    int serr;
 
     SessionCacheEntry *entry = sslMalloc(sizeof(SessionCacheEntry));
     if (entry == NULL)
@@ -181,7 +172,7 @@ static bool SessionCacheEntryMatchKey(SessionCacheEntry *entry,
 }
 
 static bool SessionCacheEntryIsStale(SessionCacheEntry *entry,
-    CFAbsoluteTime now)
+    time_t now)
 {
 	return now > entry->mExpiration;
 }
@@ -189,56 +180,34 @@ static bool SessionCacheEntryIsStale(SessionCacheEntry *entry,
 /* has this expired? */
 static bool SessionCacheEntryIsStaleNow(SessionCacheEntry *entry)
 {
-	return SessionCacheEntryIsStale(entry, CFAbsoluteTimeGetCurrent());
+	return SessionCacheEntryIsStale(entry, time(NULL));
 }
 
 /* replace existing mSessionData */
-static OSStatus SessionCacheEntrySetSessionData(SessionCacheEntry *entry,
+static int SessionCacheEntrySetSessionData(SessionCacheEntry *entry,
 	const tls_buffer *data)
 {
 	SSLFreeBuffer(&entry->mSessionData);
 	return SSLCopyBuffer(data, &entry->mSessionData);
 }
 
-/*
- * Global list of sessions and associated state. We maintain a singleton of
- * this.
- */
-typedef struct SessionCache {
-    SessionCacheEntry *head;
-    CFTimeInterval mTimeToLive;		/* default time-to-live in seconds */
-} SessionCache;
 
-static pthread_mutex_t gSessionCacheLock = PTHREAD_MUTEX_INITIALIZER;
-static SessionCache *gSessionCache = NULL;
-
-static void SessionCacheInit(void) {
-    gSessionCache = sslMalloc(sizeof(SessionCache));
-    gSessionCache->head = NULL;
-    gSessionCache->mTimeToLive = SESSION_CACHE_TTL;
+void SessionCacheInit(SessionCache *cache) {
+    cache->head = NULL;
+    cache->mTimeToLive = SESSION_CACHE_TTL;
 }
 
-static SessionCache *SessionCacheGetLockedInstance(void) {
-    pthread_mutex_lock(&gSessionCacheLock);
-    if (!gSessionCache) {
-        /* We could use pthread_once, but we already have a mutex for other
-           reasons. */
-        SessionCacheInit();
-    }
-
-    return gSessionCache;
-}
 
 /* these three correspond to the C functions exported by this file */
-static OSStatus SessionCacheAddEntry(
+int SessionCacheAddEntry(
     SessionCache *cache,
 	const tls_buffer *sessionKey,
 	const tls_buffer *sessionData,
-	uint32_t timeToLive)			/* optional time-to-live in seconds; 0 ==> default */
+	time_t timeToLive)			/* optional time-to-live in seconds; 0 ==> default */
 {
     SessionCacheEntry *entry = NULL;
     SessionCacheEntry **current;
-	CFTimeInterval expireTime;
+	time_t expireTime;
 
 	for (current = &(cache->head); *current; current = &((*current)->next)) {
         entry = *current;
@@ -256,7 +225,7 @@ static OSStatus SessionCacheAddEntry(
                  */
                 sslLogSessCacheDebug("SessionCache::addEntry CACHE HIT "
                     "entry = %p", entry);
-                return errSecSuccess;
+                return 0;
             }
             else {
                 sslLogSessCacheDebug("SessionCache::addEntry CACHE REPLACE "
@@ -266,10 +235,10 @@ static OSStatus SessionCacheAddEntry(
         }
     }
 
-	expireTime = CFAbsoluteTimeGetCurrent();
+	expireTime = time(NULL);
 	if(timeToLive) {
 		/* caller-specified */
-		expireTime += (CFTimeInterval)timeToLive;
+		expireTime += timeToLive;
 	}
 	else {
 		/* default */
@@ -286,10 +255,10 @@ static OSStatus SessionCacheAddEntry(
     entry->next = cache->head;
     cache->head = entry;
 
-	return errSecSuccess;
+	return 0;
 }
 
-static OSStatus SessionCacheLookupEntry(
+int SessionCacheLookupEntry(
     SessionCache *cache,
 	const tls_buffer *sessionKey,
 	tls_buffer *sessionData)
@@ -315,18 +284,11 @@ static OSStatus SessionCacheLookupEntry(
 		return -9804; //errSSLSessionNotFound;
 	}
 
-#if 1
-    // "get" not "copy", see: <rdar://problem/16277298> coreTLS: session cache callbacks can lead to leaks or crashes
-    sessionData->data = entry->mSessionData.data;
-    sessionData->length = entry->mSessionData.length;
-    return 0;
-#else
     /* alloc/copy sessionData from existing entry (caller must free) */
     return SSLCopyBuffer(&entry->mSessionData, sessionData);
-#endif
 }
 
-static OSStatus SessionCacheDeleteEntry(
+int SessionCacheDeleteEntry(
     SessionCache *cache,
 	const tls_buffer *sessionKey)
 {
@@ -342,18 +304,18 @@ static OSStatus SessionCacheDeleteEntry(
 			#endif
             *current = entry->next;
             SessionCacheEntryDelete(entry);
-            return errSecSuccess;
+            return 0;
 		}
 	}
 
-    return errSecSuccess;
+    return 0;
 }
 
 /* cleanup, delete stale entries */
-static bool SessionCacheCleanup(SessionCache *cache)
+bool SessionCacheCleanup(SessionCache *cache)
 {
 	bool brtn = false;
-	CFAbsoluteTime rightNow = CFAbsoluteTimeGetCurrent();
+	time_t rightNow = time(NULL);
 	SessionCacheEntry **current;
 
 	for (current = &(cache->head); *current;) {
@@ -376,6 +338,18 @@ static bool SessionCacheCleanup(SessionCache *cache)
 	return brtn;
 }
 
+/* cleanup, delete stale entries */
+void SessionCacheEmpty(SessionCache *cache)
+{
+    SessionCacheEntry **current;
+
+    for (current = &(cache->head); *current;) {
+        SessionCacheEntry *entry = *current;
+        *current = entry->next;
+        SessionCacheEntryDelete(entry);
+    }
+}
+
 #if		DUMP_ALL_CACHE
 static void dumpAllCache(void)
 {
@@ -388,94 +362,3 @@ static void dumpAllCache(void)
 	}
 }
 #endif	/* DUMP_ALL_CACHE */
-
-/*
- * Store opaque sessionData, associated with opaque sessionKey.
- */
-int sslAddSession (
-	const tls_buffer sessionKey,
-	const tls_buffer sessionData,
-	uint32_t timeToLive)			/* optional time-to-live in seconds; 0 ==> default */
-{
-    SessionCache *cache = SessionCacheGetLockedInstance();
-	OSStatus serr;
-    if (!cache)
-        serr = -9804; //errSSLSessionNotFound;
-    else
-    {
-        serr = SessionCacheAddEntry(cache, &sessionKey, &sessionData, timeToLive);
-
-        dumpAllCache();
-    }
-
-    pthread_mutex_unlock(&gSessionCacheLock);
-    return serr;
-}
-
-/*
- * Given an opaque sessionKey, alloc & retrieve associated sessionData.
- */
-int sslGetSession (
-	const tls_buffer sessionKey,
-	tls_buffer *sessionData)
-{
-    SessionCache *cache = SessionCacheGetLockedInstance();
-	OSStatus serr;
-    if (!cache)
-        serr = -9804; //errSSLSessionNotFound;
-    else
-    {
-        serr = SessionCacheLookupEntry(cache, &sessionKey, sessionData);
-
-        sslLogSessCacheDebug("sslGetSession(%d, %p): %d",
-            (int)sessionKey.length, sessionKey.data,
-            (int)serr);
-        if(!serr) {
-            cachePrint(NULL, &sessionKey, sessionData);
-        }
-        else {
-            cachePrint(NULL, &sessionKey, NULL);
-        }
-        dumpAllCache();
-    }
-
-    pthread_mutex_unlock(&gSessionCacheLock);
-
-	return serr;
-}
-
-int sslDeleteSession (
-	const tls_buffer sessionKey)
-{
-    SessionCache *cache = SessionCacheGetLockedInstance();
-	OSStatus serr;
-    if (!cache)
-        serr = -9804; //errSSLSessionNotFound;
-    else
-    {
-        serr = SessionCacheDeleteEntry(cache, &sessionKey);
-    }
-
-    pthread_mutex_unlock(&gSessionCacheLock);
-    return serr;
-}
-
-/* cleanup up session cache, deleting stale entries. */
-int sslCleanupSession(void)
-{
-    SessionCache *cache = SessionCacheGetLockedInstance();
-	OSStatus serr = errSecSuccess;
-	bool moreToGo = false;
-
-    if (!cache)
-        serr = -9804; //errSSLSessionNotFound;
-    else
-    {
-        moreToGo = SessionCacheCleanup(cache);
-    }
-	/* Possible TBD: if moreToGo, schedule a timed callback to this function */
-    (void) moreToGo;
-
-    pthread_mutex_unlock(&gSessionCacheLock);
-    return serr;
-}
