@@ -318,6 +318,23 @@
 		FEE5DCE9047D43C9003C3C56 /* DirectoryService.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = FEE5DCE7047D43B6003C3C56 /* DirectoryService.plist */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXBuildStyle section */
+		AA32E4C50B387966001D56A1 /* Development */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = Development;
+		};
+		AA32E4C60B387966001D56A1 /* Deployment */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+			};
+			name = Deployment;
+		};
+/* End PBXBuildStyle section */
+
 /* Begin PBXContainerItemProxy section */
 		61455EEA06650174004226D6 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -654,11 +671,11 @@
 	<key>CFBundlePackageType</key>
 	<string>FMWK</string>
 	<key>CFBundleShortVersionString</key>
-	<string>3.2</string>
+	<string>3.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>3.2</string>
+	<string>3.3</string>
 </dict>
 </plist>
 ";
@@ -701,11 +718,11 @@
 	<key>CFBundlePackageType</key>
 	<string>FMWK</string>
 	<key>CFBundleShortVersionString</key>
-	<string>3.2</string>
+	<string>3.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>3.2</string>
+	<string>3.3</string>
 </dict>
 </plist>
 ";
@@ -747,11 +764,11 @@
 	<key>CFBundlePackageType</key>
 	<string>FMWK</string>
 	<key>CFBundleShortVersionString</key>
-	<string>3.0</string>
+	<string>3.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>3.0</string>
+	<string>3.3</string>
 </dict>
 </plist>
 ";
@@ -1578,6 +1595,12 @@
 		0035DA8B00AB410A00DD2B59 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 61105F4108B53C1300CF6233 /* Build configuration list for PBXProject "DirectoryService" */;
+			buildSettings = {
+			};
+			buildStyles = (
+				AA32E4C50B387966001D56A1 /* Development */,
+				AA32E4C60B387966001D56A1 /* Deployment */,
+			);
 			hasScannedForEncodings = 1;
 			mainGroup = 0035DA8C00AB410A00DD2B59;
 			productRefGroup = 0035DB1400AB596200DD2B59 /* Products */;
