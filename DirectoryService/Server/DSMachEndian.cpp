@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2005 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,13 +22,13 @@
  */
 
 /*!
- * @header DSTCPEndian
- * Provides routines to byte swap DSProxy buffers.
+ * @header DSMachEndian
+ * Provides routines to byte swap Mach buffers.
  */
  
 #ifndef __BIG_ENDIAN__
 
-#include "DSTCPEndian.h"
+#include "DSMachEndian.h"
 #include <string.h>
 #include <errno.h>			// system call error numbers
 #include <unistd.h>			// for select call 
@@ -38,18 +38,9 @@
 #include <syslog.h>
 #include <Security/Authorization.h>
 
-#ifdef DSSERVERTCP
-
 #include "CServerPlugin.h"
 #include "CLog.h"
-#include "CRefTable.h"
-
-#else
-
-#include "CDSRefMap.h"
-
-#endif
-
+#include "CReftable.h"
 #include "CSharedData.h"
 
 #define DUMP_BUFFER 0
@@ -143,19 +134,16 @@ void DumpBuf(char* buf, uInt32 len)
 #endif
 
 
-DSTCPEndian::DSTCPEndian(sComProxyData* fMessage, int direction) : fMessage(fMessage)
+DSMachEndian::DSMachEndian(sComData* fMessage, int direction) : fMessage(fMessage)
 {
     toBig = (direction == kDSSwapToBig);
-	fIPAddress = 0;
-	fPort = 0;
 }
 
-void DSTCPEndian::SwapMessage()
+void DSMachEndian::SwapMessage()
 {
     short i;
     sObject* object;
     bool isTwoWay = false;
-	uInt32 ourMsgID = 0;
     
     if (fMessage == nil) return;
     
@@ -186,31 +174,27 @@ void DSTCPEndian::SwapMessage()
         }
         if (length > 0)
         {
-            uInt32 size = offset + length - sizeof(sComProxyData) + 4;
+            uInt32 size = offset + length - sizeof(sComData) + 4;
             if (size > bufSize) bufSize = size;
         }
     }
     DumpBuf(fMessage->data, bufSize);
 #endif
     
-	ourMsgID = fMessage->fMsgID; //want this to be consistent below as host order
-
     DSSwapLong(&fMessage->fDataSize, toBig);
     DSSwapLong(&fMessage->fDataLength, toBig);
     DSSwapLong(&fMessage->fMsgID, toBig);
-    DSSwapLong(&fMessage->fPID, toBig); //FW side uses PID BUT the server receiving side uses the TCP port instead
-    //DSSwapLong(&fMessage->fIPAddress, toBig); //obtained directly from the endpoint and not present yet in this value
+    DSSwapLong(&fMessage->fPID, toBig);
+    //DSSwapLong(&fMessage->fIPAddress, toBig); //zero is used for the mach ipc case
     
 	uInt32 aNodeRef = 0;
-#ifndef DSSERVERTCP
-	uInt32 aNodeRefMap = 0; //used with ktNodeRefMap only for FW
-#endif
+
 	//handle CustomCall endian issues - need to determine which plugin is being used
 	bool bCustomCall = false;
 	uInt32 aCustomRequestNum = 0;
 	bool bIsAPICallResponse = false;
 	const char* aPluginName = nil;
-    // if this is the auth case, we need to do some checks
+    // if this is the auth case or custom call case, we need to do some checks
     for (i=0; i< 10; i++)
     {
         object = &fMessage->obj[i];
@@ -229,11 +213,7 @@ void DSTCPEndian::SwapMessage()
 		{
 			bCustomCall = true;
 			aCustomRequestNum = (uInt32)DSGetLong(&object->count, toBig);
-#ifdef DSSERVERTCP
-DBGLOG1(kLogTCPEndpoint, "DSSERVERTCP>DSTCPEndian::SwapMessage(): kCustomRequestCode with code %u", aCustomRequestNum );
-#else
-LOG1(kStdErr, "FW-DSTCPEndian::SwapMessage(): kCustomRequestCode with code %u", aCustomRequestNum );
-#endif
+DBGLOG1(kLogTCPEndpoint, "DSMachEndian::SwapMessage(): kCustomRequestCode with code %u", aCustomRequestNum );
 		}
 		
 		if (objType == ktNodeRef)
@@ -241,14 +221,6 @@ LOG1(kStdErr, "FW-DSTCPEndian::SwapMessage(): kCustomRequestCode with code %u", 
 			//need to determine the nodename for discrimination of duplicate custom call codes - server and FW sends
 			aNodeRef = (uInt32)DSGetLong(&object->count, toBig);
 		}
-#ifndef DSSERVERTCP
-		if (objType == ktNodeRefMap)
-		{
-			//need to determine the nodename for discrimination of duplicate custom call codes - FW only
-			aNodeRefMap = (uInt32)DSGetLong(&object->count, toBig);
-			//need to keep this since it should come back as well from the server
-		}
-#endif
 
 		if (objType == kResult)
 		{
@@ -256,29 +228,12 @@ LOG1(kStdErr, "FW-DSTCPEndian::SwapMessage(): kCustomRequestCode with code %u", 
 		}
     } // for (i=0; i< 10; i++)
 	
-#ifndef DSSERVERTCP
-	if (bIsAPICallResponse)
-	{
-		DSSwapLong(&ourMsgID, toBig);
-		if (aCustomRequestNum == 0)
-		{
-			aCustomRequestNum = CDSRefMap::GetCustomCodeFromMsgIDMap( ourMsgID );
-			if (aCustomRequestNum != 0)
-			{
-				CDSRefMap::RemoveMsgIDToCustomCodeMap( ourMsgID );
-				bCustomCall = true;
-			}
-		}
-	}
-#endif
-
 	if ( bCustomCall && (aCustomRequestNum != 0) )
 	{
-#ifdef DSSERVERTCP
 		if (aNodeRef != 0)
 		{
 			CServerPlugin *aPluginPtr = nil;
-			sInt32 myResult = CRefTable::VerifyNodeRef( aNodeRef, &aPluginPtr, fPort, fIPAddress );
+			sInt32 myResult = CRefTable::VerifyNodeRef( aNodeRef, &aPluginPtr, fMessage->fPID, 0 );
 			if (myResult == eDSNoErr)
 			{
 				aPluginName = aPluginPtr->GetPluginName();
@@ -287,32 +242,6 @@ LOG1(kStdErr, "FW-DSTCPEndian::SwapMessage(): kCustomRequestCode with code %u", 
 				}
 			}
 		}
-#else
-		if (aNodeRefMap != 0)
-		{
-			CDSRefMap::MapMsgIDToServerRef( ourMsgID, aNodeRef );
-			CDSRefMap::MapMsgIDToCustomCode( ourMsgID, aCustomRequestNum );
-			aPluginName = CDSRefMap::GetPluginName( aNodeRefMap, getpid() ); //FW side this PID should work but on server side we use the IP Port instead
-			if (aPluginName != nil)
-			{
-			}
-		}
-		else
-		{
-			if (bIsAPICallResponse)
-			{
-				uInt32 ourServerRef = 0;
-				ourServerRef = CDSRefMap::GetServerRefFromMsgIDMap( ourMsgID );
-				CDSRefMap::RemoveMsgIDToServerRefMap( ourMsgID );
-				aNodeRefMap = CDSRefMap::GetLocalRefFromServerMap( ourServerRef );
-				
-				aPluginName = CDSRefMap::GetPluginName( aNodeRefMap, getpid() ); //FW side this PID should work but on server side we use the IP Port instead
-				if (aPluginName != nil)
-				{
-				}
-			}
-		}
-#endif
 	}
 
     // swap objects
@@ -340,12 +269,6 @@ LOG1(kStdErr, "FW-DSTCPEndian::SwapMessage(): kCustomRequestCode with code %u", 
     DumpBuf(fMessage->data, bufSize);
     fflush(stdout);
 #endif
-}
-
-void DSTCPEndian::AddIPAndPort( uInt32 inIPAddress, uInt32 inPort)
-{
-	fIPAddress = inIPAddress;
-	fPort = inPort;
 }
 
 

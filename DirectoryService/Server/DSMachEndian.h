@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2005 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,26 +22,31 @@
  */
 
 /*!
- * @header CRCCalc
+ * @header DSMachEndian
+ * Provides routines to byte swap Mach buffers.
  */
 
-#ifndef __CRCCalc_h__
-#define __CRCCalc_h__	1
+#ifndef __DSMachEndian_h__
+#define __DSMachEndian_h__ 1
 
-#include <DirectoryServiceCore/PrivateTypes.h>
+#ifndef __BIG_ENDIAN__
 
-class CRCCalc
+#include "SharedConsts.h"	// for sComData
+#include "DSSwapUtils.h"
+
+
+class DSMachEndian
 {
 public:
-					CRCCalc		( void );
-	virtual		   ~CRCCalc		( void );
-
-
-
-	unsigned long	UPDC32		( register Byte b, register unsigned long c );
-	unsigned short	UPDC16		( Byte *ptr, unsigned long count, unsigned short crc );
-	unsigned short	updcrc		( register Byte b, register unsigned short crc );
-
+    DSMachEndian(sComData* message, int direction);
+    
+    void SwapMessage(void);
+    
+private:
+    sComData* fMessage;
+    bool toBig;
 };
 
-#endif // __CRCCalc_h__
+#endif
+
+#endif
