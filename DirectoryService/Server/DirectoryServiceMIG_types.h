@@ -22,49 +22,16 @@
  */
 
 /*!
- * @header CListener
+* @header DirectoryServiceMIG_types.h
  */
 
-#ifndef __CListener_h__
-#define __CListener_h__	1
+#ifndef __DirectoryServiceMIG_types_h__
+#define	__DirectoryServiceMIG_types_h__	1
 
-// Thread
-#include "DSCThread.h"
+// this is for our MIG clients so they don't have to include the framework headers
+#define		kDSStdMachPortName	"com.apple.DirectoryService"
 
-//Mutex
-#include "DSMutexSemaphore.h"
-
-// End point
-#include "CSrvrEndPoint.h"
-
-//Extern
-extern DSMutexSemaphore	   *gHandlerLock;
-extern DSMutexSemaphore	   *gInternalHandlerLock;
-extern DSMutexSemaphore	   *gCheckpwHandlerLock;
-
-class CListener : public DSCThread
-{
-public:
-enum {
-	kEmptyQueueObj	= -128
-} eTypes;
-						CListener			( void );
-	virtual			   ~CListener			( void );
-
-	virtual	sInt32		ThreadMain			( void );		// we manage our own thread top level
-	virtual	void		StartThread			( void );
-	virtual	void		StopThread			( void );
-
-protected:
-	CSrvrEndPoint	   *fEndPt;
-
-private:
-		sInt32	CreateEndpoint		( void );
-
-		bool	ListenForMessage	( void );
-		sInt32	QueueMessage		( void );
-
-		sComData   *fMsgBlock;
-};
+typedef struct sComData *sComDataPtr;
+typedef char *sStringPtr;
 
 #endif

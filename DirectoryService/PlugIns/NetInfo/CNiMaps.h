@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,30 +21,15 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-/*!
- * @header GetMACAddress
- */
+#ifndef __MAPS_H__
+#define __MAPS_H__
 
-#ifndef __GetMACAddress_h__
-#define __GetMACAddress_h__	1
+#include "CNiPlugIn.h"
 
-#ifdef __cplusplus
-extern "C" {
+char* MapRecToNetInfoType		( const char *inRecType );
+char* MapNetInfoRecToDSType		( const char *inRecType );
+char* MapAttrToNetInfoType		( const char *inAttrType );
+char* MapNetInfoAttrToDSType	( const char *inAttrType );
+sInt32 MapNetInfoErrors			( sInt32 inNiError );
+
 #endif
-	
-#include "PrivateTypes.h"
-
-#include <CoreFoundation/CoreFoundation.h>
-
-#include <IOKit/IOKitLib.h>
-#include <IOKit/network/IOEthernetInterface.h>
-#include <IOKit/network/IOEthernetController.h>
-
-	sInt32 GetEthernetAddress( CFStringRef *theLZMACAddress, CFStringRef *theNLZMACAddress);
-	CFStringRef GetMACAddressFormattedStr(unsigned char* addr, bool bLeadingZeros);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif	// __GetMACAddress_h__

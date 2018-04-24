@@ -22,16 +22,28 @@
  */
 
 /*!
- * @header my_ni_pwdomain
+ * @header CDSPluginUtils
  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-	
-	ni_status			my_ni_pwdomain(void *ni, ni_name *buf);
+#ifndef __CDSPluginUtils_h__
+#define __CDSPluginUtils_h__		1
 
-#ifdef __cplusplus
-}
-#endif
+#include <string.h>		//used for strcpy, etc.
+#include <stdlib.h>		//used for malloc
 
+#include "PrivateTypes.h"
+#include "DirServicesConst.h"
+#include "DirServicesTypes.h"
+#include "DirServices.h"
+#include "DirServicesUtils.h"
+
+//TODO DoAnyMatch should be made common ie. needs argument rework though
+
+sInt32	PWOpenDirNode		(	tDirNodeReference fDSRef,
+								char *inNodeName,
+								tDirNodeReference *outNodeRef );
+
+bool	DoesThisMatch		(	const char		   *inString,
+								const char		   *inPatt,
+								tDirPatternMatch	inHow );
+#endif

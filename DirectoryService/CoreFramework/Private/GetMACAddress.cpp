@@ -29,10 +29,15 @@
 
 #include "GetMACAddress.h"
 
-static kern_return_t FindEthernetInterfaces(io_iterator_t *matchingServices);
-static kern_return_t GetMACAddress(io_iterator_t intfIterator, UInt8 *MACAddress);
+#include <IOKit/IOKitLib.h>
+#include <IOKit/network/IONetworkInterface.h>
+#include <IOKit/network/IOEthernetInterface.h>
+#include <IOKit/network/IOEthernetController.h>
 
-// Returns an iterator across all known Ethernet interfaces. Caller is responsible for
+static kern_return_t FindEthernetInterfaces(io_iterator_t *matchingServices);
+static kern_return_t GetMACAddressInternal(io_iterator_t intfIterator, UInt8 *MACAddress);
+
+// Returns an iterator with Primary Ethernet interface. Caller is responsible for
 // releasing the iterator when iteration is complete.
 static kern_return_t FindEthernetInterfaces(io_iterator_t *matchingServices)
 {
@@ -47,6 +52,13 @@ static kern_return_t FindEthernetInterfaces(io_iterator_t *matchingServices)
 		classesToMatch = IOServiceMatching(kIOEthernetInterfaceClass);
 		if ( classesToMatch != NULL )
 		{
+			CFMutableDictionaryRef	propertyMatch	= CFDictionaryCreateMutable( kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks );
+
+			CFDictionarySetValue( propertyMatch, CFSTR(kIOPrimaryInterface), kCFBooleanTrue );
+			CFDictionarySetValue( classesToMatch, CFSTR(kIOPropertyMatchKey), propertyMatch );
+
+			CFRelease( propertyMatch );
+
 			kernResult = IOServiceGetMatchingServices(masterPort, classesToMatch, matchingServices);    
 		}
 	}
@@ -56,7 +68,7 @@ static kern_return_t FindEthernetInterfaces(io_iterator_t *matchingServices)
     
 // Given an iterator across a set of Ethernet interfaces, return the MAC address of the first one.
 // If no interfaces are found the MAC address is set to an empty string.
-static kern_return_t GetMACAddress(io_iterator_t intfIterator, UInt8 *MACAddress)
+static kern_return_t GetMACAddressInternal(io_iterator_t intfIterator, UInt8 *MACAddress)
 {
     io_object_t		intfService			= MACH_PORT_NULL;
     io_object_t		controllerService	= MACH_PORT_NULL;
@@ -65,7 +77,7 @@ static kern_return_t GetMACAddress(io_iterator_t intfIterator, UInt8 *MACAddress
 	intfService = IOIteratorNext(intfIterator);
 	if ( intfService != MACH_PORT_NULL )
     {
-        CFTypeRef	MACAddressAsCFData = NULL;        
+        CFDataRef	MACAddressAsCFData = NULL;        
 
         // IONetworkControllers can't be found directly by the IOServiceGetMatchingServices call, 
         // matching mechanism. So we've found the IONetworkInterface and will get its parent controller
@@ -75,9 +87,9 @@ static kern_return_t GetMACAddress(io_iterator_t intfIterator, UInt8 *MACAddress
                                                     kIOServicePlane,
                                                     &controllerService );
 
-        if ( kernResult == KERN_SUCCESS )
+        if ( kernResult == KERN_SUCCESS && controllerService != MACH_PORT_NULL )
 		{
-            MACAddressAsCFData = IORegistryEntryCreateCFProperty( controllerService,
+            MACAddressAsCFData = (CFDataRef) IORegistryEntryCreateCFProperty( controllerService,
                                                                   CFSTR(kIOMACAddress),
                                                                   kCFAllocatorDefault,
                                                                   0);
@@ -98,7 +110,7 @@ static kern_return_t GetMACAddress(io_iterator_t intfIterator, UInt8 *MACAddress
 }
 
 
-sInt32 GetEthernetAddress( CFStringRef *theLZMACAddress, CFStringRef *theNLZMACAddress)
+sInt32 GetMACAddress( CFStringRef *theLZMACAddress, CFStringRef *theNLZMACAddress, bool bWithColons )
 {
     kern_return_t	kernResult		= KERN_SUCCESS;
     io_iterator_t	intfIterator	= MACH_PORT_NULL;
@@ -107,13 +119,13 @@ sInt32 GetEthernetAddress( CFStringRef *theLZMACAddress, CFStringRef *theNLZMACA
     kernResult = FindEthernetInterfaces(&intfIterator);
     if (kernResult == KERN_SUCCESS)
     {
-        kernResult = GetMACAddress(intfIterator, &macAddress[0]);
+        kernResult = GetMACAddressInternal(intfIterator, &macAddress[0]);
 		if (kernResult == KERN_SUCCESS)
 		{
 			if (theLZMACAddress != nil)
-				*theLZMACAddress	= GetMACAddressFormattedStr(&macAddress[0], true);
+				*theLZMACAddress	= GetMACAddressFormattedStr(&macAddress[0], true, bWithColons);
 			if (theNLZMACAddress != nil)
-				*theNLZMACAddress	= GetMACAddressFormattedStr(&macAddress[0], false);
+				*theNLZMACAddress	= GetMACAddressFormattedStr(&macAddress[0], false, bWithColons);
 		}
 
 		IOObjectRelease(intfIterator);	// Release the iterator
@@ -122,7 +134,7 @@ sInt32 GetEthernetAddress( CFStringRef *theLZMACAddress, CFStringRef *theNLZMACA
     return kernResult;
 }
 
-CFStringRef GetMACAddressFormattedStr(unsigned char* addr, bool bLeadingZeros)
+CFStringRef GetMACAddressFormattedStr(unsigned char* addr, bool bLeadingZeros, bool bWithColons )
 {
     // will return a string of the form "00:11:aa:bb:cc:22"
 	//32 should be more than large enough
@@ -135,16 +147,27 @@ CFStringRef GetMACAddressFormattedStr(unsigned char* addr, bool bLeadingZeros)
 	if (bLeadingZeros)
 	{
 		for (i = 0; i < 6; ++i )
-			p += sprintf( p, "%2.2x:", addr[i] );
+		{
+			if( bWithColons )
+				p += sprintf( p, "%2.2x:", addr[i] );
+			else
+				p += sprintf( p, "%2.2x", addr[i] );
+		}
 	}
 	else
 	{
 		for (i = 0; i < 6; ++i )
-			p += sprintf( p, "%x:", addr[i] );
+		{
+			if( bWithColons )
+				p += sprintf( p, "%x:", addr[i] );
+			else
+				p += sprintf( p, "%x", addr[i] );
+		}
 	}
 
     //  overwrite final ":" with a NULL terminator
-    *(--p) = '\0';
+	if( bWithColons )
+		*(--p) = '\0';
 
     outString = CFStringCreateWithCString(kCFAllocatorDefault, buffer, kCFStringEncodingMacRoman);
 

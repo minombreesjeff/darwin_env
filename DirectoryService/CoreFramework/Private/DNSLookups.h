@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,7 +22,20 @@
  */
 
 /*!
- * @header TimConditional
+ * @header DNSLookups
  */
 
-#define TIM_CLIENT_PRESENT
+#ifndef __DNSLookups_h__
+#define	__DNSLookups_h__	1
+
+
+#include <DirectoryServiceCore/PrivateTypes.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <dns.h>
+#include <dns_util.h>
+
+CFMutableArrayRef ParseServiceResults( dns_reply_t *answer );
+dns_reply_t *doDNSLookup( const char *inType, const char *inQuery );
+CFMutableArrayRef getDNSServiceRecs( const char *type, const char *domain );
+
+#endif // __DNSLookups_h__

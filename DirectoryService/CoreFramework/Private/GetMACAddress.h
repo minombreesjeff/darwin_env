@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,24 +22,17 @@
  */
 
 /*!
- * @header SMBAuth
+ * @header GetMACAddress
  */
 
-#ifndef __SMBAUTH_H__
-#define	__SMBAUTH_H__		1
+#ifndef __GetMACAddress_h__
+#define __GetMACAddress_h__	1
 
-// utility functions prototypes
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <DirectoryServiceCore/PrivateTypes.h>
 
-	void CalculateSMBNTHash(const char *utf8Password, unsigned char outHash[16]);
-	void CalculateSMBLANManagerHash(const char *password, unsigned char outHash[16]);
-	void CalculateP24(unsigned char *P21, unsigned char *C8, unsigned char *P24);
-	void DESEncode(void *str, void *data);
+#include <CoreFoundation/CoreFoundation.h>
 
-#ifdef __cplusplus
-}
-#endif
+extern sInt32 GetMACAddress( CFStringRef *theLZMACAddress, CFStringRef *theNLZMACAddress, bool bWithColons = true );
+extern CFStringRef GetMACAddressFormattedStr(unsigned char* addr, bool bLeadingZeros, bool bWithColons = true );
 
-#endif
+#endif	// __GetMACAddress_h__
