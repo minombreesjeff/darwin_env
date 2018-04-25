@@ -92,6 +92,7 @@ CLEAN_ALL_SUBPROJECTS =
 MSGFILES = 
 # .defs files that should have mig run on them
 DEFSFILES = 
+
 # .mig files (no .defs files) that should have mig run on them
 MIGFILES = 
 
