@@ -93,7 +93,7 @@ static void
 stf_construct_6to4_address(struct in_addr * ip4_addr, struct in6_addr * ip6_addr, boolean_t relay)
 {
     char	str[64];
-    uint32_t	tmp_addr = (uint32_t)ip4_addr->s_addr;
+    uint32_t	tmp_addr = ntohl((uint32_t)ip4_addr->s_addr);
 
     /*	Constructing 6to4 address:
      *		- start with 2002 prefix
