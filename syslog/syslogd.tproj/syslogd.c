@@ -3,20 +3,21 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
+ * "Portions Copyright (c) 2004 Apple Computer, Inc.  All Rights
+ * Reserved.  This file contains Original Code and/or Modifications of
+ * Original Code as defined in and that are subject to the Apple Public
+ * Source License Version 1.0 (the 'License').  You may not use this file
+ * except in compliance with the License.  Please obtain a copy of the
+ * License at http://www.apple.com/publicsource and read it before using
+ * this file.
  * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License."
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -56,6 +57,9 @@ int asl_log_filter = ASL_FILTER_MASK_UPTO(ASL_LEVEL_NOTICE);
 int prune = 0;
 
 extern int __notify_78945668_info__;
+
+/* kernel log fd */
+extern int kfd;
 
 /* Static Modules */
 int asl_in_init();
@@ -294,11 +298,11 @@ int
 main(int argc, char *argv[])
 {
 	struct module_list *mod;
-	fd_set rd, wr, ex;
+	fd_set rd, wr, ex, kern;
 	int fd, i, max, status, pdays, daemonize;
 	time_t lastmark, msec, ssec, tick, delta, ptime, notify_time;
 	char *mp, *str;
-	struct timeval timeout, *pto;
+	struct timeval timeout, *pto, zto;
 	asl_msg_t *pq;
 
 	mp = _PATH_MODULE_LIB;
@@ -306,6 +310,10 @@ main(int argc, char *argv[])
 	pdays = DEFAULT_PRUNE_DAYS;
 	daemonize = 0;
 	__notify_78945668_info__ = -1;
+	kfd = -1;
+	zto.tv_sec = 0;
+	zto.tv_usec = 0;
+	FD_ZERO(&kern);
 
 	for (i = 1; i < argc; i++)
 	{
@@ -377,7 +385,7 @@ main(int argc, char *argv[])
 		if (daemonize != 0)
 		{
 			if (fork() != 0) exit(0);
-			
+
 			detach();
 			closeall();
 		}
@@ -413,12 +421,38 @@ main(int argc, char *argv[])
 	ptime = 0;
 	if (pdays > 0) ptime = lastmark + PRUNE_AFTER_START_DELAY;
 
+	if (kfd >= 0) FD_SET(kfd, &kern);
+
+	/*
+	 * drain /dev/klog first
+	 */
+	if (kfd >= 0)
+	{
+		max = kfd + 1;
+		while (select(max, &kern, NULL, NULL, &zto) > 0)
+		{
+			aslevent_handleevent(kern, wr, ex, NULL);
+		}
+	}
+	
 	forever
 	{
 		if (pto != NULL) pto->tv_sec = ssec;
-		max = aslevent_fdsets(&rd, &wr, &ex);
+		max = aslevent_fdsets(&rd, &wr, &ex) + 1;
 
-		status = select(max+1, &rd, &wr, &ex, pto);
+		status = select(max, &rd, &wr, &ex, pto);
+		if ((kfd >= 0) && FD_ISSET(kfd, &rd))
+		{
+			/*
+			 * drain /dev/klog
+			 */
+			max = kfd + 1;
+
+			while (select(max, &kern, NULL, NULL, &zto) > 0)
+			{
+				aslevent_handleevent(kern, wr, ex, NULL);
+			}
+		}
 
 		if (reset != 0)
 		{
@@ -453,7 +487,7 @@ main(int argc, char *argv[])
 				asprintf(&str, "-%dd", pdays);
 				asl_set_query(pq, ASL_KEY_TIME, str, ASL_QUERY_OP_LESS);
 				if (str != NULL) free(str);
-			
+
 				/* asl_prune frees the query */
 				asl_prune(pq);
 				ptime = 0;
