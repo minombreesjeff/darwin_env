@@ -44,6 +44,7 @@ MDSAttrParser::MDSAttrParser(
 		mDl(dl),
 		mObjectHand(objectHand),
 		mCdsaDirHand(cdsaDirHand),
+		mGuid(NULL),
 		mDefaults(NULL)
 {
 	/* Only task here is to cook up a CFBundle for the specified path */
@@ -73,6 +74,7 @@ MDSAttrParser::~MDSAttrParser()
 {
 	CF_RELEASE(mBundle);
 	delete [] mPath;
+	delete [] mGuid;
 }
 
 /*********************
@@ -96,17 +98,9 @@ Parsing bundle {
 }
 ************/ 
 
-#define RELEASE_EACH_URL	0
-
 void MDSAttrParser::parseAttrs(CFStringRef subdir)
 {
 	/* get all *.mdsinfo files */
-	/* 
-	 * FIXME - this leaks like crazy even though we CFRelease the array.
-	 * With RELEASE_EACH_URL true, we attempt to release each element of 
-	 * the array, but that results in a ton of mallocDebug errors. I believe
-	 * this is a CF leak. 
-	 */
 	CFArrayRef bundleInfoFiles = CFBundleCopyResourceURLsOfType(mBundle,
 		CFSTR(MDS_INFO_TYPE),
 		subdir);
@@ -117,7 +111,8 @@ void MDSAttrParser::parseAttrs(CFStringRef subdir)
 	assert(CFGetTypeID(bundleInfoFiles) == CFArrayGetTypeID());
 	
 	/* process each .mdsinfo file */
-	for(CFIndex i=0; i<CFArrayGetCount(bundleInfoFiles); i++) {
+	CFIndex numFiles = CFArrayGetCount(bundleInfoFiles);
+	for(CFIndex i=0; i<numFiles; i++) {
 		/* get filename as CFURL */
 		CFURLRef infoUrl = NULL;
 		
@@ -136,9 +131,13 @@ void MDSAttrParser::parseAttrs(CFStringRef subdir)
 		CFStringRef lastComponent = CFURLCopyLastPathComponent(infoUrl);
 		if (lastComponent) {
 			CFStringRef resFilePfx = CFSTR("._");
+			// setting the search length and location like this permits, 
+			// e.g., ".foo.mdsinfo" to be valid
+			CFIndex resFilePfxLen = CFStringGetMaximumSizeForEncoding(CFStringGetLength(resFilePfx), kCFStringEncodingUTF8);
+			CFRange range = CFRangeMake(0, resFilePfxLen);
 			Boolean skip = CFStringFindWithOptions(lastComponent, 
 												   resFilePfx, 
-												   CFRangeMake(0, CFStringGetLength(resFilePfx)), // this search permits, e.g., ".foo.mdsinfo" to be valid
+												   range,
 												   0/*options*/,
 												   NULL/*returned substr*/);
 			CFRelease(lastComponent);
@@ -150,13 +149,6 @@ void MDSAttrParser::parseAttrs(CFStringRef subdir)
 		
 		parseFile(infoUrl, subdir);
 	} /* for each mdsinfo */
-	/* FIXME - do we have to release each element of the array? */
-	#if RELEASE_EACH_URL
-	for(CFIndex i=0; i<CFArrayGetCount(bundleInfoFiles); i++) {
-		CFTypeRef elmt = (CFTypeRef)CFArrayGetValueAtIndex(bundleInfoFiles, i);
-		CF_RELEASE(elmt);
-	}
-	#endif
 	CF_RELEASE(bundleInfoFiles);
 }
 
@@ -166,8 +158,26 @@ void MDSAttrParser::parseFile(CFURLRef infoUrl, CFStringRef subdir)
 	
 	/* Get contents of mdsinfo file as dictionary */
 	MDSDictionary mdsDict(infoUrl, subdir, mPath);
-	
+	/* Make sure we set all possible MDS values before checking for GUID */
 	mdsDict.setDefaults(mDefaults);
+	if (mGuid == NULL) {
+		CFStringRef guid = (CFStringRef)mdsDict.lookup("ModuleID", true, CFStringGetTypeID());
+		if (guid) {
+			CFIndex copylen = CFStringGetMaximumSizeForEncoding(CFStringGetLength(guid), kCFStringEncodingUTF8) + 1/*nul terminator*/;
+			mGuid = new char[copylen];
+			if (false == CFStringGetCString(guid, mGuid, copylen, kCFStringEncodingUTF8)) {
+				logFileError("Error copying GUID", infoUrl, NULL, NULL);
+				delete [] mGuid;
+				mGuid = NULL;
+				CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
+			}
+		}
+		else {
+			logFileError("No GUID associated with plugin?", infoUrl, NULL, NULL);
+			CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
+		}
+	}
+	
 	MPDebug("Parsing mdsinfo file %s", mdsDict.fileDesc());
 	
 	/* Determine what kind of info file this is and dispatch accordingly */
@@ -210,10 +220,10 @@ void MDSAttrParser::logFileError(
 {
 	const char *cerrStr = NULL;
 	CFStringRef urlStr = CFURLGetString(fileUrl);
-	const char *cUrlStr = CFStringGetCStringPtr(urlStr, CFStringGetSystemEncoding());
+	const char *cUrlStr = CFStringGetCStringPtr(urlStr, kCFStringEncodingUTF8);
 	
 	if(errStr) {
-		cerrStr = CFStringGetCStringPtr(errStr, CFStringGetSystemEncoding());
+		cerrStr = CFStringGetCStringPtr(errStr, kCFStringEncodingUTF8);
 		Syslog::alert("MDS: %s: bundle %s url %s: error %s",
 			op, mPath, cUrlStr, cerrStr);
 	}
