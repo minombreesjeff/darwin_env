@@ -1111,6 +1111,8 @@ void MDSSession::removeRecordsForGuid(
 	const char *guid,
 	CSSM_DB_HANDLE dbHand)
 {
+	// tell the DB to flush its intermediate data to disk
+	PassThrough(dbHand, CSSM_APPLEFILEDL_COMMIT, NULL, NULL);
 	CssmClient::Query query = Attribute("ModuleID") == guid;
 	clearRecords(dbHand, query.cssmQuery());
 }

@@ -132,15 +132,16 @@ void MDSAttrParser::parseAttrs(CFStringRef subdir)
 			continue;
 		}
 		
-		// skip any filename beginning with "._"
+		// @@@  Workaround for 4234967: skip any filename beginning with "._"
 		CFStringRef lastComponent = CFURLCopyLastPathComponent(infoUrl);
 		if (lastComponent) {
 			CFStringRef resFilePfx = CFSTR("._");
 			Boolean skip = CFStringFindWithOptions(lastComponent, 
 												   resFilePfx, 
-												   CFRangeMake(0, CFStringGetLength(resFilePfx)), // search from the start of the string to the length of the forbidden prefix--this permits, e.g., ".foo.mdsinfo" to be valid
+												   CFRangeMake(0, CFStringGetLength(resFilePfx)), // this search permits, e.g., ".foo.mdsinfo" to be valid
 												   0/*options*/,
 												   NULL/*returned substr*/);
+			CFRelease(lastComponent);
 			if (skip == true) {
 				Syslog::warning("MDSAttrParser: ignoring resource file");
 				continue;
@@ -161,31 +162,20 @@ void MDSAttrParser::parseAttrs(CFStringRef subdir)
 
 void MDSAttrParser::parseFile(CFURLRef infoUrl, CFStringRef subdir)
 {
-	MDSDictionary *mdsDict = NULL;
 	CFStringRef infoType = NULL;
 	
 	/* Get contents of mdsinfo file as dictionary */
-	try {
-		mdsDict = new MDSDictionary(infoUrl, subdir, mPath);
-		if(mdsDict == NULL) {
-			goto abortInfoFile;
-		}
-	}
-	catch (const CssmError &err) {
-		// ???  Check err?
-		// @@@  Clean up plugin; might have been loaded already
-		goto abortInfoFile;
-	}
+	MDSDictionary mdsDict(infoUrl, subdir, mPath);
 	
-	mdsDict->setDefaults(mDefaults);
-	MPDebug("Parsing mdsinfo file %s", mdsDict->fileDesc());
+	mdsDict.setDefaults(mDefaults);
+	MPDebug("Parsing mdsinfo file %s", mdsDict.fileDesc());
 	
 	/* Determine what kind of info file this is and dispatch accordingly */
-	infoType = (CFStringRef)mdsDict->lookup(CFSTR(MDS_INFO_FILE_TYPE),
+	infoType = (CFStringRef)mdsDict.lookup(CFSTR(MDS_INFO_FILE_TYPE),
 		true, CFStringGetTypeID());
 	if(infoType == NULL) {
 		logFileError("Malformed MDS Info file", infoUrl, NULL, NULL);
-		goto abortInfoFile;
+		CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
 	}
 	
 	/* be robust here, errors in these low-level routines do not affect
@@ -193,15 +183,15 @@ void MDSAttrParser::parseFile(CFURLRef infoUrl, CFStringRef subdir)
 	try {
 		if(CFStringCompare(infoType, CFSTR(MDS_INFO_FILE_TYPE_CSSM), 0) 
 				== kCFCompareEqualTo) {
-			parseCssmInfo(mdsDict);
+			parseCssmInfo(&mdsDict);
 		}
 		else if(CFStringCompare(infoType, CFSTR(MDS_INFO_FILE_TYPE_PLUGIN), 0) 
 				== kCFCompareEqualTo) {
-			parsePluginCommon(mdsDict);
+			parsePluginCommon(&mdsDict);
 		}
 		else if(CFStringCompare(infoType, CFSTR(MDS_INFO_FILE_TYPE_RECORD), 0) 
 				== kCFCompareEqualTo) {
-			parsePluginSpecific(mdsDict);
+			parsePluginSpecific(&mdsDict);
 		}
 		else {
 			logFileError("Malformed MDS Info file", infoUrl, NULL, NULL);
@@ -210,8 +200,6 @@ void MDSAttrParser::parseFile(CFURLRef infoUrl, CFStringRef subdir)
 	catch(...) {
 	
 	}
-abortInfoFile:
-	delete mdsDict;
 }
 
 void MDSAttrParser::logFileError(
