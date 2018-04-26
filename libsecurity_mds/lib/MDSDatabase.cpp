@@ -124,7 +124,7 @@ MDSDatabase::dataModify (DbContext &dbContext,
 
 CSSM_HANDLE
 MDSDatabase::dataGetFirst (DbContext &dbContext,
-                           const DLQuery *Query,
+                           const CssmQuery *Query,
                            CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR Attributes,
                            CssmData *Data,
                            CSSM_DB_UNIQUE_RECORD_PTR &UniqueRecordIdentifier)

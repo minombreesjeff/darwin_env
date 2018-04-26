@@ -21,7 +21,8 @@
 
 #include <security_cdsa_plugin/DatabaseSession.h>
 #include <security_cdsa_utilities/handleobject.h>
-#include <Security/mds.h>
+#include <security_cdsa_utilities/cssmdb.h>
+#include <Security/mdspriv.h>
 #include "MDSModule.h"
 #include "MDSSchema.h"
 #include <map>
@@ -45,8 +46,7 @@ public:
     void install ();
     void uninstall ();
 
-	CSSM_DB_HANDLE MDSSession::dbOpen(
-		const char *dbName);
+	CSSM_DB_HANDLE MDSSession::dbOpen(const char *dbName, bool batched = false);
 		
 	// some DatabaseSession routines we need to override
 	void DbOpen(const char *DbName,
@@ -55,10 +55,20 @@ public:
 			const AccessCredentials *AccessCred,
 			const void *OpenParameters,
 			CSSM_DB_HANDLE &DbHandle);
+    CSSM_HANDLE DataGetFirst(CSSM_DB_HANDLE DBHandle,
+                             const CssmQuery *Query,
+                             CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR Attributes,
+                             CssmData *Data,
+                             CSSM_DB_UNIQUE_RECORD_PTR &UniqueId);
     void GetDbNames(CSSM_NAME_LIST_PTR &NameList);
     void FreeNameList(CSSM_NAME_LIST &NameList);
     void GetDbNameFromHandle(CSSM_DB_HANDLE DBHandle,
 			char **DbName);
+	
+	// additional public (or private API) methods
+	void installFile(const MDS_InstallDefaults *defaults,
+		const char *inBundlePath, const char *subdir, const char *file);
+	void removeSubservice(const char *guid, uint32 ssid);
 
     // implement CssmHeap::Allocator
     void *malloc(size_t size) throw(std::bad_alloc)
@@ -96,7 +106,6 @@ public:
 			const char *bundleDirPath);
 		void updateForBundle(
 			const char *bundlePath);
-		void autoCommit(CSSM_BOOL val);		// DB autocommit on/off 
 	private:
 		bool lookupForPath(
 			const char *path);
@@ -139,6 +148,8 @@ private:
 		char fullPath[MAXPATHLEN+1]);
 	
 	void updateDataBases();
+	
+	void clearRecords(CSSM_DB_HANDLE dbHand, const CssmQuery &query);
 
 	bool systemDatabasesPresent(bool purge);
 	void createSystemDatabase(
@@ -151,13 +162,14 @@ private:
 	bool createSystemDatabases(
 		CSSM_BOOL autoCommit,
 		mode_t mode);
+	
+	RecursionBlock mUpdating;		// updateDatabases() in progress
 
     const CssmMemoryFunctions mCssmMemoryFunctions;
     Guid 			mCallerGuid;
     bool 			mCallerGuidPresent;
 	
 	MDSModule		&mModule;
-	int				mLockFd;		// per-user MDS DB lock
 };
 
 } // end namespace Security

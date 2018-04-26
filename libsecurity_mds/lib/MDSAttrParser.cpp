@@ -43,7 +43,8 @@ MDSAttrParser::MDSAttrParser(
 		mPath(NULL),
 		mDl(dl),
 		mObjectHand(objectHand),
-		mCdsaDirHand(cdsaDirHand)
+		mCdsaDirHand(cdsaDirHand),
+		mDefaults(NULL)
 {
 	/* Only task here is to cook up a CFBundle for the specified path */
 	unsigned pathLen = strlen(bundlePath);
@@ -97,7 +98,7 @@ Parsing bundle {
 
 #define RELEASE_EACH_URL	0
 
-void MDSAttrParser::parseAttrs()
+void MDSAttrParser::parseAttrs(CFStringRef subdir)
 {
 	/* get all *.mdsinfo files */
 	/* 
@@ -108,7 +109,7 @@ void MDSAttrParser::parseAttrs()
 	 */
 	CFArrayRef bundleInfoFiles = CFBundleCopyResourceURLsOfType(mBundle,
 		CFSTR(MDS_INFO_TYPE),
-		NULL);				// any subdir
+		subdir);
 	if(bundleInfoFiles == NULL) {
 		Syslog::alert("MDSAttrParser: no mdsattr files for %s", mPath);
 		return;
@@ -119,8 +120,6 @@ void MDSAttrParser::parseAttrs()
 	for(CFIndex i=0; i<CFArrayGetCount(bundleInfoFiles); i++) {
 		/* get filename as CFURL */
 		CFURLRef infoUrl = NULL;
-		MDSDictionary *mdsDict = NULL;
-		CFStringRef infoType = NULL;
 		
 		infoUrl = reinterpret_cast<CFURLRef>(
 			CFArrayGetValueAtIndex(bundleInfoFiles, i));
@@ -133,45 +132,7 @@ void MDSAttrParser::parseAttrs()
 			continue;
 		}
 		
-		/* Get contents of mdsinfo file as dictionary */
-		mdsDict = new MDSDictionary(infoUrl, mPath);
-		if(mdsDict == NULL) {
-			goto abortInfoFile;
-		}
-		MPDebug("Parsing mdsinfo file %s", mdsDict->fileDesc());
-		
-		/* Determine what kind of info file this is and dispatch accordingly */
-		infoType = (CFStringRef)mdsDict->lookup(CFSTR(MDS_INFO_FILE_TYPE),
-			true, CFStringGetTypeID());
-		if(infoType == NULL) {
-			logFileError("Malformed MDS Info file", infoUrl, NULL, NULL);
-			goto abortInfoFile;
-		}
-		
-		/* be robust here, errors in these low-level routines do not affect
-		 * the rest of our task */
-		try {
-			if(CFStringCompare(infoType, CFSTR(MDS_INFO_FILE_TYPE_CSSM), 0) 
-					== kCFCompareEqualTo) {
-				parseCssmInfo(mdsDict);
-			}
-			else if(CFStringCompare(infoType, CFSTR(MDS_INFO_FILE_TYPE_PLUGIN), 0) 
-					== kCFCompareEqualTo) {
-				parsePluginCommon(mdsDict);
-			}
-			else if(CFStringCompare(infoType, CFSTR(MDS_INFO_FILE_TYPE_RECORD), 0) 
-					== kCFCompareEqualTo) {
-				parsePluginSpecific(mdsDict);
-			}
-			else {
-				logFileError("Malformed MDS Info file", infoUrl, NULL, NULL);
-			}
-		}
-		catch(...) {
-		
-		}
-abortInfoFile:
-		delete mdsDict;
+		parseFile(infoUrl, subdir);
 	} /* for each mdsinfo */
 	/* FIXME - do we have to release each element of the array? */
 	#if RELEASE_EACH_URL
@@ -181,6 +142,53 @@ abortInfoFile:
 	}
 	#endif
 	CF_RELEASE(bundleInfoFiles);
+}
+
+void MDSAttrParser::parseFile(CFURLRef infoUrl, CFStringRef subdir)
+{
+	MDSDictionary *mdsDict = NULL;
+	CFStringRef infoType = NULL;
+	
+	/* Get contents of mdsinfo file as dictionary */
+	mdsDict = new MDSDictionary(infoUrl, subdir, mPath);
+	if(mdsDict == NULL) {
+		goto abortInfoFile;
+	}
+	mdsDict->setDefaults(mDefaults);
+	MPDebug("Parsing mdsinfo file %s", mdsDict->fileDesc());
+	
+	/* Determine what kind of info file this is and dispatch accordingly */
+	infoType = (CFStringRef)mdsDict->lookup(CFSTR(MDS_INFO_FILE_TYPE),
+		true, CFStringGetTypeID());
+	if(infoType == NULL) {
+		logFileError("Malformed MDS Info file", infoUrl, NULL, NULL);
+		goto abortInfoFile;
+	}
+	
+	/* be robust here, errors in these low-level routines do not affect
+	 * the rest of our task */
+	try {
+		if(CFStringCompare(infoType, CFSTR(MDS_INFO_FILE_TYPE_CSSM), 0) 
+				== kCFCompareEqualTo) {
+			parseCssmInfo(mdsDict);
+		}
+		else if(CFStringCompare(infoType, CFSTR(MDS_INFO_FILE_TYPE_PLUGIN), 0) 
+				== kCFCompareEqualTo) {
+			parsePluginCommon(mdsDict);
+		}
+		else if(CFStringCompare(infoType, CFSTR(MDS_INFO_FILE_TYPE_RECORD), 0) 
+				== kCFCompareEqualTo) {
+			parsePluginSpecific(mdsDict);
+		}
+		else {
+			logFileError("Malformed MDS Info file", infoUrl, NULL, NULL);
+		}
+	}
+	catch(...) {
+	
+	}
+abortInfoFile:
+	delete mdsDict;
 }
 
 void MDSAttrParser::logFileError(

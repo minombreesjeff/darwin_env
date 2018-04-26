@@ -119,6 +119,7 @@ void MDSModule::getDbPath(
 void MDSModule::setDbPath(const char *path)
 {
 	StLock<Mutex> _(mDbPathLock);
+	/* caller assures this, and this is private to this module */
 	assert(strlen(path) <= MAXPATHLEN);
 	strcpy(mDbPath, path);
 }

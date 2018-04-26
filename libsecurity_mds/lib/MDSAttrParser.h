@@ -82,7 +82,12 @@ public:
 	virtual ~MDSAttrParser();
 	
 	/* the bulk of the work */
-	void parseAttrs();
+	void parseAttrs(CFStringRef subdir = NULL);
+	
+	/* parse a single file, by path URL */
+	void parseFile(CFURLRef theFileUrl, CFStringRef subdir = NULL);
+	
+	void setDefaults(const MDS_InstallDefaults *defaults) { mDefaults = defaults; }
 	
 private:
 	void logFileError(
@@ -146,6 +151,9 @@ private:
 	MDSSession		&mDl;
 	CSSM_DB_HANDLE 	mObjectHand;
 	CSSM_DB_HANDLE 	mCdsaDirHand;
+	
+	// Guid/SSID defaults
+	const MDS_InstallDefaults *mDefaults;
 };
 
 

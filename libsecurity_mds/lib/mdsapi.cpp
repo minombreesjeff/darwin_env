@@ -31,8 +31,16 @@
  */
 
 #include "MDSSession.h"
+#include "mdspriv.h"
 #include <security_cdsa_utilities/cssmbridge.h>
 #include <memory>
+#include <security_utilities/globalizer.h>
+#include <security_utilities/threading.h>
+
+#define MSApiDebug(args...)	secdebug("MDS_API", ## args)
+
+/* Protects access to AppleDataBase */
+ModuleNexus<Mutex> adbMutex;
 
 using namespace std;
 
@@ -44,8 +52,10 @@ static CSSM_RETURN CSSMAPI mds_DataGetFirst(CSSM_DL_DB_HANDLE DLDBHandle,
          CSSM_DB_UNIQUE_RECORD_PTR *UniqueId)
 {
   BEGIN_API
+  MSApiDebug("mds_DataGetFirst");
+  StLock<Mutex> _(adbMutex());
   if (!(Required(ResultsHandle) = findHandle<MDSSession>(DLDBHandle.DLHandle).DataGetFirst(DLDBHandle.DBHandle,
-			DLQuery::optional(Query),
+			CssmQuery::optional(Query),
 			Attributes,
 			CssmData::optional(Data),
 			Required(UniqueId))))
@@ -61,6 +71,7 @@ static CSSM_RETURN CSSMAPI mds_DataModify(CSSM_DL_DB_HANDLE DLDBHandle,
          CSSM_DB_MODIFY_MODE ModifyMode)
 {
   BEGIN_API
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).DataModify(DLDBHandle.DBHandle,
 			RecordType,
 			Required(UniqueRecordIdentifier),
@@ -74,6 +85,7 @@ static CSSM_RETURN CSSMAPI mds_GetDbNameFromHandle(CSSM_DL_DB_HANDLE DLDBHandle,
          char **DbName)
 {
   BEGIN_API
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).GetDbNameFromHandle(DLDBHandle.DBHandle,
 			DbName);
   END_API(MDS)
@@ -83,6 +95,8 @@ static CSSM_RETURN CSSMAPI mds_DataAbortQuery(CSSM_DL_DB_HANDLE DLDBHandle,
          CSSM_HANDLE ResultsHandle)
 {
   BEGIN_API
+  MSApiDebug("mds_DataAbortQuery");
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).DataAbortQuery(DLDBHandle.DBHandle,
 			ResultsHandle);
   END_API(MDS)
@@ -92,6 +106,7 @@ static CSSM_RETURN CSSMAPI mds_DestroyRelation(CSSM_DL_DB_HANDLE DLDBHandle,
          CSSM_DB_RECORDTYPE RelationID)
 {
   BEGIN_API
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).DestroyRelation(DLDBHandle.DBHandle,
 			RelationID);
   END_API(MDS)
@@ -101,6 +116,7 @@ static CSSM_RETURN CSSMAPI mds_DataDelete(CSSM_DL_DB_HANDLE DLDBHandle,
          const CSSM_DB_UNIQUE_RECORD *UniqueRecordIdentifier)
 {
   BEGIN_API
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).DataDelete(DLDBHandle.DBHandle,
 			Required(UniqueRecordIdentifier));
   END_API(MDS)
@@ -113,6 +129,7 @@ static CSSM_RETURN CSSMAPI mds_DataInsert(CSSM_DL_DB_HANDLE DLDBHandle,
          CSSM_DB_UNIQUE_RECORD_PTR *UniqueId)
 {
   BEGIN_API
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).DataInsert(DLDBHandle.DBHandle,
 			RecordType,
 			Attributes,
@@ -127,6 +144,7 @@ static CSSM_RETURN CSSMAPI mds_DataGetFromUniqueRecordId(CSSM_DL_DB_HANDLE DLDBH
          CSSM_DATA_PTR Data)
 {
   BEGIN_API
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).DataGetFromUniqueRecordId(DLDBHandle.DBHandle,
 			Required(UniqueRecord),
             Attributes,
@@ -143,11 +161,12 @@ static CSSM_RETURN CSSMAPI mds_CreateRelation(CSSM_DL_DB_HANDLE DLDBHandle,
          const CSSM_DB_SCHEMA_INDEX_INFO *pIndexInfo)
 {
   BEGIN_API
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).CreateRelation(DLDBHandle.DBHandle,
 			RelationID,
 			RelationName,
 			NumberOfAttributes,
-			Required(pAttributeInfo),
+			pAttributeInfo,
 			NumberOfIndexes,
 			Required(pIndexInfo));
   END_API(MDS)
@@ -157,6 +176,7 @@ static CSSM_RETURN CSSMAPI mds_FreeUniqueRecord(CSSM_DL_DB_HANDLE DLDBHandle,
          CSSM_DB_UNIQUE_RECORD_PTR UniqueRecord)
 {
   BEGIN_API
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).FreeUniqueRecord(DLDBHandle.DBHandle,
 			Required(UniqueRecord));
   END_API(MDS)
@@ -171,6 +191,8 @@ static CSSM_RETURN CSSMAPI mds_DbOpen(CSSM_DL_HANDLE DLHandle,
          CSSM_DB_HANDLE *DbHandle)
 {
   BEGIN_API
+  MSApiDebug("mds_DbOpen %s", DbName);
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLHandle).DbOpen(DbName,
 			DbLocation,
 			AccessRequest,
@@ -187,6 +209,8 @@ static CSSM_RETURN CSSMAPI mds_DataGetNext(CSSM_DL_DB_HANDLE DLDBHandle,
          CSSM_DB_UNIQUE_RECORD_PTR *UniqueId)
 {
   BEGIN_API
+  MSApiDebug("mds_DataGetNext");
+  StLock<Mutex> _(adbMutex());
   if (!findHandle<MDSSession>(DLDBHandle.DLHandle).DataGetNext(DLDBHandle.DBHandle,
 			ResultsHandle,
 			Attributes,
@@ -207,6 +231,8 @@ static CSSM_RETURN CSSMAPI mds_GetDbNames(CSSM_DL_HANDLE DLHandle,
 static CSSM_RETURN CSSMAPI mds_DbClose(CSSM_DL_DB_HANDLE DLDBHandle)
 {
   BEGIN_API
+  MSApiDebug("mds_DbClose");
+  StLock<Mutex> _(adbMutex());
   findHandle<MDSSession>(DLDBHandle.DLHandle).DbClose(DLDBHandle.DBHandle);
   END_API(MDS)
 }
@@ -238,10 +264,6 @@ static MDS_FUNCS gMDSFunctionTable =
     mds_DestroyRelation,
 };
 
-
-#ifdef __MWERKS__
-#pragma export on
-#endif
 
 CSSM_RETURN CSSMAPI
 MDS_Initialize (const CSSM_GUID *inCallerGuid,
@@ -282,6 +304,26 @@ MDS_Uninstall (MDS_HANDLE inMDSHandle)
     END_API(MDS)
 }
 
-#ifdef __MWERKS__
-#pragma export off
-#endif
+
+//
+// Private APIs for subsystem registration (called from securityd as root ONLY)
+//
+CSSM_RETURN CSSMAPI
+MDS_InstallFile(MDS_HANDLE inMDSHandle, const MDS_InstallDefaults *defaults,
+	const char *bundlePath, const char *subdir, const char *file)	// file(s)
+{
+  BEGIN_API
+  findHandle<MDSSession>(inMDSHandle).installFile(defaults, bundlePath, subdir, file);
+  END_API(MDS)
+}
+
+
+//
+// Remove 
+CSSM_RETURN CSSMAPI
+MDS_RemoveSubservice(MDS_HANDLE inMDSHandle, const char *guid, uint32 ssid)
+{
+  BEGIN_API
+  findHandle<MDSSession>(inMDSHandle).removeSubservice(guid, ssid);
+  END_API(MDS)
+}

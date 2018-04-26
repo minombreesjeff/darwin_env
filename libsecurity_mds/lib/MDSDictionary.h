@@ -41,6 +41,7 @@ public:
 	/* heavyweight constructor from file */
 	MDSDictionary(
 		CFURLRef fileUrl,
+		CFStringRef subdir,
 		const char *fullPath);
 
 	/* lightweight constructor from existing CFDictionary */
@@ -110,11 +111,18 @@ public:
 		bool		&fetchedFromDisk);	// true --> caller must CFRelease the returned
 										//     value
 										// false -> it's part of this dictionary
+	
+	void setDefaults(const MDS_InstallDefaults *defaults) { mDefaults = defaults; }
+	
 private:
 	CFDictionaryRef		mDict;
 	bool				mWeOwnDict;
 	char				*mUrlPath;
 	char				*mFileDesc;
+	CFStringRef			mSubdir;
+	
+	// default GUID/SSID to apply to all records as needed
+	const MDS_InstallDefaults *mDefaults;
 };
 
 } // end namespace Security

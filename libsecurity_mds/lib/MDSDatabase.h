@@ -128,7 +128,7 @@ public:
 
     virtual CSSM_HANDLE
     dataGetFirst (DbContext &dbContext,
-                  const DLQuery *inQuery,
+                  const CssmQuery *inQuery,
                   CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR inoutAttributes,
                   CssmData *inoutData,
                   CSSM_DB_UNIQUE_RECORD_PTR &outUniqueRecord);

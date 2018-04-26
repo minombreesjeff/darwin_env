@@ -27,7 +27,10 @@
 #include <Security/cssmerr.h>
 #include <security_utilities/logging.h>
 #include <security_utilities/debugging.h>
+#include <security_utilities/cfutilities.h>
+#include <security_cdsa_client/dlquery.h>
 #include <Security/mds_schema.h>
+#include <CoreFoundation/CFBundle.h>
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -36,31 +39,35 @@
 #include <assert.h>
 #include <time.h>
 
+using namespace CssmClient;
+
+
 /* 
  * The layout of the various MDS DB files on disk is as follows:
  *
  * /var/tmp/mds				-- owner = root, mode = 01777, world writable, sticky
- *     mdsObject.db			-- owner = root, mode = 0644, object DB
- *     mdsDirectory.db		-- owner = root, mode = 0644, MDS directory DB
- *	   mds.lock             -- temporary, owner = root, protects creation of 
- *							   previous two files
- *     <uid>/				-- owner = <uid>, mode = 0644
- *     	  mdsObject.db		-- owner = <uid>, mode = 0644, object DB
- *        mdsDirectory.db	-- owner = <uid>, mode = 0644, MDS directory DB
- *	   		  mds.lock      -- temporary, owner = <uid>, protects creation of 
- *							   previous two files
+ *    system/				-- owner = root, mode = 0755
+ *       mdsObject.db		-- owner = root, mode = 0644, object DB
+ *       mdsDirectory.db	-- owner = root, mode = 0644, MDS directory DB
+ *	     mds.lock           -- temporary, owner = root, protects creation of and 
+ *							   updates to previous two files
+ *       mds.install.lock	-- owner = root, protects MDS_Install operation
+ *    <uid>/				-- owner = <uid>, mode = 0700
+ *     	 mdsObject.db		-- owner = <uid>, mode = 000, object DB
+ *       mdsDirectory.db	-- owner = <uid>, mode = 000, MDS directory DB
+ *	     mds.lock			-- owner = <uid>, protects updates of previous two files
  * 
- * The /var/tmp/mds directory and the two db files in it are created by root
- * via SS or an AEWP call. Each user except for root has their own private
- * directory with two DB files and a lock. The first time a user accesses MDS,
- * the per-user directory is created and the per-user DB files are created as 
- * copies of the system DB files. Fcntl() with a F_RDLCK is used to lock the system
+ * The /var/tmp/mds/system directory is created at OS install time. The DB files in 
+ * it are created by root at MDS_Install time. The ownership and mode of this directory and
+ * of its parent is also re-checked and forced to the correct state at MDS_Install time. 
+ * Each user has their own private directory with two DB files and a lock. The first time 
+ * a user accesses MDS, the per-user directory is created and the per-user DB files are 
+ * created as copies of the system DB files. Fcntl() with a F_RDLCK is used to lock the system
  * DB files when they are the source of these copies; this is the same mechanism
- * used by the underlying AtomincFile. 
+ * used by the underlying AtomicFile. 
  *
- * The sticky bit in /var/tmp/mds ensures that users cannot delete, rename, and/or
- * replace the root-owned DB files in that directory, and that users can not 
- * modify other user's private MDS directories. 
+ * The sticky bit in /var/tmp/mds ensures that users cannot modify other userss private 
+ * MDS directories. 
  */
 namespace Security
 {
@@ -79,102 +86,243 @@ namespace Security
 
 
 /*
- * Location of system MDS database and lock files.
+ * Location of MDS database and lock files.
  */
-#define MDS_SYSTEM_DB_DIR 	"/private/var/tmp/mds"
-#define MDS_LOCK_FILE_NAME	"mds.lock"
-#define MDS_OBJECT_DB_NAME	"mdsObject.db"
-#define MDS_DIRECT_DB_NAME	"mdsDirectory.db"
-#define MDS_LOCK_FILE_PATH	MDS_SYSTEM_DB_DIR "/" MDS_LOCK_FILE_NAME
-#define MDS_OBJECT_DB_PATH	MDS_SYSTEM_DB_DIR "/" MDS_OBJECT_DB_NAME
-#define MDS_DIRECT_DB_PATH	MDS_SYSTEM_DB_DIR "/" MDS_DIRECT_DB_NAME
+#define MDS_BASE_DB_DIR			"/private/var/tmp/mds"
+#define MDS_SYSTEM_DB_COMP		"system"
+#define MDS_SYSTEM_DB_DIR		MDS_BASE_DB_DIR "/" MDS_SYSTEM_DB_COMP
+
+#define MDS_LOCK_FILE_NAME		"mds.lock"			
+#define MDS_INSTALL_LOCK_NAME	"mds.install.lock"	
+#define MDS_OBJECT_DB_NAME		"mdsObject.db"
+#define MDS_DIRECT_DB_NAME		"mdsDirectory.db"
+
+#define MDS_INSTALL_LOCK_PATH	MDS_SYSTEM_DB_DIR "/" MDS_INSTALL_LOCK_NAME
+#define MDS_OBJECT_DB_PATH		MDS_SYSTEM_DB_DIR "/" MDS_OBJECT_DB_NAME
+#define MDS_DIRECT_DB_PATH		MDS_SYSTEM_DB_DIR "/" MDS_DIRECT_DB_NAME
+
+/* hard coded modes and a symbolic UID for root */
+#define MDS_BASE_DB_DIR_MODE	(mode_t)01777
+#define MDS_SYSTEM_DB_DIR_MODE	(mode_t)0755
+#define MDS_SYSTEM_DB_MODE		(mode_t)0644
+#define MDS_USER_DB_DIR_MODE	(mode_t)0700
+#define MDS_USER_DB_MODE		(mode_t)0600
+#define MDS_SYSTEM_UID			(uid_t)0
 
 /*
  * Location of per-user bundles, relative to home directory.
- * PEr-user DB files are in MDS_SYSTEM_DB_DIR/<uid>/. 
+ * Per-user DB files are in MDS_BASE_DB_DIR/<uid>/. 
  */
-#define MDS_USER_DB_DIR		"Library/Security"
 #define MDS_USER_BUNDLE		"Library/Security"
 
 /* time to wait in ms trying to acquire lock */
 #define DB_LOCK_TIMEOUT		(2 * 1000)
 
 /* Minimum interval, in seconds, between rescans for plugin changes */
-#define MDS_SCAN_INTERVAL 	10
+#define MDS_SCAN_INTERVAL 	5
 
-/* initial debug - start from scratch each time */
-#define START_FROM_SCRATCH	0
+/* trace file I/O */
+#define MSIoDbg(args...)		secdebug("MDS_IO", ## args)
 
-/* debug - skip file-level locking */
-#define SKIP_FILE_LOCKING	0
-
-#ifndef	NDEBUG
-
-/* Only allow root to create and update system DB files - in the final config this
- * will be true */
-#define SYSTEM_MDS_ROOT_ONLY	0
+/* Trace cleanDir() */
+#define MSCleanDirDbg(args...)	secdebug("MDS_CleanDir", ## args)
 
 /*
- * Early development; no Security Server/root involvement with system DB creation.
- * If this is true, SYSTEM_MDS_ROOT_ONLY must be false (though both can be
- * false for intermediate testing).
- */ 
-#define SYSTEM_DBS_VIA_USER		1
+ * Given a path to a directory, remove everything in the directory except for the optional
+ * keepFileNames. Returns 0 on success, else an errno. 
+ */
+static int cleanDir(
+	const char *dirPath,
+	const char **keepFileNames,		// array of strings, size numKeepFileNames
+	unsigned numKeepFileNames)
+{
+    DIR *dirp;
+    struct dirent *dp;
+	char fullPath[MAXPATHLEN];
+	int rtn = 0;
+	
+	MSCleanDirDbg("cleanDir(%s) top", dirPath);
+    if ((dirp = opendir(dirPath)) == NULL) {
+		rtn = errno;
+		MSCleanDirDbg("opendir(%s) returned  %d", dirPath, rtn);
+        return rtn;
+    }
 
-#else	/* NDEBUG */
-/* normal deployment case */
-#define SYSTEM_MDS_ROOT_ONLY	1
-#define SYSTEM_DBS_VIA_USER		0
-#endif	/* NDEBUG */
+    for(;;) {
+		bool skip = false;
+		const char *d_name = NULL;
+		
+		/* this block is for breaking on unqualified entries */
+		do {
+			errno = 0;
+			dp = readdir(dirp);
+			if(dp == NULL) {
+				/* end of directory or error */
+				rtn = errno;
+				if(rtn) {
+					MSCleanDirDbg("cleanDir(%s): readdir err %d", dirPath, rtn);
+				}
+				break;
+			}
+			d_name = dp->d_name;
+			
+			/* skip "." and ".." */
+			if( (d_name[0] == '.') &&
+			    ( (d_name[1] == '\0') ||
+				  ( (d_name[1] == '.') && (d_name[2] == '\0') ) ) ) {
+				skip = true;
+				break;
+			}
+			
+			/* skip entries in keepFileNames */
+			for(unsigned dex=0; dex<numKeepFileNames; dex++) {
+				if(!strcmp(keepFileNames[dex], d_name)) {
+					skip = true;
+					break;
+				}
+			}
+		} while(0);
+		if(rtn || (dp == NULL)) {
+			/* one way or another, we're done */
+			break;
+		}
+		if(skip) {
+			/* try again */
+			continue;
+		}
+
+		/* We have an entry to delete. Delete it, or recurse. */
+
+		snprintf(fullPath, sizeof(fullPath), "%s/%s", dirPath, d_name);
+		if(dp->d_type == DT_DIR) {
+			/* directory. Clean it, then delete. */
+			MSCleanDirDbg("cleanDir recursing for dir %s", fullPath);
+			rtn = cleanDir(fullPath, NULL, 0);
+			if(rtn) {
+				break;
+			}
+			MSCleanDirDbg("cleanDir deleting dir %s", fullPath);
+			if(rmdir(fullPath)) {
+				rtn = errno;
+				MSCleanDirDbg("unlink(%s) returned %d", fullPath, rtn);
+				break;
+			}
+		}
+		else {
+			MSCleanDirDbg("cleanDir deleting file %s", fullPath);
+			if(unlink(fullPath)) {
+				rtn = errno;
+				MSCleanDirDbg("unlink(%s) returned %d", fullPath, rtn);
+				break;
+			}
+		}
+		
+		/* 
+		 * Back to beginning of directory for clean scan.
+		 * Normally we'd just do a rewinddir() here but the RAMDisk filesystem,
+		 * used when booting from DVD, does not implement that properly.
+		 */
+		closedir(dirp);
+		if ((dirp = opendir(dirPath)) == NULL) {
+			rtn = errno;
+			MSCleanDirDbg("opendir(%s) returned  %d", dirPath, rtn);
+			return rtn;
+		}
+    } /* main loop */
+
+	closedir(dirp);
+	return rtn;
+}
+
+/* 
+ * Determine if a file exists as regular file with specified owner. Returns true if so.
+ * If the purge argument is true, and there is something at the specified path that
+ * doesn't meet spec, we do everything we can to delete it. If that fails we throw
+ * CssmError(CSSM_ERRCODE_MDS_ERROR). If the delete succeeds we return false.
+ * Returns the stat info on success for further processing by caller. 
+ */
+static bool doesFileExist(
+	const char *filePath,
+	uid_t forUid,
+	bool purge,
+	struct stat &sb)		// RETURNED
+{
+	MSIoDbg("stat %s in doesFileExist", filePath);
+	if(lstat(filePath, &sb)) {
+		/* doesn't exist or we can't even get to it. */
+		if(errno == ENOENT) {
+			return false;
+		}
+		if(purge) {
+			/* If we can't stat it we sure can't delete it. */
+			CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
+		}
+		return false;
+	}
+	
+	/* it's there...how does it look? */
+	mode_t fileType = sb.st_mode & S_IFMT;
+	if((fileType == S_IFREG) && (sb.st_uid == forUid)) {
+		return true;
+	}
+	if(!purge) {
+		return false;
+	}
+
+	/* not what we want: get rid of it. */
+	if(fileType == S_IFDIR) {
+		/* directory: clean then remove */
+		if(cleanDir(filePath, NULL, 0)) {
+			CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
+		}
+		if(rmdir(filePath)) {
+			MSDebug("rmdir(%s) returned %d", filePath, errno);
+			CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
+		}
+	}
+	else {
+		if(unlink(filePath)) {
+			MSDebug("unlink(%s) returned %d", filePath, errno);
+			CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
+		}
+	}
+	
+	/* caller should be somewhat happy */
+	return false;
+}
 
 /*
- * Determine if both of the specified DB files exist as
- * accessible regular files. Returns true if they do. If the purge argument
- * is true, we'll ensure that either both or neither of the files exist on
- * exit.
+ * Determine if both of the specified DB files exist as accessible regular files with specified 
+ * owner. Returns true if they do. 
+ *
+ * If the purge argument is true, we'll ensure that either both files exist with
+ * the right owner, or neither of the files exist on exit. An error on that operation
+ * throws a CSSM_ERRCODE_MDS_ERROR CssmError exception (i.e., we're hosed). 
+ * Returns the stat info for both files on success for further processing by caller. 
  */
 static bool doFilesExist(
 	const char *objDbFile,
 	const char *directDbFile,
-	bool purge)					// false means "passive" check 
-{
-	struct stat sb;
-	bool objectExist = false;
-	bool directExist = false;
+	uid_t forUid,
+	bool purge,					// false means "passive" check 
+	struct stat &objDbSb,		// RETURNED
+	struct stat &directDbSb)	// RETURNED
 	
-	if (stat(objDbFile, &sb) == 0) {
-		/* Object DB exists */
-		if(!(sb.st_mode & S_IFREG)) {
-			MSDebug("deleting non-regular file %s", objDbFile);
-			if(purge && unlink(objDbFile)) {
-				MSDebug("unlink(%s) returned %d", objDbFile, errno);
-				CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
-			}
-		}
-		else {
-			objectExist = true;
-		}
-	}
-	if (stat(directDbFile, &sb) == 0) {
-		/* directory DB exists */
-		if(!(sb.st_mode & S_IFREG)) {
-			MSDebug("deleting non-regular file %s", directDbFile);
-			if(purge & unlink(directDbFile)) {
-				MSDebug("unlink(%s) returned %d", directDbFile, errno);
-				CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
-			}
-		}
-		directExist = true;
-	}
+{
+	bool objectExist = doesFileExist(objDbFile, forUid, purge, objDbSb);
+	bool directExist = doesFileExist(directDbFile, forUid, purge, directDbSb);
 	if(objectExist && directExist) {
-		/* both databases exist as regular files */
 		return true;
 	}
 	else if(!purge) {
 		return false;
 	}
 	
-	/* at least one does not exist - ensure neither of them do */
+	/* 
+	 * At least one does not exist - ensure neither of them do.
+	 * Note that if we got this far, we know the one that exists is a regular file
+	 * so it's safe to just unlink it. 
+	 */
 	if(objectExist) {
 		if(unlink(objDbFile)) {
 			MSDebug("unlink(%s) returned %d", objDbFile, errno);
@@ -191,45 +339,129 @@ static bool doFilesExist(
 }
 
 /*
- * Determine if specified directory exists. 
+ * Determine if specified directory exists with specified owner and mode. 
+ * Returns true if copacetic, else returns false and also indicates
+ * via the directStatus out param what went wrong. 
  */
+typedef enum {
+	MDS_NotPresent,		/* nothing there */
+	MDS_NotDirectory,	/* not a directory */
+	MDS_BadOwnerMode,	/* wrong owner or mode */
+	MDS_Access			/* couldn't search the directories */
+} MdsDirectStatus;
+
 static bool doesDirectExist(
-	const char *dirPath)
+	const char		*dirPath,
+	uid_t			forUid,
+	mode_t			mode,
+	MdsDirectStatus	&directStatus)		/* RETURNED */
 {
 	struct stat sb;
 	
-	if (stat(dirPath, &sb)) {
+	MSIoDbg("stat %s in doesDirectExist", dirPath);
+	if (lstat(dirPath, &sb)) {
+		int err = errno;
+		switch(err) {
+			case EACCES:
+				directStatus = MDS_Access;
+				break;
+			case ENOENT:
+				directStatus = MDS_NotPresent;
+				break;
+			/* Any others? Is this a good SWAG to handle the default? */
+			default:
+				directStatus = MDS_NotDirectory;
+				break;
+		}
 		return false;
 	}
-	if(!(sb.st_mode & S_IFDIR)) {
+	mode_t fileType = sb.st_mode & S_IFMT;
+	if(fileType != S_IFDIR) {
+		directStatus = MDS_NotDirectory;
+		return false;
+	}
+	if(sb.st_uid != forUid) {
+		directStatus = MDS_BadOwnerMode;
+		return false;
+	}
+	if((sb.st_mode & 07777) != mode) {
+		directStatus = MDS_BadOwnerMode;
 		return false;
 	}
 	return true;
 }
 
 /*
- * Create specified directory if it doesn't already exist. 
- * Zero for mode means "use the default provided by 0755 modified by umask".
+ * Create specified directory if it doesn't already exist. If there is something 
+ * already there that doesn't meet spec (not a directory, wrong mode, wrong owner)
+ * we'll do everything we can do delete what is there and then try to create it
+ * correctly.
+ *
+ * Returns an errno on any unrecoverable error. 
  */
 static int createDir(
 	const char *dirPath,
-	mode_t dirMode = 0)
+	uid_t forUid,			// for checking - we don't try to set this
+	mode_t dirMode)
 {
-	if(doesDirectExist(dirPath)) {
+	MdsDirectStatus directStatus;
+	
+	if(doesDirectExist(dirPath, forUid, dirMode, directStatus)) {
+		/* we're done */
 		return 0;
 	}
-	int rtn = mkdir(dirPath, 0755);
-	if(rtn) {
-		if(errno == EEXIST) {
-			/* this one's OK */
-			rtn = 0;
-		}
-		else {
-			rtn = errno;
-			MSDebug("mkdir(%s) returned  %d", dirPath, errno);
-		}
+	
+	/*
+	 * Attempt recovery if there is *something* there.
+	 * Anything other than "not present" should be considered to be a possible
+	 * attack; syslog it. 
+	 */
+	int rtn;
+	switch(directStatus) {
+		case MDS_NotPresent:
+			/* normal trivial case: proceed. */
+			break;
+			
+		case MDS_NotDirectory:
+			/* there's a file or symlink in the way */
+			Syslog::alert("MDS error: %s is not a directory", dirPath);
+			if(unlink(dirPath)) {
+				rtn = errno;
+				MSDebug("createDir(%s): unlink() returned %d", dirPath, rtn);
+				return rtn;
+			}
+			break;
+			
+		case MDS_BadOwnerMode:
+			/* 
+			 * It's a directory; try to clean it out (which may well fail if we're
+			 * not root).
+			 */
+			Syslog::alert("MDS error: %s with bad owner/mode", dirPath);
+			rtn = cleanDir(dirPath, NULL, 0);
+			if(rtn) {
+				return rtn;
+			}
+			if(rmdir(dirPath)) {
+				rtn = errno;
+				MSDebug("createDir(%s): rmdir() returned %d", dirPath, rtn);
+				return rtn;
+			}
+			/* good to go */
+			break;
+			
+		case MDS_Access:		/* hopeless */
+			Syslog::alert("MDS error: %s is inaccessible", dirPath);
+			MSDebug("createDir(%s): access failure, bailing", dirPath);
+			return EACCES;
 	}
-	if((rtn == 0) && (dirMode != 0)) {
+	rtn = mkdir(dirPath, dirMode);
+	if(rtn) {
+		rtn = errno;
+		MSDebug("createDir(%s): mkdir() returned %d", dirPath, errno);
+	}
+	else {
+		/* make sure umask does't trick us */
 		rtn = chmod(dirPath, dirMode);
 		if(rtn) {
 			MSDebug("chmod(%s) returned  %d", dirPath, errno);
@@ -243,84 +475,81 @@ static int createDir(
  */
 MDSSession::MDSSession (const Guid *inCallerGuid,
                         const CSSM_MEMORY_FUNCS &inMemoryFunctions) :
-	DatabaseSession(MDSModule::get().databaseManager()),    
+	DatabaseSession(MDSModule::get().databaseManager()),
 	mCssmMemoryFunctions (inMemoryFunctions),
-	mModule(MDSModule::get()),
-	mLockFd(-1)
+	mModule(MDSModule::get())
 {
 	MSDebug("MDSSession::MDSSession");
 		
-	#if START_FROM_SCRATCH
-	unlink(MDS_LOCK_FILE_PATH);
-	unlink(MDS_OBJECT_DB_PATH);
-	unlink(MDS_DIRECT_DB_PATH);	
-	#endif
-	
     mCallerGuidPresent =  inCallerGuid != nil;
-    if (mCallerGuidPresent)
+    if (mCallerGuidPresent) {
         mCallerGuid = *inCallerGuid;
-	
-	/*
-	 * Create DB files if necessary; make sure they are up-to-date
-	 */
-	// no! done in either install or open! updateDataBases();
+	}
 }
 
 MDSSession::~MDSSession ()
 {
 	MSDebug("MDSSession::~MDSSession");
-	releaseLock(mLockFd);
 }
 
 void
 MDSSession::terminate ()
 {
 	MSDebug("MDSSession::terminate");
-	releaseLock(mLockFd);
     closeAll();
 }
 
 /*
- * Called by security server or AEWP-executed privileged tool.
+ * Called by security server via MDS_Install().
  */
 void
 MDSSession::install ()
 {
-	if((getuid() != (uid_t)0) && SYSTEM_MDS_ROOT_ONLY) {
+	if(geteuid() != (uid_t)0) { 
 		CssmError::throwMe(CSSMERR_DL_OS_ACCESS_DENIED);
 	}
 	
 	int sysFdLock = -1;
 	try {
-		/* before we obtain the lock, ensure the the system MDS DB directory exists */
-		if(createDir(MDS_SYSTEM_DB_DIR, 01777)) {
+		/* ensure MDS base directory exists with correct permissions */
+		if(createDir(MDS_BASE_DB_DIR, MDS_SYSTEM_UID, MDS_BASE_DB_DIR_MODE)) {
+			MSDebug("Error creating base MDS dir; aborting.");
+			CssmError::throwMe(CSSMERR_DL_OS_ACCESS_DENIED);
+		}
+		       
+		/* ensure the the system MDS DB directory exists with correct permissions */
+		if(createDir(MDS_SYSTEM_DB_DIR, MDS_SYSTEM_UID, MDS_SYSTEM_DB_DIR_MODE)) {
 			MSDebug("Error creating system MDS dir; aborting.");
 			CssmError::throwMe(CSSMERR_DL_OS_ACCESS_DENIED);
 		}
 
-		if(!obtainLock(MDS_LOCK_FILE_PATH, sysFdLock, DB_LOCK_TIMEOUT)) {
+		if(!obtainLock(MDS_INSTALL_LOCK_PATH, sysFdLock, DB_LOCK_TIMEOUT)) {
 			CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
 		}
-		if(!systemDatabasesPresent(true)) {
-			/* 
-			 * Root umask is 0 when this runs, so specify readable (only) 
-			 * by world. Also, turn off autocommit during initial
-			 * system DB population.
-			 */
-			bool created = createSystemDatabases(CSSM_FALSE, 0644);
-			if(created) {
-				/* 
-				 * Skip possible race condition in which this is called twice,
-				 * both via SS by user procs who say "no system DBs present"
-				 * in their updateDataBases() method. 
-				 *
-				 * Do initial population of system DBs.
-				 */
-				DbFilesInfo dbFiles(*this, MDS_SYSTEM_DB_DIR);
-				dbFiles.autoCommit(CSSM_FALSE);
-				dbFiles.updateSystemDbInfo(MDS_SYSTEM_PATH, MDS_BUNDLE_PATH);
-			}
+
+		/* 
+		 * We own the whole MDS system. Clean everything out except for our lock
+		 * (and the directory it's in :-)
+		 */
+		const char *savedFile = MDS_INSTALL_LOCK_NAME;
+		if(cleanDir(MDS_SYSTEM_DB_DIR, &savedFile, 1)) {
+			/* this should never happen - we're root */
+			Syslog::alert("MDS error: unable to clean %s", MDS_SYSTEM_DB_DIR);
+			CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
 		}
+		savedFile = MDS_SYSTEM_DB_COMP;
+		if(cleanDir(MDS_BASE_DB_DIR, &savedFile, 1)) {
+			/* this should never happen - we're root */
+			Syslog::alert("MDS error: unable to clean %s", MDS_BASE_DB_DIR);
+			CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
+		}
+				
+		/* 
+		 * Do initial population of system DBs.
+		 */
+		createSystemDatabases(CSSM_FALSE, MDS_SYSTEM_DB_MODE);
+		DbFilesInfo dbFiles(*this, MDS_SYSTEM_DB_DIR);
+		dbFiles.updateSystemDbInfo(MDS_SYSTEM_PATH, MDS_BUNDLE_PATH);
 	}
 	catch(...) {
 		if(sysFdLock != -1) {
@@ -344,39 +573,27 @@ MDSSession::uninstall ()
 
 /*
  * Common private open routine given a full specified path.
- *
- * FIXME: both of these dbOpen routines leak like crazy even though
- * we know we close properly. 
- * Typical stack trace (from MallocDebug) of a leak is
- *
- *	DatabaseSession::DbOpen(char const *, cssm_net_address const...)
- *	DatabaseManager::dbOpen(Security::DatabaseSession &, ...)
- *	Database::_dbOpen(Security::DatabaseSession &, unsigned long, ...)
- *	AppleDatabase::dbOpen(Security::DbContext &)
- *	DbModifier::openDatabase(void)
- *	DbModifier::getDbVersion(void) 
- *	DbVersion::DbVersion(Security::AtomicFile &, ...)
- *	DbVersion::open(void) 
- *	MetaRecord::unpackRecord(Security::ReadSection const &, ...)
- *	MetaRecord::unpackAttribute(Security::ReadSection const &, ...)
- *	MetaAttribute::unpackAttribute(Security::ReadSection const &, ..)
- *	TypedMetaAttribute<Security::StringValue>::unpackValue(...)
- *	TrackingAllocator::malloc(unsigned long) 
  */
-CSSM_DB_HANDLE MDSSession::dbOpen(
-	const char *dbName)
+CSSM_DB_HANDLE MDSSession::dbOpen(const char *dbName, bool batched)
 {
-	MSDebug("Opening %s", dbName);
+	static CSSM_APPLEDL_OPEN_PARAMETERS batchOpenParams = {
+		sizeof(CSSM_APPLEDL_OPEN_PARAMETERS),
+		CSSM_APPLEDL_OPEN_PARAMETERS_VERSION,
+		CSSM_FALSE,		// do not auto-commit
+		0				// mask - do not use following fields
+	};
+	
+	MSDebug("Opening %s%s", dbName, batched ? " in batch mode" : "");
+	MSIoDbg("open %s in dbOpen(name, batched)", dbName);
 	CSSM_DB_HANDLE dbHand;
 	DatabaseSession::DbOpen(dbName,
 		NULL,				// DbLocation
 		CSSM_DB_ACCESS_READ,
 		NULL,				// AccessCred - hopefully optional 
-		NULL,				// OpenParameters
+		batched ? &batchOpenParams : NULL,
 		dbHand);
 	return dbHand;
 }
-
 
 /* DatabaseSession routines we need to override */
 void MDSSession::DbOpen(const char *DbName,
@@ -409,16 +626,28 @@ void MDSSession::DbOpen(const char *DbName,
 	}
 	char fullPath[MAXPATHLEN];
 	dbFullPath(dbName, fullPath);
+	MSIoDbg("open %s in dbOpen(name, loc, accessReq...)", dbName);
 	DatabaseSession::DbOpen(fullPath, DbLocation, AccessRequest, AccessCred,
 		OpenParameters, DbHandle);
 }
+
+CSSM_HANDLE MDSSession::DataGetFirst(CSSM_DB_HANDLE DBHandle,
+                             const CssmQuery *Query,
+                             CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR Attributes,
+                             CssmData *Data,
+                             CSSM_DB_UNIQUE_RECORD_PTR &UniqueId)
+{
+	updateDataBases();
+	return DatabaseSession::DataGetFirst(DBHandle, Query, Attributes, Data, UniqueId);
+}
+
 
 void
 MDSSession::GetDbNames(CSSM_NAME_LIST_PTR &outNameList)
 {
 	outNameList = new CSSM_NAME_LIST[1];
 	outNameList->NumStrings = 2;
-	outNameList->String = new (char *)[2];
+	outNameList->String = new char*[2];
 	outNameList->String[0] = MDSCopyCstring(MDS_OBJECT_DIRECTORY_NAME);
 	outNameList->String[1] = MDSCopyCstring(MDS_CDSA_DIRECTORY_NAME);
 }
@@ -446,25 +675,34 @@ void MDSSession::GetDbNameFromHandle(CSSM_DB_HANDLE DBHandle,
 //
 bool
 MDSSession::obtainLock(
-	const char *lockFile,	// e.g. MDS_LOCK_FILE_PATH
+	const char *lockFile,	// e.g. MDS_INSTALL_LOCK_PATH
 	int &fd,				// IN/OUT
 	int timeout)			// default 0
 {
-	#if	SKIP_FILE_LOCKING
-	return true;
-	#else
-	
-	static const int kRetryDelay = 250; // ms
-	
-	fd = open(MDS_LOCK_FILE_PATH, O_CREAT | O_EXCL, 0544);
-	while (fd == -1 && timeout >= kRetryDelay) {
-		timeout -= kRetryDelay;
-		usleep(1000 * kRetryDelay);
-		mLockFd = open(MDS_LOCK_FILE_PATH, O_CREAT | O_EXCL, 0544);
+	fd = -1;
+	for(;;) {
+		secdebug("mdslock", "obtainLock: calling open()");
+		fd = open(lockFile, O_EXLOCK | O_CREAT | O_RDWR, 0644);
+		if(fd == -1) {
+			int err = errno;
+			secdebug("mdslock", "obtainLock: open error %d", errno);
+			if(err == EINTR) {
+				/* got a signal, go again */
+				continue;
+			}
+			else {
+				/* theoretically should never happen */
+				return false;
+			}
+		}
+		else {
+			secdebug("mdslock", "obtainLock: success");
+			return true;
+		}
 	}
 	
-	return (fd != -1);
-	#endif	/* SKIP_FILE_LOCKING */
+	/* not reached */
+	return false;
 }
 
 //
@@ -475,13 +713,11 @@ MDSSession::obtainLock(
 void
 MDSSession::releaseLock(int &fd)
 {
-	#if !SKIP_FILE_LOCKING
-	if (fd != -1) {
-		close(fd);
-		unlink(MDS_LOCK_FILE_PATH);
-		fd = -1;
-	}
-	#endif
+	secdebug("mdslock", "releaseLock");
+	assert(fd != -1);
+	flock(fd, LOCK_UN);
+	close(fd);
+	fd = -1;
 }
 
 /* given DB file name, fill in fully specified path */
@@ -545,91 +781,147 @@ static bool checkUserBundles(
 
 #define COPY_BUF_SIZE	1024
 
-/* Single file copy with locking */
+/* 
+ * Single file copy with locking. 
+ * Ensures that the source is a regular file with specified owner. 
+ * Caller specifies mode of destination file. 
+ * Throws a CssmError if the source file doesn't meet spec; throws a
+ *    UnixError on any other error (which is generally recoverable by 
+ *    having the user MDS session use the system DB files).
+ */
 static void safeCopyFile(
 	const char *fromPath,
-	const char *toPath)
+	uid_t fromUid,
+	const char *toPath,
+	mode_t toMode)
 {
-	/* open source for reading */
-	int srcFd = open(fromPath, O_RDONLY, 0);
-	if(srcFd < 0) {
-		/* FIXME - what error would we see if the file is locked for writing
-		 * by someone else? We definitely have to handle that. */
-		int error = errno;
-		MSDebug("Error %d opening system DB file %s\n", error, fromPath);
-		UnixError::throwMe(error);
+	int error = 0;
+	bool haveLock = false;
+	int destFd = 0;
+	int srcFd = 0;
+	struct stat sb;
+	char tmpToPath[MAXPATHLEN+1];
+		
+	MSIoDbg("open %s, %s in safeCopyFile", fromPath, toPath);
+
+	if(!doesFileExist(fromPath, fromUid, false, sb)) {
+		MSDebug("safeCopyFile: bad system DB file %s", fromPath);
+		CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
 	}
 	
-	/* acquire the same kind of lock AtomicFile uses */
-	struct flock fl;
-	fl.l_start = 0;
-	fl.l_len = 1;
-	fl.l_pid = getpid();
-	fl.l_type = F_RDLCK;		// AtomicFile gets F_WRLCK
-	fl.l_whence = SEEK_SET;
-
-	// Keep trying to obtain the lock if we get interupted.
-	for (;;) {
-		if (::fcntl(srcFd, F_SETLKW, reinterpret_cast<int>(&fl)) == -1) {
-			int error = errno;
-			if (error == EINTR) {
-				continue;
-			}
-			MSDebug("Error %d locking system DB file %s\n", error, fromPath);
-			UnixError::throwMe(error);
-		}
-		else {
-			break;
-		}
-	}
-
-	/* create destination */
-	int destFd = open(toPath, O_WRONLY | O_APPEND | O_CREAT | O_TRUNC | O_EXCL, 0644);
+	/* create temp destination */
+	snprintf(tmpToPath, sizeof(tmpToPath), "%s_", toPath);
+	destFd = open(tmpToPath, O_WRONLY | O_APPEND | O_CREAT | O_TRUNC | O_EXCL, toMode);
 	if(destFd < 0) {
-		int error = errno;
-		MSDebug("Error %d opening user DB file %s\n", error, toPath);
+		error = errno;
+		MSDebug("Error %d opening user DB file %s\n", error, tmpToPath);
 		UnixError::throwMe(error);
 	}
 	
-	/* copy */
-	char buf[COPY_BUF_SIZE];
-	while(1) {
-		int bytesRead = read(srcFd, buf, COPY_BUF_SIZE);
-		if(bytesRead == 0) {
-			break;
-		}
-		if(bytesRead < 0) {
-			int error = errno;
-			MSDebug("Error %d reading system DB file %s\n", error, fromPath);
+	struct flock fl;
+	try {
+		/* don't get tripped up by umask */
+		if(fchmod(destFd, toMode)) {
+			error = errno;
+			MSDebug("Error %d chmoding user DB file %s\n", error, tmpToPath);
 			UnixError::throwMe(error);
 		}
-		int bytesWritten = write(destFd, buf, bytesRead);
-		if(bytesWritten < 0) {
-			int error = errno;
-			MSDebug("Error %d writing user DB file %s\n", error, toPath);
+
+		/* open source for reading */
+		srcFd = open(fromPath, O_RDONLY, 0);
+		if(srcFd < 0) {
+			error = errno;
+			MSDebug("Error %d opening system DB file %s\n", error, fromPath);
 			UnixError::throwMe(error);
 		}
+		
+		/* acquire the same kind of lock AtomicFile uses */
+		fl.l_start = 0;
+		fl.l_len = 1;
+		fl.l_pid = getpid();
+		fl.l_type = F_RDLCK;		// AtomicFile gets F_WRLCK
+		fl.l_whence = SEEK_SET;
+
+		// Keep trying to obtain the lock if we get interupted.
+		for (;;) {
+			if (::fcntl(srcFd, F_SETLKW, reinterpret_cast<int>(&fl)) == -1) {
+				error = errno;
+				if (error == EINTR) {
+					error = 0;
+					continue;
+				}
+				MSDebug("Error %d locking system DB file %s\n", error, fromPath);
+				UnixError::throwMe(error);
+			}
+			else {
+				break;
+				haveLock = true;
+			}
+		}
+
+		/* copy */
+		char buf[COPY_BUF_SIZE];
+		while(1) {
+			int bytesRead = read(srcFd, buf, COPY_BUF_SIZE);
+			if(bytesRead == 0) {
+				break;
+			}
+			if(bytesRead < 0) {
+				error = errno;
+				MSDebug("Error %d reading system DB file %s\n", error, fromPath);
+				UnixError::throwMe(error);
+			}
+			int bytesWritten = write(destFd, buf, bytesRead);
+			if(bytesWritten < 0) {
+				error = errno;
+				MSDebug("Error %d writing user DB file %s\n", error, tmpToPath);
+				UnixError::throwMe(error);
+			}
+		}
+	}
+	catch(...) {
+		/* error is nonzero, we'll re-throw below...still have some cleanup */
 	}
 	
 	/* unlock source and close both */
-	fl.l_type = F_UNLCK;
-	if (::fcntl(srcFd, F_SETLK, reinterpret_cast<int>(&fl)) == -1) {
-		MSDebug("Error %d unlocking system DB file %s\n", errno, fromPath);
+	if(haveLock) {
+		fl.l_type = F_UNLCK;
+		if (::fcntl(srcFd, F_SETLK, reinterpret_cast<int>(&fl)) == -1) {
+			MSDebug("Error %d unlocking system DB file %s\n", errno, fromPath);
+		}
 	}
-	close(srcFd);
-	close(destFd);
+	MSIoDbg("close %s, %s in safeCopyFile", fromPath, tmpToPath);
+	if(srcFd) {
+		close(srcFd);
+	}
+	if(destFd) {
+		close(destFd);
+	}
+	if(error == 0) {
+		/* commit temp file */
+		if(::rename(tmpToPath, toPath)) {
+			error = errno;
+			MSDebug("Error %d committing %s\n", error, toPath);
+		}
+	}
+	if(error) {
+		UnixError::throwMe(error);
+	}
 }
 
-/* Copy system DB files to specified user dir. */
+/* 
+ * Copy system DB files to specified user dir. Caller holds user DB lock. 
+ * Throws a UnixError on error.
+ */
 static void copySystemDbs(
 	const char *userDbFileDir)
 {
 	char toPath[MAXPATHLEN+1];
 	
-	sprintf(toPath, "%s/%s", userDbFileDir, MDS_OBJECT_DB_NAME);
-	safeCopyFile(MDS_OBJECT_DB_PATH, toPath);
-	sprintf(toPath, "%s/%s", userDbFileDir, MDS_DIRECT_DB_NAME);
-	safeCopyFile(MDS_DIRECT_DB_PATH, toPath);
+	snprintf(toPath, sizeof(toPath), "%s/%s", userDbFileDir, MDS_OBJECT_DB_NAME);
+	safeCopyFile(MDS_OBJECT_DB_PATH, MDS_SYSTEM_UID, toPath, MDS_USER_DB_MODE);
+	snprintf(toPath, sizeof(toPath), "%s/%s", userDbFileDir, MDS_DIRECT_DB_NAME);
+	safeCopyFile(MDS_DIRECT_DB_PATH, MDS_SYSTEM_UID, toPath, MDS_USER_DB_MODE);
 }
 
 /*
@@ -639,33 +931,30 @@ static void copySystemDbs(
  */
 void MDSSession::updateDataBases()
 {
-	bool isRoot = (getuid() == (uid_t)0);
-	bool createdSystemDb = false;
+	RecursionBlock::Once once(mUpdating);
+	if (once())
+		return;	// already updating; don't recurse
 	
-	/*
-	 * The first thing we do is to ensure that system DBs are present.
-	 * This call right here is the reason for the purge argument in 
-	 * systemDatabasesPresent(); if we're a user proc, we can't grab the system
-	 * MDS lock. 
-	 */
-	if(!systemDatabasesPresent(false)) {
-		if(isRoot || SYSTEM_DBS_VIA_USER) {
-			/* Either doing actual MDS op as root, or development case: 
-			 * install as current user */
-			install();
-		}
-		else {
-			/* This path TBD; it involves either a SecurityServer RPC or
-			 * a privileged tool exec'd via AEWP. */
-			assert(0);
-		}
-		/* remember this - we have to delete possible existing user DBs */
-		createdSystemDb = true;
-	}
+	uid_t ourUid = geteuid();
+	bool isRoot = (ourUid == 0);
 	
 	/* if we scanned recently, we're done */
 	double delta = mModule.timeSinceLastScan();
 	if(delta < (double)MDS_SCAN_INTERVAL) {
+		return;
+	}
+
+	/*
+	 * If we're root, the first thing we do is to ensure that system DBs are present.
+	 * Note that this is a necessary artifact of the problem behind Radar 3800811.
+	 * When that is fixed, install() should ONLY be called from the public MDS_Install()
+	 * routine.
+	 * Anyway, if we *do* have to install here, we're done.
+	 */
+	if(isRoot && !systemDatabasesPresent(false)) {
+		install();
+		mModule.setDbPath(MDS_SYSTEM_DB_DIR);
+		mModule.lastScanIsNow();
 		return;
 	}
 	
@@ -679,68 +968,113 @@ void MDSSession::updateDataBases()
 	char userBundlePath[MAXPATHLEN+1];
 	char userDbLockPath[MAXPATHLEN+1];
 	
+	/* this means "no user bundles" */
+	userBundlePath[0] = '\0';
 	if(isRoot) {
-		strcat(userDbFileDir, MDS_SYSTEM_DB_DIR);
+		strcpy(userDbFileDir, MDS_SYSTEM_DB_DIR);
 		/* no userBundlePath */
 	}
 	else {
 		char *userHome = getenv("HOME");
-		if(userHome == NULL) {
-			/* FIXME - what now, batman? */
-			MSDebug("updateDataBases: no HOME");
-			userHome = "/";
+		if((userHome == NULL) ||
+		   (strlen(userHome) + strlen(MDS_USER_BUNDLE) + 2) > sizeof(userBundlePath)) {
+			/* Can't check for user bundles */
+			MSDebug("missing or invalid HOME; skipping user bundle check");
 		}
-		sprintf(userBundlePath, "%s/%s", userHome, MDS_USER_BUNDLE);
+		/* TBD: any other checking of userHome? */
+		else {
+			snprintf(userBundlePath, sizeof(userBundlePath), 
+				"%s/%s", userHome, MDS_USER_BUNDLE);
+		}
 		
-		/* DBs go in a per-UID directory in the system MDS DB directory */
-		sprintf(userDbFileDir, "%s/%d", MDS_SYSTEM_DB_DIR, (int)(getuid()));
+		/* DBs go in a per-UID directory in the base MDS DB directory */
+		snprintf(userDbFileDir, sizeof(userDbFileDir),
+			"%s/%d", MDS_BASE_DB_DIR, (int)ourUid);
 	}
-	sprintf(userObjDbFilePath,    "%s/%s", userDbFileDir, MDS_OBJECT_DB_NAME);
-	sprintf(userDirectDbFilePath, "%s/%s", userDbFileDir, MDS_DIRECT_DB_NAME);
-	sprintf(userDbLockPath,       "%s/%s", userDbFileDir, MDS_LOCK_FILE_NAME);
+	snprintf(userObjDbFilePath,    sizeof(userObjDbFilePath), 
+		"%s/%s", userDbFileDir, MDS_OBJECT_DB_NAME);
+	snprintf(userDirectDbFilePath, sizeof(userDirectDbFilePath), 
+		"%s/%s", userDbFileDir, MDS_DIRECT_DB_NAME);
+	snprintf(userDbLockPath,       sizeof(userDbLockPath),
+		"%s/%s", userDbFileDir, MDS_LOCK_FILE_NAME);
 	
 	/* 
-	 * Create the per-user directory first...that's where the lock we'll be using
-	 * lives. Our createDir() is tolerant of EEXIST errors. 
+	 * Create the per-user directory...that's where the lock we'll be using lives.
 	 */
 	if(!isRoot) {
-		if(createDir(userDbFileDir)) {
-			/* We'll just have to limp along using the read-only system DBs */
-			Syslog::alert("Error creating %s", userDbFileDir);
+		if(createDir(userDbFileDir, ourUid, MDS_USER_DB_DIR_MODE)) {
+			/* 
+			 * We'll just have to limp along using the read-only system DBs.
+			 * Note that this protects (somewhat) against the DoS attack in 
+			 * Radar 3801292. The only problem is that this user won't be able 
+			 * to use per-user bundles. 
+			 */
+			Syslog::alert("MDS Error: unable to create %s", userDbFileDir);
 			MSDebug("Error creating user DBs; using system DBs");
 			mModule.setDbPath(MDS_SYSTEM_DB_DIR);
 			return;
 		}
 	}
 
-	/* always release mLockFd no matter what happens */
-	if(!obtainLock(userDbLockPath, mLockFd, DB_LOCK_TIMEOUT)) {
+	/* always release userLockFd no matter what happens */
+	int userLockFd = -1;
+	if(!obtainLock(userDbLockPath, userLockFd, DB_LOCK_TIMEOUT)) {
 		CssmError::throwMe(CSSM_ERRCODE_MDS_ERROR);
 	}
 	try {
 		if(!isRoot) {
-			if(createdSystemDb) {
-				/* initial creation of system DBs by user - start from scratch */
-				unlink(userObjDbFilePath);
-				unlink(userDirectDbFilePath);
+			try {
+				/* 
+				 * We copy the system DBs to the per-user DBs in two cases:
+				 * -- user DBs don't exist, or
+				 * -- system DBs have changed since the the last update to the user DBs. 
+				 *    This happens on smart card insertion and removal. 
+				 */
+				bool doCopySystem = false;
+				struct stat userObjStat, userDirectStat;
+				if(!doFilesExist(userObjDbFilePath, userDirectDbFilePath, ourUid, true,
+						userObjStat, userDirectStat)) {
+					doCopySystem = true;
+				}
+				else {
+					/* compare the two mdsDirectory.db files */
+					MSIoDbg("stat %s, %s in updateDataBases",
+						MDS_DIRECT_DB_PATH, userDirectDbFilePath);
+					struct stat sysStat;
+					if (!stat(MDS_DIRECT_DB_PATH, &sysStat)) {
+						doCopySystem = (sysStat.st_mtimespec.tv_sec > userDirectStat.st_mtimespec.tv_sec) ||
+							((sysStat.st_mtimespec.tv_sec == userDirectStat.st_mtimespec.tv_sec) &&
+								(sysStat.st_mtimespec.tv_nsec > userDirectStat.st_mtimespec.tv_nsec));
+						if(doCopySystem) {
+							MSDebug("user DB files obsolete at %s", userDbFileDir);
+						}
+					}
+				}
+				if(doCopySystem) {
+					/* copy system DBs to user DBs */
+					MSDebug("copying system DBs to user at %s", userDbFileDir);
+					copySystemDbs(userDbFileDir);
+				}
+				else {
+					MSDebug("Using existing user DBs at %s", userDbFileDir);
+				}
 			}
-		
-			/*
-			 * System DBs exist and are as up-to-date as we are allowed to make them. 
-			 * Create per-user DBs if they don't exist.
-			 */
-			if(createdSystemDb || 		//Êoptimization - if this is true, the
-										// per-user DBs do not exist since we just
-										// deleted them
-				!doFilesExist(userObjDbFilePath, userDirectDbFilePath,
-					true)) {
-			
-				/* copy system DBs to user DBs */
-				MSDebug("copying system DBs to user at %s", userDbFileDir);
-				copySystemDbs(userDbFileDir);
+			catch(const CssmError &cerror) {
+				/*
+				 * Bad system DB file detected. Fatal.
+				 */
+				Syslog::alert("MDS Error: bad system DB file");
+				throw;
 			}
-			else {
-				MSDebug("Using existing user DBs at %s", userDbFileDir);
+			catch(...) {
+				/* 
+				 * Error on delete or create user DBs; fall back on system DBs. 
+				 */
+				Syslog::alert("MDS Error: unable to create user DBs in %s", userDbFileDir);
+				MSDebug("doFilesExist(purge) error; using system DBs");
+				mModule.setDbPath(MDS_SYSTEM_DB_DIR);
+				releaseLock(userLockFd);
+				return;
 			}
 		}
 		else {
@@ -748,18 +1082,14 @@ void MDSSession::updateDataBases()
 		}
 		
 		/* 
-		 * Update per-user DBs from all three sources (System.framework, 
-		 * System bundles, user bundles) as appropriate. Note that if we
-		 * just created the system DBs, we don't have to update with
-		 * respect to system framework or system bundles. 
+		 * Update per-user DBs from both bundle sources (System bundles, user bundles)
+		 * as appropriate. 
 		 */
 		DbFilesInfo dbFiles(*this, userDbFileDir);
-		if(!createdSystemDb) {
-			dbFiles.removeOutdatedPlugins();
-			dbFiles.updateSystemDbInfo(MDS_SYSTEM_PATH, MDS_BUNDLE_PATH);
-		}
-		if(!isRoot) {
-			/* root doesn't have user bundles */
+		dbFiles.removeOutdatedPlugins();
+		dbFiles.updateSystemDbInfo(NULL, MDS_BUNDLE_PATH);
+		if(userBundlePath[0]) {
+			/* skip for invalid or missing $HOME... */
 			if(checkUserBundles(userBundlePath)) {
 				dbFiles.updateForBundleDir(userBundlePath);
 			}
@@ -767,11 +1097,11 @@ void MDSSession::updateDataBases()
 		mModule.setDbPath(userDbFileDir);
 	}	/* main block protected by mLockFd */
 	catch(...) {
-		releaseLock(mLockFd);
+		releaseLock(userLockFd);
 		throw;
 	}
 	mModule.lastScanIsNow();
-	releaseLock(mLockFd);
+	releaseLock(userLockFd);
 }
 
 /*
@@ -781,83 +1111,56 @@ void MDSSession::removeRecordsForGuid(
 	const char *guid,
 	CSSM_DB_HANDLE dbHand)
 {
-	CSSM_QUERY						query;
-	CSSM_DB_UNIQUE_RECORD_PTR		record = NULL;
-	CSSM_HANDLE						resultHand;
-	CSSM_DB_RECORD_ATTRIBUTE_DATA	recordAttrs;
-	CSSM_SELECTION_PREDICATE		predicate;
-	CSSM_DATA						predData;
-	
-	/* don't want any attributes back, just a record ptr */
-	recordAttrs.DataRecordType = CSSM_DL_DB_RECORD_ANY;
-	recordAttrs.SemanticInformation = 0;
-	recordAttrs.NumberOfAttributes = 0;
-	recordAttrs.AttributeData = NULL;
-	
-	/* one predicate, == guid */
-	predicate.DbOperator = CSSM_DB_EQUAL;
-	predicate.Attribute.Info.AttributeNameFormat = CSSM_DB_ATTRIBUTE_NAME_AS_STRING;
-	predicate.Attribute.Info.Label.AttributeName = "ModuleID";
-	predicate.Attribute.Info.AttributeFormat = CSSM_DB_ATTRIBUTE_FORMAT_STRING;
-	predData.Data = (uint8 *)guid;
-	predData.Length = strlen(guid) + 1;
-	predicate.Attribute.Value = &predData;
-	predicate.Attribute.NumberOfValues = 1;
-	
-	query.RecordType = CSSM_DL_DB_RECORD_ANY;
-	query.Conjunctive = CSSM_DB_NONE;
-	query.NumSelectionPredicates = 1;
-	query.SelectionPredicate = &predicate;
-	query.QueryLimits.TimeLimit = 0;			// FIXME - meaningful?
-	query.QueryLimits.SizeLimit = 1;			// FIXME - meaningful?
-	query.QueryFlags = 0;		// CSSM_QUERY_RETURN_DATA...FIXME - used?
+	CssmClient::Query query = Attribute("ModuleID") == guid;
+	clearRecords(dbHand, query.cssmQuery());
+}
 
-	/* 
-	 * Each search starts from scratch - not sure if we can delete a record
-	 * associated with an active query and continue on with that query. 
-	 */
+
+void MDSSession::clearRecords(CSSM_DB_HANDLE dbHand, const CssmQuery &query)
+{
+	CSSM_DB_UNIQUE_RECORD_PTR record = NULL;
+	CSSM_HANDLE resultHand = DataGetFirst(dbHand,
+		&query,
+		NULL,
+		NULL,			// No data
+		record);
+	if (resultHand == CSSM_INVALID_HANDLE)
+		return; // no matches
 	try {
-		for(;;) {
-			DLQuery perryQuery(query);
-			resultHand = DataGetFirst(dbHand,
-				&perryQuery,
-				&recordAttrs,
-				NULL,			// No data
-				record);
-			if(resultHand) {
-				try {
-					MSDebug("...deleting a record for guid %s", guid);
-					DataDelete(dbHand, *record);
-					DataAbortQuery(dbHand, resultHand);
-				}
-				catch(...) {
-					MSDebug("exception (1) while deleting record for guid %s", guid);
-					/* proceed.... */
-				}
-			}
-			else if(record) {
-				FreeUniqueRecord(dbHand, *record);
-				break;
-			}
-		}	/* main loop */
-	}
-	catch (...) {
-		MSDebug("exception (2) while deleting record for guid %s", guid);
+		do {
+			DataDelete(dbHand, *record);
+			FreeUniqueRecord(dbHand, *record);
+			record = NULL;
+		} while (DataGetNext(dbHand,
+			resultHand,
+			NULL,
+			NULL,
+			record));
+	} catch (...) {
+		if (record)
+			FreeUniqueRecord(dbHand, *record);
+		DataAbortQuery(dbHand, resultHand);
 	}
 }
+
 
 /*
  * Determine if system databases are present. 
  * If the purge argument is true, we'll ensure that either both or neither 
- * DB files exist on exit; in that case caller need to hold MDS_LOCK_FILE_PATH.
+ * DB files exist on exit; in that case caller must be holding MDS_INSTALL_LOCK_PATH.
  */
 bool MDSSession::systemDatabasesPresent(bool purge)
 {
 	bool rtn = false;
 	
 	try {
-		/* this can throw on a failed attempt to delete sole existing file */
-		if(doFilesExist(MDS_OBJECT_DB_PATH, MDS_DIRECT_DB_PATH, purge)) {
+		/* 
+		 * This can throw on a failed attempt to delete sole existing file....
+		 * But if that happens while we're root, our goose is fully cooked. 
+		 */
+		struct stat objDbSb, directDbSb;
+		if(doFilesExist(MDS_OBJECT_DB_PATH, MDS_DIRECT_DB_PATH, 
+				MDS_SYSTEM_UID, purge, objDbSb, directDbSb)) {
 			rtn = true;
 		}
 	}
@@ -951,8 +1254,8 @@ MDSSession::createSystemDatabase(
 
 /*
  * Create system databases from scratch if they do not already exist. 
- * MDS_LOCK_FILE_PATH held on entry and exit. MDS_SYSTEM_DB_DIR assumed to
- * exist (that's our caller's job, before acquiring MDS_LOCK_FILE_PATH). 
+ * MDS_INSTALL_LOCK_PATH held on entry and exit. MDS_SYSTEM_DB_DIR assumed to
+ * exist (that's our caller's job, before acquiring MDS_INSTALL_LOCK_PATH). 
  * Returns true if we actually built the files, false if they already 
  * existed.
  */
@@ -963,9 +1266,9 @@ bool MDSSession::createSystemDatabases(
 	CSSM_DB_HANDLE objectDbHand = 0;
 	CSSM_DB_HANDLE directoryDbHand = 0;
 	
-	assert((getuid() == (uid_t)0) || !SYSTEM_MDS_ROOT_ONLY);
+	assert(geteuid() == (uid_t)0);
 	if(systemDatabasesPresent(true)) {
-		/* both databases exist as regular files - we're done */
+		/* both databases exist as regular files with correct owner - we're done */
 		MSDebug("system DBs already exist");
 		return false;
 	}
@@ -975,10 +1278,12 @@ bool MDSSession::createSystemDatabases(
 	try {
 		createSystemDatabase(MDS_OBJECT_DB_PATH, &kObjectRelation, 1, 
 			autoCommit, mode, objectDbHand);
+		MSIoDbg("close objectDbHand in createSystemDatabases");
 		DbClose(objectDbHand);
 		objectDbHand = 0;
 		createSystemDatabase(MDS_DIRECT_DB_PATH, kMDSRelationInfo, kNumMdsRelations,
 			autoCommit, mode, directoryDbHand);
+		MSIoDbg("close directoryDbHand in createSystemDatabases");
 		DbClose(directoryDbHand);
 		directoryDbHand = 0;
 	}
@@ -1011,6 +1316,7 @@ MDSSession::DbFilesInfo::DbFilesInfo(
 	char path[MAXPATHLEN];
 	sprintf(path, "%s/%s", mDbPath, MDS_OBJECT_DB_NAME);
 	struct stat sb;
+	MSIoDbg("stat %s in DbFilesInfo()", path);
 	int rtn = ::stat(path, &sb);
 	if(rtn) {
 		int error = errno;
@@ -1019,6 +1325,7 @@ MDSSession::DbFilesInfo::DbFilesInfo(
 	}
 	mLaterTimestamp = sb.st_mtimespec.tv_sec;
 	sprintf(path, "%s/%s", mDbPath, MDS_DIRECT_DB_NAME);
+	MSIoDbg("stat %s in DbFilesInfo()", path);
 	rtn = ::stat(path, &sb);
 	if(rtn) {
 		int error = errno;
@@ -1035,17 +1342,15 @@ MDSSession::DbFilesInfo::~DbFilesInfo()
 	if(mObjDbHand != 0) {
 		/* autocommit on, henceforth */
 		mSession.PassThrough(mObjDbHand,
-			CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
-			reinterpret_cast<void *>(CSSM_TRUE),
-			NULL);
+			CSSM_APPLEFILEDL_COMMIT, NULL, NULL);
+		MSIoDbg("close objectDbHand in ~DbFilesInfo()");
 		mSession.DbClose(mObjDbHand);
 		mObjDbHand = 0;
 	}
 	if(mDirectDbHand != 0) {
 		mSession.PassThrough(mDirectDbHand,
-			CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
-			reinterpret_cast<void *>(CSSM_TRUE),
-			NULL);
+			CSSM_APPLEFILEDL_COMMIT, NULL, NULL);
+		MSIoDbg("close mDirectDbHand in ~DbFilesInfo()");
 		mSession.DbClose(mDirectDbHand);
 		mDirectDbHand = 0;
 	}
@@ -1059,7 +1364,8 @@ CSSM_DB_HANDLE MDSSession::DbFilesInfo::objDbHand()
 	}
 	char fullPath[MAXPATHLEN + 1];
 	sprintf(fullPath, "%s/%s", mDbPath, MDS_OBJECT_DB_NAME);
-	mObjDbHand = mSession.dbOpen(fullPath);
+	MSIoDbg("open %s in objDbHand()", fullPath);
+	mObjDbHand = mSession.dbOpen(fullPath, true);	// batch mode
 	return mObjDbHand;
 }
 
@@ -1070,21 +1376,33 @@ CSSM_DB_HANDLE MDSSession::DbFilesInfo::directDbHand()
 	}
 	char fullPath[MAXPATHLEN + 1];
 	sprintf(fullPath, "%s/%s", mDbPath, MDS_DIRECT_DB_NAME);
-	mDirectDbHand = mSession.dbOpen(fullPath);
+	MSIoDbg("open %s in directDbHand()", fullPath);
+	mDirectDbHand = mSession.dbOpen(fullPath, true);	// batch mode
 	return mDirectDbHand;
 }
 
 /*
- * Update the info for System.framework and the system bundles.
+ * Update the info for Security.framework and the system bundles.
  */
 void MDSSession::DbFilesInfo::updateSystemDbInfo(
 	const char *systemPath,		// e.g., /System/Library/Frameworks
 	const char *bundlePath)		// e.g., /System/Library/Security
 {
-	/* System.framework - CSSM and built-in modules */
-	char fullPath[MAXPATHLEN];
-	sprintf(fullPath, "%s/%s", systemPath, MDS_SYSTEM_FRAME);
-	updateForBundle(fullPath);
+	/* 
+	 * Security.framework - CSSM and built-in modules - only for initial population of
+	 * system DB files. 
+	 */
+	if (systemPath) {
+		string path;
+		if (CFRef<CFBundleRef> me = CFBundleGetBundleWithIdentifier(CFSTR("com.apple.security")))
+			if (CFRef<CFURLRef> url = CFBundleCopyBundleURL(me))
+				if (CFRef<CFStringRef> cfpath = CFURLCopyFileSystemPath(url, kCFURLPOSIXPathStyle))
+					path = cfString(cfpath);	// path to my bundle
+
+		if (path.empty())   // use system default
+			path = string(systemPath) + "/" MDS_SYSTEM_FRAME;
+		updateForBundle(path.c_str());
+	}
 	
 	/* Standard loadable bundles */
 	updateForBundleDir(bundlePath);
@@ -1114,7 +1432,13 @@ void MDSSession::DbFilesInfo::checkOutdatedPlugin(
 	/* stat the specified plugin */
 	struct stat sb;
 	bool obsolete = false;
-	int rtn = ::stat((char *)pathValue.Data, &sb);
+	string path = CssmData::overlay(pathValue).toString();
+	if (!path.empty() && path[0] == '*') {
+		/* builtin pseudo-path; never obsolete this */
+		return;
+	}
+	MSIoDbg("stat %s in checkOutdatedPlugin()", path.c_str());
+	int rtn = ::stat(path.c_str(), &sb);
 	if(rtn) {
 		/* not there or inaccessible; delete */
 		obsolete = true;
@@ -1126,7 +1450,7 @@ void MDSSession::DbFilesInfo::checkOutdatedPlugin(
 	if(obsolete) {
 		TbdRecord *tbdRecord = new TbdRecord(guidValue);
 		tbdVector.push_back(tbdRecord);
-		MSDebug("checkOutdatedPlugin: flagging %s obsolete", pathValue.Data);
+		MSDebug("checkOutdatedPlugin: flagging %s obsolete", path.c_str());
 	}
 }
 
@@ -1175,7 +1499,7 @@ void MDSSession::DbFilesInfo::removeOutdatedPlugins()
 	query.QueryLimits.SizeLimit = 1;			// FIXME - meaningful?
 	query.QueryFlags = 0;		// CSSM_QUERY_RETURN_DATA...FIXME - used?
 
-	DLQuery perryQuery(query);
+	CssmQuery perryQuery(query);
 	try {
 		resultHand = mSession.DataGetFirst(objDbHand(),
 			&perryQuery,
@@ -1320,7 +1644,7 @@ bool MDSSession::DbFilesInfo::lookupForPath(
 	predicate.Attribute.Info.Label.AttributeName = "Path";
 	predicate.Attribute.Info.AttributeFormat = CSSM_DB_ATTRIBUTE_FORMAT_STRING;
 	predData.Data = (uint8 *)path;
-	predData.Length = strlen(path) + 1;
+	predData.Length = strlen(path);
 	predicate.Attribute.Value = &predData;
 	predicate.Attribute.NumberOfValues = 1;
 	
@@ -1334,7 +1658,7 @@ bool MDSSession::DbFilesInfo::lookupForPath(
 
 	bool ourRtn = true;
 	try {
-		DLQuery perryQuery(query);
+		CssmQuery perryQuery(query);
 		resultHand = mSession.DataGetFirst(objDbHand(),
 			&perryQuery,
 			&recordAttrs,
@@ -1386,23 +1710,62 @@ void MDSSession::DbFilesInfo::updateForBundle(
 	parser.parseAttrs();
 }
 
-/* DB autocommit on/off */
-void MDSSession::DbFilesInfo::autoCommit(CSSM_BOOL val)
+
+//
+// Private API: add MDS records from contents of file
+// These files are typically written by securityd and handed to us in this call.
+//
+void MDSSession::installFile(const MDS_InstallDefaults *defaults,
+	const char *inBundlePath, const char *subdir, const char *file)
 {
-	try {
-		mSession.PassThrough(objDbHand(),
-			CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
-			reinterpret_cast<void *>(val),
-			NULL);
-		mSession.PassThrough(directDbHand(),
-			CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
-			reinterpret_cast<void *>(val),
-			NULL);
-	}
-	catch (...) {
-		MSDebug("DbFilesInfo::autoCommit error!");
-		/* but proceed */
-	}
+	string bundlePath = inBundlePath ? inBundlePath : cfString(CFBundleGetMainBundle());
+	DbFilesInfo dbFiles(*this, MDS_SYSTEM_DB_DIR);
+	MDSAttrParser parser(bundlePath.c_str(),
+		*this,
+		dbFiles.objDbHand(),
+		dbFiles.directDbHand());
+	parser.setDefaults(defaults);
+
+	if (file == NULL)	// parse a directory
+		if (subdir)		// a particular directory
+			parser.parseAttrs(CFTempString(subdir));
+		else			// all resources in bundle
+			parser.parseAttrs(NULL);
+	else				// parse just one file
+		parser.parseFile(CFRef<CFURLRef>(makeCFURL(file)), CFTempString(subdir));
 }
+
+
+//
+// Private API: Remove all records for a guid/subservice
+//
+// Note: Multicursors searching for SSID fail because not all records in the
+// database have this attribute. So we have to explicitly run through all tables
+// that do.
+//
+void MDSSession::removeSubservice(const char *guid, uint32 ssid)
+{
+	DbFilesInfo dbFiles(*this, MDS_SYSTEM_DB_DIR);
+
+	CssmClient::Query query =
+		Attribute("ModuleID") == guid &&
+		Attribute("SSID") == ssid;
+
+	// only CSP and DL tables are cleared here
+	// (this function is private to securityd, which only handles those types)
+	clearRecords(dbFiles.directDbHand(),
+		CssmQuery(query.cssmQuery(), MDS_CDSADIR_CSP_PRIMARY_RECORDTYPE));
+	clearRecords(dbFiles.directDbHand(),
+		CssmQuery(query.cssmQuery(), MDS_CDSADIR_CSP_CAPABILITY_RECORDTYPE));
+	clearRecords(dbFiles.directDbHand(),
+		CssmQuery(query.cssmQuery(), MDS_CDSADIR_CSP_ENCAPSULATED_PRODUCT_RECORDTYPE));
+	clearRecords(dbFiles.directDbHand(),
+		CssmQuery(query.cssmQuery(), MDS_CDSADIR_CSP_SC_INFO_RECORDTYPE));
+	clearRecords(dbFiles.directDbHand(),
+		CssmQuery(query.cssmQuery(), MDS_CDSADIR_DL_PRIMARY_RECORDTYPE));
+	clearRecords(dbFiles.directDbHand(),
+		CssmQuery(query.cssmQuery(), MDS_CDSADIR_DL_ENCAPSULATED_PRODUCT_RECORDTYPE));
+}
+
 
 } // end namespace Security

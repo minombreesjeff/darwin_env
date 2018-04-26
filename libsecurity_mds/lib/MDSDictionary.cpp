@@ -36,11 +36,14 @@ namespace Security
 /* heavyweight constructor from file */
 MDSDictionary::MDSDictionary(
 	CFURLRef fileUrl,
+	CFStringRef subdir,
 	const char *fullPath)		// could get from fileUrl, but very messy!
 	: mDict(NULL),
 	  mWeOwnDict(false),
 	  mUrlPath(NULL),
-	  mFileDesc(NULL)
+	  mFileDesc(NULL),
+	  mSubdir(subdir),
+	  mDefaults(NULL)
 {
 	CFDataRef dictData = NULL;
 	CFStringRef cfErr = NULL;
@@ -101,7 +104,8 @@ MDSDictionary::MDSDictionary(CFDictionaryRef theDict)
 	: mDict(theDict),
 	  mWeOwnDict(false),
 	  mUrlPath(NULL),
-	  mFileDesc(NULL)
+	  mFileDesc(NULL),
+	  mDefaults(NULL)
 {
 	/* note caller owns and releases the dictionary */ 
 	if(mDict == NULL) {
@@ -189,24 +193,29 @@ bool MDSDictionary::lookupToDbAttr(
 	
 	value = (CFTypeRef)lookup(key);
 	if(value == NULL) {
-		/*
-		 * Special case here: we implicitly provide a value for the "Path" key
-		 * if it's not in the dictionary and we have it. 
-		 */
-		if((attrFormat == CSSM_DB_ATTRIBUTE_FORMAT_STRING) &&
-		   !strcmp(key, "Path") &&
-		   (mUrlPath != NULL)) {
-				MDSRawValueToDbAttr(mUrlPath, 
-					strlen(mUrlPath) + 1, 
-					attrFormat, 
-					key, 
-					attr, 
-					1);				// numValues
-				return true;
-		}
-		else {
+		//
+		// Generate/insert synthetic attributes ONLY if they're not present
+		// in the input file.
+		//
+		CssmData value;
+		if (attrFormat == CSSM_DB_ATTRIBUTE_FORMAT_STRING && !strcmp(key, "Path") && mUrlPath)
+			value = StringData(mUrlPath);
+		else if (attrFormat == CSSM_DB_ATTRIBUTE_FORMAT_STRING && !strcmp(key, "ModuleID")
+				&& mDefaults && mDefaults->guid)
+			value = StringData(mDefaults->guid);
+		else if (attrFormat == CSSM_DB_ATTRIBUTE_FORMAT_UINT32 && !strcmp(key, "SSID")
+				&& mDefaults && mDefaults->ssid)
+			value = CssmData::wrap(mDefaults->ssid);
+		else if (attrFormat == CSSM_DB_ATTRIBUTE_FORMAT_STRING && !strcmp(key, "ScSerialNumber")
+				&& mDefaults && mDefaults->serial)
+			value = StringData(mDefaults->serial);
+		else if (attrFormat == CSSM_DB_ATTRIBUTE_FORMAT_STRING && !strcmp(key, "ScDesc")
+				&& mDefaults && mDefaults->printName)
+			value = StringData(mDefaults->printName);
+		else
 			return false;
-		}
+		MDSRawValueToDbAttr(value.data(), value.length(), attrFormat, key, attr, 1);
+		return true;
 	}
 	CFTypeID valueType = CFGetTypeID(value);
 	
@@ -231,7 +240,7 @@ bool MDSDictionary::lookupToDbAttr(
 			}
 			else {
 				srcPtr = cstr;
-				srcLen = strlen(cstr) + 1;
+				srcLen = strlen(cstr);
 				ourRtn = true;
 			}
 			break;
@@ -470,7 +479,7 @@ const CFPropertyListRef MDSDictionary::lookupWithIndirect(
 	fileUrl = CFBundleCopyResourceURL(bundle, 
                 cfFileName, 
                 NULL, 
-                NULL);
+                mSubdir);
 	if(fileUrl == NULL) {
 		MPDebug("lookupWithIndirect: file %s not found", cVal);
 		goto abort;
@@ -520,5 +529,6 @@ abort:
 	CF_RELEASE(cfErr);
 	return ourRtn;
 }
+
 
 } // end namespace Security
