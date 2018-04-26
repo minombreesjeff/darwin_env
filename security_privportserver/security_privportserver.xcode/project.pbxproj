@@ -7,6 +7,7 @@
 	objects = {
 		4CA1FEAC052A3C5800F22E42 = {
 			children = (
+				4E2FD6A106F13D0100C4F5DC,
 				C20E338105895335009849E5,
 				4CA1FEB7052A3C6D00F22E42,
 			);
@@ -15,8 +16,6 @@
 			sourceTree = "<group>";
 		};
 		4CA1FEAE052A3C5800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = debug;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -29,8 +28,6 @@
 			name = Development;
 		};
 		4CA1FEAF052A3C5800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				ZERO_LINK = NO;
@@ -81,10 +78,11 @@
 				4CA1FEB1052A3C6D00F22E42,
 				4CA1FEB2052A3C6D00F22E42,
 				4CA1FEB3052A3C6D00F22E42,
+				4E15282E06F13BFE00529649,
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks /usr/local/SecurityPieces/Components/Security";
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				INSTALL_GROUP = wheel;
@@ -118,10 +116,9 @@
 			productReference = 4CA1FEB6052A3C6D00F22E42;
 		};
 		4CA1FEB6052A3C6D00F22E42 = {
-			expectedFileType = "compiled.mach-o.executable";
-			fallbackIsa = PBXFileReference;
-			isa = PBXExecutableFileReference;
-			path = privportserver;
+			explicitFileType = "compiled.mach-o.executable";
+			isa = PBXFileReference;
+			path = security_privportserver;
 			refType = 3;
 			sourceTree = BUILT_PRODUCTS_DIR;
 		};
@@ -139,6 +136,50 @@
 //4C2
 //4C3
 //4C4
+//4E0
+//4E1
+//4E2
+//4E3
+//4E4
+		4E15282E06F13BFE00529649 = {
+			buildActionMask = 8;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+				4E2FD6A306F13D1300C4F5DC,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		4E2FD6A106F13D0100C4F5DC = {
+			children = (
+				4E2FD6A206F13D1300C4F5DC,
+			);
+			isa = PBXGroup;
+			name = Documentation;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		4E2FD6A206F13D1300C4F5DC = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = text.man;
+			name = security_privportserver.1;
+			path = Documentation/security_privportserver.1;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		4E2FD6A306F13D1300C4F5DC = {
+			fileRef = 4E2FD6A206F13D1300C4F5DC;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+//4E0
+//4E1
+//4E2
+//4E3
+//4E4
 //C20
 //C21
 //C22
@@ -154,9 +195,9 @@
 			sourceTree = "<group>";
 		};
 		C20E338205895335009849E5 = {
-			expectedFileType = sourcecode.cpp.cpp;
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
 			path = privPortServer.cpp;
 			refType = 4;
 			sourceTree = "<group>";
