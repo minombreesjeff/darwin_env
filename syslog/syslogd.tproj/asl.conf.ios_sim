@@ -11,9 +11,6 @@
 # redirect com.apple.eventmonitor* messages to $ENV(SIMULATOR_LOG_ROOT)/eventmonitor
 ? [A= Facility com.apple.eventmonitor] store_dir $ENV(SIMULATOR_LOG_ROOT)/eventmonitor
 
-# broadcast emergency messages
-? [= Level emergency] broadcast
-
 # ignore "internal" facility
 ? [= Facility internal] ignore
 
