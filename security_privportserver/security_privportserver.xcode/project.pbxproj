@@ -81,8 +81,8 @@
 				4E15282E06F13BFE00529649,
 			);
 			buildSettings = {
-				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 4;
+				BUILD_VARIANTS = "normal debug";
+				CURRENT_PROJECT_VERSION = 24739;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks /usr/local/SecurityPieces/Components/Security";
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				INSTALL_GROUP = wheel;
