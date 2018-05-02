@@ -257,22 +257,22 @@ OSStatus SessionSetUserPreferences(SecuritySessionId session)
 		return errSessionValueNotSet;
 	
 	CFRef<CFArrayRef> appleLanguagesArray(static_cast<CFArrayRef>(CFPreferencesCopyAppValue(appleLanguagesStr, kCFPreferencesCurrentApplication)));
-	if (NULL != appleLanguagesArray)
+	if (appleLanguagesArray)
 		CFDictionarySetValue(globalPrefsDict, appleLanguagesStr, appleLanguagesArray);
 	
 	CFRef<CFNumberRef> controlTintNumber(static_cast<CFNumberRef>(CFPreferencesCopyAppValue(controlTintStr, kCFPreferencesCurrentApplication)));
-	if (NULL != controlTintNumber)
+	if (controlTintNumber)
 		CFDictionarySetValue(globalPrefsDict, controlTintStr, controlTintNumber);
 
 	CFRef<CFNumberRef> keyboardUIModeNumber(static_cast<CFNumberRef>(CFPreferencesCopyAppValue(keyboardUIModeStr, kCFPreferencesCurrentApplication)));
-	if (NULL != keyboardUIModeNumber)
+	if (keyboardUIModeNumber)
 		CFDictionarySetValue(globalPrefsDict, keyboardUIModeStr, keyboardUIModeNumber);
 
 	if (CFDictionaryGetCount(globalPrefsDict) > 0)
 		CFDictionarySetValue(userPrefsDict, kCFPreferencesAnyApplication, globalPrefsDict);
 
 	CFRef<CFDictionaryRef> hitoolboxPrefsDict(static_cast<CFDictionaryRef>(CFPreferencesCopyMultiple(NULL, hitoolboxAppIDStr, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)));
-	if (NULL != hitoolboxPrefsDict)
+	if (hitoolboxPrefsDict)
 		CFDictionarySetValue(userPrefsDict, hitoolboxAppIDStr, hitoolboxPrefsDict);
 
 	CFRef<CFDataRef> userPrefsData(CFPropertyListCreateXMLData(NULL, userPrefsDict));
