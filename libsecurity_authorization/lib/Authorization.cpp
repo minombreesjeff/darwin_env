@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -30,6 +28,7 @@
 // This file is the unified implementation of the Authorization and AuthSession APIs.
 //
 #include <Security/Authorization.h>
+#include <Security/AuthorizationPriv.h>
 #include <Security/AuthorizationDB.h>
 #include <Security/AuthorizationTagsPriv.h>
 #include <Security/AuthSession.h>
@@ -41,6 +40,7 @@
 #include <security_cdsa_utilities/cssmbridge.h>
 #include <security_cdsa_utilities/AuthorizationWalkers.h>
 #include <securityd_client/ssclient.h>
+#include <CoreFoundation/CFPreferences.h>
 
 using namespace SecurityServer;
 using namespace MachPlusPlus;
@@ -183,7 +183,7 @@ OSStatus SessionGetInfo(SecuritySessionId session,
 {
     BEGIN_API
     SecuritySessionId sid = session;
-    server().getSessionInfo(sid, *attributes);
+    server().getSessionInfo(sid, Required(attributes));
     if (sessionId)
         *sessionId = sid;
     END_API(CSSM)
@@ -222,6 +222,66 @@ OSStatus SessionCreate(SessionCreationFlags flags,
     END_API(CSSM)
 }
 
+
+//
+// Get and set the distinguished uid (optionally) associated with the session.
+//
+OSStatus SessionSetDistinguishedUser(SecuritySessionId session, uid_t user)
+{
+	BEGIN_API
+	server().setSessionDistinguishedUid(session, user);
+	END_API(CSSM)
+}
+
+
+OSStatus SessionGetDistinguishedUser(SecuritySessionId session, uid_t *user)
+{
+    BEGIN_API
+	server().getSessionDistinguishedUid(session, Required(user));
+    END_API(CSSM)
+}
+
+
+OSStatus SessionSetUserPreferences(SecuritySessionId session)
+{
+    BEGIN_API
+	CFStringRef appleLanguagesStr = CFSTR("AppleLanguages");
+	CFStringRef controlTintStr = CFSTR("AppleAquaColorVariant");
+	CFStringRef keyboardUIModeStr = CFSTR("AppleKeyboardUIMode");
+	CFStringRef hitoolboxAppIDStr = CFSTR("com.apple.HIToolbox");
+
+	CFRef<CFMutableDictionaryRef> userPrefsDict(CFDictionaryCreateMutable(NULL, 10, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+	CFRef<CFMutableDictionaryRef> globalPrefsDict(CFDictionaryCreateMutable(NULL, 10, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+	
+	if (!userPrefsDict || !globalPrefsDict)
+		return errSessionValueNotSet;
+	
+	CFRef<CFArrayRef> appleLanguagesArray(static_cast<CFArrayRef>(CFPreferencesCopyAppValue(appleLanguagesStr, kCFPreferencesCurrentApplication)));
+	if (NULL != appleLanguagesArray)
+		CFDictionarySetValue(globalPrefsDict, appleLanguagesStr, appleLanguagesArray);
+	
+	CFRef<CFNumberRef> controlTintNumber(static_cast<CFNumberRef>(CFPreferencesCopyAppValue(controlTintStr, kCFPreferencesCurrentApplication)));
+	if (NULL != controlTintNumber)
+		CFDictionarySetValue(globalPrefsDict, controlTintStr, controlTintNumber);
+
+	CFRef<CFNumberRef> keyboardUIModeNumber(static_cast<CFNumberRef>(CFPreferencesCopyAppValue(keyboardUIModeStr, kCFPreferencesCurrentApplication)));
+	if (NULL != keyboardUIModeNumber)
+		CFDictionarySetValue(globalPrefsDict, keyboardUIModeStr, keyboardUIModeNumber);
+
+	if (CFDictionaryGetCount(globalPrefsDict) > 0)
+		CFDictionarySetValue(userPrefsDict, kCFPreferencesAnyApplication, globalPrefsDict);
+
+	CFRef<CFDictionaryRef> hitoolboxPrefsDict(static_cast<CFDictionaryRef>(CFPreferencesCopyMultiple(NULL, hitoolboxAppIDStr, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)));
+	if (NULL != hitoolboxPrefsDict)
+		CFDictionarySetValue(userPrefsDict, hitoolboxAppIDStr, hitoolboxPrefsDict);
+
+	CFRef<CFDataRef> userPrefsData(CFPropertyListCreateXMLData(NULL, userPrefsDict));
+	if (!userPrefsData)
+		return errSessionValueNotSet;
+	server().setSessionUserPrefs(session, CFDataGetLength(userPrefsData), CFDataGetBytePtr(userPrefsData));
+	
+    END_API(CSSM)
+}
 
 //
 // Modify Authorization rules
@@ -297,7 +357,7 @@ OSStatus AuthorizationRightSet(AuthorizationRef authRef,
 			CssmError::throwMe(errAuthorizationInternal);
 	
 		// assigning to perform a retain on either
-		CFRef<CFBundleRef> clientBundle = bundle ? bundle : CFBundleGetMainBundle(); 
+		CFRef<CFBundleRef> clientBundle; clientBundle = bundle ? bundle : CFBundleGetMainBundle(); 
 		
 		// looks like a list of CFStrings: English us_en etc.
 		CFRef<CFArrayRef> localizations(CFBundleCopyBundleLocalizations(clientBundle));
@@ -360,7 +420,7 @@ OSStatus AuthorizationRightSet(AuthorizationRef authRef,
 	}
 	
 	// serialize cfdictionary with data into rightDefinitionXML
-	CFDataRef rightDefinitionXML = CFPropertyListCreateXMLData(NULL, rightDefinitionDict);
+	CFRef<CFDataRef> rightDefinitionXML(CFPropertyListCreateXMLData(NULL, rightDefinitionDict));
 
 	server().authorizationdbSet(Required(auth), rightName, CFDataGetLength(rightDefinitionXML), CFDataGetBytePtr(rightDefinitionXML));
 		

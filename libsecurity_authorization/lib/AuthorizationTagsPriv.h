@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -147,6 +145,10 @@
     AuthorizationDBSet call (@see AuthorizationDB.h). */
 #define kAuthorizationRuleParameterDescription      "description"
 
+/*! @defined kAuthorizationRuleParameterAuthenticateUser
+	boolean that indicates whether to authenticate the user requesting authorization */
+#define kAuthorizationRuleParameterAuthenticateUser		"authenticate-user"
+
 /* authorization hints passed between securityd and agent */
 #define AGENT_HINT_SUGGESTED_USER "suggested-user"
 #define AGENT_HINT_REQUIRE_USER_IN_GROUP "require-user-in-group"
@@ -160,6 +162,7 @@
 #define AGENT_HINT_TRIES "tries"
 #define AGENT_HINT_RETRY_REASON "reason"
 #define AGENT_HINT_AUTHORIZE_RULE "authorize-rule"
+#define AGENT_HINT_TOKEN_NAME "token-name"
 
 
 // remote home directory specification
@@ -193,6 +196,7 @@
 #define AGENT_HINT_ACL_MISMATCH "acl-mismatch"
 #define AGENT_HINT_KEYCHAIN_ITEM_NAME "keychain-item-name"
 #define AGENT_HINT_KEYCHAIN_PATH "keychain-path"
+#define AGENT_HINT_WINDOW_LEVEL "window-level"
 
 #define AGENT_CONTEXT_REMEMBER_ACTION   "remember-action"
 #define AGENT_CONTEXT_ALLOW   "allow"
@@ -211,5 +215,9 @@
 	the right used to invoke the right mechanisms to (re)create a login
 	keychain */
 #define LOGIN_KC_CREATION_RIGHT	"system.keychain.create.loginkc"
+
+/* Keychain synchronization */
+// iDisk keychain blob metainfo dictionary; follows "defaults" naming
+#define AGENT_HINT_KCSYNC_DICT "com.apple.keychainsync.dictionary"
 
 #endif /* !_SECURITY_AUTHORIZATIONTAGSPRIV_H_ */

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -123,6 +121,7 @@ enum {
     errSessionInvalidId                     = -60500, /* invalid session id specified */
     errSessionInvalidAttributes             = -60501, /* invalid set of requested attribute bits */
     errSessionAuthorizationDenied           = -60502, /* you are not allowed to do this */
+    errSessionValueNotSet                   = -60503, /* the session attribute you requested has not been set */
 
     errSessionInternal                      = errAuthorizationInternal,	/* internal error */
 	errSessionInvalidFlags                  = errAuthorizationInvalidFlags /* invalid flags/options */

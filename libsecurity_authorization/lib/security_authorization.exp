@@ -35,4 +35,7 @@ _AuthorizationRightRemove
 _AuthorizationRightSet
 _SessionCreate
 _SessionGetInfo
+_SessionSetDistinguishedUser
+_SessionGetDistinguishedUser
+_SessionSetUserPreferences
 ___authorization_bind

@@ -186,7 +186,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>4</string>
+	<string>11</string>
 </dict>
 </plist>
 ";
@@ -245,8 +245,6 @@
 			sourceTree = "<group>";
 		};
 		4CA1FEA9052A3C3800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = debug;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -259,8 +257,6 @@
 			name = Development;
 		};
 		4CA1FEAA052A3C3800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				ZERO_LINK = NO;
@@ -326,24 +322,28 @@
 				4CD0D449055B0C9D001715CB,
 			);
 			buildSettings = {
-				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 4;
+				BUILD_VARIANTS = "normal debug";
+				CURRENT_PROJECT_VERSION = 11;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks /usr/local/SecurityPieces/Components/Security";
 				HEADER_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers\" \"$(BUILT_PRODUCTS_DIR)/SecurityPieces/PrivateHeaders\"";
 				LIBRARY_STYLE = STATIC;
+				OPT_CFLAGS = "-DNDEBUG -Os $(OPT_INLINEFLAGS)";
+				OPT_CPPFLAGS = "$(OPT_CFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_INLINEFLAGS = "-finline-functions --param max-inline-insns-single=100 --param max-inline-insns-auto=150 --param max-inline-insns=180 --param min-inline-insns=60";
+				OPT_LDFLAGS = "";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
 				OTHER_CFLAGS = "-DPORTSERVERPATH=\\\\\\\"/usr/libexec/security_privportserver\\\\\\\" -DTRAMPOLINE=\\\\\\\"/usr/libexec/security_authtrampoline\\\\\\\"";
 				OTHER_CFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CFLAGS_normal = "$(OPT_CFLAGS)  $(OTHER_CFLAGS)";
+				OTHER_CFLAGS_profile = "$(OPT_CFLAGS)  $(OTHER_CFLAGS) -pg";
 				OTHER_CPLUSPLUSFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CPLUSPLUSFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CPLUSPLUSFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CPLUSPLUSFLAGS_normal = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS)";
+				OTHER_CPLUSPLUSFLAGS_profile = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS) -pg";
 				OTHER_LDFLAGS_debug = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_normal = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_profile = "$(OTHER_LDFLAGS) -pg";
+				OTHER_LDFLAGS_normal = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS)";
+				OTHER_LDFLAGS_profile = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS) -pg";
 				PRIVATE_HEADER_DIR = "$(DSTROOT)/usr/local/SecurityPieces/PrivateHeaders/Security";
 				PRODUCT_NAME = security_authorization;
 				PUBLIC_HEADER_DIR = "$(DSTROOT)/usr/local/SecurityPieces/Headers/Security";
