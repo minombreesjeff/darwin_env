@@ -8,7 +8,6 @@
 
 #define STRING_LENGTH	128		/* hosts, users, processes */
 
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 
