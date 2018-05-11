@@ -173,8 +173,8 @@
 				406F0EFF072F15F50000E40A,
 			);
 			buildSettings = {
-				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 4;
+				BUILD_VARIANTS = "normal debug";
+				CURRENT_PROJECT_VERSION = 24739;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				INSTALL_GROUP = wheel;
 				INSTALL_MODE_FLAG = 4711;
