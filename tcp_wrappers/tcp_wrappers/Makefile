@@ -750,6 +750,9 @@ TCPDCHK_OBJ = tcpdchk.o fakelog.o inetcf.o scaffold.o
 tcpdchk: $(TCPDCHK_OBJ) $(LIB)
 	$(CC) $(CFLAGS) -o $@ $(TCPDCHK_OBJ) $(LIB) $(LIBS)
 
+$(TCPDCHK_OBJ) $(TCPDMATCH_OBJ):
+	$(CC) -mdynamic-no-pic $(CFLAGS) $(CPPFLAGS) -c $*.c
+
 shar:	$(KIT)
 	@shar $(KIT)
 
