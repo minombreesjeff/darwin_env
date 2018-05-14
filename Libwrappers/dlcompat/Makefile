@@ -68,7 +68,8 @@ DISTFILES= README \
 		
 OBJS = dlfcn.o
 
-all: libdl.a libdl.dylib dlopen.3
+#all: libdl.a libdl.dylib dlopen.3
+all: libdl.a dlopen.3
 
 configure: configure.in
 	autoconf
@@ -85,8 +86,6 @@ dist: $(DISTFILES)
 install: all man
 	$(INSTALL) -d -m 755 $(DESTDIR)/$(libdir)/
 	$(INSTALL) -m 644 libdl.a $(DESTDIR)/$(libdir)/
-	$(INSTALL) -m 644 libdl.$(LIBVER).dylib $(DESTDIR)/$(libdir)/
-	ln -fs libdl.$(LIBVER).dylib $(DESTDIR)/$(libdir)/libdl.dylib
 	$(INSTALL) -d -m 755 $(DESTDIR)/$(includedir)/
 	$(INSTALL) -m 644 dlfcn.h $(DESTDIR)/$(includedir)/
 

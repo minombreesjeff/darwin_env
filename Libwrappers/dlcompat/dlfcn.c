@@ -1058,19 +1058,6 @@ int dlclose(void *handle)
 			fini();
 		}
 		options |= NSUNLINKMODULE_OPTION_RESET_LAZY_REFERENCES;
-#if 1
-/*  Currently, if a module contains c++ static destructors and it is unloaded, we
- *  get a segfault in atexit(), due to compiler and dynamic loader differences of
- *  opinion, this works around that.
- *  I really need a way to figure out from code if this is still necessary.
- */
-		if ((const struct section *)NULL !=
-			getsectbynamefromheader(get_mach_header_from_NSModule(dls->module),
-									"__DATA", "__mod_term_func"))
-		{
-			options |= NSUNLINKMODULE_OPTION_KEEP_MEMORY_MAPPED;
-		}
-#endif
 #ifdef RTLD_NODELETE
 		if (isFlagSet(dls->mode, RTLD_NODELETE))
 			options |= NSUNLINKMODULE_OPTION_KEEP_MEMORY_MAPPED;
@@ -1094,7 +1081,7 @@ int dlclose(void *handle)
 	return 1;
 }
 
-const char *dlerror(void)
+char *dlerror(void)
 {
 	struct dlthread  *tss;
 	const char * err_str = NULL;

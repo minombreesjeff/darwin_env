@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------*\
-  $Id: poll.c,v 1.1.1.1 2003/07/21 16:20:21 zarzycki Exp $
+  $Id: poll.c,v 1.2 2004/02/06 22:31:14 eseidel Exp $
 
   NAME
 
@@ -74,8 +74,8 @@
 #include <unistd.h>			     /* standard Unix definitions */
 #include <sys/types.h>                       /* system types */
 #include <sys/time.h>                        /* time definitions */
-#include <assert.h>                          /* assertion macros */
 #include <string.h>                          /* string functions */
+#include <errno.h>                           /* errno variable*/
 #include "poll.h"                            /* this package */
 
 /*---------------------------------------------------------------------------*\
@@ -95,21 +95,38 @@ static int map_poll_spec
 #if __STDC__ > 0
 			(struct pollfd *pArray,
 			  unsigned long  n_fds,
-			  fd_set        *pReadSet,
-			  fd_set        *pWriteSet,
-			  fd_set        *pExceptSet)
+			  fd_set        **ppReadSet,
+			  fd_set        **ppWriteSet,
+			  fd_set        **ppExceptSet)
 #else
 			 (pArray, n_fds, pReadSet, pWriteSet, pExceptSet)
 			  struct pollfd *pArray;
 			  unsigned long  n_fds;
-			  fd_set        *pReadSet;
-			  fd_set        *pWriteSet;
-			  fd_set        *pExceptSet;
+			  fd_set        **ppReadSet;
+			  fd_set        **ppWriteSet;
+			  fd_set        **ppExceptSet;
 #endif
 {
     register unsigned long  i;                   /* loop control */
     register struct	    pollfd *pCur;        /* current array element */
     register int	    max_fd = -1;         /* return value */
+    fd_set *pReadSet = NULL, *pWriteSet = NULL, *pExceptSet = NULL;
+
+    /* If pArray is bad, simply set them all to NULL and return. */
+    if ( pArray == (struct pollfd *) NULL ) {
+        pReadSet = pWriteSet = pExceptSet = NULL;
+        return max_fd; // -1
+    }
+    
+    /* Safely set-up the local arrays set pointers */
+    if ( ppReadSet != (fd_set **) NULL )
+        pReadSet = *ppReadSet;
+        
+    if ( ppWriteSet != (fd_set **) NULL )
+        pWriteSet = *ppWriteSet;
+        
+    if ( ppExceptSet != (fd_set **) NULL )
+        pExceptSet = *ppExceptSet;
 
     /*
        Map the poll() structures into the file descriptor sets required
@@ -122,19 +139,19 @@ static int map_poll_spec
         if (pCur->fd < 0)
             continue;
 
-	if (pCur->events & POLLIN)
+	if ( (pCur->events & POLLIN) && (pReadSet != (fd_set *) NULL) )
 	{
 	    /* "Input Ready" notification desired. */
 	    FD_SET (pCur->fd, pReadSet);
 	}
 
-	if (pCur->events & POLLOUT)
+	if ( (pCur->events & POLLOUT) && (pWriteSet != (fd_set *) NULL) )
 	{
 	    /* "Output Possible" notification desired. */
 	    FD_SET (pCur->fd, pWriteSet);
 	}
 
-	if (pCur->events & POLLPRI)
+	if ( (pCur->events & POLLPRI) && (pExceptSet != (fd_set *) NULL) )
 	{
 	    /*
 	       "Exception Occurred" notification desired.  (Exceptions
@@ -174,8 +191,12 @@ static struct timeval *map_timeout
        seconds and microseconds, so the milliseconds value has to be mapped
        accordingly.
     */
-
-    assert (pSelTimeout != (struct timeval *) NULL);
+    
+    /* If we're given a bad timeout pointer, simply return NULL */
+    /* This will cause us to wait indefinately -- which is wrong, */
+    /* but we don't really have any other option. */
+    if (pSelTimeout == (struct timeval *) NULL)
+        return NULL;
 
     switch (poll_timeout)
     {
@@ -238,13 +259,13 @@ static void map_select_results
 	/* Exception events take priority over input events. */
 
 	pCur->revents = 0;
-	if (FD_ISSET (pCur->fd, pExceptSet))
+	if ( (pExceptSet != (fd_set *) NULL) && FD_ISSET (pCur->fd, pExceptSet) )
 	    pCur->revents |= POLLPRI;
 
-	else if (FD_ISSET (pCur->fd, pReadSet))
+	else if ( (pReadSet != (fd_set *) NULL) && FD_ISSET (pCur->fd, pReadSet))
 	    pCur->revents |= POLLIN;
 
-	if (FD_ISSET (pCur->fd, pWriteSet))
+	if ( (pWriteSet != (fd_set *) NULL) && FD_ISSET (pCur->fd, pWriteSet))
 	    pCur->revents |= POLLOUT;
     }
 
@@ -270,21 +291,30 @@ int poll
     fd_set  read_descs;                          /* input file descs */
     fd_set  write_descs;                         /* output file descs */
     fd_set  except_descs;                        /* exception descs */
+    fd_set  *pRead_descs = &read_descs;           /* ptr to input file descs */
+    fd_set  *pWrite_descs = &write_descs;         /* ptr to output file descs */
+    fd_set  *pExcept_descs = &except_descs;       /* ptr to exception descs */
+    
     struct  timeval stime;                       /* select() timeout value */
     int	    ready_descriptors;                   /* function result */
     int	    max_fd;                              /* maximum fd value */
     struct  timeval *pTimeout;                   /* actually passed */
 
-    FD_ZERO (&read_descs);
-    FD_ZERO (&write_descs);
-    FD_ZERO (&except_descs);
+    FD_ZERO (pRead_descs);
+    FD_ZERO (pWrite_descs);
+    FD_ZERO (pExcept_descs);
 
-    assert (pArray != (struct pollfd *) NULL);
+    /* If we've been passed an empty array, but told it's not empty, abort! */
+    if ( (pArray == (struct pollfd *) NULL) && n_fds != 0 ) {
+        errno = EFAULT;
+        return -1;
+    }
+    /* Otherwise continue, and select should do the right thing. */
 
     /* Map the poll() file descriptor list in the select() data structures. */
 
     max_fd = map_poll_spec (pArray, n_fds,
-			    &read_descs, &write_descs, &except_descs);
+			    &pRead_descs, &pWrite_descs, &pExcept_descs);
 
     /* Map the poll() timeout value in the select() timeout structure. */
 
@@ -292,13 +322,13 @@ int poll
 
     /* Make the select() call. */
 
-    ready_descriptors = select (max_fd + 1, &read_descs, &write_descs,
-				&except_descs, pTimeout);
+    ready_descriptors = select (max_fd + 1, pRead_descs, pWrite_descs,
+				pExcept_descs, pTimeout);
 
     if (ready_descriptors >= 0)
     {
 	map_select_results (pArray, n_fds,
-			    &read_descs, &write_descs, &except_descs);
+			    pRead_descs, pWrite_descs, pExcept_descs);
     }
 
     return ready_descriptors;

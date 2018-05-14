@@ -1,6 +1,6 @@
 # Makefile for poll(2) emulator
 #
-# $Id: Makefile,v 1.3 2003/08/31 18:31:28 emoy Exp $
+# $Id: Makefile,v 1.4 2004/05/05 20:17:16 emoy Exp $
 # ---------------------------------------------------------------------------
 
 #############################################################################
@@ -66,7 +66,8 @@ RANLIB		= ranlib
 	$(COMPILE_STATIC) $<
 
 all:		libs
-libs:		$(SHLIB) $(LIB)
+#libs:		$(SHLIB) $(LIB)
+libs:		$(LIB)
 test:		polltest
 
 dirs:
@@ -75,9 +76,7 @@ dirs:
 		$(INSTALL) -m 755 -d $(INCDIR)
 
 install:	all dirs
-		$(INSTALL) -m 755 $(SHLIB) $(LIB) $(LIBDIR)
-		ln -sf $(SHLIB) $(SHLIB_INSTALLED)
-		ln -sf $(SHLIB) $(LIBDIR)/$(SHLIB_NOVER)
+		$(INSTALL) -m 755 $(LIB) $(LIBDIR)
 		$(INSTALL) -m 644 poll.h $(INCDIR)
 
 clean:

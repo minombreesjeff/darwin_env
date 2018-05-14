@@ -186,7 +186,7 @@ void *dlsymIntern(void *handle, const char *symbol)
 	return NSAddressOfSymbol(nssym);
 }
 
-const char *dlerror(void)
+char *dlerror(void)
 {
 	return error(1, (char *)NULL);
 }

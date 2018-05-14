@@ -44,10 +44,11 @@ extern "C" {
 #else
 #define dl_restrict
 #endif
+
+#ifndef _POSIX_SOURCE
 /*
  * Structure filled in by dladdr().
  */
-
 typedef struct dl_info {
         const char      *dli_fname;     /* Pathname of shared object */
         void            *dli_fbase;     /* Base address of shared object */
@@ -55,16 +56,20 @@ typedef struct dl_info {
         void            *dli_saddr;     /* Address of nearest symbol */
 } Dl_info;
 
+extern int dladdr(const void * dl_restrict, Dl_info * dl_restrict);
+#endif /* ! _POSIX_SOURCE */
+
+extern int dlclose(void * handle);
+extern char * dlerror(void);
 extern void * dlopen(const char *path, int mode);
 extern void * dlsym(void * dl_restrict handle, const char * dl_restrict symbol);
-extern const char * dlerror(void);
-extern int dlclose(void * handle);
-extern int dladdr(const void * dl_restrict, Dl_info * dl_restrict);
 
 #define RTLD_LAZY	0x1
 #define RTLD_NOW	0x2
 #define RTLD_LOCAL	0x4
 #define RTLD_GLOBAL	0x8
+
+#ifndef _POSIX_SOURCE
 #define RTLD_NOLOAD	0x10
 #define RTLD_NODELETE	0x80
 
@@ -73,6 +78,7 @@ extern int dladdr(const void * dl_restrict, Dl_info * dl_restrict);
  */
 #define	RTLD_NEXT		((void *) -1)	/* Search subsequent objects. */
 #define	RTLD_DEFAULT	((void *) -2)	/* Use default search algorithm. */
+#endif /* ! _POSIX_SOURCE */
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------*\
-  $Id: poll.h,v 1.2 2003/09/13 00:08:18 eseidel Exp $
+  $Id: poll.h,v 1.3 2003/10/16 07:05:08 jkh Exp $
 
   NAME
 
@@ -79,6 +79,14 @@
 #define POLLERR		0x08
 #define POLLHUP		0x10
 #define POLLNVAL	0x20
+
+/* SUSv2 synonyms */
+#define POLLNORM	POLLIN
+#define POLLPRI		POLLIN
+#define POLLRDNORM	POLLIN
+#define POLLRDBAND	POLLIN
+#define POLLWRNORM	POLLOUT
+#define POLLWRBAND	POLLOUT
 
 struct pollfd
 {
