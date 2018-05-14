@@ -49,17 +49,20 @@ SSLProcessHandshakeRecord(SSLRecord rec, SSLContext *ctx)
 {   OSStatus        err;
     sint32          remaining;
     UInt8           *p;
+	UInt8			*startingP;		// top of record we're parsing
     SSLHandshakeMsg message;
     SSLBuffer       messageData;
     
     if (ctx->fragmentedMessageCache.data != 0)
-    {   if ((err = SSLReallocBuffer(ctx->fragmentedMessageCache,
+    {   
+		UInt32 origLen = ctx->fragmentedMessageCache.length;
+		if ((err = SSLReallocBuffer(ctx->fragmentedMessageCache,
                     ctx->fragmentedMessageCache.length + rec.contents.length,
                     ctx)) != 0)
         {   SSLFatalSessionAlert(SSL_AlertInternalError, ctx);
             return err;
         }
-        memcpy(ctx->fragmentedMessageCache.data + ctx->fragmentedMessageCache.length,
+        memcpy(ctx->fragmentedMessageCache.data + origLen,
             rec.contents.data, rec.contents.length);
         remaining = ctx->fragmentedMessageCache.length;
         p = ctx->fragmentedMessageCache.data;
@@ -68,7 +71,8 @@ SSLProcessHandshakeRecord(SSLRecord rec, SSLContext *ctx)
     {   remaining = rec.contents.length;
         p = rec.contents.data;
     }
-
+	startingP = p;
+	
     while (remaining > 0)
     {   if (remaining < 4)
             break;  /* we must have at least a header */
@@ -110,8 +114,8 @@ SSLProcessHandshakeRecord(SSLRecord rec, SSLContext *ctx)
                 return err;
             }
         }
-        if (p != ctx->fragmentedMessageCache.data)
-        {   memcpy(ctx->fragmentedMessageCache.data, p, remaining);
+        if (startingP != ctx->fragmentedMessageCache.data)
+        {   memcpy(ctx->fragmentedMessageCache.data, startingP, remaining);
             ctx->fragmentedMessageCache.length = remaining;
         }
     }

@@ -100,7 +100,20 @@ SSLGetResumableSessionInfo	(
 	Boolean			*sessionWasResumed,		// RETURNED
 	void			*sessionID,				// RETURNED, mallocd by caller
 	size_t			*sessionIDLength);		// IN/OUT
-							 
+					
+/*
+ * Getters for SSLSetCertificate() and SSLSetEncryptionCertificate()
+ */
+OSStatus
+SSLGetCertificate (
+	SSLContextRef	context,
+	CFArrayRef		*certRefs);				// RETURNED, *not* retained
+	
+OSStatus
+SSLGetEncryptionCertificate (
+	SSLContextRef	context,
+	CFArrayRef		*certRefs);				// RETURNED, *not* retained
+
 #ifdef __cplusplus
 }
 #endif

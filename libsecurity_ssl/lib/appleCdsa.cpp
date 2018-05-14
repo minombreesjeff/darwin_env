@@ -1332,6 +1332,9 @@ static void sslReleaseArray(
 			case CSSMERR_TP_CERT_NOT_VALID_YET:
 				serr = errSSLCertNotYetValid;
 				break;
+			case CSSMERR_APPLETP_HOSTNAME_MISMATCH:
+				serr = errSSLHostNameMismatch;
+				break;
 			default:
 				stPrintCdsaError("sslVerifyCertChain: SecTrustEvaluate returned", 
 						crtn);

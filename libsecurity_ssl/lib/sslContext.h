@@ -155,6 +155,13 @@ struct SSLContext
     SSLCertificate		*encryptCert;
     SSLCertificate      *peerCert;
     
+	/* 
+	 * The arrays we are given via SSLSetCertificate() and SSLSetEncryptionCertificate().
+	 * We keep them here, refcounted, solely for the associated getters. 
+	 */
+	CFArrayRef			localCertArray;
+	CFArrayRef			encryptCertArray;
+	
 	/* peer certs as SecTrustRef */
 	SecTrustRef			peerSecTrust;
 	

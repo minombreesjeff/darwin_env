@@ -252,6 +252,13 @@ SSLDisposeContext				(SSLContext			*ctx)
 	
 	detachFromAll(ctx);
 	    
+	if(ctx->localCertArray) {
+		CFRelease(ctx->localCertArray);
+	}
+	if(ctx->encryptCertArray) {
+		CFRelease(ctx->encryptCertArray);
+	}
+
     memset(ctx, 0, sizeof(SSLContext));
     sslFree(ctx);
 	sslCleanupSession();
@@ -896,11 +903,20 @@ SSLSetCertificate			(SSLContextRef		ctx,
 		/* can't do this with an active session */
 		return badReqErr;
 	}
-	return parseIncomingCerts(ctx,
+	if(ctx->localCertArray) {
+		CFRelease(ctx->localCertArray);
+		ctx->localCertArray = NULL;
+	}
+	OSStatus ortn = parseIncomingCerts(ctx,
 		certRefs,
 		&ctx->localCert,
 		&ctx->signingPubKey,
 		&ctx->signingPrivKeyRef);
+	if(ortn == noErr) {
+		ctx->localCertArray = certRefs;
+		CFRetain(certRefs);
+	}
+	return ortn;
 }
 
 OSStatus
@@ -920,11 +936,40 @@ SSLSetEncryptionCertificate	(SSLContextRef		ctx,
 		/* can't do this with an active session */
 		return badReqErr;
 	}
-	return parseIncomingCerts(ctx,
+	if(ctx->encryptCertArray) {
+		CFRelease(ctx->encryptCertArray);
+		ctx->encryptCertArray = NULL;
+	}
+	OSStatus ortn = parseIncomingCerts(ctx,
 		certRefs,
 		&ctx->encryptCert,
 		&ctx->encryptPubKey,
 		&ctx->encryptPrivKeyRef);
+	if(ortn == noErr) {
+		ctx->encryptCertArray = certRefs;
+		CFRetain(certRefs);
+	}
+	return ortn;
+}
+
+OSStatus SSLGetCertificate(SSLContextRef		ctx,
+						   CFArrayRef			*certRefs)
+{
+	if(ctx == NULL) {
+		return paramErr;
+	}
+	*certRefs = ctx->localCertArray;
+	return noErr;
+}
+
+OSStatus SSLGetEncryptionCertificate(SSLContextRef		ctx,
+								     CFArrayRef			*certRefs)
+{
+	if(ctx == NULL) {
+		return paramErr;
+	}
+	*certRefs = ctx->encryptCertArray;
+	return noErr;
 }
 
 OSStatus 

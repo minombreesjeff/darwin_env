@@ -37,12 +37,14 @@ _SSLSetAllowsAnyRoot
 _SSLSetAllowsExpiredCerts
 _SSLSetAllowsExpiredRoots
 _SSLSetCertificate
+_SSLGetCertificate
 _SSLSetClientSideAuthenticate
 _SSLSetConnection
 _SSLSetDiffieHellmanParams
 _SSLSetEnableCertVerify
 _SSLSetEnabledCiphers
 _SSLSetEncryptionCertificate
+_SSLGetEncryptionCertificate
 _SSLSetIOFuncs
 _SSLSetPeerDomainName
 _SSLSetPeerID
