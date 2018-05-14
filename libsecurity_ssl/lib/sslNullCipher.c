@@ -34,9 +34,8 @@ static OSStatus NullFinish(
 	CipherContext *cipherCtx,
 	SSLContext *ctx);
 
-extern "C" {
 extern const SSLSymmetricCipher SSLCipherNull;
-}
+
 const SSLSymmetricCipher SSLCipherNull = {
     0,          /* Key size in bytes (ignoring parity) */
     0,          /* Secret key size */

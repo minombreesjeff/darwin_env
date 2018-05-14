@@ -17,7 +17,7 @@
 
 
 /*
-	File:		sslRecord.cpp
+	File:		sslRecord.c
 
 	Contains:	Encryption, decryption and MACing of data
 
@@ -53,19 +53,19 @@
  *  Attempt to read & decrypt an SSL record.
  */
 OSStatus
-SSLReadRecord(SSLRecord &rec, SSLContext *ctx)
+SSLReadRecord(SSLRecord *rec, SSLContext *ctx)
 {   OSStatus        err;
-    UInt32          len, contentLen;
+    size_t          len, contentLen;
     UInt8           *charPtr;
     SSLBuffer       readData, cipherFragment;
     
     if (!ctx->partialReadBuffer.data || ctx->partialReadBuffer.length < 5)
     {   if (ctx->partialReadBuffer.data)
-            if ((err = SSLFreeBuffer(ctx->partialReadBuffer, ctx)) != 0)
+            if ((err = SSLFreeBuffer(&ctx->partialReadBuffer, ctx)) != 0)
             {   SSLFatalSessionAlert(SSL_AlertInternalError, ctx);
                 return err;
             }
-        if ((err = SSLAllocBuffer(ctx->partialReadBuffer, 
+        if ((err = SSLAllocBuffer(&ctx->partialReadBuffer, 
 				DEFAULT_BUFFER_SIZE, ctx)) != 0)
         {   SSLFatalSessionAlert(SSL_AlertInternalError, ctx);
             return err;
@@ -180,12 +180,12 @@ SSLReadRecord(SSLRecord &rec, SSLContext *ctx)
     assert(ctx->amountRead >= 5);
     
     charPtr = ctx->partialReadBuffer.data;
-    rec.contentType = *charPtr++;
-    if (rec.contentType < SSL_RecordTypeV3_Smallest || 
-        rec.contentType > SSL_RecordTypeV3_Largest)
+    rec->contentType = *charPtr++;
+    if (rec->contentType < SSL_RecordTypeV3_Smallest || 
+        rec->contentType > SSL_RecordTypeV3_Largest)
         return errSSLProtocol;
     
-    rec.protocolVersion = (SSLProtocolVersion)SSLDecodeInt(charPtr, 2);
+    rec->protocolVersion = (SSLProtocolVersion)SSLDecodeInt(charPtr, 2);
     charPtr += 2;
     contentLen = SSLDecodeInt(charPtr, 2);
     charPtr += 2;
@@ -195,8 +195,14 @@ SSLReadRecord(SSLRecord &rec, SSLContext *ctx)
         return errSSLProtocol;
     }
     
+	if (contentLen < ctx->readCipher.macRef->hash->digestSize)
+	{
+		SSLFatalSessionAlert(SSL_AlertInternalError, ctx);
+		return errSSLClosedAbort;
+	}
+	
     if (ctx->partialReadBuffer.length < 5 + contentLen)
-    {   if ((err = SSLReallocBuffer(ctx->partialReadBuffer, 5 + contentLen, ctx)) != 0)
+    {   if ((err = SSLReallocBuffer(&ctx->partialReadBuffer, 5 + contentLen, ctx)) != 0)
         {   SSLFatalSessionAlert(SSL_AlertInternalError, ctx);
             return err;
         }
@@ -229,7 +235,7 @@ SSLReadRecord(SSLRecord &rec, SSLContext *ctx)
 	 * its own alerts).
 	 */
 	assert(ctx->sslTslCalls != NULL);
-    if ((err = ctx->sslTslCalls->decryptRecord(rec.contentType, 
+    if ((err = ctx->sslTslCalls->decryptRecord(rec->contentType, 
 			&cipherFragment, ctx)) != 0)
         return err;
     
@@ -240,11 +246,11 @@ SSLReadRecord(SSLRecord &rec, SSLContext *ctx)
     IncrementUInt64(&ctx->readCipher.sequenceNum);
     
 	/* Allocate a buffer to return the plaintext in and return it */
-    if ((err = SSLAllocBuffer(rec.contents, cipherFragment.length, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&rec->contents, cipherFragment.length, ctx)) != 0)
     {   SSLFatalSessionAlert(SSL_AlertInternalError, ctx);
         return err;
     }
-    memcpy(rec.contents.data, cipherFragment.data, cipherFragment.length);
+    memcpy(rec->contents.data, cipherFragment.data, cipherFragment.length);
     
     ctx->amountRead = 0;        /* We've used all the data in the cache */
     
@@ -254,7 +260,7 @@ SSLReadRecord(SSLRecord &rec, SSLContext *ctx)
 /* common for sslv3 and tlsv1, except for the computeMac callout */
 OSStatus SSLVerifyMac(
 	UInt8 type, 
-	SSLBuffer &data, 
+	SSLBuffer *data, 
 	UInt8 *compareMAC, 
 	SSLContext *ctx)
 {   
@@ -269,7 +275,7 @@ OSStatus SSLVerifyMac(
     
 	assert(ctx->sslTslCalls != NULL);
     if ((err = ctx->sslTslCalls->computeMac(type, 
-			data, 
+			*data, 
 			mac, 
 			&ctx->readCipher,
 			ctx->readCipher.sequenceNum, 

@@ -56,7 +56,7 @@ static void inline sslIoTrace(
 #define sslIoTrace(op, req, moved, stat)
 #endif	/* NDEBUG */
 
-static OSStatus SSLProcessProtocolMessage(SSLRecord &rec, SSLContext *ctx);
+static OSStatus SSLProcessProtocolMessage(SSLRecord *rec, SSLContext *ctx);
 static OSStatus SSLHandshakeProceed(SSLContext *ctx);
 static OSStatus SSLInitConnection(SSLContext *ctx);
 static OSStatus SSLServiceWriteQueue(SSLContext *ctx);
@@ -65,12 +65,12 @@ OSStatus
 SSLWrite(
 	SSLContext			*ctx,
 	const void *		data,
-	UInt32				dataLength,
-	UInt32 				*bytesWritten)	/* RETURNED */ 
+	size_t				dataLength,
+	size_t 				*bytesWritten)	/* RETURNED */ 
 {   
 	OSStatus        err;
     SSLRecord       rec;
-    UInt32          dataLen, processed;
+    size_t          dataLen, processed;
     
 	sslLogRecordIo("SSLWrite top");
     if((ctx == NULL) || (bytesWritten == NULL)) {
@@ -118,7 +118,7 @@ SSLWrite(
     while (dataLen > 0)
     {   rec.contentType = SSL_RecordTypeAppData;
         rec.protocolVersion = ctx->negProtocolVersion;
-        rec.contents.data = ((UInt8*)data) + processed;
+        rec.contents.data = ((uint8*)data) + processed;
         
         if (dataLen < MAX_RECORD_LENGTH)
             rec.contents.length = dataLen;
@@ -152,12 +152,12 @@ OSStatus
 SSLRead	(
 	SSLContext			*ctx,
 	void *				data,
-	UInt32				dataLength,
-	UInt32 				*processed)		/* RETURNED */ 
+	size_t				dataLength,
+	size_t 				*processed)		/* RETURNED */ 
 {   
 	OSStatus        err;
-    UInt8           *charPtr;
-    UInt32          bufSize, remaining, count;
+    uint8           *charPtr;
+    size_t          bufSize, remaining, count;
     SSLRecord       rec;
     
 	sslLogRecordIo("SSLRead top");
@@ -201,7 +201,7 @@ readRetry:
     }
     
     remaining = bufSize;
-    charPtr = (UInt8*)data;
+    charPtr = (uint8*)data;
     if (ctx->receivedDataBuffer.data)
     {   count = ctx->receivedDataBuffer.length - ctx->receivedDataPos;
         if (count > bufSize)
@@ -215,11 +215,11 @@ readRetry:
     
     assert(ctx->receivedDataPos <= ctx->receivedDataBuffer.length);
     assert(*processed + remaining == bufSize);
-    assert(charPtr == ((UInt8*)data) + *processed);
+    assert(charPtr == ((uint8*)data) + *processed);
     
     if (ctx->receivedDataBuffer.data != 0 &&
         ctx->receivedDataPos >= ctx->receivedDataBuffer.length)
-    {   SSLFreeBuffer(ctx->receivedDataBuffer, ctx);
+    {   SSLFreeBuffer(&ctx->receivedDataBuffer, ctx);
         ctx->receivedDataBuffer.data = 0;
         ctx->receivedDataPos = 0;
     }
@@ -233,7 +233,7 @@ readRetry:
 	 */
     if (remaining > 0 && ctx->state != SSL_HdskStateGracefulClose)
     {   assert(ctx->receivedDataBuffer.data == 0);
-        if ((err = SSLReadRecord(rec, ctx)) != 0) {
+        if ((err = SSLReadRecord(&rec, ctx)) != 0) {
             goto exit;
         }
         if (rec.contentType == SSL_RecordTypeAppData ||
@@ -252,7 +252,7 @@ readRetry:
                  */
                 {
                 	SSLBuffer *b = &rec.contents;
-                	if ((err = SSLFreeBuffer(*b, ctx)) != 0) {
+                	if ((err = SSLFreeBuffer(b, ctx)) != 0) {
                     	goto exit;
                     }
                 }
@@ -267,10 +267,10 @@ readRetry:
             }
         }
         else {
-            if ((err = SSLProcessProtocolMessage(rec, ctx)) != 0) {
+            if ((err = SSLProcessProtocolMessage(&rec, ctx)) != 0) {
                 goto exit;
 			}
-            if ((err = SSLFreeBuffer(rec.contents, ctx)) != 0) {
+            if ((err = SSLFreeBuffer(&rec.contents, ctx)) != 0) {
                 goto exit;
 			}
         }
@@ -351,13 +351,13 @@ SSLHandshakeProceed(SSLContext *ctx)
     if ((err = SSLServiceWriteQueue(ctx)) != 0)
         return err;
     assert(ctx->readCipher.ready == 0);
-    if ((err = SSLReadRecord(rec, ctx)) != 0)
+    if ((err = SSLReadRecord(&rec, ctx)) != 0)
         return err;
-    if ((err = SSLProcessProtocolMessage(rec, ctx)) != 0)
-    {   SSLFreeBuffer(rec.contents, ctx);
+    if ((err = SSLProcessProtocolMessage(&rec, ctx)) != 0)
+    {   SSLFreeBuffer(&rec.contents, ctx);
         return err;
     }
-    if ((err = SSLFreeBuffer(rec.contents, ctx)) != 0)
+    if ((err = SSLFreeBuffer(&rec.contents, ctx)) != 0)
         return err;
         
     return noErr;
@@ -413,7 +413,7 @@ SSLInitConnection(SSLContext *ctx)
 		}
 		if(!enable) {
 			sslLogResumSessDebug("===Resumable session protocol mismatch");
-			SSLFreeBuffer(ctx->resumableSession, ctx);
+			SSLFreeBuffer(&ctx->resumableSession, ctx);
 			cachedV3OrTls1 = false;
 		} 
 		else {
@@ -443,25 +443,20 @@ SSLInitConnection(SSLContext *ctx)
 static OSStatus
 SSLServiceWriteQueue(SSLContext *ctx)
 {   OSStatus        err = noErr, werr = noErr;
-    UInt32          written = 0;
-    SSLBuffer       buf, recBuf;
+    size_t          written = 0;
+    SSLBuffer       buf;
     WaitingRecord   *rec;
 
     while (!werr && ((rec = ctx->recordWriteQueue) != 0))
-    {   buf.data = rec->data.data + rec->sent;
-        buf.length = rec->data.length - rec->sent;
+    {   buf.data = rec->data + rec->sent;
+        buf.length = rec->length - rec->sent;
         werr = sslIoWrite(buf, &written, ctx);
         rec->sent += written;
-        if (rec->sent >= rec->data.length)
-        {   assert(rec->sent == rec->data.length);
+        if (rec->sent >= rec->length)
+        {   assert(rec->sent == rec->length);
             assert(err == 0);
-            err = SSLFreeBuffer(rec->data, ctx);
-            assert(err == 0);
-            recBuf.data = (UInt8*)rec;
-            recBuf.length = sizeof(WaitingRecord);
             ctx->recordWriteQueue = rec->next;
-            err = SSLFreeBuffer(recBuf, ctx);
-            assert(err == 0);
+			sslFree(rec);
         }
         if (err)
             return err;
@@ -471,21 +466,21 @@ SSLServiceWriteQueue(SSLContext *ctx)
 }
 
 static OSStatus
-SSLProcessProtocolMessage(SSLRecord &rec, SSLContext *ctx)
+SSLProcessProtocolMessage(SSLRecord *rec, SSLContext *ctx)
 {   OSStatus      err;
     
-    switch (rec.contentType)
+    switch (rec->contentType)
     {   case SSL_RecordTypeHandshake:
 			sslLogRxProtocolDebug("Handshake");
-            err = SSLProcessHandshakeRecord(rec, ctx);
+            err = SSLProcessHandshakeRecord(*rec, ctx);
             break;
         case SSL_RecordTypeAlert:
  			sslLogRxProtocolDebug("Alert");
-            err = SSLProcessAlert(rec, ctx);
+            err = SSLProcessAlert(*rec, ctx);
             break;
         case SSL_RecordTypeChangeCipher:
 			sslLogRxProtocolDebug("ChangeCipher");
-            err = SSLProcessChangeCipherSpec(rec, ctx);
+            err = SSLProcessChangeCipherSpec(*rec, ctx);
             break;
         case SSL_RecordTypeV2_0:
 			sslLogRxProtocolDebug("RecordTypeV2_0");

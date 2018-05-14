@@ -17,7 +17,7 @@
 
 
 /*
-	File:		ssl3Callouts.cpp
+	File:		ssl3Callouts.c
 
 	Contains:	SSLv3-specific routines for SslTlsCallouts. 
 
@@ -51,14 +51,14 @@ OSStatus ssl3WriteRecord(
 {   
 	OSStatus        err;
     int             padding = 0, i;
-    WaitingRecord   *out, *queue;
-    SSLBuffer       buf, payload, mac;
+    WaitingRecord   *out = NULL, *queue;
+    SSLBuffer       payload, mac;
     UInt8           *charPtr;
     UInt16          payloadSize,blockSize;
     
 	switch(rec.protocolVersion) {
 		case SSL_Version_2_0:
-			return SSL2WriteRecord(rec, ctx);
+			return SSL2WriteRecord(&rec, ctx);
 		case SSL_Version_3_0:
 		case TLS_Version_1_0:
 			break;
@@ -68,13 +68,6 @@ OSStatus ssl3WriteRecord(
 	}
     assert(rec.contents.length <= 16384);
     
-    out = 0;
-    /* Allocate a WaitingRecord to store our ready-to-send record in */
-    if ((err = SSLAllocBuffer(buf, sizeof(WaitingRecord), ctx)) != 0)
-        return err;
-    out = (WaitingRecord*)buf.data;
-    out->next = 0;
-    out->sent = 0;
     /* Allocate enough room for the transmitted record, which will be:
      *  5 bytes of header +
      *  encrypted contents +
@@ -88,11 +81,14 @@ OSStatus ssl3WriteRecord(
     {   padding = blockSize - (payloadSize % blockSize) - 1;
         payloadSize += padding + 1;
     }
-    out->data.data = 0;
-    if ((err = SSLAllocBuffer(out->data, 5 + payloadSize, ctx)) != 0)
-        goto fail;
+	
+	out = (WaitingRecord *)sslMalloc(offsetof(WaitingRecord, data) +
+		5 + payloadSize);
+	out->next = NULL;
+	out->sent = 0;
+	out->length = 5 + payloadSize;
     
-    charPtr = out->data.data;
+    charPtr = out->data;
     *(charPtr++) = rec.contentType;
     charPtr = SSLEncodeInt(charPtr, rec.protocolVersion, 2);
     charPtr = SSLEncodeInt(charPtr, payloadSize, 2);
@@ -159,10 +155,7 @@ fail:
 	 * Only for if we fail between when the WaitingRecord is allocated and when 
 	 * it is queued 
 	 */
-    SSLFreeBuffer(out->data, ctx);
-    buf.data = (UInt8*)out;
-    buf.length = sizeof(WaitingRecord);
-    SSLFreeBuffer(buf, ctx);
+	sslFree(out);
     return err;
 }
 
@@ -207,7 +200,7 @@ static OSStatus ssl3DecryptRecord(
 	/* Verify MAC on payload */
     if (ctx->readCipher.macRef->hash->digestSize > 0)       
 		/* Optimize away MAC for null case */
-        if ((err = SSLVerifyMac(type, content, 
+        if ((err = SSLVerifyMac(type, &content, 
 				payload->data + content.length, ctx)) != 0)
         {   SSLFatalSessionAlert(SSL_AlertBadRecordMac, ctx);
             return errSSLBadRecordMac;
@@ -234,9 +227,9 @@ static OSStatus ssl3InitMac (
 	
 	hashCtx = &cipherCtx->macCtx.hashCtx;
 	if(hashCtx->data != NULL) {
-		SSLFreeBuffer(*hashCtx, ctx);
+		SSLFreeBuffer(hashCtx, ctx);
 	}
-	serr = SSLAllocBuffer(*hashCtx, hash->contextSize, ctx);
+	serr = SSLAllocBuffer(hashCtx, hash->contextSize, ctx);
 	if(serr) {
 		return serr;
 	}
@@ -297,13 +290,13 @@ static OSStatus ssl3ComputeMac (
 	 *			         length + content ) 
 	 *			 ) 
 	 */
-    if ((err = hash->init(digestCtx, ctx)) != 0)
+    if ((err = hash->init(&digestCtx, ctx)) != 0)
         goto exit;
-    if ((err = hash->update(digestCtx, secret)) != 0)    /* MAC secret */
+    if ((err = hash->update(&digestCtx, &secret)) != 0)    /* MAC secret */
         goto exit;
     scratch.data = (UInt8 *)SSLMACPad1;
     scratch.length = hash->macPadSize;
-    if ((err = hash->update(digestCtx, scratch)) != 0)   /* pad1 */
+    if ((err = hash->update(&digestCtx, &scratch)) != 0)   /* pad1 */
         goto exit;
     charPtr = scratchData;
     charPtr = SSLEncodeUInt64(charPtr, seqNo);
@@ -312,27 +305,27 @@ static OSStatus ssl3ComputeMac (
     scratch.data = scratchData;
     scratch.length = 11;
     assert(charPtr = scratchData+11);
-    if ((err = hash->update(digestCtx, scratch)) != 0)   
+    if ((err = hash->update(&digestCtx, &scratch)) != 0)   
 										/* sequenceNo, type & length */
         goto exit;
-    if ((err = hash->update(digestCtx, data)) != 0)      /* content */
+    if ((err = hash->update(&digestCtx, &data)) != 0)      /* content */
         goto exit;
     digest.data = innerDigestData;
     digest.length = hash->digestSize;
-    if ((err = hash->final(digestCtx, digest)) != 0) 	/* figure inner digest */
+    if ((err = hash->final(&digestCtx, &digest)) != 0) 	/* figure inner digest */
         goto exit;
     
-    if ((err = hash->init(digestCtx, ctx)) != 0)
+    if ((err = hash->init(&digestCtx, ctx)) != 0)
         goto exit;
-    if ((err = hash->update(digestCtx, secret)) != 0)    /* MAC secret */
+    if ((err = hash->update(&digestCtx, &secret)) != 0)    /* MAC secret */
         goto exit;
     scratch.data = (UInt8 *)SSLMACPad2;
     scratch.length = hash->macPadSize;
-    if ((err = hash->update(digestCtx, scratch)) != 0)   /* pad2 */
+    if ((err = hash->update(&digestCtx, &scratch)) != 0)   /* pad2 */
         goto exit;
-    if ((err = hash->update(digestCtx, digest)) != 0)    /* inner digest */
+    if ((err = hash->update(&digestCtx, &digest)) != 0)    /* inner digest */
         goto exit;  
-    if ((err = hash->final(digestCtx, mac)) != 0)   	 /* figure the mac */
+    if ((err = hash->final(&digestCtx, &mac)) != 0)   	 /* figure the mac */
         goto exit;
     
     err = noErr; /* redundant, I know */
@@ -398,9 +391,9 @@ static OSStatus ssl3GenerateKeyMaterial (
     
     md5Context.data = 0;
     shaContext.data = 0;
-    if ((err = ReadyHash(SSLHashMD5, md5Context, ctx)) != 0)
+    if ((err = ReadyHash(&SSLHashMD5, &md5Context, ctx)) != 0)
         goto fail;
-    if ((err = ReadyHash(SSLHashSHA1, shaContext, ctx)) != 0)
+    if ((err = ReadyHash(&SSLHashSHA1, &shaContext, ctx)) != 0)
         goto fail;  
     
     keyProgress = key.data;
@@ -411,21 +404,21 @@ static OSStatus ssl3GenerateKeyMaterial (
             leaderData[j] = 0x41 + i;   /* 'A', 'BB', 'CCC', etc. */
         leader.length = i+1;
         
-        if ((err = SSLHashSHA1.update(shaContext, leader)) != 0)
+        if ((err = SSLHashSHA1.update(&shaContext, &leader)) != 0)
             goto fail;
-        if ((err = SSLHashSHA1.update(shaContext, masterSecret)) != 0)
+        if ((err = SSLHashSHA1.update(&shaContext, &masterSecret)) != 0)
             goto fail;
-        if ((err = SSLHashSHA1.update(shaContext, serverRandom)) != 0)
+        if ((err = SSLHashSHA1.update(&shaContext, &serverRandom)) != 0)
             goto fail;
-        if ((err = SSLHashSHA1.update(shaContext, clientRandom)) != 0)
+        if ((err = SSLHashSHA1.update(&shaContext, &clientRandom)) != 0)
             goto fail;
-        if ((err = SSLHashSHA1.final(shaContext, shaHash)) != 0)
+        if ((err = SSLHashSHA1.final(&shaContext, &shaHash)) != 0)
             goto fail;
-        if ((err = SSLHashMD5.update(md5Context, masterSecret)) != 0)
+        if ((err = SSLHashMD5.update(&md5Context, &masterSecret)) != 0)
             goto fail;
-        if ((err = SSLHashMD5.update(md5Context, shaHash)) != 0)
+        if ((err = SSLHashMD5.update(&md5Context, &shaHash)) != 0)
             goto fail;
-        if ((err = SSLHashMD5.final(md5Context, md5Hash)) != 0)
+        if ((err = SSLHashMD5.final(&md5Context, &md5Hash)) != 0)
             goto fail;
         
         satisfied = 16;
@@ -437,9 +430,9 @@ static OSStatus ssl3GenerateKeyMaterial (
         
 		if(remaining > 0) {
 			/* at top of loop, this was done in ReadyHash() */
-			if ((err = SSLHashMD5.init(md5Context, ctx)) != 0)
+			if ((err = SSLHashMD5.init(&md5Context, ctx)) != 0)
 				goto fail;
-			if ((err = SSLHashSHA1.init(shaContext, ctx)) != 0)
+			if ((err = SSLHashSHA1.init(&shaContext, ctx)) != 0)
 				goto fail;
 		}
     }
@@ -447,8 +440,8 @@ static OSStatus ssl3GenerateKeyMaterial (
     assert(remaining == 0 && keyProgress == (key.data + key.length));
     err = noErr;
 fail:
-    SSLFreeBuffer(md5Context, ctx);
-    SSLFreeBuffer(shaContext, ctx);
+    SSLFreeBuffer(&md5Context, ctx);
+    SSLFreeBuffer(&shaContext, ctx);
     
  	#if	LOG_GEN_KEY
 	printf("GenerateKey: DONE\n");
@@ -474,63 +467,63 @@ static OSStatus ssl3GenerateExportKeyAndIv (
 	clientRandom.data = ctx->clientRandom;
 	clientRandom.length = SSL_CLIENT_SRVR_RAND_SIZE;
 	
-	if ((err = SSLAllocBuffer(hashCtx, SSLHashMD5.contextSize, ctx)) != 0)
+	if ((err = SSLAllocBuffer(&hashCtx, SSLHashMD5.contextSize, ctx)) != 0)
 		return err;
 	/* client write key */
-	if ((err = SSLHashMD5.init(hashCtx, ctx)) != 0)
+	if ((err = SSLHashMD5.init(&hashCtx, ctx)) != 0)
 		goto fail;
-	if ((err = SSLHashMD5.update(hashCtx, clientWriteKey)) != 0)
+	if ((err = SSLHashMD5.update(&hashCtx, &clientWriteKey)) != 0)
 		goto fail;
-	if ((err = SSLHashMD5.update(hashCtx, clientRandom)) != 0)
+	if ((err = SSLHashMD5.update(&hashCtx, &clientRandom)) != 0)
 		goto fail;
-	if ((err = SSLHashMD5.update(hashCtx, serverRandom)) != 0)
+	if ((err = SSLHashMD5.update(&hashCtx, &serverRandom)) != 0)
 		goto fail;
 	finalClientWriteKey.length = 16;
-	if ((err = SSLHashMD5.final(hashCtx, finalClientWriteKey)) != 0)
+	if ((err = SSLHashMD5.final(&hashCtx, &finalClientWriteKey)) != 0)
 		goto fail;
 
 	/* optional client IV */
 	if (ctx->selectedCipherSpec->cipher->ivSize > 0)
-	{   if ((err = SSLHashMD5.init(hashCtx, ctx)) != 0)
+	{   if ((err = SSLHashMD5.init(&hashCtx, ctx)) != 0)
 			goto fail;
-		if ((err = SSLHashMD5.update(hashCtx, clientRandom)) != 0)
+		if ((err = SSLHashMD5.update(&hashCtx, &clientRandom)) != 0)
 			goto fail;
-		if ((err = SSLHashMD5.update(hashCtx, serverRandom)) != 0)
+		if ((err = SSLHashMD5.update(&hashCtx, &serverRandom)) != 0)
 			goto fail;
 		finalClientIV.length = 16;
-		if ((err = SSLHashMD5.final(hashCtx, finalClientIV)) != 0)
+		if ((err = SSLHashMD5.final(&hashCtx, &finalClientIV)) != 0)
 			goto fail;
 	}
 
 	/* server write key */
-	if ((err = SSLHashMD5.init(hashCtx, ctx)) != 0)
+	if ((err = SSLHashMD5.init(&hashCtx, ctx)) != 0)
 		goto fail;
-	if ((err = SSLHashMD5.update(hashCtx, serverWriteKey)) != 0)
+	if ((err = SSLHashMD5.update(&hashCtx, &serverWriteKey)) != 0)
 		goto fail;
-	if ((err = SSLHashMD5.update(hashCtx, serverRandom)) != 0)
+	if ((err = SSLHashMD5.update(&hashCtx, &serverRandom)) != 0)
 		goto fail;
-	if ((err = SSLHashMD5.update(hashCtx, clientRandom)) != 0)
+	if ((err = SSLHashMD5.update(&hashCtx, &clientRandom)) != 0)
 		goto fail;
 	finalServerWriteKey.length = 16;
-	if ((err = SSLHashMD5.final(hashCtx, finalServerWriteKey)) != 0)
+	if ((err = SSLHashMD5.final(&hashCtx, &finalServerWriteKey)) != 0)
 		goto fail;
 	
 	/* optional server IV */
 	if (ctx->selectedCipherSpec->cipher->ivSize > 0)
-	{   if ((err = SSLHashMD5.init(hashCtx, ctx)) != 0)
+	{   if ((err = SSLHashMD5.init(&hashCtx, ctx)) != 0)
 			goto fail;
-		if ((err = SSLHashMD5.update(hashCtx, serverRandom)) != 0)
+		if ((err = SSLHashMD5.update(&hashCtx, &serverRandom)) != 0)
 			goto fail;
-		if ((err = SSLHashMD5.update(hashCtx, clientRandom)) != 0)
+		if ((err = SSLHashMD5.update(&hashCtx, &clientRandom)) != 0)
 			goto fail;
 		finalServerIV.length = 16;
-		if ((err = SSLHashMD5.final(hashCtx, finalServerIV)) != 0)
+		if ((err = SSLHashMD5.final(&hashCtx, &finalServerIV)) != 0)
 			goto fail;
 	}
 
     err = noErr;
 fail:
-    SSLFreeBuffer(hashCtx, ctx);
+    SSLFreeBuffer(&hashCtx, ctx);
     return err;
 }
 
@@ -548,9 +541,9 @@ static OSStatus ssl3GenerateMasterSecret (
     int         i;
     
     md5State.data = shaState.data = 0;
-    if ((err = SSLAllocBuffer(md5State, SSLHashMD5.contextSize, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&md5State, SSLHashMD5.contextSize, ctx)) != 0)
         goto fail;
-    if ((err = SSLAllocBuffer(shaState, SSLHashSHA1.contextSize, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&shaState, SSLHashSHA1.contextSize, ctx)) != 0)
         goto fail;
     
     clientRandom.data = ctx->clientRandom;
@@ -563,40 +556,40 @@ static OSStatus ssl3GenerateMasterSecret (
     masterProgress = ctx->masterSecret;
     
     for (i = 1; i <= 3; i++)
-    {   if ((err = SSLHashMD5.init(md5State, ctx)) != 0)
+    {   if ((err = SSLHashMD5.init(&md5State, ctx)) != 0)
             goto fail;
-        if ((err = SSLHashSHA1.init(shaState, ctx)) != 0)
+        if ((err = SSLHashSHA1.init(&shaState, ctx)) != 0)
             goto fail;
         
         leaderData[0] = leaderData[1] = leaderData[2] = 0x40 + i;   /* 'A', 'B', etc. */
         leader.data = leaderData;
         leader.length = i;
         
-        if ((err = SSLHashSHA1.update(shaState, leader)) != 0)
+        if ((err = SSLHashSHA1.update(&shaState, &leader)) != 0)
             goto fail;
-        if ((err = SSLHashSHA1.update(shaState, ctx->preMasterSecret)) != 0)
+        if ((err = SSLHashSHA1.update(&shaState, &ctx->preMasterSecret)) != 0)
             goto fail;
-        if ((err = SSLHashSHA1.update(shaState, clientRandom)) != 0)
+        if ((err = SSLHashSHA1.update(&shaState, &clientRandom)) != 0)
             goto fail;
-        if ((err = SSLHashSHA1.update(shaState, serverRandom)) != 0)
+        if ((err = SSLHashSHA1.update(&shaState, &serverRandom)) != 0)
             goto fail;
-        if ((err = SSLHashSHA1.final(shaState, shaHash)) != 0)
+        if ((err = SSLHashSHA1.final(&shaState, &shaHash)) != 0)
             goto fail;
-        if ((err = SSLHashMD5.update(md5State, ctx->preMasterSecret)) != 0)
+        if ((err = SSLHashMD5.update(&md5State, &ctx->preMasterSecret)) != 0)
             goto fail;
-        if ((err = SSLHashMD5.update(md5State, shaHash)) != 0)
+        if ((err = SSLHashMD5.update(&md5State, &shaHash)) != 0)
             goto fail;
         md5Hash.data = masterProgress;
         md5Hash.length = 16;
-        if ((err = SSLHashMD5.final(md5State, md5Hash)) != 0)
+        if ((err = SSLHashMD5.final(&md5State, &md5Hash)) != 0)
             goto fail;
         masterProgress += 16;
     }
     
     err = noErr;
 fail:
-    SSLFreeBuffer(shaState, ctx);
-    SSLFreeBuffer(md5State, ctx);
+    SSLFreeBuffer(&shaState, ctx);
+    SSLFreeBuffer(&md5State, ctx);
     return err;
 }
 
@@ -619,64 +612,64 @@ ssl3CalculateFinishedMessage(
 		SSLEncodeInt(sender, senderID, 4);
         input.data = sender;
         input.length = 4;
-        if ((err = SSLHashMD5.update(md5MsgState, input)) != 0)
+        if ((err = SSLHashMD5.update(&md5MsgState, &input)) != 0)
             return err;
-        if ((err = SSLHashSHA1.update(shaMsgState, input)) != 0)
+        if ((err = SSLHashSHA1.update(&shaMsgState, &input)) != 0)
             return err;
     }
     input.data = ctx->masterSecret;
     input.length = SSL_MASTER_SECRET_SIZE;
-    if ((err = SSLHashMD5.update(md5MsgState, input)) != 0)
+    if ((err = SSLHashMD5.update(&md5MsgState, &input)) != 0)
         return err;
-    if ((err = SSLHashSHA1.update(shaMsgState, input)) != 0)
+    if ((err = SSLHashSHA1.update(&shaMsgState, &input)) != 0)
         return err;
     input.data = (UInt8 *)SSLMACPad1;
     input.length = SSLHashMD5.macPadSize;
-    if ((err = SSLHashMD5.update(md5MsgState, input)) != 0)
+    if ((err = SSLHashMD5.update(&md5MsgState, &input)) != 0)
         return err;
     input.length = SSLHashSHA1.macPadSize;
-    if ((err = SSLHashSHA1.update(shaMsgState, input)) != 0)
+    if ((err = SSLHashSHA1.update(&shaMsgState, &input)) != 0)
         return err;
     hash.data = md5Inner;
     hash.length = 16;
-    if ((err = SSLHashMD5.final(md5MsgState, hash)) != 0)
+    if ((err = SSLHashMD5.final(&md5MsgState, &hash)) != 0)
         return err;
     hash.data = shaInner;
     hash.length = 20;
-    if ((err = SSLHashSHA1.final(shaMsgState, hash)) != 0)
+    if ((err = SSLHashSHA1.final(&shaMsgState, &hash)) != 0)
         return err;
-    if ((err = SSLHashMD5.init(md5MsgState, ctx)) != 0)
+    if ((err = SSLHashMD5.init(&md5MsgState, ctx)) != 0)
         return err;
-    if ((err = SSLHashSHA1.init(shaMsgState, ctx)) != 0)
+    if ((err = SSLHashSHA1.init(&shaMsgState, ctx)) != 0)
         return err;
     input.data = ctx->masterSecret;
     input.length = SSL_MASTER_SECRET_SIZE;
-    if ((err = SSLHashMD5.update(md5MsgState, input)) != 0)
+    if ((err = SSLHashMD5.update(&md5MsgState, &input)) != 0)
         return err;
-    if ((err = SSLHashSHA1.update(shaMsgState, input)) != 0)
+    if ((err = SSLHashSHA1.update(&shaMsgState, &input)) != 0)
         return err;
     input.data = (UInt8 *)SSLMACPad2;
     input.length = SSLHashMD5.macPadSize;
-    if ((err = SSLHashMD5.update(md5MsgState, input)) != 0)
+    if ((err = SSLHashMD5.update(&md5MsgState, &input)) != 0)
         return err;
     input.length = SSLHashSHA1.macPadSize;
-    if ((err = SSLHashSHA1.update(shaMsgState, input)) != 0)
+    if ((err = SSLHashSHA1.update(&shaMsgState, &input)) != 0)
         return err;
     input.data = md5Inner;
     input.length = 16;
-    if ((err = SSLHashMD5.update(md5MsgState, input)) != 0)
+    if ((err = SSLHashMD5.update(&md5MsgState, &input)) != 0)
         return err;
     hash.data = finished.data;
     hash.length = 16;
-    if ((err = SSLHashMD5.final(md5MsgState, hash)) != 0)
+    if ((err = SSLHashMD5.final(&md5MsgState, &hash)) != 0)
         return err;
     input.data = shaInner;
     input.length = 20;
-    if ((err = SSLHashSHA1.update(shaMsgState, input)) != 0)
+    if ((err = SSLHashSHA1.update(&shaMsgState, &input)) != 0)
         return err;
     hash.data = finished.data + 16;
     hash.length = 20;
-    if ((err = SSLHashSHA1.final(shaMsgState, hash)) != 0)
+    if ((err = SSLHashSHA1.final(&shaMsgState, &hash)) != 0)
         return err;
     return noErr;
 }

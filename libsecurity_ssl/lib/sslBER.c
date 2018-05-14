@@ -17,7 +17,7 @@
 
 
 /*
-	File:		sslBER.cpp
+	File:		sslBER.c
 
 	Contains:	BER routines
 
@@ -34,9 +34,9 @@
 #include "appleCdsa.h"
 
 #include <string.h>
-#include <security_cdsa_utilities/cssmdata.h>
-#include <security_asn1/SecNssCoder.h>
+//#include <security_asn1/SecNssCoder.h>
 #include <Security/keyTemplates.h>
+#include <security_asn1/secasn1.h>
 
 /*
  * Given a PKCS-1 encoded RSA public key, extract the 
@@ -46,37 +46,46 @@
  *		modulus INTEGER, -- n
  *		publicExponent INTEGER -- e }
  */
- 
+
+/* 
+ * Default chunk size for new arena pool.
+ * FIXME: analyze & measure different defaults here. I'm pretty sure
+ * that only performance - not correct behavior - is affected by
+ * an arena pool's chunk size.
+ */
+#define CHUNKSIZE_DEF		1024		
+
 OSStatus sslDecodeRsaBlob(
 	const SSLBuffer	*blob,			/* PKCS-1 encoded */
 	SSLBuffer		*modulus,		/* data mallocd and RETURNED */
 	SSLBuffer		*exponent)		/* data mallocd and RETURNED */
 {
+    SECStatus rv;
 	OSStatus srtn;
+	NSS_RSAPublicKeyPKCS1 nssPubKey = {};
+    PLArenaPool *pool;
 
 	assert(blob != NULL);
 	assert(modulus != NULL);
 	assert(exponent != NULL);
-	
-	/* DER-decode the blob */
-	NSS_RSAPublicKeyPKCS1 nssPubKey;
-	SecNssCoder coder;
-	
-	memset(&nssPubKey, 0, sizeof(nssPubKey));
-	PRErrorCode perr = coder.decode(blob->data, blob->length, 
-		kSecAsn1RSAPublicKeyPKCS1Template, &nssPubKey);
-	if(perr) {
-		return errSSLBadCert;
-	}
 
-	/* malloc & copy components */
-	srtn = SSLCopyBufferFromData(nssPubKey.modulus.Data,
-		nssPubKey.modulus.Length, *modulus);
-	if(srtn) {
-		return srtn;
-	}
-	return SSLCopyBufferFromData(nssPubKey.publicExponent.Data,
-		nssPubKey.publicExponent.Length, *exponent);
+	/* DER-decode the blob */
+    pool = PORT_NewArena(CHUNKSIZE_DEF);
+    rv = SEC_ASN1Decode(pool, &nssPubKey,
+        kSecAsn1RSAPublicKeyPKCS1Template, (const char *)blob->data, blob->length);
+    if (rv != SECSuccess)
+		srtn = errSSLBadCert;
+    else {
+        /* malloc & copy components */
+        srtn = SSLCopyBufferFromData(nssPubKey.modulus.Data,
+            nssPubKey.modulus.Length, modulus);
+        if(!srtn) {
+            srtn = SSLCopyBufferFromData(nssPubKey.publicExponent.Data,
+                nssPubKey.publicExponent.Length, exponent);
+        }
+    }
+    PORT_FreeArena(pool, PR_TRUE);
+    return srtn;
 }
 
 /*
@@ -88,26 +97,30 @@ OSStatus sslEncodeRsaBlob(
 	const SSLBuffer	*exponent,		
 	SSLBuffer		*blob)			/* data mallocd and RETURNED */
 {
+    PLArenaPool *pool;
+	OSStatus srtn;
+    SECItem *encBlob, dest = {};
+	NSS_RSAPublicKeyPKCS1 nssPubKey;
+
 	assert((modulus != NULL) && (exponent != NULL));
-	blob->data = NULL;
-	blob->length = 0;
 
 	/* convert to NSS_RSAPublicKeyPKCS1 */
-	NSS_RSAPublicKeyPKCS1 nssPubKey;
 	SSLBUF_TO_CSSM(modulus, &nssPubKey.modulus);
 	SSLBUF_TO_CSSM(exponent, &nssPubKey.publicExponent);
-	
+
 	/* DER encode */
-	SecNssCoder coder;
-	CSSM_DATA encBlob;
-	PRErrorCode perr;
-	perr = coder.encodeItem(&nssPubKey, kSecAsn1RSAPublicKeyPKCS1Template, encBlob);
-	if(perr) {
-		return memFullErr;
-		
-	}
-	/* copy out to caller */
-	return SSLCopyBufferFromData(encBlob.Data, encBlob.Length, *blob);
+    pool = PORT_NewArena(CHUNKSIZE_DEF);
+    encBlob = SEC_ASN1EncodeItem(pool, &dest, &nssPubKey,
+        kSecAsn1RSAPublicKeyPKCS1Template);
+	if (!encBlob)
+		srtn = memFullErr;
+    else {
+        /* copy out to caller */
+        srtn = SSLCopyBufferFromData(encBlob->Data, encBlob->Length, blob);
+    }
+
+    PORT_FreeArena(pool, PR_TRUE);
+    return srtn;
 }
 
 /*
@@ -121,50 +134,52 @@ OSStatus sslDecodeDhParams(
 	SSLBuffer		*prime,			/* data mallocd and RETURNED */
 	SSLBuffer		*generator)		/* data mallocd and RETURNED */
 {
+    SECStatus rv;
+	OSStatus srtn;
+	NSS_DHParameterBlock paramBlock = {};
+    PLArenaPool *pool;
+
 	assert(blob != NULL);
 	assert(prime != NULL);
 	assert(generator != NULL);
-	
-	PRErrorCode perr;
-	NSS_DHParameterBlock paramBlock;
-	SecNssCoder coder;
-	CSSM_DATA cblob;
-	
-	memset(&paramBlock, 0, sizeof(paramBlock));
-	SSLBUF_TO_CSSM(blob, &cblob);
-	
+
+    pool = PORT_NewArena(CHUNKSIZE_DEF);
 	/*
 	 * Since the common case here is to decode a parameter block coming
 	 * over the wire, which is in openssl format, let's try that format first.
 	 */
-	perr = coder.decodeItem(cblob, kSecAsn1DHParameterTemplate, 
-		&paramBlock.params);
-	if(perr) {
+    rv = SEC_ASN1Decode(pool, &paramBlock.params,
+        kSecAsn1DHParameterTemplate, (const char *)blob->data, blob->length);
+    if (rv != SECSuccess) {
 		/*
 		 * OK, that failed when trying as a CDSA_formatted parameter
 		 * block DHParameterBlock). Openssl uses a subset of that,
 		 * a DHParameter. Try that instead.
 		 */
 		memset(&paramBlock, 0, sizeof(paramBlock));
-		perr = coder.decodeItem(cblob, kSecAsn1DHParameterBlockTemplate, 
-			&paramBlock);
-		if(perr) {
-			/* Ah well, we tried. */
-			sslErrorLog("sslDecodeDhParams: both CDSA and openssl format"
-				"failed\n");
-			return errSSLCrypto;
-		}
+        rv = SEC_ASN1Decode(pool, &paramBlock,
+            kSecAsn1DHParameterBlockTemplate,
+            (const char *)blob->data, blob->length);
 	}
 
-	/* copy out components */
-	NSS_DHParameter &param = paramBlock.params;
-	OSStatus ortn = SSLCopyBufferFromData(param.prime.Data,
-		param.prime.Length, *prime);
-	if(ortn) {
-		return ortn;
-	}
-	return SSLCopyBufferFromData(param.base.Data,
-		param.base.Length, *generator);
+    if (rv != SECSuccess) {
+        /* Ah well, we tried. */
+        sslErrorLog("sslDecodeDhParams: both CDSA and openssl format"
+            "failed\n");
+        srtn = errSSLCrypto;
+    }
+    else {
+        /* copy out components */
+        srtn = SSLCopyBufferFromData(paramBlock.params.prime.Data,
+            paramBlock.params.prime.Length, prime);
+        if(!srtn) {
+            srtn = SSLCopyBufferFromData(paramBlock.params.base.Data,
+                paramBlock.params.base.Length, generator);
+        }
+    }
+
+    PORT_FreeArena(pool, PR_TRUE);
+    return srtn;
 }
 
 /*
@@ -175,27 +190,31 @@ OSStatus sslEncodeDhParams(
 	const SSLBuffer	*generator,		
 	SSLBuffer		*blob)			/* data mallocd and RETURNED */
 {
+    PLArenaPool *pool;
+	OSStatus srtn;
+    SECItem *encBlob, dest = {};
+	NSS_DHParameter dhParams;
+
 	assert((prime != NULL) && (generator != NULL));
-	blob->data = NULL;
-	blob->length = 0;
 
 	/* convert to NSS_DHParameter */
-	NSS_DHParameter dhParams;
 	SSLBUF_TO_CSSM(prime, &dhParams.prime);
 	SSLBUF_TO_CSSM(generator, &dhParams.base);
 	dhParams.privateValueLength.Data = NULL;
 	dhParams.privateValueLength.Length = 0;
-	
+
 	/* DER encode */
-	SecNssCoder coder;
-	CSSM_DATA encBlob;
-	PRErrorCode perr;
-	perr = coder.encodeItem(&dhParams, kSecAsn1DHParameterTemplate, encBlob);
-	if(perr) {
-		return memFullErr;
-		
-	}
-	/* copy out to caller */
-	return SSLCopyBufferFromData(encBlob.Data, encBlob.Length, *blob);
+    pool = PORT_NewArena(CHUNKSIZE_DEF);
+    encBlob = SEC_ASN1EncodeItem(pool, &dest, &dhParams,
+        kSecAsn1DHParameterTemplate);
+	if (!encBlob)
+		srtn = memFullErr;
+    else {
+        /* copy out to caller */
+        srtn = SSLCopyBufferFromData(encBlob->Data, encBlob->Length, blob);
+    }
+
+    PORT_FreeArena(pool, PR_TRUE);
+    return srtn;
 }
 

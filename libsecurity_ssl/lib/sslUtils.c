@@ -31,10 +31,11 @@
 #include "sslUtils.h"
 #include "sslMemory.h"
 #include "sslDebug.h"
-#include <security_utilities/devrandom.h>
 
-#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacTypes.h>
 #include <sys/time.h>
+
+#include <fcntl.h> // for open
+#include <unistd.h> // for read
 
 UInt32
 SSLDecodeInt(const unsigned char *p, int length)
@@ -49,14 +50,14 @@ SSLEncodeInt(unsigned char *p, UInt32 value, int length)
 {   unsigned char   *retVal = p + length;       /* Return pointer to char after int */
     assert(length > 0 && length <= 4);
     while (length--)                /* Assemble backwards */
-    {   p[length] = (UInt8)value;   /* Implicit masking to low byte */
+    {   p[length] = (uint8)value;   /* Implicit masking to low byte */
         value >>= 8;
     }
     return retVal;
 }
 
-UInt8*
-SSLEncodeUInt64(UInt8 *p, sslUint64 value)
+uint8*
+SSLEncodeUInt64(uint8 *p, sslUint64 value)
 {   p = SSLEncodeInt(p, value.high, 4);
     return SSLEncodeInt(p, value.low, 4);
 }
@@ -107,7 +108,7 @@ OSStatus sslDeleteCertificateChain(
 	cert=certs;
 	while(cert != NULL) {
 		nextCert = cert->next;
-		SSLFreeBuffer(cert->derCert, ctx);
+		SSLFreeBuffer(&cert->derCert, ctx);
 		sslFree(cert);
 		cert = nextCert;
 	}
@@ -138,7 +139,7 @@ OSStatus sslIoRead(
  	size_t 			*actualLength, 
  	SSLContext 		*ctx)
 {
- 	UInt32 		dataLength = buf.length;
+ 	size_t 		dataLength = buf.length;
  	OSStatus	ortn;
  		
 	*actualLength = 0;
@@ -154,7 +155,7 @@ OSStatus sslIoWrite(
  	size_t 			*actualLength, 
  	SSLContext 		*ctx)
 {
- 	UInt32 			dataLength = buf.length;
+ 	size_t 			dataLength = buf.length;
  	OSStatus		ortn;
  		
 	*actualLength = 0;
@@ -174,10 +175,12 @@ OSStatus sslTime(UInt32 *tim)
 }
 
 /*
- * Common RNG function.
+ * Common RNG function.  @@@ Factor this into a common crypto lib
  */
 OSStatus sslRand(SSLContext *ctx, SSLBuffer *buf)
 {
+	static int random_fd = -1;
+
 	OSStatus		serr = noErr;
 	
 	assert(ctx != NULL);
@@ -188,13 +191,23 @@ OSStatus sslRand(SSLContext *ctx, SSLBuffer *buf)
 		sslErrorLog("sslRand: zero buf->length\n");
 		return noErr;
 	}
-	try {
-		Security::DevRandomGenerator devRand(false);
-		devRand.random(buf->data, buf->length);
+
+	if (random_fd == -1) {
+		random_fd = open("/dev/random", O_RDONLY);
+		if (random_fd == -1) {
+			sslErrorLog("sslRand: error opening /dev/random: %s\n",
+				strerror(errno));
+			return errSSLCrypto;
+		}
 	}
-	catch(...) {
+
+    ssize_t bytesRead = read(random_fd, buf->data, buf->length);
+	if (bytesRead != buf->length) {
+		sslErrorLog("sslRand: error reading %lu bytes from /dev/random: %s\n",
+			buf->length, strerror(errno));
 		serr = errSSLCrypto;
 	}
+
 	return serr;
 }
 

@@ -17,7 +17,7 @@
 
 
 /*
-	File:		ssl2Protocol.cpp
+	File:		ssl2Protocol.c
 
 	Contains:	Protocol engine for SSL 2
 
@@ -88,17 +88,17 @@ static void logSsl2Msg(SSL2MessageType msg, char sent)
 #endif		/* NDEBUG */
 
 OSStatus
-SSL2ProcessMessage(SSLRecord &rec, SSLContext *ctx)
+SSL2ProcessMessage(SSLRecord *rec, SSLContext *ctx)
 {   OSStatus            err = 0;
     SSL2MessageType     msg;
     SSLBuffer           contents;
     
-    if (rec.contents.length < 2)
+    if (rec->contents.length < 2)
         return errSSLProtocol;
     
-    msg = (SSL2MessageType)rec.contents.data[0];
-    contents.data = rec.contents.data + 1;
-    contents.length = rec.contents.length - 1;
+    msg = (SSL2MessageType)rec->contents.data[0];
+    contents.data = rec->contents.data + 1;
+    contents.length = rec->contents.length - 1;
     
     logSsl2Msg(msg, 0);
     
@@ -163,7 +163,7 @@ SSL2ProcessMessage(SSLRecord &rec, SSLContext *ctx)
     	if ((msg == SSL2_MsgClientHello) && 
 		    (ctx->negProtocolVersion >= SSL_Version_3_0))
         {   /* Promote this message to SSL 3 protocol */
-            if ((err = SSL3ReceiveSSL2ClientHello(rec, ctx)) != 0)
+            if ((err = SSL3ReceiveSSL2ClientHello(*rec, ctx)) != 0)
                 return err;
         }
         else
@@ -282,14 +282,14 @@ SSL2PrepareAndQueueMessage(EncodeSSL2MessageFunc encodeFunc, SSLContext *ctx)
     
     rec.contentType = SSL_RecordTypeV2_0;
     rec.protocolVersion = SSL_Version_2_0;
-    if ((err = encodeFunc(rec.contents, ctx)) != 0)
+    if ((err = encodeFunc(&rec.contents, ctx)) != 0)
         return err;
 
     logSsl2Msg((SSL2MessageType)rec.contents.data[0], 1);
     
 	assert(ctx->sslTslCalls != NULL);
 	if ((err = ctx->sslTslCalls->writeRecord(rec, ctx)) != 0)
-    {   SSLFreeBuffer(rec.contents, ctx);
+    {   SSLFreeBuffer(&rec.contents, ctx);
         return err;
     }
     
@@ -298,11 +298,11 @@ SSL2PrepareAndQueueMessage(EncodeSSL2MessageFunc encodeFunc, SSLContext *ctx)
     if((ctx->negProtocolVersion == SSL_Version_Undetermined) &&
 	   (ctx->versionSsl3Enable || ctx->versionTls1Enable)) {
 		/* prepare for possible V3/TLS1 upgrade */
-        if ((err = SSLHashSHA1.update(ctx->shaState, rec.contents)) != 0 ||
-            (err = SSLHashMD5.update(ctx->md5State, rec.contents)) != 0)
+        if ((err = SSLHashSHA1.update(&ctx->shaState, &rec.contents)) != 0 ||
+            (err = SSLHashMD5.update(&ctx->md5State, &rec.contents)) != 0)
             return err;
     }
-    err = SSLFreeBuffer(rec.contents, ctx);
+    err = SSLFreeBuffer(&rec.contents, ctx);
     return err;
 }
 
@@ -324,7 +324,7 @@ SSL2CompareSessionIDs(SSLContext *ctx)
         memcmp(sessionIdentifier.data, ctx->sessionID.data, sessionIdentifier.length) == 0)
         ctx->sessionMatch = 1;
     
-    if ((err = SSLFreeBuffer(sessionIdentifier, ctx)) != 0)
+    if ((err = SSLFreeBuffer(&sessionIdentifier, ctx)) != 0)
         return err;
     
     return noErr;
@@ -345,9 +345,9 @@ OSStatus
 SSL2GenerateSessionID(SSLContext *ctx)
 {   OSStatus          err;
     
-    if ((err = SSLFreeBuffer(ctx->sessionID, ctx)) != 0)
+    if ((err = SSLFreeBuffer(&ctx->sessionID, ctx)) != 0)
         return err;
-    if ((err = SSLAllocBuffer(ctx->sessionID, SSL_SESSION_ID_LEN, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&ctx->sessionID, SSL_SESSION_ID_LEN, ctx)) != 0)
         return err;
     if ((err = sslRand(ctx, &ctx->sessionID)) != 0)
         return err;
@@ -363,7 +363,7 @@ SSL2InitCiphers(SSLContext *ctx)
     SSLBuffer       hashDigest, hashContext, masterKey, challenge, connectionID, variantData;
     
     keyMaterialLen = 2 * ctx->selectedCipherSpec->cipher->keySize;
-    if ((err = SSLAllocBuffer(keyData, keyMaterialLen, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&keyData, keyMaterialLen, ctx)) != 0)
         return err;
     
 	/* Can't have % in assertion string... */
@@ -383,8 +383,8 @@ SSL2InitCiphers(SSLContext *ctx)
     connectionID.length = ctx->ssl2ConnectionIDLength;
     variantData.data = &variantChar;
     variantData.length = 1;
-    if ((err = SSLAllocBuffer(hashContext, SSLHashMD5.contextSize, ctx)) != 0)
-    {   SSLFreeBuffer(keyData, ctx);
+    if ((err = SSLAllocBuffer(&hashContext, SSLHashMD5.contextSize, ctx)) != 0)
+    {   SSLFreeBuffer(&keyData, ctx);
         return err;
     }
 
@@ -393,14 +393,14 @@ SSL2InitCiphers(SSLContext *ctx)
     while (keyMaterialLen)
     {   hashDigest.data = charPtr;
         hashDigest.length = SSLHashMD5.digestSize;
-        if ((err = SSLHashMD5.init(hashContext, ctx)) != 0 ||
-            (err = SSLHashMD5.update(hashContext, masterKey)) != 0 ||
-            (err = SSLHashMD5.update(hashContext, variantData)) != 0 ||
-            (err = SSLHashMD5.update(hashContext, challenge)) != 0 ||
-            (err = SSLHashMD5.update(hashContext, connectionID)) != 0 ||
-            (err = SSLHashMD5.final(hashContext, hashDigest)) != 0)
-        {   SSLFreeBuffer(keyData, ctx);
-            SSLFreeBuffer(hashContext, ctx);
+        if ((err = SSLHashMD5.init(&hashContext, ctx)) != 0 ||
+            (err = SSLHashMD5.update(&hashContext, &masterKey)) != 0 ||
+            (err = SSLHashMD5.update(&hashContext, &variantData)) != 0 ||
+            (err = SSLHashMD5.update(&hashContext, &challenge)) != 0 ||
+            (err = SSLHashMD5.update(&hashContext, &connectionID)) != 0 ||
+            (err = SSLHashMD5.final(&hashContext, &hashDigest)) != 0)
+        {   SSLFreeBuffer(&keyData, ctx);
+            SSLFreeBuffer(&hashContext, ctx);
             return err;
         }
         charPtr += hashDigest.length;
@@ -410,8 +410,8 @@ SSL2InitCiphers(SSLContext *ctx)
     
     assert(charPtr == keyData.data + keyData.length);
     
-    if ((err = SSLFreeBuffer(hashContext, ctx)) != 0)
-    {   SSLFreeBuffer(keyData, ctx);
+    if ((err = SSLFreeBuffer(&hashContext, ctx)) != 0)
+    {   SSLFreeBuffer(&keyData, ctx);
         return err;
     }
     
@@ -437,7 +437,7 @@ SSL2InitCiphers(SSLContext *ctx)
                             &ctx->readPending, ctx)) != 0 ||
         (err = ctx->writePending.symCipher->initialize(writeKey, iv,
                             &ctx->writePending, ctx)) != 0)
-    {   SSLFreeBuffer(keyData, ctx);
+    {   SSLFreeBuffer(&keyData, ctx);
         return err;
     }
     
@@ -451,7 +451,7 @@ SSL2InitCiphers(SSLContext *ctx)
     memcpy(ctx->readPending.macSecret, readKey, ctx->selectedCipherSpec->cipher->keySize);
     memcpy(ctx->writePending.macSecret, writeKey, ctx->selectedCipherSpec->cipher->keySize);
     
-    if ((err = SSLFreeBuffer(keyData, ctx)) != 0)
+    if ((err = SSLFreeBuffer(&keyData, ctx)) != 0)
         return err;
     
     ctx->readCipher = ctx->readPending;

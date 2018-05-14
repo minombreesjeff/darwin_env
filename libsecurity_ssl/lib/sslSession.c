@@ -70,7 +70,7 @@ SSLAddSessionData(const SSLContext *ctx)
         cert = cert->next;
     }
     
-    if ((err = SSLAllocBuffer(sessionID, sessionIDLen, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&sessionID, sessionIDLen, ctx)) != 0)
         return err;
     
     session = (ResumableSession*)sessionID.data;
@@ -93,7 +93,7 @@ SSLAddSessionData(const SSLContext *ctx)
     }
     
     err = sslAddSession(ctx->peerID, sessionID, ctx->sessionCacheTimeout);
-    SSLFreeBuffer(sessionID, ctx);
+    SSLFreeBuffer(&sessionID, ctx);
     
     return err;
 }
@@ -140,7 +140,7 @@ SSLRetrieveSessionID(
     ResumableSession    *session;
     
     session = (ResumableSession*) sessionData.data;
-    if ((err = SSLAllocBuffer(*identifier, session->sessionIDLen, ctx)) != 0)
+    if ((err = SSLAllocBuffer(identifier, session->sessionIDLen, ctx)) != 0)
         return err;
     memcpy(identifier->data, session->sessionID, session->sessionIDLen);
     return noErr;
@@ -246,7 +246,7 @@ SSLInstallSessionFromData(const SSLBuffer sessionData, SSLContext *ctx)
         cert->next = 0;
         certLen = SSLDecodeInt(storedCertProgress, 4);
         storedCertProgress += 4;
-        if ((err = SSLAllocBuffer(cert->derCert, certLen, ctx)) != 0)
+        if ((err = SSLAllocBuffer(&cert->derCert, certLen, ctx)) != 0)
         {   
 			sslFree(cert);
             return err;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2001 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2000-2007 Apple Inc. All Rights Reserved.
  * 
  * The contents of this file constitute Original Code as defined in and are
  * subject to the Apple Public Source License Version 1.2 (the 'License').
@@ -17,13 +17,13 @@
 
 
 /*
-	File:		appleCdsa.cpp
+	File:		appleCdsa.c
 
 	Contains:	interface between SSL and CDSA
 
 	Written by:	Doug Mitchell
 
-	Copyright: (c) 1999 by Apple Computer, Inc., all rights reserved.
+	Copyright: (c) 1999-2007 Apple Inc., all rights reserved.
 
 */
 
@@ -68,7 +68,7 @@ OSStatus sslSetUpSymmKey(
 	CSSM_KEYUSE		keyUse, 		// CSSM_KEYUSE_ENCRYPT, etc.
 	CSSM_BOOL		copyKey,		// true: copy keyData   false: set by reference
 	uint8 			*keyData,
-	uint32			keyDataLen)		// in bytes
+	size_t		keyDataLen)		// in bytes
 {
 	OSStatus serr;
 	CSSM_KEYHEADER *hdr;
@@ -132,17 +132,17 @@ OSStatus sslFreeKey(
 /*
  * Standard app-level memory functions required by CDSA.
  */
-void * stAppMalloc (uint32 size, void *allocRef) {
+void * stAppMalloc (size_t size, void *allocRef) {
 	return( malloc(size) );
 }
 void stAppFree (void *mem_ptr, void *allocRef) {
 	free(mem_ptr);
  	return;
 }
-void * stAppRealloc (void *ptr, uint32 size, void *allocRef) {
+void * stAppRealloc (void *ptr, size_t size, void *allocRef) {
 	return( realloc( ptr, size ) );
 }
-void * stAppCalloc (uint32 num, uint32 size, void *allocRef) {
+void * stAppCalloc (uint32 num, size_t size, void *allocRef) {
 	return( calloc( num, size ) );
 }
 
@@ -267,11 +267,41 @@ static OSStatus sslGetKeyParts(
 	return ortn;
 }
 
+/* Return the first certificate reference from the supplied array
+ * whose data matches the given certificate, or NULL if none match.
+ */
+ static SecCertificateRef sslGetMatchingCertInArray(
+	SecCertificateRef	certRef,
+	CFArrayRef          certArray)
+{
+    CSSM_DATA certData;
+    OSStatus ortn;
+    int idx, count;
+
+    if(certRef == NULL || certArray == NULL) {
+        return NULL;
+    }
+    ortn = SecCertificateGetData(certRef, &certData);
+    if(!ortn) {
+        count = CFArrayGetCount(certArray);
+        for(idx=0; idx<count; idx++) {
+            CSSM_DATA aData = { 0, NULL };
+            SecCertificateRef aCert = (SecCertificateRef)CFArrayGetValueAtIndex(certArray, idx);
+            ortn = SecCertificateGetData(aCert, &aData);
+            if (!ortn && aData.Length == certData.Length &&
+                !memcmp(aData.Data, certData.Data, certData.Length)) {
+                return aCert;
+            }
+        }
+	}
+    return NULL;
+}
+
 #pragma mark -
 #pragma mark *** CSSM_DATA routines ***
 
 CSSM_DATA_PTR stMallocCssmData(
-	uint32 size)
+	size_t size)
 {
 	CSSM_DATA_PTR rtn = (CSSM_DATA_PTR)stAppMalloc(sizeof(CSSM_DATA), NULL);
 
@@ -311,7 +341,7 @@ void stFreeCssmData(
  */
 OSStatus stSetUpCssmData(
 	CSSM_DATA_PTR 	data,
-	uint32 			length)
+	size_t		length)
 {
 	assert(data != NULL);
 	if(data->Length == 0) {
@@ -330,16 +360,16 @@ OSStatus stSetUpCssmData(
 
 static OSStatus sslKeyToSigAlg(
 	const CSSM_KEY *cssmKey,
-	CSSM_ALGORITHMS &sigAlg)	/* RETURNED */
+	CSSM_ALGORITHMS *sigAlg)	/* RETURNED */
 	
 {
 	OSStatus ortn = noErr;
 	switch(cssmKey->KeyHeader.AlgorithmId) {
 		case CSSM_ALGID_RSA:
-			sigAlg = CSSM_ALGID_RSA;
+			*sigAlg = CSSM_ALGID_RSA;
 			break;
 		case CSSM_ALGID_DSA:
-			sigAlg = CSSM_ALGID_DSA;
+			*sigAlg = CSSM_ALGID_DSA;
 			break;
 		default:
 			ortn = errSSLBadConfiguration;
@@ -358,10 +388,10 @@ OSStatus sslRawSign(
 	SSLContext			*ctx,
 	SecKeyRef			privKeyRef,		
 	const UInt8			*plainText,
-	UInt32				plainTextLen,
+	size_t			plainTextLen,
 	UInt8				*sig,			// mallocd by caller; RETURNED
-	UInt32				sigLen,			// available
-	UInt32				*actualBytes)	// RETURNED
+	size_t			sigLen,			// available
+	size_t			*actualBytes)	// RETURNED
 {
 	CSSM_CC_HANDLE			sigHand = 0;
 	CSSM_RETURN				crtn;
@@ -390,7 +420,7 @@ OSStatus sslRawSign(
 	assert(privKey->KeyHeader.KeyClass == CSSM_KEYCLASS_PRIVATE_KEY);
 
 	CSSM_ALGORITHMS sigAlg;
-	serr = sslKeyToSigAlg(privKey, sigAlg);
+	serr = sslKeyToSigAlg(privKey, &sigAlg);
 	if(serr) {
 		return serr;
 	}
@@ -461,9 +491,9 @@ OSStatus sslRawVerify(
 	const CSSM_KEY		*pubKey,
 	CSSM_CSP_HANDLE		cspHand,
 	const UInt8			*plainText,
-	UInt32				plainTextLen,
+	size_t			plainTextLen,
 	const UInt8			*sig,
-	UInt32				sigLen)	
+	size_t			sigLen)	
 {
 	CSSM_CC_HANDLE			sigHand = 0;
 	CSSM_RETURN				crtn;
@@ -481,7 +511,7 @@ OSStatus sslRawVerify(
 	}
 	
 	CSSM_ALGORITHMS sigAlg;
-	serr = sslKeyToSigAlg(pubKey, sigAlg);
+	serr = sslKeyToSigAlg(pubKey, &sigAlg);
 	if(serr) {
 		return serr;
 	}
@@ -525,11 +555,12 @@ OSStatus sslRsaEncrypt(
 	SSLContext			*ctx,
 	const CSSM_KEY		*pubKey,
 	CSSM_CSP_HANDLE		cspHand,
+	CSSM_PADDING		padding,			// CSSM_PADDING_PKCS1, CSSM_PADDING_APPLE_SSLv2
 	const UInt8			*plainText,
-	UInt32				plainTextLen,
+	size_t				plainTextLen,
 	UInt8				*cipherText,		// mallocd by caller; RETURNED 
-	UInt32				cipherTextLen,		// available
-	UInt32				*actualBytes)		// RETURNED
+	size_t				cipherTextLen,		// available
+	size_t				*actualBytes)		// RETURNED
 {
 	CSSM_DATA 		ctextData = {0, NULL};
 	CSSM_DATA 		ptextData;
@@ -537,7 +568,7 @@ OSStatus sslRsaEncrypt(
 	CSSM_CC_HANDLE 	cryptHand = 0;
 	OSStatus		serr = errSSLInternal;
 	CSSM_RETURN		crtn;
-	uint32			bytesMoved = 0;
+	size_t			bytesMoved = 0;
 	CSSM_ACCESS_CREDENTIALS	creds;
 	
 	assert(ctx != NULL);
@@ -559,7 +590,7 @@ OSStatus sslRsaEncrypt(
 		CSSM_ALGID_RSA,
 		&creds,
 		pubKey,
-		CSSM_PADDING_PKCS1,
+		padding,
 		&cryptHand);
 	if(crtn) {
 		stPrintCdsaError("CSSM_CSP_CreateAsymmetricContext", crtn);
@@ -584,13 +615,13 @@ OSStatus sslRsaEncrypt(
 		 * in caller's buf & copy 
 		 */
 		if(bytesMoved > cipherTextLen) {
-			sslErrorLog("sslRsaEncrypt overflow; cipherTextLen %ld bytesMoved %ld\n",
+			sslErrorLog("sslRsaEncrypt overflow; cipherTextLen %lu bytesMoved %lu\n",
 				cipherTextLen, bytesMoved);
 			serr = errSSLCrypto;
 		}
 		else {
-			UInt32 toMoveCtext;
-			UInt32 toMoveRem;
+			size_t toMoveCtext;
+			size_t toMoveRem;
 			
 			*actualBytes = bytesMoved;
 			/* 
@@ -634,11 +665,12 @@ OSStatus sslRsaEncrypt(
 OSStatus sslRsaDecrypt(
 	SSLContext			*ctx,
 	SecKeyRef			privKeyRef,
+	CSSM_PADDING		padding,			// CSSM_PADDING_PKCS1, CSSM_PADDING_APPLE_SSLv2
 	const UInt8			*cipherText,
-	UInt32				cipherTextLen,		
+	size_t				cipherTextLen,		
 	UInt8				*plainText,			// mallocd by caller; RETURNED
-	UInt32				plainTextLen,		// available
-	UInt32				*actualBytes)		// RETURNED
+	size_t				plainTextLen,		// available
+	size_t				*actualBytes)		// RETURNED
 {
 	CSSM_DATA 		ptextData = {0, NULL};
 	CSSM_DATA 		ctextData;
@@ -646,9 +678,9 @@ OSStatus sslRsaDecrypt(
 	CSSM_CC_HANDLE 	cryptHand = 0;
 	OSStatus		serr = errSSLInternal;
 	CSSM_RETURN		crtn;
-	uint32			bytesMoved = 0;
-	CSSM_CSP_HANDLE			cspHand;
-	const CSSM_KEY 			*privKey;
+	size_t			bytesMoved = 0;
+	CSSM_CSP_HANDLE	cspHand;
+	const CSSM_KEY 	*privKey;
 	const CSSM_ACCESS_CREDENTIALS	*creds;
 		
 	assert(ctx != NULL);
@@ -684,7 +716,7 @@ OSStatus sslRsaDecrypt(
 		CSSM_ALGID_RSA,
 		creds,
 		privKey,
-		CSSM_PADDING_PKCS1,
+		padding,
 		&cryptHand);
 	if(crtn) {
 		stPrintCdsaError("CSSM_CSP_CreateAsymmetricContext", crtn);
@@ -720,13 +752,13 @@ OSStatus sslRsaDecrypt(
 		 * in caller's buf & copy 
 		 */
 		if(bytesMoved > plainTextLen) {
-			sslErrorLog("sslRsaDecrypt overflow; plainTextLen %ld bytesMoved %ld\n",
+			sslErrorLog("sslRsaDecrypt overflow; plainTextLen %lu bytesMoved %lu\n",
 				plainTextLen, bytesMoved);
 			serr = errSSLCrypto;
 		}
 		else {
-			UInt32 toMovePtext;
-			UInt32 toMoveRem;
+			size_t toMovePtext;
+			size_t toMoveRem;
 			
 			*actualBytes = bytesMoved;
 			/* 
@@ -770,7 +802,7 @@ OSStatus sslRsaDecrypt(
 /*
  * Obtain size of key in bytes.
  */
-UInt32 sslKeyLengthInBytes(const CSSM_KEY *key)
+uint32 sslKeyLengthInBytes(const CSSM_KEY *key)
 {
 	assert(key != NULL);
 	return (((key->KeyHeader.LogicalKeySizeInBits) + 7) / 8);
@@ -782,23 +814,23 @@ UInt32 sslKeyLengthInBytes(const CSSM_KEY *key)
  */
 OSStatus sslGetMaxSigSize(
 	const CSSM_KEY	*privKey,
-	UInt32			&maxSigSize)
+	uint32			*maxSigSize)
 {	
 	OSStatus ortn = noErr;
 	assert(privKey != NULL);
 	assert(privKey->KeyHeader.KeyClass == CSSM_KEYCLASS_PRIVATE_KEY);
 	switch(privKey->KeyHeader.AlgorithmId) {
 		case CSSM_ALGID_RSA:
-			maxSigSize = sslKeyLengthInBytes(privKey);
+			*maxSigSize = sslKeyLengthInBytes(privKey);
 			break;
 		case CSSM_ALGID_DSA:
 		{
 			/* DSA sig is DER sequence of two 160-bit integers */
-			UInt32 sizeOfOneInt;
+			uint32 sizeOfOneInt;
 			sizeOfOneInt = (160 / 8) +	// the raw contents
 							1 +			// possible leading zero
 							2;			// tag + length (assume DER, not BER)
-			maxSigSize = (2 * sizeOfOneInt) + 5;
+			*maxSigSize = (2 * sizeOfOneInt) + 5;
 			break;
 		}
 		default:
@@ -830,11 +862,11 @@ OSStatus sslGetPubKeyBits(
 	
 	hdr = &pubKey->KeyHeader;
 	if(hdr->KeyClass != CSSM_KEYCLASS_PUBLIC_KEY) {
-		sslErrorLog("sslGetPubKeyBits: bad keyClass (%ld)\n", hdr->KeyClass);
+		sslErrorLog("sslGetPubKeyBits: bad keyClass (%ld)\n", (long)hdr->KeyClass);
 		return errSSLInternal;
 	}
 	if(hdr->AlgorithmId != CSSM_ALGID_RSA) {
-		sslErrorLog("sslGetPubKeyBits: bad AlgorithmId (%ld)\n", hdr->AlgorithmId);
+		sslErrorLog("sslGetPubKeyBits: bad AlgorithmId (%ld)\n", (long)hdr->AlgorithmId);
 		return errSSLInternal;
 	}
 
@@ -855,7 +887,7 @@ OSStatus sslGetPubKeyBits(
 		case CSSM_KEYBLOB_REFERENCE:
 			
 			sslErrorLog("sslGetPubKeyBits: bad BlobType (%ld)\n", 
-				hdr->BlobType);
+				(long)hdr->BlobType);
 			return errSSLInternal;
 
 			#if 0
@@ -905,7 +937,7 @@ OSStatus sslGetPubKeyBits(
 			
 		default:
 			sslErrorLog("sslGetPubKeyBits: bad BlobType (%ld)\n", 
-				hdr->BlobType);
+				(long)hdr->BlobType);
 			return errSSLInternal;
 	
 	}	/* switch BlobType */
@@ -1017,7 +1049,7 @@ abort:
  */
 OSStatus sslPubKeyFromCert(
 	SSLContext 			*ctx,
-	const SSLBuffer		&derCert,
+	const SSLBuffer		*derCert,
 	CSSM_KEY_PTR		*pubKey,		// RETURNED
 	CSSM_CSP_HANDLE		*cspHand)		// RETURNED
 {
@@ -1040,7 +1072,7 @@ OSStatus sslPubKeyFromCert(
 	if(serr) {
 		return serr;
 	}
-	SSLBUF_TO_CSSM(&derCert, &certData);
+	SSLBUF_TO_CSSM(derCert, &certData);
 	crtn = CSSM_CL_CertGetKeyInfo(ctx->clHand, &certData, pubKey);
 	if(crtn) {
 		return errSSLBadCert;
@@ -1058,7 +1090,8 @@ static void sslReleaseArray(
 	CFArrayRef a)
 {
 	CFIndex num = CFArrayGetCount(a);
-	for(CFIndex dex=0; dex<num; dex++) {
+	CFIndex dex;
+	for(dex=0; dex<num; dex++) {
 		CFTypeRef elmt = (CFTypeRef)CFArrayGetValueAtIndex(a, dex);
 		secdebug("sslcert", "Freeing cert %p", elmt);
 		CFRelease(elmt);
@@ -1067,8 +1100,7 @@ static void sslReleaseArray(
 
 /*
  * Verify a chain of DER-encoded certs.
- * First cert in a chain is root; this must also be present
- * in ctx->trustedCerts. 
+ * Last cert in the chain is leaf.
  *
  * If arePeerCerts is true, host name verification is enabled and we
  * save the resulting SecTrustRef in ctx->peerSecTrust. Otherwise
@@ -1077,13 +1109,13 @@ static void sslReleaseArray(
  */
  OSStatus sslVerifyCertChain(
 	SSLContext				*ctx,
-	const SSLCertificate	&certChain,
-	bool					arePeerCerts /* = true */) 
+	const SSLCertificate	*certChain,
+	bool					arePeerCerts) 
 {
-	UInt32 						numCerts;
+	uint32 						numCerts;
 	int 						i;
 	OSStatus					serr;
-	SSLCertificate				*c = (SSLCertificate *)&certChain;
+	SSLCertificate				*c = (SSLCertificate *)certChain;
 	CSSM_RETURN					crtn;
 	CSSM_APPLE_TP_SSL_OPTIONS	sslOpts;
 	CSSM_APPLE_TP_ACTION_DATA	tpActionData;
@@ -1103,7 +1135,7 @@ static void sslReleaseArray(
 		ctx->peerSecTrust = NULL;
 	}
 	
-	numCerts = SSLGetCertificateChainLength(&certChain);
+	numCerts = SSLGetCertificateChainLength(certChain);
 	if(numCerts == 0) {
 		/* nope */
 		return errSSLBadCert;
@@ -1189,23 +1221,8 @@ static void sslReleaseArray(
 	}
 	
 	/* anchors - default, or ours? */
-	if(ctx->numTrustedCerts != 0) {
-		anchors = CFArrayCreateMutable(NULL, ctx->numTrustedCerts, 
-			&kCFTypeArrayCallBacks);
-		if(anchors == NULL) {
-			serr = memFullErr;
-			goto errOut;
-		}
-		for(i=0; i<(int)ctx->numTrustedCerts; i++) {
-			serr = SecCertificateCreateFromData(&ctx->trustedCerts[i],
-				CSSM_CERT_X_509v3, CSSM_CERT_ENCODING_DER, &cert);
-			if(serr) {
-				goto errOut;
-			}
-			secdebug("sslcert", "Adding cert %p", cert);
-			CFArraySetValueAtIndex(anchors, i, cert);
-		}
-		serr = SecTrustSetAnchorCertificates(theTrust, anchors);
+	if(ctx->trustedCerts != NULL) {
+		serr = SecTrustSetAnchorCertificates(theTrust, ctx->trustedCerts);
 		if(serr) {
 			sslErrorLog("***sslVerifyCertChain: SecTrustSetAnchorCertificates "
 				"rtn %d\n",	(int)serr);
@@ -1267,6 +1284,17 @@ static void sslReleaseArray(
 		goto errOut;
 	}
 	
+    /*
+     * If the caller provided a list of trusted leaf certs, check them here
+     */
+	if(ctx->trustedLeafCerts) {
+		if (sslGetMatchingCertInArray((SecCertificateRef)CFArrayGetValueAtIndex(certGroup, 0),
+			ctx->trustedLeafCerts)) {
+			serr = noErr;
+			goto errOut;
+		}
+	}
+
 	/*
 	 * Here we go; hand it over to SecTrust/TP. 
 	 */
@@ -1336,6 +1364,10 @@ static void sslReleaseArray(
 			case CSSMERR_APPLETP_HOSTNAME_MISMATCH:
 				serr = errSSLHostNameMismatch;
 				break;
+			case errSecInvalidTrustSettings:
+				/* these get passed along unmodified */
+				serr = crtn;
+				break;
 			default:
 				stPrintCdsaError("sslVerifyCertChain: SecTrustEvaluate returned", 
 						crtn);
@@ -1386,7 +1418,7 @@ void stPrintCdsaError(const char *op, CSSM_RETURN crtn)
 char *stCssmErrToStr(CSSM_RETURN err)
 {
 #if 1
-	return const_cast<char *>("error");
+	return (char *)"error";
 #else
 	string errStr = cssmErrorString(err);
 	return const_cast<char *>(errStr.c_str());
@@ -1405,34 +1437,34 @@ char *stCssmErrToStr(CSSM_RETURN err)
  */
 OSStatus sslDhGenKeyPairClient(
 	SSLContext		*ctx,
-	const SSLBuffer	&prime,
-	const SSLBuffer	&generator,
+	const SSLBuffer	*prime,
+	const SSLBuffer	*generator,
 	CSSM_KEY_PTR	publicKey,		// RETURNED
 	CSSM_KEY_PTR	privateKey)		// RETURNED
 {
-	assert((prime.data != NULL) && (generator.data != NULL));
-	if(prime.data && !generator.data) {
+	assert((prime->data != NULL) && (generator->data != NULL));
+	if(prime->data && !generator->data) {
 		return errSSLProtocol;
 	}
-	if(!prime.data && generator.data) {
+	if(!prime->data && generator->data) {
 		return errSSLProtocol;
 	}
 	
 	SSLBuffer sParam;
-	OSStatus ortn = sslEncodeDhParams(&prime, &generator, &sParam);
+	OSStatus ortn = sslEncodeDhParams(prime, generator, &sParam);
 	if(ortn) {
 		sslErrorLog("***sslDhGenerateKeyPairClient: DH param error\n");
 		return ortn;
 	}
-	ortn = sslDhGenerateKeyPair(ctx, sParam, prime.length * 8, publicKey, privateKey);
-	SSLFreeBuffer(sParam, ctx);
+	ortn = sslDhGenerateKeyPair(ctx, &sParam, prime->length * 8, publicKey, privateKey);
+	SSLFreeBuffer(&sParam, ctx);
 	return ortn;
 }
 
 OSStatus sslDhGenerateKeyPair(
 	SSLContext		*ctx,
-	const SSLBuffer	&paramBlob,
-	UInt32			keySizeInBits,
+	const SSLBuffer	*paramBlob,
+	uint32			keySizeInBits,
 	CSSM_KEY_PTR	publicKey,		// RETURNED
 	CSSM_KEY_PTR	privateKey)		// RETURNED
 {
@@ -1447,7 +1479,7 @@ OSStatus sslDhGenerateKeyPair(
 	
 	memset(publicKey, 0, sizeof(CSSM_KEY));
 	memset(privateKey, 0, sizeof(CSSM_KEY));
-	SSLBUF_TO_CSSM(&paramBlob, &cParamBlob);
+	SSLBUF_TO_CSSM(paramBlob, &cParamBlob);
 	
 	crtn = CSSM_CSP_CreateKeyGenContext(ctx->cspHand,
 		CSSM_ALGID_DH,
@@ -1600,7 +1632,7 @@ OSStatus sslVerifyNegotiatedCipher(
 			/* CSSM_ALGID_NONE, no signing key */
 			break;
 		default:
-			/* needs update per cipherSpecs.cpp */
+			/* needs update per cipherSpecs.c */
 			assert(0);
 			return errSSLInternal;
     }

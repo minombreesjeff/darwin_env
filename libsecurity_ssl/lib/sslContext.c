@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2001 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2000-2007 Apple, Inc. All Rights Reserved.
  * 
  * The contents of this file constitute Original Code as defined in and are
  * subject to the Apple Public Source License Version 1.2 (the 'License').
@@ -17,13 +17,13 @@
 
 
 /*
-	File:		sslContext.cpp
+	File:		sslContext.c
 
 	Contains:	SSLContext accessors
 
 	Written by:	Doug Mitchell
 
-	Copyright: (c) 1999 by Apple Computer, Inc., all rights reserved.
+	Copyright: (c) 1999-2007 Apple Inc., all rights reserved.
 
 */
 
@@ -39,9 +39,14 @@
 #include "cipherSpecs.h"
 #include "appleSession.h"
 #include "sslBER.h"
+#include "SecureTransportPriv.h"
 #include <string.h>
 #include <Security/SecCertificate.h>
+#include <Security/SecCertificatePriv.h>
 #include <Security/SecTrust.h>
+#include <Security/oidsalg.h>
+#include <Security/SecTrustSettingsPriv.h>
+#include <Security/oidscert.h>
 
 static void sslFreeDnList(
 	SSLContext *ctx)
@@ -51,7 +56,7 @@ static void sslFreeDnList(
     dn = ctx->acceptableDNList;
     while (dn)
     {   
-    	SSLFreeBuffer(dn->derDN, ctx);
+    	SSLFreeBuffer(&dn->derDN, ctx);
         nextDN = dn->next;
         sslFree(dn);
         dn = nextDN;
@@ -59,32 +64,10 @@ static void sslFreeDnList(
     ctx->acceptableDNList = NULL;
 }
 
-static OSStatus sslFreeTrustedRoots(
-	SSLContext *ctx)
-{
-	unsigned i;
-	
-	assert(ctx != NULL);
-	if((ctx->numTrustedCerts == 0) || (ctx->trustedCerts == NULL)) {
-		/* they really should both be zero, right? */
-		assert((ctx->numTrustedCerts == 0) && (ctx->trustedCerts == NULL));
-	}
-	else {
-		for(i=0; i<ctx->numTrustedCerts; i++) {
-			stFreeCssmData(&ctx->trustedCerts[i], CSSM_FALSE);
-		}
-		sslFree(ctx->trustedCerts);
-	}
-	ctx->numTrustedCerts = 0;
-	ctx->trustedCerts = NULL;
-	sslFreeDnList(ctx);
-	return noErr;
-}
-
 /*
  * Default version enables.
  */
-#define DEFAULT_SSL2_ENABLE		true
+#define DEFAULT_SSL2_ENABLE		false
 #define DEFAULT_SSL3_ENABLE		true
 #define DEFAULT_TLS1_ENABLE		true
 
@@ -139,7 +122,8 @@ SSLNewContext				(Boolean 			isServer,
     /* this gets init'd on first call to SSLHandshake() */
     ctx->validCipherSpecs = NULL;
     ctx->numValidCipherSpecs = 0;
-    
+    ctx->numValidNonSSLv2Specs = 0;
+
 	ctx->peerDomainName = NULL;
 	ctx->peerDomainNameLen = 0;
 
@@ -154,6 +138,9 @@ SSLNewContext				(Boolean 			isServer,
 	
 	/* Default for RSA blinding is ENABLED */
 	ctx->rsaBlindingEnable = true;
+	
+	/* default for anonymous ciphers is ENABLED */
+	ctx->anonCipherEnable = true;
 	
     *contextPtr = ctx;
     return noErr;
@@ -171,7 +158,6 @@ OSStatus
 SSLDisposeContext				(SSLContext			*ctx)
 {   
 	WaitingRecord   *wait, *next;
-    SSLBuffer       buf;
     
     if(ctx == NULL) {
     	return paramErr;
@@ -180,41 +166,38 @@ SSLDisposeContext				(SSLContext			*ctx)
     sslDeleteCertificateChain(ctx->encryptCert, ctx);
     sslDeleteCertificateChain(ctx->peerCert, ctx);
     ctx->localCert = ctx->encryptCert = ctx->peerCert = NULL;
-    SSLFreeBuffer(ctx->partialReadBuffer, ctx);
+    SSLFreeBuffer(&ctx->partialReadBuffer, ctx);
 	if(ctx->peerSecTrust) {
 		CFRelease(ctx->peerSecTrust);
 		ctx->peerSecTrust = NULL;
 	}
     wait = ctx->recordWriteQueue;
     while (wait)
-    {   SSLFreeBuffer(wait->data, ctx);
-        next = wait->next;
-        buf.data = (uint8*)wait;
-        buf.length = sizeof(WaitingRecord);
-        SSLFreeBuffer(buf, ctx);
+    {   next = wait->next;
+		sslFree(wait);
         wait = next;
     }
-    SSLFreeBuffer(ctx->sessionTicket, ctx);
+    SSLFreeBuffer(&ctx->sessionTicket, ctx);
     
 	#if APPLE_DH
-    SSLFreeBuffer(ctx->dhParamsPrime, ctx);
-    SSLFreeBuffer(ctx->dhParamsGenerator, ctx);
-    SSLFreeBuffer(ctx->dhParamsEncoded, ctx);
-    SSLFreeBuffer(ctx->dhPeerPublic, ctx);
-    SSLFreeBuffer(ctx->dhExchangePublic, ctx);
+    SSLFreeBuffer(&ctx->dhParamsPrime, ctx);
+    SSLFreeBuffer(&ctx->dhParamsGenerator, ctx);
+    SSLFreeBuffer(&ctx->dhParamsEncoded, ctx);
+    SSLFreeBuffer(&ctx->dhPeerPublic, ctx);
+    SSLFreeBuffer(&ctx->dhExchangePublic, ctx);
 	sslFreeKey(ctx->cspHand, &ctx->dhPrivate, NULL);
     #endif	/* APPLE_DH */
 	
-	CloseHash(SSLHashSHA1, ctx->shaState, ctx);
-	CloseHash(SSLHashMD5,  ctx->md5State, ctx);
+	CloseHash(&SSLHashSHA1, &ctx->shaState, ctx);
+	CloseHash(&SSLHashMD5,  &ctx->md5State, ctx);
     
-    SSLFreeBuffer(ctx->sessionID, ctx);
-    SSLFreeBuffer(ctx->peerID, ctx);
-    SSLFreeBuffer(ctx->resumableSession, ctx);
-    SSLFreeBuffer(ctx->preMasterSecret, ctx);
-    SSLFreeBuffer(ctx->partialReadBuffer, ctx);
-    SSLFreeBuffer(ctx->fragmentedMessageCache, ctx);
-    SSLFreeBuffer(ctx->receivedDataBuffer, ctx);
+    SSLFreeBuffer(&ctx->sessionID, ctx);
+    SSLFreeBuffer(&ctx->peerID, ctx);
+    SSLFreeBuffer(&ctx->resumableSession, ctx);
+    SSLFreeBuffer(&ctx->preMasterSecret, ctx);
+    SSLFreeBuffer(&ctx->partialReadBuffer, ctx);
+    SSLFreeBuffer(&ctx->fragmentedMessageCache, ctx);
+    SSLFreeBuffer(&ctx->receivedDataBuffer, ctx);
 
 	if(ctx->peerDomainName) {
 		sslFree(ctx->peerDomainName);
@@ -249,7 +232,16 @@ SSLDisposeContext				(SSLContext			*ctx)
 	if(ctx->encryptPrivKeyRef) {
 		CFRelease(ctx->encryptPrivKeyRef);
 	}
-	sslFreeTrustedRoots(ctx);
+	if(ctx->trustedCerts) {
+		CFRelease(ctx->trustedCerts);
+	}
+	if(ctx->trustedLeafCerts) {
+		CFRelease(ctx->trustedLeafCerts);
+	}
+	sslFreeDnList(ctx);
+	if(ctx->acceptableCAs) {
+		CFRelease(ctx->acceptableCAs);
+	}
 	
 	detachFromAll(ctx);
 	    
@@ -722,20 +714,26 @@ SSLGetAllowsAnyRoot(
 	return noErr;
 }
 
+/* obtain the system roots sets for this app, policy SSL */
+static OSStatus sslDefaultSystemRoots(
+	SSLContextRef ctx,
+	CFArrayRef *systemRoots)				// created and RETURNED
+	
+{
+	return SecTrustSettingsCopyQualifiedCerts(&CSSMOID_APPLE_TP_SSL,
+		ctx->peerDomainName,
+		ctx->peerDomainNameLen,
+		(ctx->protocolSide == SSL_ServerSide) ?
+			/* server verifies, client encrypts */
+			CSSM_KEYUSE_VERIFY : CSSM_KEYUSE_ENCRYPT,
+		systemRoots);
+}
+
 OSStatus 
 SSLSetTrustedRoots			(SSLContextRef 		ctx,
 							 CFArrayRef 		trustedRoots,
 							 Boolean 			replaceExisting)
 {
-	unsigned 			dex;
-	unsigned			outDex;
-	unsigned 			numIncoming;
-	uint32 				numCerts;
-	CSSM_DATA_PTR		newRoots = NULL;
-	const CSSM_DATA 	*existAnchors = NULL;
-	uint32 				numExistAnchors = 0;
-	OSStatus			ortn = noErr;
-	
 	if(ctx == NULL) {
 		return paramErr;
 	}
@@ -743,112 +741,119 @@ SSLSetTrustedRoots			(SSLContextRef 		ctx,
 		/* can't do this with an active session */
 		return badReqErr;
 	}
-	numCerts = numIncoming = CFArrayGetCount(trustedRoots);
-	sslCertDebug("SSLSetTrustedRoot  numCerts %d  replaceExist %s",
-		(int)numCerts, replaceExisting ? "true" : "false");
-	if(!replaceExisting) {
-		if(ctx->trustedCerts != NULL) {
-			/* adding to existing store */
-			existAnchors = ctx->trustedCerts;
-			numExistAnchors = ctx->numTrustedCerts;
-		}
-		else {
-			/* adding to system roots */
-			ortn = SecTrustGetCSSMAnchorCertificates(&existAnchors,
-				&numExistAnchors);
-			if(ortn) {
-				/* should never happen */
-				return ortn;
-			}
-		}
-		numCerts += numExistAnchors;
-	}
-	newRoots = (CSSM_DATA_PTR)sslMalloc(numCerts * sizeof(CSSM_DATA));
-	memset(newRoots, 0, numCerts * sizeof(CSSM_DATA));
 	
-	/* Caller's certs first */
-	for(dex=0, outDex=0; dex<numIncoming; dex++, outDex++) {
-		CSSM_DATA certData;
-		SecCertificateRef secCert = (SecCertificateRef)
-			CFArrayGetValueAtIndex(trustedRoots, dex);
-		
-		if(CFGetTypeID(secCert) != SecCertificateGetTypeID()) {
-			/* elements of trustedRoots must be SecCertificateRefs */
-			ortn = paramErr;
-			goto abort;
+	if(replaceExisting) {
+		/* trivial case - throw out the old, retain the new */
+		if(ctx->trustedCerts) {
+			CFRelease(ctx->trustedCerts);
 		}
-		ortn = SecCertificateGetData(secCert, &certData);
+		ctx->trustedCerts = trustedRoots;
+		CFRetain(trustedRoots);
+		return noErr;
+	}
+	
+	/* adding new trusted roots - to either our existing set, or the system set */
+	CFArrayRef existingRoots = NULL;
+	OSStatus ortn;
+	if(ctx->trustedCerts != NULL) {
+		/* we'll release these as we exit */
+		existingRoots = ctx->trustedCerts;
+	}
+	else {
+		/* get system set for this app, policy SSL */
+		ortn = sslDefaultSystemRoots(ctx, &existingRoots);
 		if(ortn) {
-			goto abort;
+			if(existingRoots) {
+				CFRelease(existingRoots);
+			}
+			return ortn;
 		}
-		stSetUpCssmData(&newRoots[outDex], certData.Length);
-		memmove(newRoots[outDex].Data, certData.Data, certData.Length);
 	}
 	
-	/* now existing roots - either ours, or the system's */
-	for(dex=0; dex<numExistAnchors; dex++, outDex++) {
-		stSetUpCssmData(&newRoots[outDex], existAnchors[dex].Length);
-		memmove(newRoots[outDex].Data, existAnchors[dex].Data, 
-			existAnchors[dex].Length);
-	}
-	
-	/* success - replace context values */
-	sslFreeTrustedRoots(ctx);
-	ctx->numTrustedCerts = numCerts;
+	/* Create a new root array with caller's roots first */
+	CFMutableArrayRef newRoots = CFArrayCreateMutableCopy(NULL, 0, trustedRoots);
+	CFRange existRange = { 0, CFArrayGetCount(existingRoots) };
+	CFArrayAppendArray(newRoots, existingRoots, existRange);
+	CFRelease(existingRoots);
 	ctx->trustedCerts = newRoots;
 	return noErr;
-	
-abort:
-	sslFree(newRoots);
-	return ortn;
 }
 
 OSStatus 
-SSLGetTrustedRoots			(SSLContextRef 		ctx,
+SSLCopyTrustedRoots			(SSLContextRef 		ctx,
 							 CFArrayRef 		*trustedRoots)	/* RETURNED */
 {
-	uint32	 			numCerts;
-	const CSSM_DATA 	*certs;
-	CFMutableArrayRef	certArray;
-	unsigned			dex;
-	SecCertificateRef	secCert;
-	OSStatus 			ortn;
-	
 	if(ctx == NULL) {
 		return paramErr;
 	}
 	if(ctx->trustedCerts != NULL) {
-		/* use ours */
-		certs = ctx->trustedCerts;
-		numCerts = ctx->numTrustedCerts;
+		*trustedRoots = ctx->trustedCerts;
+		CFRetain(ctx->trustedCerts);
+		return noErr;
 	}
 	else {
 		/* use default system roots */
-		OSStatus ortn = SecTrustGetCSSMAnchorCertificates(&certs,
-			&numCerts);
-		if(ortn) {
-			/* should never happen */
-			return ortn;
-		}
+		return sslDefaultSystemRoots(ctx, trustedRoots);
+	}
+}
+
+/* legacy version, caller must CFRelease each cert */
+OSStatus 
+SSLGetTrustedRoots			(SSLContextRef 		ctx,
+							 CFArrayRef 		*trustedRoots)	/* RETURNED */
+{
+	OSStatus ortn;
+
+	if((ctx == NULL) || (trustedRoots == NULL)) {
+		return paramErr;
 	}
 	
-	certArray = CFArrayCreateMutable(kCFAllocatorDefault,
-		(CFIndex)numCerts, &kCFTypeArrayCallBacks);
-	if(certArray == NULL) {
-		return memFullErr;	
+	ortn = SSLCopyTrustedRoots(ctx, trustedRoots);
+	if(ortn) {
+		return ortn;
 	}
+	/* apply the legacy bug */
+	CFIndex numCerts = CFArrayGetCount(*trustedRoots);
+	CFIndex dex;
 	for(dex=0; dex<numCerts; dex++) {
-		ortn = SecCertificateCreateFromData(&certs[dex],
-			CSSM_CERT_X_509v3,
-			CSSM_CERT_ENCODING_DER,
-			&secCert);
-		if(ortn) {
-			CFRelease(certArray);
-			return ortn;
-		}
-		CFArrayAppendValue(certArray, secCert);
+		CFRetain(CFArrayGetValueAtIndex(*trustedRoots, dex));
 	}
-	*trustedRoots = certArray;
+	return noErr;
+}
+					 
+OSStatus 
+SSLSetTrustedLeafCertificates	(SSLContextRef 		ctx,
+								 CFArrayRef 		trustedCerts)
+{
+	if(ctx == NULL) {
+		return paramErr;
+	}
+	if(sslIsSessionActive(ctx)) {
+		/* can't do this with an active session */
+		return badReqErr;
+	}
+	
+	if(ctx->trustedLeafCerts) {
+		CFRelease(ctx->trustedLeafCerts);
+	}
+	ctx->trustedLeafCerts = trustedCerts;
+	CFRetain(trustedCerts);
+	return noErr;
+}
+
+OSStatus 
+SSLCopyTrustedLeafCertificates	(SSLContextRef 		ctx,
+								 CFArrayRef 		*trustedCerts)	/* RETURNED */
+{
+	if(ctx == NULL) {
+		return paramErr;
+	}
+	if(ctx->trustedLeafCerts != NULL) {
+		*trustedCerts = ctx->trustedLeafCerts;
+		CFRetain(ctx->trustedCerts);
+		return noErr;
+	}
+	*trustedCerts = NULL;
 	return noErr;
 }
 
@@ -873,6 +878,17 @@ SSLSetClientSideAuthenticate 	(SSLContext			*ctx,
 			ctx->tryClientAuth = true;
 			break;
 	}
+	return noErr;
+}
+
+OSStatus
+SSLGetClientSideAuthenticate 	(SSLContext			*ctx,
+								 SSLAuthenticate	*auth)	/* RETURNED */
+{
+	if(ctx == NULL || auth == NULL) {
+		return paramErr;
+	}
+	*auth = ctx->clientAuth;
 	return noErr;
 }
 
@@ -990,8 +1006,8 @@ SSLSetPeerID				(SSLContext 		*ctx,
 		/* can't do this with an active session */
 		return badReqErr;
 	}
-	SSLFreeBuffer(ctx->peerID, ctx);
-	serr = SSLAllocBuffer(ctx->peerID, peerIDLen, ctx);
+	SSLFreeBuffer(&ctx->peerID, ctx);
+	serr = SSLAllocBuffer(&ctx->peerID, peerIDLen, ctx);
 	if(serr) {
 		return serr;
 	}
@@ -1035,11 +1051,18 @@ SSLAddDistinguishedName(
     DNListElem      *dn;
     OSStatus        err;
     
+	if(ctx == NULL) {
+		return paramErr;
+	}
+	if(sslIsSessionActive(ctx)) {
+		return badReqErr;
+	}
+
 	dn = (DNListElem *)sslMalloc(sizeof(DNListElem));
 	if(dn == NULL) {
 		return memFullErr;
 	}
-    if ((err = SSLAllocBuffer(dn->derDN, derDNLen, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&dn->derDN, derDNLen, ctx)) != 0)
         return err;
     memcpy(dn->derDN.data, derDN, derDNLen);
     dn->next = ctx->acceptableDNList;
@@ -1047,13 +1070,155 @@ SSLAddDistinguishedName(
     return noErr;
 }
 
+/* single-cert version of SSLSetCertificateAuthorities() */
+static OSStatus
+sslAddCA(SSLContextRef		ctx,
+		 SecCertificateRef	cert)
+{
+	OSStatus ortn;
+	CSSM_DATA_PTR subjectName = NULL;
+	
+	/* add to acceptableCAs as cert, creating array if necessary */
+	if(ctx->acceptableCAs == NULL) {
+		ctx->acceptableCAs = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+		if(ctx->acceptableCAs == NULL) {
+			return memFullErr;
+		}
+	}
+	CFArrayAppendValue(ctx->acceptableCAs, cert);
+	
+	/* then add this cert's subject name to acceptableDNList */
+	ortn = SecCertificateCopyFirstFieldValue(cert, 
+		&CSSMOID_X509V1SubjectNameStd, &subjectName);
+	if(ortn) {
+		return ortn;
+	}
+	ortn = SSLAddDistinguishedName(ctx, subjectName->Data, subjectName->Length);
+	SecCertificateReleaseFirstFieldValue(cert, 
+		&CSSMOID_X509V1SubjectNameStd, subjectName);
+	return ortn;
+}
+
+/* 
+ * Add a SecCertificateRef, or a CFArray of them, to a server's list
+ * of acceptable Certificate Authorities (CAs) to present to the client
+ * when client authentication is performed. 
+ */
+OSStatus
+SSLSetCertificateAuthorities(SSLContextRef		ctx,
+							 CFTypeRef			certificateOrArray,
+							 Boolean 			replaceExisting)
+{
+	CFTypeID itemType;
+	OSStatus ortn = noErr;
+	
+	if((ctx == NULL) || sslIsSessionActive(ctx) || 
+	   (ctx->protocolSide != SSL_ServerSide)) {
+		return paramErr;
+	}
+	if(replaceExisting) {
+		sslFreeDnList(ctx);
+		if(ctx->acceptableCAs) {
+			CFRelease(ctx->acceptableCAs);
+			ctx->acceptableCAs = NULL;
+		}
+	}
+	/* else appending */
+	
+	itemType = CFGetTypeID(certificateOrArray);
+	if(itemType == SecCertificateGetTypeID()) {
+		/* one cert */
+		ortn = sslAddCA(ctx, (SecCertificateRef)certificateOrArray);
+	}
+	else if(itemType == CFArrayGetTypeID()) {
+		CFArrayRef cfa = (CFArrayRef)certificateOrArray;
+		CFIndex numCerts = CFArrayGetCount(cfa);
+		CFIndex dex;
+		
+		/* array of certs */
+		for(dex=0; dex<numCerts; dex++) {
+			SecCertificateRef cert = (SecCertificateRef)CFArrayGetValueAtIndex(cfa, dex);
+			if(CFGetTypeID(cert) != SecCertificateGetTypeID()) {
+				return paramErr;
+			}
+			ortn = sslAddCA(ctx, cert);
+			if(ortn) {
+				break;
+			}
+		}
+	}
+	else {
+		ortn = paramErr;
+	}
+	return ortn;
+}
+
+
+/*
+ * Obtain the certificates specified in SSLSetCertificateAuthorities(),
+ * if any. Returns a NULL array if SSLSetCertificateAuthorities() has not
+ * been called. 
+ * Caller must CFRelease the returned array.
+ */
+OSStatus
+SSLCopyCertificateAuthorities(SSLContextRef		ctx,
+							  CFArrayRef		*certificates)	/* RETURNED */
+{
+	if((ctx == NULL) || (certificates == NULL)) {
+		return paramErr;
+	}
+	if(ctx->acceptableCAs == NULL) {
+		*certificates = NULL;
+		return noErr;
+	}
+	*certificates = ctx->acceptableCAs;
+	CFRetain(ctx->acceptableCAs);
+	return noErr;
+}
+							  
+							  
+/* 
+ * Obtain the list of acceptable distinguished names as provided by 
+ * a server (if the SSLCotextRef is configured as a client), or as
+ * specified by SSLSetCertificateAuthorities() (if the SSLContextRef 
+ * is configured as a server).
+  */
+OSStatus 
+SSLCopyDistinguishedNames	(SSLContextRef		ctx,
+							 CFArrayRef			*names)
+{
+	CFMutableArrayRef outArray = NULL;
+	DNListElem *dn;
+
+	if((ctx == NULL) || (names == NULL)) {
+		return paramErr;
+	}
+	if(ctx->acceptableDNList == NULL) {
+		*names = NULL;
+		return noErr;
+	}
+	outArray = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+	dn = ctx->acceptableDNList;
+	while (dn) {   
+		CFDataRef cfDn = CFDataCreate(NULL, dn->derDN.data, dn->derDN.length);
+		CFArrayAppendValue(outArray, cfDn);
+		CFRelease(cfDn);
+		dn = dn->next;
+	}
+	*names = outArray;
+	return noErr;
+}
+							  
+							  
 /*
  * Request peer certificates. Valid anytime, subsequent to
  * a handshake attempt.
+ * Common code for SSLGetPeerCertificates() and SSLCopyPeerCertificates().
  */	
-OSStatus 
-SSLGetPeerCertificates		(SSLContextRef 		ctx, 
-							 CFArrayRef			*certs)
+static OSStatus 
+sslCopyPeerCertificates		(SSLContextRef 		ctx, 
+							 CFArrayRef			*certs,
+							 Boolean			legacy)
 {
 	uint32 				numCerts;
 	CFMutableArrayRef	ca;
@@ -1100,12 +1265,31 @@ SSLGetPeerCertificates		(SSLContextRef 		ctx,
 		}
 		/* insert at head of array */
 		CFArrayInsertValueAtIndex(ca, 0, cfd);
+		if(!legacy) {
+			/* skip for legacy SSLGetPeerCertificates() */
+			CFRelease(cfd);
+		}	
 		scert = scert->next;
 	}
 	*certs = ca;
 	return noErr;
 }							 								 
    
+OSStatus 
+SSLCopyPeerCertificates		(SSLContextRef 		ctx, 
+							 CFArrayRef			*certs)
+{
+	return sslCopyPeerCertificates(ctx, certs, false);
+}
+		
+OSStatus 
+SSLGetPeerCertificates		(SSLContextRef 		ctx, 
+							 CFArrayRef			*certs)
+ {
+	 return sslCopyPeerCertificates(ctx, certs, true);
+ }
+							 
+							 
 /*
  * Specify Diffie-Hellman parameters. Optional; if we are configured to allow
  * for D-H ciphers and a D-H cipher is negotiated, and this function has not
@@ -1123,13 +1307,13 @@ OSStatus SSLSetDiffieHellmanParams(
 	if(sslIsSessionActive(ctx)) {
 		return badReqErr;
 	}
-	SSLFreeBuffer(ctx->dhParamsPrime, ctx);
-	SSLFreeBuffer(ctx->dhParamsGenerator, ctx);
-	SSLFreeBuffer(ctx->dhParamsEncoded, ctx);
+	SSLFreeBuffer(&ctx->dhParamsPrime, ctx);
+	SSLFreeBuffer(&ctx->dhParamsGenerator, ctx);
+	SSLFreeBuffer(&ctx->dhParamsEncoded, ctx);
 	
 	OSStatus ortn;
 	ortn = SSLCopyBufferFromData(dhParams, dhParamsLen,
-		ctx->dhParamsEncoded);
+		&ctx->dhParamsEncoded);
 	if(ortn) {
 		return ortn;
 	}
@@ -1294,6 +1478,43 @@ SSLGetResumableSessionInfo(
 }
 
 /*
+ * Get/set enable of anonymous ciphers. Default is enabled.
+ */
+OSStatus 
+SSLSetAllowAnonymousCiphers(
+	SSLContextRef	ctx, 
+	Boolean			enable)
+{
+	if(ctx == NULL) {
+		return paramErr;
+	}
+	if(sslIsSessionActive(ctx)) {
+		return badReqErr;
+	}
+	if(ctx->validCipherSpecs != NULL) {
+		/* SSLSetEnabledCiphers() has already been called */
+		return badReqErr;
+	}
+	ctx->anonCipherEnable = enable;
+	return noErr;
+}
+
+OSStatus 
+SSLGetAllowAnonymousCiphers(
+	SSLContextRef	ctx, 
+	Boolean			*enable)
+{
+	if((ctx == NULL) || (enable == NULL)) {
+		return paramErr;
+	}
+	if(sslIsSessionActive(ctx)) {
+		return badReqErr;
+	}
+	*enable = ctx->anonCipherEnable;
+	return noErr;
+}
+
+/*
  * Override the default session cache timeout for a cache entry created for
  * the current session.
  */
@@ -1356,8 +1577,7 @@ OSStatus SSLInternalSetSessionTicket(
 		/* extension data encoded with a 2-byte length! */
 		return paramErr;
 	}
-	SSLFreeBuffer(ctx->sessionTicket, NULL);
-	return SSLCopyBufferFromData(ticket, ticketLength, ctx->sessionTicket);
+	SSLFreeBuffer(&ctx->sessionTicket, NULL);
+	return SSLCopyBufferFromData(ticket, ticketLength, &ctx->sessionTicket);
 }
-
 

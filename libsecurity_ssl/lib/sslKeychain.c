@@ -71,7 +71,7 @@ static OSStatus secCertToSslCert(
 	if(thisSslCert == NULL) {
 		return memFullErr;
 	}
-	if(SSLAllocBuffer(thisSslCert->derCert, certData.Length, 
+	if(SSLAllocBuffer(&thisSslCert->derCert, certData.Length, 
 			ctx)) {
 		return memFullErr;
 	}

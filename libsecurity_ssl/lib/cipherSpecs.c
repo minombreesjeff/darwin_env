@@ -17,7 +17,7 @@
 
 
 /*
-	File:		cipherSpecs.cpp
+	File:		cipherSpecs.c
 
 	Contains:	SSLCipherSpec declarations
 
@@ -68,9 +68,7 @@
 #define ENABLE_DH_EPHEM_DSA		0
 #endif	/* APPLE_DH */
 
-extern "C" {
-extern const SSLSymmetricCipher SSLCipherNull;		/* in sslNullCipher.cpp */
-}
+extern const SSLSymmetricCipher SSLCipherNull;		/* in sslNullCipher.c */
 
 /*
  * The symmetric ciphers currently supported (in addition to the
@@ -88,10 +86,10 @@ static const SSLSymmetricCipher SSLCipherDES_CBC = {
      * for us */
     CSSM_ALGMODE_CBC_IV8,
 	CSSM_PADDING_NONE,
-    CDSASymmInit,
-    CDSASymmEncrypt,
-    CDSASymmDecrypt,
-    CDSASymmFinish
+    CCSymmInit,
+    CCSymmEncryptDecrypt,
+    CCSymmEncryptDecrypt,
+    CCSymmFinish
 };
 
 static const SSLSymmetricCipher SSLCipherDES40_CBC = {
@@ -103,10 +101,10 @@ static const SSLSymmetricCipher SSLCipherDES40_CBC = {
     CSSM_ALGID_DES,
     CSSM_ALGMODE_CBC_IV8,
 	CSSM_PADDING_NONE,
-    CDSASymmInit,
-    CDSASymmEncrypt,
-    CDSASymmDecrypt,
-    CDSASymmFinish
+    CCSymmInit,
+    CCSymmEncryptDecrypt,
+    CCSymmEncryptDecrypt,
+    CCSymmFinish
 };
 #endif	/* ENABLE_DES */
 
@@ -122,10 +120,10 @@ static const SSLSymmetricCipher SSLCipher3DES_CBC = {
      * for us */
     CSSM_ALGMODE_CBC_IV8,
 	CSSM_PADDING_NONE,
-    CDSASymmInit,
-    CDSASymmEncrypt,
-    CDSASymmDecrypt,
-    CDSASymmFinish
+    CCSymmInit,
+    CCSymmEncryptDecrypt,
+    CCSymmEncryptDecrypt,
+    CCSymmFinish
 };
 #endif	/* ENABLE_3DES */
 
@@ -139,10 +137,10 @@ static const SSLSymmetricCipher SSLCipherRC4_40 = {
     CSSM_ALGID_RC4,
     CSSM_ALGMODE_NONE,
 	CSSM_PADDING_NONE,
-    CDSASymmInit,
-    CDSASymmEncrypt,
-    CDSASymmDecrypt,
-    CDSASymmFinish
+    CCSymmInit,
+    CCSymmEncryptDecrypt,
+    CCSymmEncryptDecrypt,
+    CCSymmFinish
 };
 
 static const SSLSymmetricCipher SSLCipherRC4_128 = {
@@ -154,10 +152,10 @@ static const SSLSymmetricCipher SSLCipherRC4_128 = {
     CSSM_ALGID_RC4,
     CSSM_ALGMODE_NONE,
 	CSSM_PADDING_NONE,
-    CDSASymmInit,
-    CDSASymmEncrypt,
-    CDSASymmDecrypt,
-    CDSASymmFinish
+    CCSymmInit,
+    CCSymmEncryptDecrypt,
+    CCSymmEncryptDecrypt,
+    CCSymmFinish
 };
 #endif	/* ENABLE_RC4 */
 
@@ -205,10 +203,10 @@ static const SSLSymmetricCipher SSLCipherAES_128 = {
     CSSM_ALGID_AES,
     CSSM_ALGMODE_CBC_IV8,
 	CSSM_PADDING_NONE,
-    CDSASymmInit,
-    CDSASymmEncrypt,
-    CDSASymmDecrypt,
-    CDSASymmFinish
+    AESSymmInit,
+    AESSymmEncrypt,
+    AESSymmDecrypt,
+    AESSymmFinish
 };
 
 static const SSLSymmetricCipher SSLCipherAES_256 = {
@@ -375,13 +373,6 @@ static const SSLCipherSpec KnownCipherSpecs[] =
 	    	&HashHmacSHA1, 
 	    	&SSLCipherAES_128 
 	    },
-	    {   
-	    	TLS_DH_anon_WITH_AES_128_CBC_SHA, 
-	    	NotExportable, 
-	    	SSL_DH_anon, 
-	    	&HashHmacSHA1, 
-	    	&SSLCipherAES_128 
-	    },
 		{   
 	    	TLS_DHE_DSS_WITH_AES_256_CBC_SHA, 
 	    	NotExportable, 
@@ -393,13 +384,6 @@ static const SSLCipherSpec KnownCipherSpecs[] =
 	    	TLS_DHE_RSA_WITH_AES_256_CBC_SHA, 
 	    	NotExportable, 
 	    	SSL_DHE_RSA, 
-	    	&HashHmacSHA1, 
-	    	&SSLCipherAES_256 
-	    },
-	    {   
-	    	TLS_DH_anon_WITH_AES_256_CBC_SHA, 
-	    	NotExportable, 
-	    	SSL_DH_anon, 
 	    	&HashHmacSHA1, 
 	    	&SSLCipherAES_256 
 	    },
@@ -453,6 +437,20 @@ static const SSLCipherSpec KnownCipherSpecs[] =
 	
 	#endif	/* ENABLE_DH_EPHEM_DSA */
     #if ENABLE_DH_ANON
+	    {   
+	    	TLS_DH_anon_WITH_AES_128_CBC_SHA, 
+	    	NotExportable, 
+	    	SSL_DH_anon, 
+	    	&HashHmacSHA1, 
+	    	&SSLCipherAES_128 
+	    },
+	    {   
+	    	TLS_DH_anon_WITH_AES_256_CBC_SHA, 
+	    	NotExportable, 
+	    	SSL_DH_anon, 
+	    	&HashHmacSHA1, 
+	    	&SSLCipherAES_256 
+	    },
 		{
 			SSL_DH_anon_WITH_RC4_128_MD5,
 			NotExportable,
@@ -502,6 +500,26 @@ static const SSLCipherSpec KnownCipherSpecs[] =
 static const unsigned CipherSpecCount = sizeof(KnownCipherSpecs) / sizeof(SSLCipherSpec);
 
 /*
+ * Given a valid ctx->validCipherSpecs array, calculate how many of those
+ * cipherSpecs are *not* SSLv2 only, storing result in 
+ * ctx->numValidNonSSLv2Specs. ClientHello routines need this to set
+ * up outgoing cipherSpecs arrays correctly.
+ */
+static void sslSetNumNonSSLv2Specs(SSLContext *ctx)
+{
+	unsigned 		dex;
+	SSLCipherSpec	*cipherSpec;
+	
+	ctx->numValidNonSSLv2Specs = 0;
+	cipherSpec = &ctx->validCipherSpecs[0];
+	for(dex=0; dex<ctx->numValidCipherSpecs; dex++, cipherSpec++) {
+		if(!CIPHER_SUITE_IS_SSLv2(cipherSpec->cipherSpec)) {
+			ctx->numValidNonSSLv2Specs++;
+		}
+	}
+}
+
+/*
  * Build ctx->validCipherSpecs as a copy of KnownCipherSpecs, assuming that
  * validCipherSpecs is currently not valid (i.e., SSLSetEnabledCiphers() has
  * not been called).
@@ -509,6 +527,7 @@ static const unsigned CipherSpecCount = sizeof(KnownCipherSpecs) / sizeof(SSLCip
 OSStatus sslBuildCipherSpecArray(SSLContext *ctx)
 {
 	unsigned 		size;
+	unsigned		dex;
 	
 	assert(ctx != NULL);
 	assert(ctx->validCipherSpecs == NULL);
@@ -520,7 +539,34 @@ OSStatus sslBuildCipherSpecArray(SSLContext *ctx)
 		ctx->numValidCipherSpecs = 0;
 		return memFullErr;
 	}
-	memmove(ctx->validCipherSpecs, KnownCipherSpecs, size);
+	if(!ctx->anonCipherEnable) {
+		/* trim out the anonymous ciphers */
+		SSLCipherSpec *dst = ctx->validCipherSpecs;
+		const SSLCipherSpec *src = KnownCipherSpecs;
+		for(dex=0; dex<CipherSpecCount; dex++) {
+			if(src->cipher == &SSLCipherNull) {
+				/* skip this one */
+				ctx->numValidCipherSpecs--;
+				src++;
+				continue;
+			}
+			switch(src->keyExchangeMethod) {
+				case SSL_DH_anon:
+				case SSL_DH_anon_EXPORT:
+					/* skip this one */
+					ctx->numValidCipherSpecs--;
+					src++;
+					break;
+				default:
+					*dst++ = *src++;
+					break;
+			}
+		}
+	}
+	else {
+		memmove(ctx->validCipherSpecs, KnownCipherSpecs, size);
+	}
+	sslSetNumNonSSLv2Specs(ctx);
 	return noErr;
 }
 
@@ -533,7 +579,7 @@ cipherSpecsToCipherSuites(
 	UInt32				numCipherSpecs,	/* size of cipherSpecs */
 	const SSLCipherSpec	*cipherSpecs,
 	SSLCipherSuite		*ciphers,		/* RETURNED */
-	UInt32				*numCiphers)	/* IN/OUT */
+	size_t				*numCiphers)	/* IN/OUT */
 {
 	unsigned dex;
 	
@@ -559,7 +605,7 @@ cipherSpecsToCipherSuites(
  */
 OSStatus
 SSLGetNumberSupportedCiphers (SSLContextRef	ctx,
-							  UInt32		*numCiphers)
+							  size_t		*numCiphers)
 {
 	if((ctx == NULL) || (numCiphers == NULL)) {
 		return paramErr;
@@ -571,7 +617,7 @@ SSLGetNumberSupportedCiphers (SSLContextRef	ctx,
 OSStatus
 SSLGetSupportedCiphers		 (SSLContextRef		ctx,
 							  SSLCipherSuite	*ciphers,		/* RETURNED */
-							  UInt32			*numCiphers)	/* IN/OUT */
+							  size_t			*numCiphers)	/* IN/OUT */
 {
 	if((ctx == NULL) || (ciphers == NULL) || (numCiphers == NULL)) {
 		return paramErr;
@@ -591,7 +637,7 @@ SSLGetSupportedCiphers		 (SSLContextRef		ctx,
 OSStatus 
 SSLSetEnabledCiphers		(SSLContextRef			ctx,
 							 const SSLCipherSuite	*ciphers,	
-							 UInt32					numCiphers)
+							 size_t					numCiphers)
 {
 	unsigned 		size;
 	unsigned 		callerDex;
@@ -635,6 +681,7 @@ SSLSetEnabledCiphers		(SSLContextRef			ctx,
 	
 	/* success */
 	ctx->numValidCipherSpecs = numCiphers;
+	sslSetNumNonSSLv2Specs(ctx);
 	return noErr;
 }
 							 
@@ -646,7 +693,7 @@ SSLSetEnabledCiphers		(SSLContextRef			ctx,
  */
 OSStatus
 SSLGetNumberEnabledCiphers 	(SSLContextRef			ctx,
-							 UInt32					*numCiphers)
+							 size_t					*numCiphers)
 {
 	if((ctx == NULL) || (numCiphers == NULL)) {
 		return paramErr;
@@ -665,7 +712,7 @@ SSLGetNumberEnabledCiphers 	(SSLContextRef			ctx,
 OSStatus
 SSLGetEnabledCiphers		(SSLContextRef			ctx,
 							 SSLCipherSuite			*ciphers,		/* RETURNED */
-							 UInt32					*numCiphers)	/* IN/OUT */
+							 size_t					*numCiphers)	/* IN/OUT */
 {
 	if((ctx == NULL) || (ciphers == NULL) || (numCiphers == NULL)) {
 		return paramErr;

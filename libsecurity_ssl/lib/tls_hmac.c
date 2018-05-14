@@ -29,18 +29,31 @@
 #include "sslMemory.h"
 #include "cryptType.h"
 #include "sslDigests.h"
+#include "sslDebug.h"
 #include <strings.h>
 #include <assert.h>
-#include <Security/cssm.h>
+#include <CommonCrypto/CommonHMAC.h>
+#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
+
 
 /* Per-session state, opaque to callers; all fields set at alloc time */
 struct HMACContext {
 	SSLContext					*ctx;
-	CSSM_CC_HANDLE				ccHand;
+	
+	/* this one is set once with the key, and it then cloned
+	 * for each init() */
+	CCHmacContext				ccHmacTemplate;
+	
+	/* the one we actually feed data to */
+	CCHmacContext				ccHmac;
+	size_t						macSize;
+	
+	/* FIXME not sure if we need this */
 	const struct HMACReference	*hmac;
+	
 };
 
-#pragma mark *** Common CDSA_based HMAC routines ***
+#pragma mark *** CommonCryptor HMAC routines ***
 
 /* Create an HMAC session */
 static OSStatus HMAC_Alloc(
@@ -48,59 +61,35 @@ static OSStatus HMAC_Alloc(
 	SSLContext 					*ctx,
 	const void					*keyPtr,
 	unsigned					keyLen,
-	HMACContextRef				*hmacCtx)			// RETURNED
+	HMACContextRef				*hmacCtxOut)		// RETURNED
 {
-	CSSM_RETURN 	crtn;
-	CSSM_KEY		cssmKey;
-	OSStatus			serr;
-	CSSM_ALGORITHMS	calg;
-	HMACContextRef 	href = (HMACContextRef)sslMalloc(sizeof(struct HMACContext));
+	CCHmacAlgorithm	ccAlg;
 	
-	if(href == NULL) {
+	HMACContextRef hmacCtx = (HMACContextRef)sslMalloc(sizeof(struct HMACContext));
+	
+	if(hmacCtx == NULL) {
 		return memFullErr;
 	}
-	href->ctx = ctx;
-	href->ccHand = 0;
-	href->hmac = hmac;
+	hmacCtx->ctx = ctx;
+	hmacCtx->hmac = hmac;
 	
-	/*
-	 * Since the key is present in the CDSA context, we cook up the context now.
-	 * Currently we can't reuse an HMAC context if the key changes. 
-	 */
 	switch(hmac->alg) {
 		case HA_SHA1:
-			calg = CSSM_ALGID_SHA1HMAC;
+			ccAlg = kCCHmacAlgSHA1;
+			hmacCtx->macSize = CC_SHA1_DIGEST_LENGTH;
 			break;
 		case HA_MD5:
-			calg = CSSM_ALGID_MD5HMAC;
+			ccAlg = kCCHmacAlgMD5;
+			hmacCtx->macSize = CC_MD5_DIGEST_LENGTH;
 			break;
 		default:
-			assert(0);
+			ASSERT(0);
 			return errSSLInternal;
 	}
-	serr = sslSetUpSymmKey(&cssmKey,
-		calg,
-		CSSM_KEYUSE_SIGN | CSSM_KEYUSE_VERIFY,
-		CSSM_FALSE,			/* don't malloc/copy key */
-		(uint8 *)keyPtr,
-		keyLen);
-	if(serr) {
-		return serr;
-	}
-	if(attachToCsp(ctx)) {
-		return serr;
-	}
-	crtn = CSSM_CSP_CreateMacContext(ctx->cspHand,
-		calg,
-		&cssmKey,
-		&href->ccHand);
-	if(crtn) {
-		stPrintCdsaError("CSSM_CSP_CreateMacContext", crtn);
-		return errSSLCrypto;
-	}
 	
-	/* success */
-	*hmacCtx = href;
+	/* create the template from which individual record MAC-ers are cloned */
+	CCHmacInit(&hmacCtx->ccHmacTemplate, ccAlg, keyPtr, keyLen);
+	*hmacCtxOut = hmacCtx;
 	return noErr;
 }
 
@@ -109,33 +98,20 @@ static OSStatus HMAC_Free(
 	HMACContextRef	hmacCtx)
 {
 	if(hmacCtx != NULL) {
-		if(hmacCtx->ccHand != 0) {
-			CSSM_DeleteContext(hmacCtx->ccHand);
-			hmacCtx->ccHand = 0;
-		}
+		memset(hmacCtx, 0, sizeof(*hmacCtx));
 		sslFree(hmacCtx);
 	}
 	return noErr;
 }
 
-/* Reusable init */
+/* Reusable init - clone from template */
 static OSStatus HMAC_Init(
 	HMACContextRef	hmacCtx)
 {
-	CSSM_RETURN crtn;
-	
 	if(hmacCtx == NULL) {
 		return errSSLInternal;
 	}
-	assert(hmacCtx->ctx != NULL);
-	assert(hmacCtx->hmac != NULL);
-	assert(hmacCtx->ccHand != 0);
-	
-	crtn = CSSM_GenerateMacInit(hmacCtx->ccHand);
-	if(crtn) {
-		stPrintCdsaError("CSSM_GenerateMacInit", crtn);
-		return errSSLCrypto;
-	}
+	hmacCtx->ccHmac = hmacCtx->ccHmacTemplate;
 	return noErr;
 }
 
@@ -145,22 +121,7 @@ static OSStatus HMAC_Update(
 	const void		*data,
 	unsigned		dataLen)
 {
-	CSSM_RETURN crtn;
-	CSSM_DATA	cdata;
-	
-	if(hmacCtx == NULL) {
-		return errSSLInternal;
-	}
-	assert(hmacCtx->ctx != NULL);
-	assert(hmacCtx->hmac != NULL);
-	assert(hmacCtx->ccHand != 0);
-	cdata.Data = (uint8 *)data;
-	cdata.Length = dataLen;
-	crtn = CSSM_GenerateMacUpdate(hmacCtx->ccHand, &cdata, 1);
-	if(crtn) {
-		stPrintCdsaError("CSSM_GenerateMacUpdate", crtn);
-		return errSSLCrypto;
-	}
+	CCHmacUpdate(&hmacCtx->ccHmac, data, dataLen);
 	return noErr;
 }
 	
@@ -169,26 +130,11 @@ static OSStatus HMAC_Final(
 	void			*hmac,			// mallocd by caller
 	unsigned		*hmacLen)		// IN/OUT
 {
-	CSSM_RETURN crtn;
-	CSSM_DATA	cdata;
-	
-	if(hmacCtx == NULL) {
+	if(*hmacLen < hmacCtx->macSize) {
 		return errSSLInternal;
 	}
-	if((hmac == NULL) || (hmacLen == 0)) {
-		return errSSLInternal;
-	}
-	assert(hmacCtx->ctx != NULL);
-	assert(hmacCtx->hmac != NULL);
-	assert(hmacCtx->ccHand != 0);
-	cdata.Data = (uint8 *)hmac;
-	cdata.Length = *hmacLen;
-	crtn = CSSM_GenerateMacFinal(hmacCtx->ccHand, &cdata);
-	if(crtn) {
-		stPrintCdsaError("CSSM_GenerateMacFinal", crtn);
-		return errSSLCrypto;
-	}
-	*hmacLen = cdata.Length;
+	CCHmacFinal(&hmacCtx->ccHmac, hmac);
+	*hmacLen = hmacCtx->macSize;
 	return noErr;
 }
 

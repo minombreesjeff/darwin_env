@@ -17,7 +17,7 @@
 
 
 /*  *********************************************************************
-    File: sslAlertMessage.cpp - SSL3 Alert protocol
+    File: sslAlertMessage.c - SSL3 Alert protocol
     ****************************************************************** */
 
 #include "ssl.h"
@@ -37,7 +37,7 @@ static void SSLLogAlertMsg(AlertDescription msg, bool sent);
 #endif
 
 static OSStatus SSLEncodeAlert(
-	SSLRecord &rec, 
+	SSLRecord *rec, 
 	AlertLevel level, 
 	AlertDescription desc, 
 	SSLContext *ctx);
@@ -250,13 +250,13 @@ SSLSendAlert(AlertLevel level, AlertDescription desc, SSLContext *ctx)
 		/* no more alerts allowed */
 		return noErr;
 	}
-    if ((err = SSLEncodeAlert(rec, level, desc, ctx)) != 0)
+    if ((err = SSLEncodeAlert(&rec, level, desc, ctx)) != 0)
         return err;
 	assert(ctx->sslTslCalls != NULL);
 	SSLLogAlertMsg(desc, true);
     if ((err = ctx->sslTslCalls->writeRecord(rec, ctx)) != 0)
         return err;
-    if ((err = SSLFreeBuffer(rec.contents, ctx)) != 0)
+    if ((err = SSLFreeBuffer(&rec.contents, ctx)) != 0)
         return err;
     if(desc == SSL_AlertCloseNotify) {
 		/* no more alerts allowed */
@@ -266,16 +266,16 @@ SSLSendAlert(AlertLevel level, AlertDescription desc, SSLContext *ctx)
 }
 
 static OSStatus
-SSLEncodeAlert(SSLRecord &rec, AlertLevel level, AlertDescription desc, SSLContext *ctx)
+SSLEncodeAlert(SSLRecord *rec, AlertLevel level, AlertDescription desc, SSLContext *ctx)
 {   OSStatus          err;
     
-	rec.protocolVersion = ctx->negProtocolVersion;
-	rec.contentType = SSL_RecordTypeAlert;
-    rec.contents.length = 2;
-    if ((err = SSLAllocBuffer(rec.contents, 2, ctx)) != 0)
+	rec->protocolVersion = ctx->negProtocolVersion;
+	rec->contentType = SSL_RecordTypeAlert;
+    rec->contents.length = 2;
+    if ((err = SSLAllocBuffer(&rec->contents, 2, ctx)) != 0)
         return err;
-    rec.contents.data[0] = level;
-    rec.contents.data[1] = desc;
+    rec->contents.data[0] = level;
+    rec->contents.data[1] = desc;
     
     return noErr;
 }

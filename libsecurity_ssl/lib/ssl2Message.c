@@ -179,7 +179,7 @@ SSL2ProcessClientHello(SSLBuffer msg, SSLContext *ctx)
     }
     if (sessionIDLen > 0 && ctx->peerID.data != 0)
     {   /* Don't die on error; just treat it as an uncacheable session */
-        err = SSLAllocBuffer(ctx->sessionID, sessionIDLen, ctx);
+        err = SSLAllocBuffer(&ctx->sessionID, sessionIDLen, ctx);
         if (err == 0)
             memcpy(ctx->sessionID.data, charPtr, sessionIDLen);
     }
@@ -207,7 +207,7 @@ SSL2ProcessClientHello(SSLBuffer msg, SSLContext *ctx)
 #define SSL2_CHALLENGE_LEN	16
 
 OSStatus
-SSL2EncodeClientHello(SSLBuffer &msg, SSLContext *ctx)
+SSL2EncodeClientHello(SSLBuffer *msg, SSLContext *ctx)
 {   OSStatus 	err;
     UInt8 		*charPtr;
     unsigned   	i, j;
@@ -236,7 +236,7 @@ SSL2EncodeClientHello(SSLBuffer &msg, SSLContext *ctx)
     #endif
 	
     if (useSSL3Ciphers != 0)
-        totalCipherCount = ctx->numValidCipherSpecs;
+        totalCipherCount = ctx->numValidNonSSLv2Specs;
     else
         totalCipherCount = 0;
         
@@ -265,36 +265,46 @@ SSL2EncodeClientHello(SSLBuffer &msg, SSLContext *ctx)
 	 */ 
     if ((err = SSLAllocBuffer(msg, 9 + (3*totalCipherCount) + sessionIDLen + 
 			SSL2_CHALLENGE_LEN, ctx)) != 0)
-    {   SSLFreeBuffer(sessionIdentifier, ctx);
+    {   SSLFreeBuffer(&sessionIdentifier, ctx);
         return err;
     }
     
-    charPtr = msg.data;
+    charPtr = msg->data;
     *charPtr++ = SSL2_MsgClientHello;
     charPtr = SSLEncodeInt(charPtr, version, 2);
     charPtr = SSLEncodeInt(charPtr, 3*totalCipherCount, 2);
     charPtr = SSLEncodeInt(charPtr, sessionIDLen, 2);
     charPtr = SSLEncodeInt(charPtr, SSL2_CHALLENGE_LEN, 2);
     
-	/* If we can send SSL3 ciphers, encode the two-byte cipher specs into three-byte
-	 *  CipherKinds which have a leading 0.
+	/* 
+	 * If we can send SSL3 ciphers, encode the non-SSLv2 two-byte cipher specs 
+	 * into three-byte CipherKinds with a leading 0.
 	 */
-    if (useSSL3Ciphers != 0)
-        for (i = 0; i < ctx->numValidCipherSpecs; i++)
+    if (useSSL3Ciphers != 0) {
+        for (i = 0; i < ctx->numValidCipherSpecs; i++) {
+			if(CIPHER_SUITE_IS_SSLv2(ctx->validCipherSpecs[i].cipherSpec)) {
+				continue;
+			}
+			sslLogNegotiateDebug("ssl2EncodeClientHello sending spec %x", 
+				ctx->validCipherSpecs[i].cipherSpec);
             charPtr = SSLEncodeInt(charPtr, ctx->validCipherSpecs[i].cipherSpec, 3);
-    
+    	}
+	}
+
 	/* Now send those SSL2 specs for which we have implementations */
     for (i = 0; i < SSL2CipherMapCount; i++)
         for (j = 0; j < ctx->numValidCipherSpecs; j++)
-            if (ctx->validCipherSpecs[j].cipherSpec == SSL2CipherMap[i].cipherSuite)
-            {   charPtr = SSLEncodeInt(charPtr, SSL2CipherMap[i].cipherKind, 3);
+            if (ctx->validCipherSpecs[j].cipherSpec == SSL2CipherMap[i].cipherSuite) {   
+				sslLogNegotiateDebug("ssl2EncodeClientHello sending spec %x", 
+					SSL2CipherMap[i].cipherKind);		
+				charPtr = SSLEncodeInt(charPtr, SSL2CipherMap[i].cipherKind, 3);
                 break;
             }
     
     if (sessionIDLen > 0)
     {   memcpy(charPtr, sessionIdentifier.data, sessionIDLen);
         charPtr += sessionIDLen;
-        SSLFreeBuffer(sessionIdentifier, ctx);
+        SSLFreeBuffer(&sessionIdentifier, ctx);
     }
     
     randomData.data = charPtr;
@@ -317,7 +327,7 @@ SSL2EncodeClientHello(SSLBuffer &msg, SSLContext *ctx)
 	#endif
     ctx->ssl2ChallengeLength = SSL2_CHALLENGE_LEN;
     
-    assert(charPtr == msg.data + msg.length);
+    assert(charPtr == msg->data + msg->length);
     
     return noErr;
 }
@@ -327,8 +337,9 @@ SSL2ProcessClientMasterKey(SSLBuffer msg, SSLContext *ctx)
 {   OSStatus        err;
     SSL2CipherKind  cipherKind;
     SSLBuffer       secretData;
-    unsigned        clearLength, encryptedLength, keyArgLength;
-    UInt32    		secretLength, localKeyModulusLen;
+    unsigned        clearLength, keyArgLength;
+    uint32    		localKeyModulusLen;
+	size_t		secretLength, encryptedLength;
     UInt8           *charPtr;
     const CSSM_KEY	*cssmKey;
 	SecKeyRef		decryptKeyRef = NULL;
@@ -388,18 +399,35 @@ SSL2ProcessClientMasterKey(SSLBuffer msg, SSLContext *ctx)
 	}
 	
 	/* Allocate enough room to hold any decrypted value */
-    if ((err = SSLAllocBuffer(secretData, encryptedLength, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&secretData, encryptedLength, ctx)) != 0)
         return err;
     
+	/* 
+	 * Detect CSSM_PADDING_APPLE_SSLv2 if SSLv2 or TLSv1 enabled. If
+	 * that padding style is seen, that means that the client is capable of 
+	 * better than SSLv2, but it has been tricked into negotiating down
+	 * to SSLv2. It shouldn't be talking SSLv2 if both it and we are capable 
+	 * of better than that.
+	 */
+	CSSM_PADDING padding;
+	if(ctx->versionSsl3Enable || ctx->versionTls1Enable) {
+		sslLogNegotiateDebug("===SSL2ProcessClientMasterKey: detecting SSLv2 padding");
+		padding = CSSM_PADDING_APPLE_SSLv2;
+	}
+	else {
+		sslLogNegotiateDebug("===SSL2ProcessClientMasterKey: using PKCS1 padding");
+		padding = CSSM_PADDING_PKCS1;
+	}
 	err = sslRsaDecrypt(ctx,
 		decryptKeyRef,
+		padding,
 		charPtr, 
 		encryptedLength,
 		secretData.data,
 		encryptedLength,	// same length for both...? 
 		&secretLength);
 	if(err) {
-		SSLFreeBuffer(secretData, ctx);
+		SSLFreeBuffer(&secretData, ctx);
 		return err;
 	}
     
@@ -410,7 +438,7 @@ SSL2ProcessClientMasterKey(SSLBuffer msg, SSLContext *ctx)
         return errSSLProtocol;
     }
     memcpy(ctx->masterSecret + clearLength, secretData.data, secretLength);
-    if ((err = SSLFreeBuffer(secretData, ctx)) != 0)
+    if ((err = SSLFreeBuffer(&secretData, ctx)) != 0)
         return err;
     
     if (keyArgLength != ctx->selectedCipherSpec->cipher->ivSize) {
@@ -427,10 +455,11 @@ SSL2ProcessClientMasterKey(SSLBuffer msg, SSLContext *ctx)
 }
 
 OSStatus
-SSL2EncodeClientMasterKey(SSLBuffer &msg, SSLContext *ctx)
+SSL2EncodeClientMasterKey(SSLBuffer *msg, SSLContext *ctx)
 {   OSStatus            err;
     unsigned            length, i, clearLen;
-    UInt32        		outputLen, peerKeyModulusLen;
+    size_t        	outputLen;
+	uint32				peerKeyModulusLen;
     SSLBuffer           keyData;
     UInt8               *charPtr;
 	
@@ -445,7 +474,7 @@ SSL2EncodeClientMasterKey(SSLBuffer &msg, SSLContext *ctx)
     
     if ((err = SSLAllocBuffer(msg, length, ctx)) != 0)
         return err;
-    charPtr = msg.data;
+    charPtr = msg->data;
     *charPtr++ = SSL2_MsgClientMasterKey;
     for (i = 0; i < SSL2CipherMapCount; i++)
         if (ctx->selectedCipher == SSL2CipherMap[i].cipherSuite)
@@ -468,16 +497,31 @@ SSL2EncodeClientMasterKey(SSLBuffer &msg, SSLContext *ctx)
     memcpy(charPtr, ctx->masterSecret, clearLen);
     charPtr += clearLen;
     
-	/* Replace this with code to do encryption at lower level & set PKCS1 padding
-    for rollback attack */
-
 	/* 
 	 * encrypt only the secret key portion of masterSecret, starting at
 	 * clearLen bytes
 	 */
+
+	/* 
+	 * Use CSSM_PADDING_APPLE_SSLv2 if we're not running SSLv2 ONLY. This
+	 * is our way of telling an SSLv3/TLSv1 server that we wanted to negotiate
+	 * a better protocol than SSLv2 (which we're in right now) but were forced
+	 * down to SSLv2 during Hello negotiation. A server that supports better
+	 * than SSLv2 will detect this as a man-in-the-middle rollback attack. 
+	 */
+	CSSM_PADDING padding;
+	if(ctx->versionSsl3Enable || ctx->versionTls1Enable) {
+		sslLogNegotiateDebug("===SSL2EncodeClientMasterKey: using SSLv2 padding");
+		padding = CSSM_PADDING_APPLE_SSLv2;
+	}
+	else {
+		sslLogNegotiateDebug("===SSL2EncodeClientMasterKey: using PKCS1 padding");
+		padding = CSSM_PADDING_PKCS1;
+	}
 	err = sslRsaEncrypt(ctx,
 		ctx->peerPubKey,
 		ctx->peerPubKeyCsp,		// XX - maybe cspHand
+		padding,
 		ctx->masterSecret + clearLen,
 		ctx->selectedCipherSpec->cipher->keySize - clearLen,
 		charPtr, 
@@ -494,7 +538,7 @@ SSL2EncodeClientMasterKey(SSLBuffer &msg, SSLContext *ctx)
             ctx->selectedCipherSpec->cipher->ivSize);
     charPtr += ctx->selectedCipherSpec->cipher->ivSize;
     
-    assert(charPtr == msg.data + msg.length);
+    assert(charPtr == msg->data + msg->length);
     
     return noErr;
 }
@@ -513,13 +557,13 @@ SSL2ProcessClientFinished(SSLBuffer msg, SSLContext *ctx)
 }
 
 OSStatus
-SSL2EncodeClientFinished(SSLBuffer &msg, SSLContext *ctx)
+SSL2EncodeClientFinished(SSLBuffer *msg, SSLContext *ctx)
 {   OSStatus      err;
     
     if ((err = SSLAllocBuffer(msg, ctx->ssl2ConnectionIDLength+1, ctx)) != 0)
         return err;
-    msg.data[0] = SSL2_MsgClientFinished;
-    memcpy(msg.data+1, ctx->serverRandom, ctx->ssl2ConnectionIDLength);
+    msg->data[0] = SSL2_MsgClientFinished;
+    memcpy(msg->data+1, ctx->serverRandom, ctx->ssl2ConnectionIDLength);
     return noErr;
 }
 
@@ -581,7 +625,7 @@ SSL2ProcessServerHello(SSLBuffer msg, SSLContext *ctx)
 			return memFullErr;
 		}
         cert->next = 0;
-        if ((err = SSLAllocBuffer(cert->derCert, certLen, ctx)) != 0)
+        if ((err = SSLAllocBuffer(&cert->derCert, certLen, ctx)) != 0)
         {   
 			sslFree(cert);
             return err;
@@ -589,11 +633,11 @@ SSL2ProcessServerHello(SSLBuffer msg, SSLContext *ctx)
         memcpy(cert->derCert.data, charPtr, certLen);
         charPtr += certLen;
         ctx->peerCert = cert;
-    	if((err = sslVerifyCertChain(ctx, *ctx->peerCert)) != 0) {
+    	if((err = sslVerifyCertChain(ctx, ctx->peerCert, true)) != 0) {
     		return err;
     	}
         if((err = sslPubKeyFromCert(ctx, 
-        	cert->derCert, 
+        	&cert->derCert, 
         	&ctx->peerPubKey,
         	&ctx->peerPubKeyCsp)) != 0)
             return err;
@@ -635,7 +679,7 @@ SSL2ProcessServerHello(SSLBuffer msg, SSLContext *ctx)
 }
 
 OSStatus
-SSL2EncodeServerHello(SSLBuffer &msg, SSLContext *ctx)
+SSL2EncodeServerHello(SSLBuffer *msg, SSLContext *ctx)
 {   OSStatus            err;
     SSLCertificate      *cert;
     SSLBuffer           randomData;
@@ -652,7 +696,7 @@ SSL2EncodeServerHello(SSLBuffer &msg, SSLContext *ctx)
     if (ctx->sessionMatch != 0)
     {   if ((err = SSLAllocBuffer(msg, 11 + ctx->sessionID.length, ctx)) != 0)
             return err;
-        charPtr = msg.data;
+        charPtr = msg->data;
         *charPtr++ = SSL2_MsgServerHello;
         *charPtr++ = ctx->sessionMatch;
         *charPtr++ = 0;    /* cert type */
@@ -687,7 +731,7 @@ SSL2EncodeServerHello(SSLBuffer &msg, SSLContext *ctx)
         
         if ((err = SSLAllocBuffer(msg, 11 + cert->derCert.length + 3 + ctx->sessionID.length, ctx)) != 0)
             return err;
-        charPtr = msg.data;
+        charPtr = msg->data;
         *charPtr++ = SSL2_MsgServerHello;
         *charPtr++ = ctx->sessionMatch;
         *charPtr++ = SSL2_CertTypeX509; /* cert type */
@@ -714,7 +758,7 @@ SSL2EncodeServerHello(SSLBuffer &msg, SSLContext *ctx)
         charPtr += ctx->ssl2ConnectionIDLength;
     }
     
-    assert(charPtr == msg.data + msg.length);
+    assert(charPtr == msg->data + msg->length);
     return noErr;
 }
 
@@ -731,14 +775,14 @@ SSL2ProcessServerVerify(SSLBuffer msg, SSLContext *ctx)
 }
 
 OSStatus
-SSL2EncodeServerVerify(SSLBuffer &msg, SSLContext *ctx)
+SSL2EncodeServerVerify(SSLBuffer *msg, SSLContext *ctx)
 {   OSStatus      err;
     
     if ((err = SSLAllocBuffer(msg, 1 + ctx->ssl2ChallengeLength, ctx)) != 0)
         return err;
     
-    msg.data[0] = SSL2_MsgServerVerify;
-    memcpy(msg.data+1, ctx->clientRandom + SSL_CLIENT_SRVR_RAND_SIZE - 
+    msg->data[0] = SSL2_MsgServerVerify;
+    memcpy(msg->data+1, ctx->clientRandom + SSL_CLIENT_SRVR_RAND_SIZE - 
 			ctx->ssl2ChallengeLength, ctx->ssl2ChallengeLength);
     
     return noErr;
@@ -748,21 +792,21 @@ OSStatus
 SSL2ProcessServerFinished(SSLBuffer msg, SSLContext *ctx)
 {   OSStatus      err;
     
-    if ((err = SSLAllocBuffer(ctx->sessionID, msg.length, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&ctx->sessionID, msg.length, ctx)) != 0)
         return err;
     memcpy(ctx->sessionID.data, msg.data, msg.length);
     return noErr;
 }
 
 OSStatus
-SSL2EncodeServerFinished(SSLBuffer &msg, SSLContext *ctx)
+SSL2EncodeServerFinished(SSLBuffer *msg, SSLContext *ctx)
 {   OSStatus      err;
     
     if ((err = SSLAllocBuffer(msg, 1 + ctx->sessionID.length, ctx)) != 0)
         return err;
     
-    msg.data[0] = SSL2_MsgServerFinished;
-    memcpy(msg.data+1, ctx->sessionID.data, ctx->sessionID.length);
+    msg->data[0] = SSL2_MsgServerFinished;
+    memcpy(msg->data+1, ctx->sessionID.data, ctx->sessionID.length);
     
     return noErr;
 }

@@ -17,7 +17,7 @@
 
 
 /*
-	File:		ssl2Record.cpp
+	File:		ssl2Record.c
 
 	Contains:	Record encrypting/decrypting/MACing for SSL 2
 
@@ -39,27 +39,27 @@
 #include <string.h>
 
 static OSStatus SSL2DecryptRecord(
-	SSLBuffer &payload, 
+	SSLBuffer *payload, 
 	SSLContext *ctx);
 static OSStatus SSL2VerifyMAC(
-	SSLBuffer &content, 
-	UInt8 *compareMAC, 
+	SSLBuffer *content, 
+	uint8 *compareMAC, 
 	SSLContext *ctx);
 static OSStatus SSL2CalculateMAC(
-	SSLBuffer &secret, 
-	SSLBuffer &content, 
+	SSLBuffer *secret, 
+	SSLBuffer *content, 
 	UInt32 seqNo, 
-	const HashReference &hash, 
-	SSLBuffer &mac, 
+	const HashReference *hash,
+	SSLBuffer *mac,
 	SSLContext *ctx);
 
 
 OSStatus
-SSL2ReadRecord(SSLRecord &rec, SSLContext *ctx)
+SSL2ReadRecord(SSLRecord *rec, SSLContext *ctx)
 {   OSStatus        err;
-    UInt32          len, contentLen;
+	size_t			len, contentLen;
     int             padding, headerSize;
-    UInt8           *charPtr;
+    uint8           *charPtr;
     SSLBuffer       readData, cipherFragment;
     
     switch (ctx->negProtocolVersion)
@@ -78,11 +78,11 @@ SSL2ReadRecord(SSLRecord &rec, SSLContext *ctx)
     
     if (!ctx->partialReadBuffer.data || ctx->partialReadBuffer.length < 3)
     {   if (ctx->partialReadBuffer.data)
-            if ((err = SSLFreeBuffer(ctx->partialReadBuffer, ctx)) != 0)
+            if ((err = SSLFreeBuffer(&ctx->partialReadBuffer, ctx)) != 0)
             {   SSL2SendError(SSL2_ErrNoCipher, ctx);
                 return err;
             }
-        if ((err = SSLAllocBuffer(ctx->partialReadBuffer, DEFAULT_BUFFER_SIZE, ctx)) != 0)
+        if ((err = SSLAllocBuffer(&ctx->partialReadBuffer, DEFAULT_BUFFER_SIZE, ctx)) != 0)
         {   SSL2SendError(SSL2_ErrNoCipher, ctx);
             return err;
         }
@@ -103,8 +103,8 @@ SSL2ReadRecord(SSLRecord &rec, SSLContext *ctx)
         ctx->amountRead += len;
     }
     
-    rec.contentType = SSL_RecordTypeV2_0;
-    rec.protocolVersion = SSL_Version_2_0;
+    rec->contentType = SSL_RecordTypeV2_0;
+    rec->protocolVersion = SSL_Version_2_0;
     charPtr = ctx->partialReadBuffer.data;
     
     if (((*charPtr) & 0x80) != 0)       /* High bit on -> specifies 2-byte header */
@@ -134,7 +134,7 @@ SSL2ReadRecord(SSLRecord &rec, SSLContext *ctx)
     charPtr += headerSize;
     
     if (ctx->partialReadBuffer.length < headerSize + contentLen)
-    {   if ((err = SSLReallocBuffer(ctx->partialReadBuffer, 5 + contentLen, ctx)) != 0)
+    {   if ((err = SSLReallocBuffer(&ctx->partialReadBuffer, 5 + contentLen, ctx)) != 0)
             return err;
     }
     
@@ -153,7 +153,7 @@ SSL2ReadRecord(SSLRecord &rec, SSLContext *ctx)
     
     cipherFragment.data = ctx->partialReadBuffer.data + headerSize;
     cipherFragment.length = contentLen;
-    if ((err = SSL2DecryptRecord(cipherFragment, ctx)) != 0)
+    if ((err = SSL2DecryptRecord(&cipherFragment, ctx)) != 0)
         return err;
     
     cipherFragment.length -= padding;       /* Remove padding; MAC was removed 
@@ -162,9 +162,9 @@ SSL2ReadRecord(SSLRecord &rec, SSLContext *ctx)
     IncrementUInt64(&ctx->readCipher.sequenceNum);
     
 	/* Allocate a buffer to return the plaintext in and return it */
-    if ((err = SSLAllocBuffer(rec.contents, cipherFragment.length, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&rec->contents, cipherFragment.length, ctx)) != 0)
         return err;
-    memcpy(rec.contents.data, cipherFragment.data, cipherFragment.length);
+    memcpy(rec->contents.data, cipherFragment.data, cipherFragment.length);
     
     ctx->amountRead = 0;        /* We've used all the data in the cache */
     
@@ -172,26 +172,18 @@ SSL2ReadRecord(SSLRecord &rec, SSLContext *ctx)
 }
 
 OSStatus
-SSL2WriteRecord(SSLRecord &rec, SSLContext *ctx)
+SSL2WriteRecord(SSLRecord *rec, SSLContext *ctx)
 {   OSStatus        err;
     int             padding = 0, i, headerSize;
-    WaitingRecord   *out, *queue;
-    SSLBuffer       buf, content, payload, secret, mac;
-    UInt8           *charPtr;
+    WaitingRecord   *out = NULL, *queue;
+    SSLBuffer       content, payload, secret, mac;
+    uint8           *charPtr;
     UInt16          payloadSize, blockSize;
     
-    assert(rec.contents.length < 16384);
+    assert(rec->contents.length < 16384);
     
-    out = 0;
-    /* Allocate a WaitingRecord to store our ready-to-send record in */
-    if ((err = SSLAllocBuffer(buf, sizeof(WaitingRecord), ctx)) != 0)
-        return err;
-    out = (WaitingRecord*)buf.data;
-    out->next = 0;
-    out->sent = 0;
-        
     payloadSize = (UInt16) 
-		(rec.contents.length + ctx->writeCipher.macRef->hash->digestSize);
+		(rec->contents.length + ctx->writeCipher.macRef->hash->digestSize);
     blockSize = ctx->writeCipher.symCipher->blockSize;
     if (blockSize > 0)
     {   
@@ -205,10 +197,14 @@ SSL2WriteRecord(SSLRecord &rec, SSLContext *ctx)
     {   padding = 0;
         headerSize = 2;
     }
-    out->data.data = 0;
-    if ((err = SSLAllocBuffer(out->data, headerSize + payloadSize, ctx)) != 0)
-        goto fail;
-    charPtr = out->data.data;
+	
+	out = (WaitingRecord *)sslMalloc(offsetof(WaitingRecord, data) +
+		headerSize + payloadSize);
+	out->next = NULL;
+	out->sent = 0;
+	out->length = headerSize + payloadSize;
+
+    charPtr = out->data;
     
     if (headerSize == 2)
         charPtr = SSLEncodeInt(charPtr, payloadSize | 0x8000, 2);
@@ -225,21 +221,21 @@ SSL2WriteRecord(SSLRecord &rec, SSLContext *ctx)
     charPtr += mac.length;
     
     content.data = charPtr;
-    content.length = rec.contents.length + padding;
-    memcpy(charPtr, rec.contents.data, rec.contents.length);
-    charPtr += rec.contents.length;
+    content.length = rec->contents.length + padding;
+    memcpy(charPtr, rec->contents.data, rec->contents.length);
+    charPtr += rec->contents.length;
     i = padding;
     while (i--)
         *charPtr++ = padding;
 
-    assert(charPtr == out->data.data + out->data.length);
+    assert(charPtr == out->data + out->length);
     
     secret.data = ctx->writeCipher.macSecret;
     secret.length = ctx->writeCipher.symCipher->keySize;
     if (mac.length > 0)
-        if ((err = SSL2CalculateMAC(secret, content, 
+        if ((err = SSL2CalculateMAC(&secret, &content, 
 				ctx->writeCipher.sequenceNum.low,
-                *ctx->writeCipher.macRef->hash, mac, ctx)) != 0)
+                ctx->writeCipher.macRef->hash, &mac, ctx)) != 0)
             goto fail;
     
     if ((err = ctx->writeCipher.symCipher->encrypt(payload, 
@@ -268,38 +264,35 @@ fail:
 	 * Only for if we fail between when the WaitingRecord is allocated and 
 	 * when it is queued 
 	 */
-    SSLFreeBuffer(out->data, 0);
-    buf.data = (UInt8*)out;
-    buf.length = sizeof(WaitingRecord);
-    SSLFreeBuffer(buf, ctx);
+	sslFree(out);
     return err;
 }
 
 static OSStatus
-SSL2DecryptRecord(SSLBuffer &payload, SSLContext *ctx)
+SSL2DecryptRecord(SSLBuffer *payload, SSLContext *ctx)
 {   OSStatus        err;
     SSLBuffer       content;
     
     if (ctx->readCipher.symCipher->blockSize > 0)
-        if (payload.length % ctx->readCipher.symCipher->blockSize != 0)
+        if (payload->length % ctx->readCipher.symCipher->blockSize != 0)
             return errSSLProtocol;
     
 	/* Decrypt in place */
-    if ((err = ctx->readCipher.symCipher->decrypt(payload, 
-    		payload, 
+    if ((err = ctx->readCipher.symCipher->decrypt(*payload, 
+    		*payload, 
     		&ctx->readCipher, 
     		ctx)) != 0)
         return err;
     
     if (ctx->readCipher.macRef->hash->digestSize > 0)       
 		/* Optimize away MAC for null case */
-    {   content.data = payload.data + ctx->readCipher.macRef->hash->digestSize;        		/* Data is after MAC */
-        content.length = payload.length - ctx->readCipher.macRef->hash->digestSize;
-        if ((err = SSL2VerifyMAC(content, payload.data, ctx)) != 0)
+    {   content.data = payload->data + ctx->readCipher.macRef->hash->digestSize;        		/* Data is after MAC */
+        content.length = payload->length - ctx->readCipher.macRef->hash->digestSize;
+        if ((err = SSL2VerifyMAC(&content, payload->data, ctx)) != 0)
             return err;
 		/* Adjust payload to remove MAC; caller is still responsible 
 		 * for removing padding [if any] */
-        payload = content;
+        *payload = content;
     }
     
     return noErr;
@@ -308,17 +301,17 @@ SSL2DecryptRecord(SSLBuffer &payload, SSLContext *ctx)
 #define IGNORE_MAC_FAILURE	0
 
 static OSStatus
-SSL2VerifyMAC(SSLBuffer &content, UInt8 *compareMAC, SSLContext *ctx)
+SSL2VerifyMAC(SSLBuffer *content, uint8 *compareMAC, SSLContext *ctx)
 {   OSStatus    err;
-    UInt8       calculatedMAC[SSL_MAX_DIGEST_LEN];
+    uint8       calculatedMAC[SSL_MAX_DIGEST_LEN];
     SSLBuffer   secret, mac;
     
     secret.data = ctx->readCipher.macSecret;
     secret.length = ctx->readCipher.symCipher->keySize;
     mac.data = calculatedMAC;
     mac.length = ctx->readCipher.macRef->hash->digestSize;
-    if ((err = SSL2CalculateMAC(secret, content, ctx->readCipher.sequenceNum.low,
-                                *ctx->readCipher.macRef->hash, mac, ctx)) != 0)
+    if ((err = SSL2CalculateMAC(&secret, content, ctx->readCipher.sequenceNum.low,
+                                ctx->readCipher.macRef->hash, &mac, ctx)) != 0)
         return err;
     if (memcmp(mac.data, compareMAC, mac.length) != 0) {
 		#if	IGNORE_MAC_FAILURE
@@ -361,14 +354,14 @@ static void logMacData(
  */
 static OSStatus
 SSL2CalculateMAC(
-	SSLBuffer &secret, 
-	SSLBuffer &content, 
+	SSLBuffer *secret, 
+	SSLBuffer *content, 
 	UInt32 seqNo, 
-	const HashReference &hash, 
-	SSLBuffer &mac, 
+	const HashReference *hash, 
+	SSLBuffer *mac, 
 	SSLContext *ctx)
 {   OSStatus    err;
-    UInt8       sequenceNum[4];
+    uint8       sequenceNum[4];
     SSLBuffer   seqData, hashContext;
     
     SSLEncodeInt(sequenceNum, seqNo, 4);
@@ -376,24 +369,24 @@ SSL2CalculateMAC(
     seqData.length = 4;
 	
     hashContext.data = 0;
-    if ((err = ReadyHash(hash, hashContext, ctx)) != 0)
+    if ((err = ReadyHash(hash, &hashContext, ctx)) != 0)
         return err;
-    if ((err = hash.update(hashContext, secret)) != 0)
+    if ((err = hash->update(&hashContext, secret)) != 0)
         goto fail;
-    if ((err = hash.update(hashContext, content)) != 0)
+    if ((err = hash->update(&hashContext, content)) != 0)
         goto fail;
-    if ((err = hash.update(hashContext, seqData)) != 0)
+    if ((err = hash->update(&hashContext, &seqData)) != 0)
         goto fail;
-    if ((err = hash.final(hashContext, mac)) != 0)
+    if ((err = hash->final(&hashContext, mac)) != 0)
         goto fail;
 
-	logMacData("secret ", &secret);
+	logMacData("secret ", secret);
 	logMacData("seqData", &seqData);
-	logMacData("mac    ", &mac);
-    
+	logMacData("mac    ", mac);
+
     err = noErr;
 fail:
-    SSLFreeBuffer(hashContext, ctx);
+    SSLFreeBuffer(&hashContext, ctx);
     return err;
 }
 
@@ -401,7 +394,7 @@ OSStatus
 SSL2SendError(SSL2ErrorCode error, SSLContext *ctx)
 {   OSStatus        err;
     SSLRecord       rec;
-    UInt8           errorData[3];
+    uint8           errorData[3];
     
     rec.contentType = SSL_RecordTypeV2_0;
     rec.protocolVersion = SSL_Version_2_0;
@@ -410,6 +403,6 @@ SSL2SendError(SSL2ErrorCode error, SSLContext *ctx)
     errorData[0] = SSL2_MsgError;
     SSLEncodeInt(errorData + 1, error, 2);
     
-    err = SSL2WriteRecord(rec, ctx);
+    err = SSL2WriteRecord(&rec, ctx);
     return err;
 }

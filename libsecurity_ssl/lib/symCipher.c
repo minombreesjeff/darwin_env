@@ -35,10 +35,15 @@
 #include "symCipher.h"
 
 #include <Security/cssm.h>
+#include <CommonCrypto/CommonCryptor.h>
+#include <CommonCrypto/aesopt.h>		/* SPI to raw AES cipher */
+#include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
 
 #include <string.h>
 
-/* dispose of dynamically allocated resources in a CipherContext */
+/* 
+ * Dispose of dynamically allocated resources in a CipherContext, CDSA version
+ */
 static void disposeCipherCtx(
 	CipherContext *cipherCtx)
 {
@@ -67,6 +72,7 @@ OSStatus CDSASymmInit(
 	 * 		cipherCtx->symCipher.keyAlg
 	 * 		ctx->cspHand
 	 * 		key (raw key bytes)
+	 *		cipherCtx->encrypting
 	 * On successful exit:
 	 * 		Resulting CSSM_KEY_PTR --> cipherCtx->symKey
 	 * 	 	Resulting CSSM_CC_HANDLE --> cipherCtx->ccHand
@@ -200,9 +206,9 @@ OSStatus CDSASymmEncrypt(
 	CSSM_RETURN			crtn;
 	CSSM_DATA			ptextData;
 	CSSM_DATA			ctextData;
-	uint32				bytesEncrypted;
-	OSStatus				serr = errSSLInternal;
-	uint32				origLen = dest.length;
+	size_t			bytesEncrypted;
+	OSStatus			serr = errSSLInternal;
+	size_t			origLen = dest.length;
 	
 	/*
 	 * Valid on entry:
@@ -221,12 +227,12 @@ OSStatus CDSASymmEncrypt(
 		unsigned blockSize = cipherCtx->symCipher->blockSize;
 		if(blockSize) {
 			if(!IS_ALIGNED(src.length, blockSize)) {
-				sslErrorLog("CDSASymmEncrypt: unaligned ptext (len %ld bs %d)\n",
+				sslErrorLog("CDSASymmEncrypt: unaligned ptext (len %lu bs %d)\n",
 					src.length, blockSize);
 				return errSSLInternal;
 			}
 			if(!IS_ALIGNED(dest.length, blockSize)) {
-				sslErrorLog("CDSASymmEncrypt: unaligned ctext (len %ld bs %d)\n",
+				sslErrorLog("CDSASymmEncrypt: unaligned ctext (len %lu bs %d)\n",
 					dest.length, blockSize);
 				return errSSLInternal;
 			}
@@ -255,7 +261,7 @@ OSStatus CDSASymmEncrypt(
 	if(bytesEncrypted > origLen) {
 		/* should never happen, callers always give us block-aligned
 		 * plaintext and CSP padding is disabled. */
-		sslErrorLog("Symmetric encrypt overflow: bytesEncrypted %ld destLen %ld\n",
+		sslErrorLog("Symmetric encrypt overflow: bytesEncrypted %lu destLen %lu\n",
 			bytesEncrypted, dest.length);
 		serr = errSSLCrypto;
 		goto errOut;
@@ -277,9 +283,9 @@ OSStatus CDSASymmDecrypt(
 	CSSM_RETURN			crtn;
 	CSSM_DATA			ptextData = {0, NULL};
 	CSSM_DATA			ctextData;
-	uint32				bytesDecrypted;
-	OSStatus				serr = errSSLInternal;
-	uint32				origLen = dest.length;
+	size_t			bytesDecrypted;
+	OSStatus			serr = errSSLInternal;
+	size_t			origLen = dest.length;
 	
 	/*
 	 * Valid on entry:
@@ -300,12 +306,12 @@ OSStatus CDSASymmDecrypt(
 		unsigned blockSize = cipherCtx->symCipher->blockSize;
 		if(blockSize) {
 			if(!IS_ALIGNED(src.length, blockSize)) {
-				sslErrorLog("CDSASymmDecrypt: unaligned ctext (len %ld bs %d)\n",
+				sslErrorLog("CDSASymmDecrypt: unaligned ctext (len %lu bs %d)\n",
 					src.length, blockSize);
 				return errSSLInternal;
 			}
 			if(!IS_ALIGNED(dest.length, blockSize)) {
-				sslErrorLog("CDSASymmDecrypt: unaligned ptext (len %ld bs %d)\n",
+				sslErrorLog("CDSASymmDecrypt: unaligned ptext (len %lu bs %d)\n",
 					dest.length, blockSize);
 				return errSSLInternal;
 			}
@@ -329,7 +335,7 @@ OSStatus CDSASymmDecrypt(
 	
 	if(bytesDecrypted > origLen) {
 		/* FIXME - can this happen? Should we remalloc? */
-		sslErrorLog("Symmetric decrypt overflow: bytesDecrypted %ld destLen %ld\n",
+		sslErrorLog("Symmetric decrypt overflow: bytesDecrypted %lu destLen %lu\n",
 			bytesDecrypted, dest.length);
 		serr = errSSLCrypto;
 		goto errOut;
@@ -350,3 +356,168 @@ OSStatus CDSASymmFinish(
 	return noErr;
 }
 
+/*
+ * CommonCrypto-based symmetric cipher callouts
+ */
+OSStatus CCSymmInit(
+	uint8 *key, 
+	uint8* iv, 
+	CipherContext *cipherCtx, 
+	SSLContext *ctx)
+{
+	/*
+	 * Cook up a CCCryptorRef. Assumes:
+	 * 		cipherCtx->symCipher.keyAlg
+	 *		cipherCtx->encrypting
+	 * 		key (raw key bytes)
+	 *		iv (raw bytes)
+	 * On successful exit:
+	 * 		Resulting CCCryptorRef --> cipherCtx->cc.cryptorRef
+	 */
+	CCAlgorithm ccAlg;
+	CCCryptorStatus ccrtn;
+	CCOperation op = cipherCtx->encrypting ? kCCEncrypt : kCCDecrypt;
+	
+	if(cipherCtx->cc.cryptorRef) {
+		CCCryptorRelease(cipherCtx->cc.cryptorRef);
+		cipherCtx->cc.cryptorRef = NULL;
+	}
+	
+	switch(cipherCtx->symCipher->keyAlg) {
+		case CSSM_ALGID_DES:
+			ccAlg = kCCAlgorithmDES;
+			break;
+		case CSSM_ALGID_3DES_3KEY:
+			ccAlg = kCCAlgorithm3DES;
+			break;
+		case CSSM_ALGID_RC4:
+			ccAlg = kCCAlgorithmRC4;
+			break;
+		default:
+			ASSERT(0);
+			return internalComponentErr;
+	}
+	
+	ccrtn = CCCryptorCreate(op, ccAlg, 
+		0,		/* options - no padding, default CBC */
+		key, cipherCtx->symCipher->keySize,
+		iv,
+		&cipherCtx->cc.cryptorRef);
+	if(ccrtn) {
+		sslErrorLog("CCCryptorCreate returned %d\n", (int)ccrtn);
+		return internalComponentErr;
+	}
+	return noErr;
+}
+
+/* same for en/decrypt */
+OSStatus CCSymmEncryptDecrypt(
+	SSLBuffer src, 
+	SSLBuffer dest, 
+	CipherContext *cipherCtx, 
+	SSLContext *ctx)
+{
+	size_t outLen = dest.length;
+	CCCryptorStatus ccrtn;
+	
+	ASSERT(cipherCtx != NULL);
+	ASSERT(cipherCtx->cc.cryptorRef != NULL);
+	if(cipherCtx->cc.cryptorRef == NULL) {
+		sslErrorLog("CCSymmEncryptDecrypt: NULL cryptorRef\n");
+		return internalComponentErr;
+	}
+	ccrtn = CCCryptorUpdate(cipherCtx->cc.cryptorRef, src.data, dest.length,
+		dest.data, outLen, &outLen);
+	#if SSL_DEBUG
+	if(ccrtn) {
+		sslErrorLog("CCSymmEncryptDecrypt: returned %d\n", (int)ccrtn);
+		return internalComponentErr;
+	}
+	#endif
+	dest.length = outLen;
+	return noErr;
+}
+
+OSStatus CCSymmFinish(
+	CipherContext *cipherCtx, 
+	SSLContext *ctx)
+{
+	if(cipherCtx->cc.cryptorRef) {
+		CCCryptorRelease(cipherCtx->cc.cryptorRef);
+		cipherCtx->cc.cryptorRef = NULL;
+	}
+	return noErr;
+}
+
+/*
+ * Super-optimized AES-128 cipher, bypassing even the thin CommonCryptor
+ * layer. 
+ */
+OSStatus AESSymmInit(
+	uint8 *key, 
+	uint8* iv, 
+	CipherContext *cipherCtx, 
+	SSLContext *ctx)
+{
+	aes_cc_ctx *aesCtx;
+	int encrypting = cipherCtx->encrypting;
+	
+	/*
+	 * Cook up an AES context.
+	 */
+	if(cipherCtx->cc.aes == NULL) {
+		/* just zero it, we'll reuse */
+		cipherCtx->cc.aes = sslMalloc(sizeof(aes_cc_ctx));
+	}
+	/* else reuse existing context */
+	aesCtx = (aes_cc_ctx *)cipherCtx->cc.aes;
+	
+	aes_cc_set_key(aesCtx, key, cipherCtx->symCipher->keySize, encrypting);
+	aes_cc_set_iv(aesCtx, encrypting, iv);
+	return noErr;
+}
+
+OSStatus AESSymmEncrypt(
+	SSLBuffer src, 
+	SSLBuffer dest, 
+	CipherContext *cipherCtx, 
+	SSLContext *ctx)
+{
+	aes_cc_ctx *aesCtx = (aes_cc_ctx *)cipherCtx->cc.aes;
+	
+	ASSERT(aesCtx != NULL);
+
+	aes_encrypt_cbc((const unsigned char *)src.data, NULL, 
+		src.length / kCCBlockSizeAES128,
+		(unsigned char *)dest.data, &aesCtx->encrypt);
+	dest.length = kCCBlockSizeAES128;
+	return noErr;
+}
+
+OSStatus AESSymmDecrypt(
+	SSLBuffer src, 
+	SSLBuffer dest, 
+	CipherContext *cipherCtx, 
+	SSLContext *ctx)
+{
+	aes_cc_ctx *aesCtx = (aes_cc_ctx *)cipherCtx->cc.aes;
+	
+	ASSERT(aesCtx != NULL);
+
+	aes_decrypt_cbc((const unsigned char *)src.data, NULL,
+		src.length / kCCBlockSizeAES128,
+		(unsigned char *)dest.data, &aesCtx->decrypt);
+	dest.length = kCCBlockSizeAES128;
+	return noErr;
+}
+
+OSStatus AESSymmFinish(
+	CipherContext *cipherCtx, 
+	SSLContext *ctx)
+{
+	if(cipherCtx->cc.aes) {
+		sslFree(cipherCtx->cc.aes);
+		cipherCtx->cc.aes = NULL;
+	}
+	return noErr;
+}

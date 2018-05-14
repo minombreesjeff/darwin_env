@@ -17,7 +17,7 @@
 
 
 /*
-	File:		sslChangeCipher.cpp
+	File:		sslChangeCipher.c
 
 	Contains:	support for change cipher spec messages
 
@@ -38,20 +38,20 @@
 #include <string.h>
 
 OSStatus
-SSLEncodeChangeCipherSpec(SSLRecord &rec, SSLContext *ctx)
+SSLEncodeChangeCipherSpec(SSLRecord *rec, SSLContext *ctx)
 {   OSStatus          err;
     
     assert(ctx->writePending.ready);
     
     sslLogNegotiateDebug("===Sending changeCipherSpec msg");
-    rec.contentType = SSL_RecordTypeChangeCipher;
+    rec->contentType = SSL_RecordTypeChangeCipher;
 	assert((ctx->negProtocolVersion == SSL_Version_3_0) ||
 		   (ctx->negProtocolVersion == TLS_Version_1_0));
-    rec.protocolVersion = ctx->negProtocolVersion;
-    rec.contents.length = 1;
-    if ((err = SSLAllocBuffer(rec.contents, 1, ctx)) != 0)
+    rec->protocolVersion = ctx->negProtocolVersion;
+    rec->contents.length = 1;
+    if ((err = SSLAllocBuffer(&rec->contents, 1, ctx)) != 0)
         return err;
-    rec.contents.data[0] = 1;
+    rec->contents.data[0] = 1;
     
     return noErr;
 }
@@ -118,12 +118,12 @@ OSStatus
 SSLDisposeCipherSuite(CipherContext *cipher, SSLContext *ctx)
 {   OSStatus      err;
     
-	/* symmetric key */
-    if (cipher->symKey)
-    {   if ((err = cipher->symCipher->finish(cipher, ctx)) != 0)
-            return err;
-        cipher->symKey = 0;
-    }
+	/* symmetric encryption context */
+	if(cipher->symCipher) {
+		if ((err = cipher->symCipher->finish(cipher, ctx)) != 0) {
+			return err;
+		}
+	}
     
 	/* per-record hash/hmac context */
 	ctx->sslTslCalls->freeMac(cipher);

@@ -320,7 +320,7 @@ static OSStatus tls1DecryptRecord(
 	/* Verify MAC on payload */
     if (ctx->readCipher.macRef->hash->digestSize > 0)       
 		/* Optimize away MAC for null case */
-        if ((err = SSLVerifyMac(type, content, 
+        if ((err = SSLVerifyMac(type, &content, 
 				payload->data + content.length, ctx)) != 0)
         {   SSLFatalSessionAlert(SSL_AlertBadRecordMac, ctx);
             return errSSLBadRecordMac;
@@ -624,13 +624,13 @@ OSStatus tls1ComputeFinishedMac (
 	/* concatenate two digest results */
 	digBuf.data = digests;
 	digBuf.length = SSL_MD5_DIGEST_LEN;
-	serr = SSLHashMD5.final(md5MsgState, digBuf);
+	serr = SSLHashMD5.final(&md5MsgState, &digBuf);
 	if(serr) {
 		return serr;
 	}
 	digBuf.data += SSL_MD5_DIGEST_LEN;
 	digBuf.length = SSL_SHA1_DIGEST_LEN;
-	serr = SSLHashSHA1.final(shaMsgState, digBuf);
+	serr = SSLHashSHA1.final(&shaMsgState, &digBuf);
 	if(serr) {
 		return serr;
 	}
@@ -665,13 +665,13 @@ OSStatus tls1ComputeCertVfyMac (
 	assert(finished.length == (SSL_MD5_DIGEST_LEN + SSL_SHA1_DIGEST_LEN));
 	digBuf.data = finished.data;
 	digBuf.length = SSL_MD5_DIGEST_LEN;
-	serr = SSLHashMD5.final(md5MsgState, digBuf);
+	serr = SSLHashMD5.final(&md5MsgState, &digBuf);
 	if(serr) {
 		return serr;
 	}
 	digBuf.data = finished.data + SSL_MD5_DIGEST_LEN;
 	digBuf.length = SSL_SHA1_DIGEST_LEN;
-	return SSLHashSHA1.final(shaMsgState, digBuf);
+	return SSLHashSHA1.final(&shaMsgState, &digBuf);
 }
 
 const SslTlsCallouts Tls1Callouts = {

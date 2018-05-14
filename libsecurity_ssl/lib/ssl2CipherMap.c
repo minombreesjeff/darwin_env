@@ -17,7 +17,7 @@
 
 
 /*************************************************************************
-  File: ssl2CipherMap.cpp    Maps SSL 2 cipher kinds to SSL 3 cipher suites
+  File: ssl2CipherMap.c    Maps SSL 2 cipher kinds to SSL 3 cipher suites
  *************************************************************************/
 
 #include "sslContext.h"

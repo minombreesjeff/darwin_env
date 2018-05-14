@@ -42,7 +42,7 @@
 #include <stdlib.h>
 
 void *
-sslMalloc(UInt32 length)
+sslMalloc(size_t length)
 {   
 	return malloc(length);
 }
@@ -56,7 +56,7 @@ sslFree(void *p)
 }
 
 void *
-sslRealloc(void *oldPtr, UInt32 oldLen, UInt32 newLen)
+sslRealloc(void *oldPtr, size_t oldLen, size_t newLen)
 {   
 	return realloc(oldPtr, newLen);
 }
@@ -64,41 +64,41 @@ sslRealloc(void *oldPtr, UInt32 oldLen, UInt32 newLen)
 #pragma mark *** SSLBuffer-level alloc/free ***
 
 OSStatus SSLAllocBuffer(
-	SSLBuffer &buf, 
-	UInt32 length, 
+	SSLBuffer *buf, 
+	size_t length, 
 	const SSLContext *ctx)			// currently unused
 {   
-	buf.data = (UInt8 *)sslMalloc(length);
-	if(buf.data == NULL) {
-		buf.length = 0;
+	buf->data = (UInt8 *)sslMalloc(length);
+	if(buf->data == NULL) {
+		buf->length = 0;
 		return memFullErr;
 	}
-    buf.length = length;
+    buf->length = length;
     return noErr;
 }
 
 OSStatus
-SSLFreeBuffer(SSLBuffer &buf, const SSLContext *ctx)
+SSLFreeBuffer(SSLBuffer *buf, const SSLContext *ctx)
 {   
-	if(&buf == NULL) {
+	if(buf == NULL) {
 		sslErrorLog("SSLFreeBuffer: NULL buf!\n");
 		return errSSLInternal;
 	}
-    sslFree(buf.data);
-    buf.data = NULL;
-    buf.length = 0;
+    sslFree(buf->data);
+    buf->data = NULL;
+    buf->length = 0;
     return noErr;
 }
 
 OSStatus
-SSLReallocBuffer(SSLBuffer &buf, UInt32 newSize, const SSLContext *ctx)
+SSLReallocBuffer(SSLBuffer *buf, size_t newSize, const SSLContext *ctx)
 {   
-	buf.data = (UInt8 *)sslRealloc(buf.data, buf.length, newSize);
-	if(buf.data == NULL) {
-		buf.length = 0;
+	buf->data = (UInt8 *)sslRealloc(buf->data, buf->length, newSize);
+	if(buf->data == NULL) {
+		buf->length = 0;
 		return memFullErr;
 	}
-	buf.length = newSize;
+	buf->length = newSize;
 	return noErr;
 }
 
@@ -106,7 +106,7 @@ SSLReallocBuffer(SSLBuffer &buf, UInt32 newSize, const SSLContext *ctx)
 
 UInt8 *sslAllocCopy(
 	const UInt8 *src,
-	UInt32 len)
+	size_t len)
 {
 	UInt8 *dst;
 	
@@ -119,7 +119,7 @@ UInt8 *sslAllocCopy(
 } 
 
 OSStatus SSLAllocCopyBuffer(
-	const SSLBuffer &src, 
+	const SSLBuffer *src, 
 	SSLBuffer **dst)		// buffer and data mallocd and returned 
 {   
 	OSStatus serr;
@@ -128,7 +128,7 @@ OSStatus SSLAllocCopyBuffer(
 	if(rtn == NULL) {
 		return memFullErr;
 	}
-	serr = SSLCopyBuffer(src, *rtn);
+	serr = SSLCopyBuffer(src, rtn);
 	if(serr) {
 		sslFree(rtn);
 	}
@@ -140,21 +140,21 @@ OSStatus SSLAllocCopyBuffer(
 
 OSStatus SSLCopyBufferFromData(
 	const void *src,
-	UInt32 len,
-	SSLBuffer &dst)		// data mallocd and returned 
+	size_t len,
+	SSLBuffer *dst)		// data mallocd and returned 
 {   
-	dst.data = sslAllocCopy((const UInt8 *)src, len);
-	if(dst.data == NULL) {
+	dst->data = sslAllocCopy((const UInt8 *)src, len);
+	if(dst->data == NULL) {
 		return memFullErr;
 	}
-    dst.length = len;
+    dst->length = len;
     return noErr;
 }
 
 OSStatus SSLCopyBuffer(
-	const SSLBuffer &src, 
-	SSLBuffer &dst)		// data mallocd and returned 
+	const SSLBuffer *src, 
+	SSLBuffer *dst)		// data mallocd and returned 
 {   
-	return SSLCopyBufferFromData(src.data, src.length, dst);
+	return SSLCopyBufferFromData(src->data, src->length, dst);
 }
 

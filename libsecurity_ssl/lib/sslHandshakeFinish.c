@@ -38,7 +38,7 @@
 #include <assert.h>
 
 OSStatus
-SSLEncodeFinishedMessage(SSLRecord &finished, SSLContext *ctx)
+SSLEncodeFinishedMessage(SSLRecord *finished, SSLContext *ctx)
 {   OSStatus        err;
     SSLBuffer       finishedMsg, shaMsgState, md5MsgState;
     Boolean         isServerMsg;
@@ -50,32 +50,32 @@ SSLEncodeFinishedMessage(SSLRecord &finished, SSLContext *ctx)
 	/* size and version depend on negotiatedProtocol */
 	switch(ctx->negProtocolVersion) {
 		case SSL_Version_3_0:
-			finished.protocolVersion = SSL_Version_3_0;
+			finished->protocolVersion = SSL_Version_3_0;
 			finishedSize = 36;
 			break;
 		case TLS_Version_1_0:
-			finished.protocolVersion = TLS_Version_1_0;
+			finished->protocolVersion = TLS_Version_1_0;
 			finishedSize = 12;
 			break;
 		default:
 			assert(0);
 			return errSSLInternal;
 	}
-    finished.contentType = SSL_RecordTypeHandshake;
+    finished->contentType = SSL_RecordTypeHandshake;
 	/* msg = type + 3 bytes len + finishedSize */
-    if ((err = SSLAllocBuffer(finished.contents, finishedSize + 4, 
+    if ((err = SSLAllocBuffer(&finished->contents, finishedSize + 4, 
 			ctx)) != 0)
         return err;
     
-    finished.contents.data[0] = SSL_HdskFinished;
-    SSLEncodeInt(finished.contents.data + 1, finishedSize, 3);
+    finished->contents.data[0] = SSL_HdskFinished;
+    SSLEncodeInt(finished->contents.data + 1, finishedSize, 3);
     
-    finishedMsg.data = finished.contents.data + 4;
+    finishedMsg.data = finished->contents.data + 4;
     finishedMsg.length = finishedSize;
     
-    if ((err = CloneHashState(SSLHashSHA1, ctx->shaState, shaMsgState, ctx)) != 0)
+    if ((err = CloneHashState(&SSLHashSHA1, &ctx->shaState, &shaMsgState, ctx)) != 0)
         goto fail;
-    if ((err = CloneHashState(SSLHashMD5, ctx->md5State, md5MsgState, ctx)) != 0)
+    if ((err = CloneHashState(&SSLHashMD5, &ctx->md5State, &md5MsgState, ctx)) != 0)
         goto fail;
     isServerMsg = (ctx->protocolSide == SSL_ServerSide) ? true : false;
     if ((err = ctx->sslTslCalls->computeFinishedMac(ctx, finishedMsg, 
@@ -83,8 +83,8 @@ SSLEncodeFinishedMessage(SSLRecord &finished, SSLContext *ctx)
         goto fail;  
     
 fail:
-    SSLFreeBuffer(shaMsgState, ctx);
-    SSLFreeBuffer(md5MsgState, ctx);
+    SSLFreeBuffer(&shaMsgState, ctx);
+    SSLFreeBuffer(&md5MsgState, ctx);
     return err;
 }
 
@@ -111,13 +111,13 @@ SSLProcessFinished(SSLBuffer message, SSLContext *ctx)
         return errSSLProtocol;
     }
     expectedFinished.data = 0;
-    if ((err = SSLAllocBuffer(expectedFinished, finishedSize, ctx)) != 0)
+    if ((err = SSLAllocBuffer(&expectedFinished, finishedSize, ctx)) != 0)
         return err;
     shaMsgState.data = 0;
-    if ((err = CloneHashState(SSLHashSHA1, ctx->shaState, shaMsgState, ctx)) != 0)
+    if ((err = CloneHashState(&SSLHashSHA1, &ctx->shaState, &shaMsgState, ctx)) != 0)
         goto fail;
     md5MsgState.data = 0;
-    if ((err = CloneHashState(SSLHashMD5, ctx->md5State, md5MsgState, ctx)) != 0)
+    if ((err = CloneHashState(&SSLHashMD5, &ctx->md5State, &md5MsgState, ctx)) != 0)
         goto fail;
     isServerMsg = (ctx->protocolSide == SSL_ServerSide) ? false : true;
     if ((err = ctx->sslTslCalls->computeFinishedMac(ctx, expectedFinished, 
@@ -132,24 +132,24 @@ SSLProcessFinished(SSLBuffer message, SSLContext *ctx)
     }
     
 fail:
-    SSLFreeBuffer(expectedFinished, ctx);
-    SSLFreeBuffer(shaMsgState, ctx);
-    SSLFreeBuffer(md5MsgState, ctx);
+    SSLFreeBuffer(&expectedFinished, ctx);
+    SSLFreeBuffer(&shaMsgState, ctx);
+    SSLFreeBuffer(&md5MsgState, ctx);
     return err;
 }
 
 OSStatus
-SSLEncodeServerHelloDone(SSLRecord &helloDone, SSLContext *ctx)
+SSLEncodeServerHelloDone(SSLRecord *helloDone, SSLContext *ctx)
 {   OSStatus          err;
     
-    helloDone.contentType = SSL_RecordTypeHandshake;
+    helloDone->contentType = SSL_RecordTypeHandshake;
 	assert((ctx->negProtocolVersion == SSL_Version_3_0) ||
 		   (ctx->negProtocolVersion == TLS_Version_1_0));
-    helloDone.protocolVersion = ctx->negProtocolVersion;
-    if ((err = SSLAllocBuffer(helloDone.contents, 4, ctx)) != 0)
+    helloDone->protocolVersion = ctx->negProtocolVersion;
+    if ((err = SSLAllocBuffer(&helloDone->contents, 4, ctx)) != 0)
         return err;
-    helloDone.contents.data[0] = SSL_HdskServerHelloDone;
-    SSLEncodeInt(helloDone.contents.data+1, 0, 3);     /* Message has 0 length */
+    helloDone->contents.data[0] = SSL_HdskServerHelloDone;
+    SSLEncodeInt(helloDone->contents.data+1, 0, 3);     /* Message has 0 length */
     return noErr;
 }
 

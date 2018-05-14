@@ -17,7 +17,7 @@
 
 
 /*
-	File:		sslCert.cpp
+	File:		sslCert.c
 
 	Contains:	certificate request/verify messages
 
@@ -40,9 +40,9 @@
 #include <assert.h>
 
 OSStatus
-SSLEncodeCertificate(SSLRecord &certificate, SSLContext *ctx)
+SSLEncodeCertificate(SSLRecord *certificate, SSLContext *ctx)
 {   OSStatus        err;
-    UInt32          totalLength;
+    size_t          totalLength;
     int             i, j, certCount;
     UInt8           *charPtr;
     SSLCertificate  *cert;
@@ -67,12 +67,12 @@ SSLEncodeCertificate(SSLRecord &certificate, SSLContext *ctx)
         cert = cert->next;
     }
     
-    certificate.contentType = SSL_RecordTypeHandshake;
-    certificate.protocolVersion = ctx->negProtocolVersion;
-    if ((err = SSLAllocBuffer(certificate.contents, totalLength + 7, ctx)) != 0)
+    certificate->contentType = SSL_RecordTypeHandshake;
+    certificate->protocolVersion = ctx->negProtocolVersion;
+    if ((err = SSLAllocBuffer(&certificate->contents, totalLength + 7, ctx)) != 0)
         return err;
     
-    charPtr = certificate.contents.data;
+    charPtr = certificate->contents.data;
     *charPtr++ = SSL_HdskCert;
     charPtr = SSLEncodeInt(charPtr, totalLength+3, 3);    /* Handshake message length */
     charPtr = SSLEncodeInt(charPtr, totalLength, 3);      /* Vector length */
@@ -88,7 +88,7 @@ SSLEncodeCertificate(SSLRecord &certificate, SSLContext *ctx)
         charPtr += cert->derCert.length;
     }
     
-    assert(charPtr == certificate.contents.data + certificate.contents.length);
+    assert(charPtr == certificate->contents.data + certificate->contents.length);
     
     if ((ctx->protocolSide == SSL_ClientSide) && (ctx->localCert)) {
 		/* this tells us to send a CertificateVerify msg after the
@@ -106,7 +106,7 @@ SSLEncodeCertificate(SSLRecord &certificate, SSLContext *ctx)
 OSStatus
 SSLProcessCertificate(SSLBuffer message, SSLContext *ctx)
 {   OSStatus        err;
-    UInt32          listLen, certLen;
+    size_t          listLen, certLen;
     UInt8           *p;
     SSLCertificate  *cert;
     
@@ -129,7 +129,7 @@ SSLProcessCertificate(SSLBuffer message, SSLContext *ctx)
 		if(cert == NULL) {
 			return memFullErr;
 		}
-        if ((err = SSLAllocBuffer(cert->derCert, certLen, ctx)) != 0)
+        if ((err = SSLAllocBuffer(&cert->derCert, certLen, ctx)) != 0)
         {   sslFree(cert);
             return err;
         }
@@ -165,7 +165,7 @@ SSLProcessCertificate(SSLBuffer message, SSLContext *ctx)
 			return errSSLXCertChainInvalid;
 		}
     }
-    if((err = sslVerifyCertChain(ctx, *ctx->peerCert)) != 0) {
+    if((err = sslVerifyCertChain(ctx, ctx->peerCert, true)) != 0) {
 		AlertDescription desc;
 		switch(err) {
 			case errSSLUnknownRootCert:
@@ -189,9 +189,13 @@ SSLProcessCertificate(SSLBuffer message, SSLContext *ctx)
     cert = ctx->peerCert;
     while (cert->next != 0)
         cert = cert->next;
+	if(ctx->peerPubKey != NULL) {
+		/* renegotiating - free old key first */
+		sslFreeKey(ctx->peerPubKeyCsp, &ctx->peerPubKey, NULL);
+	}
 	/* Convert its public key to CDSA format */
     if ((err = sslPubKeyFromCert(ctx, 
-    	cert->derCert, 
+    	&cert->derCert, 
     	&ctx->peerPubKey,
     	&ctx->peerPubKeyCsp)) != 0)
         return err;
@@ -200,7 +204,7 @@ SSLProcessCertificate(SSLBuffer message, SSLContext *ctx)
 }
 
 OSStatus
-SSLEncodeCertificateRequest(SSLRecord &request, SSLContext *ctx)
+SSLEncodeCertificateRequest(SSLRecord *request, SSLContext *ctx)
 {   
 	OSStatus    err;
     UInt32      dnListLen, msgLen;
@@ -216,14 +220,14 @@ SSLEncodeCertificateRequest(SSLRecord &request, SSLContext *ctx)
     }
     msgLen = 1 + 1 + 2 + dnListLen;
     
-    request.contentType = SSL_RecordTypeHandshake;
+    request->contentType = SSL_RecordTypeHandshake;
 	assert((ctx->negProtocolVersion == SSL_Version_3_0) ||
 		   (ctx->negProtocolVersion == TLS_Version_1_0));
-    request.protocolVersion = ctx->negProtocolVersion;
-    if ((err = SSLAllocBuffer(request.contents, msgLen + 4, ctx)) != 0)
+    request->protocolVersion = ctx->negProtocolVersion;
+    if ((err = SSLAllocBuffer(&request->contents, msgLen + 4, ctx)) != 0)
         return err;
     
-    charPtr = request.contents.data;
+    charPtr = request->contents.data;
     *charPtr++ = SSL_HdskCertRequest;
     charPtr = SSLEncodeInt(charPtr, msgLen, 3);
     
@@ -238,7 +242,7 @@ SSLEncodeCertificateRequest(SSLRecord &request, SSLContext *ctx)
         dn = dn->next;
     }
     
-    assert(charPtr == request.contents.data + request.contents.length);
+    assert(charPtr == request->contents.data + request->contents.length);
     return noErr;
 }
 
@@ -248,6 +252,11 @@ SSLProcessCertificateRequest(SSLBuffer message, SSLContext *ctx)
     unsigned        i;
     unsigned	    typeCount;
     UInt8           *charPtr;
+    unsigned		dnListLen;
+	unsigned		dnLen;
+    SSLBuffer		dnBuf;
+    DNListElem		*dn;
+	OSStatus		err;	
     
 	/* 
 	 * Cert request only happens in during client authentication, which
@@ -270,14 +279,7 @@ SSLProcessCertificateRequest(SSLBuffer message, SSLContext *ctx)
             ctx->x509Requested = 1;
     }
     
-	#if		0	
-	/* FIXME - currently untested  */
-    unsigned	dnListLen;
-	unsigned	dnLen;
-    SSLBuffer	dnBuf;
-    DNListElem  *dn;
-	OSStatus	err;	
-	
+	/* obtain server's DNList */
     dnListLen = SSLDecodeInt(charPtr, 2);
     charPtr += 2;
     if (message.length != 3 + typeCount + dnListLen) {
@@ -286,20 +288,20 @@ SSLProcessCertificateRequest(SSLBuffer message, SSLContext *ctx)
 	}    
     while (dnListLen > 0)
     {   if (dnListLen < 2) {
-    		sslErrorLog("SSLProcessCertificateRequest: dnListLen error 1\n");
-            return errSSLProtocol;
-        }
+		sslErrorLog("SSLProcessCertificateRequest: dnListLen error 1\n");
+		return errSSLProtocol;
+	}
         dnLen = SSLDecodeInt(charPtr, 2);
         charPtr += 2;
         if (dnListLen < 2 + dnLen) {
      		sslErrorLog("SSLProcessCertificateRequest: dnListLen error 2\n");
            	return errSSLProtocol;
     	}
-        if ((err = SSLAllocBuffer(dnBuf, sizeof(DNListElem), ctx)) != 0)
+        if ((err = SSLAllocBuffer(&dnBuf, sizeof(DNListElem), ctx)) != 0)
             return err;
         dn = (DNListElem*)dnBuf.data;
-        if ((err = SSLAllocBuffer(dn->derDN, dnLen, ctx)) != 0)
-        {   SSLFreeBuffer(dnBuf, ctx);
+        if ((err = SSLAllocBuffer(&dn->derDN, dnLen, ctx)) != 0)
+        {   SSLFreeBuffer(&dnBuf, ctx);
             return err;
         }
         memcpy(dn->derDN.data, charPtr, dnLen);
@@ -310,27 +312,26 @@ SSLProcessCertificateRequest(SSLBuffer message, SSLContext *ctx)
     }
     
     assert(charPtr == message.data + message.length);
-	#endif	/* untested client-side authentication */
 	
     return noErr;
 }
 
 OSStatus
-SSLEncodeCertificateVerify(SSLRecord &certVerify, SSLContext *ctx)
+SSLEncodeCertificateVerify(SSLRecord *certVerify, SSLContext *ctx)
 {   OSStatus        err;
     UInt8           hashData[36];
     SSLBuffer       hashDataBuf, shaMsgState, md5MsgState;
-    UInt32          len;
-    UInt32		    outputLen;
+    size_t          len;
+    size_t		    outputLen;
     const CSSM_KEY	*cssmKey;
 	
-    certVerify.contents.data = 0;
+    certVerify->contents.data = 0;
     hashDataBuf.data = hashData;
     hashDataBuf.length = 36;
     
-    if ((err = CloneHashState(SSLHashSHA1, ctx->shaState, shaMsgState, ctx)) != 0)
+    if ((err = CloneHashState(&SSLHashSHA1, &ctx->shaState, &shaMsgState, ctx)) != 0)
         goto fail;
-    if ((err = CloneHashState(SSLHashMD5, ctx->md5State, md5MsgState, ctx)) != 0)
+    if ((err = CloneHashState(&SSLHashMD5, &ctx->md5State, &md5MsgState, ctx)) != 0)
         goto fail;
 	assert(ctx->sslTslCalls != NULL);
     if ((err = ctx->sslTslCalls->computeCertVfyMac(ctx,	hashDataBuf, 
@@ -345,22 +346,22 @@ SSLEncodeCertificateVerify(SSLRecord &certVerify, SSLContext *ctx)
 	}
 	len = sslKeyLengthInBytes(cssmKey);
     
-    certVerify.contentType = SSL_RecordTypeHandshake;
+    certVerify->contentType = SSL_RecordTypeHandshake;
 	assert((ctx->negProtocolVersion == SSL_Version_3_0) ||
 		   (ctx->negProtocolVersion == TLS_Version_1_0));
-    certVerify.protocolVersion = ctx->negProtocolVersion;
-    if ((err = SSLAllocBuffer(certVerify.contents, len + 6, ctx)) != 0)
+    certVerify->protocolVersion = ctx->negProtocolVersion;
+    if ((err = SSLAllocBuffer(&certVerify->contents, len + 6, ctx)) != 0)
         goto fail;
     
-    certVerify.contents.data[0] = SSL_HdskCertVerify;
-    SSLEncodeInt(certVerify.contents.data+1, len+2, 3);
-    SSLEncodeInt(certVerify.contents.data+4, len, 2);
+    certVerify->contents.data[0] = SSL_HdskCertVerify;
+    SSLEncodeInt(certVerify->contents.data+1, len+2, 3);
+    SSLEncodeInt(certVerify->contents.data+4, len, 2);
 
 	err = sslRawSign(ctx,
 		ctx->signingPrivKeyRef,
 		hashData,						// data to sign 
 		36,								// MD5 size + SHA1 size
-		certVerify.contents.data+6,		// signature destination
+		certVerify->contents.data+6,	// signature destination
 		len,							// we mallocd len+6
 		&outputLen);
 	if(err) {
@@ -372,8 +373,8 @@ SSLEncodeCertificateVerify(SSLRecord &certVerify, SSLContext *ctx)
     err = noErr;
     
 fail:
-    SSLFreeBuffer(shaMsgState, ctx);
-    SSLFreeBuffer(md5MsgState, ctx);
+    SSLFreeBuffer(&shaMsgState, ctx);
+    SSLFreeBuffer(&md5MsgState, ctx);
 
     return err;
 }
@@ -410,9 +411,9 @@ SSLProcessCertificateVerify(SSLBuffer message, SSLContext *ctx)
     hashDataBuf.data = hashData;
     hashDataBuf.length = 36;
     
-    if ((err = CloneHashState(SSLHashSHA1, ctx->shaState, shaMsgState, ctx)) != 0)
+    if ((err = CloneHashState(&SSLHashSHA1, &ctx->shaState, &shaMsgState, ctx)) != 0)
         goto fail;
-    if ((err = CloneHashState(SSLHashMD5, ctx->md5State, md5MsgState, ctx)) != 0)
+    if ((err = CloneHashState(&SSLHashMD5, &ctx->md5State, &md5MsgState, ctx)) != 0)
         goto fail;
 	assert(ctx->sslTslCalls != NULL);
     if ((err = ctx->sslTslCalls->computeCertVfyMac(ctx, hashDataBuf, 
@@ -436,8 +437,8 @@ SSLProcessCertificateVerify(SSLBuffer message, SSLContext *ctx)
     err = noErr;
     
 fail:
-    SSLFreeBuffer(shaMsgState, ctx);
-    SSLFreeBuffer(md5MsgState, ctx);
+    SSLFreeBuffer(&shaMsgState, ctx);
+    SSLFreeBuffer(&md5MsgState, ctx);
 
     return err;
 }
