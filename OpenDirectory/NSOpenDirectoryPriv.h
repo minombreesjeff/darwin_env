@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2008 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,15 +21,23 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef __OPENDIRECTORYPRIV_H
-#define __OPENDIRECTORYPRIV_H
+/*!
+    @header		NSOpenDirectoryPriv
+    @abstract   Contains private functions that are not public API
+    @discussion Contains private functions that are not public API
+*/
 
-enum
-{
-	kODMatchCompoundExpression		= 0x200b
-};
+#import <OpenDirectory/NSOpenDirectory.h>
 
-#include <CFOpenDirectory/CFOpenDirectoryConstants.h>
-#include <CFOpenDirectory/CFOpenDirectoryPriv.h>
+@interface ODRecord (PrivateExtensions)
 
-#endif
+/*!
+	@method     isMemberRecordRefresh: error:
+	@abstract   Will use membership APIs to determine if inRecord is a member of the group ignoring the cache
+	@discussion Will use membership APIs to determine if inRecord is a member of the group ignoring the cache.  
+				If the receiving object is not a group then NO will still be returned.  outError is optional parameter, 
+				nil can be passed if error details are not needed.
+ */
+- (BOOL)isMemberRecordRefresh:(ODRecord *)inRecord error:(NSError **)outError;
+
+@end
