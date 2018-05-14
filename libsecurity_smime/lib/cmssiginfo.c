@@ -465,7 +465,11 @@ SecCmsSignerInfoVerifyCertificate(SecCmsSignerInfoRef signerinfo, SecKeychainRef
     if (rv || !trustRef)
     {
 	if (PORT_GetError() == SEC_ERROR_UNTRUSTED_CERT)
-	    signerinfo->verificationStatus = SecCmsVSSigningCertNotTrusted;
+	{
+	    /* Signature or digest level verificationStatus errors should supercede certificate level errors, so only change the verificationStatus if the status was GoodSignature. */
+	    if (signerinfo->verificationStatus == SecCmsVSGoodSignature)
+		signerinfo->verificationStatus = SecCmsVSSigningCertNotTrusted;
+	}
     }
 
     return rv;

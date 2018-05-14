@@ -762,7 +762,7 @@ SecCmsMessageEncode(SecCmsMessageRef cmsg, const CSSM_DATA *input, SecArenaPoolR
     }
 
     result = SecCmsEncoderCreate(cmsg, 0, 0, outBer, arena, 0, 0, 0, 0, 0, 0, &encoder);
-    if (!result)
+    if (result)
 	goto loser;
 
     if (input) {

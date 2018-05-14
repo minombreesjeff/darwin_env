@@ -486,22 +486,31 @@ SecCmsSignedDataVerifySignerInfo(SecCmsSignedDataRef sigd, int i,
     SecCmsContentInfoRef cinfo;
     SECOidData *algiddata;
     CSSM_DATA_PTR contentType, digest;
+    OSStatus status, status2;
 
     cinfo = &(sigd->contentInfo);
 
     signerinfo = sigd->signerInfos[i];
 
-    /* verify certificate */
-    if (SecCmsSignerInfoVerifyCertificate(signerinfo, keychainOrArray, policies, trustRef) != SECSuccess)
-	return SECFailure;		/* error is set by SecCmsSignerInfoVerifyCertificate */
+    /* Signature or digest level verificationStatus errors should supercede
+       certificate level errors, so check the digest and signature first.  */
 
-    /* find digest and contentType for signerinfo */
+    /* Find digest and contentType for signerinfo */
     algiddata = SecCmsSignerInfoGetDigestAlg(signerinfo);
     digest = SecCmsSignedDataGetDigestByAlgTag(sigd, algiddata->offset);
     contentType = SecCmsContentInfoGetContentTypeOID(cinfo);
 
-    /* now verify signature */
-    return SecCmsSignerInfoVerify(signerinfo, digest, contentType);
+    /* verify signature */
+    status = SecCmsSignerInfoVerify(signerinfo, digest, contentType);
+
+    /* Now verify the certificate.  We do this even if the signature failed to verify so we can
+       return a trustRef to the caller for display purposes.  */
+    status2 = SecCmsSignerInfoVerifyCertificate(signerinfo, keychainOrArray, policies, trustRef);
+    /* The error from SecCmsSignerInfoVerify() supercedes error from SecCmsSignerInfoVerifyCertificate(). */
+    if (status)
+	return status;
+
+    return status2;
 }
 
 /*

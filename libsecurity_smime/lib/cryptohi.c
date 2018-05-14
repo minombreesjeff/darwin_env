@@ -146,13 +146,17 @@ SEC_SignData(SECItem *result, unsigned char *buf, int len,
     if (rv) {
         SECErrorCodes code;
         if (CSSM_ERRCODE(rv) == CSSM_ERRCODE_USER_CANCELED
-            || CSSM_ERRCODE(rv) == CSSM_ERRCODE_OPERATION_AUTH_DENIED)
+            || CSSM_ERRCODE(rv) == CSSM_ERRCODE_OPERATION_AUTH_DENIED
+	    || CSSM_ERRCODE(rv) == CSSM_ERRCODE_OBJECT_USE_AUTH_DENIED)
             code = SEC_ERROR_USER_CANCELLED;
         else if (CSSM_ERRCODE(rv) == CSSM_ERRCODE_NO_USER_INTERACTION
                  || rv == CSSMERR_CSP_KEY_USAGE_INCORRECT)
             code = SEC_ERROR_INADEQUATE_KEY_USAGE;
         else
+	{
+	    fprintf(stderr, "CSSM_SignData returned: %08X\n", (uint32_t)rv);
             code = SEC_ERROR_LIBRARY_FAILURE;
+	}
 
         PORT_SetError(code);
 	goto loser;
@@ -214,13 +218,17 @@ SGN_Digest(SecPrivateKeyRef pk, SECOidTag digAlgTag, SECOidTag sigAlgTag, SECIte
     if (rv) {
         SECErrorCodes code;
         if (CSSM_ERRCODE(rv) == CSSM_ERRCODE_USER_CANCELED
-            || CSSM_ERRCODE(rv) == CSSM_ERRCODE_OPERATION_AUTH_DENIED)
+            || CSSM_ERRCODE(rv) == CSSM_ERRCODE_OPERATION_AUTH_DENIED
+	    || CSSM_ERRCODE(rv) == CSSM_ERRCODE_OBJECT_USE_AUTH_DENIED)
             code = SEC_ERROR_USER_CANCELLED;
         else if (CSSM_ERRCODE(rv) == CSSM_ERRCODE_NO_USER_INTERACTION
                  || rv == CSSMERR_CSP_KEY_USAGE_INCORRECT)
             code = SEC_ERROR_INADEQUATE_KEY_USAGE;
         else
+	{
+	    fprintf(stderr, "CSSM_SignData returned: %08X\n", (uint32_t)rv);
             code = SEC_ERROR_LIBRARY_FAILURE;
+	}
 
         PORT_SetError(code);
 	goto loser;
@@ -520,13 +528,17 @@ WRAP_PubUnwrapSymKey(SecPrivateKeyRef privkey, CSSM_DATA_PTR encKey, SECOidTag b
     if (rv) {
         SECErrorCodes code;
         if (CSSM_ERRCODE(rv) == CSSM_ERRCODE_USER_CANCELED
-            || CSSM_ERRCODE(rv) == CSSM_ERRCODE_OPERATION_AUTH_DENIED)
+            || CSSM_ERRCODE(rv) == CSSM_ERRCODE_OPERATION_AUTH_DENIED
+	    || CSSM_ERRCODE(rv) == CSSM_ERRCODE_OBJECT_USE_AUTH_DENIED)
             code = SEC_ERROR_USER_CANCELLED;
         else if (CSSM_ERRCODE(rv) == CSSM_ERRCODE_NO_USER_INTERACTION
                  || rv == CSSMERR_CSP_KEY_USAGE_INCORRECT)
             code = SEC_ERROR_INADEQUATE_KEY_USAGE;
         else
+	{
+	    fprintf(stderr, "CSSM_UnwrapKey returned: %08X\n", (uint32_t)rv);
             code = SEC_ERROR_LIBRARY_FAILURE;
+	}
 
         PORT_SetError(code);
 	goto loser;

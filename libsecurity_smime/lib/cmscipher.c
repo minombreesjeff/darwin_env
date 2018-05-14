@@ -149,6 +149,13 @@ static unsigned long  rc2_unmap(unsigned long x)
     return 58;
 }
 
+/* default IV size in bytes */
+#define DEFAULT_IV_SIZE	    8
+/* IV/block size for AES */
+#define AES_BLOCK_SIZE	    16
+/* max IV size in bytes */
+#define MAX_IV_SIZE	    AES_BLOCK_SIZE
+
 static SecCmsCipherContextRef
 SecCmsCipherContextStart(PRArenaPool *poolp, SecSymmetricKeyRef key, SECAlgorithmID *algid, Boolean encrypt)
 {
@@ -162,8 +169,8 @@ SecCmsCipherContextStart(PRArenaPool *poolp, SecSymmetricKeyRef key, SECAlgorith
     CSSM_CSP_HANDLE cspHandle;
     const CSSM_KEY *cssmKey;
     OSStatus rv;
-    uint8 ivbuf[8];
-    CSSM_DATA initVector = { sizeof(ivbuf), ivbuf };
+    uint8 ivbuf[MAX_IV_SIZE];
+    CSSM_DATA initVector = { DEFAULT_IV_SIZE, ivbuf };
     //CSSM_CONTEXT_ATTRIBUTE contextAttribute = { CSSM_ATTRIBUTE_ALG_PARAMS, sizeof(CSSM_DATA_PTR) };
 
     rv = SecKeyGetCSPHandle(key, &cspHandle);
@@ -191,10 +198,15 @@ SecCmsCipherContextStart(PRArenaPool *poolp, SecSymmetricKeyRef key, SECAlgorith
     case SEC_OID_DES_EDE:
     case SEC_OID_DES_CBC:
     case SEC_OID_RC5_CBC_PAD:
+    case SEC_OID_FORTEZZA_SKIPJACK:
+	mode = CSSM_ALGMODE_CBCPadIV8;
+	break;
+	
+    /* RFC 3565 says that these sizes refer to key size, NOT block size */
     case SEC_OID_AES_128_CBC:
     case SEC_OID_AES_192_CBC:
     case SEC_OID_AES_256_CBC:
-    case SEC_OID_FORTEZZA_SKIPJACK:
+	initVector.Length = AES_BLOCK_SIZE;
 	mode = CSSM_ALGMODE_CBCPadIV8;
 	break;
 
@@ -608,9 +620,12 @@ SecCmsCipherContextLength(SecCmsCipherContextRef cc, unsigned int input_len, Boo
 {
     CSSM_QUERY_SIZE_DATA dataBlockSize[2] = { { input_len, 0 }, { input_len, 0 } };
     /* Hack CDSA treats the last block as the final one.  So unless we are being asked to report the final size we ask for 2 block and ignore the second (final) one. */
-    OSStatus rv = CSSM_QuerySize(cc->cc, encrypt, final ? 1 : 2, dataBlockSize);
+    OSStatus rv = CSSM_QuerySize(cc->cc, cc->encrypt, final ? 1 : 2, dataBlockSize);
     if (rv)
-	abort();
+    {
+	PORT_SetError(rv);
+	return 0;
+    }
 
     return dataBlockSize[0].SizeOutputBlock;
 }
