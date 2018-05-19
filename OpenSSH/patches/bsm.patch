@@ -1,7 +1,17 @@
-diff -Naur /tmp/OpenSSH.roots/OpenSSH/openssh/audit-bsm.c ./audit-bsm.c
---- /tmp/OpenSSH.roots/OpenSSH/openssh/audit-bsm.c	2005-02-20 02:08:00.000000000 -0800
-+++ ./audit-bsm.c	2005-09-30 11:32:45.000000000 -0700
-@@ -71,7 +71,9 @@
+diff -Naur ../openssh-4.4p1.orig/audit-bsm.c ./audit-bsm.c
+--- ../openssh-4.4p1.orig/audit-bsm.c	2006-08-31 22:38:36.000000000 -0700
++++ ./audit-bsm.c	2006-10-19 16:56:18.000000000 -0700
+@@ -57,6 +57,9 @@
+ #include <bsm/audit_uevents.h>
+ #include <bsm/audit_record.h>
+ #include <locale.h>
++#if defined(__APPLE__)
++#include <errno.h>
++#endif
+ 
+ #if defined(HAVE_GETAUDIT_ADDR)
+ #define	AuditInfoStruct		auditinfo_addr
+@@ -78,7 +81,9 @@
  #define AUToReturnFunc(a,b)	au_to_return((a), (u_int)(b))
  #endif
  
@@ -11,7 +21,7 @@ diff -Naur /tmp/OpenSSH.roots/OpenSSH/openssh/audit-bsm.c ./audit-bsm.c
  extern void	aug_init(void);
  extern dev_t	aug_get_port(void);
  extern int 	aug_get_machine(char *, u_int32_t *, u_int32_t *);
-@@ -236,10 +236,18 @@
+@@ -241,10 +246,18 @@
  	/* populate our terminal id structure */
  #if defined(HAVE_GETAUDIT_ADDR)
  	tid->at_port = (dev_t)port;
@@ -30,13 +40,14 @@ diff -Naur /tmp/OpenSSH.roots/OpenSSH/openssh/audit-bsm.c ./audit-bsm.c
  #else
  	/* this is used on IPv4-only machines */
  	tid->port = (dev_t)port;
-diff -Naur ../OpenSSH.roots/OpenSSH/openssh/configure ./configure
---- ../OpenSSH.roots/OpenSSH/openssh/configure	2005-09-27 14:48:46.000000000 -0700
-+++ ./configure	2005-10-04 12:49:44.000000000 -0700
-@@ -10846,6 +10846,22 @@
+diff -Naur ../openssh-4.4p1.orig/configure ./configure
+--- ../openssh-4.4p1.orig/configure	2006-09-26 04:03:41.000000000 -0700
++++ ./configure	2006-10-19 16:53:20.000000000 -0700
+@@ -13669,6 +13669,23 @@
  #define `echo "HAVE_$ac_func" | $as_tr_cpp` 1
  _ACEOF
  
++
 +				case "$host" in
 +				*-*-darwin7* | *-*-darwin8*)
 +					echo "$as_me:$LINENO: checking for getaudit_addr usability" >&5
@@ -56,10 +67,10 @@ diff -Naur ../OpenSSH.roots/OpenSSH/openssh/configure ./configure
  fi
  done
  
-diff -Naur ../OpenSSH.roots/OpenSSH/openssh/configure.ac ./configure.ac
---- ../OpenSSH.roots/OpenSSH/openssh/configure.ac	2005-09-27 14:48:45.000000000 -0700
-+++ ./configure.ac	2005-10-04 12:49:01.000000000 -0700
-@@ -1096,7 +1096,21 @@
+diff -Naur ../openssh-4.4p1.orig/configure.ac ./configure.ac
+--- ../openssh-4.4p1.orig/configure.ac	2006-09-24 12:08:59.000000000 -0700
++++ ./configure.ac	2006-10-19 16:53:33.000000000 -0700
+@@ -1201,7 +1201,21 @@
  		AC_CHECK_FUNCS(getaudit, [],
  		    [AC_MSG_ERROR(BSM enabled and required function not found)])
  		# These are optional
@@ -79,6 +90,6 @@ diff -Naur ../OpenSSH.roots/OpenSSH/openssh/configure.ac ./configure.ac
 +				esac
 +				]
 +				)
- 		AC_DEFINE(USE_BSM_AUDIT, [], [Use BSM audit module])
+ 		AC_DEFINE(USE_BSM_AUDIT, 1, [Use BSM audit module])
  		;;
  	  debug)
