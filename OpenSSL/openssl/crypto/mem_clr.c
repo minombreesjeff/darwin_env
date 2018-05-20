@@ -1,5 +1,9 @@
+/* crypto/mem_clr.c -*- mode:C; c-file-style: "eay" -*- */
+/* Written by Geoff Thorpe (geoff@geoffthorpe.net) for the OpenSSL
+ * project 2002.
+ */
 /* ====================================================================
- * Copyright (c) 1999 The OpenSSL Project.  All rights reserved.
+ * Copyright (c) 2001 The OpenSSL Project.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -16,12 +20,12 @@
  * 3. All advertising materials mentioning features or use of this
  *    software must display the following acknowledgment:
  *    "This product includes software developed by the OpenSSL Project
- *    for use in the OpenSSL Toolkit. (http://www.OpenSSL.org/)"
+ *    for use in the OpenSSL Toolkit. (http://www.openssl.org/)"
  *
  * 4. The names "OpenSSL Toolkit" and "OpenSSL Project" must not be used to
  *    endorse or promote products derived from this software without
  *    prior written permission. For written permission, please contact
- *    licensing@OpenSSL.org.
+ *    openssl-core@openssl.org.
  *
  * 5. Products derived from this software may not be called "OpenSSL"
  *    nor may "OpenSSL" appear in their names without prior written
@@ -30,7 +34,7 @@
  * 6. Redistributions of any form whatsoever must retain the following
  *    acknowledgment:
  *    "This product includes software developed by the OpenSSL Project
- *    for use in the OpenSSL Toolkit (http://www.OpenSSL.org/)"
+ *    for use in the OpenSSL Toolkit (http://www.openssl.org/)"
  *
  * THIS SOFTWARE IS PROVIDED BY THE OpenSSL PROJECT ``AS IS'' AND ANY
  * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -52,19 +56,20 @@
  *
  */
 
-/*
- * This header only exists to break a circular dependency between pem and err
- * Ben 30 Jan 1999.
- */
+#include <string.h>
+#include <openssl/crypto.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+unsigned char cleanse_ctr = 0;
 
-#ifndef HEADER_PEM_H
-void ERR_load_PEM_strings(void);
-#endif
-
-#ifdef __cplusplus
-}
-#endif
+void OPENSSL_cleanse(void *ptr, size_t len)
+	{
+	unsigned char *p = ptr;
+	size_t loop = len;
+	while(loop--)
+		{
+		*(p++) = cleanse_ctr;
+		cleanse_ctr += (17 + (unsigned char)((int)p & 0xF));
+		}
+	if(memchr(ptr, cleanse_ctr, len))
+		cleanse_ctr += 63;
+	}
