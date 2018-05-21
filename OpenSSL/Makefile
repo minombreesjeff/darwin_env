@@ -33,7 +33,7 @@ AEP_Version    = 0.9.7i
 AEP_ProjVers   = $(AEP_Project)-$(AEP_Version)
 AEP_Filename   = $(AEP_ProjVers).tar.gz
 AEP_ExtractDir = $(AEP_ProjVers)
-AEP_Patches    = NLS_openssl_097b_to_097g.patch NLS_buildfailure.patch
+AEP_Patches    = NLS_openssl_097b_to_097g.patch #NLS_buildfailure.patch
 
 ifeq ($(suffix $(AEP_Filename)),.bz2)
 AEP_ExtractOption = j
@@ -119,6 +119,8 @@ strip:
 
 configure::
 	make -C $(BuildDirectory) depend
+	$(_v) touch $(BuildDirectory)/include/openssl/idea.h
+#	$(_v) ed - $(BuildDirectory)/include/openssl/opensslconf.h < $(FIX)/opensslconf.h.ed
 
 install-man-pages:
 	$(LN) -s verify.1ssl $(DSTROOT)/$(MANDIR)/man1/c_rehash.1ssl
