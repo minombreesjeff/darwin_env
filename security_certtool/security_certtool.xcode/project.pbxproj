@@ -180,8 +180,6 @@
 			sourceTree = "<group>";
 		};
 		4CA1FEAE052A3C5800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = debug;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -193,8 +191,6 @@
 			name = Development;
 		};
 		4CA1FEAF052A3C5800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
@@ -252,8 +248,8 @@
 				0528609A062B16AD004E2D42,
 			);
 			buildSettings = {
-				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 4;
+				BUILD_VARIANTS = "normal debug";
+				CURRENT_PROJECT_VERSION = 24739;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				INSTALL_PATH = /usr/bin;

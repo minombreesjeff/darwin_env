@@ -255,7 +255,7 @@ static CSSM_RETURN setPubKeyHash(
 	recordAttrs.NumberOfAttributes = 1;
 	recordAttrs.AttributeData = &attr;
 	
-	CSSM_DATA recordData = {NULL, 0};
+	CSSM_DATA recordData = {0, NULL};
 	crtn = CSSM_DL_DataGetFirst(dlDbHand,
 		&query,
 		&resultHand,
@@ -628,7 +628,7 @@ static CSSM_RETURN importPrivateKey(
 		goto done;
 	}
 	CSSM_KEY_SIZE keySize;
-	crtn = CSSM_QueryKeySizeInBits(rawCspHand, NULL, &wrappedKey, &keySize);
+	crtn = CSSM_QueryKeySizeInBits(rawCspHand, CSSM_INVALID_HANDLE, &wrappedKey, &keySize);
 	if(crtn) {
 		printError("***Error finding size of key","CSSM_QueryKeySizeInBits",crtn);
 		goto done;
