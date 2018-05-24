@@ -92,8 +92,7 @@ install:
 	@[ -n "$(INSTALLTOP)" ] # should be set by top Makefile...
 	@if [ -n "$(SHARED_LIBS)" ]; then \
 		set -e; \
-		rm -rf $(INSTALL_PREFIX)$(INSTALLTOP)/lib/engines; \
-		mkdir -p $(INSTALL_PREFIX)$(INSTALLTOP)/lib/openssl/engines; \
+		$(PERL) $(TOP)/util/mkdir-p.pl $(INSTALL_PREFIX)$(INSTALLTOP)/lib/engines; \
 		for l in $(LIBNAMES); do \
 			( echo installing $$l; \
 			  if [ "$(PLATFORM)" != "Cygwin" ]; then \
@@ -102,13 +101,13 @@ install:
 				*DSO_DL*)	sfx="sl";;	\
 				*)		sfx="bad";;	\
 				esac; \
-				cp lib$$l.$$sfx $(INSTALL_PREFIX)$(INSTALLTOP)/lib/openssl/engines/lib$$l.$$sfx.new; \
+				cp lib$$l.$$sfx $(INSTALL_PREFIX)$(INSTALLTOP)/$(LIBDIR)/engines/lib$$l.$$sfx.new; \
 			  else \
 			  	sfx="so"; \
 				cp cyg$$l.dll $(INSTALL_PREFIX)$(INSTALLTOP)/$(LIBDIR)/engines/lib$$l.$$sfx.new; \
 			  fi; \
-			  chmod 555 $(INSTALL_PREFIX)$(INSTALLTOP)/lib/openssl/engines/lib$$l.$$sfx.new; \
-			  mv -f $(INSTALL_PREFIX)$(INSTALLTOP)/lib/openssl/engines/lib$$l.$$sfx.new $(INSTALL_PREFIX)$(INSTALLTOP)/lib/openssl/engines/lib$$l.1.$$sfx ); \
+			  chmod 555 $(INSTALL_PREFIX)$(INSTALLTOP)/$(LIBDIR)/engines/lib$$l.$$sfx.new; \
+			  mv -f $(INSTALL_PREFIX)$(INSTALLTOP)/$(LIBDIR)/engines/lib$$l.$$sfx.new $(INSTALL_PREFIX)$(INSTALLTOP)/$(LIBDIR)/engines/lib$$l.$$sfx ); \
 		done; \
 	fi
 

@@ -10,6 +10,8 @@ $OPTIONS="";
 $ssl_version="";
 $banner="\t\@echo Building OpenSSL";
 
+if ($ENV{"DEBUG_BUILD"}) { $debug = 1; } # APPLE-SPECIFIC hack to force debug build
+
 my $no_static_engine = 0;
 my $engines = "";
 local $zlib_opt = 0;	# 0 = no zlib, 1 = static, 2 = dynamic
@@ -538,7 +540,7 @@ EX_LIBS=$ex_libs
 SRC_D=$src_dir
 
 LINK=$link
-LFLAGS=$lflags
+LFLAGS=$lflags \$(EXTRA_LFLAGS)   # <rdar://problem/7370791> allow LFLAGS to be modified externally
 RSC=$rsc
 FIPSLINK=\$(PERL) util${o}fipslink.pl
 
@@ -581,8 +583,8 @@ RM=$rm
 RANLIB=$ranlib
 MKDIR=$mkdir
 MKLIB=$bin_dir$mklib
-MLFLAGS=$mlflags
-ASM=$bin_dir$asm
+MLFLAGS=$mlflags \$(EXTRA_MLFLAGS)    # <rdar://problem/7370791> allow MLFLAGS to be modified externally
+ASM=$bin_dir$asm \$(EXTRA_ASMFLAGS)   # <rdar://problem/7370791> allow ASMFLAGS to be modified externally
 
 # FIPS validated module and support file locations
 
@@ -647,6 +649,7 @@ EOF
 
 $rules=<<"EOF";
 all: banner \$(TMP_D) \$(BIN_D) \$(TEST_D) \$(LIB_D) \$(INCO_D) headers \$(FIPS_SHA1_EXE) lib exe $ex_build_targets
+all_noexe: banner \$(TMP_D) \$(BIN_D) \$(TEST_D) \$(LIB_D) \$(INCO_D) headers \$(FIPS_SHA1_EXE) lib $ex_build_targets   # APPLE-SPECIFIC - target to skip building openssl.exe to speed up build process
 
 banner:
 $banner

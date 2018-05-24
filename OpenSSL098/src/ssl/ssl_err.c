@@ -1,6 +1,6 @@
 /* ssl/ssl_err.c */
 /* ====================================================================
- * Copyright (c) 1999-2008 The OpenSSL Project.  All rights reserved.
+ * Copyright (c) 1999-2011 The OpenSSL Project.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -80,6 +80,7 @@ static ERR_STRING_DATA SSL_str_functs[]=
 {ERR_FUNC(SSL_F_DTLS1_ACCEPT),	"DTLS1_ACCEPT"},
 {ERR_FUNC(SSL_F_DTLS1_ADD_CERT_TO_BUF),	"DTLS1_ADD_CERT_TO_BUF"},
 {ERR_FUNC(SSL_F_DTLS1_BUFFER_RECORD),	"DTLS1_BUFFER_RECORD"},
+{ERR_FUNC(SSL_F_DTLS1_CHECK_TIMEOUT_NUM),	"DTLS1_CHECK_TIMEOUT_NUM"},
 {ERR_FUNC(SSL_F_DTLS1_CLIENT_HELLO),	"DTLS1_CLIENT_HELLO"},
 {ERR_FUNC(SSL_F_DTLS1_CONNECT),	"DTLS1_CONNECT"},
 {ERR_FUNC(SSL_F_DTLS1_ENC),	"DTLS1_ENC"},
@@ -137,6 +138,7 @@ static ERR_STRING_DATA SSL_str_functs[]=
 {ERR_FUNC(SSL_F_SSL3_CALLBACK_CTRL),	"SSL3_CALLBACK_CTRL"},
 {ERR_FUNC(SSL_F_SSL3_CHANGE_CIPHER_STATE),	"SSL3_CHANGE_CIPHER_STATE"},
 {ERR_FUNC(SSL_F_SSL3_CHECK_CERT_AND_ALGORITHM),	"SSL3_CHECK_CERT_AND_ALGORITHM"},
+{ERR_FUNC(SSL_F_SSL3_CHECK_CLIENT_HELLO),	"SSL3_CHECK_CLIENT_HELLO"},
 {ERR_FUNC(SSL_F_SSL3_CLIENT_HELLO),	"SSL3_CLIENT_HELLO"},
 {ERR_FUNC(SSL_F_SSL3_CONNECT),	"SSL3_CONNECT"},
 {ERR_FUNC(SSL_F_SSL3_CTRL),	"SSL3_CTRL"},
@@ -216,6 +218,7 @@ static ERR_STRING_DATA SSL_str_functs[]=
 {ERR_FUNC(SSL_F_SSL_GET_NEW_SESSION),	"SSL_GET_NEW_SESSION"},
 {ERR_FUNC(SSL_F_SSL_GET_PREV_SESSION),	"SSL_GET_PREV_SESSION"},
 {ERR_FUNC(SSL_F_SSL_GET_SERVER_SEND_CERT),	"SSL_GET_SERVER_SEND_CERT"},
+{ERR_FUNC(SSL_F_SSL_GET_SERVER_SEND_PKEY),	"SSL_GET_SERVER_SEND_PKEY"},
 {ERR_FUNC(SSL_F_SSL_GET_SIGN_PKEY),	"SSL_GET_SIGN_PKEY"},
 {ERR_FUNC(SSL_F_SSL_INIT_WBIO_BUFFER),	"SSL_INIT_WBIO_BUFFER"},
 {ERR_FUNC(SSL_F_SSL_LOAD_CLIENT_CA_FILE),	"SSL_load_client_CA_file"},
@@ -375,6 +378,7 @@ static ERR_STRING_DATA SSL_str_reasons[]=
 {ERR_REASON(SSL_R_MISSING_TMP_RSA_KEY)   ,"missing tmp rsa key"},
 {ERR_REASON(SSL_R_MISSING_TMP_RSA_PKEY)  ,"missing tmp rsa pkey"},
 {ERR_REASON(SSL_R_MISSING_VERIFY_MESSAGE),"missing verify message"},
+{ERR_REASON(SSL_R_MULTIPLE_SGC_RESTARTS) ,"multiple sgc restarts"},
 {ERR_REASON(SSL_R_NON_SSLV2_INITIAL_PACKET),"non sslv2 initial packet"},
 {ERR_REASON(SSL_R_NO_CERTIFICATES_RETURNED),"no certificates returned"},
 {ERR_REASON(SSL_R_NO_CERTIFICATE_ASSIGNED),"no certificate assigned"},
@@ -471,6 +475,11 @@ static ERR_STRING_DATA SSL_str_reasons[]=
 {ERR_REASON(SSL_R_TLSV1_ALERT_RECORD_OVERFLOW),"tlsv1 alert record overflow"},
 {ERR_REASON(SSL_R_TLSV1_ALERT_UNKNOWN_CA),"tlsv1 alert unknown ca"},
 {ERR_REASON(SSL_R_TLSV1_ALERT_USER_CANCELLED),"tlsv1 alert user cancelled"},
+{ERR_REASON(SSL_R_TLSV1_BAD_CERTIFICATE_HASH_VALUE),"tlsv1 bad certificate hash value"},
+{ERR_REASON(SSL_R_TLSV1_BAD_CERTIFICATE_STATUS_RESPONSE),"tlsv1 bad certificate status response"},
+{ERR_REASON(SSL_R_TLSV1_CERTIFICATE_UNOBTAINABLE),"tlsv1 certificate unobtainable"},
+{ERR_REASON(SSL_R_TLSV1_UNRECOGNIZED_NAME),"tlsv1 unrecognized name"},
+{ERR_REASON(SSL_R_TLSV1_UNSUPPORTED_EXTENSION),"tlsv1 unsupported extension"},
 {ERR_REASON(SSL_R_TLS_CLIENT_CERT_REQ_WITH_ANON_CIPHER),"tls client cert req with anon cipher"},
 {ERR_REASON(SSL_R_TLS_INVALID_ECPOINTFORMAT_LIST),"tls invalid ecpointformat list"},
 {ERR_REASON(SSL_R_TLS_PEER_DID_NOT_RESPOND_WITH_CERTIFICATE_LIST),"tls peer did not respond with certificate list"},

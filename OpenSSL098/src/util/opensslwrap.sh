@@ -19,7 +19,7 @@ if [ -x "${OPENSSL}.exe" ]; then
 		PATH="${HERE}..:$PATH"; export PATH
 	fi
 	exec "${OPENSSL}.exe" "$@"
-elif [ -x "${OPENSSL}" -a -x "${HERE}shlib_wrap.sh" ]; then
+elif [ -x "${HERE}shlib_wrap.sh" ]; then
 	exec "${HERE}shlib_wrap.sh" "${OPENSSL}" "$@"
 else
 	exec "${OPENSSL}" "$@"	# hope for the best...

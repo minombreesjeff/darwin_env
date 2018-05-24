@@ -88,4 +88,6 @@ if [ -f "$LIBCRYPTOSO" -a -z "$preload_var" ]; then
 	export LD_PRELOAD _RLD_LIST DYLD_INSERT_LIBRARIES
 fi
 
-exec "$@"
+PROG=$(echo "$1" | sed 's|.*/||' )
+shift
+exec "${TARGET_BUILD_DIR}/${PROG}" "$@"

@@ -1,1 +1,1 @@
-../crypto/idea/ideatest.c
+dummytest.c

@@ -2,7 +2,7 @@
 
 testsrc=Makefile
 test=./p
-cmd="${BUILT_PRODUCTS_DIR}/openssl"
+cmd="../util/shlib_wrap.sh ../apps/openssl"
 
 cat $testsrc >$test;
 

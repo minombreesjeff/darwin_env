@@ -6,11 +6,11 @@ DIR=	x509
 TOP=	../..
 CC=	cc
 INCLUDES= -I.. -I$(TOP) -I../../include
-CFLAG=-g 
+CFLAG=-g
 MAKEFILE=	Makefile
 AR=		ar r
 
-CFLAGS= $(INCLUDES) $(CFLAG) -F /System/Library/PrivateFrameworks/
+CFLAGS= $(INCLUDES) $(CFLAG)
 
 GENERAL=Makefile README
 TEST=
@@ -18,13 +18,13 @@ APPS=
 
 LIB=$(TOP)/libcrypto.a
 LIBSRC=	x509_def.c x509_d2.c x509_r2x.c x509_cmp.c \
-	x509_obj.c x509_req.c x509spki.c x509_vfy.c x509_vfy_apple.c \
+	x509_obj.c x509_req.c x509spki.c x509_vfy.c \
 	x509_set.c x509cset.c x509rset.c x509_err.c \
 	x509name.c x509_v3.c x509_ext.c x509_att.c \
 	x509type.c x509_lu.c x_all.c x509_txt.c \
 	x509_trs.c by_file.c by_dir.c x509_vpm.c
 LIBOBJ= x509_def.o x509_d2.o x509_r2x.o x509_cmp.o \
-	x509_obj.o x509_req.o x509spki.o x509_vfy.o x509_vfy_apple.o \
+	x509_obj.o x509_req.o x509spki.o x509_vfy.o \
 	x509_set.o x509cset.o x509rset.o x509_err.o \
 	x509name.o x509_v3.o x509_ext.o x509_att.o \
 	x509type.o x509_lu.o x_all.o x509_txt.o \

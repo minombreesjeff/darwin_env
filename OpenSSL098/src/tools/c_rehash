@@ -7,7 +7,7 @@
 my $openssl;
 
 my $dir = "/System/Library/OpenSSL";
-my $prefix = $dir;
+my $prefix = "/System/Library/OpenSSL";
 
 if(defined $ENV{OPENSSL}) {
 	$openssl = $ENV{OPENSSL};

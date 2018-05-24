@@ -250,12 +250,13 @@
 			name = test_ca;
 			productName = test_enc;
 		};
-		1CF791C00F79827100F27DA5 /* OpenSSL */ = {
+		1CF791C00F79827100F27DA5 /* OpenSSL-all */ = {
 			isa = PBXAggregateTarget;
-			buildConfigurationList = 1CF791C20F79828F00F27DA5 /* Build configuration list for PBXAggregateTarget "OpenSSL" */;
+			buildConfigurationList = 1CF791C20F79828F00F27DA5 /* Build configuration list for PBXAggregateTarget "OpenSSL-all" */;
 			buildPhases = (
 			);
 			dependencies = (
+				E1DFA33D196E4B6B0023A393 /* PBXTargetDependency */,
 				1CC41B280F9901F900362F40 /* PBXTargetDependency */,
 				1CC41B2A0F9901FC00362F40 /* PBXTargetDependency */,
 				1CF791C40F79829000F27DA5 /* PBXTargetDependency */,
@@ -264,9 +265,23 @@
 				1CC41B220F9901D500362F40 /* PBXTargetDependency */,
 				1CC41B200F9901D500362F40 /* PBXTargetDependency */,
 				1CC41B1E0F9901D500362F40 /* PBXTargetDependency */,
+				E1DFA33F196E4B6E0023A393 /* PBXTargetDependency */,
 			);
-			name = OpenSSL;
+			name = "OpenSSL-all";
 			productName = all;
+		};
+		E1E950EB196CD46400B680D0 /* Deprecate Prototypes */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = E1E950EC196CD46400B680D0 /* Build configuration list for PBXAggregateTarget "Deprecate Prototypes" */;
+			buildPhases = (
+				E1E950F2196CD48100B680D0 /* Deprecate Prototypes */,
+			);
+			dependencies = (
+				E1E950EF196CD47800B680D0 /* PBXTargetDependency */,
+				E1E950F1196CD47A00B680D0 /* PBXTargetDependency */,
+			);
+			name = "Deprecate Prototypes";
+			productName = "Deprecate Prototypes";
 		};
 /* End PBXAggregateTarget section */
 
@@ -1038,7 +1053,8 @@
 		4C111690110F5C6B00FCEEB6 /* client.pem in Resources */ = {isa = PBXBuildFile; fileRef = 4C11168C110F5C6B00FCEEB6 /* client.pem */; };
 		4C111691110F5C6B00FCEEB6 /* server.pem in Resources */ = {isa = PBXBuildFile; fileRef = 4C11168D110F5C6B00FCEEB6 /* server.pem */; };
 		4C111692110F5C6B00FCEEB6 /* signed.pem in Resources */ = {isa = PBXBuildFile; fileRef = 4C11168E110F5C6B00FCEEB6 /* signed.pem */; };
-		4C50815E1345539000328938 /* t1_reneg.c in Sources */ = {isa = PBXBuildFile; fileRef = 4C50815A134530A600328938 /* t1_reneg.c */; };
+		4CD3F97F124178210080CF62 /* t1_reneg.c in Sources */ = {isa = PBXBuildFile; fileRef = 4CD3F97D124177E30080CF62 /* t1_reneg.c */; };
+		78A9091816C9C2B2006047B2 /* s3_cbc.c in Sources */ = {isa = PBXBuildFile; fileRef = 78A9091716C9C2B2006047B2 /* s3_cbc.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1938,6 +1954,34 @@
 			remoteGlobalIDString = 1C3430020F71AA900045E860;
 			remoteInfo = ssl.0.9.8;
 		};
+		E1DFA33C196E4B6B0023A393 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E1E950D5196C8E7F00B680D0;
+			remoteInfo = "Verify Source";
+		};
+		E1DFA33E196E4B6E0023A393 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E1E950EB196CD46400B680D0;
+			remoteInfo = "Deprecate Prototypes";
+		};
+		E1E950EE196CD47800B680D0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1C342FED0F71A9220045E860;
+			remoteInfo = crypto.0.9.8;
+		};
+		E1E950F0196CD47A00B680D0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08FB7793FE84155DC02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1C3430020F71AA900045E860;
+			remoteInfo = ssl.0.9.8;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -2797,7 +2841,7 @@
 		1C6C3C4D0F783EEC005DE0AD /* tmdiff.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tmdiff.h; path = src/crypto/tmdiff.h; sourceTree = "<group>"; };
 		1C6C3C670F783F18005DE0AD /* ui.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ui.h; path = src/crypto/ui/ui.h; sourceTree = "<group>"; };
 		1C6C3C740F784002005DE0AD /* buildinf.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = buildinf.h; path = src/MacOS/buildinf.h; sourceTree = "<group>"; };
-		1C6CEF440FA239E100D47643 /* test_ssl */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = test_ssl; sourceTree = BUILT_PRODUCTS_DIR; };
+		1C6CEF440FA239E100D47643 /* ssltest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = ssltest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1CD4BB460FA1257A001142D5 /* test_sha1 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = test_sha1; sourceTree = BUILT_PRODUCTS_DIR; };
 		1CD4BB5B0FA125E0001142D5 /* test_sha256 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = test_sha256; sourceTree = BUILT_PRODUCTS_DIR; };
 		1CD4BB6F0FA12632001142D5 /* test_sha512 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = test_sha512; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -2823,7 +2867,7 @@
 		1CD4BDE10FA13E07001142D5 /* test_engine */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = test_engine; sourceTree = BUILT_PRODUCTS_DIR; };
 		1CD4BDF50FA13E59001142D5 /* test_ige */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = test_ige; sourceTree = BUILT_PRODUCTS_DIR; };
 		1CD4BE0B0FA13ED4001142D5 /* test_jpake */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = test_jpake; sourceTree = BUILT_PRODUCTS_DIR; };
-		1CD58E7D0F79ADED003A1E68 /* README */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = README; sourceTree = "<group>"; };
+		1CD58E7D0F79ADED003A1E68 /* README.rtf */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.rtf; path = README.rtf; sourceTree = "<group>"; };
 		1CF7920B0F79A4DF00F27DA5 /* libcrypto.pc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = libcrypto.pc; path = pkgconfigs/libcrypto.pc; sourceTree = "<group>"; };
 		1CF7920C0F79A4DF00F27DA5 /* libssl.pc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = libssl.pc; path = pkgconfigs/libssl.pc; sourceTree = "<group>"; };
 		1CF7920D0F79A4DF00F27DA5 /* openssl.pc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = openssl.pc; path = pkgconfigs/openssl.pc; sourceTree = "<group>"; };
@@ -2832,13 +2876,19 @@
 		4C1115AF110A862400FCEEB6 /* Unit Tests-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Unit Tests-Info.plist"; sourceTree = "<group>"; };
 		4C1115BA110E16B400FCEEB6 /* unit_tests.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = unit_tests.h; sourceTree = "<group>"; };
 		4C1115BB110E16B400FCEEB6 /* unit_tests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = unit_tests.m; sourceTree = "<group>"; };
-		4C1115D2110E19C300FCEEB6 /* Unit-Tests-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Unit-Tests-Info.plist"; sourceTree = "<group>"; };
 		4C11168B110F5C6B00FCEEB6 /* client.crt */ = {isa = PBXFileReference; lastKnownFileType = file; path = client.crt; sourceTree = "<group>"; };
 		4C11168C110F5C6B00FCEEB6 /* client.pem */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = client.pem; sourceTree = "<group>"; };
 		4C11168D110F5C6B00FCEEB6 /* server.pem */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = server.pem; sourceTree = "<group>"; };
 		4C11168E110F5C6B00FCEEB6 /* signed.pem */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = signed.pem; sourceTree = "<group>"; };
-		4C508159134530A600328938 /* ssl_task.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = ssl_task.c; path = src/ssl/ssl_task.c; sourceTree = "<group>"; };
-		4C50815A134530A600328938 /* t1_reneg.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = t1_reneg.c; path = src/ssl/t1_reneg.c; sourceTree = "<group>"; };
+		4CD3F97C124177E30080CF62 /* ssl_task.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = ssl_task.c; path = src/ssl/ssl_task.c; sourceTree = "<group>"; };
+		4CD3F97D124177E30080CF62 /* t1_reneg.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = t1_reneg.c; path = src/ssl/t1_reneg.c; sourceTree = "<group>"; };
+		78A9091716C9C2B2006047B2 /* s3_cbc.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = s3_cbc.c; path = src/ssl/s3_cbc.c; sourceTree = "<group>"; };
+		E1DFA340196E530F0023A393 /* buildWin32.pl */ = {isa = PBXFileReference; lastKnownFileType = text.script.perl; name = buildWin32.pl; path = bin/buildWin32.pl; sourceTree = "<group>"; };
+		E1E950D1196C728000B680D0 /* verify-source.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; name = "verify-source.sh"; path = "bin/verify-source.sh"; sourceTree = "<group>"; };
+		E1E950D3196C73E100B680D0 /* extract-source.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; name = "extract-source.sh"; path = "bin/extract-source.sh"; sourceTree = "<group>"; };
+		E1E950DA196C903800B680D0 /* generate-patch.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; name = "generate-patch.sh"; path = "bin/generate-patch.sh"; sourceTree = "<group>"; };
+		E1E950DF196CAA9900B680D0 /* deprecate-prototypes.pl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.perl; name = "deprecate-prototypes.pl"; path = "bin/deprecate-prototypes.pl"; sourceTree = "<group>"; };
+		E1E950F6196CE91000B680D0 /* OpenSSL098.plist */ = {isa = PBXFileReference; explicitFileType = text.xml; path = OpenSSL098.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -3135,16 +3185,16 @@
 		08FB7794FE84155DC02AAC07 /* openssl */ = {
 			isa = PBXGroup;
 			children = (
+				1CD58E7D0F79ADED003A1E68 /* README.rtf */,
+				E1E950F6196CE91000B680D0 /* OpenSSL098.plist */,
 				4C111681110F5C2E00FCEEB6 /* Resources */,
 				1C06923910112F4300631593 /* Scripts */,
 				1C343D0E0F71ABD50045E860 /* Source */,
 				1C0879160F72FACD00A4C5A8 /* Linked Libraries */,
 				1AB674ADFE9D54B511CA2CBB /* Products */,
-				1CD58E7D0F79ADED003A1E68 /* README */,
 				4C1115AF110A862400FCEEB6 /* Unit Tests-Info.plist */,
 				4C1115BA110E16B400FCEEB6 /* unit_tests.h */,
 				4C1115BB110E16B400FCEEB6 /* unit_tests.m */,
-				4C1115D2110E19C300FCEEB6 /* Unit-Tests-Info.plist */,
 			);
 			name = openssl;
 			sourceTree = "<group>";
@@ -3182,7 +3232,7 @@
 				1CD4BDE10FA13E07001142D5 /* test_engine */,
 				1CD4BDF50FA13E59001142D5 /* test_ige */,
 				1CD4BE0B0FA13ED4001142D5 /* test_jpake */,
-				1C6CEF440FA239E100D47643 /* test_ssl */,
+				1C6CEF440FA239E100D47643 /* ssltest */,
 				4C1115AE110A862400FCEEB6 /* Unit Tests.octest */,
 			);
 			name = Products;
@@ -3191,6 +3241,11 @@
 		1C06923910112F4300631593 /* Scripts */ = {
 			isa = PBXGroup;
 			children = (
+				E1E950D3196C73E100B680D0 /* extract-source.sh */,
+				E1E950DA196C903800B680D0 /* generate-patch.sh */,
+				E1E950D1196C728000B680D0 /* verify-source.sh */,
+				E1E950DF196CAA9900B680D0 /* deprecate-prototypes.pl */,
+				E1DFA340196E530F0023A393 /* buildWin32.pl */,
 			);
 			name = Scripts;
 			sourceTree = "<group>";
@@ -4260,10 +4315,11 @@
 		1C4D8C110F72E36700732E83 /* ssl */ = {
 			isa = PBXGroup;
 			children = (
+				78A9091716C9C2B2006047B2 /* s3_cbc.c */,
+				4CD3F97C124177E30080CF62 /* ssl_task.c */,
+				4CD3F97D124177E30080CF62 /* t1_reneg.c */,
 				1C6C3C170F783CBB005DE0AD /* kssl.h */,
 				1C6C3C160F783CBB005DE0AD /* kssl.c */,
-				4C508159134530A600328938 /* ssl_task.c */,
-				4C50815A134530A600328938 /* t1_reneg.c */,
 				1C343BDF0F71AB990045E860 /* bio_ssl.c */,
 				1C343BE00F71AB990045E860 /* d1_both.c */,
 				1C343BE10F71AB990045E860 /* d1_clnt.c */,
@@ -4424,6 +4480,22 @@
 		};
 /* End PBXGroup section */
 
+/* Begin PBXLegacyTarget section */
+		E1E950D5196C8E7F00B680D0 /* Verify Source */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "$(ACTION)";
+			buildConfigurationList = E1E950D6196C8E7F00B680D0 /* Build configuration list for PBXLegacyTarget "Verify Source" */;
+			buildPhases = (
+			);
+			buildToolPath = "$(SRCROOT)/bin/verify-source.sh";
+			dependencies = (
+			);
+			name = "Verify Source";
+			passBuildSettingsInEnvironment = 1;
+			productName = "Verify Source";
+		};
+/* End PBXLegacyTarget section */
+
 /* Begin PBXNativeTarget section */
 		1C342FED0F71A9220045E860 /* crypto.0.9.8 */ = {
 			isa = PBXNativeTarget;
@@ -4533,7 +4605,7 @@
 			);
 			name = test_ssl;
 			productName = test_ssl;
-			productReference = 1C6CEF440FA239E100D47643 /* test_ssl */;
+			productReference = 1C6CEF440FA239E100D47643 /* ssltest */;
 			productType = "com.apple.product-type.tool";
 		};
 		1CD4BB450FA1257A001142D5 /* test_sha1 */ = {
@@ -5030,34 +5102,41 @@
 			name = "Unit Tests";
 			productName = "Unit Tests";
 			productReference = 4C1115AE110A862400FCEEB6 /* Unit Tests.octest */;
-			productType = "com.apple.product-type.bundle";
+			productType = "com.apple.product-type.bundle.ocunit-test";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
 		08FB7793FE84155DC02AAC07 /* Project object */ = {
 			isa = PBXProject;
+			attributes = {
+			};
 			buildConfigurationList = 1DEB914E08733D8E0010E9CD /* Build configuration list for PBXProject "openssl" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = English;
 			hasScannedForEncodings = 1;
 			knownRegions = (
-				en,
+				English,
+				Japanese,
+				French,
+				German,
 			);
 			mainGroup = 08FB7794FE84155DC02AAC07 /* openssl */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				1CF791C00F79827100F27DA5 /* OpenSSL */,
+				1CF791C00F79827100F27DA5 /* OpenSSL-all */,
 				1CD4BE120FA1406C001142D5 /* test */,
 				1C3434420F71AB0C0045E860 /* openssl */,
 				1C342FED0F71A9220045E860 /* crypto.0.9.8 */,
 				1C3430020F71AA900045E860 /* ssl.0.9.8 */,
+				E1E950D5196C8E7F00B680D0 /* Verify Source */,
 				1CC41AFF0F98FD8200362F40 /* Install symlinks and scripts */,
 				1CC41B030F98FE3500362F40 /* Install Config */,
 				1CC41B060F98FE4400362F40 /* Install manpages */,
 				1CC41B090F98FE6B00362F40 /* Install pkgconfig */,
 				1CC41B0F0F98FE9C00362F40 /* Install legal */,
+				E1E950EB196CD46400B680D0 /* Deprecate Prototypes */,
 				1C06922A10112D1A00631593 /* pre-test */,
 				1C06925D1011359200631593 /* post-test */,
 				1C4E311A0FA115F600F91AE5 /* test_des */,
@@ -5198,7 +5277,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/sh;
-			shellScript = "\nbindir=\"$DSTROOT/usr/bin\"\nsrcdir=\"$SRCROOT/src\"\n\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$bindir\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 \"$srcdir/tools/c_rehash\" \"$bindir/c_rehash\"\n\nlibdir=\"$DSTROOT/usr/lib/\"\nln -s \"libcrypto.0.9.8.dylib\" \"$libdir/libcrypto.dylib\"\nln -s \"libssl.0.9.8.dylib\"    \"$libdir/libssl.dylib\"";
+			shellScript = "\nbindir=\"$DSTROOT/usr/bin\"\nsrcdir=\"$SRCROOT/src\"\n\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$bindir\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 \"$srcdir/tools/c_rehash\" \"$bindir/c_rehash\"\n\nlibdir=\"$DSTROOT/usr/lib/\"\nln -sf \"libcrypto.0.9.8.dylib\" \"$libdir/libcrypto.dylib\"\nln -sf \"libssl.0.9.8.dylib\"    \"$libdir/libssl.dylib\"";
 			showEnvVarsInLog = 0;
 		};
 		1CC41B020F98FE3500362F40 /* ShellScript */ = {
@@ -5226,7 +5305,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/sh;
-			shellScript = "\nusr_sh=\"$DSTROOT/usr/share/man\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$usr_sh/man1\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$usr_sh/man3\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$usr_sh/man5\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$usr_sh/man7\"\n\n\"${SRCROOT}/bin/clean_bn_internal\"\n\n\"${SRCROOT}/bin/install_manpages\"\n/bin/ln -s verify.1ssl \"$usr_sh\"/man1/c_rehash.1ssl\n\n/Developer/Makefiles/bin/compress-man-pages.pl -d \"$DSTROOT\" /usr/share/man\n\nexit 0";
+			shellScript = "\nusr_sh=\"$DSTROOT/usr/share/man\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$usr_sh/man1\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$usr_sh/man3\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$usr_sh/man5\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$usr_sh/man7\"\n\n#see 17897481 for =item related failures.\n\"${SRCROOT}/bin/install_manpages\"\nstatus=$?\nif [ $status -ne 0 ]; then\n  exit $status\nfi\n/bin/ln -f -s verify.1ssl \"$usr_sh\"/man1/c_rehash.1ssl\nexit $?";
 			showEnvVarsInLog = 0;
 		};
 		1CC41B080F98FE6B00362F40 /* ShellScript */ = {
@@ -5240,7 +5319,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/sh;
-			shellScript = "\npkgdir=\"$DSTROOT/usr/lib/pkgconfig\"\n\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$pkgdir\"\n\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0644 \"$SRCROOT/pkgconfigs/libcrypto.pc\" \"$pkgdir/libcrypto.pc\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0644 \"$SRCROOT/pkgconfigs/libssl.pc\"    \"$pkgdir/libssl.pc\"\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0644 \"$SRCROOT/pkgconfigs/openssl.pc\"   \"$pkgdir/openssl.pc\"\n";
+			shellScript = "set -x\n\npkgdir=\"$DSTROOT/usr/lib/pkgconfig\"\ntmpdir=\"$BUILT_PRODUCTS_DIR/tmp\"\nVER=$( cat \"$SRCROOT\"/src/.version )\n\nmkdir -p \"$tmpdir\"\ncp \"$SRCROOT/pkgconfigs/\"*.pc \"$tmpdir\"\n\nsed -i \"\" \"s/SSL_VERSION/$VER/\" \"$tmpdir/\"*.pc\n\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0755 -d \"$pkgdir\"\n\ninstall -o \"$INSTALL_OWNER\" -g \"$INSTALL_GROUP\" -m 0644 \"$tmpdir/\"*.pc \"$pkgdir\"\n";
 			showEnvVarsInLog = 0;
 		};
 		1CC41B0E0F98FE9C00362F40 /* ShellScript */ = {
@@ -5745,6 +5824,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# Run the unit tests in this test bundle.\n\"${SYSTEM_DEVELOPER_DIR}/Tools/RunUnitTests\"\n";
+		};
+		E1E950F2196CD48100B680D0 /* Deprecate Prototypes */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 8;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Deprecate Prototypes";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}\"/bin/deprecate-prototypes.pl \"${DSTROOT}/usr/include\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -6313,7 +6406,8 @@
 				1C4D8C400F72E3F100732E83 /* t1_lib.c in Sources */,
 				1C4D8C410F72E3F100732E83 /* t1_meth.c in Sources */,
 				1C4D8C420F72E3F100732E83 /* t1_srvr.c in Sources */,
-				4C50815E1345539000328938 /* t1_reneg.c in Sources */,
+				4CD3F97F124178210080CF62 /* t1_reneg.c in Sources */,
+				78A9091816C9C2B2006047B2 /* s3_cbc.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -7245,6 +7339,26 @@
 			target = 1C3430020F71AA900045E860 /* ssl.0.9.8 */;
 			targetProxy = 4C1115B6110A866200FCEEB6 /* PBXContainerItemProxy */;
 		};
+		E1DFA33D196E4B6B0023A393 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E1E950D5196C8E7F00B680D0 /* Verify Source */;
+			targetProxy = E1DFA33C196E4B6B0023A393 /* PBXContainerItemProxy */;
+		};
+		E1DFA33F196E4B6E0023A393 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E1E950EB196CD46400B680D0 /* Deprecate Prototypes */;
+			targetProxy = E1DFA33E196E4B6E0023A393 /* PBXContainerItemProxy */;
+		};
+		E1E950EF196CD47800B680D0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1C342FED0F71A9220045E860 /* crypto.0.9.8 */;
+			targetProxy = E1E950EE196CD47800B680D0 /* PBXContainerItemProxy */;
+		};
+		E1E950F1196CD47A00B680D0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1C3430020F71AA900045E860 /* ssl.0.9.8 */;
+			targetProxy = E1E950F0196CD47A00B680D0 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -7309,7 +7423,7 @@
 		1C6CEF460FA239E200D47643 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				PRODUCT_NAME = test_ssl;
+				PRODUCT_NAME = ssltest;
 			};
 			name = Release;
 		};
@@ -7639,12 +7753,9 @@
 					OPENSSL_THREADS,
 					ZLIB,
 				);
-				GCC_VERSION = "";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/src/include";
 				PUBLIC_HEADERS_FOLDER_PATH = /usr/include/openssl;
-				SDKROOT = "";
 				STRIP_STYLE = debugging;
-				VALID_ARCHS = "armv6 armv7 i386 x86_64 ppc";
 			};
 			name = Release;
 		};
@@ -7672,6 +7783,20 @@
 				PRODUCT_NAME = "Unit Tests";
 				WRAPPER_EXTENSION = octest;
 				ZERO_LINK = NO;
+			};
+			name = Release;
+		};
+		E1E950D7196C8E7F00B680D0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "Verify Source";
+			};
+			name = Release;
+		};
+		E1E950ED196CD46400B680D0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "Deprecate Prototypes";
 			};
 			name = Release;
 		};
@@ -8062,7 +8187,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		1CF791C20F79828F00F27DA5 /* Build configuration list for PBXAggregateTarget "OpenSSL" */ = {
+		1CF791C20F79828F00F27DA5 /* Build configuration list for PBXAggregateTarget "OpenSSL-all" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1CF791C10F79827100F27DA5 /* Release */,
@@ -8082,6 +8207,22 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4C1115B0110A862600FCEEB6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E1E950D6196C8E7F00B680D0 /* Build configuration list for PBXLegacyTarget "Verify Source" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E1E950D7196C8E7F00B680D0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E1E950EC196CD46400B680D0 /* Build configuration list for PBXAggregateTarget "Deprecate Prototypes" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E1E950ED196CD46400B680D0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

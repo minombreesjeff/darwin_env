@@ -133,10 +133,6 @@ int MAIN(int argc, char **argv)
 		else if (strcmp(*argv,"-des3") == 0)
 			enc=EVP_des_ede3_cbc();
 #endif
-#ifndef OPENSSL_NO_IDEA
-		else if (strcmp(*argv,"-idea") == 0)
-			enc=EVP_idea_cbc();
-#endif
 #ifndef OPENSSL_NO_SEED
 		else if (strcmp(*argv,"-seed") == 0)
 			enc=EVP_seed_cbc();
@@ -175,9 +171,6 @@ bad:
 #ifndef OPENSSL_NO_DES
 		BIO_printf(bio_err," -des      - encrypt the generated key with DES in cbc mode\n");
 		BIO_printf(bio_err," -des3     - encrypt the generated key with DES in ede cbc mode (168 bit key)\n");
-#endif
-#ifndef OPENSSL_NO_IDEA
-		BIO_printf(bio_err," -idea     - encrypt the generated key with IDEA in cbc mode\n");
 #endif
 #ifndef OPENSSL_NO_SEED
 		BIO_printf(bio_err," -seed\n");

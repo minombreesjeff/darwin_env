@@ -27,8 +27,8 @@ make_arch_cache()
 				continue
 			fi
 
-			valid="`arch -${arch} echo YES 2>/dev/null`"
-			if [ "$valid" == "YES" ]
+			valid="`lipo -detailed_info /usr/lib/dyld | grep -o $arch 2>/dev/null`"
+			if [ "$valid" == "$arch" ]
 			then
 				echo " $arch" >> "$ARCH_CACHE"
 			fi

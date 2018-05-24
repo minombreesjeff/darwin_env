@@ -198,9 +198,6 @@
 #ifndef OPENSSL_NO_RC2
 #include <openssl/rc2.h>
 #endif
-#ifndef OPENSSL_NO_IDEA
-#include <openssl/idea.h>
-#endif
 #ifndef OPENSSL_NO_SEED
 #include <openssl/seed.h>
 #endif
@@ -544,9 +541,6 @@ int MAIN(int argc, char **argv)
 #endif
 #ifndef OPENSSL_NO_RC2
 	RC2_KEY rc2_ks;
-#endif
-#ifndef OPENSSL_NO_IDEA
-	IDEA_KEY_SCHEDULE idea_ks;
 #endif
 #ifndef OPENSSL_NO_SEED
 	SEED_KEY_SCHEDULE seed_ks;
@@ -1015,11 +1009,6 @@ int MAIN(int argc, char **argv)
 		else if (strcmp(*argv,"rc5") == 0) doit[D_CBC_RC5]=1;
 		else
 #endif
-#ifndef OPENSSL_NO_IDEA
-		     if (strcmp(*argv,"idea-cbc") == 0) doit[D_CBC_IDEA]=1;
-		else if (strcmp(*argv,"idea") == 0) doit[D_CBC_IDEA]=1;
-		else
-#endif
 #ifndef OPENSSL_NO_SEED
 		     if (strcmp(*argv,"seed-cbc") == 0) doit[D_CBC_SEED]=1;
 		else if (strcmp(*argv,"seed") == 0) doit[D_CBC_SEED]=1;
@@ -1167,9 +1156,6 @@ int MAIN(int argc, char **argv)
 			BIO_printf(bio_err,"\n");
 #endif
 
-#ifndef OPENSSL_NO_IDEA
-			BIO_printf(bio_err,"idea-cbc ");
-#endif
 #ifndef OPENSSL_NO_SEED
 			BIO_printf(bio_err,"seed-cbc ");
 #endif
@@ -1222,9 +1208,6 @@ int MAIN(int argc, char **argv)
 			BIO_printf(bio_err,"ecdh\n");
 #endif
 
-#ifndef OPENSSL_NO_IDEA
-			BIO_printf(bio_err,"idea     ");
-#endif
 #ifndef OPENSSL_NO_SEED
 			BIO_printf(bio_err,"seed     ");
 #endif
@@ -1347,9 +1330,6 @@ int MAIN(int argc, char **argv)
 	Camellia_set_key(key16,128,&camellia_ks1);
 	Camellia_set_key(ckey24,192,&camellia_ks2);
 	Camellia_set_key(ckey32,256,&camellia_ks3);
-#endif
-#ifndef OPENSSL_NO_IDEA
-	idea_set_encrypt_key(key16,&idea_ks);
 #endif
 #ifndef OPENSSL_NO_SEED
 	SEED_set_key(key16,&seed_ks);
@@ -1932,22 +1912,6 @@ int MAIN(int argc, char **argv)
 		}
 
 #endif
-#ifndef OPENSSL_NO_IDEA
-	if (doit[D_CBC_IDEA])
-		{
-		for (j=0; j<SIZE_NUM; j++)
-			{
-			print_message(names[D_CBC_IDEA],c[D_CBC_IDEA][j],lengths[j]);
-			Time_F(START);
-			for (count=0,run=1; COND(c[D_CBC_IDEA][j]); count++)
-				idea_cbc_encrypt(buf,buf,
-					(unsigned long)lengths[j],&idea_ks,
-					iv,IDEA_ENCRYPT);
-			d=Time_F(STOP);
-			print_result(D_CBC_IDEA,j,count,d);
-			}
-		}
-#endif
 #ifndef OPENSSL_NO_SEED
 	if (doit[D_CBC_SEED])
 		{
@@ -2490,9 +2454,6 @@ show_res:
 #endif
 #ifndef OPENSSL_NO_AES
 		printf("%s ",AES_options());
-#endif
-#ifndef OPENSSL_NO_IDEA
-		printf("%s ",idea_options());
 #endif
 #ifndef OPENSSL_NO_BF
 		printf("%s ",BF_options());

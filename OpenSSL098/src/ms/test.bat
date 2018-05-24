@@ -15,10 +15,6 @@ echo destest
 destest
 if errorlevel 1 goto done
 
-echo ideatest
-ideatest
-if errorlevel 1 goto done
-
 echo bftest
 bftest
 if errorlevel 1 goto done
@@ -188,3 +184,4 @@ goto end
 echo problems.....
 :end
 PATH=%opath%
+if errorlevel 1 exit /b 1

@@ -363,7 +363,7 @@ static char *dlfcn_name_converter(DSO *dso, const char *filename)
 			rsize += DSO_extlen; /* The length of "lib" */
 		}
 #else
-		/* We will convert this to "%s.so" or "lib%s.so" */
+		/* We will convert this to "%s.so" or "lib%s.so" etc */
 		rsize += DSO_extlen;	/* The length of ".so" */
 		if ((DSO_flags(dso) & DSO_FLAG_NAME_TRANSLATION_EXT_ONLY) == 0)
 			rsize += 3; /* The length of "lib" */

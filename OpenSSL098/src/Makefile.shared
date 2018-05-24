@@ -220,7 +220,7 @@ link_a.darwin:
 	SHLIB_SUFFIX=.dylib; \
 	ALLSYMSFLAGS='-all_load'; \
 	NOALLSYMSFLAGS=''; \
-	SHAREDFLAGS="$(CFLAGS) $(SHARED_LDFLAGS) -F/System/Library/PrivateFrameworks/ -framework TrustEvaluationAgent"; \
+	SHAREDFLAGS="$(CFLAGS) $(SHARED_LDFLAGS)"; \
 	if [ -n "$(LIBVERSION)" ]; then \
 		SHAREDFLAGS="$$SHAREDFLAGS -current_version $(LIBVERSION)"; \
 	fi; \

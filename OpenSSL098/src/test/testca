@@ -1,8 +1,5 @@
 #!/bin/sh
 
-dir="${SRCROOT}/src/apps"
-cmd="${dir}/CA.sh"
-
 SH="/bin/sh"
 if test "$OSTYPE" = msdosdjgpp; then
     PATH="../apps\;$PATH"
@@ -14,11 +11,11 @@ export SH PATH
 SSLEAY_CONFIG="-config CAss.cnf"
 export SSLEAY_CONFIG
 
-OPENSSL="${TARGET_BUILD_DIR}/openssl"
+OPENSSL="`pwd`/../util/opensslwrap.sh"
 export OPENSSL
 
 /bin/rm -fr demoCA
-$SH ${cmd} -newca <<EOF
+$SH ../apps/CA.sh -newca <<EOF
 EOF
 
 if [ $? != 0 ]; then
@@ -27,15 +24,15 @@ fi
 
 SSLEAY_CONFIG="-config Uss.cnf"
 export SSLEAY_CONFIG
-$SH ${cmd}  -newreq
+$SH ../apps/CA.sh -newreq
 if [ $? != 0 ]; then
 	exit 1;
 fi
 
 
-SSLEAY_CONFIG="-config ${dir}/openssl.cnf"
+SSLEAY_CONFIG="-config ../apps/openssl.cnf"
 export SSLEAY_CONFIG
-$SH ${cmd} -sign  <<EOF
+$SH ../apps/CA.sh -sign  <<EOF
 y
 y
 EOF
@@ -44,7 +41,7 @@ if [ $? != 0 ]; then
 fi
 
 
-$SH ${cmd} -verify newcert.pem
+$SH ../apps/CA.sh -verify newcert.pem
 if [ $? != 0 ]; then
 	exit 1;
 fi

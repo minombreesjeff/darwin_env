@@ -69,4 +69,6 @@ int X509_TEA_is_enabled();
  */
 void X509_TEA_set_state(int change);
 
+int X509_verify_cert_orig(X509_STORE_CTX *ctx);
+
 #endif /* HEADER_X509_VFY_APPLE_H */

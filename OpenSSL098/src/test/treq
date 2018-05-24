@@ -1,6 +1,6 @@
 #!/bin/sh
 
-cmd="${BUILT_PRODUCTS_DIR}/openssl req -config ${SRCROOT}/src/apps/openssl.cnf"
+cmd='../util/shlib_wrap.sh ../apps/openssl req -config ../apps/openssl.cnf'
 
 if [ "$1"x != "x" ]; then
 	t=$1

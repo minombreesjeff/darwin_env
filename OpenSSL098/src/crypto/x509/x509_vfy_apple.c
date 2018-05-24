@@ -80,7 +80,11 @@ X509_verify_cert(X509_STORE_CTX *ctx)
 			goto bail;
 		}
 
-		error = TEACertificateChainAddCert(inputChain, ctx->cert, i2d_X509(ctx->cert, NULL));
+		unsigned char *asn1_cert_data = NULL;
+		int asn1_cert_len = i2d_X509(ctx->cert, &asn1_cert_data);
+		error = TEACertificateChainAddCert(inputChain, asn1_cert_data, asn1_cert_len);
+		// TEACertificateChainAddCert made a copy of the ASN.1 data, so we get to free ours here
+		OPENSSL_free(asn1_cert_data);
 		if (error) {
 			TEALogDebug("An error occured while inserting the certificate into the chain");
 			goto bail;
@@ -89,18 +93,18 @@ X509_verify_cert(X509_STORE_CTX *ctx)
 		for (i = 0; i < certLastIndex; ++i) {
 			X509	*t = sk_X509_value(ctx->untrusted, i);
 
-			error = TEACertificateChainAddCert(inputChain, t, i2d_X509(t, NULL));
+			asn1_cert_data = NULL;
+			asn1_cert_len = i2d_X509(t, &asn1_cert_data);
+			error = TEACertificateChainAddCert(inputChain, asn1_cert_data, asn1_cert_len);
+			// TEACertificateChainAddCert made a copy of the ASN.1 data, so we get to free ours here
+			OPENSSL_free(asn1_cert_data);
 			if (error) {
 				TEALogDebug("An error occured while inserting an untrusted certificate into the chain");
 				goto bail;
 			}
 		}
 
-		TEACertificateChainSetEncodingHandler(inputChain, ^(uint8_t *dstBuffer, const TEACertificateRef cert) {
-			if (i2d_X509((void *)TEACertificateGetData(cert), &dstBuffer) == 0)
-				return 1;
-			return 0;
-		});
+		// We put ASN.1 encoded X509 on the CertificateChain, so we don't call TEACertificateChainSetEncodingHandler
 		
 		params.purpose = ctx->param->purpose;
 		if (ctx->param->flags & X509_V_FLAG_USE_CHECK_TIME)
@@ -160,6 +164,14 @@ X509_verify_cert(X509_STORE_CTX *ctx)
 	}
 
 bail:
+	if (inputChain) {
+		TEACertificateChainRelease(inputChain);
+		inputChain = NULL;
+	}
+	if (outputChain) {
+		TEACertificateChainRelease(outputChain);
+		outputChain = NULL;
+	}
 	return ret;
 }
 
@@ -169,7 +181,7 @@ bail:
  *  0: set to false
  *  1: set to true
  */
-static tea_enabled = -1;
+static int tea_enabled = -1;
 
 void
 X509_TEA_set_state(int change)

@@ -17,7 +17,6 @@ touch $TOP/krb5.h
 if expr "$MAKEDEPEND" : '.*gcc$' > /dev/null; then
     args=""
     while [ $# -gt 0 ]; do
-    	if [ "$1" == "-arch" ]; then shift; shift; fi
 	if [ "$1" != "--" ]; then args="$args $1"; fi
 	shift
     done

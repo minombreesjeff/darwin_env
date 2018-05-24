@@ -69,7 +69,7 @@ ARD=ar $(ARFLAGS) d
 RANLIB= ranlib
 PERL= perl
 TAR= tar
-TARFLAGS= --no-recursion
+TARFLAGS= --no-recursion --record-size=10240
 MAKEDEPPROG=makedepend
 LIBDIR=lib
 
@@ -723,9 +723,7 @@ install_docs:
 			(grep -v "[	]"; true) | \
 			(cd $(INSTALL_PREFIX)$(MANDIR)/man$$sec/; \
 			 while read n; do \
-			 	if [ "$$fn" != "bn_internal" ]; then \
-					$$here/util/point.sh $$fn.$${sec}$(MANSUFFIX) "$$n".$${sec}$(MANSUFFIX); \
-				fi; \
+				$$here/util/point.sh $$fn.$${sec}$(MANSUFFIX) "$$n".$${sec}$(MANSUFFIX); \
 			 done); \
 	done
 
