@@ -38,12 +38,6 @@
 			refType = 0;
 			sourceTree = "<absolute>";
 		};
-		055EAD9A0716EDE400A84F76 = {
-			fileRef = 055EAD990716EDE400A84F76;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
 		058B797A05694B9100B395BD = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
@@ -166,7 +160,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				058B7ADA05694CBD00B395BD,
-				055EAD9A0716EDE400A84F76,
 			);
 			isa = PBXFrameworksBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -179,8 +172,8 @@
 				052860DB062B26A7004E2D42,
 			);
 			buildSettings = {
-				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 4;
+				BUILD_VARIANTS = "normal debug";
+				CURRENT_PROJECT_VERSION = 24989;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				INSTALL_PATH = /usr/bin;
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
@@ -194,9 +187,9 @@
 				OTHER_CPLUSPLUSFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
 				OTHER_CPLUSPLUSFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
 				OTHER_LDFLAGS = "";
-				OTHER_LDFLAGS_debug = "$(OTHER_LDFLAGS)  \"-framework\" \"Security,_debug\" \"-framework\" \"security_cdsa_utils,_debug\" \"-framework\" \"security_cdsa_client,_debug\" \"-framework\" \"security_cdsa_utilities,_debug\" \"-framework\" \"security_utilities,_debug\" \"-lstdc++\"";
-				OTHER_LDFLAGS_normal = "$(OTHER_LDFLAGS)  \"-framework\" \"Security\" \"-framework\" \"security_cdsa_utils\" \"-framework\" \"security_cdsa_client\" \"-framework\" \"security_cdsa_utilities\" \"-framework\" \"security_utilities\" \"-lstdc++\"";
-				OTHER_LDFLAGS_profile = "$(OTHER_LDFLAGS)  \"-framework\" \"Security,_profile\" \"-framework\" \"security_cdsa_utils,_profile\" \"-framework\" \"security_cdsa_client,_profile\" \"-framework\" \"security_cdsa_utilities,_profile\" \"-framework\" \"security_utilities,_profile\" \"-lstdc++\" -pg";
+				OTHER_LDFLAGS_debug = "$(OTHER_LDFLAGS)  \"-framework\" \"Security,_debug\" \"-framework\" \"security_cdsa_utils,_debug\" \"-framework\" \"security_cdsa_client,_debug\" \"-framework\" \"security_cdsa_utilities,_debug\" \"-framework\" \"security_utilities,_debug\" $(OTHER_LDFLAGS)  \"-framework\" \"Security,_debug\" \"-framework\" \"security_cdsa_utils,_debug\" \"-framework\" \"security_cdsa_client,_debug\" \"-framework\" \"security_cdsa_utilities,_debug\" \"-framework\" \"security_ocspd,_debug\" \"-lstdc++\"";
+				OTHER_LDFLAGS_normal = "$(OTHER_LDFLAGS)  \"-framework\" \"Security\" \"-framework\" \"security_cdsa_utils\" \"-framework\" \"security_cdsa_client\" \"-framework\" \"security_cdsa_utilities\" \"-framework\" \"security_utilities\" \"-framework\" \"security_ocspd\" \"-lstdc++\"";
+				OTHER_LDFLAGS_profile = "$(OTHER_LDFLAGS)  \"-framework\" \"Security,_profile\" \"-framework\" \"security_cdsa_utils,_profile\" \"-framework\" \"security_cdsa_client,_profile\" \"-framework\" \"security_cdsa_utilities,_profile\" \"-framework\" \"security_utilities,_profile\" \"-framework\" \"security_ocspd,_profile\" \"-lstdc++\" -pg";
 				PRODUCT_NAME = crlrefresh;
 				SECTORDER_FLAGS = "";
 				VERSIONING_SYSTEM = "apple-generic";
