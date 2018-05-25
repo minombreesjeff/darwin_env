@@ -31,5 +31,5 @@ install:
 	if [ ! -d $(CRL_CACHE_DIR) ]; then \
 		mkdir -p $(CRL_CACHE_DIR); \
 		chown root:wheel $(CRL_CACHE_DIR); \
-		chmod 777 $(CRL_CACHE_DIR); \
+		chmod 755 $(CRL_CACHE_DIR); \
 	fi
