@@ -30,6 +30,20 @@
 			settings = {
 			};
 		};
+		055EAD990716EDE400A84F76 = {
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
+			name = security_ocspd.framework;
+			path = /usr/local/SecurityPieces/Frameworks/security_ocspd.framework;
+			refType = 0;
+			sourceTree = "<absolute>";
+		};
+		055EAD9A0716EDE400A84F76 = {
+			fileRef = 055EAD990716EDE400A84F76;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
 		058B797A05694B9100B395BD = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
@@ -39,38 +53,8 @@
 			refType = 4;
 			sourceTree = "<group>";
 		};
-		058B797B05694B9100B395BD = {
-			fileEncoding = 30;
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.cpp.cpp;
-			name = ldapFetch.cpp;
-			path = src/ldapFetch.cpp;
-			refType = 4;
-			sourceTree = "<group>";
-		};
-		058B797C05694B9100B395BD = {
-			fileEncoding = 30;
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.c.h;
-			name = ldapFetch.h;
-			path = src/ldapFetch.h;
-			refType = 4;
-			sourceTree = "<group>";
-		};
 		058B797D05694B9100B395BD = {
 			fileRef = 058B797A05694B9100B395BD;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		058B797E05694B9100B395BD = {
-			fileRef = 058B797B05694B9100B395BD;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
-		058B797F05694B9100B395BD = {
-			fileRef = 058B797C05694B9100B395BD;
 			isa = PBXBuildFile;
 			settings = {
 			};
@@ -78,13 +62,8 @@
 		058B798205694B9900B395BD = {
 			children = (
 				058B798505694BCB00B395BD,
-				058B7A9C05694BFE00B395BD,
-				058B7AC605694C1800B395BD,
 				058B7AD905694CBD00B395BD,
-				058B7ADF05694D2200B395BD,
-				058B7B5305694D4100B395BD,
-				058B7BB505694D5E00B395BD,
-				058B7BF605694D8200B395BD,
+				055EAD990716EDE400A84F76,
 			);
 			isa = PBXGroup;
 			name = Frameworks;
@@ -97,27 +76,6 @@
 			path = Security.framework;
 			refType = 3;
 			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		058B7A9C05694BFE00B395BD = {
-			isa = PBXFileReference;
-			lastKnownFileType = wrapper.framework;
-			path = security_cdsa_utils.framework;
-			refType = 3;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		058B7AC605694C1800B395BD = {
-			isa = PBXFileReference;
-			lastKnownFileType = wrapper.framework;
-			name = LDAP.framework;
-			path = /System/Library/Frameworks/LDAP.framework;
-			refType = 0;
-			sourceTree = "<absolute>";
-		};
-		058B7AC705694C1800B395BD = {
-			fileRef = 058B7AC605694C1800B395BD;
-			isa = PBXBuildFile;
-			settings = {
-			};
 		};
 		058B7AD905694CBD00B395BD = {
 			isa = PBXFileReference;
@@ -133,34 +91,6 @@
 			settings = {
 			};
 		};
-		058B7ADF05694D2200B395BD = {
-			isa = PBXFileReference;
-			lastKnownFileType = wrapper.framework;
-			path = security_cdsa_utilities.framework;
-			refType = 3;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		058B7B5305694D4100B395BD = {
-			isa = PBXFileReference;
-			lastKnownFileType = wrapper.framework;
-			path = security_keychain.framework;
-			refType = 3;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		058B7BB505694D5E00B395BD = {
-			isa = PBXFileReference;
-			lastKnownFileType = wrapper.framework;
-			path = security_cdsa_client.framework;
-			refType = 3;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		058B7BF605694D8200B395BD = {
-			isa = PBXFileReference;
-			lastKnownFileType = wrapper.framework;
-			path = security_utilities.framework;
-			refType = 3;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
 //050
 //051
 //052
@@ -174,8 +104,6 @@
 		4CA1FEAC052A3C5800F22E42 = {
 			children = (
 				058B797A05694B9100B395BD,
-				058B797B05694B9100B395BD,
-				058B797C05694B9100B395BD,
 				052860DE062B26C5004E2D42,
 				058B798205694B9900B395BD,
 				4CA1FEB7052A3C6D00F22E42,
@@ -185,8 +113,6 @@
 			sourceTree = "<group>";
 		};
 		4CA1FEAE052A3C5800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = debug;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -198,8 +124,6 @@
 			name = Development;
 		};
 		4CA1FEAF052A3C5800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				ZERO_LINK = NO;
@@ -226,7 +150,6 @@
 		4CA1FEB1052A3C6D00F22E42 = {
 			buildActionMask = 2147483647;
 			files = (
-				058B797F05694B9100B395BD,
 			);
 			isa = PBXHeadersBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -235,7 +158,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				058B797D05694B9100B395BD,
-				058B797E05694B9100B395BD,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -243,8 +165,8 @@
 		4CA1FEB3052A3C6D00F22E42 = {
 			buildActionMask = 2147483647;
 			files = (
-				058B7AC705694C1800B395BD,
 				058B7ADA05694CBD00B395BD,
+				055EAD9A0716EDE400A84F76,
 			);
 			isa = PBXFrameworksBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -258,7 +180,7 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				INSTALL_PATH = /usr/bin;
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
