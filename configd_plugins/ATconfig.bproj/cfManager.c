@@ -37,6 +37,7 @@
 #include "cfManager.h"
 
 
+#ifdef	NOTNOW
 /*
  * Opens a configuration file and returns a CFArrayRef consisting
  * of a CFStringRef for each line.
@@ -89,6 +90,7 @@ configRead(const char *path)
 	}
 	return config;
 }
+#endif	/* NOTNOW */
 
 /*
  * Writes a new configuration file with the contents of a CFArrayRef. Each

@@ -71,7 +71,7 @@ copy_entity(CFStringRef key)
 }
 
 
-void
+static void
 interface_update_status(const char *if_name, CFBooleanRef active,
 			boolean_t attach)
 {
@@ -134,8 +134,8 @@ interface_remove(const char *if_name)
 }
 
 
-static void
-link_update_status(const char *if_name)
+void
+link_update_status(const char *if_name, boolean_t attach)
 {
 	CFBooleanRef		active	= NULL;
 	struct ifmediareq	ifm;
@@ -171,7 +171,7 @@ link_update_status(const char *if_name)
 	}
 
  done:
-	interface_update_status(if_name, active, TRUE);
+	interface_update_status(if_name, active, attach);
 	if (sock >= 0)
 		close(sock);
 	return;
@@ -224,7 +224,7 @@ link_add(const char *if_name)
 				     newIFList);
 	}
 	cache_SCDynamicStoreSetValue(store, cacheKey, newDict);
-	link_update_status(if_name);
+	link_update_status(if_name, TRUE);
 	CFRelease(cacheKey);
 	CFRelease(interface);
 	if (newDict)	CFRelease(newDict);

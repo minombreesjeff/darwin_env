@@ -34,10 +34,10 @@
 
 __BEGIN_DECLS
 
-void	interface_update_status	(const char *if_name, CFBooleanRef active, boolean_t attach);
 void	interface_detaching	(const char *if_name);
 void	link_add		(const char *if_name);
 void	link_remove		(const char *if_name);
+void	link_update_status	(const char *if_name, boolean_t attach);
 
 __END_DECLS
 

@@ -20,19 +20,6 @@
 	</dict>
 	<dict>
 		<key>execCommand</key>
-		<string>$BUNDLE/Contents/Resources/set-hostname</string>
-		<key>execUID</key>
-		<integer>0</integer>
-		<key>keys</key>
-		<array>
-			<string>Setup:/Network/HostNames</string>
-			<string>State:/Network/Global/DNS</string>
-		</array>
-		<key>name</key>
-		<string>set-hostname</string>
-	</dict>
-	<dict>
-		<key>execCommand</key>
 		<string>/usr/sbin/AppleFileServer</string>
 		<key>execUID</key>
 		<integer>0</integer>

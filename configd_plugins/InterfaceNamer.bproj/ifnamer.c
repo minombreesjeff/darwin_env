@@ -52,6 +52,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/sockio.h>
 #include <sys/stat.h>
 #include <sys/param.h>
 #include <mach/mach.h>
@@ -64,13 +65,11 @@
 #include <SystemConfiguration/SCPrivate.h>	// for SCLog(), SCPrint()
 #include <SystemConfiguration/SCValidation.h>
 
-#define	KERNEL_PRIVATE
-#include <sys/sockio.h>
-#undef	KERNEL_PRIVATE
-#ifdef	SIOCGETVLAN
+#include <SystemConfiguration/BondConfiguration.h>
+#include <SystemConfiguration/BondConfigurationPrivate.h>
+
 #include <SystemConfiguration/VLANConfiguration.h>
 #include <SystemConfiguration/VLANConfigurationPrivate.h>
-#endif	/* SIOCGETVLAN */
 
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOBSD.h>
@@ -547,7 +546,32 @@ done:
     return;
 }
 
-#ifdef	SIOCGETVLAN
+static void
+updateBondConfiguration(void)
+{
+    BondPreferencesRef	prefs;
+
+    prefs = BondPreferencesCreate(NULL);
+    if (prefs == NULL) {
+	SCLog(TRUE, LOG_INFO,
+	      CFSTR(MY_PLUGIN_NAME ": BondPreferencesCreate failed, %s"),
+	      SCErrorString(SCError()));
+	return;
+    }
+
+    if (!_BondPreferencesUpdateConfiguration(prefs)) {
+	SCLog(TRUE, LOG_INFO,
+	      CFSTR(MY_PLUGIN_NAME ": _BondPreferencesUpdateConfiguration failed, %s"),
+	      SCErrorString(SCError()));
+	goto done;
+    }
+
+done:
+
+    CFRelease(prefs);
+    return;
+}
+
 static void
 updateVLANConfiguration(void)
 {
@@ -573,7 +597,6 @@ done:
     CFRelease(prefs);
     return;
 }
-#endif	/* SIOCGETVLAN */
 
 #define INDEX_BAD	(-1)
 
@@ -974,7 +997,7 @@ getInterface(io_object_t if_obj)
 						 CFSTR(kIOBuiltin)));
     if ((builtin == NULL) || !CFBooleanGetValue(builtin)) {
 	builtin = isA_CFBoolean(CFDictionaryGetValue(reginfo_if,
-						     CFSTR(kIOPrimaryInterface)));
+						 CFSTR(kIOPrimaryInterface)));
     }
     location = isA_CFString(CFDictionaryGetValue(reginfo_if,
 						 CFSTR(kIOLocation)));
@@ -1274,9 +1297,8 @@ interfaceArrivalCallback( void * refcon, io_iterator_t iter )
     if (if_list) {
 	sort_interfaces_by_path(if_list);
 	name_interfaces(if_list);
-#ifdef	SIOCGETVLAN
+	updateBondConfiguration();
 	updateVLANConfiguration();
-#endif	/* SIOCGETVLAN */
 	CFRelease(if_list);
     }
     return;

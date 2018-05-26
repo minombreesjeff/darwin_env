@@ -123,7 +123,7 @@ void
 cache_SCDynamicStoreRemoveValue(SCDynamicStoreRef store, CFStringRef key)
 {
 	CFDictionaryRemoveValue(cached_set, key);
-	
+
 	if (!CFArrayContainsValue(cached_removals,
 				  CFRangeMake(0, CFArrayGetCount(cached_removals)),
 				  key)) {

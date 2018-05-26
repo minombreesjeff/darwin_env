@@ -64,6 +64,7 @@
 #define HOSTCONFIG	"/etc/hostconfig"
 
 static SCDynamicStoreRef	store		= NULL;
+static CFRunLoopSourceRef	storeRls	= NULL;
 
 static int			curState	= 0;	// abs(state) == sequence #, < 0 == stop, > 0 == start
 static CFMutableDictionaryRef	curGlobals	= NULL;
@@ -78,34 +79,6 @@ static void	stopAppleTalk (CFRunLoopTimerRef timer, void *info);
 static void	startAppleTalk(CFRunLoopTimerRef timer, void *info);
 
 
-static char *
-cfstring_to_cstring(CFStringRef cfstr, char *buf, int bufLen)
-{
-	CFIndex	len	= CFStringGetLength(cfstr);
-
-	if (!buf) {
-		bufLen = len + 1;
-		buf = CFAllocatorAllocate(NULL, bufLen, 0);
-	}
-
-	if (len >= bufLen) {
-		len = bufLen - 1;
-	}
-
-	(void)CFStringGetBytes(cfstr,
-			CFRangeMake(0, len),
-			kCFStringEncodingASCII,
-			0,
-			FALSE,
-			buf,
-			bufLen,
-			NULL);
-	buf[len] = '\0';
-
-	return buf;
-}
-
-
 static void
 updateDefaults(const void *key, const void *val, void *context)
 {
@@ -118,11 +91,11 @@ updateDefaults(const void *key, const void *val, void *context)
 
 	if (!CFDictionaryGetValueIfPresent(curDefaults, ifName, (const void **)&oldDict) ||
 	    !CFEqual(oldDict, newDict)) {
-		char		ifr_name[IFNAMSIZ];
+		char		ifr_name[IFNAMSIZ+1];
 
 		bzero(&ifr_name, sizeof(ifr_name));
-		if (!CFStringGetCString(ifName, ifr_name, sizeof(ifr_name), kCFStringEncodingMacRoman)) {
-			SCLog(TRUE, LOG_ERR, CFSTR("CFStringGetCString: could not convert interface name to C string"));
+		if (!_SC_cfstring_to_cstring(ifName, ifr_name, sizeof(ifr_name), kCFStringEncodingASCII)) {
+			SCLog(TRUE, LOG_ERR, CFSTR("could not convert interface name to C string"));
 			return;
 		}
 
@@ -147,6 +120,7 @@ updateDefaults(const void *key, const void *val, void *context)
 			status = at_setdefaultaddr(ifr_name, &init_address);
 			if (status == -1) {
 				SCLog(TRUE, LOG_ERR, CFSTR("at_setdefaultaddr() failed"));
+				return;
 			}
 		}
 
@@ -157,25 +131,27 @@ updateDefaults(const void *key, const void *val, void *context)
 						  kSCPropNetAppleTalkDefaultZone,
 						  (const void **)&defaultZone)
 		    ) {
+			int		status;
 			at_nvestr_t	zone;
 
 			/*
 			 * set the "default zone" for this interface
 			 */
 			bzero(&zone, sizeof(zone));
-			if (CFStringGetCString(defaultZone, zone.str, sizeof(zone.str), kCFStringEncodingMacRoman)) {
-				int	status;
+			if (!_SC_cfstring_to_cstring(defaultZone, zone.str, sizeof(zone.str), kCFStringEncodingASCII)) {
+				SCLog(TRUE, LOG_ERR, CFSTR("could not convert default zone to C string"));
+				return;
+			}
 
-				zone.len = strlen(zone.str);
-				status = at_setdefaultzone(ifr_name, &zone);
-				if (status == -1) {
-					SCLog(TRUE, LOG_ERR, CFSTR("at_setdefaultzone() failed"));
-				}
-			} else {
-				SCLog(TRUE, LOG_ERR, CFSTR("CFStringGetCString: could not convert default zone to C string"));
+			zone.len = strlen(zone.str);
+			status = at_setdefaultzone(ifr_name, &zone);
+			if (status == -1) {
+				SCLog(TRUE, LOG_ERR, CFSTR("at_setdefaultzone() failed"));
+				return;
 			}
 		}
 	}
+
 	return;
 }
 
@@ -1313,7 +1289,7 @@ startAppleTalk(CFRunLoopTimerRef timer, void *info)
 
 	// set hostname
 	if (name) {
-		computerName = cfstring_to_cstring(name, NULL, 0);
+		computerName = _SC_cfstring_to_cstring(name, NULL, 0, kCFStringEncodingASCII);
 		if (computerName) {
 			argv[argc++] = "-C";
 			argv[argc++] = computerName;
@@ -1329,7 +1305,7 @@ startAppleTalk(CFRunLoopTimerRef timer, void *info)
 	} else if (CFEqual(mode, CFSTR("-MULTIHOME-"))) {
 		argv[argc++] = "-x";
 	} else {
-		interface = cfstring_to_cstring(mode, NULL, 0);
+		interface = _SC_cfstring_to_cstring(mode, NULL, 0, kCFStringEncodingASCII);
 		if (interface) {
 			argv[argc++] = "-u";
 			argv[argc++] = interface;
@@ -1396,13 +1372,37 @@ atConfigChangedCallback(SCDynamicStoreRef store, CFArrayRef changedKeys, void *a
 
 
 void
+stop(CFRunLoopSourceRef stopRls)
+{
+	// cleanup
+
+	if (storeRls != NULL) {
+		CFRunLoopSourceInvalidate(storeRls);
+		CFRelease(storeRls);
+		storeRls = NULL;
+	}
+
+	if (store != NULL) {
+		CFRelease(store);
+		store = NULL;
+		CFRelease(curGlobals);
+		CFRelease(curConfigFile);
+		CFRelease(curDefaults);
+		CFRelease(curStartup);
+	}
+
+	CFRunLoopSourceSignal(stopRls);
+	return;
+}
+
+
+void
 load(CFBundleRef bundle, Boolean bundleVerbose)
 {
 	CFStringRef		key;
 	CFMutableArrayRef	keys		= NULL;
 	CFStringRef		pattern;
 	CFMutableArrayRef	patterns	= NULL;
-	CFRunLoopSourceRef	rls;
 
 	if (bundleVerbose) {
 		_verbose = TRUE;
@@ -1437,7 +1437,7 @@ load(CFBundleRef bundle, Boolean bundleVerbose)
 		goto error;
 	}
 
-	/* establish notificaiton keys and patterns */
+	/* establish notification keys and patterns */
 
 	keys     = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
@@ -1485,20 +1485,18 @@ load(CFBundleRef bundle, Boolean bundleVerbose)
 		      SCErrorString(SCError()));
 		goto error;
 	}
+	CFRelease(keys);
+	CFRelease(patterns);
 
-	rls = SCDynamicStoreCreateRunLoopSource(NULL, store, 0);
-	if (!rls) {
+	storeRls = SCDynamicStoreCreateRunLoopSource(NULL, store, 0);
+	if (!storeRls) {
 		SCLog(TRUE, LOG_ERR,
 		      CFSTR("SCDynamicStoreCreateRunLoopSource() failed: %s"),
 		      SCErrorString(SCError()));
 		goto error;
 	}
+	CFRunLoopAddSource(CFRunLoopGetCurrent(), storeRls, kCFRunLoopDefaultMode);
 
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
-	CFRelease(rls);
-
-	CFRelease(keys);
-	CFRelease(patterns);
 	return;
 
     error :

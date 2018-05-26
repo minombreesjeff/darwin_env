@@ -1,15 +1,15 @@
 /*
- * Copyright (c) 2000-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- *
+ * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
  * compliance with the License. Please obtain a copy of the License at
  * http://www.opensource.apple.com/apsl/ and read it before using this
  * file.
- *
+ * 
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -17,7 +17,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
  * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -41,8 +41,6 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <sys/param.h>
-#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <notify.h>
@@ -458,63 +456,27 @@ startKicker(const void *value, void *context)
 static CFArrayRef
 getTargets(CFBundleRef bundle)
 {
-	int			fd;
 	Boolean			ok;
-	struct stat		statBuf;
 	CFArrayRef		targets;	/* The array of dictionaries
 						   representing targets with
 						   a "kick me" sign posted on
 						   their backs. */
-	char			targetPath[MAXPATHLEN];
 	CFURLRef		url;
 	CFStringRef		xmlError;
-	CFMutableDataRef	xmlTargets;
+	CFDataRef		xmlTargets	= NULL;
 
 	/* locate the Kicker targets */
 	url = CFBundleCopyResourceURL(bundle, CFSTR("Kicker"), CFSTR("xml"), NULL);
-	if (!url) {
+	if (url == NULL) {
 		return NULL;
 	}
 
-	ok = CFURLGetFileSystemRepresentation(url,
-					      TRUE,
-					      (UInt8 *)&targetPath,
-					      sizeof(targetPath));
+	/* read the resource data */
+	ok = CFURLCreateDataAndPropertiesFromResource(NULL, url, &xmlTargets, NULL, NULL, NULL);
 	CFRelease(url);
-	if (!ok) {
+	if (!ok || (xmlTargets == NULL)) {
 		return NULL;
 	}
-
-	/* open the file */
-	if ((fd = open(targetPath, O_RDONLY, 0)) == -1) {
-		SCLog(TRUE, LOG_NOTICE,
-		      CFSTR("%@ load(): %s not found"),
-		      CFBundleGetIdentifier(bundle),
-		      targetPath);
-		return NULL;
-	}
-
-	/* get the type and size of the XML data file */
-	if (fstat(fd, &statBuf) < 0) {
-		(void) close(fd);
-		return NULL;
-	}
-
-	/* check that its a regular file */
-	if ((statBuf.st_mode & S_IFMT) != S_IFREG) {
-		(void) close(fd);
-		return NULL;
-	}
-
-	/* load the file contents */
-	xmlTargets = CFDataCreateMutable(NULL, statBuf.st_size);
-	CFDataSetLength(xmlTargets, statBuf.st_size);
-	if (read(fd, (void *)CFDataGetMutableBytePtr(xmlTargets), statBuf.st_size) != statBuf.st_size) {
-		CFRelease(xmlTargets);
-		(void) close(fd);
-		return NULL;
-	}
-	(void) close(fd);
 
 	/* convert the XML data into a property list */
 	targets = CFPropertyListCreateFromXMLData(NULL,
@@ -522,11 +484,9 @@ getTargets(CFBundleRef bundle)
 						  kCFPropertyListImmutable,
 						  &xmlError);
 	CFRelease(xmlTargets);
-	if (!targets) {
-		if (xmlError) {
-			SCLog(TRUE, LOG_DEBUG,
-			      CFSTR("CFPropertyListCreateFromXMLData() start: %@"),
-			      xmlError);
+	if (targets == NULL) {
+		if (xmlError != NULL) {
+			SCLog(TRUE, LOG_DEBUG, CFSTR("getTargets(): %@"), xmlError);
 			CFRelease(xmlError);
 		}
 		return NULL;
@@ -556,13 +516,13 @@ load(CFBundleRef bundle, Boolean bundleVerbose)
 
 	/* get the bundle's URL */
 	myBundleURL = CFBundleCopyBundleURL(bundle);
-	if (!myBundleURL) {
+	if (myBundleURL == NULL) {
 		return;
 	}
 
 	/* get the targets */
 	targets = getTargets(bundle);
-	if (!targets) {
+	if (targets == NULL) {
 		/* if nothing to do */
 		CFRelease(myBundleURL);
 		return;

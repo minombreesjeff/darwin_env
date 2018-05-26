@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -24,6 +24,9 @@
 /*
  * Modification History
  *
+ * April 2, 2004		Allan Nathanson <ajn@apple.com>
+ * - use SCPreference notification APIs
+ *
  * June 24, 2001		Allan Nathanson <ajn@apple.com>
  * - update to public SystemConfiguration.framework APIs
  *
@@ -45,8 +48,8 @@
 
 #define USE_FLAT_FILES	"UseFlatFiles"
 
+static SCPreferencesRef		prefs		= NULL;
 static SCDynamicStoreRef	store		= NULL;
-static CFRunLoopSourceRef	rls		= NULL;
 
 static CFMutableDictionaryRef	currentPrefs;		/* current prefs */
 static CFMutableDictionaryRef	newPrefs;		/* new prefs */
@@ -90,7 +93,7 @@ updateCache(const void *key, const void *value, void *context)
 
 
 static void
-flatten(SCPreferencesRef	pSession,
+flatten(SCPreferencesRef	prefs,
 	CFStringRef		key,
 	CFDictionaryRef		base)
 {
@@ -108,7 +111,7 @@ flatten(SCPreferencesRef	pSession,
 		subset = base;
 	} else {
 		/* if __LINK__ key is present */
-		subset = SCPreferencesPathGetValue(pSession, link);
+		subset = SCPreferencesPathGetValue(prefs, link);
 		if (!subset) {
 			/* if error with link */
 			SCLog(TRUE, LOG_ERR,
@@ -161,7 +164,7 @@ flatten(SCPreferencesRef	pSession,
 								  key,
 								  CFEqual(key, CFSTR("/")) ? "" : "/",
 								  keys[i]);
-				flatten(pSession, subKey, vals[i]);
+				flatten(prefs, subKey, vals[i]);
 				CFRelease(subKey);
 			}
 		}
@@ -182,19 +185,24 @@ flatten(SCPreferencesRef	pSession,
 
 
 static void
-updateConfiguration(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
+updateConfiguration(SCPreferencesRef		prefs,
+		    SCPreferencesNotification   notificationType,
+		    void			*info)
 {
 	CFStringRef		current		= NULL;
 	CFDateRef		date		= NULL;
 	CFMutableDictionaryRef	dict		= NULL;
 	CFDictionaryRef		global		= NULL;
 	CFIndex			i;
+	CFArrayRef		keys;
 	CFIndex			n;
-	Boolean			noPrefs		= TRUE;
 	CFStringRef		pattern;
 	CFMutableArrayRef	patterns;
-	SCPreferencesRef	pSession	= NULL;
 	CFDictionaryRef		set		= NULL;
+
+	if ((notificationType & kSCPreferencesNotificationApply) != kSCPreferencesNotificationApply) {
+		return;
+	}
 
 	SCLog(_verbose, LOG_DEBUG, CFSTR("updating configuration"));
 
@@ -227,15 +235,15 @@ updateConfiguration(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 
 	i = CFDictionaryGetCount(currentPrefs);
 	if (i > 0) {
-		const void	**keys;
+		const void	**currentKeys;
 		CFArrayRef	array;
 
-		keys = CFAllocatorAllocate(NULL, i * sizeof(CFStringRef), 0);
-		CFDictionaryGetKeysAndValues(currentPrefs, keys, NULL);
-		array = CFArrayCreate(NULL, keys, i, &kCFTypeArrayCallBacks);
+		currentKeys = CFAllocatorAllocate(NULL, i * sizeof(CFStringRef), 0);
+		CFDictionaryGetKeysAndValues(currentPrefs, currentKeys, NULL);
+		array = CFArrayCreate(NULL, currentKeys, i, &kCFTypeArrayCallBacks);
 		removedPrefsKeys = CFArrayCreateMutableCopy(NULL, 0, array);
 		CFRelease(array);
-		CFAllocatorDeallocate(NULL, keys);
+		CFAllocatorDeallocate(NULL, currentKeys);
 	} else {
 		removedPrefsKeys = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 	}
@@ -265,18 +273,8 @@ updateConfiguration(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 	/*
 	 * load preferences
 	 */
-	pSession = SCPreferencesCreate(NULL, CFSTR("PreferencesMonitor.bundle"), NULL);
-	if (pSession) {
-		CFArrayRef	prefKeys = SCPreferencesCopyKeyList(pSession);
-
-		if (prefKeys) {
-			if (CFArrayGetCount(prefKeys) > 0) {
-				noPrefs = FALSE;
-			}
-			CFRelease(prefKeys);
-		}
-	}
-	if (noPrefs == TRUE) {
+	keys = SCPreferencesCopyKeyList(prefs);
+	if ((keys == NULL) || (CFArrayGetCount(keys) == 0)) {
 		/* no preferences, indicate that we should use flat files */
 		CFStringRef	key;
 
@@ -295,7 +293,7 @@ updateConfiguration(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 	/*
 	 * get "global" system preferences
 	 */
-	(CFPropertyListRef)global = SCPreferencesGetValue(pSession, kSCPrefSystem);
+	(CFPropertyListRef)global = SCPreferencesGetValue(prefs, kSCPrefSystem);
 	if (!global) {
 		/* if no global preferences are defined */
 		goto getSet;
@@ -309,14 +307,14 @@ updateConfiguration(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 	}
 
 	/* flatten property list */
-	flatten(pSession, CFSTR("/"), global);
+	flatten(prefs, CFSTR("/"), global);
 
     getSet :
 
 	/*
 	 * get current set name
 	 */
-	(CFPropertyListRef)current = SCPreferencesGetValue(pSession, kSCPrefCurrentSet);
+	(CFPropertyListRef)current = SCPreferencesGetValue(prefs, kSCPrefCurrentSet);
 	if (!current) {
 		/* if current set not defined */
 		goto done;
@@ -332,7 +330,7 @@ updateConfiguration(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 	/*
 	 * get current set
 	 */
-	(CFPropertyListRef)set = SCPreferencesPathGetValue(pSession, current);
+	(CFPropertyListRef)set = SCPreferencesPathGetValue(prefs, current);
 	if (!set) {
 		/* if error with path */
 		SCLog(TRUE, LOG_ERR,
@@ -350,7 +348,7 @@ updateConfiguration(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 	}
 
 	/* flatten property list */
-	flatten(pSession, CFSTR("/"), set);
+	flatten(prefs, CFSTR("/"), set);
 
 	CFDictionarySetValue(dict, kSCDynamicStorePropSetupCurrentSet, current);
 
@@ -381,13 +379,43 @@ updateConfiguration(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 		      SCErrorString(SCError()));
 	}
 
+	/* finished with current prefs, wait for changes */
+	SCPreferencesSynchronize(prefs);
+
 	CFRelease(currentPrefs);
 	CFRelease(newPrefs);
 	CFRelease(unchangedPrefsKeys);
 	CFRelease(removedPrefsKeys);
 	if (dict)	CFRelease(dict);
 	if (date)	CFRelease(date);
-	if (pSession)	CFRelease(pSession);
+	if (keys)	CFRelease(keys);
+	return;
+}
+
+
+void
+stop(CFRunLoopSourceRef stopRls)
+{
+	// cleanup
+
+	if (prefs != NULL) {
+		if (!SCPreferencesUnscheduleFromRunLoop(prefs,
+							CFRunLoopGetCurrent(),
+							kCFRunLoopDefaultMode)) {
+			SCLog(TRUE, LOG_ERR,
+			      CFSTR("SCPreferencesUnscheduleFromRunLoop() failed: %s"),
+			      SCErrorString(SCError()));
+		}
+		CFRelease(prefs);
+		prefs = NULL;
+	}
+
+	if (store != NULL) {
+		CFRelease(store);
+		store = NULL;
+	}
+
+	CFRunLoopSourceSignal(stopRls);
 	return;
 }
 
@@ -398,7 +426,7 @@ prime()
 	SCLog(_verbose, LOG_DEBUG, CFSTR("prime() called"));
 
 	/* load the initial configuration from the database */
-	updateConfiguration(store, NULL, NULL);
+	updateConfiguration(prefs, kSCPreferencesNotificationApply, (void *)store);
 
 	return;
 }
@@ -407,10 +435,6 @@ prime()
 void
 load(CFBundleRef bundle, Boolean bundleVerbose)
 {
-	CFStringRef		key;
-	CFMutableArrayRef	keys;
-	Boolean			ok;
-
 	if (bundleVerbose) {
 		_verbose = TRUE;
 	}
@@ -418,14 +442,27 @@ load(CFBundleRef bundle, Boolean bundleVerbose)
 	SCLog(_verbose, LOG_DEBUG, CFSTR("load() called"));
 	SCLog(_verbose, LOG_DEBUG, CFSTR("  bundle ID = %@"), CFBundleGetIdentifier(bundle));
 
-	/* open a "configd" session to allow cache updates */
-	store = SCDynamicStoreCreate(NULL,
-				     CFSTR("Configuraton Preferences Monitor plug-in"),
-				     updateConfiguration,
-				     NULL);
-	if (!store) {
+	/* open a SCDynamicStore session to allow cache updates */
+	store = SCDynamicStoreCreate(NULL, CFSTR("PreferencesMonitor.bundle"), NULL, NULL);
+	if (store == NULL) {
 		SCLog(TRUE, LOG_ERR,
 		      CFSTR("SCDynamicStoreCreate() failed: %s"),
+		      SCErrorString(SCError()));
+		goto error;
+	}
+
+	/* open a SCPreferences session */
+	prefs = SCPreferencesCreate(NULL, CFSTR("PreferencesMonitor.bundle"), NULL);
+	if (prefs == NULL) {
+		SCLog(TRUE, LOG_ERR,
+		      CFSTR("SCPreferencesCreate() failed: %s"),
+		      SCErrorString(SCError()));
+		goto error;
+	}
+
+	if (!SCPreferencesSetCallback(prefs, updateConfiguration, NULL)) {
+		SCLog(TRUE, LOG_ERR,
+		      CFSTR("SCPreferencesSetCallBack() failed: %s"),
 		      SCErrorString(SCError()));
 		goto error;
 	}
@@ -433,33 +470,19 @@ load(CFBundleRef bundle, Boolean bundleVerbose)
 	/*
 	 * register for change notifications.
 	 */
-	keys = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
-	key  = SCDynamicStoreKeyCreatePreferences(NULL, NULL, kSCPreferencesKeyApply);
-	CFArrayAppendValue(keys, key);
-	CFRelease(key);
-	ok = SCDynamicStoreSetNotificationKeys(store, keys, NULL);
-	CFRelease(keys);
-	if (!ok) {
+	if (!SCPreferencesScheduleWithRunLoop(prefs, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode)) {
 		SCLog(TRUE, LOG_ERR,
-		      CFSTR("SCDynamicStoreSetNotificationKeys() failed: %s"),
+		      CFSTR("SCPreferencesScheduleWithRunLoop() failed: %s"),
 		      SCErrorString(SCError()));
 		goto error;
 	}
 
-	rls = SCDynamicStoreCreateRunLoopSource(NULL, store, 0);
-	if (!rls) {
-		SCLog(TRUE, LOG_ERR,
-		      CFSTR("SCDynamicStoreCreateRunLoopSource() failed: %s"),
-		      SCErrorString(SCError()));
-		goto error;
-	}
-
-	CFRunLoopAddSource(CFRunLoopGetCurrent(), rls, kCFRunLoopDefaultMode);
 	return;
 
     error :
 
 	if (store)	CFRelease(store);
+	if (prefs)	CFRelease(prefs);
 
 	return;
 }

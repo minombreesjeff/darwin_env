@@ -37,7 +37,9 @@
 
 __BEGIN_DECLS
 
+#ifdef	NOTNOW
 CFArrayRef	configRead	__P((const char *path));
+#endif	/* NOTNOW */
 void		configWrite	__P((const char *path, CFArrayRef config));
 #ifdef	NOTNOW
 void		configSet	__P((CFMutableArrayRef config, CFStringRef key, CFStringRef value));

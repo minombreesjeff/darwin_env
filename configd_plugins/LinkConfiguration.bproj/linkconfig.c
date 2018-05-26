@@ -34,6 +34,7 @@
 //#include <sys/fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <net/if.h>
 #include <net/if_media.h>
 
@@ -41,6 +42,7 @@
 #include <SystemConfiguration/SCPrivate.h>
 #include <SystemConfiguration/SCValidation.h>
 #include <SystemConfiguration/LinkConfiguration.h>
+#include <SystemConfiguration/SCDPlugin.h>		// for _SCDPluginExecCommand
 
 
 static CFMutableDictionaryRef	baseSettings	= NULL;
@@ -53,35 +55,6 @@ static Boolean			_verbose	= FALSE;
 /* in SystemConfiguration/LinkConfiguration.c */
 int
 __createMediaOptions(CFDictionaryRef media_options);
-
-
-static char *
-cfstring_to_cstring(CFStringRef cfstr, char *buf, int bufLen)
-{
-	CFIndex	len	= CFStringGetLength(cfstr);
-
-	if (!buf) {
-		bufLen = len + 1;
-		buf = CFAllocatorAllocate(NULL, bufLen, 0);
-	}
-
-	if (len >= bufLen) {
-		len = bufLen - 1;
-	}
-
-	(void)CFStringGetBytes(cfstr,
-			       CFRangeMake(0, len),
-			       kCFStringEncodingASCII,
-			       0,
-			       FALSE,
-			       buf,
-			       bufLen,
-			       NULL);
-	buf[len] = '\0';
-
-	return buf;
-}
-
 
 
 Boolean
@@ -156,7 +129,7 @@ _NetworkInterfaceSetMediaOptions(CFStringRef		interface,
 	}
 
 	bzero((char *)&ifm, sizeof(ifm));
-	(void)cfstring_to_cstring(interface, ifm.ifm_name, sizeof(ifm.ifm_name));
+	(void)_SC_cfstring_to_cstring(interface, ifm.ifm_name, sizeof(ifm.ifm_name), kCFStringEncodingASCII);
 
 	if (ioctl(sock, SIOCGIFMEDIA, (caddr_t)&ifm) < 0) {
 		SCLog(TRUE, LOG_DEBUG, CFSTR("ioctl(SIOCGIFMEDIA) failed: %s"), strerror(errno));
@@ -189,17 +162,45 @@ _NetworkInterfaceSetMediaOptions(CFStringRef		interface,
 }
 
 
+#ifndef	USE_SIOCSIFMTU
+static void
+ifconfig_exit(pid_t pid, int status, struct rusage *rusage, void *context)
+{
+	char	*if_name	= (char *)context;
+
+	if (WIFEXITED(status)) {
+		if (WEXITSTATUS(status) != 0) {
+			SCLog(TRUE, LOG_ERR,
+			      CFSTR("ifconfig %s failed, exit status = %d"),
+			      if_name,
+			      WEXITSTATUS(status));
+		}
+	} else if (WIFSIGNALED(status)) {
+		SCLog(TRUE, LOG_DEBUG,
+		      CFSTR("ifconfig %s: terminated w/signal = %d"),
+		      if_name,
+		      WTERMSIG(status));
+	} else {
+		SCLog(TRUE, LOG_DEBUG,
+		      CFSTR("ifconfig %s: exit status = %d"),
+		      if_name,
+		      status);
+	}
+
+	CFAllocatorDeallocate(NULL, if_name);
+	return;
+}
+#endif	/* !USE_SIOCSIFMTU */
+
+
 Boolean
 _NetworkInterfaceSetMTU(CFStringRef	interface,
 			CFDictionaryRef	options)
 {
-	struct ifreq	ifr;
 	int		mtu_cur		= -1;
 	int		mtu_max		= -1;
 	int		mtu_min		= -1;
-	Boolean		ok		= FALSE;
 	int		requested;
-	int		sock		= -1;
 	CFNumberRef	val;
 
 	if (!NetworkInterfaceCopyMTU(interface, &mtu_cur, &mtu_min, &mtu_max)) {
@@ -212,7 +213,7 @@ _NetworkInterfaceSetMTU(CFStringRef	interface,
 		if (isA_CFNumber(val)) {
 			CFNumberGetValue(val, kCFNumberIntType, &requested);
 		} else {
-			goto done;
+			return FALSE;
 		}
 	} else {
 		requested = mtu_cur;
@@ -220,37 +221,64 @@ _NetworkInterfaceSetMTU(CFStringRef	interface,
 
 	if (requested == mtu_cur) {
 		/* if current setting is as requested */
-		ok = TRUE;
-		goto done;
+		return TRUE;
 	}
 
 	if (((mtu_min >= 0) && (requested < mtu_min)) ||
 	    ((mtu_max >= 0) && (requested > mtu_max))) {
 		/* if requested MTU outside of the valid range */
-		goto done;
+		return FALSE;
 	}
 
+#ifdef	USE_SIOCSIFMTU
+{
+	struct ifreq	ifr;
+	int		ret;
+	int		sock;
+
 	bzero((char *)&ifr, sizeof(ifr));
-	(void)cfstring_to_cstring(interface, ifr.ifr_name, sizeof(ifr.ifr_name));
+	(void)_SC_cfstring_to_cstring(interface, ifr.ifr_name, sizeof(ifr.ifr_name), kCFStringEncodingASCII);
 	ifr.ifr_mtu = requested;
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sock < 0) {
 		SCLog(TRUE, LOG_ERR, CFSTR("socket() failed: %s"), strerror(errno));
-		goto done;
+		return FALSE;
 	}
 
-	if (ioctl(sock, SIOCSIFMTU, (caddr_t)&ifr) < 0) {
+	ret = ioctl(sock, SIOCSIFMTU, (caddr_t)&ifr);
+	(void)close(sock);
+	if (ret == -1) {
 		SCLog(TRUE, LOG_DEBUG, CFSTR("ioctl(SIOCSIFMTU) failed: %s"), strerror(errno));
-		goto done;
+		return FALSE;
 	}
+}
+#else	/* !USE_SIOCSIFMTU */
+{
+	char	*ifconfig_argv[] = { "ifconfig", NULL, "mtu", NULL, NULL };
+	pid_t	pid;
 
-	ok = TRUE;
+	ifconfig_argv[1] = _SC_cfstring_to_cstring(interface, NULL, 0, kCFStringEncodingASCII);
+	(void)asprintf(&ifconfig_argv[3], "%d", requested);
 
-    done :
+	pid = _SCDPluginExecCommand(ifconfig_exit,	// callout,
+                                    ifconfig_argv[1],	// context
+                                    0,			// uid
+                                    0,			// gid
+                                    "/sbin/ifconfig",	// path
+                                    ifconfig_argv	// argv
+                                   );
 
-	if (sock >= 0)	(void)close(sock);
-	return ok;
+//	CFAllocatorDeallocate(NULL, ifconfig_argv[1]);	// released in ifconfig_exit()
+	free(ifconfig_argv[3]);
+
+	if (pid <= 0) {
+		return FALSE;
+	}
+}
+#endif	/* !USE_SIOCSIFMTU */
+
+	return TRUE;
 }
 
 
@@ -423,7 +451,7 @@ load(CFBundleRef bundle, Boolean bundleVerbose)
 		goto error;
 	}
 
-	/* establish notificaiton keys and patterns */
+	/* establish notification keys and patterns */
 
 	patterns = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 
