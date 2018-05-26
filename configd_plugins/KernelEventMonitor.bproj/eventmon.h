@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -26,27 +26,44 @@
 /*
  * Modification History
  *
- * July 17, 2000		Allan Nathanson <ajn@apple.com>
- * - initial revision
+ * August 5, 2002	Allan Nathanson <ajn@apple.com>
+ * - split code out from eventmon.c
  */
 
-#ifndef __CFMANAGER_H
-#define __CFMANAGER_H
 
-#include <CoreFoundation/CoreFoundation.h>
+#ifndef _EVENTMON_H
+#define _EVENTMON_H
+
 #include <sys/cdefs.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/filio.h>
+#include <sys/kern_event.h>
+#include <errno.h>
+#include <net/if.h>
+#include <net/if_dl.h>
+#include <net/if_media.h>
+#include <net/route.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <SystemConfiguration/SystemConfiguration.h>
+#include <SystemConfiguration/SCPrivate.h>
+#include <SystemConfiguration/SCValidation.h>
+
+
+extern SCDynamicStoreRef	store;
+extern Boolean			_verbose;
 
 
 __BEGIN_DECLS
 
-CFArrayRef	configRead	__P((const char *path));
-void		configWrite	__P((const char *path, CFArrayRef config));
-#ifdef	NOTNOW
-void		configSet	__P((CFMutableArrayRef config, CFStringRef key, CFStringRef value));
-void		configRemove	__P((CFMutableArrayRef config, CFStringRef key));
-#endif	/* NOTNOW */
+int	dgram_socket		(int	domain);
 
 __END_DECLS
 
+#endif /* _EVENTMON_H */
 
-#endif	/* __CFMANAGER_H */

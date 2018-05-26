@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -26,27 +26,40 @@
 /*
  * Modification History
  *
- * July 17, 2000		Allan Nathanson <ajn@apple.com>
+ * May 1, 2003	Allan Nathanson <ajn@apple.com>
  * - initial revision
  */
 
-#ifndef __CFMANAGER_H
-#define __CFMANAGER_H
+
+#ifndef	_CACHE_H
+#define	_CACHE_H
+
 
 #include <CoreFoundation/CoreFoundation.h>
-#include <sys/cdefs.h>
+#include <SystemConfiguration/SystemConfiguration.h>
 
 
 __BEGIN_DECLS
 
-CFArrayRef	configRead	__P((const char *path));
-void		configWrite	__P((const char *path, CFArrayRef config));
-#ifdef	NOTNOW
-void		configSet	__P((CFMutableArrayRef config, CFStringRef key, CFStringRef value));
-void		configRemove	__P((CFMutableArrayRef config, CFStringRef key));
-#endif	/* NOTNOW */
+void			cache_open			();
+
+CFPropertyListRef	cache_SCDynamicStoreCopyValue	(SCDynamicStoreRef	store,
+							 CFStringRef		key);
+
+void			cache_SCDynamicStoreSetValue	(SCDynamicStoreRef	store,
+							 CFStringRef		key,
+							 CFPropertyListRef	value);
+
+void			cache_SCDynamicStoreRemoveValue	(SCDynamicStoreRef	store,
+							 CFStringRef		key);
+
+void			cache_SCDynamicStoreNotifyValue	(SCDynamicStoreRef	store,
+							 CFStringRef		key);
+
+void			cache_write			(SCDynamicStoreRef	store);
+
+void			cache_close			();
 
 __END_DECLS
 
-
-#endif	/* __CFMANAGER_H */
+#endif	/* _CACHE_H */

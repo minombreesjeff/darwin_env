@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -26,27 +26,25 @@
 /*
  * Modification History
  *
- * July 17, 2000		Allan Nathanson <ajn@apple.com>
- * - initial revision
+ * August 5, 2002	Allan Nathanson <ajn@apple.com>
+ * - split code out from eventmon.c
  */
 
-#ifndef __CFMANAGER_H
-#define __CFMANAGER_H
 
-#include <CoreFoundation/CoreFoundation.h>
-#include <sys/cdefs.h>
+#ifndef _EV_APPLETALK_H
+#define _EV_APPLETALK_H
 
+#include <netat/appletalk.h>
+#include <netat/at_var.h>
 
 __BEGIN_DECLS
 
-CFArrayRef	configRead	__P((const char *path));
-void		configWrite	__P((const char *path, CFArrayRef config));
-#ifdef	NOTNOW
-void		configSet	__P((CFMutableArrayRef config, CFStringRef key, CFStringRef value));
-void		configRemove	__P((CFMutableArrayRef config, CFStringRef key));
-#endif	/* NOTNOW */
+void	interface_update_appletalk	(struct ifaddrs *ifap, const char *if_name);
+void	interface_update_atalk_address	(struct kev_atalk_data *aEvent, const char *if_name);
+void	interface_update_atalk_zone	(struct kev_atalk_data *aEvent, const char *if_name);
+void	interface_update_shutdown_atalk	();
 
 __END_DECLS
 
+#endif /* _EV_EVENTMON_H */
 
-#endif	/* __CFMANAGER_H */
