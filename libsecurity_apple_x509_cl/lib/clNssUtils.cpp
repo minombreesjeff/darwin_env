@@ -123,7 +123,13 @@ uint32 clDataToInt(
 	}
 	uint32 len = cdata.Length;
 	if(len > sizeof(uint32)) {
-		CssmError::throwMe(toThrow);
+		if(toThrow == 0) {
+			/* tolerate this */
+			len = sizeof(uint32);
+		}
+		else {
+			CssmError::throwMe(toThrow);
+		}
 	}
 	
 	uint32 rtn = 0;
@@ -780,12 +786,12 @@ void CL_decodeDistributionPointName(
 			}
 			
 			cssmDpn.nameType = CE_CDNT_FullName;
-			cssmDpn.fullName = (CE_GeneralNames *)alloc.malloc(
+			cssmDpn.dpn.fullName = (CE_GeneralNames *)alloc.malloc(
 				sizeof(CE_GeneralNames));
 				
 			/* copy out to caller */
 			CL_nssGeneralNamesToCssm(gnames, 
-				*cssmDpn.fullName, coder, alloc);
+				*cssmDpn.dpn.fullName, coder, alloc);
 			break;
 		}
 		case NSS_DIST_POINT_RDN_TAG:
@@ -800,11 +806,11 @@ void CL_decodeDistributionPointName(
 			}
 			
 			cssmDpn.nameType = CE_CDNT_NameRelativeToCrlIssuer;
-			cssmDpn.rdn = (CSSM_X509_RDN_PTR)alloc.malloc(
+			cssmDpn.dpn.rdn = (CSSM_X509_RDN_PTR)alloc.malloc(
 				sizeof(CSSM_X509_RDN));
 			
 			/* copy out to caller */
-			CL_nssRdnToCssm(rdn, *cssmDpn.rdn, alloc, coder);
+			CL_nssRdnToCssm(rdn, *cssmDpn.dpn.rdn, alloc, coder);
 			break;
 		}
 		default:
@@ -829,14 +835,14 @@ void CL_encodeDistributionPointName(
 	 */
 	switch(cpoint.nameType) {
 		case CE_CDNT_FullName:
-			CL_cssmGeneralNamesToNss(*cpoint.fullName,
+			CL_cssmGeneralNamesToNss(*cpoint.dpn.fullName,
 				gnames, coder);
 			encodeSrc = &gnames;
 			templ = kSecAsn1DistPointFullNameTemplate;
 			break;
 			
 		case CE_CDNT_NameRelativeToCrlIssuer:
-			CL_cssmRdnToNss(*cpoint.rdn, rdn, coder);
+			CL_cssmRdnToNss(*cpoint.dpn.rdn, rdn, coder);
 			encodeSrc = &rdn;
 			templ = kSecAsn1DistPointRDNTemplate;
 			break;

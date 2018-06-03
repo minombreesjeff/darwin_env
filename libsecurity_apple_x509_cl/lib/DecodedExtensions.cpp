@@ -211,7 +211,15 @@ void DecodedExten::parse(
 			nssObj,
 			cdsaObj,
 			alloc);
-		*cdsaObj = clDataToInt(*nssObj);
+		CSSM_RETURN toThrow;
+		if(clCompareCssmData(&mExtnId, &CSSMOID_CrlReason)) {
+			toThrow = CSSMERR_CL_INVALID_CRL_POINTER;
+		}
+		else {
+			/* tolerate crlNumber > 4 bytes */
+			toThrow = CSSM_OK;
+		}
+		*cdsaObj = clDataToInt(*nssObj, toThrow);
 		vCdsaObj = cdsaObj;
 	}
 	/* same encoding (GeneralNames) for all of these: */

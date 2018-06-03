@@ -681,12 +681,12 @@ void CL_freeCssmDistPointName(
 	}
 	switch(cssmDpn->nameType) {
 		case CE_CDNT_FullName:
-			CL_freeCssmGeneralNames(cssmDpn->fullName, alloc);
-			alloc.free(cssmDpn->fullName);
+			CL_freeCssmGeneralNames(cssmDpn->dpn.fullName, alloc);
+			alloc.free(cssmDpn->dpn.fullName);
 			break;
 		case CE_CDNT_NameRelativeToCrlIssuer:
-			CL_freeX509Rdn(cssmDpn->rdn, alloc);
-			alloc.free(cssmDpn->rdn);
+			CL_freeX509Rdn(cssmDpn->dpn.rdn, alloc);
+			alloc.free(cssmDpn->dpn.rdn);
 			break;
 	}
 	memset(cssmDpn, 0, sizeof(*cssmDpn));

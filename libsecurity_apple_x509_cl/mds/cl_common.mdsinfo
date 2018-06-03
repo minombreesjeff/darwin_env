@@ -15,7 +15,7 @@
 	<key>MdsFileType</key>
 	<string>PluginCommon</string>
 	<key>ModuleID</key>
-	<string>{87191ca4-0fc9-11d4-849a000502b52122}</string>
+	<string>{87191ca4-0fc9-11d4-849a-000502b52122}</string>
 	<key>ModuleName</key>
 	<string>AppleX509CL</string>
 	<key>MultiThreadFlag</key>
@@ -24,5 +24,7 @@
 	<string>1.0</string>
 	<key>ServiceMask</key>
 	<string>CSSM_SERVICE_CL</string>
+    <key>Path</key>
+    <string>*AppleX509CL</string>
 </dict>
 </plist>
