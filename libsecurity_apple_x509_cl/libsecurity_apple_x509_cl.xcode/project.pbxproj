@@ -230,13 +230,13 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 24817;
+				CURRENT_PROJECT_VERSION = 24989;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Components/Security /usr/local/SecurityPieces/Frameworks";
 				HEADER_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers\" \"$(BUILT_PRODUCTS_DIR)/SecurityPieces/PrivateHeaders\"";
 				LIBRARY_STYLE = STATIC;
 				OPT_CFLAGS = "-DNDEBUG -Os $(OPT_INLINEFLAGS)";
-				OPT_CPPFLAGS = "$(OPT_CFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
-				OPT_INLINEFLAGS = "-finline-functions --param max-inline-insns-single=100 --param max-inline-insns-auto=150 --param max-inline-insns=180 --param min-inline-insns=60";
+				OPT_INLINEFLAGS = "-finline-functions";
+				OPT_CPPFLAGS = "$(OPT_CFLAGS)";
 				OPT_LDFLAGS = "";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
@@ -440,7 +440,7 @@
 			);
 			buildSettings = {
 				BUILD_VARIANTS = "normal debug";
-				CURRENT_PROJECT_VERSION = 24817;
+				CURRENT_PROJECT_VERSION = 24989;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				HEADER_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers\" \"$(BUILT_PRODUCTS_DIR)/SecurityPieces/PrivateHeaders\"";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
@@ -493,7 +493,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>24817</string>
+	<string>24989</string>
 </dict>
 </plist>
 ";

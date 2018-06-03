@@ -455,6 +455,7 @@ CSSM_KEY_PTR CL_extractCSSMKeyNSS(
 				break;
 			case CSSM_ALGID_DSA:
 			case CSSM_ALGID_DH:
+			case CSSM_ALGMODE_PKCS1_EME_OAEP:
 				hdr.Format = CSSM_KEYBLOB_RAW_FORMAT_X509;
 				break;
 			case CSSM_ALGID_FEE:
@@ -482,6 +483,7 @@ CSSM_KEY_PTR CL_extractCSSMKeyNSS(
 		switch(hdr.AlgorithmId) {
 			case CSSM_ALGID_DSA:
 			case CSSM_ALGID_DH:
+			case CSSM_ALGMODE_PKCS1_EME_OAEP:
 			{
 				/* 
 				 * Just encode the whole subject public key info blob.
