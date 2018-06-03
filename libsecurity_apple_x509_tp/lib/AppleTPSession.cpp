@@ -118,14 +118,15 @@ void AppleTPSession::CrlVerify(CSSM_CL_HANDLE CLHandle,
 	TPCrlInfo crlToVerify(CLHandle, CSPHandle, &CrlToBeVerified.CrlBlob,
 		TIC_NoCopy, cssmTimeStr);
 		
-	/* required at the API but in fact may be empty */
+	/* Both required at the API but in fact may be empty */
 	TPCertGroup inCertGroup(SignerCertGroup, CLHandle, CSPHandle, *this, 
 		cssmTimeStr, 		// optional 'this' time
 		false, 				// firstCertMustBeValid
 		TGO_Group);	
+	TPCertGroup gatheredCerts(*this, TGO_Group);	
 		
-	/* common CRL verify parameters */
-	TPCrlVerifyContext vfyCtx(*this,
+	/* common CRL/OCSP verify parameters */
+	TPVerifyContext vfyCtx(*this,
 		CLHandle,
 		CSPHandle,
 		cssmTimeStr,
@@ -133,11 +134,12 @@ void AppleTPSession::CrlVerify(CSSM_CL_HANDLE CLHandle,
 		AnchorCerts,
 		&inCertGroup,
 		NULL,				// no CRLs, we're on our own 
-		NULL,				// gatheredCerts, none so far
+		gatheredCerts,	
 		DBList,
-		kCrlNone,			// policy, varies per policy
+		kRevokeCrlBasic,
 		actionFlags,
-		0);					// crlOptFlags, varies per policy
+		NULL,				// crlOpts
+		NULL);				// OCSP opts
 		
 	/*
 	 * We assert the doCrlVerify flag to ensure CRL verification 

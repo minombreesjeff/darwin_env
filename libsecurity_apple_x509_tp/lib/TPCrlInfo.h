@@ -93,7 +93,7 @@ public:
 	 * If doCrlVerify is true, we'll do an eventually recursive
 	 * CRL verification test on the cert group we construct
 	 * here to verify the CRL in question. This recursive
-	 * verifdy is also done if the CRL is an indirect CRL.
+	 * verify is also done if the CRL is an indirect CRL.
 	 * Currently, the doCrlVerifyFlag will be set false in the
 	 * normal case of verifying a cert chain; in that case the 
 	 * various certs needed to verify the CRL are assumed to 
@@ -103,7 +103,7 @@ public:
 	 * the top-level op is simply a CRL verify.
 	 */
 	CSSM_RETURN verifyWithContext(
-		TPCrlVerifyContext	&tpVerifyContext,
+		TPVerifyContext		&tpVerifyContext,
 		TPCertInfo			*forCert,	// optional
 		bool				doCrlVerify = false);	
 	
@@ -148,7 +148,7 @@ private:
 	
 	void releaseResources();
 	CSSM_RETURN parseExtensions(
-		TPCrlVerifyContext			&tpVerifyContext,
+		TPVerifyContext				&tpVerifyContext,
 		bool						isPerEntry,
 		uint32						entryIndex,		// if isPerEntry
 		const CSSM_X509_EXTENSIONS	&extens,
@@ -166,7 +166,7 @@ class TPCrlGroup
 public:
 	/* construct empty CRL group */
 	TPCrlGroup(
-		Allocator			&alloc,
+		Allocator				&alloc,
 		TPGroupOwner			whoOwns);		// if TGO_Group, we delete
 	
 	/*
@@ -179,7 +179,7 @@ public:
 		const CSSM_CRLGROUP 	*cssmCrlGroup,		// optional
 		CSSM_CL_HANDLE 			clHand,
 		CSSM_CSP_HANDLE 		cspHand,
-		Allocator			&alloc,
+		Allocator				&alloc,
 		const char				*cssmTimeStr,		// may be NULL
 		TPGroupOwner			whoOwns);	
 	
@@ -217,7 +217,7 @@ public:
 	unsigned numCrls()								{ return mNumCrls; }
 	
 private:
-	Allocator			&mAlloc;
+	Allocator				&mAlloc;
 	TPCrlInfo				**mCrlInfo;			// just an array of pointers
 	unsigned				mNumCrls;			// valid certs in certInfo
 	unsigned				mSizeofCrlInfo;		// mallocd space in certInfo

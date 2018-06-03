@@ -87,7 +87,7 @@ static CSSM_DB_UNIQUE_RECORD_PTR tpCertLookup(
  * with partial public key processing later. 
  */
 TPCertInfo *tpDbFindIssuerCert(
-	Allocator 			&alloc,
+	Allocator				&alloc,
 	CSSM_CL_HANDLE			clHand,
 	CSSM_CSP_HANDLE			cspHand,
 	const TPClItemInfo		*subjectItem,
@@ -304,12 +304,12 @@ static CSSM_DB_UNIQUE_RECORD_PTR tpCrlLookup(
 
 /*
  * Search a list of DBs for a CRL from the specified issuer and (optional)  
- * TPCrlVerifyContext.verifyTime. 
+ * TPVerifyContext.verifyTime. 
  * Just a boolean return - we found it, or not. If we did, we return a
- * TPCrlInfo which has been verified with the specified TPCrlVerifyContext.
+ * TPCrlInfo which has been verified with the specified TPVerifyContext.
  */
 TPCrlInfo *tpDbFindIssuerCrl(
-	TPCrlVerifyContext	&vfyCtx,
+	TPVerifyContext		&vfyCtx,
 	const CSSM_DATA		&issuer,
 	TPCertInfo			&forCert)
 {
@@ -429,6 +429,7 @@ TPCrlInfo *tpDbFindIssuerCrl(
 	return NULL;
 }
 
+#if WRITE_FETCHED_CRLS_TO_DB
 /*
  * Update an existing DLDB to be CRL-capable.
  */
@@ -703,3 +704,5 @@ CSSM_RETURN tpDbStoreCrl(
 	
 	return crtn;
 }
+
+#endif	/* WRITE_FETCHED_CRLS_TO_DB */

@@ -39,14 +39,14 @@ extern "C" {
 #define tpCalloc(alloc, num, size)	(alloc).calloc(num, size)
 
 void tpCopyCssmData(
-	Allocator	&alloc,
+	Allocator		&alloc,
 	const CSSM_DATA	*src,
 	CSSM_DATA_PTR	dst);
 CSSM_DATA_PTR tpMallocCopyCssmData(
-	Allocator	&alloc,
+	Allocator		&alloc,
 	const CSSM_DATA	*src);
 void tpFreeCssmData(
-	Allocator &alloc,
+	Allocator		&alloc,
 	CSSM_DATA_PTR 	data,
 	CSSM_BOOL 		freeStruct);
 CSSM_BOOL tpCompareCssmData(
@@ -94,7 +94,8 @@ void tpToLower(
 
 void tpNormalizeAddrSpec(
 	char		*addr,
-	unsigned	addrLen);
+	unsigned	addrLen,
+	bool		normalizeAll);
 
 CSSM_BOOL tpCompareHostNames(
 	const char	 	*hostName,			// spec'd by app, tpToLower'd
@@ -106,7 +107,8 @@ CSSM_BOOL tpCompareEmailAddr(
 	const char	 	*appEmail,		// spec'd by app, tpToLower'd
 	uint32			appEmailLen,
 	char			*certEmail,		// from cert, we tpToLower
-	uint32			certEmailLen);
+	uint32			certEmailLen,
+	bool			normalizeAll);	// true : lower-case all certEmail characters
 
 #ifdef	__cplusplus
 }

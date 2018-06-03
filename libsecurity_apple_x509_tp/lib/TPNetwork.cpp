@@ -24,24 +24,12 @@
  
 #include "TPNetwork.h"
 #include "tpdebugging.h"
+#include "tpTime.h"
 #include <Security/cssmtype.h>
 #include <Security/cssmapple.h>
 #include <Security/oidscert.h>
 #include <security_utilities/logging.h>
-/* Unix-y fork and file stuff */
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <fcntl.h>
-
-/* normally, crlrefresh exec'd from here */
-#define CRL_FETCH_TOOL	"/usr/bin/crlrefresh"
-
-/* !NDEBUG, this env var optionally points to crlrefresh */
-#define CRL_FETCH_ENV	"TP_CRLREFRESH"
-
-#define CRL_RBUF_SIZE	1024		/* read this much at a time from pipe */
+#include <security_ocspd/ocspdClient.h>
 
 typedef enum {
 	LT_Crl = 1,
@@ -51,153 +39,23 @@ typedef enum {
 static CSSM_RETURN tpFetchViaNet(
 	const CSSM_DATA &url,
 	LF_Type 		lfType,
-	Allocator	&alloc,
-	CSSM_DATA		&attrBlob)		// mallocd and RETURNED
+	CSSM_TIMESTRING verifyTime,		// CRL only
+	Allocator		&alloc,
+	CSSM_DATA		&rtnBlob)		// mallocd and RETURNED
 {
-	char *arg1;
-	int status;
-	
-	switch(lfType) {
-		case LT_Crl:
-			arg1 = "f";
-			break;
-		case LT_Cert:
-			arg1 = "F";
-			break;
-		default:
-			return CSSMERR_TP_INTERNAL_ERROR;
+	if(lfType == LT_Crl) {
+		return ocspdCRLFetch(alloc, url, 
+			true, true,				// cache r/w both enable
+			verifyTime, rtnBlob);
 	}
-
-	/* create pipe to catch CRL_FETCH_TOOL's output */
-	int pipeFds[2];
-	status = pipe(pipeFds);
-	if(status) {
-		tpErrorLog("tpFetchViaNet: pipe error %d\n", errno);
-		return CSSMERR_TP_REQUEST_LOST;
+	else {
+		return ocspdCertFetch(alloc, url, rtnBlob);
 	}
-	
-	pid_t pid = fork();
-	if(pid < 0) {
-		tpErrorLog("tpFetchViaNet: fork error %d\n", errno);
-		return CSSMERR_TP_REQUEST_LOST;
-	}
-	if(pid == 0) {
-		/* child: run CRL_FETCH_TOOL */
-				
-		/* don't assume URL string is NULL terminated */
-		char *urlStr;
-		if(url.Data[url.Length - 1] == '\0') {
-			urlStr = (char *)url.Data;
-		}
-		else {
-			urlStr = (char *)alloc.malloc(url.Length + 1);
-			memmove(urlStr, url.Data, url.Length);
-			urlStr[url.Length] = '\0';
-		}
-	
-		/* set up pipeFds[1] as stdout for CRL_FETCH_TOOL */
-		status = dup2(pipeFds[1], STDOUT_FILENO);
-		if(status < 0) {
-			tpErrorLog("tpFetchViaNet: dup2 error %d\n", errno);
-			_exit(1);
-		}
-		close(pipeFds[0]);
-		close(pipeFds[1]);
-		
-		char *crlFetchTool = CRL_FETCH_TOOL;
-		#ifndef	NDEBUG
-		char *cft = getenv(CRL_FETCH_ENV);
-		if(cft) {
-			crlFetchTool = cft;
-		}
-		#endif	/* NDEBUG */
-		
-		/* here we go */
-		execl(crlFetchTool, CRL_FETCH_TOOL, arg1, urlStr, NULL);
-		
-		/* only get here on error */
-		Syslog::error("TPNetwork: exec returned %d errno %d", status, errno);
-		/* we are the child... */
-		_exit(1);
-	}
-
-	/* parent - resulting blob comes in on pipeFds[0] */
-	close(pipeFds[1]);
-	int thisRead = 0;
-	int totalRead = 0;
-	char inBuf[CRL_RBUF_SIZE];
-	attrBlob.Data = NULL;
-	attrBlob.Length = 0;	// buf size until complete, then actual size of 
-							//   good data
-	CSSM_RETURN crtn = CSSM_OK;
-	
-	do {
-		thisRead = read(pipeFds[0], inBuf, CRL_RBUF_SIZE);
-		if(thisRead < 0) {
-			switch(errno) {
-				case EINTR:
-					/* try some more */
-					continue;
-				default:
-					tpErrorLog("tpFetchViaNet: read from child error %d\n", errno);
-					crtn = CSSMERR_TP_REQUEST_LOST;
-					break;
-			}
-			if(crtn) {
-				break;
-			}
-		}
-		if(thisRead == 0) {
-			/* normal termination */
-			attrBlob.Length = totalRead;
-			break;
-		}
-		if(attrBlob.Length < (unsigned)(totalRead + thisRead)) {
-			uint32 newLen = attrBlob.Length + CRL_RBUF_SIZE;
-			attrBlob.Data = (uint8 *)alloc.realloc(attrBlob.Data, newLen);
-			attrBlob.Length = newLen;
-				
-		}
-		memmove(attrBlob.Data + totalRead, inBuf, thisRead);
-		totalRead += thisRead;
-	} while(1);
-	
-	close(pipeFds[0]);
-	
-	/* ensure child exits */
-	pid_t rtnPid;
-	do {
-		rtnPid = wait4(pid, &status, 0 /* options */, NULL /* rusage */);
-		if(rtnPid == pid) {
-			if(!WIFEXITED(status) || (WEXITSTATUS(status) != 0)) {
-				tpErrorLog("tpFetchViaNet: bad exit status from child\n");
-				crtn = CSSMERR_TP_REQUEST_LOST;
-			}
-			/* done */
-			break;
-		}
-		else if(rtnPid < 0) {
-			if(errno == EINTR) {
-				/* try again */
-				continue;
-			}
-			/* hosed */
-			tpErrorLog("tpFetchViaNet: wait4 error %d\n", errno);
-			crtn = CSSMERR_TP_REQUEST_LOST;
-			break;
-		}
-		else {
-			tpErrorLog("tpFetchViaNet: wait4 returned %d\n", rtnPid);
-				crtn = CSSMERR_TP_REQUEST_LOST;
-		}
-	} while(1);
-
-	return crtn;
 }
 
 static CSSM_RETURN tpCrlViaNet(
 	const CSSM_DATA &url,
-	TPCrlVerifyContext &vfyCtx,
+	TPVerifyContext &vfyCtx,
 	TPCertInfo &forCert,		// for verifyWithContext
 	TPCrlInfo *&rtnCrl)
 {
@@ -205,8 +63,27 @@ static CSSM_RETURN tpCrlViaNet(
 	CSSM_DATA crlData;
 	CSSM_RETURN crtn;
 	Allocator &alloc = Allocator::standard();
+	char cssmTime[CSSM_TIME_STRLEN+1];
 	
-	crtn = tpFetchViaNet(url, LT_Crl, alloc, crlData);
+	rtnCrl = NULL;
+	
+	/* verifyTime: Cook up an appropriate time string. */
+	if(vfyCtx.verifyTime != NULL) {
+		/* tolerate any incoming format */
+		int rtn = tpTimeToCssmTimestring(vfyCtx.verifyTime, strlen(vfyCtx.verifyTime),
+			cssmTime);
+		if(rtn) {
+			tpErrorLog("tpCrlLookup: Invalid VerifyTime string\n");
+			return CSSMERR_APPLETP_CRL_NOT_FOUND;
+		}
+	}
+	else {
+		/* right now */
+		StLock<Mutex> _(tpTimeLock());
+		timeAtNowPlus(0, TIME_CSSM, cssmTime);
+	}
+
+	crtn = tpFetchViaNet(url, LT_Crl, cssmTime, alloc, crlData);
 	if(crtn) {
 		return crtn;
 	}
@@ -219,8 +96,35 @@ static CSSM_RETURN tpCrlViaNet(
 	}
 	catch(...) {
 		alloc.free(crlData.Data);
-		rtnCrl = NULL;
-		return CSSMERR_APPLETP_CRL_NOT_FOUND;
+		
+		/* 
+		 * There is a slight possibility of recovering from this error. In case
+		 * the CRL came from disk cache, flush the cache and try to get the CRL
+		 * from the net.
+		 */
+		tpDebug("   bad CRL; flushing from cache and retrying"); 
+		ocspdCRLFlush(url);
+		crtn = tpFetchViaNet(url, LT_Crl, cssmTime, alloc, crlData);
+		if(crtn == CSSM_OK) {
+			try {
+				crl = new TPCrlInfo(vfyCtx.clHand,
+					vfyCtx.cspHand,
+					&crlData,
+					TIC_CopyData,
+					vfyCtx.verifyTime);	
+				tpDebug("   RECOVERY: good CRL obtained from net"); 
+			}
+			catch(...) {
+				alloc.free(crlData.Data);
+				tpDebug("   bad CRL; recovery FAILED (1)"); 
+				return CSSMERR_APPLETP_CRL_NOT_FOUND;
+			}
+		}
+		else {
+			/* it was in cache but we can't find it on the net */
+			tpDebug("   bad CRL; recovery FAILED (2)"); 
+			return CSSMERR_APPLETP_CRL_NOT_FOUND;
+		}
 	}
 	alloc.free(crlData.Data);
 	
@@ -250,7 +154,7 @@ static CSSM_RETURN tpIssuerCertViaNet(
 	CSSM_RETURN crtn;
 	Allocator &alloc = Allocator::standard();
 	
-	crtn = tpFetchViaNet(url, LT_Cert, alloc, certData);
+	crtn = tpFetchViaNet(url, LT_Cert, NULL, alloc, certData);
 	if(crtn) {
 		tpErrorLog("tpIssuerCertViaNet: net fetch failed\n");
 		return CSSMERR_APPLETP_CERT_NOT_FOUND_FROM_ISSUER;
@@ -301,10 +205,10 @@ static CSSM_RETURN tpIssuerCertViaNet(
 static CSSM_RETURN tpFetchViaGeneralNames(
 	const CE_GeneralNames	*names,
 	TPCertInfo 				&forCert,
-	TPCrlVerifyContext		*verifyContext,		// only for CRLs
+	TPVerifyContext			*verifyContext,		// only for CRLs
 	CSSM_CL_HANDLE			clHand,				// only for certs
 	CSSM_CSP_HANDLE			cspHand,			// only for certs
-	const char				*verifyTime,		// only for certs, optional
+	const char				*verifyTime,		// optional
 	/* exactly one must be non-NULL, that one is returned */
 	TPCertInfo				**certInfo,
 	TPCrlInfo				**crlInfo)
@@ -381,16 +285,12 @@ static CSSM_RETURN tpFetchViaGeneralNames(
  */
 CSSM_RETURN tpFetchCrlFromNet(
 	TPCertInfo 			&cert,
-	TPCrlVerifyContext	&vfyCtx,
+	TPVerifyContext		&vfyCtx,
 	TPCrlInfo			*&crl)			// RETURNED
 {
 	/* does the cert have a cRlDistributionPoint? */
 	CSSM_DATA_PTR fieldValue;			// mallocd by CL
 	
-	if(vfyCtx.verifyTime != NULL) {
-		tpErrorLog("***tpFetchCrlFromNet: don't know how to time travel\n");
-		return CSSMERR_APPLETP_CRL_NOT_FOUND;
-	}
 	CSSM_RETURN crtn = cert.fetchField(&CSSMOID_CrlDistributionPoints,
 		&fieldValue);
 	switch(crtn) {
@@ -432,13 +332,13 @@ CSSM_RETURN tpFetchCrlFromNet(
 				
 			case CE_CDNT_FullName:
 			{
-				CE_GeneralNames *names = dp->distPointName->fullName;
+				CE_GeneralNames *names = dp->distPointName->dpn.fullName;
 				crtn = tpFetchViaGeneralNames(names,
 					cert,
 					&vfyCtx,
 					0,			// clHand, use the one in vfyCtx
 					0,			// cspHand, ditto
-					NULL,		// verifyTime - in vfyCtx
+					vfyCtx.verifyTime,	
 					NULL,		
 					&rtnCrl);
 				break;
@@ -451,7 +351,7 @@ CSSM_RETURN tpFetchCrlFromNet(
 						(unsigned)dp->distPointName->nameType);
 				break;
 		}	/* switch distPointName->nameType */
-		if(crtn) {
+		if(crtn == CSSM_OK) {
 			/* i.e., tpFetchViaGeneralNames SUCCEEDED */
 			break;
 		}
@@ -487,10 +387,6 @@ CSSM_RETURN tpFetchIssuerFromNet(
 	/* does the cert have a issuerAltName? */
 	CSSM_DATA_PTR fieldValue;			// mallocd by CL
 	
-	if(verifyTime != NULL) {
-		tpErrorLog("***tpFetchIssuerFromNet: don't know how to time travel\n");
-		return CSSMERR_TP_CERTGROUP_INCOMPLETE;
-	}
 	CSSM_RETURN crtn = subject.fetchField(&CSSMOID_IssuerAltName,
 		&fieldValue);
 	switch(crtn) {

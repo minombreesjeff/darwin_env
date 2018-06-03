@@ -165,7 +165,7 @@ static const CSSM_OID *const TPGoodCrlExtens[] =
  * we actually understand it and can deal it.
  */
 CSSM_RETURN TPCrlInfo::parseExtensions(
-	TPCrlVerifyContext			&vfyCtx,
+	TPVerifyContext				&vfyCtx,
 	bool						isPerEntry,
 	uint32						entryIndex,		// if isPerEntry
 	const CSSM_X509_EXTENSIONS	&extens,
@@ -246,7 +246,7 @@ CSSM_RETURN TPCrlInfo::parseExtensions(
  * Intermediate certs can come from signerCerts or dBList. 
  */
 CSSM_RETURN TPCrlInfo::verifyWithContext(
-	TPCrlVerifyContext		&tpVerifyContext,
+	TPVerifyContext			&tpVerifyContext,
 	TPCertInfo				*forCert,		// optional
 	bool					doCrlVerify)	
 {
@@ -340,7 +340,7 @@ CSSM_RETURN TPCrlInfo::verifyWithContext(
 			tpVerifyContext.numAnchorCerts,
 			tpVerifyContext.anchorCerts,
 			certsToBeFreed,
-			tpVerifyContext.gatheredCerts,
+			&tpVerifyContext.gatheredCerts,
 			CSSM_FALSE,						// subjectIsInGroup
 			tpVerifyContext.actionFlags,
 			verifiedToRoot,	
@@ -409,8 +409,8 @@ CSSM_RETURN TPCrlInfo::verifyWithContext(
 	if(isIndirectCrl || doCrlVerify) {
 		tpCrlDebug("verifyWithContext recursing to "
 			"tpVerifyCertGroupWithCrls");
-		crtn = tpVerifyCertGroupWithCrls(outCertGroup, 
-			tpVerifyContext);
+		crtn = tpVerifyCertGroupWithCrls(tpVerifyContext,
+			outCertGroup);
 		if(crtn) {
 			tpCrlDebug("   ...verifyWithContext CRL reverify FAILURE CRL %u",
 				index());
@@ -528,7 +528,7 @@ CSSM_RETURN TPCrlInfo::isCertRevoked(
  
 /* build empty group */
 TPCrlGroup::TPCrlGroup(
-	Allocator		&alloc,
+	Allocator			&alloc,
 	TPGroupOwner		whoOwns) :
 		mAlloc(alloc),
 		mCrlInfo(NULL),
@@ -549,7 +549,7 @@ TPCrlGroup::TPCrlGroup(
 	const CSSM_CRLGROUP 	*cssmCrlGroup,			// optional
 	CSSM_CL_HANDLE 			clHand,
 	CSSM_CSP_HANDLE 		cspHand,
-	Allocator			&alloc,
+	Allocator				&alloc,
 	const char				*verifyTime,			// may be NULL
 	TPGroupOwner			whoOwns) :
 		mAlloc(alloc),

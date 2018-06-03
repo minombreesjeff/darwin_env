@@ -72,6 +72,8 @@ TPClItemInfo::TPClItemInfo(
 			mIssuerName(NULL),
 			mItemData(NULL),
 			mSigAlg(CSSM_ALGID_NONE),
+			mNotBefore(NULL),
+			mNotAfter(NULL),
 			mIsExpired(false),
 			mIsNotValidYet(false),
 			mIndex(0)
@@ -140,6 +142,14 @@ void TPClItemInfo::releaseResources()
 	if(mCacheHand != 0) {
 		mClCalls.abortCache(mClHand, mCacheHand);
 		mCacheHand = 0;
+	}
+	if(mNotBefore) {
+		CFRelease(mNotBefore);
+		mNotBefore = NULL;
+	}
+	if(mNotAfter) {
+		CFRelease(mNotAfter);
+		mNotAfter = NULL;
 	}
 }
 
@@ -302,7 +312,7 @@ void TPClItemInfo::fetchNotBeforeAfter()
 	
 	/* subsequent errors to errOut */
 	xTime = (CSSM_X509_TIME *)notBeforeField->Data;
-	if(timeStringToTm((char *)xTime->time.Data, xTime->time.Length, &mNotBefore)) {
+	if(timeStringToCfDate((char *)xTime->time.Data, xTime->time.Length, &mNotBefore)) {
 		tpErrorLog("fetchNotBeforeAfter: malformed notBefore time\n");
 		crtn = mClCalls.invalidItemRtn;
 		goto errOut;
@@ -322,14 +332,14 @@ void TPClItemInfo::fetchNotBeforeAfter()
 			/*
 			 * Fake NextUpdate to be "at the end of time"
 			 */
-			timeStringToTm(CSSM_APPLE_CRL_END_OF_TIME, 
+			timeStringToCfDate(CSSM_APPLE_CRL_END_OF_TIME, 
 				strlen(CSSM_APPLE_CRL_END_OF_TIME), 
 				&mNotAfter);
 		}
 	}
 	else {
 		xTime = (CSSM_X509_TIME *)notAfterField->Data;
-		if(timeStringToTm((char *)xTime->time.Data, xTime->time.Length, &mNotAfter)) {
+		if(timeStringToCfDate((char *)xTime->time.Data, xTime->time.Length, &mNotAfter)) {
 			tpErrorLog("fetchNotBeforeAfter: malformed notAfter time\n");
 			crtn = mClCalls.invalidItemRtn;
 			goto errOut;
@@ -366,47 +376,40 @@ ModuleNexus<Mutex> tpTimeLock;
 CSSM_RETURN TPClItemInfo::calculateCurrent(
 	const char 			*verifyString)
 {
-	struct tm 		refTime;
+	CFDateRef refTime = NULL;
 	
 	if(verifyString != NULL) {
 		/* caller specifies verification time base */
-		if(timeStringToTm(verifyString, strlen(verifyString), &refTime)) {
-			tpErrorLog("calculateCurrent: timeStringToTm error\n");
+		if(timeStringToCfDate(verifyString, strlen(verifyString), &refTime)) {
+			tpErrorLog("calculateCurrent: timeStringToCfDate error\n");
 			return CSSMERR_TP_INVALID_TIMESTRING;
 		}
 	}
 	else {
 		/* time base = right now */
-		StLock<Mutex> _(tpTimeLock());
-		nowTime(&refTime);
+		refTime = CFDateCreate(NULL, CFAbsoluteTimeGetCurrent());
 	}
-	if(compareTimes(&refTime, &mNotBefore) < 0) {
+	if(compareTimes(refTime, mNotBefore) < 0) {
 		mIsNotValidYet = true;
-		tpTimeDbg("\nTP_CERT_NOT_VALID_YET:\n   now y:%d m:%d d:%d h:%d m:%d",
-			refTime.tm_year, refTime.tm_mon, refTime.tm_mday, 
-			refTime.tm_hour, refTime.tm_min);
-		tpTimeDbg(" notBefore y:%d m:%d d:%d h:%d m:%d",
-			mNotBefore.tm_year, mNotBefore.tm_mon, mNotBefore.tm_mday, 
-			mNotBefore.tm_hour, mNotBefore.tm_min);
+		tpTimeDbg("\nTP_CERT_NOT_VALID_YET: now %g notBefore %g", 
+			CFDateGetAbsoluteTime(refTime), CFDateGetAbsoluteTime(mNotBefore));
+		CFRelease(refTime);
 		return mClCalls.notValidYetRtn;
 	}
 	else {
 		mIsNotValidYet = false;
 	}
 
-	if(compareTimes(&refTime, &mNotAfter) > 0) {
+	if(compareTimes(refTime, mNotAfter) > 0) {
 		mIsExpired = true;
-		tpTimeDbg("\nTP_CERT_EXPIRED: \n   now y:%d m:%d d:%d "
-				"h:%d m:%d",
-			refTime.tm_year, refTime.tm_mon, refTime.tm_mday, 
-			refTime.tm_hour, refTime.tm_min);
-		tpTimeDbg(" notAfter y:%d m:%d d:%d h:%d m:%d",
-			mNotAfter.tm_year, mNotAfter.tm_mon, mNotAfter.tm_mday, 
-			mNotAfter.tm_hour, mNotAfter.tm_min);
+		tpTimeDbg("\nTP_CERT_EXPIRED: now %g notBefore %g", 
+			CFDateGetAbsoluteTime(refTime), CFDateGetAbsoluteTime(mNotBefore));
+		CFRelease(refTime);
 		return mClCalls.expiredRtn;
 	}
 	else {
 		mIsExpired = false;
+		CFRelease(refTime);
 		return CSSM_OK;
 	}
 }
@@ -428,16 +431,19 @@ TPCertInfo::TPCertInfo(
 		TPClItemInfo(clHand, cspHand, tpCertClCalls, certData, 
 			copyCertData, verifyTime),
 		mSubjectName(NULL),
+		mPublicKeyData(NULL),
 		mPublicKey(NULL),
 		mIsAnchor(false),
-		mIsFromDb(false),
+		mIsFromInputCerts(false),
 		mIsFromNet(false),
 		mNumStatusCodes(0),
 		mStatusCodes(NULL),
 		mUniqueRecord(NULL),
 		mUsed(false),
 		mIsLeaf(false),
-		mIsRoot(TRS_Unknown)
+		mIsRoot(TRS_Unknown),
+		mRevCheckGood(false),
+		mRevCheckComplete(false)
 {
 	CSSM_RETURN	crtn;
 
@@ -454,12 +460,13 @@ TPCertInfo::TPCertInfo(
 	}
 	
 	/* this cert's public key */
-	crtn = CSSM_CL_CertGetKeyInfo(clHand, certData, &mPublicKey);
-	if(crtn) {
+	crtn = fetchField(&CSSMOID_CSSMKeyStruct, &mPublicKeyData);
+	if(crtn || (mPublicKeyData->Length != sizeof(CSSM_KEY))) {
 		/* bad cert */
 		releaseResources();
 		CssmError::throwMe(crtn);
 	}
+	mPublicKey = (CSSM_KEY_PTR)mPublicKeyData->Data;
 	
 	/* calculate other commonly used fields */
 	if(tpCompareCssmData(mSubjectName, issuerName())) {
@@ -488,15 +495,14 @@ void TPCertInfo::releaseResources()
 		freeField(&CSSMOID_X509V1SubjectName, mSubjectName);
 		mSubjectName = NULL;
 	}
+	if(mPublicKeyData) {
+		freeField(&CSSMOID_CSSMKeyStruct, mPublicKeyData);
+		mPublicKey = NULL;
+		mPublicKeyData = NULL;
+	}
 	if(mStatusCodes) {
 		free(mStatusCodes);
 		mStatusCodes = NULL;
-	}
-	if(mPublicKey) {
-		/* allocated by CL */
-		tpFreePluginMemory(clHand(), mPublicKey->KeyData.Data);
-		tpFreePluginMemory(clHand(), mPublicKey);
-		mPublicKey = NULL;
 	}
 	TPClItemInfo::releaseResources();
 }
@@ -580,7 +586,7 @@ bool TPCertInfo::hasPartialKey()
  
 /* build empty group */
 TPCertGroup::TPCertGroup(
-	Allocator		&alloc,
+	Allocator			&alloc,
 	TPGroupOwner		whoOwns) :
 		mAlloc(alloc),
 		mCertInfo(NULL),
@@ -602,7 +608,7 @@ TPCertGroup::TPCertGroup(
 	const CSSM_CERTGROUP 	&CertGroupFrag,
 	CSSM_CL_HANDLE 			clHand,
 	CSSM_CSP_HANDLE 		cspHand,
-	Allocator			&alloc,
+	Allocator				&alloc,
 	const char				*verifyTime,			// may be NULL
 	bool					firstCertMustBeValid,
 	TPGroupOwner			whoOwns) :
@@ -798,14 +804,14 @@ CSSM_TP_APPLE_EVIDENCE_INFO *TPCertGroup::buildCssmEvidenceInfo()
 		if(certInfo->isNotValidYet()) {
 			evInfo->StatusBits |= CSSM_CERT_STATUS_NOT_VALID_YET;
 		}
+		if(certInfo->isAnchor()) {
+			evInfo->StatusBits |= CSSM_CERT_STATUS_IS_IN_ANCHORS;
+		}
 		if(certInfo->dlDbHandle().DLHandle == 0) {
-			if(certInfo->isAnchor()) {
-				evInfo->StatusBits |= CSSM_CERT_STATUS_IS_IN_ANCHORS;
-			}
-			else if(certInfo->isFromNet()) {
+			if(certInfo->isFromNet()) {
 				evInfo->StatusBits |= CSSM_CERT_STATUS_IS_FROM_NET;
 			}
-			else {
+			else if(certInfo->isFromInputCerts()) {
 				evInfo->StatusBits |= CSSM_CERT_STATUS_IS_IN_INPUT_CERTS;
 			}
 		}
@@ -836,19 +842,24 @@ CSSM_TP_APPLE_EVIDENCE_INFO *TPCertGroup::buildCssmEvidenceInfo()
  * encapsulates a policy for CertGroupConstruct and CertGroupVerify.
  */
 CSSM_RETURN TPCertGroup::getReturnCode(
-	CSSM_RETURN constructStatus,
-	CSSM_BOOL	allowExpired,
-	CSSM_BOOL	allowExpiredRoot,
-	CSSM_RETURN policyStatus /* = CSSM_OK */)
+	CSSM_RETURN					constructStatus,
+	CSSM_RETURN					policyStatus,
+	CSSM_APPLE_TP_ACTION_FLAGS	actionFlags)
 {
 	if(constructStatus) {
 		/* CSSMERR_TP_NOT_TRUSTED, CSSMERR_TP_INVALID_ANCHOR_CERT, gross errors */
 		return constructStatus;
 	}
-	
-	/* check for expired, not valid yet */
+
 	bool expired = false;
 	bool notValid = false;
+	bool allowExpiredRoot = (actionFlags & CSSM_TP_ACTION_ALLOW_EXPIRED_ROOT) ?
+		true : false;
+	bool allowExpired = (actionFlags & CSSM_TP_ACTION_ALLOW_EXPIRED) ? true : false;
+	bool requireRevPerCert = (actionFlags & CSSM_TP_ACTION_REQUIRE_REV_PER_CERT) ?
+		true : false;
+		
+	/* check for expired, not valid yet */
 	for(unsigned i=0; i<mNumCerts; i++) {
 		if(mCertInfo[i]->isExpired() &&
 		   !(allowExpiredRoot && mCertInfo[i]->isSelfSigned())) {
@@ -863,6 +874,19 @@ CSSM_RETURN TPCertGroup::getReturnCode(
 	}
 	if(notValid) {
 		return CSSMERR_TP_CERT_NOT_VALID_YET;
+	}
+	
+	/* Check for missing revocation check */
+	if(requireRevPerCert) {
+		for(unsigned i=0; i<mNumCerts; i++) {
+			if(mCertInfo[i]->isSelfSigned()) {
+				/* revocation check meaningless for a root cert */
+				continue;
+			}
+			if(!mCertInfo[i]->revokeCheckGood()) {
+				return CSSMERR_APPLETP_INCOMPLETE_REVOCATION_CHECK;
+			}
+		}
 	}
 	return policyStatus;
 }
@@ -963,7 +987,7 @@ CSSM_RETURN TPCertGroup::buildCertGroup(
 	TPCertGroup				*gatheredCerts,
 	
 	/*
-	 * Indicates that subjectItem is the last element in this cert group.
+	 * Indicates that subjectItem is a cert in this cert group.
 	 * If true, that cert will be tested for "root-ness", including 
 	 *   -- subject/issuer compare
 	 *   -- signature self-verify
@@ -984,6 +1008,7 @@ CSSM_RETURN TPCertGroup::buildCertGroup(
 	unsigned certDex;
 	TPCertInfo *anchorInfo = NULL;
 	bool foundPartialIssuer = false;
+	CSSM_BOOL firstSubjectIsInGroup = subjectIsInGroup;
 	
 	tpVfyDebug("buildCertGroup top");
 	
@@ -1019,11 +1044,21 @@ CSSM_RETURN TPCertGroup::buildCertGroup(
 				 * leaf): remove it from the outgoing cert group, save it,
 				 * and try to proceed with anchor cert processing.
 				 */
-				if(subjCert->isExpired() && (mNumCerts > 1)) {
+				if(subjCert->isExpired() && 
+				   (!firstSubjectIsInGroup || (mNumCerts > 1))) {
 					tpDebug("buildCertGroup: EXPIRED ROOT, looking for good one");
-					mNumCerts--;
 					expiredRoot = subjCert;
-					thisSubject = lastCert();
+					if(mNumCerts) {
+						/* roll back to previous cert */
+						mNumCerts--;
+					}
+					if(mNumCerts == 0) {
+						/* roll back to caller's initial condition */
+						thisSubject = &subjectItem;
+					}
+					else {
+						thisSubject = lastCert();
+					}
 				}
 				break;
 			}
@@ -1039,6 +1074,7 @@ CSSM_RETURN TPCertGroup::buildCertGroup(
 			issuerCert = inCertGroup->findIssuerForCertOrCrl(*thisSubject, 
 				partial);
 			if(issuerCert) {
+				issuerCert->isFromInputCerts(true);
 				if(partial) {
 					/* deal with this later */
 					foundPartialIssuer = true;
@@ -1066,7 +1102,7 @@ CSSM_RETURN TPCertGroup::buildCertGroup(
 		}
 		
 		if((issuerCert == NULL) && (dbList != NULL)) {
-			/* Issuer not in incoming cert group. Search DBList. */
+			/* Issuer not in incoming cert group or gathered certs. Search DBList. */
 			bool partial = false;
 			issuerCert = tpDbFindIssuerCert(mAlloc,
 				clHand,
@@ -1142,9 +1178,13 @@ CSSM_RETURN TPCertGroup::buildCertGroup(
 		for(certDex=0; certDex<numAnchorCerts; certDex++) {
 			if(tp_CompareCerts(theRoot->itemData(), &anchorCerts[certDex])) {
 				/* one fully successful return */
+				tpAnchorDebug("buildCertGroup: root in input AND anchors");
 				verifiedToAnchor = CSSM_TRUE;
 				theRoot->isAnchor(true);
-				theRoot->index(certDex);
+				if(!theRoot->isFromInputCerts()) {
+					/* Don't override index into input certs */
+					theRoot->index(certDex);
+				}
 				if(expiredRoot) {
 					/* verified to anchor but caller will see 
 					 * CSSMERR_TP_CERT_EXPIRED */
@@ -1159,6 +1199,7 @@ CSSM_RETURN TPCertGroup::buildCertGroup(
 				}
 			}
 		}
+		tpAnchorDebug("buildCertGroup: root in input, NOT anchors");
 		
 		if(!expiredRoot) {
 			/* verified to a root cert which is not an anchor */
@@ -1231,6 +1272,7 @@ CSSM_RETURN TPCertGroup::buildCertGroup(
 				 */
 				appendCert(anchorInfo);
 				anchorInfo->isAnchor(true);
+				assert(!anchorInfo->isFromInputCerts());
 				anchorInfo->index(certDex);
 				certsToBeFreed.appendCert(anchorInfo);
 				tpDebug("buildCertGroup: Cert FOUND by signer in AnchorList");	

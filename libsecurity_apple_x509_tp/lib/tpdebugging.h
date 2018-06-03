@@ -49,5 +49,7 @@
 #define tpPolicyError(args...)	secdebug("tpPolicy", ## args)
 #define tpVfyDebug(args...)		secdebug("tpVfyDebug", ## args)
 #define tpAnchorDebug(args...)	secdebug("tpAnchorDebug", ## args)
+#define tpOcspDebug(args...)	secdebug("tpOcsp", ## args)
+#define tpOcspCacheDebug(args...)	secdebug("tpOcspCache", ## args)
 
 #endif	/* _TPDEBUGGING_H_ */

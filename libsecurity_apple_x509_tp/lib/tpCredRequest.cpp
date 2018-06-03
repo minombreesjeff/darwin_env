@@ -64,7 +64,7 @@ CSSM_X509_NAME * AppleTPSession::buildX509Name(
 			malloc(sizeof(CSSM_X509_TYPE_VALUE_PAIR));
 		CSSM_X509_TYPE_VALUE_PAIR_PTR atvp = rdn->AttributeTypeAndValue;
 		tpCopyCssmData(*this, nameOid->oid, &atvp->type);
-		atvp->valueType = BER_TAG_PRINTABLE_STRING;
+		atvp->valueType = BER_TAG_PKIX_UTF8_STRING;
 		atvp->value.Length = strlen(nameOid->string);
 		atvp->value.Data = (uint8 *)malloc(atvp->value.Length);
 		memmove(atvp->value.Data, nameOid->string, atvp->value.Length);

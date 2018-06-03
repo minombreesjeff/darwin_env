@@ -29,12 +29,15 @@
 #include <security_utilities/alloc.h>
 #include "TPCertInfo.h"
 
+/* crlrefresh does this now */
+#define WRITE_FETCHED_CRLS_TO_DB	0
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
 TPCertInfo *tpDbFindIssuerCert(
-	Allocator 			&alloc,
+	Allocator				&alloc,
 	CSSM_CL_HANDLE			clHand,
 	CSSM_CSP_HANDLE			cspHand,
 	const TPClItemInfo		*subjectItem,
@@ -44,24 +47,27 @@ TPCertInfo *tpDbFindIssuerCert(
 
 /*
  * Search a list of DBs for a CRL from the specified issuer and (optional)  
- * TPCrlVerifyContext.verifyTime. 
+ * TPVerifyContext.verifyTime. 
  * Just a boolean return - we found it, or not. If we did, we return a
- * TPCrlInfo which has been verified with the specified TPCrlVerifyContext.
+ * TPCrlInfo which has been verified with the specified TPVerifyContext.
  */
 class TPCrlInfo;
-class TPCrlVerifyContext;
+class TPVerifyContext;
 
 TPCrlInfo *tpDbFindIssuerCrl(
-	TPCrlVerifyContext	&vfyCtx,
+	TPVerifyContext		&vfyCtx,
 	const CSSM_DATA		&issuer,
 	TPCertInfo			&forCert);
 
+#if WRITE_FETCHED_CRLS_TO_DB
 /*
  * Store a CRL in a DLDB.
  */
 CSSM_RETURN tpDbStoreCrl(
 	TPCrlInfo			&crl,
 	CSSM_DL_DB_HANDLE	&dlDb);
+
+#endif	/* WRITE_FETCHED_CRLS_TO_DB */
 
 #ifdef	__cplusplus
 }

@@ -34,13 +34,13 @@ extern "C" {
 /*
  * Fetch CRL(s) for specified cert if the cert has a cRlDistributionPoint
  * extension. If a non-NULL CRL is returned, it has passed verification
- * with specified TPCrlVerifyContext.
+ * with specified TPVerifyContext.
  * The common, trivial failure of "no URI in a cRlDistributionPoint 
  * extension" is indicated by CSSMERR_APPLETP_CRL_NOT_FOUND.
  */
 extern CSSM_RETURN tpFetchCrlFromNet(
 	TPCertInfo 			&cert,
-	TPCrlVerifyContext	&verifyContext,
+	TPVerifyContext		&verifyContext,
 	TPCrlInfo			*&crl);				// RETURNED
 
 /*

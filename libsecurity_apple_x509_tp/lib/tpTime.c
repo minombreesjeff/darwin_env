@@ -31,22 +31,27 @@
 
 /*
  * Given a string containing either a UTC-style or "generalized time"
- * time string, convert to a struct tm (in GMT/UTC). Returns nonzero on
+ * time string, convert to a CFDateRef. Returns nonzero on
  * error. 
  */
-int timeStringToTm(
+int timeStringToCfDate(
 	const char			*str,
 	unsigned			len,
-	struct tm			*tmp)
+	CFDateRef			*cfDate)
 {
 	char 		szTemp[5];
 	bool 		isUtc = false;			// 2-digit year
+	bool		isLocal = false;		// trailing timezone offset
 	bool		isCssmTime = false;		// no trailing 'Z'
+	bool		noSeconds = false;
 	unsigned 	x;
 	unsigned 	i;
 	char 		*cp;
-
-	if((str == NULL) || (len == 0) || (tmp == NULL)) {
+	CFGregorianDate		gd;
+	CFTimeZoneRef		timeZone;
+	CFTimeInterval		gmtOff = 0;
+	
+	if((str == NULL) || (len == 0) || (cfDate == NULL)) {
     	return 1;
   	}
   	
@@ -55,6 +60,10 @@ int timeStringToTm(
   		len--;
   	}
   	switch(len) {
+		case UTC_TIME_NOSEC_LEN:		// 2-digit year, no seconds, not y2K compliant
+			isUtc = true;
+			noSeconds = true;
+			break;
   		case UTC_TIME_STRLEN:			// 2-digit year, not Y2K compliant
   			isUtc = true;
   			break;
@@ -63,21 +72,27 @@ int timeStringToTm(
 			break;
   		case GENERALIZED_TIME_STRLEN:	// 4-digit year
   			break;
-  		default:						// unknown format 
+ 		case LOCALIZED_UTC_TIME_STRLEN:	// "YYMMDDhhmmssThhmm" (where T=[+,-])
+			isUtc = 1;
+			// deliberate fallthrough
+		case LOCALIZED_TIME_STRLEN:		// "YYYYMMDDhhmmssThhmm" (where T=[+,-])
+			isLocal = 1;
+			break;
+ 		default:						// unknown format 
   			return 1;
   	}
   	
   	cp = (char *)str;
   	
-	/* check that all characters except last are digits */
+	/* check that all characters except last (or timezone indicator, if localized) are digits */
 	for(i=0; i<(len - 1); i++) {
-		if ( !(isdigit(cp[i])) ) {
-		  	return 1;
-		}
+		if ( !(isdigit(cp[i])) )
+			if ( !isLocal || !(cp[i]=='+' || cp[i]=='-') )
+				return 1;
 	}
 
   	/* check last character is a 'Z' or digit as appropriate */
-	if(isCssmTime) {
+	if(isCssmTime || isLocal) {
 		if(!isdigit(cp[len - 1])) {
 			return 1;
 		}
@@ -122,8 +137,7 @@ int timeStringToTm(
 			x += 1900;			
 		}
 	}
-  	/* by definition - tm_year is year - 1900 */
-  	tmp->tm_year = x - 1900;
+	gd.year = x;
 
   	/* MONTH */
 	szTemp[0] = *cp++;
@@ -134,8 +148,7 @@ int timeStringToTm(
 	if((x > 12) || (x <= 0)) {
     	return 1;
 	}
-	/* in a tm, 0 to 11 */
-  	tmp->tm_mon = x - 1;
+	gd.month = x;
 
  	/* DAY */
 	szTemp[0] = *cp++;
@@ -146,7 +159,7 @@ int timeStringToTm(
 	if((x > 31) || (x <= 0)) {
 		return 1;
 	}
-  	tmp->tm_mday = x;
+	gd.day = x;
 
 	/* HOUR */
 	szTemp[0] = *cp++;
@@ -156,7 +169,7 @@ int timeStringToTm(
 	if((x > 23) || (x < 0)) {
 		return 1;
 	}
-	tmp->tm_hour = x;
+	gd.hour = x;
 
   	/* MINUTE */
 	szTemp[0] = *cp++;
@@ -166,29 +179,60 @@ int timeStringToTm(
 	if((x > 59) || (x < 0)) {
 		return 1;
 	}
-  	tmp->tm_min = x;
+	gd.minute = x;
 
   	/* SECOND */
-	szTemp[0] = *cp++;
-	szTemp[1] = *cp++;
-	szTemp[2] = '\0';
-  	x = atoi( szTemp );
-	if((x > 59) || (x < 0)) {
+	if(noSeconds) {
+		gd.second = 0;
+	}
+	else {
+		szTemp[0] = *cp++;
+		szTemp[1] = *cp++;
+		szTemp[2] = '\0';
+		x = atoi( szTemp );
+		if((x > 59) || (x < 0)) {
+			return 1;
+		}
+		gd.second = x;
+	}
+	
+	if (isLocal) {
+		/* ZONE INDICATOR */
+		switch(*cp++) {
+			case '+':
+				gmtOff = 1;
+				break;
+			case '-':
+				gmtOff = -1;
+				break;
+			default:
+				return 1;
+		}
+	  	/* ZONE HH OFFSET */
+		szTemp[0] = *cp++;
+		szTemp[1] = *cp++;
+		szTemp[2] = '\0';
+		x = atoi( szTemp ) * 60 * 60;
+		gmtOff *= x;
+	  	/* ZONE MM OFFSET */
+		szTemp[0] = *cp++;
+		szTemp[1] = *cp++;
+		szTemp[2] = '\0';
+		x = atoi( szTemp ) * 60;
+		if(gmtOff < 0) {
+			gmtOff -= x;
+		}
+		else {
+			gmtOff += x;
+		}
+	}
+	timeZone = CFTimeZoneCreateWithTimeIntervalFromGMT(NULL, gmtOff);
+	if (!timeZone) {
 		return 1;
 	}
-  	tmp->tm_sec = x;
+	*cfDate = CFDateCreate(NULL, CFGregorianDateGetAbsoluteTime(gd, timeZone));
+	CFRelease(timeZone);
 	return 0;
-}
-
-/* 
- * Return current GMT time as a struct tm.
- * Caller must hold tpTimeLock.
- */
-void nowTime(
-	struct tm *now)
-{
-	time_t nowTime = time(NULL);
-	*now = *gmtime(&nowTime);
 }
 
 /*
@@ -198,51 +242,19 @@ void nowTime(
  *  1 if t1 >  t2
  */
 int compareTimes(
-	const struct tm 	*t1,
-	const struct tm 	*t2)
+	CFDateRef 	t1,
+	CFDateRef 	t2)
 {
-	if(t1->tm_year > t2->tm_year) {
-		return 1;
+	switch(CFDateCompare(t1, t2, NULL)) {
+		case kCFCompareLessThan:
+			return -1;
+		case kCFCompareEqualTo:
+			return 0;
+		case kCFCompareGreaterThan:
+			return 1;
 	}
-	else if(t1->tm_year < t2->tm_year) {
-		return -1;
-	}
-	/* year equal */
-	else if(t1->tm_mon > t2->tm_mon) {
-		return 1;
-	}
-	else if(t1->tm_mon < t2->tm_mon) {
-		return -1;
-	}
-	/* month equal */
-	else if(t1->tm_mday > t2->tm_mday) {
-		return 1;
-	}
-	else if(t1->tm_mday < t2->tm_mday) {
-		return -1;
-	}
-	/* day of month equal */
-	else if(t1->tm_hour > t2->tm_hour) {
-		return 1;
-	}
-	else if(t1->tm_hour < t2->tm_hour) {
-		return -1;
-	}
-	/* hour equal */
-	else if(t1->tm_min > t2->tm_min) {
-		return 1;
-	}
-	else if(t1->tm_min < t2->tm_min) {
-		return -1;
-	}
-	/* minute equal */
-	else if(t1->tm_sec > t2->tm_sec) {
-		return 1;
-	}
-	else if(t1->tm_sec < t2->tm_sec) {
-		return -1;
-	}
-	/* equal */
+	/* NOT REACHED */
+	assert(0);
 	return 0;
 }
 
@@ -349,4 +361,5 @@ int tpTimeToCssmTimestring(
 	outTime[CSSM_TIME_STRLEN] = '\0';
 	return 0;
 }
+
 

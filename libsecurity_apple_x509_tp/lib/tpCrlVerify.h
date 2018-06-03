@@ -28,6 +28,7 @@
 #include <Security/cssmtype.h>
 #include <security_utilities/alloc.h>
 #include <Security/cssmapple.h>
+#include <Security/cssmapplePriv.h>
 
 class TPCertInfo;
 class TPCertGroup;
@@ -38,23 +39,23 @@ class TPCrlGroup;
  * Enumerated CRL policies enforced by this module.
  */
 typedef enum {
-	kCrlNone,			/* no CRL checking */
-	kCrlBasic,
-} TPCrlPolicy;
+	kRevokeNone,			/* no revocation checking */
+	kRevokeCrlBasic,
+	kRevokeOcsp	
+} TPRevocationPolicy;
 
 /* Module-specific default policy */
-#define TP_CRL_POLICY_DEFAULT	kCrlNone
+#define TP_CRL_POLICY_DEFAULT	kRevokeNone
 
 /*
- * Various parameters widely used in any operation involing the 
- * verification of CRLs and of a cert against a CRL. Most fields
- * are generally optional for a given operation except.
+ * Various parameters widely used in any operation involving CRL and 
+ * OCSP verification. Most fields are optional.
  */
-class TPCrlVerifyContext {
-	NOCOPY(TPCrlVerifyContext)
+class TPVerifyContext {
+	NOCOPY(TPVerifyContext)
 public:
-	TPCrlVerifyContext(
-		Allocator		&_alloc,
+	TPVerifyContext(
+		Allocator			&_alloc,
 		CSSM_CL_HANDLE		_clHand,
 		CSSM_CSP_HANDLE		_cspHand,
 		CSSM_TIMESTRING		_verifyTime,
@@ -62,11 +63,12 @@ public:
 		const CSSM_DATA		*_anchorCerts,
 		TPCertGroup			*_signerCerts,
 		TPCrlGroup			*_inputCrls,
-		TPCertGroup			*_gatheredCerts,
+		TPCertGroup			&_gatheredCerts,
 		CSSM_DL_DB_LIST_PTR	_dbList,
-		TPCrlPolicy			_policy,
+		TPRevocationPolicy	_policy,
 		CSSM_APPLE_TP_ACTION_FLAGS	_actionFlags,
-		CSSM_APPLE_TP_CRL_OPTIONS	*_crlOpts)
+		CSSM_APPLE_TP_CRL_OPTIONS	*_crlOpts,
+		CSSM_APPLE_TP_OCSP_OPTIONS	*_ocspOpts)
 			: alloc(_alloc),
 				clHand(_clHand),
 				cspHand(_cspHand),
@@ -79,12 +81,13 @@ public:
 				dbList(_dbList),
 				policy(_policy),
 				actionFlags(_actionFlags),
-				crlOpts(_crlOpts)
+				crlOpts(_crlOpts),
+				ocspOpts(_ocspOpts)
 					{ }
 	
-	~TPCrlVerifyContext() { }
+	~TPVerifyContext() { }
 	
-	Allocator					&alloc;
+	Allocator						&alloc;
 	CSSM_CL_HANDLE					clHand;
 	CSSM_CSP_HANDLE					cspHand;
 	
@@ -100,10 +103,11 @@ public:
 	const CSSM_DATA					*anchorCerts;
 	
 	/* 
-	 * Intermediate CRL signing certs. Optional.
+	 * Intermediate signing certs. Always present.
 	 * This could come from the raw cert group to be verified
 	 * in CertGroupVerify(), or the explicit SignerCertGroup in
-	 * CrlVerify(). These certs have not been verified in any 
+	 * CrlVerify(). IN both cases the cert group owns the certs and 
+	 * eventually frees them. These certs have not been verified in any 
 	 * way other than to ensure that they parse and have been cached
 	 * by the CL.
 	 */
@@ -120,22 +124,31 @@ public:
 	 * significant optimization) and from DLDB (a side effect, also
 	 * a slight optimization).
 	 */
-	TPCertGroup						*gatheredCerts;
+	TPCertGroup						&gatheredCerts;
 	
 	/* can contain certs and/or CRLs */
     CSSM_DL_DB_LIST_PTR 			dbList;
 	
-	TPCrlPolicy						policy;
+	TPRevocationPolicy				policy;
 	CSSM_APPLE_TP_ACTION_FLAGS		actionFlags;
+	
+	/* one of these valid, depends on policy */
 	const CSSM_APPLE_TP_CRL_OPTIONS	*crlOpts;
+	const CSSM_APPLE_TP_OCSP_OPTIONS *ocspOpts;
 };
 
 extern "C" {
 
+/* CRL - specific */
 CSSM_RETURN tpVerifyCertGroupWithCrls(
-	TPCertGroup 					&certGroup,		// to be verified 
-	TPCrlVerifyContext				&tpVerifyContext);
+	TPVerifyContext					&tpVerifyContext,
+	TPCertGroup 					&certGroup);		// to be verified 
 	
+/* general purpose, switch to policy-specific code based on TPVerifyContext.policy */
+CSSM_RETURN tpRevocationPolicyVerify(
+	TPVerifyContext					&tpVerifyContext,
+	TPCertGroup 					&certGroup);		// to be verified 
+
 }
 
 #endif	/* _TP_CRL_VERIFY_H_ */

@@ -49,16 +49,19 @@ typedef enum {
 	kTPiSign,			/* Apple code signing */
 	kTP_SSL,			/* SecureTransport/SSL */
 	kCrlPolicy,			/* cert chain verification via CRL */
-	kTP_SMIME				/* S/MIME */			
+	kTP_SMIME,			/* S/MIME */		
+	kTP_EAP,
+	kTP_CodeSign,		/* Apple Code Signing */
+	kTP_IPSec,			/* IPSEC */
+	kTP_iChat			/* iChat */
 } TPPolicy;
 
 /*
  * Perform TP verification on a constructed (ordered) cert group.
- * Returns CSSM_TRUE on success.
  */
 CSSM_RETURN tp_policyVerify(
 	TPPolicy						policy,
-	Allocator					&alloc,
+	Allocator						&alloc,
 	CSSM_CL_HANDLE					clHand,
 	CSSM_CSP_HANDLE					cspHand,
 	TPCertGroup 					*certGroup,

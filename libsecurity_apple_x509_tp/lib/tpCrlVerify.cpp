@@ -25,15 +25,32 @@
 #include "tpCrlVerify.h"
 #include "TPCertInfo.h"
 #include "TPCrlInfo.h"
+#include "tpOcspVerify.h"
 #include "tpdebugging.h"
 #include "TPNetwork.h"
 #include "TPDatabase.h"
+#include <Security/oidscert.h>
 #include <security_utilities/globalizer.h>
 #include <security_utilities/threading.h>
 #include <security_cdsa_utilities/cssmerrors.h>
 
-/* crlrefresh does this now */
-#define WRITE_FETCHED_CRLS_TO_DB	0
+/* general purpose, switch to policy-specific code based on TPVerifyContext.policy */
+CSSM_RETURN tpRevocationPolicyVerify(
+	TPVerifyContext	&tpVerifyContext,
+	TPCertGroup 	&certGroup)
+{
+	switch(tpVerifyContext.policy) {
+		case kRevokeNone:
+			return CSSM_OK;
+		case kRevokeCrlBasic:
+			return tpVerifyCertGroupWithCrls(tpVerifyContext, certGroup);
+		case kRevokeOcsp:
+			return tpVerifyCertGroupWithOCSP(tpVerifyContext, certGroup);
+		default:
+			assert(0);
+			return CSSMERR_TP_INTERNAL_ERROR;
+	}
+}
 
 /*
  * For now, a process-wide memory resident CRL cache. 
@@ -49,7 +66,7 @@ public:
 	~TPCRLCache() { }
 	TPCrlInfo *search(
 		TPCertInfo 			&cert,
-		TPCrlVerifyContext	&vfyCtx);
+		TPVerifyContext		&vfyCtx);
 	void add(
 		TPCrlInfo 			&crl);
 	void remove(
@@ -70,7 +87,7 @@ TPCRLCache::TPCRLCache()
 
 TPCrlInfo *TPCRLCache::search(
 	TPCertInfo 			&cert,
-	TPCrlVerifyContext	&vfyCtx)
+	TPVerifyContext		&vfyCtx)
 {
 	StLock<Mutex> _(mLock);
 	TPCrlInfo *crl = findCrlForCert(cert);
@@ -97,7 +114,6 @@ void TPCRLCache::remove(
 {
 	StLock<Mutex> _(mLock);
 	removeCrl(crl);
-	release(crl);
 	assert(crl.mRefCount > 0);
 	crl.mRefCount--;
 	if(crl.mRefCount == 0) {
@@ -131,9 +147,10 @@ static ModuleNexus<TPCRLCache> tpGlobalCrlCache;
 static CSSM_RETURN tpFindCrlForCert(
 	TPCertInfo						&subject,
 	TPCrlInfo						*&foundCrl,		// RETURNED
-	TPCrlVerifyContext				&vfyCtx)
+	TPVerifyContext					&vfyCtx)
 {
 	
+	tpCrlDebug("tpFindCrlForCert top");
 	TPCrlInfo *crl = NULL;
 	foundCrl = NULL;
 	CSSM_APPLE_TP_CRL_OPT_FLAGS crlOptFlags = 0;
@@ -145,6 +162,8 @@ static CSSM_RETURN tpFindCrlForCert(
 	/* Search inputCrls for a CRL for subject cert */
 	if(vfyCtx.inputCrls != NULL) {
 		crl = vfyCtx.inputCrls->findCrlForCert(subject);
+		tpCrlDebug("...tpFindCrlForCert found CRL in CRLGroup, "
+			"calling verifyWithContext");
 		if(crl && (crl->verifyWithContext(vfyCtx, &subject) == CSSM_OK)) {
 			foundCrl = crl;
 			crl->mFromWhere = CFW_InGroup;
@@ -156,6 +175,7 @@ static CSSM_RETURN tpFindCrlForCert(
 	/* local process-wide cache */
 	crl = tpGlobalCrlCache().search(subject, vfyCtx);
 	if(crl) {
+		tpCrlDebug("...tpFindCrlForCert found CRL in cache, calling verifyWithContext");
 		if(crl->verifyWithContext(vfyCtx, &subject) == CSSM_OK) {
 			foundCrl = crl;
 			crl->mFromWhere = CFW_LocalCache;
@@ -222,7 +242,7 @@ static CSSM_RETURN tpFindCrlForCert(
  */
 static void tpDisposeCrl(
 	TPCrlInfo			&crl,
-	TPCrlVerifyContext	&vfyCtx)
+	TPVerifyContext		&vfyCtx)
 {
 	switch(crl.mFromWhere) {
 		case CFW_Nowhere:
@@ -244,6 +264,24 @@ static void tpDisposeCrl(
 	}
 }
 
+/* 
+ * Does this cert have a CrlDistributionPoints extension? We don't parse it, we
+ * just tell the caller whether or not it has one.
+ */
+static bool tpCertHasCrlDistPt(
+	TPCertInfo &cert)
+{
+	CSSM_DATA_PTR fieldValue;		
+	CSSM_RETURN crtn = cert.fetchField(&CSSMOID_CrlDistributionPoints, &fieldValue);
+	if(crtn) {
+		return false;
+	}
+	else {
+		cert.freeField(&CSSMOID_CrlDistributionPoints,	fieldValue);
+		return true;
+	}
+}
+
 /*
  * Perform CRL verification on a cert group.
  * The cert group has already passed basic issuer/subject and signature
@@ -254,22 +292,14 @@ static void tpDisposeCrl(
  * time in the past?
  */
 CSSM_RETURN tpVerifyCertGroupWithCrls(
-	TPCertGroup 					&certGroup,		// to be verified 
-	TPCrlVerifyContext				&vfyCtx)
+	TPVerifyContext					&vfyCtx,
+	TPCertGroup 					&certGroup)		// to be verified 
 {
 	CSSM_RETURN 	crtn;
 	CSSM_RETURN		ourRtn = CSSM_OK;
 
-	switch(vfyCtx.policy) {
-		case kCrlNone:
-			return CSSM_OK;
-		case kCrlBasic:
-			break;
-		default:
-			return CSSMERR_TP_INVALID_POLICY_IDENTIFIERS;
-	}
-	
 	assert(vfyCtx.clHand != 0);
+	assert(vfyCtx.policy == kRevokeCrlBasic);
 	tpCrlDebug("tpVerifyCertGroupWithCrls numCerts %u", certGroup.numCerts());
 	CSSM_APPLE_TP_CRL_OPT_FLAGS optFlags = 0;
 	if(vfyCtx.crlOpts != NULL) {
@@ -288,10 +318,16 @@ CSSM_RETURN tpVerifyCertGroupWithCrls(
 		for(certDex=0; certDex<certGroup.numCerts(); certDex++) {
 			TPCertInfo *cert = certGroup.certAtIndex(certDex);
 
-			tpCrlDebug("...verifying %scert %u", 
+			tpCrlDebug("...verifying %s cert %u", 
 				cert->isAnchor() ? "anchor " : "", cert->index());
 			if(cert->isSelfSigned()) {
 				/* CRL meaningless for a root cert */
+				continue;
+			}
+			if(cert->revokeCheckComplete()) {
+				/* Another revocation policy claimed that this cert is good to go */
+				tpCrlDebug("   ...cert at index %u revokeCheckComplete; skipping", 
+					cert->index());
 				continue;
 			}
 			crl = NULL;
@@ -299,17 +335,26 @@ CSSM_RETURN tpVerifyCertGroupWithCrls(
 				/* find a CRL for this cert by hook or crook */
 				crtn = tpFindCrlForCert(*cert, crl, vfyCtx);
 				if(crtn) {
-					if(!(optFlags & CSSM_TP_ACTION_REQUIRE_CRL_PER_CERT)) {
-						/* 
-						 * This is the only place where "Best Attempt"
-						 * tolerates an error
-						 */
-						tpCrlDebug("   ...cert %u: no CRL; skipping", 
-							cert->index());
-						crtn = CSSM_OK;
+					if(optFlags & CSSM_TP_ACTION_REQUIRE_CRL_PER_CERT) {
+						tpCrlDebug("   ...cert %u: REQUIRE_CRL_PER_CERT abort",
+								cert->index());
+						break;
 					}
+					if((optFlags & CSSM_TP_ACTION_REQUIRE_CRL_IF_PRESENT) && 
+								tpCertHasCrlDistPt(*cert)) {
+						tpCrlDebug("   ...cert %u: REQUIRE_CRL_IF_PRESENT abort",
+								cert->index());
+						break;
+					}
+					/* 
+					 * This is the only place where "Best Attempt" tolerates an error
+					 */
+					tpCrlDebug("   ...cert %u: no CRL; tolerating", cert->index());
+					crtn = CSSM_OK;
+					assert(crl == NULL);
 					break;
 				}
+				
 				/* Keep track; we'll release all when done. */
 				assert(crl != NULL);
 				foundCrls.appendCrl(*crl);
@@ -320,6 +365,11 @@ CSSM_RETURN tpVerifyCertGroupWithCrls(
 					break;
 				}
 				tpCrlDebug("   ...cert %u VERIFIED by CRL", cert->index());
+				cert->revokeCheckGood(true);
+				if(optFlags & CSSM_TP_ACTION_CRL_SUFFICIENT) {
+					/* no more revocation checking necessary for this cert */
+					cert->revokeCheckComplete(true);
+				}
 			} while(0);
 			
 			/* done processing one cert */

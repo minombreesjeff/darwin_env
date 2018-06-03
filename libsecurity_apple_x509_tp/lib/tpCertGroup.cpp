@@ -98,7 +98,7 @@ void AppleTPSession::CertGroupConstruct(CSSM_CL_HANDLE clHand,
 		TGO_Group);
 		
 	/* set up for disposal of TPCertInfos created by CertGroupConstructPriv */
-	TPCertGroup			certsToBeFreed(*this, TGO_Group);
+	TPCertGroup			gatheredCerts(*this, TGO_Group);
 	
 	CSSM_RETURN constructReturn = CSSM_OK;
 	CSSM_BOOL verifiedToRoot;		// not used
@@ -113,7 +113,7 @@ void AppleTPSession::CertGroupConstruct(CSSM_CL_HANDLE clHand,
 			/* no anchors */
 			0, NULL,
 			0,					// actionFlags
-			certsToBeFreed,
+			gatheredCerts,
 			verifiedToRoot,
 			verifiedToAnchor,
 			outCertGroup);
@@ -179,6 +179,7 @@ void AppleTPSession::CertGroupConstructPriv(CSSM_CL_HANDLE clHand,
 	/* Append leaf cert to outCertGroup */
 	outCertGroup.appendCert(subjectCert);
 	subjectCert->isLeaf(true);
+	subjectCert->isFromInputCerts(true);
 	outCertGroup.setAllUnused();
 	
 	outErr = outCertGroup.buildCertGroup(
@@ -191,7 +192,7 @@ void AppleTPSession::CertGroupConstructPriv(CSSM_CL_HANDLE clHand,
 		numAnchorCerts,
 		anchorCerts,
 		certsToBeFreed,
-		NULL,				// gatheredCerts - none here
+		&certsToBeFreed,	// gatheredCerts to accumulate net/DB fetches
 		CSSM_TRUE,			// subjectIsInGroup - enables root check on
 							//    subject cert
 		actionFlags,
@@ -278,8 +279,6 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 	CSSM_RETURN				constructReturn = CSSM_OK;
 	CSSM_RETURN				policyReturn = CSSM_OK;
 	const CSSM_TP_CALLERAUTH_CONTEXT *cred;
-	CSSM_BOOL				allowExpired = CSSM_FALSE;
-	CSSM_BOOL				allowExpiredRoot = CSSM_FALSE;
 	/* declare volatile as compiler workaround to avoid caching in CR4 */
 	const CSSM_APPLE_TP_ACTION_DATA * volatile actionData = NULL;
 	CSSM_TIMESTRING			cssmTimeStr;
@@ -316,12 +315,6 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 				CssmError::throwMe(CSSMERR_TP_INVALID_ACTION_DATA);
 		}
 		actionFlags = actionData->ActionFlags;
-		if(actionFlags & CSSM_TP_ACTION_ALLOW_EXPIRED) {
-			allowExpired = CSSM_TRUE;
-		}
-		if(actionData->ActionFlags & CSSM_TP_ACTION_ALLOW_EXPIRED_ROOT) {
-			allowExpiredRoot = CSSM_TRUE;
-		}
 	}
 	
 	/* optional, may be NULL */
@@ -357,7 +350,7 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 		TGO_Group);	
 		
 	/* set up for disposal of TPCertInfos created by CertGroupConstructPriv */
-	TPCertGroup	certsToBeFreed(*this, TGO_Group);
+	TPCertGroup	gatheredCerts(*this, TGO_Group);
 	
 	try {
 		CertGroupConstructPriv(
@@ -369,7 +362,7 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 			cred->NumberOfAnchorCerts,
 			cred->AnchorCerts,
 			actionFlags,
-			certsToBeFreed,
+			gatheredCerts,
 			verifiedToRoot, 
 			verifiedToAnchor,
 			outCertGroup);
@@ -463,7 +456,7 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 	}
 	/* others are way fatal */
 
-	TPCrlVerifyContext crlVfyContext(*this,
+	TPVerifyContext revokeVfyContext(*this,
 		clHand,
 		cspHand,
 		cssmTimeStr,
@@ -475,14 +468,17 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 		 * This may consist of certs gathered from the net (which is the purpose
 		 * of this argument) and from DLDBs (a side-effect optimization).
 		 */
-		&certsToBeFreed,
+		gatheredCerts,
 		cred->DBList,
-		kCrlNone,			// policy, varies per policy
+		kRevokeNone,		// policy
 		actionFlags,
-		0);					// crlOptFlags, varies per policy
+		NULL,				// CRL options
+		NULL);				// OCSP options
 
 	/* true if we're to execute tp_policyVerify at end of loop */
 	bool doPolicyVerify;
+	/* true if we're to execute a revocation policy at end of loop */
+	bool doRevocationPolicy;
 	
 	/* grind thru each policy */
 	for(uint32 polDex=0; polDex<cred->Policy.NumberOfPolicyIds; polDex++) {
@@ -495,6 +491,7 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 		const CSSM_OID	*oid = &policyId->FieldOid;
 		thisPolicyRtn = CSSM_OK;
 		doPolicyVerify = false;
+		doRevocationPolicy = false;
 		sslOpts = NULL;
 		
 		/* first the basic cert policies */
@@ -520,8 +517,19 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 		}
 
 		else if(tpCompareOids(oid, &CSSMOID_APPLE_TP_EAP)) {
-			/* treated here exactly the same as SSL */
-			tpPolicy = kTP_SSL;
+			tpPolicy = kTP_EAP;
+			doPolicyVerify = true;
+		}
+		else if(tpCompareOids(oid, &CSSMOID_APPLE_TP_CODE_SIGN)) {
+			tpPolicy = kTP_CodeSign;
+			doPolicyVerify = true;
+		}
+		else if(tpCompareOids(oid, &CSSMOID_APPLE_TP_IP_SEC)) {
+			tpPolicy = kTP_IPSec;
+			doPolicyVerify = true;
+		}
+		else if(tpCompareOids(oid, &CSSMOID_APPLE_TP_ICHAT)) {
+			tpPolicy = kTP_iChat;
 			doPolicyVerify = true;
 		}
 		
@@ -535,7 +543,10 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 			doPolicyVerify = true;
 		}
 		
-		/* now revocation policies */
+		/* 
+		 * Now revocation policies. Note some fields in revokeVfyContext can 
+		 * accumulate across multiple policy calls, e.g., signerCerts. 
+		 */
 		else if(tpCompareOids(oid, &CSSMOID_APPLE_TP_REVOCATION_CRL)) {
 			/* CRL-specific options */
 			const CSSM_APPLE_TP_CRL_OPTIONS *crlOpts;
@@ -561,12 +572,38 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 					break;
 				}
 			}
-			crlVfyContext.policy = kCrlBasic;
-			crlVfyContext.crlOpts = crlOpts;
-
-			thisPolicyRtn = tpVerifyCertGroupWithCrls(outCertGroup,
-				crlVfyContext);
-			didRevokePolicy = true;
+			revokeVfyContext.policy = kRevokeCrlBasic;
+			revokeVfyContext.crlOpts = crlOpts;
+			doRevocationPolicy = true;
+		}
+		else if(tpCompareOids(oid, &CSSMOID_APPLE_TP_REVOCATION_OCSP)) {
+			/* OCSP-specific options */
+			const CSSM_APPLE_TP_OCSP_OPTIONS *ocspOpts;
+			ocspOpts = (CSSM_APPLE_TP_OCSP_OPTIONS *)fieldVal->Data;
+			thisPolicyRtn = CSSM_OK;
+			if(ocspOpts != NULL) {
+				switch(ocspOpts->Version) {
+					case CSSM_APPLE_TP_OCSP_OPTS_VERSION:
+						if(fieldVal->Length != 
+								sizeof(CSSM_APPLE_TP_OCSP_OPTIONS)) {
+							thisPolicyRtn = 
+								CSSMERR_TP_INVALID_POLICY_IDENTIFIERS;
+							break;
+						}
+						break;
+					/* handle backwards compatibility here if necessary */
+					default:
+						thisPolicyRtn = CSSMERR_TP_INVALID_POLICY_IDENTIFIERS;
+						break;
+				}
+				if(thisPolicyRtn != CSSM_OK) {
+					policyReturn = thisPolicyRtn;
+					break;
+				}
+			}
+			revokeVfyContext.policy = kRevokeOcsp;
+			revokeVfyContext.ocspOpts = ocspOpts;
+			doRevocationPolicy = true;
 		}
 		/* etc. - add more policies here */
 		else {
@@ -575,8 +612,9 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 			break;
 		}
 		
-		/* common tp_policyVerify call */
+		/* common cert policy call */
 		if(doPolicyVerify) {
+			assert(!doRevocationPolicy);	// one at a time
 			thisPolicyRtn = tp_policyVerify(tpPolicy,
 				*this,
 				clHand,
@@ -588,7 +626,12 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 				cred->Policy.PolicyControl);	// not currently used
 			didCertPolicy = true;
 		}
-		
+		/* common revocation policy call */
+		if(doRevocationPolicy) {
+			assert(!doPolicyVerify);	// one at a time
+			thisPolicyRtn = tpRevocationPolicyVerify(revokeVfyContext, outCertGroup);
+			didRevokePolicy = true;
+		}
 		if(thisPolicyRtn) {
 			/* Policy error. First remember the error if it's the first policy
 			 * error we'veÊseen. */
@@ -624,11 +667,9 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 		      (tpStopOn == CSSM_TP_STOP_ON_NONE)) 		// keep going anyway
 			)
 		  ) {
-
-			crlVfyContext.policy = TP_CRL_POLICY_DEFAULT;
-			crlVfyContext.crlOpts = NULL;
-			CSSM_RETURN thisPolicyRtn = tpVerifyCertGroupWithCrls(outCertGroup,
-				crlVfyContext);
+			revokeVfyContext.policy = TP_CRL_POLICY_DEFAULT;
+			CSSM_RETURN thisPolicyRtn = tpRevocationPolicyVerify(revokeVfyContext, 
+				outCertGroup);
 			if((thisPolicyRtn != CSSM_OK) && (policyReturn == CSSM_OK)) {
 				policyReturn = thisPolicyRtn;
 			}
@@ -666,8 +707,8 @@ void AppleTPSession::CertGroupVerify(CSSM_CL_HANDLE clHand,
 		ev->Evidence = outCertGroup.buildCssmEvidenceInfo();
 
 	}
-	CSSM_RETURN outErr = outCertGroup.getReturnCode(constructReturn,
-		allowExpired, allowExpiredRoot, policyReturn);
+	CSSM_RETURN outErr = outCertGroup.getReturnCode(constructReturn, policyReturn,
+		actionFlags);
 		
 	if(outErr) {
 		CssmError::throwMe(outErr);

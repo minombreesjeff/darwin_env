@@ -5,6 +5,128 @@
 	};
 	objectVersion = 39;
 	objects = {
+		0544C52D06A8718D00F54E48 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = ocspRequest.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		0544C52E06A8718D00F54E48 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = ocspRequest.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		0544C52F06A8718D00F54E48 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = tpOcspCache.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		0544C53006A8718D00F54E48 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = tpOcspCache.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		0544C53106A8718D00F54E48 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = tpOcspCertVfy.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		0544C53206A8718D00F54E48 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = tpOcspCertVfy.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		0544C53306A8718D00F54E48 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = tpOcspVerify.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		0544C53406A8718D00F54E48 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = tpOcspVerify.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		0544C53506A8718D00F54E48 = {
+			fileRef = 0544C52D06A8718D00F54E48;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		0544C53606A8718D00F54E48 = {
+			fileRef = 0544C52E06A8718D00F54E48;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		0544C53706A8718D00F54E48 = {
+			fileRef = 0544C52F06A8718D00F54E48;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		0544C53806A8718D00F54E48 = {
+			fileRef = 0544C53006A8718D00F54E48;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		0544C53906A8718D00F54E48 = {
+			fileRef = 0544C53106A8718D00F54E48;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		0544C53A06A8718D00F54E48 = {
+			fileRef = 0544C53206A8718D00F54E48;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		0544C53B06A8718D00F54E48 = {
+			fileRef = 0544C53306A8718D00F54E48;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		0544C53C06A8718D00F54E48 = {
+			fileRef = 0544C53406A8718D00F54E48;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+//050
+//051
+//052
+//053
+//054
+//400
+//401
+//402
+//403
+//404
 		4094B05A057EA55E00B44BCC = {
 			containerPortal = 4CA1FEAB052A3C3800F22E42;
 			isa = PBXContainerItemProxy;
@@ -26,7 +148,7 @@
 		4094B069057EA5B000B44BCC = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
-			lastKnownFileType = text.plist.xml;
+			lastKnownFileType = text.xml;
 			path = tp_common.mdsinfo;
 			refType = 4;
 			sourceTree = "<group>";
@@ -34,7 +156,7 @@
 		4094B06A057EA5B000B44BCC = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
-			lastKnownFileType = text.plist.xml;
+			lastKnownFileType = text.xml;
 			path = tp_policyOids.mdsinfo;
 			refType = 4;
 			sourceTree = "<group>";
@@ -42,7 +164,7 @@
 		4094B06B057EA5B000B44BCC = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
-			lastKnownFileType = text.plist.xml;
+			lastKnownFileType = text.xml;
 			path = tp_primary.mdsinfo;
 			refType = 4;
 			sourceTree = "<group>";
@@ -108,7 +230,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>21</string>
 </dict>
 </plist>
 ";
@@ -146,8 +268,6 @@
 			sourceTree = "<group>";
 		};
 		4CA1FEA9052A3C3800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = debug;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -160,8 +280,6 @@
 			name = Development;
 		};
 		4CA1FEAA052A3C3800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				ZERO_LINK = NO;
@@ -201,6 +319,10 @@
 				C2B5C5070534C6AA00AF53F5,
 				C2B5C5090534C6AA00AF53F5,
 				C2B5C50B0534C6AA00AF53F5,
+				0544C53606A8718D00F54E48,
+				0544C53806A8718D00F54E48,
+				0544C53A06A8718D00F54E48,
+				0544C53C06A8718D00F54E48,
 			);
 			isa = PBXHeadersBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -224,6 +346,10 @@
 				C2B5C5080534C6AA00AF53F5,
 				C2B5C50A0534C6AA00AF53F5,
 				C2196B77053B5A2B005808D4,
+				0544C53506A8718D00F54E48,
+				0544C53706A8718D00F54E48,
+				0544C53906A8718D00F54E48,
+				0544C53B06A8718D00F54E48,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -244,23 +370,27 @@
 				4CD0D4ED055B10B4001715CB,
 			);
 			buildSettings = {
-				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 3;
-				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
+				BUILD_VARIANTS = "normal debug";
+				CURRENT_PROJECT_VERSION = 21;
+				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Components/Security /usr/local/SecurityPieces/Frameworks";
 				HEADER_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers\" \"$(BUILT_PRODUCTS_DIR)/SecurityPieces/PrivateHeaders\"";
 				LIBRARY_STYLE = STATIC;
+				OPT_CFLAGS = "-DNDEBUG -Os $(OPT_INLINEFLAGS)";
+				OPT_CPPFLAGS = "$(OPT_CFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_INLINEFLAGS = "-finline-functions --param max-inline-insns-single=100 --param max-inline-insns-auto=150 --param max-inline-insns=180 --param min-inline-insns=60";
+				OPT_LDFLAGS = "";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
 				OTHER_CFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CFLAGS_normal = "$(OPT_CFLAGS)  $(OTHER_CFLAGS)";
+				OTHER_CFLAGS_profile = "$(OPT_CFLAGS)  $(OTHER_CFLAGS) -pg";
 				OTHER_CPLUSPLUSFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CPLUSPLUSFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CPLUSPLUSFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CPLUSPLUSFLAGS_normal = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS)";
+				OTHER_CPLUSPLUSFLAGS_profile = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS) -pg";
 				OTHER_LDFLAGS_debug = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_normal = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_profile = "$(OTHER_LDFLAGS) -pg";
+				OTHER_LDFLAGS_normal = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS)";
+				OTHER_LDFLAGS_profile = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS) -pg";
 				PRODUCT_NAME = security_apple_x509_tp;
 				VERSIONING_SYSTEM = "apple-generic";
 				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
@@ -411,6 +541,14 @@
 				C2B5C4E90534C6AA00AF53F5,
 				C2B5C4EA0534C6AA00AF53F5,
 				C2B5C4EB0534C6AA00AF53F5,
+				0544C52D06A8718D00F54E48,
+				0544C52E06A8718D00F54E48,
+				0544C52F06A8718D00F54E48,
+				0544C53006A8718D00F54E48,
+				0544C53106A8718D00F54E48,
+				0544C53206A8718D00F54E48,
+				0544C53306A8718D00F54E48,
+				0544C53406A8718D00F54E48,
 				C2B5C4EC0534C6AA00AF53F5,
 				C2B5C4ED0534C6AA00AF53F5,
 				C2B5C4EE0534C6AA00AF53F5,

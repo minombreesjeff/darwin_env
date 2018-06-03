@@ -26,32 +26,30 @@
 #define _TP_TIME_H_
 
 #include <time.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <Security/cssmtype.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
 /* lengths of time strings without trailing NULL */
+#define UTC_TIME_NOSEC_LEN			11
 #define UTC_TIME_STRLEN				13
 #define CSSM_TIME_STRLEN			14		/* no trailing 'Z' */
 #define GENERALIZED_TIME_STRLEN		15		
+#define LOCALIZED_UTC_TIME_STRLEN	17
+#define LOCALIZED_TIME_STRLEN		19
 
 /*
  * Given a string containing either a UTC-style or "generalized time"
- * time string, convert to a struct tm (in GMT/UTC). Returns nonzero on
+ * time string, convert to a CFDateRef. Returns nonzero on
  * error. 
  */
-extern int timeStringToTm(
+extern int timeStringToCfDate(
 	const char			*str,
 	unsigned			len,
-	struct tm			*tmp);
-
-/* 
- * Return current GMT time as a struct tm.
- * Caller must hold tpTimeLock.
- */
-extern void nowTime(
-	struct tm		 	*now);
+	CFDateRef			*cfDate);
 
 /*
  * Compare two times. Assumes they're both in GMT. Returns:
@@ -60,8 +58,8 @@ extern void nowTime(
  *  1 if t1 >  t2
  */
 extern int compareTimes(
-	const struct tm 	*t1,
-	const struct tm 	*t2);
+	CFDateRef 	t1,
+	CFDateRef 	t2);
 	
 /*
  * Create a time string, in either UTC (2-digit) or or Generalized (4-digit)

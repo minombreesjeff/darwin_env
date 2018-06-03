@@ -29,6 +29,7 @@
 #include <security_utilities/alloc.h>
 #include <security_utilities/threading.h>
 #include <security_utilities/globalizer.h>
+#include <CoreFoundation/CFDate.h>
 
 /* protects TP-wide access to time() and gmtime() */
 extern ModuleNexus<Mutex> tpTimeLock;
@@ -123,7 +124,7 @@ public:
 	void releaseResources();
 	
 	/* 
-	 * Fetch arbitrary field from cached cert.
+	 * Fetch arbitrary field from cached item.
 	 * Only should be used when caller is sure there is either zero or one
 	 * of the requested fields present in the cert.
 	 */
@@ -196,8 +197,8 @@ private:
 	CSSM_ALGORITHMS			mSigAlg;
 
 	/* calculated implicitly at construction */
-	struct tm				mNotBefore;
-	struct tm				mNotAfter;
+	CFDateRef				mNotBefore;
+	CFDateRef				mNotAfter;
 	
 	/* also calculated at construction, but can be recalculated at will */
 	bool					mIsExpired;
@@ -212,7 +213,7 @@ private:
  * CertGroupVerify()); in this case, we don't own the raw data and 
  * don't copy or free it. Caller can optionally specify that we copy 
  * (and own and eventually free) the raw cert data. Currently this is 
- * only done when we find a cert in a DlDb. The constructor throws 
+ * done when we find a cert in a DlDb or from the net. The constructor throws 
  * on any error (bad cert data); subsequent to successful construction, no CSSM 
  * errors are thrown and it's guaranteed that the cert is basically good and 
  * successfully cached in the CL, and that we have a locally cached subject 
@@ -247,6 +248,8 @@ public:
 	void		isAnchor(bool a)		{ mIsAnchor = a; }
 	bool		isFromNet()				{ return mIsFromNet; }
 	void		isFromNet(bool n)		{ mIsFromNet = n; };
+	bool		isFromInputCerts()		{ return mIsFromInputCerts; }
+	void		isFromInputCerts(bool i) { mIsFromInputCerts = i; }
 	unsigned	numStatusCodes()		{ return mNumStatusCodes; }
 	CSSM_RETURN	*statusCodes()			{ return mStatusCodes; }
 	CSSM_DL_DB_HANDLE dlDbHandle()		{ return mDlDbHandle; }
@@ -277,14 +280,32 @@ public:
 	 */
 	bool 					hasPartialKey();
 	 
+	/*
+	 * Flag to indicate that at least one revocation policy has successfully
+	 * achieved a positive verification of the cert. 
+	 */
+	bool				revokeCheckGood()			{ return mRevCheckGood; }
+	void				revokeCheckGood(bool b)		{ mRevCheckGood = b; }
+	
+	/*
+	 * Flag to indicate "I have successfully been checked for revocation
+	 * status and the per-policy action data indicates that I need not be 
+	 * checked again by any other revocation policy". E.g., 
+	 * CSSM_TP_ACTION_CRL_SUFFICIENT is set and CRL revocation checking
+	 * was successful for this cert. 
+	 */
+	bool				revokeCheckComplete()		{ return mRevCheckComplete; }
+	void				revokeCheckComplete(bool b)	{ mRevCheckComplete = b; }
+	
 private:
 	/* obtained from CL at construction */
 	CSSM_DATA_PTR			mSubjectName;		// always valid
+	CSSM_DATA_PTR			mPublicKeyData;		// mPublicKey obtained from this field
 	CSSM_KEY_PTR			mPublicKey;
 	
 	/* maintained by caller, default at constructor 0/false */
 	bool					mIsAnchor;
-	bool					mIsFromDb;
+	bool					mIsFromInputCerts;
 	bool					mIsFromNet;
 	unsigned				mNumStatusCodes;
 	CSSM_RETURN				*mStatusCodes;
@@ -293,7 +314,9 @@ private:
 	bool					mUsed;			// e.g., used in current loop 
 	bool					mIsLeaf;		// first in chain
 	TPRootState				mIsRoot;		// subject == issuer
-
+	bool					mRevCheckGood;		// >= 1 revoke check good
+	bool					mRevCheckComplete;	// no more revoke checking needed
+	
 	void 					releaseResources();
 };
 
@@ -318,7 +341,7 @@ public:
 	 * This one creates an empty TPCertGroup.
 	 */
 	TPCertGroup(
-		Allocator		&alloc,
+		Allocator			&alloc,
 		TPGroupOwner		whoOwns);		// if TGO_Group, we delete
 	
 	/*
@@ -331,7 +354,7 @@ public:
 		const CSSM_CERTGROUP 	&CertGroupFrag,
 		CSSM_CL_HANDLE 			clHand,
 		CSSM_CSP_HANDLE 		cspHand,
-		Allocator			&alloc,
+		Allocator				&alloc,
 		const char				*verifyString,			// may be NULL
 		bool					firstCertMustBeValid,
 		TPGroupOwner			whoOwns);	
@@ -389,7 +412,7 @@ public:
 		TPCertGroup				*gatheredCerts,
 		
 		/*
-		* Indicates that subjectItem is the last element in this cert group.
+		* Indicates that subjectItem is a cert in this cert group.
 		* If true, that cert will be tested for "root-ness", including 
 		*   -- subject/issuer compare
 		*   -- signature self-verify
@@ -436,10 +459,9 @@ public:
 	 * encapsulates a policy for CertGroupeConstruct and CertGroupVerify.
 	 */
 	CSSM_RETURN getReturnCode(
-		CSSM_RETURN constructStatus,
-		CSSM_BOOL	allowExpired,
-		CSSM_BOOL	allowExpiredRoot,
-		CSSM_RETURN policyStatus = CSSM_OK);
+		CSSM_RETURN					constructStatus,
+		CSSM_RETURN					policyStatus,
+		CSSM_APPLE_TP_ACTION_FLAGS	actionFlags);
 	 
 	Allocator
 		&alloc() {return mAlloc; }
@@ -473,7 +495,7 @@ private:
 	CSSM_RETURN				verifyWithPartialKeys(
 		const TPClItemInfo	&subjectItem);		// Cert or CRL
 	
-	Allocator			&mAlloc;
+	Allocator				&mAlloc;
 	TPCertInfo				**mCertInfo;		// just an array of pointers
 	unsigned				mNumCerts;			// valid certs in certInfo
 	unsigned				mSizeofCertInfo;	// mallocd space in certInfo

@@ -40,7 +40,7 @@
  * Copy one CSSM_DATA to another, mallocing destination. 
  */
 void tpCopyCssmData(
-	Allocator	&alloc,
+	Allocator		&alloc,
 	const CSSM_DATA	*src,
 	CSSM_DATA_PTR	dst)
 {
@@ -53,7 +53,7 @@ void tpCopyCssmData(
  * Malloc a CSSM_DATA, copy another one to it.
  */
 CSSM_DATA_PTR tpMallocCopyCssmData(
-	Allocator	&alloc,
+	Allocator		&alloc,
 	const CSSM_DATA	*src)
 {
 	CSSM_DATA_PTR dst = (CSSM_DATA_PTR)alloc.malloc(sizeof(CSSM_DATA));
@@ -65,7 +65,7 @@ CSSM_DATA_PTR tpMallocCopyCssmData(
  * Free the data referenced by a CSSM data, and optionally, the struct itself.
  */
 void tpFreeCssmData(
-	Allocator	&alloc,
+	Allocator		&alloc,
 	CSSM_DATA_PTR 	data,
 	CSSM_BOOL 		freeStruct)
 {
@@ -250,18 +250,23 @@ void tpToLower(
 /*
  * Normalize an RFC822 addr-spec. This consists of converting
  * all characters following the '@' character to lower case.
+ * A true normalizeAll results in lower-casing all characters
+ * (e.g. for iChat). 
  */
 void tpNormalizeAddrSpec(
 	char		*addr,
-	unsigned	addrLen)
+	unsigned	addrLen,
+	bool		normalizeAll)
 {
-	while((*addr != '@') && (addrLen != 0)) {
-		addr++;
-		addrLen--;
-	}
-	if(addrLen == 0) {
-		tpPolicyError("tpNormalizeAddrSpec: bad addr-spec");
-		return;
+	if(!normalizeAll) {
+		while((*addr != '@') && (addrLen != 0)) {
+			addr++;
+			addrLen--;
+		}
+		if(addrLen == 0) {
+			tpPolicyError("tpNormalizeAddrSpec: bad addr-spec");
+			return;
+		}
 	}
 	tpToLower(addr, addrLen);
 }
@@ -463,6 +468,8 @@ static CSSM_BOOL tpCompareComps(
  * The incoming hostname is assumed to have been processed by tpToLower();
  * we'll perform that processing on certName here. 
  *
+ * Trailing '.' characters in both host names will be ignored per Radar 3996792.
+ *
  * Returns CSSM_TRUE on match, else CSSM_FALSE.
  */
 CSSM_BOOL tpCompareHostNames(
@@ -474,10 +481,28 @@ CSSM_BOOL tpCompareHostNames(
 	tpToLower(certName, certNameLen);
 
 	/* tolerate optional NULL terminators for both */
-	if(hostName[hostNameLen - 1] == '\0') {
+	if(hostNameLen && (hostName[hostNameLen - 1] == '\0')) {
 		hostNameLen--;
 	}
-	if(certName[certNameLen - 1] == '\0') {
+	if(certNameLen && (certName[certNameLen - 1] == '\0')) {
+		certNameLen--;
+	}
+	
+	if((hostNameLen == 0) || (certNameLen == 0)) {
+		/* trivial case with at least one empty name */
+		if(hostNameLen == certNameLen) {
+			return CSSM_TRUE;
+		}
+		else {
+			return CSSM_FALSE;
+		}
+	}
+	
+	/* trim off trailing dots */
+	if(hostName[hostNameLen - 1] == '.') {
+		hostNameLen--;
+	}
+	if(certName[certNameLen - 1] == '.') {
 		certNameLen--;
 	}
 	
@@ -543,9 +568,11 @@ CSSM_BOOL tpCompareEmailAddr(
 	const char	 	*appEmail,		// spec'd by app, normalized
 	uint32			appEmailLen,
 	char			*certEmail,		// from cert, we normalize
-	uint32			certEmailLen)
+	uint32			certEmailLen,
+	bool			normalizeAll)	// true : lower-case all certEmail characters
+
 {
-	tpNormalizeAddrSpec(certEmail, certEmailLen);
+	tpNormalizeAddrSpec(certEmail, certEmailLen, normalizeAll);
 
 	/* tolerate optional NULL terminators for both */
 	if(appEmail[appEmailLen - 1] == '\0') {
@@ -564,3 +591,4 @@ CSSM_BOOL tpCompareEmailAddr(
 		return CSSM_FALSE;
 	}
 }
+
