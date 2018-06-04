@@ -291,7 +291,7 @@ static OcspIssuerStatus tpIsOcspIssuer(
 				break;
 			}
 
-			/* check EKU lingage */
+			/* check EKU linkage */
 			shouldBeSigner = tpIsAuthorizedOcspSigner(*issuer, *signer);
 			break;
 		}
@@ -374,6 +374,7 @@ OcspRespStatus tpVerifyOcspResp(
 	 * pass signature verify. If true and we never success, that's a XXX error.
 	 */
 	bool foundBadIssuer = false;
+	bool foundLocalResponder = false;
 	uint32 numSignerCerts = ocspResp.numSignerCerts();
 	
 	/*
@@ -418,6 +419,7 @@ OcspRespStatus tpVerifyOcspResp(
 			case OIS_Good:
 				assert(responderInfo != NULL);
 				signerInfo = signerInfoTBD = responderInfo;
+				foundLocalResponder = true;
 				tpOcspDebug("tpVerifyOcspResp: signer := LocalResponderCert");
 				break;
 		}
@@ -452,7 +454,7 @@ OcspRespStatus tpVerifyOcspResp(
 			else {
 				/* 
 				 * At least add this cert to certGroup for verification.
-				 * OcspCertwill own the TPCertInfo .
+				 * OcspCert will own the TPCertInfo.
 				 */
 				try {
 					respCert = new TPCertInfo(vfyCtx.clHand, vfyCtx.cspHand, certData,
@@ -502,6 +504,20 @@ OcspRespStatus tpVerifyOcspResp(
 			/* caller adds to per-cert status */
 			cssmErr = CSSMERR_APPLETP_OCSP_NO_SIGNER;
 		}
+		goto errOut;
+	}
+
+	if(signerInfo != NULL && !foundLocalResponder) {
+		/*
+		 * tpIsOcspIssuer has verified that signerInfo is the signer of the
+		 * OCSP response, and that it is either the issuer of the cert being
+		 * checked or is a valid authorized responder for that issuer based on
+		 * key id linkage and EKU. There is no stipulation in RFC2560 to also
+		 * build the chain back to a trusted anchor; however, we'll continue to
+		 * enforce this for the local responder case. (10742723)
+		 */
+		tpOcspDebug("tpVerifyOcspResp SUCCESS");
+		ourRtn = ORS_Good;
 		goto errOut;
 	}
 	
@@ -562,7 +578,7 @@ OcspRespStatus tpVerifyOcspResp(
 		}
 	}
 	else {
-		tpOcspDebug("tpVerifyOcspResp SUCCESS");
+		tpOcspDebug("tpVerifyOcspResp SUCCESS; chain verified");
 		ourRtn = ORS_Good;
 	}
 	

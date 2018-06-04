@@ -286,6 +286,12 @@ public:
 	bool addStatusCode(
 		CSSM_RETURN 		code);
 
+	/*
+	 * See if the specified error status is in the mStatusCodes array.
+	 */
+	bool hasStatusCode(
+		CSSM_RETURN			code);
+
 	/* 
 	 * See if the specified error status is allowed (return false) or
 	 * fatal (return true) per mAllowedErrs[].
@@ -298,7 +304,7 @@ public:
 	 * key.
 	 */
 	bool 					hasPartialKey();
-	 
+
 	/* Indicate whether this cert should be explicitly rejected.
 	 */
 	bool					shouldReject();

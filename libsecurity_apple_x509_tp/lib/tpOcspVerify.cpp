@@ -498,9 +498,9 @@ CSSM_RETURN tpVerifyCertGroupWithOCSP(
 	 * For each cert, either obtain a cached OCSPResponse, or create
 	 * a request to get one. 
 	 *
-	 * NOTE: in-core cache reads (via tpOcspCacheLookup() do NOT incolve a
+	 * NOTE: in-core cache reads (via tpOcspCacheLookup() do NOT involve a
 	 * nonce check, no matter what the app says. If nonce checking is required by the
-	 * app, responses son't get added to cache if the nonce doesn't match, but once
+	 * app, responses don't get added to cache if the nonce doesn't match, but once
 	 * a response is validated and added to cache it's fair game for that task. 
 	 */
 	for(unsigned dex=0; dex<numCerts; dex++) {
@@ -574,8 +574,8 @@ CSSM_RETURN tpVerifyCertGroupWithOCSP(
 	vfyCtx.alloc.free(derOcspdReplies.Data);
 	if(prtn) {
 		/* 
-		 * This can happen when an OCSP server provides bad data...we can
-		 * not determine which cert is associated with this bad response;
+		 * This can happen when an OCSP server provides bad data...we cannot
+		 * determine which cert is associated with this bad response;
 		 * just flag it with the first one and proceed to the loop that
 		 * handles CSSM_TP_ACTION_OCSP_REQUIRE_PER_CERT.
 		 */
@@ -683,7 +683,7 @@ CSSM_RETURN tpVerifyCertGroupWithOCSP(
 				delete ocspResp;
 				/* 
 				 * An exceptional case: synchronously flush the OCSPD cache and send a 
-				 * new resquest for just this one cert. 
+				 * new request for just this one cert. 
 				 * FIXME: does this really buy us anything? A DOS attacker who managed
 				 * to get this bogus response into our cache is likely to be able
 				 * to do it again and again.
@@ -781,22 +781,43 @@ postOcspd:
 		if(!pendReq->processed) {
 			/* Couldn't perform OCSP for this cert. */
 			tpOcspDebug("tpVerifyCertGroupWithOCSP: OCSP_UNAVAILABLE for cert %u", dex);
-			pendReq->subject.addStatusCode(CSSMERR_APPLETP_OCSP_UNAVAILABLE);
 			bool required = false;
+			CSSM_RETURN responseStatus = CSSM_OK;
+			if(pendReq->subject.numStatusCodes() > 0) {
+				/*
+				 * Check whether we got a response for this cert, but it was rejected
+				 * due to being improperly signed. That should result in an actual
+				 * error, even under Best Attempt processing. (10743149)
+				 */
+				if(pendReq->subject.hasStatusCode(CSSMERR_APPLETP_OCSP_BAD_RESPONSE)) {
+					responseStatus = CSSMERR_APPLETP_OCSP_BAD_RESPONSE;
+				} else if(pendReq->subject.hasStatusCode(CSSMERR_APPLETP_OCSP_SIG_ERROR)) {
+					responseStatus = CSSMERR_APPLETP_OCSP_SIG_ERROR;
+				} else if(pendReq->subject.hasStatusCode(CSSMERR_APPLETP_OCSP_NO_SIGNER)) {
+					responseStatus = CSSMERR_APPLETP_OCSP_NO_SIGNER;
+				}
+			}
+			if(responseStatus == CSSM_OK) {
+				/* no response available (as opposed to getting an invalid response) */
+				pendReq->subject.addStatusCode(CSSMERR_APPLETP_OCSP_UNAVAILABLE);
+			}
 			if(optFlags & CSSM_TP_ACTION_OCSP_REQUIRE_PER_CERT) {
 				/* every cert needs OCSP */
+				tpOcspDebug("tpVerifyCertGroupWithOCSP: response required for all certs, missing for cert %u", dex);
 				required = true;
 			}
 			else if(optFlags & CSSM_TP_ACTION_OCSP_REQUIRE_IF_RESP_PRESENT) {
 				/* this cert needs OCSP if it had an AIA extension with an OCSP URI */
 				if(pendReq->urls) {
+					tpOcspDebug("tpVerifyCertGroupWithOCSP: OCSP URI present but no valid response for cert %u", dex);
 					required = true;
 				}
 			}
-			if(required && pendReq->subject.isStatusFatal(CSSMERR_APPLETP_OCSP_UNAVAILABLE)) {
+			if( (required && pendReq->subject.isStatusFatal(CSSMERR_APPLETP_OCSP_UNAVAILABLE)) ||
+				(responseStatus != CSSM_OK && pendReq->subject.isStatusFatal(responseStatus)) ) {
 				/* fatal error, but we keep on processing */
 				if(ourRtn == CSSM_OK) {
-					ourRtn = CSSMERR_APPLETP_OCSP_UNAVAILABLE;
+					ourRtn = (responseStatus != CSSM_OK) ? responseStatus : CSSMERR_APPLETP_OCSP_UNAVAILABLE;
 				}
 			}
 		}
