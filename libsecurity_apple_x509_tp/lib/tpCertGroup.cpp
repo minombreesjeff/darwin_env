@@ -437,10 +437,6 @@ static bool checkPolicyOid(
 		tpPolicy = kTP_MacAppStoreRec;
 		return true;
 	}
-	else if(tpCompareOids(&oid, &CSSMOID_APPLE_TP_APPLEID_SHARING)) {
-		tpPolicy = kTP_AppleIDSharing;
-		return true;
-	}
 	return false;
 }
 

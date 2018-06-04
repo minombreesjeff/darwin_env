@@ -53,8 +53,7 @@ typedef enum {
 	kTP_PKINIT_Server,	/* PKINIT server cert */
 	kTP_CodeSigning,	/* new Apple Code Signing (Leopard/10.5) */
 	kTP_PackageSigning,	/* Package Signing */
-	kTP_MacAppStoreRec,	/* MacApp store receipt */
-	kTP_AppleIDSharing	/* AppleID Sharing */
+	kTP_MacAppStoreRec	/* MacApp store receipt */
 } TPPolicy;
 
 /*
