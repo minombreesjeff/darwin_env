@@ -31,6 +31,18 @@ using namespace CssmClient;
 const uint32 kBlobType = 0x1;
 
 
+//
+// Abstract classes
+//
+DbMaker::~DbMaker()
+{ /* virtual */ }
+
+DbCursorMaker::~DbCursorMaker()
+{ /* virtual */ }
+
+DbUniqueRecordMaker::~DbUniqueRecordMaker()
+{ /* virtual */ }
+
 
 //
 // Manage DL attachments
@@ -453,6 +465,13 @@ void DbImpl::defaultCredentials(DefaultCredentialsMaker *maker)
 {
 	mDefaultCredentials = maker;
 }
+
+
+//
+// Abstract DefaultCredentialsMakers
+//
+DbImpl::DefaultCredentialsMaker::~DefaultCredentialsMaker()
+{ /* virtual */ }
 
 
 //
