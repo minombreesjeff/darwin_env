@@ -326,7 +326,7 @@ void CSPFullPluginSession::EncryptData(CSSM_CC_HANDLE ccHandle,
                                        uint32 clearBufCount,
                                        CssmData cipherBufs[],
                                        uint32 cipherBufCount,
-                                       uint32 &bytesEncrypted,
+                                       CSSM_SIZE &bytesEncrypted,
                                        CssmData &remData,
                                        CSSM_PRIVILEGE privilege)
 {
@@ -351,7 +351,7 @@ void CSPFullPluginSession::EncryptDataUpdate(CSSM_CC_HANDLE ccHandle,
                                          uint32 clearBufCount,
                                          CssmData cipherBufs[],
                                          uint32 cipherBufCount,
-                                         uint32 &bytesEncrypted)
+                                         CSSM_SIZE &bytesEncrypted)
 {
     CSPContext *alg = getStagedContext(ccHandle, CSSM_ALGCLASS_CRYPT, true);
     Writer writer(cipherBufs, cipherBufCount);
@@ -374,7 +374,7 @@ void CSPFullPluginSession::DecryptData(CSSM_CC_HANDLE ccHandle,
                                    uint32 cipherBufCount,
                                    CssmData clearBufs[],
                                    uint32 clearBufCount,
-                                   uint32 &bytesDecrypted,
+                                   CSSM_SIZE &bytesDecrypted,
                                    CssmData &remData,
                                    CSSM_PRIVILEGE privilege)
 {
@@ -399,7 +399,7 @@ void CSPFullPluginSession::DecryptDataUpdate(CSSM_CC_HANDLE ccHandle,
                                uint32 cipherBufCount,
                                CssmData clearBufs[],
                                uint32 clearBufCount,
-                               uint32 &bytesDecrypted)
+                               CSSM_SIZE &bytesDecrypted)
 {
     CSPContext *ctx = getStagedContext(ccHandle, CSSM_ALGCLASS_CRYPT, false);
     Writer writer(clearBufs, clearBufCount);
