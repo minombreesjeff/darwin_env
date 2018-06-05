@@ -64,7 +64,7 @@ public:
                         CSSM_DB_RECORDTYPE RelationID,
                         const char *RelationName,
                         uint32 NumberOfAttributes,
-                        const CSSM_DB_SCHEMA_ATTRIBUTE_INFO &pAttributeInfo,
+                        const CSSM_DB_SCHEMA_ATTRIBUTE_INFO *pAttributeInfo,
                         uint32 NumberOfIndexes,
                         const CSSM_DB_SCHEMA_INDEX_INFO &pIndexInfo);
     void DestroyRelation(CSSM_DB_HANDLE DBHandle,
@@ -101,7 +101,7 @@ public:
                     const CssmData *DataToBeModified,
                     CSSM_DB_MODIFY_MODE ModifyMode);
     CSSM_HANDLE DataGetFirst(CSSM_DB_HANDLE DBHandle,
-                             const DLQuery *Query,
+                             const CssmQuery *Query,
                              CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR Attributes,
                              CssmData *Data,
                              CSSM_DB_UNIQUE_RECORD_PTR &UniqueId);

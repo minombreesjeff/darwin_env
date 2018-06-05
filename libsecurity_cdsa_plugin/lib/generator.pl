@@ -61,6 +61,7 @@ while (($type, $header) = each %SPI_H) {
   $MOREHEADERS="";
   $MOREHEADERS .= "#include <security_cdsa_utilities/context.h>\n" if /CSSM_CONTEXT/;
   $MOREHEADERS .= "#include <security_cdsa_utilities/cssmacl.h>\n" if /CSSM_(ACL|ACCESS)/;
+  $MOREHEADERS .= "#include <security_cdsa_utilities/cssmdb.h>\n" if /CSSM_QUERY/;
 
   # break function arguments into many forms:
   #  functions => formal SPI arguments
@@ -102,7 +103,7 @@ while (($type, $header) = each %SPI_H) {
 	s/(const )?CSSM_QUERY_SIZE_DATA \*/$1QuerySizeData \&/gm; # ditto
 	s/(const )?CSSM_CSP_OPERATIONAL_STATISTICS \*/$1CSPOperationalStatistics \&/gm; # ditto
     s/(const )?CSSM_(WRAP_)?KEY \*/$1CssmKey \&/gm;	# CSSM[WRAP]KEY * -> CssmKey &
-    s/const CSSM_QUERY \*/const DLQuery \&/gm;		# c QUERY * -> c Query &
+    s/const CSSM_QUERY \*/const CssmQuery \&/gm;		# c QUERY * -> c Query &
 	s/(const )?(CSSM_[A-Z_]+) \*/$1$2 \&/gm;		# c CSSM_ANY * -> c CSSM_ANY &
     $methods{$function} = $_;
 

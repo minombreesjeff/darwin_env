@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2001 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2000-2004 Apple Computer, Inc. All Rights Reserved.
  * 
  * The contents of this file constitute Original Code as defined in and are
  * subject to the Apple Public Source License Version 1.2 (the 'License').
@@ -21,14 +21,11 @@
 
 #include <security_cdsa_utilities/cssmacl.h>
 #include <security_utilities/threading.h>
-#include <security_cdsa_utilities/cssmdbname.h>
+#include <security_cdsa_utilities/cssmdb.h>
 #include <list>
 #include <map>
 #include <set>
 
-#ifdef _CPP_DATABASE
-# pragma export on
-#endif
 
 // @@@ Should not use using in headers.
 using namespace std;
@@ -132,7 +129,7 @@ public:
                     CSSM_DB_RECORDTYPE inRelationID,
                     const char *inRelationName,
                     uint32 inNumberOfAttributes,
-                    const CSSM_DB_SCHEMA_ATTRIBUTE_INFO &inAttributeInfo,
+                    const CSSM_DB_SCHEMA_ATTRIBUTE_INFO *inAttributeInfo,
                     uint32 inNumberOfIndexes,
                     const CSSM_DB_SCHEMA_INDEX_INFO &inIndexInfo) = 0;
 
@@ -187,7 +184,7 @@ public:
 
     virtual CSSM_HANDLE
     dataGetFirst (DbContext &dbContext,
-                  const DLQuery *inQuery,
+                  const CssmQuery *inQuery,
                   CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR inoutAttributes,
                   CssmData *inoutData,
                   CSSM_DB_UNIQUE_RECORD_PTR &outUniqueRecord) = 0;

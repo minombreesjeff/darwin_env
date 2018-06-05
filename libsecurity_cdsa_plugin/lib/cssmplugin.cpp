@@ -24,63 +24,77 @@
 // active in its code. Thus, our locks merely protect global maps; they do not
 // need (or try) to close the classic use-and-delete window.
 //
-#ifdef __MWERKS__
-#define _CPP_CSSMPLUGIN
-#endif
 #include <security_cdsa_plugin/cssmplugin.h>
 #include <security_cdsa_plugin/pluginsession.h>
+#include <memory>
 
 
 ModuleNexus<CssmPlugin::SessionMap> CssmPlugin::sessionMap;
 
 
 CssmPlugin::CssmPlugin()
+	: mLoaded(false)
 {
-    haveCallback = false;
 }
 
 CssmPlugin::~CssmPlugin()
 {
-	// Note: if haveCallback, we're being unloaded forcibly.
+	// Note: if mLoaded, we're being unloaded forcibly.
 	// (CSSM wouldn't do this to us in normal operation.)
 }
 
 
+//
+// Load processing.
+// CSSM only calls this once for a module, and multiplexes any additional
+// CSSM_ModuleLoad calls internally. So this is only called when we have just
+// been loaded (and not yet attached).
+//
 void CssmPlugin::moduleLoad(const Guid &cssmGuid,
                 const Guid &moduleGuid,
                 const ModuleCallback &newCallback)
 {
-    // add the callback vector
-    if (haveCallback)	// re-entering moduleLoad - not currently supported
+    if (mLoaded)
         CssmError::throwMe(CSSM_ERRCODE_INTERNAL_ERROR);
         
 	mMyGuid = moduleGuid;
 
     // let the implementation know that we're loading
-    load();
+	this->load();
 
     // commit
-    callback = newCallback;
-    haveCallback = true;
+    mCallback = newCallback;
+    mLoaded = true;
 }
 
 
+//
+// Unload processing.
+// The callback passed here will be the same passed to load.
+// CSSM only calls this on a "final" CSSM_ModuleUnload, after all attachments
+// are destroyed and (just) before we are physically unloaded.
+//
 void CssmPlugin::moduleUnload(const Guid &cssmGuid,
-                  const Guid &moduleGuid,
-                      const ModuleCallback &oldCallback)
+				const Guid &moduleGuid,
+                const ModuleCallback &oldCallback)
 {
     // check the callback vector
-    if (!haveCallback || oldCallback != callback)
+    if (!mLoaded || oldCallback != mCallback)
         CssmError::throwMe(CSSM_ERRCODE_INTERNAL_ERROR);
 
     // tell our subclass that we're closing down
-    unload();
+	this->unload();
 
     // commit closure
-    haveCallback = false;
+    mLoaded = false;
 }
 
 
+//
+// Create one attachment session. This is what CSSM calls to process
+// a CSSM_ModuleAttach call. moduleLoad() has already been called and has
+// returned successfully.
+//
 void CssmPlugin::moduleAttach(CSSM_MODULE_HANDLE theHandle,
                               const Guid &newCssmGuid,
                               const Guid &moduleGuid,
@@ -94,29 +108,36 @@ void CssmPlugin::moduleAttach(CSSM_MODULE_HANDLE theHandle,
                               const CSSM_UPCALLS &upcalls,
                               CSSM_MODULE_FUNCS_PTR &funcTbl)
 {
-    // insanity checks
-    // @@@ later
+	// basic (in)sanity checks
+	if (moduleGuid != mMyGuid)
+		CssmError::throwMe(CSSM_ERRCODE_INVALID_GUID);
     
     // make the new session object, hanging in thin air
-    PluginSession *session = makeSession(theHandle,
+    auto_ptr<PluginSession> session(this->makeSession(theHandle,
                                          version,
                                          subserviceId, subserviceType,
                                          attachFlags,
-                                         upcalls);
+                                         upcalls));
 
-    try {
-        // haggle with the implementor
-        funcTbl = session->construct();
+	// haggle with the implementor
+	funcTbl = session->construct();
 
-        // commit this session creation
-        StLock<Mutex> _(sessionMap());
-		sessionMap()[theHandle] = session;
-    } catch (...) {
-        delete session;
-        throw;
-    }
+	// commit this session creation
+    StLock<Mutex> _(sessionMap());
+	sessionMap()[theHandle] = session.release();
 }
 
+
+//
+// Undo a (single) module attachment. This calls the detach() method on
+// the Session object representing the attachment. This is only called
+// if session->construct() has succeeded previously.
+// If session->detach() fails, we do not destroy the session and it continues
+// to live, though its handle may have (briefly) been invalid. This is for
+// desperate "mustn't go right now" situations and should not be abused.
+// CSSM always has the ability to ditch you without your consent if you are
+// obstreporous.
+//
 void CssmPlugin::moduleDetach(CSSM_MODULE_HANDLE handle)
 {
 	// locate the plugin and hold the sessionMapLock
@@ -133,28 +154,30 @@ void CssmPlugin::moduleDetach(CSSM_MODULE_HANDLE handle)
 	// let the session know it is going away
 	try {
 		session->detach();
+		delete session;
 	} catch (...) {
 		// session detach failed - put the plugin back and fail
 		StLock<Mutex> _(sessionMap());
 		sessionMap()[handle] = session;
 		throw;
 	}
-	
-	// everything's fine, delete the session
-	delete session;
 }
 
-void CssmPlugin::sendCallback(CSSM_MODULE_EVENT event, uint32 subId,
+
+//
+// Send an official CSSM module callback message upstream
+//
+void CssmPlugin::sendCallback(CSSM_MODULE_EVENT event, uint32 ssid,
                      		  CSSM_SERVICE_TYPE serviceType) const
 {
-	assert(haveCallback);
-	callback(event, mMyGuid, subId, serviceType);
+	assert(mLoaded);
+	mCallback(event, mMyGuid, ssid, serviceType);
 }
 
 
 //
 // Default subclass hooks.
-// The default implementations succeed without doing anything
+// The default implementations succeed without doing anything.
 //
 void CssmPlugin::load() { }
 

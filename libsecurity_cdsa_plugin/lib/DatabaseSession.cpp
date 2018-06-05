@@ -182,7 +182,7 @@ DatabaseSession::CreateRelation(CSSM_DB_HANDLE inDbHandle,
                                 CSSM_DB_RECORDTYPE inRelationID,
                                 const char *inRelationName,
                                 uint32 inNumberOfAttributes,
-                                const CSSM_DB_SCHEMA_ATTRIBUTE_INFO &inAttributeInfo,
+                                const CSSM_DB_SCHEMA_ATTRIBUTE_INFO *inAttributeInfo,
                                 uint32 inNumberOfIndexes,
                                 const CSSM_DB_SCHEMA_INDEX_INFO &inIndexInfo)
 {
@@ -293,7 +293,7 @@ DatabaseSession::DataModify(CSSM_DB_HANDLE inDbHandle,
 
 CSSM_HANDLE
 DatabaseSession::DataGetFirst(CSSM_DB_HANDLE inDbHandle,
-                              const DLQuery *inQuery,
+                              const CssmQuery *inQuery,
                               CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR inoutAttributes,
                               CssmData *inoutData,
                               CSSM_DB_UNIQUE_RECORD_PTR &outUniqueId)

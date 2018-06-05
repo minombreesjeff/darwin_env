@@ -27,15 +27,12 @@
 #include <security_cdsa_utilities/callback.h>
 #include <set>
 
-#if __GNUC__ > 2
 #include <ext/hash_map>
 using __gnu_cxx::hash_map;
-#else
-#include <hash_map>
-#endif
 
-namespace Security
-{
+
+namespace Security {
+
 
 //
 // Inherit from this (abstract) class to implement your plugin
@@ -70,7 +67,7 @@ public:
     const Guid &myGuid() const { return mMyGuid; }
     
     void sendCallback(CSSM_MODULE_EVENT event,
-                      uint32 subId,
+                      uint32 ssid,
                       CSSM_SERVICE_TYPE serviceType) const;
                       
     void sendInsertion(uint32 subId, CSSM_SERVICE_TYPE serviceType) const
@@ -105,9 +102,9 @@ private:
     
     Guid mMyGuid;
 
-    // the registered callback. We currently allow only one
-    ModuleCallback callback;
-    bool haveCallback;
+    // the registered callback. Set during load processing, unset during unload
+    ModuleCallback mCallback;
+    bool mLoaded;
 
 public:
     static PluginSession *find(CSSM_MODULE_HANDLE h)

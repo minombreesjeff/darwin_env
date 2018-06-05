@@ -46,7 +46,7 @@ public:
     virtual ~DbContext();
 
     CSSM_HANDLE
-    dataGetFirst(const DLQuery *inQuery,
+    dataGetFirst(const CssmQuery *inQuery,
                       CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR inoutAttributes,
                       CssmData *inoutData,
                       CSSM_DB_UNIQUE_RECORD_PTR &outUniqueRecord);

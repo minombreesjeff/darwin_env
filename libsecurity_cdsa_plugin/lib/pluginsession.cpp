@@ -19,37 +19,40 @@
 //
 // pluginsession - an attachment session for a CSSM plugin
 //
-#ifdef __MWERKS__
-#define _CPP_PLUGINSESSION
-#endif
 #include <security_cdsa_plugin/pluginsession.h>
 #include <security_cdsa_plugin/cssmplugin.h>
 #include <security_cdsa_plugin/DLsession.h>
 
 
 //
-// Construct the PluginSession base object.
+// Construct a PluginSession
 //
 PluginSession::PluginSession(CSSM_MODULE_HANDLE theHandle,
-                             CssmPlugin &plug,
+                             CssmPlugin &myPlugin,
                              const CSSM_VERSION &version,
                              uint32 subserviceId,
                              CSSM_SERVICE_TYPE subserviceType,
                              CSSM_ATTACH_FLAGS attachFlags,
                              const CSSM_UPCALLS &inUpcalls)
-: HandledObject(theHandle), plugin(plug), upcalls(inUpcalls)
+	: HandledObject(theHandle), plugin(myPlugin),
+	  mVersion(version), mSubserviceId(subserviceId),
+	  mSubserviceType(subserviceType), mAttachFlags(attachFlags),
+	  upcalls(inUpcalls)
 {
-    // fill in passed flags
-    mVersion = version;
-    mSubserviceId = subserviceId;
-    mSubserviceType = subserviceType;
-    mAttachFlags = attachFlags;
 }
 
+
+//
+// Destruction
+//
 PluginSession::~PluginSession()
 {
 }
 
+
+//
+// The default implementation of detach() does nothing
+//
 void PluginSession::detach()
 {
 }
@@ -62,27 +65,27 @@ void *PluginSession::malloc(size_t size) throw(std::bad_alloc)
 {
     if (void *addr = upcalls.malloc_func(handle(), size))
         return addr;
-    CssmError::throwMe(CSSM_ERRCODE_MEMORY_ERROR);
+	throw std::bad_alloc();
 }
 
 void *PluginSession::realloc(void *oldAddr, size_t size) throw(std::bad_alloc)
 {
     if (void *addr = upcalls.realloc_func(handle(), oldAddr, size))
         return addr;
-    CssmError::throwMe(CSSM_ERRCODE_MEMORY_ERROR);
+	throw std::bad_alloc();
 }
 
 
 //
-// Dispatch events through the plugin module object.
+// Dispatch callback events through the plugin object.
 // Subsystem ID and subservice type default to our own.
 //
 
 void PluginSession::sendCallback(CSSM_MODULE_EVENT event,
-                                 uint32 subId,
+                                 uint32 ssid,
                                  CSSM_SERVICE_TYPE serviceType) const
 {
     plugin.sendCallback(event,
-                        (subId == uint32(-1)) ? mSubserviceId : subId,
+                        (ssid == uint32(-1)) ? mSubserviceId : ssid,
                         serviceType ? serviceType : mSubserviceType);
 }

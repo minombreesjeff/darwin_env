@@ -27,28 +27,26 @@
 #include <security_utilities/alloc.h>
 
 
-#ifdef _CPP_PLUGINSESSION
-# pragma export on
-#endif
+namespace Security {
 
-namespace Security
-{
 
 //
 // A PluginSession object describes an ongoing connection between a particular
 // CSSM client and our plugin. Every time CSSM_SPI_ModuleAttach is called
 // (due to the client calling CSSM_ModuleAttach), a new PluginSession object
 // is created as a result. Sessions and CSSM_MODULE_HANDLES correspond one-to-one.
+// Note that CSSM makes up our module handle; we just record it.
 //
-// PluginSession is meant to be the parent class of your session object.
-// This is where you store per-session information.
+// A PluginSession *is* an Allocator, whose implementation is to call the
+// "application allocator" functions provided by CSSM's caller for the attachment.
+// Use the session object as the Allocator for anything you return to your caller.
 //
 class PluginSession : public Allocator, public HandledObject {
     NOCOPY(PluginSession)
     friend class CssmPlugin;
 public:
     PluginSession(CSSM_MODULE_HANDLE theHandle,
-                  CssmPlugin &plug,
+                  CssmPlugin &myPlugin,
                   const CSSM_VERSION &Version,
                   uint32 SubserviceID,
                   CSSM_SERVICE_TYPE SubServiceType,
@@ -60,7 +58,7 @@ public:
     CssmPlugin &plugin;
     
     void sendCallback(CSSM_MODULE_EVENT event,
-    				  uint32 subId = uint32(-1),
+    				  uint32 ssid = uint32(-1),
                       CSSM_SERVICE_TYPE serviceType = 0) const;
 
     static void unimplemented() { CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED); }
@@ -69,11 +67,12 @@ protected:
     virtual CSSM_MODULE_FUNCS_PTR construct() = 0;
 
 public:
-    // implement CssmHeap::Allocator
+    // implement Allocator
     void *malloc(size_t size) throw(std::bad_alloc);
     void *realloc(void *addr, size_t size) throw(std::bad_alloc);
     void free(void *addr) throw() { upcalls.free_func(handle(), addr); }
 
+	// about ourselves
 	const CSSM_VERSION &version() const { return mVersion; }
     uint32 subserviceId() const { return mSubserviceId; }
     CSSM_SERVICE_TYPE subserviceType() const { return mSubserviceType; }
@@ -89,8 +88,5 @@ private:
 
 } // end namespace Security
 
-#ifdef _CPP_PLUGINSESSION
-# pragma export off
-#endif
 
 #endif //_H_PLUGINSESSION
