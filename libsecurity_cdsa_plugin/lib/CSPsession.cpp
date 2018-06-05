@@ -951,8 +951,8 @@ KeyPool::erase(ReferencedKey::KeyReference keyReference)
 	if (it == mKeyMap.end())
 		CssmError::throwMe(CSSMERR_CSP_INVALID_KEY_REFERENCE);
 
-	mKeyMap.erase(it);
 	ReferencedKey &referencedKey = *it->second;
+	mKeyMap.erase(it);
 	return referencedKey;
 }
 
