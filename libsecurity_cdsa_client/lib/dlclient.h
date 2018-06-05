@@ -318,6 +318,7 @@ public:
 	virtual void changePassphrase(const CSSM_ACCESS_CREDENTIALS *cred);
 	virtual void recode(const CSSM_DATA &data, const CSSM_DATA &extraData);
 	virtual void copyBlob(CssmData &data);
+	virtual void setBatchMode(Boolean mode, Boolean rollback);
 
 	// Utility methods
 

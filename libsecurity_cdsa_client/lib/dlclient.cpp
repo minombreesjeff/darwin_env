@@ -416,6 +416,41 @@ void DbImpl::copyBlob (CssmData &data)
 	check(CSSM_DL_PassThrough(handle(), CSSM_APPLECSPDL_DB_COPY_BLOB, NULL, (void**) (CSSM_DATA*) &data));
 }
 
+void DbImpl::setBatchMode(Boolean mode, Boolean rollback)
+{
+	//
+	// We need the DL_DB_Handle of the underyling DL in order to use CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT
+	// 
+	CSSM_RETURN result;
+	CSSM_DL_DB_HANDLE dldbHandleOfUnderlyingDL;
+	result = CSSM_DL_PassThrough(handle(),
+								 CSSM_APPLECSPDL_DB_GET_HANDLE,
+								 NULL,
+								 (void **)&dldbHandleOfUnderlyingDL);
+	//
+	// Now, toggle the autocommit...
+	//
+	if ( result == noErr )
+	{
+		CSSM_BOOL modeToUse = !mode;
+		if (rollback)
+		{
+			result = (OSStatus)CSSM_DL_PassThrough(dldbHandleOfUnderlyingDL,
+										CSSM_APPLEFILEDL_ROLLBACK, NULL, NULL);
+		}
+
+		result = CSSM_DL_PassThrough(dldbHandleOfUnderlyingDL,
+									 CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
+									 (void *)(modeToUse),
+									 NULL);
+		if (!rollback && modeToUse)
+			result = CSSM_DL_PassThrough(dldbHandleOfUnderlyingDL,
+									 CSSM_APPLEFILEDL_COMMIT,
+									 NULL,
+									 NULL);
+	}
+}
+
 //
 // DbCursorMaker
 //
