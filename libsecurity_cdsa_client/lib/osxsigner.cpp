@@ -28,11 +28,9 @@
 #include <security_utilities/debugging.h>
 
 
-namespace Security
-{
+namespace Security {
+namespace CodeSigning {
 
-namespace CodeSigning
-{
 
 //
 // Construct an OSXSigner
@@ -77,7 +75,7 @@ void OSXSigner::Digester::enumerateContents(const void *data, size_t length)
 //
 // Re-create a Signature object from its external representation
 //
-OSXSigner::OSXSignature *OSXSigner::restore(uint32 type, const void *data, size_t length)
+OSXSigner::OSXSignature *OSXSigner::restore(u_int32_t type, const void *data, size_t length)
 {
 	switch (type) {
 	case CSSM_ACL_CODE_SIGNATURE_OSX:

@@ -25,11 +25,9 @@
 #include <security_cdsa_client/cspclient.h>
 #include <security_cdsa_client/keyclient.h>
 
-namespace Security
-{
+namespace Security {
+namespace CssmClient {
 
-namespace CssmClient
-{
 
 //
 // A signing/verifying context

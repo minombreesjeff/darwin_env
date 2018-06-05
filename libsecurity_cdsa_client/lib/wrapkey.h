@@ -27,14 +27,14 @@
 #include <security_cdsa_client/keyclient.h>
 
 
-namespace Security
-{
+namespace Security {
+namespace CssmClient {
 
-namespace CssmClient
-{
 
-class WrapKey : public Crypt
-{
+//
+// Wrap a key
+//
+class WrapKey : public Crypt {
 public:
 	WrapKey(const CSP &csp, CSSM_ALGORITHMS alg) :
 		Crypt(csp, alg), mWrappedKeyFormat(CSSM_KEYBLOB_WRAPPED_FORMAT_NONE) {}
@@ -56,8 +56,11 @@ private:
 	CSSM_KEYBLOB_FORMAT mWrappedKeyFormat;
 };
 
-class UnwrapKey : public Crypt
-{
+
+//
+// Unwrap a key. This creates a new key object
+//
+class UnwrapKey : public Crypt, public RccBearer {
 public:
 	UnwrapKey(const CSP &csp, CSSM_ALGORITHMS alg) : Crypt(csp, alg) {}
 
@@ -78,14 +81,17 @@ public:
 					  CssmKey &unwrappedKey, CssmData *descriptiveData);
 
 	Key operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec,
-					 Key &optionalPublicKey, CssmData *descriptiveData);
+					 const Key &optionalPublicKey, CssmData *descriptiveData);
 	void operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec,
 					  CssmKey &unwrappedKey, CssmData *descriptiveData,
 					  const CssmKey *optionalPublicKey);
 };
 
-class DeriveKey : public Crypt
-{
+
+//
+// Derive a key in various and wonderous ways. Creates a new key object.
+//
+class DeriveKey : public Crypt, public RccBearer {
 public:
 	DeriveKey(const CSP &csp, CSSM_ALGORITHMS alg, CSSM_ALGORITHMS target, uint32 size = 0)
     : Crypt(csp, alg), mKeySize(size), mTargetType(target), mIterationCount(0),
@@ -116,7 +122,6 @@ private:
 };
 
 } // end namespace CssmClient
-
 } // end namespace Security
 
 #endif // _H_CDSA_CLIENT_WRAPKEY

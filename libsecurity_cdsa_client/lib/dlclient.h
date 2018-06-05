@@ -24,6 +24,8 @@
 #define _H_CDSA_CLIENT_DLCLIENT  1
 
 #include <security_cdsa_client/cssmclient.h>
+#include <security_cdsa_client/dliterators.h>
+#include <security_cdsa_client/aclclient.h>
 #include <security_cdsa_client/DLDBList.h>
 #include <security_cdsa_utilities/cssmacl.h>
 #include <security_cdsa_utilities/cssmdb.h>
@@ -222,16 +224,18 @@ public:
 
 class DbAttributes;
 class DbUniqueRecord;
+class Db;
 
 
 //
 // A CSSM_DLDB handle.
 // Dbs always belong to DLs (DL attachments)
 //
-class DbImpl : public ObjectImpl, public DbCursorMaker, public DbUniqueRecordMaker
+class DbImpl : public ObjectImpl, public AclBearer,
+	public DbCursorMaker, public DbUniqueRecordMaker
 {
 public:
-	DbImpl(const DL &dl, const char *inDbName, const CSSM_NET_ADDRESS *inDbLocation);
+	DbImpl(const DL &dl, const char *inDbName = NULL, const CSSM_NET_ADDRESS *inDbLocation = NULL);
 	virtual ~DbImpl();
 
 	DL dl() const { return parent<DL>(); }
@@ -257,13 +261,20 @@ public:
 	virtual DbUniqueRecord insert(CSSM_DB_RECORDTYPE recordType,
 									const CSSM_DB_RECORD_ATTRIBUTE_DATA *attributes,
 									const CSSM_DATA *data);
+									
+	virtual DbUniqueRecord insertWithoutEncryption(CSSM_DB_RECORDTYPE recordType,
+													const CSSM_DB_RECORD_ATTRIBUTE_DATA *attributes,
+													CSSM_DATA *data);
 
 	const CSSM_DL_DB_HANDLE &handle() { activate(); return mHandle; }
 
 	const DbName &dbName() { return mDbName; }
 	void dbName(const DbName &dbName) { mDbName = dbName; }
 
-	const char *name() const { return mDbName.dbName().c_str(); }
+	// Attempt to get a (cached) name from CSSM_DL_GetDbNameFromHandle(), falls
+	// back to the name passed in to the constructor if this fails.
+	const char *name();
+
 	const CSSM_NET_ADDRESS *dbLocation() const { return mDbName.dbLocation(); }
 
 	CSSM_DB_ACCESS_TYPE accessRequest() const { return mAccessRequest; }
@@ -301,12 +312,14 @@ public:
 	virtual void setSettings(uint32 inIdleTimeout, bool inLockOnSleep);
 	virtual bool isLocked();
 	virtual void changePassphrase(const CSSM_ACCESS_CREDENTIALS *cred);
-#if 0
-	virtual bool getUnlockKeyIndex(CssmData &index);
-#endif
+	virtual void recode(const CSSM_DATA &data, const CSSM_DATA &extraData);
+	virtual void copyBlob(CssmData &data);
 
 	// Utility methods
-	virtual DLDbIdentifier dlDbIdentifier() const;
+
+	// Always use the dbName and dbLocation that were passed in during
+	// construction.
+	virtual DLDbIdentifier dlDbIdentifier();
 
 	// DbCursorMaker
 	virtual DbCursorImpl *newDbCursor(const CSSM_QUERY &query, Allocator &allocator);
@@ -315,16 +328,37 @@ public:
 	// DbUniqueRecordMaker
 	virtual DbUniqueRecordImpl *newDbUniqueRecord();
 
+	// Acl manipulation
+	void getAcl(AutoAclEntryInfoList &aclInfos, const char *selectionTag = NULL) const;
+	void changeAcl(const CSSM_ACL_EDIT &aclEdit,
+		const CSSM_ACCESS_CREDENTIALS *accessCred);
+
+	// Acl owner manipulation
+	void getOwner(AutoAclOwnerPrototype &owner) const;
+	void changeOwner(const CSSM_ACL_OWNER_PROTOTYPE &newOwner,
+		const CSSM_ACCESS_CREDENTIALS *accessCred = NULL);
+	
+	// default-credential hook
+	class DefaultCredentialsMaker {
+	public:
+		virtual const AccessCredentials *makeCredentials() = 0;
+	};
+	
+	void defaultCredentials(DefaultCredentialsMaker *maker);	// NULL to turn off
+
 protected:
-	virtual void activate();
-	virtual void deactivate();
+	void activate();
+	void deactivate();
 
 private:
 	CSSM_DL_DB_HANDLE mHandle;			// CSSM DLDB handle
 
 	DbName mDbName;
+	bool mUseNameFromHandle; // false if CSSM_DL_GetDbNameFromHandle failed
+	char *mNameFromHandle; // Cached CSSM_DL_GetDbNameFromHandle result.
 	CSSM_DB_ACCESS_TYPE mAccessRequest;
 	const CSSM_ACCESS_CREDENTIALS *mAccessCredentials;
+	DefaultCredentialsMaker *mDefaultCredentials;
 	const void *mOpenParameters;
 
 	// Arguments to create
@@ -333,10 +367,11 @@ private:
 };
 
 
-class Db : public Object
+class Db : public Object, public DLAccess
 {
 public:
 	typedef DbImpl Impl;
+	typedef Impl::DefaultCredentialsMaker DefaultCredentialsMaker;
 
 	explicit Db(Impl *impl) : Object(impl) {}
 	Db() : Object(NULL) {}
@@ -350,6 +385,21 @@ public:
 	operator DbCursorMaker &() const { return impl<Impl>(); }
 	// Conversion to DbUniqueRecordMaker.
 	operator DbUniqueRecordMaker &() const { return impl<Impl>(); }
+
+	const CSSM_DL_DB_HANDLE &handle() { return impl<Impl>().handle(); }
+	
+protected:
+	// DLAccess adapters
+	CSSM_HANDLE dlGetFirst(const CSSM_QUERY &query,
+		CSSM_DB_RECORD_ATTRIBUTE_DATA &attributes, CSSM_DATA *data,
+		CSSM_DB_UNIQUE_RECORD *&id);
+	bool dlGetNext(CSSM_HANDLE handle,
+		CSSM_DB_RECORD_ATTRIBUTE_DATA &attributes, CSSM_DATA *data,
+		 CSSM_DB_UNIQUE_RECORD *&id);
+	void dlAbortQuery(CSSM_HANDLE handle);
+	void dlFreeUniqueId(CSSM_DB_UNIQUE_RECORD *id);
+	void dlDeleteRecord(CSSM_DB_UNIQUE_RECORD *id);
+	Allocator &allocator();
 };
 
 //
@@ -403,7 +453,15 @@ public:
 						const CSSM_DB_RECORD_ATTRIBUTE_DATA *attributes,
 						const CSSM_DATA *data,
 						CSSM_DB_MODIFY_MODE modifyMode);
+
+	virtual void modifyWithoutEncryption (CSSM_DB_RECORDTYPE recordType,
+											const CSSM_DB_RECORD_ATTRIBUTE_DATA *attributes,
+											const CSSM_DATA *data,
+											CSSM_DB_MODIFY_MODE modifyMode);
+											
 	virtual void get(DbAttributes *attributes, ::CssmDataContainer *data);
+
+	virtual void getWithoutEncryption(DbAttributes *attributes, ::CssmDataContainer *data);
 
 	Db database() const { return parent<Db>(); }
 
@@ -416,11 +474,16 @@ public:
 	operator const CSSM_DB_UNIQUE_RECORD *() const { return mUniqueId; }
 
 	void activate();
+	
+	void getRecordIdentifier(CSSM_DATA &data);
+
+	void setUniqueRecordPtr (CSSM_DB_UNIQUE_RECORD_PTR uniquePtr); // because cast overloading is evil!
 
 protected:
 	void deactivate();
 
 	CSSM_DB_UNIQUE_RECORD_PTR mUniqueId;
+	bool mDestroyID;
 };
 
 class DbUniqueRecord : public Object

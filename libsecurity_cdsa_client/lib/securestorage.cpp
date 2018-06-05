@@ -19,7 +19,7 @@
 #include "securestorage.h"
 #include <security_cdsa_client/genkey.h>
 //#include <Security/Access.h> //@@@CONV
-#include <security_cdsa_client/osxsigning.h>
+#include <security_utilities/osxcode.h>
 #include <memory>
 
 using namespace CssmClient;
@@ -131,16 +131,40 @@ SSDbImpl::insert(CSSM_DB_RECORDTYPE recordType,
 				 const CSSM_DATA *data,
 				 const CSSM_RESOURCE_CONTROL_CONTEXT *rc)
 {
+	// Get the handle of the DL underlying this CSPDL.
+	CSSM_DL_DB_HANDLE dldbh;
+	passThrough(CSSM_APPLECSPDL_DB_GET_HANDLE, NULL,
+		reinterpret_cast<void **>(&dldbh));
+
+	// Turn off autocommit on the underlying DL and remember the old state.
+	CSSM_BOOL autoCommit = CSSM_TRUE;
+	check(CSSM_DL_PassThrough(dldbh, CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
+		0, reinterpret_cast<void **>(&autoCommit)));
 	SSGroup group(SSDb(this), rc);
 	const CSSM_ACCESS_CREDENTIALS *cred = rc ? rc->AccessCred : NULL;
 	try
 	{
 		return insert(recordType, attributes, data, group, cred);
+		if (autoCommit)
+		{
+			// autoCommit was on so commit now that we are done and turn
+			// it back on.
+			check(CSSM_DL_PassThrough(dldbh, CSSM_APPLEFILEDL_COMMIT, NULL, NULL));
+			CSSM_DL_PassThrough(dldbh, CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
+				reinterpret_cast<const void *>(autoCommit), NULL);
+		}
 	}
 	catch(...)
 	{
-		// @@@ Look at rc for credentials
-		group->deleteKey(cred);
+		try { group->deleteKey(cred); } catch (...) {}
+		if (autoCommit)
+		{
+			// autoCommit was off so rollback since we failed and turn
+			// autoCommit back on.
+			CSSM_DL_PassThrough(dldbh, CSSM_APPLEFILEDL_ROLLBACK, NULL, NULL);
+			CSSM_DL_PassThrough(dldbh, CSSM_APPLEFILEDL_TOGGLE_AUTOCOMMIT,
+				reinterpret_cast<const void *>(autoCommit), NULL);
+		}
 		throw;
 	}
 }
@@ -199,7 +223,7 @@ SSGroupImpl::SSGroupImpl(const SSDb &ssDb,
 		(mLabel.mAllocator.malloc(mLabel.Length));
 
 	// Get our csp and set up a random number generation context.
-	CSP csp(csp());
+	CSP csp(this->csp());
 	Random random(csp, CSSM_ALGID_APPLE_YARROW);
 
 	// Generate a kLabelSize byte random number that will be the label of
@@ -217,7 +241,7 @@ SSGroupImpl::SSGroupImpl(const SSDb &ssDb,
 	genKey.database(ssDb);
 
 	// Set the acl of the key correctly here
-	genKey.initialAcl(ResourceControlContext::overlay(credAndAclEntry));
+	genKey.rcc(credAndAclEntry);
 
 	// Generate the key
 	genKey(*this, KeySpec(CSSM_KEYUSE_ENCRYPT|CSSM_KEYUSE_DECRYPT,
@@ -311,7 +335,7 @@ SSGroupImpl::encodeDataBlob(const CSSM_DATA *data,
 							CssmDataContainer &dataBlob)
 {
 	// Get our csp and set up a random number generation context.
-	CSP csp(csp());
+	CSP csp(this->csp());
 	Random random(csp, CSSM_ALGID_APPLE_YARROW);
 
 	// Encrypt data using key and encode it in a dataBlob.

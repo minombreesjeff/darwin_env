@@ -95,15 +95,14 @@ public:
 };
 
 
-struct KeySpec 
-{
-	uint32 usage;
-	uint32 attributes;
+struct KeySpec {
+	CSSM_KEYUSE usage;
+	CSSM_KEYATTR_FLAGS attributes;
 	const CssmData *label;
 	//add rc context
 	
-	KeySpec(uint32 u, uint32 a) : usage(u), attributes(a), label(NULL) { }
-	KeySpec(uint32 u, uint32 a, const CssmData &l) : usage(u), attributes(a), label(&l) { }
+	KeySpec(CSSM_KEYUSE u, CSSM_KEYATTR_FLAGS a) : usage(u), attributes(a), label(NULL) { }
+	KeySpec(CSSM_KEYUSE u, CSSM_KEYATTR_FLAGS a, const CssmData &l) : usage(u), attributes(a), label(&l) { }
 };
 
 } // end namespace CssmClient

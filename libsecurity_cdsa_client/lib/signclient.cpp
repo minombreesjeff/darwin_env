@@ -23,6 +23,7 @@
 
 using namespace CssmClient;
 
+
 //
 // Common features of signing and verify contexts
 //
@@ -31,7 +32,7 @@ void SigningContext::activate()
 	if (!mActive)
 	{
 		check(CSSM_CSP_CreateSignatureContext(attachment()->handle(), mAlgorithm,
-			  NULL/*cred*/, mKey, &mHandle));
+			  cred(), mKey, &mHandle));
 		mActive = true;
 	}
 }

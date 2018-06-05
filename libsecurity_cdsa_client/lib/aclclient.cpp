@@ -107,6 +107,9 @@ struct Statics {
 	AutoCredentials nullCred;
 	AutoCredentials promptCred;
 	AutoCredentials unlockCred;
+	
+	AclOwnerPrototype anyOwner;
+	AclEntryInfo anyAcl;
 };
 
 namespace {
@@ -117,14 +120,15 @@ namespace {
 //
 // Make pseudo-statics.
 // Note: This is an eternal object. It is not currently destroyed
-// if the containing code is unloaded. But then, the containing
-// code is Security.framework, which never unloads anyway.
+// if the containing code is unloaded.
 //
 Statics::Statics()
 	: alloc(Allocator::standard()),
 	  nullCred(alloc, 1),
-	  promptCred(alloc, 2),
-	  unlockCred(alloc, 1)
+	  promptCred(alloc, 3),
+	  unlockCred(alloc, 1),
+	  anyOwner(TypedList(alloc, CSSM_ACL_SUBJECT_TYPE_ANY)),
+	  anyAcl(AclEntryPrototype(TypedList(alloc, CSSM_ACL_SUBJECT_TYPE_ANY), 1))
 {
 	// nullCred: nothing at all
 	// contains:
@@ -134,9 +138,12 @@ Statics::Statics()
 	// promptCred: a credential permitting user prompt confirmations
 	// contains:
 	//  a KEYCHAIN_PROMPT sample, both by itself and in a THRESHOLD
+	//  a PROMPTED_PASSWORD sample
 	promptCred.sample(0) = TypedList(alloc, CSSM_SAMPLE_TYPE_KEYCHAIN_PROMPT);
 	promptCred.sample(1) = TypedList(alloc, CSSM_SAMPLE_TYPE_THRESHOLD,
 		new(alloc) ListElement(TypedList(alloc, CSSM_SAMPLE_TYPE_KEYCHAIN_PROMPT)));
+	promptCred.sample(2) = TypedList(alloc, CSSM_SAMPLE_TYPE_PROMPTED_PASSWORD,
+		new(alloc) ListElement(alloc, CssmData()));
 
 	// unlockCred: ???
 	unlockCred.sample(0) = TypedList(alloc, CSSM_SAMPLE_TYPE_KEYCHAIN_LOCK,
@@ -173,7 +180,7 @@ const AccessCredentials *AclFactory::unlockCred() const
 //
 AclFactory::KeychainCredentials::~KeychainCredentials ()
 {
-    DataWalkers::chunkFree (mCredentials, allocator);
+    DataWalkers::chunkFree(mCredentials, allocator);
 }
 
 AclFactory::PassphraseUnlockCredentials::PassphraseUnlockCredentials (const CssmData& password,
@@ -198,6 +205,16 @@ AclFactory::PasswordChangeCredentials::PasswordChangeCredentials (const CssmData
 
 
 //
+// Wide open ("ANY") CSSM forms for owner and ACL entry
+//
+const AclOwnerPrototype &AclFactory::anyOwner() const
+{ return statics().anyOwner; }
+
+const AclEntryInfo &AclFactory::anyAcl() const
+{ return statics().anyAcl; }
+
+
+//
 // Create an ANY style AclEntryInput.
 // This can be used to explicitly request wide-open authorization on a new CSSM object.
 //
@@ -212,6 +229,56 @@ AclFactory::AnyResourceContext::AnyResourceContext(const CSSM_ACCESS_CREDENTIALS
 	
 	// install the cred (not copied)
 	credentials(cred);
+}
+
+
+//
+// CSSM ACL makers
+//
+AclFactory::Subject::Subject(Allocator &alloc, CSSM_ACL_SUBJECT_TYPE type)
+	: TypedList(alloc, type)
+{ }
+
+
+AclFactory::PWSubject::PWSubject(Allocator &alloc)
+	: Subject(alloc, CSSM_ACL_SUBJECT_TYPE_PASSWORD)
+{ }
+
+AclFactory::PWSubject::PWSubject(Allocator &alloc, const CssmData &secret)
+	: Subject(alloc, CSSM_ACL_SUBJECT_TYPE_PASSWORD)
+{
+	append(new(alloc) ListElement(alloc, secret));
+}
+
+AclFactory::PromptPWSubject::PromptPWSubject(Allocator &alloc, const CssmData &prompt)
+	: Subject(alloc, CSSM_ACL_SUBJECT_TYPE_PROMPTED_PASSWORD)
+{
+	append(new(alloc) ListElement(alloc, prompt));
+}
+
+AclFactory::PromptPWSubject::PromptPWSubject(Allocator &alloc, const CssmData &prompt, const CssmData &secret)
+	: Subject(alloc, CSSM_ACL_SUBJECT_TYPE_PROMPTED_PASSWORD)
+{
+	append(new(alloc) ListElement(alloc, prompt));
+	append(new(alloc) ListElement(alloc, secret));
+}
+
+AclFactory::ProtectedPWSubject::ProtectedPWSubject(Allocator &alloc)
+	: Subject(alloc, CSSM_ACL_SUBJECT_TYPE_PROTECTED_PASSWORD)
+{ }
+
+AclFactory::PinSubject::PinSubject(Allocator &alloc, uint32 slot)
+	: Subject(alloc, CSSM_ACL_SUBJECT_TYPE_PREAUTH)
+{
+	append(new(alloc) ListElement(CSSM_ACL_AUTHORIZATION_PREAUTH(slot)));
+}
+
+AclFactory::PinSourceSubject::PinSourceSubject(Allocator &alloc,
+	const TypedList &form, CSSM_ACL_PREAUTH_TRACKING_STATE state)
+	: Subject(alloc, CSSM_ACL_SUBJECT_TYPE_PREAUTH_SOURCE)
+{
+	append(new(alloc) ListElement(form));
+	append(new(alloc) ListElement(state));
 }
 
 

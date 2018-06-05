@@ -21,9 +21,15 @@
 //
 #include <security_cdsa_client/dlclient.h>
 #include <security_cdsa_client/aclclient.h>
-//#include <securityd/ssclient.h>
+#include <Security/cssmapple.h>
+#include <Security/cssmapplePriv.h>
 
 using namespace CssmClient;
+
+
+// blob type for blobs created by these classes -- done so that we can change the formats later
+const uint32 kBlobType = 0x1;
+
 
 
 //
@@ -64,9 +70,11 @@ DLImpl::newDb(const char *inDbName, const CSSM_NET_ADDRESS *inDbLocation)
 // Db (database)
 //
 DbImpl::DbImpl(const DL &dl, const char *inDbName, const CSSM_NET_ADDRESS *inDbLocation)
-: ObjectImpl(dl), mDbName(inDbName, inDbLocation),
-mAccessRequest(CSSM_DB_ACCESS_READ), mAccessCredentials(NULL),
-mOpenParameters(NULL), mDbInfo(NULL), mResourceControlContext(NULL)
+	: ObjectImpl(dl), mDbName(inDbName, inDbLocation),
+	mUseNameFromHandle(!inDbName), mNameFromHandle(NULL),
+	mAccessRequest(CSSM_DB_ACCESS_READ), mAccessCredentials(NULL),
+	mDefaultCredentials(NULL), mOpenParameters(NULL), mDbInfo(NULL),
+	mResourceControlContext(NULL)
 {
 }
 
@@ -74,6 +82,8 @@ DbImpl::~DbImpl()
 {
 	try
 	{
+		if (mNameFromHandle)
+			allocator().free(mNameFromHandle);
 		deactivate();
 	}
 	catch(...) {}
@@ -86,10 +96,14 @@ DbImpl::open()
 	{
 		assert(mDbInfo == nil);
 		mHandle.DLHandle = dl()->handle();
-		check(CSSM_DL_DbOpen(mHandle.DLHandle, name(), dbLocation(),
+		check(CSSM_DL_DbOpen(mHandle.DLHandle, mDbName.dbName(), dbLocation(),
 								mAccessRequest, mAccessCredentials,
 								mOpenParameters, &mHandle.DBHandle));
 		mActive = true;
+		
+		if (!mAccessCredentials && mDefaultCredentials)
+			if (const AccessCredentials *creds = mDefaultCredentials->makeCredentials())
+				CSSM_DL_Authenticate(handle(), mAccessRequest, creds);	// ignore error
 	}
 }
 
@@ -108,12 +122,12 @@ DbImpl::create()
 	
 	if (!mResourceControlContext && mAccessCredentials) {
 		AclFactory::AnyResourceContext ctx(mAccessCredentials);
-		check(CSSM_DL_DbCreate(mHandle.DLHandle, name(), dbLocation(), mDbInfo,
-							mAccessRequest, &ctx,
+		check(CSSM_DL_DbCreate(mHandle.DLHandle, mDbName.dbName(), dbLocation(),
+							mDbInfo, mAccessRequest, &ctx,
 							mOpenParameters, &mHandle.DBHandle));
 	} else {
-		check(CSSM_DL_DbCreate(mHandle.DLHandle, name(), dbLocation(), mDbInfo,
-							mAccessRequest, mResourceControlContext,
+		check(CSSM_DL_DbCreate(mHandle.DLHandle, mDbName.dbName(), dbLocation(),
+							mDbInfo, mAccessRequest, mResourceControlContext,
 							mOpenParameters, &mHandle.DBHandle));
 	}
 	mActive = true;
@@ -122,7 +136,11 @@ DbImpl::create()
 void
 DbImpl::close()
 {
-	check(CSSM_DL_DbClose(mHandle));
+	if (mActive)
+	{
+		check(CSSM_DL_DbClose (mHandle));
+		mActive = false;
+	}
 }
 
 void
@@ -153,7 +171,7 @@ DbImpl::deleteDb()
 	// Deactivate so the db gets closed if it was open.
 	deactivate();
 	// This call does not require the receiver to be active.
-	check(CSSM_DL_DbDelete(dl()->handle(), name(), dbLocation(),
+	check(CSSM_DL_DbDelete(dl()->handle(), mDbName.dbName(), dbLocation(),
 						   mAccessCredentials));
 }
 
@@ -162,11 +180,11 @@ DbImpl::rename(const char *newName)
 {
 	// Deactivate so the db gets closed if it was open.
 	deactivate();
-    if (::rename(name(), newName))
+    if (::rename(mDbName.dbName(), newName))
 		UnixError::throwMe(errno);
 
 	// Change our DbName to reflect this rename.
-	mDbName = DbName(newName, mDbName.dbLocation());
+	mDbName = DbName(newName, dbLocation());
 }
 
 void
@@ -196,6 +214,25 @@ DbImpl::name(char *&outDbName)
 	check(CSSM_DL_GetDbNameFromHandle(handle(), &outDbName));
 }
 
+const char *
+DbImpl::name()
+{
+	if (mUseNameFromHandle)
+	{
+		if (mNameFromHandle
+		    || !CSSM_DL_GetDbNameFromHandle(handle(), &mNameFromHandle))
+		{
+			return mNameFromHandle;
+		}
+
+		// We failed to get the name from the handle so use the passed
+		// in name instead
+		mUseNameFromHandle = false;
+	}
+
+	return mDbName.dbName();
+}
+
 void
 DbImpl::createRelation(CSSM_DB_RECORDTYPE inRelationID,
 							 const char *inRelationName,
@@ -223,6 +260,30 @@ DbImpl::insert(CSSM_DB_RECORDTYPE recordType, const CSSM_DB_RECORD_ATTRIBUTE_DAT
 	check(CSSM_DL_DataInsert(handle(), recordType,
 							 attributes,
 							 data, uniqueId));
+	// Activate uniqueId so CSSM_DL_FreeUniqueRecord() gets called when it goes out of scope.
+	uniqueId->activate();
+	return uniqueId;
+}
+
+
+DbUniqueRecord
+DbImpl::insertWithoutEncryption(CSSM_DB_RECORDTYPE recordType, const CSSM_DB_RECORD_ATTRIBUTE_DATA *attributes,
+								CSSM_DATA *data)
+{
+	DbUniqueRecord uniqueId(Db(this));
+
+	// fill out the parameters
+	CSSM_APPLECSPDL_DB_INSERT_WITHOUT_ENCRYPTION_PARAMETERS params;
+	params.recordType = recordType;
+	params.attributes = const_cast<CSSM_DB_RECORD_ATTRIBUTE_DATA*>(attributes);
+	params.data = *data;
+
+	// for clarity, call the overloaded operator to produce a unique record pointer
+	CSSM_DB_UNIQUE_RECORD_PTR *uniquePtr = uniqueId;
+
+	// make the call
+	passThrough (CSSM_APPLECSPDL_DB_INSERT_WITHOUT_ENCRYPTION, &params, (void**) uniquePtr);
+	
 	// Activate uniqueId so CSSM_DL_FreeUniqueRecord() gets called when it goes out of scope.
 	uniqueId->activate();
 	return uniqueId;
@@ -298,25 +359,22 @@ DbImpl::changePassphrase(const CSSM_ACCESS_CREDENTIALS *cred)
 	check(CSSM_DL_PassThrough(handle(), CSSM_APPLECSPDL_DB_CHANGE_PASSWORD, &params, NULL));
 }
 
-#if 0
-bool
-DbImpl::getUnlockKeyIndex(CssmData &index)
+void DbImpl::recode(const CSSM_DATA &data, const CSSM_DATA &extraData)
 {
-	try {
-		SecurityServer::DbHandle dbHandle;
-		if (CSSM_DL_PassThrough(handle(),
-			CSSM_APPLECSPDL_DB_GET_HANDLE, NULL, (void **)&dbHandle))
-				return false;	// can't get index
-		SecurityServer::ClientSession ss(allocator(), allocator());
-		ss.getDbSuggestedIndex(dbHandle, index);
-		return true;
-	} catch (const CssmError &error) {
-		if (error.error == CSSMERR_DL_DATASTORE_DOESNOT_EXIST)
-			return false;
-		throw;
-	}
+	// setup parameters for the recode call
+	CSSM_APPLECSPDL_RECODE_PARAMETERS params;
+	params.dbBlob = data;
+	params.extraData = extraData;
+
+	// do the call
+	check(CSSM_DL_PassThrough(handle(), CSSM_APPLECSPDL_CSP_RECODE, &params, NULL));
 }
-#endif
+
+void DbImpl::copyBlob (CssmData &data)
+{
+	// do the call
+	check(CSSM_DL_PassThrough(handle(), CSSM_APPLECSPDL_DB_COPY_BLOB, NULL, (void**) (CSSM_DATA*) &data));
+}
 
 //
 // DbCursorMaker
@@ -333,6 +391,96 @@ DbImpl::newDbCursor(uint32 capacity, Allocator &allocator)
 	return new DbDbCursorImpl(Db(this), capacity, allocator);
 }
 
+
+//
+// Db adapters for AclBearer
+//
+void DbImpl::getAcl(AutoAclEntryInfoList &aclInfos, const char *selectionTag) const
+{
+	aclInfos.allocator(allocator());
+	check(CSSM_DL_GetDbAcl(const_cast<DbImpl*>(this)->handle(),
+		reinterpret_cast<const CSSM_STRING *>(selectionTag), aclInfos, aclInfos));
+}
+
+void DbImpl::changeAcl(const CSSM_ACL_EDIT &aclEdit,
+	const CSSM_ACCESS_CREDENTIALS *accessCred)
+{
+	check(CSSM_DL_ChangeDbAcl(handle(), AccessCredentials::needed(accessCred), &aclEdit));
+}
+
+void DbImpl::getOwner(AutoAclOwnerPrototype &owner) const
+{
+	owner.allocator(allocator());
+	check(CSSM_DL_GetDbOwner(const_cast<DbImpl*>(this)->handle(), owner));
+}
+
+void DbImpl::changeOwner(const CSSM_ACL_OWNER_PROTOTYPE &newOwner,
+	const CSSM_ACCESS_CREDENTIALS *accessCred)
+{
+	check(CSSM_DL_ChangeDbOwner(handle(),
+		AccessCredentials::needed(accessCred), &newOwner));
+}
+
+void DbImpl::defaultCredentials(DefaultCredentialsMaker *maker)
+{
+	mDefaultCredentials = maker;
+}
+
+
+//
+// Db adapters for DLAccess
+//
+CSSM_HANDLE Db::dlGetFirst(const CSSM_QUERY &query,	CSSM_DB_RECORD_ATTRIBUTE_DATA &attributes, 
+	CSSM_DATA *data, CSSM_DB_UNIQUE_RECORD *&id)
+{
+	CSSM_HANDLE result;
+	switch (CSSM_RETURN rc = CSSM_DL_DataGetFirst(handle(), &query, &result, &attributes, data, &id)) {
+	case CSSM_OK:
+		return result;
+	case CSSMERR_DL_ENDOFDATA:
+		return CSSM_INVALID_HANDLE;
+	default:
+		CssmError::throwMe(rc);
+		return CSSM_INVALID_HANDLE; // placebo
+	}
+}
+
+bool Db::dlGetNext(CSSM_HANDLE query, CSSM_DB_RECORD_ATTRIBUTE_DATA &attributes,
+	CSSM_DATA *data, CSSM_DB_UNIQUE_RECORD *&id)
+{
+	CSSM_RETURN rc = CSSM_DL_DataGetNext(handle(), query, &attributes, data, &id);
+	switch (rc) {
+	case CSSM_OK:
+		return true;
+	case CSSMERR_DL_ENDOFDATA:
+		return false;
+	default:
+		CssmError::throwMe(rc);
+		return false;   // placebo
+	}
+}
+
+void Db::dlAbortQuery(CSSM_HANDLE query)
+{
+	CssmError::check(CSSM_DL_DataAbortQuery(handle(), query));
+}
+
+void Db::dlFreeUniqueId(CSSM_DB_UNIQUE_RECORD *id)
+{
+	CssmError::check(CSSM_DL_FreeUniqueRecord(handle(), id));
+}
+
+void Db::dlDeleteRecord(CSSM_DB_UNIQUE_RECORD *id)
+{
+	CssmError::check(CSSM_DL_DataDelete(handle(), id));
+}
+
+Allocator &Db::allocator()
+{
+	return Object::allocator();
+}
+
+
 //
 // DbUniqueRecordMaker
 //
@@ -347,9 +495,11 @@ DbImpl::newDbUniqueRecord()
 // Utility methods
 //
 DLDbIdentifier
-DbImpl::dlDbIdentifier() const
+DbImpl::dlDbIdentifier()
 {
-	return DLDbIdentifier(dl()->subserviceUid(), name(), dbLocation());
+	// Always use the same dbName and dbLocation that were passed in during
+	// construction
+	return DLDbIdentifier(dl()->subserviceUid(), mDbName.dbName(), dbLocation());
 }
 
 
@@ -473,7 +623,7 @@ DbCursorImpl::allocator(Allocator &alloc)
 //
 // DbUniqueRecord
 //
-DbUniqueRecordImpl::DbUniqueRecordImpl(const Db &db) : ObjectImpl(db)
+DbUniqueRecordImpl::DbUniqueRecordImpl(const Db &db) : ObjectImpl(db), mDestroyID (false)
 {
 }
 
@@ -481,6 +631,11 @@ DbUniqueRecordImpl::~DbUniqueRecordImpl()
 {
 	try
 	{
+		if (mDestroyID)
+		{
+			allocator ().free (mUniqueId);
+		}
+		
 		deactivate();
 	}
 	catch(...) {}
@@ -501,6 +656,27 @@ DbUniqueRecordImpl::modify(CSSM_DB_RECORDTYPE recordType,
 	check(CSSM_DL_DataModify(database()->handle(), recordType, mUniqueId,
 							 attributes,
 							 data, modifyMode));
+}
+
+void
+DbUniqueRecordImpl::modifyWithoutEncryption(CSSM_DB_RECORDTYPE recordType,
+											const CSSM_DB_RECORD_ATTRIBUTE_DATA *attributes,
+											const CSSM_DATA *data,
+											CSSM_DB_MODIFY_MODE modifyMode)
+{
+	// fill out the parameters
+	CSSM_APPLECSPDL_DB_MODIFY_WITHOUT_ENCRYPTION_PARAMETERS params;
+	params.recordType = recordType;
+	params.uniqueID = mUniqueId;
+	params.attributes = const_cast<CSSM_DB_RECORD_ATTRIBUTE_DATA*>(attributes);
+	params.data = (CSSM_DATA*) data;
+	params.modifyMode = modifyMode;
+	
+	// modify the data
+	check(CSSM_DL_PassThrough(database()->handle(),
+		  CSSM_APPLECSPDL_DB_MODIFY_WITHOUT_ENCRYPTION,
+		  &params, 
+		  NULL));
 }
 
 void
@@ -528,6 +704,31 @@ DbUniqueRecordImpl::get(DbAttributes *attributes,
 }
 
 void
+DbUniqueRecordImpl::getWithoutEncryption(DbAttributes *attributes,
+										 ::CssmDataContainer *data)
+{
+	if (attributes)
+		attributes->deleteValues();
+
+	if (data)
+		data->clear();
+
+	// @@@ Fix the allocators for attributes and data.
+	CSSM_RETURN result;
+	
+	// make the parameter block
+	CSSM_APPLECSPDL_DB_GET_WITHOUT_ENCRYPTION_PARAMETERS params;
+	params.uniqueID = mUniqueId;
+	params.attributes = attributes;
+	
+	// get the data
+	::CssmDataContainer recordData;
+	result = CSSM_DL_PassThrough(database()->handle(), CSSM_APPLECSPDL_DB_GET_WITHOUT_ENCRYPTION, &params,
+								 (void**) data);
+	check (result);
+}
+
+void
 DbUniqueRecordImpl::activate()
 {
 	mActive = true;
@@ -543,6 +744,20 @@ DbUniqueRecordImpl::deactivate()
 	}
 }
 
+void
+DbUniqueRecordImpl::getRecordIdentifier(CSSM_DATA &data)
+{
+	check(CSSM_DL_PassThrough(database()->handle(), CSSM_APPLECSPDL_DB_GET_RECORD_IDENTIFIER,
+		  mUniqueId, (void**) &data));
+}
+
+void DbUniqueRecordImpl::setUniqueRecordPtr(CSSM_DB_UNIQUE_RECORD_PTR uniquePtr)
+{
+	// clone the record
+	mUniqueId = (CSSM_DB_UNIQUE_RECORD_PTR) allocator ().malloc (sizeof (CSSM_DB_UNIQUE_RECORD));
+	*mUniqueId = *uniquePtr;
+	mDestroyID = true;
+}
 
 //
 // DbAttributes

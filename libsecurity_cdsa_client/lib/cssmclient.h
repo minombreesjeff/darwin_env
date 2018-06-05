@@ -43,7 +43,7 @@ class Attachment;
 
 //
 // An mixin for objects that have (store) GUIDs.
-// The GUID value is meant to be set-once constant, and can be locked handled accordingly.
+// The GUID value is meant to be set-once constant, and can be lock-handled accordingly.
 //
 class HasGuid {
 public:
@@ -157,6 +157,35 @@ private:
 
 
 //
+// Event callback mix-in class
+//
+class ModuleImpl;
+
+class RawModuleEvents {
+	friend class ModuleImpl;
+public:
+	virtual ~RawModuleEvents();
+
+	virtual void notify(uint32 subService,
+		CSSM_SERVICE_TYPE type, CSSM_MODULE_EVENT event) = 0;
+
+private:
+	static CSSM_RETURN sendNotify(const CSSM_GUID *, void *context, uint32 subService,
+		CSSM_SERVICE_TYPE type, CSSM_MODULE_EVENT event);
+};
+
+class ModuleEvents : public RawModuleEvents {
+public:
+	virtual void insertion(uint32 subService, CSSM_SERVICE_TYPE type);
+	virtual void removal(uint32 subService, CSSM_SERVICE_TYPE type);
+	virtual void fault(uint32 subService, CSSM_SERVICE_TYPE type);
+
+protected:
+	void notify(uint32 subService, CSSM_SERVICE_TYPE type, CSSM_MODULE_EVENT event);
+};
+
+
+//
 // A CSSM loadable module.
 // You rarely directly interact with these objects, but if you need to,
 // here they are.
@@ -174,9 +203,15 @@ public:
 	
 	Cssm session() const;
 
+	void appNotifyCallback(CSSM_API_ModuleEventHandler appNotifyCallback, void *appNotifyCallbackCtx);
+	void appNotifyCallback(RawModuleEvents *handler);
+
 protected:
 	void activate();
 	void deactivate();
+
+	CSSM_API_ModuleEventHandler mAppNotifyCallback;
+	void *mAppNotifyCallbackCtx;
 };
 
 class Module : public Object

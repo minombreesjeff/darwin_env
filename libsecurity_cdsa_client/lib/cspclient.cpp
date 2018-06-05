@@ -21,7 +21,8 @@
 //
 #include <security_cdsa_client/cspclient.h>
 
-using namespace CssmClient;
+namespace Security {
+namespace CssmClient {
 
 
 //
@@ -52,12 +53,12 @@ void CSPImpl::freeKey(CssmKey &key, const AccessCredentials *cred, bool permanen
 //
 // Manage generic context objects
 //
-CssmClient::Context::Context(const CSP &csp, CSSM_ALGORITHMS alg) 
-: ObjectImpl(csp), mAlgorithm(alg), mStaged(false)
+Context::Context(const CSP &csp, CSSM_ALGORITHMS alg) 
+: ObjectImpl(csp), mAlgorithm(alg), mStaged(false), mCred(NULL)
 {
 }
 
-CssmClient::Context::~Context()
+Context::~Context()
 {
 	try
 	{
@@ -65,12 +66,12 @@ CssmClient::Context::~Context()
 	} catch(...) {}
 }
 
-void CssmClient::Context::init()
+void Context::init()
 {
 	CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
 }
 
-void CssmClient::Context::deactivate()
+void Context::deactivate()
 {
 	if (mActive)
 	{
@@ -80,7 +81,7 @@ void CssmClient::Context::deactivate()
 }
 
 
-void CssmClient::Context::algorithm(CSSM_ALGORITHMS alg)
+void Context::algorithm(CSSM_ALGORITHMS alg)
 {
 	if (isActive())
 		abort();	//@@@ can't (currently?) change algorithm with active context
@@ -88,10 +89,17 @@ void CssmClient::Context::algorithm(CSSM_ALGORITHMS alg)
 }
 
 
+void Context::cred(const CSSM_ACCESS_CREDENTIALS *cred)
+{
+	mCred = AccessCredentials::overlay(cred);
+    set(CSSM_ATTRIBUTE_ACCESS_CREDENTIALS, *mCred);
+}
+
+
 //
 // Query context operation output sizes.
 //    
-uint32 CssmClient::Context::getOutputSize(uint32 inputSize, bool encrypt /*= true*/)
+uint32 Context::getOutputSize(uint32 inputSize, bool encrypt /*= true*/)
 {
     CSSM_QUERY_SIZE_DATA data;
     data.SizeInputBlock = inputSize;
@@ -99,7 +107,7 @@ uint32 CssmClient::Context::getOutputSize(uint32 inputSize, bool encrypt /*= tru
     return data.SizeOutputBlock;
 }
 
-void CssmClient::Context::getOutputSize(CSSM_QUERY_SIZE_DATA &sizes, uint32 count, bool encrypt /*= true*/)
+void Context::getOutputSize(CSSM_QUERY_SIZE_DATA &sizes, uint32 count, bool encrypt /*= true*/)
 {
     check(CSSM_QuerySize(handle(), encrypt, count, &sizes));
 }
@@ -111,7 +119,7 @@ void CssmClient::Context::getOutputSize(CSSM_QUERY_SIZE_DATA &sizes, uint32 coun
 // consistent with the purpose of the Context subclass he is (mis)using.
 // This feature is currently used by the SecurityServer.
 //
-void CssmClient::Context::override(const Security::Context &ctx)
+void Context::override(const Security::Context &ctx)
 {
 	if (!isActive()) {
 		// make a valid context object (it doesn't matter what kind - keep it cheap)
@@ -120,6 +128,35 @@ void CssmClient::Context::override(const Security::Context &ctx)
 	// now replace everything with the context data provided
 	check(CSSM_SetContext(mHandle, &ctx));
 	mActive = true;		// now active
+}
+
+
+//
+// RccContexts
+//
+const ResourceControlContext &RccBearer::compositeRcc() const
+{
+	// explicitly specified RCC wins
+	if (mRcc)
+		return *mRcc;
+	
+	// cobble one up from the pieces
+	if (mOwner)
+		mWorkRcc.input() = *mOwner;
+	else
+		mWorkRcc.clearPod();
+	mWorkRcc.credentials(mOpCred);
+	return mWorkRcc;
+}
+
+
+void RccBearer::owner(const CSSM_ACL_ENTRY_PROTOTYPE *owner)
+{
+	if (owner) {
+		mWorkInput = *owner;
+		this->owner(mWorkInput);
+	} else
+		this->owner((AclEntryInput*)NULL);
 }
 
 
@@ -218,3 +255,6 @@ void Random::generate(CssmData &data, uint32 newSize)
 	assert(!mStaged);	// not a stage-able operation
 	check(CSSM_GenerateRandom(handle(), &data));
 }
+
+} // end namespace CssmClient
+} // end namespace Security

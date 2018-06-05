@@ -24,13 +24,10 @@
 using namespace CssmClient;
 
 
-Crypt::Crypt(const CSP &csp, CSSM_ALGORITHMS alg) : Context(csp, alg)
+Crypt::Crypt(const CSP &csp, CSSM_ALGORITHMS alg)
+	: Context(csp, alg), mMode(CSSM_ALGMODE_NONE), mInitVector(NULL),
+	  mPadding(CSSM_PADDING_NONE)
 {
-	// set defaults
-	mMode = CSSM_ALGMODE_NONE;
-	mCred = NULL;
-	mInitVector = NULL;
-	mPadding = CSSM_PADDING_NONE;
 }
 
 void Crypt::key(const Key &key)
@@ -39,16 +36,12 @@ void Crypt::key(const Key &key)
 	set(CSSM_ATTRIBUTE_KEY, static_cast<const CssmKey &>(key));
 }
 
+
 void
 Crypt::activate()
 {
 	if (!mActive)
 	{
-        // Some crypto operations require a credential.
-        // Use a null credential if none was specified.
-        if (!mCred)
-            mCred = &AccessCredentials::null;
-    
         // Key is required unless we have a NULL algorithm (cleartext wrap/unwrap),
         // in which case we'll make a symmetric context (it shouldn't matter then).
 		if (!mKey && mAlgorithm != CSSM_ALGID_NONE)
@@ -56,30 +49,23 @@ Crypt::activate()
 		if (!mKey || mKey->keyClass() == CSSM_KEYCLASS_SESSION_KEY)
 		{	// symmetric key
 			check(CSSM_CSP_CreateSymmetricContext(attachment()->handle(), mAlgorithm,
-				mMode, mCred, mKey, mInitVector, mPadding, NULL,
+				mMode, neededCred(), mKey, mInitVector, mPadding, NULL,
 				&mHandle));
 		}
 		else
 		{
 			check(CSSM_CSP_CreateAsymmetricContext(attachment()->handle(), mAlgorithm,
-				mCred, mKey, mPadding, &mHandle));
+				neededCred(), mKey, mPadding, &mHandle));
 			//@@@ stick mode and initVector explicitly into the context?
 		}		
 		mActive = true;
 	}
-}
-void Crypt::cred(const AccessCredentials *c)
-{
-    if (!(mCred = c))
-        mCred = &AccessCredentials::null;
-    set(CSSM_ATTRIBUTE_ACCESS_CREDENTIALS, *mCred);
 }
 
 
 //
 // Manage encryption contexts
 //
-
 uint32
 Encrypt::encrypt(const CssmData *in, uint32 inCount,
 						CssmData *out, uint32 outCount, CssmData &remData)

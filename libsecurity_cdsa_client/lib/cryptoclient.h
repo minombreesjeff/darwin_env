@@ -25,14 +25,15 @@
 #include <security_cdsa_client/cspclient.h>
 #include <security_cdsa_client/keyclient.h>
 
-namespace Security
-{
+namespace Security {
+namespace CssmClient {
 
-namespace CssmClient
-{
 
-class Crypt : public Context
-{
+//
+// Common features of various cryptographic operations contexts.
+// These all use symmetric or asymmetric contexts.
+//
+class Crypt : public Context {
 public:
 	Crypt(const CSP &csp, CSSM_ALGORITHMS alg);
 	
@@ -40,18 +41,12 @@ public:
     // Context attributes
 	CSSM_ENCRYPT_MODE mode() const			{ return mMode; }
 	void mode(CSSM_ENCRYPT_MODE m)			{ mMode = m; set(CSSM_ATTRIBUTE_MODE, m); }
-	const AccessCredentials *cred() const	{ return mCred; }
-	void cred(const AccessCredentials *c);
 	Key key() const							{ return mKey; }
 	void key(const Key &k);
 	const CssmData &initVector() const		{ return *mInitVector; }
 	void initVector(const CssmData &v)		{ mInitVector = &v; set(CSSM_ATTRIBUTE_INIT_VECTOR, v); }
 	CSSM_PADDING padding() const			{ return mPadding; }
 	void padding(CSSM_PADDING p)			{ mPadding = p; set(CSSM_ATTRIBUTE_PADDING, p); }
-
-    // Other attributes
-	AclEntryInput aclEntry() const			{ return mAclEntry; }
-	void aclEntry(AclEntryInput &aclEntry)	{ mAclEntry = aclEntry; }
 
 protected:
 	void activate();
@@ -61,10 +56,6 @@ protected:
 	Key mKey;
 	const CssmData *mInitVector;
 	CSSM_PADDING mPadding;
-	
-protected:
-	const AccessCredentials *mCred;
-	AclEntryInput mAclEntry;
 };
 
 
@@ -77,7 +68,6 @@ class Encrypt : public Crypt
 public:
 	Encrypt(const CSP &csp, CSSM_ALGORITHMS alg) : Crypt(csp, alg) {};
 	
-
 public:
 	// integrated
 	uint32 encrypt(const CssmData *in, uint32 inCount, CssmData *out, uint32 outCount,
@@ -92,7 +82,6 @@ public:
 	{ return encrypt(&in, 1, &out, 1); }
 	// staged final
 	void final(CssmData &remData);
-
 };
 
 //
@@ -121,7 +110,6 @@ public:
 
 
 } // end namespace CssmClient
-
 } // end namespace Security
 
 #endif // _H_CDSA_CLIENT_CRYPTOCLIENT

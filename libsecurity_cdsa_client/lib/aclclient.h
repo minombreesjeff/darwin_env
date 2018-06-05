@@ -39,6 +39,8 @@ class CSP;
 // derived from AclBearer and implement its methods accordingly.
 // Note the (shared/virtual) RefCount - you should handle AclBearer
 // references via RefPointers.
+// All the non-pure methods are implemented (in AclBearer) in terms of
+// the pure virtual methods; they just restate the problem in various ways.
 //
 class AclBearer : public virtual RefCount {
 public:
@@ -98,9 +100,12 @@ public:
 	
 	// these values are owned by the AclFactory and persist
 	// until it is destroyed. You don't own the memory.
-	const AccessCredentials *nullCred() const;
-	const AccessCredentials *promptCred() const;
+	const AccessCredentials *nullCred() const;			// conforming empty
+	const AccessCredentials *promptCred() const;		// enable interactive prompting
 	const AccessCredentials *unlockCred() const;
+	
+	const AclOwnerPrototype &anyOwner() const;			// wide-open owner
+	const AclEntryInfo &anyAcl() const;					// wide-open ACL entry (authorizes anything)
 
 protected:
 	class KeychainCredentials {
@@ -111,7 +116,7 @@ protected:
 
 		Allocator &allocator;
 
-        operator const AccessCredentials* () { return mCredentials; }
+        operator const AccessCredentials* () const { return mCredentials; }
 	
     protected:
 		AutoCredentials *mCredentials;
@@ -138,6 +143,50 @@ public:
 	private:
 		ListElement mAny;
 		CSSM_ACL_AUTHORIZATION_TAG mTag;
+	};
+
+public:
+	//
+	// Subject makers. Contents are chunk-allocated with the Allocator given
+	//
+	struct Subject : public TypedList {
+		Subject(Allocator &alloc, CSSM_ACL_SUBJECT_TYPE type);
+	};
+	
+	// an ANY subject, allocated dynamically for you
+	struct AnySubject : public Subject {
+		AnySubject(Allocator &alloc) : Subject(alloc, CSSM_ACL_SUBJECT_TYPE_ANY) { }
+	};
+	
+	// a "nobody" subject (something guaranteed never to match)
+	struct NobodySubject : public Subject {
+		NobodySubject(Allocator &alloc) : Subject(alloc, CSSM_ACL_SUBJECT_TYPE_COMMENT) { }
+	};
+
+	// password subjects
+	struct PWSubject : public Subject {
+		PWSubject(Allocator &alloc);							// no secret
+		PWSubject(Allocator &alloc, const CssmData &secret);	// this secret
+	};
+
+	struct PromptPWSubject : public Subject {
+		PromptPWSubject(Allocator &alloc, const CssmData &prompt);
+		PromptPWSubject(Allocator &alloc, const CssmData &prompt, const CssmData &secret);
+	};
+
+	struct ProtectedPWSubject : public Subject {
+		ProtectedPWSubject(Allocator &alloc);
+	};
+	
+	// PIN (pre-auth) reference, origin side
+	struct PinSubject : public Subject {
+		PinSubject(Allocator &alloc, uint32 slot);
+	};
+	
+	// PIN (pre-auth) source site
+	struct PinSourceSubject : public Subject {
+		PinSourceSubject(Allocator &alloc, const TypedList &form,
+		CSSM_ACL_PREAUTH_TRACKING_STATE state = CSSM_ACL_PREAUTH_TRACKING_UNKNOWN);
 	};
 };
 

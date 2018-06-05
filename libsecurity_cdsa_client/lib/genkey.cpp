@@ -25,7 +25,7 @@ using namespace CssmClient;
 
 
 GenerateKey::GenerateKey(const CSP &csp, CSSM_ALGORITHMS alg, uint32 size)
-: Context(csp, alg), mKeySize(size), mSeed(NULL), mSalt(NULL), mParams(NULL), mInitialAcl(NULL)
+: Context(csp, alg), mKeySize(size), mSeed(NULL), mSalt(NULL), mParams(NULL)
 {
 }
 
@@ -56,7 +56,7 @@ Key GenerateKey::operator () (const KeySpec &spec)
 	Key key;
 	
 	check(CSSM_GenerateKey(handle(), spec.usage, spec.attributes, spec.label,
-		   mInitialAcl, key.makeNewKey(attachment())));
+		   &compositeRcc(), key.makeNewKey(attachment())));
 		   
 	key->activate();
 	
@@ -65,7 +65,7 @@ Key GenerateKey::operator () (const KeySpec &spec)
 
 void GenerateKey::operator () (CssmKey &key, const KeySpec &spec)
 {
-	check(CSSM_GenerateKey(handle(), spec.usage, spec.attributes, spec.label, mInitialAcl, &key));
+	check(CSSM_GenerateKey(handle(), spec.usage, spec.attributes, spec.label, &compositeRcc(), &key));
 
 }
 
@@ -76,7 +76,7 @@ void GenerateKey::operator () (Key &publicKey, const KeySpec &pubSpec,
 		pubSpec.usage, pubSpec.attributes,
 		pubSpec.label, publicKey.makeNewKey(attachment()),
 		privSpec.usage, privSpec.attributes,
-		privSpec.label, mInitialAcl, privateKey.makeNewKey(attachment())));
+		privSpec.label, &compositeRcc(), privateKey.makeNewKey(attachment())));
 
 	publicKey->activate();
 	privateKey->activate();
@@ -88,6 +88,6 @@ void GenerateKey::operator () (CssmKey &publicKey, const KeySpec &pubSpec,
 {
 	check(CSSM_GenerateKeyPair(handle(),
 		pubSpec.usage, pubSpec.attributes, pubSpec.label, &publicKey,
-		privSpec.usage, privSpec.attributes, privSpec.label, mInitialAcl, &privateKey));
+		privSpec.usage, privSpec.attributes, privSpec.label, &compositeRcc(), &privateKey));
 }
 

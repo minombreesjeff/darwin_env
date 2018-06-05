@@ -34,21 +34,17 @@ namespace Security
 namespace CssmClient
 {
 
-class GenerateKey : public Context {
+class GenerateKey : public Context, public RccBearer {
 public:
 	GenerateKey(const CSP &csp, CSSM_ALGORITHMS alg, uint32 size = 0);
 
 public:
-	
 	// context parameters
 	void size(uint32 s) { mKeySize = s; set(CSSM_ATTRIBUTE_KEY_LENGTH, s); }
 	void seed(const CssmCryptoData &s) { mSeed = &s; set(CSSM_ATTRIBUTE_SEED, s); }
 	void salt(const CssmData &s) { mSalt = &s;set(CSSM_ATTRIBUTE_SALT, s);  }
 	void params(const CssmData &p) { mParams = &p; set(CSSM_ATTRIBUTE_ALG_PARAMS, p); }
 	void database(const Db &inDb);
-
-	// Generation parameters
-	void initialAcl(const ResourceControlContext *rc) { mInitialAcl = rc; }
 
 	// symmetric key generation
 	Key operator () (const KeySpec &spec);

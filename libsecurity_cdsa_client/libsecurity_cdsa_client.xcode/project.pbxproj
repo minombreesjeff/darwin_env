@@ -122,15 +122,6 @@
 				);
 			};
 		};
-		4C52ACA00540B32300536F78 = {
-			fileRef = C25F989E052C9E3200EDA739;
-			isa = PBXBuildFile;
-			settings = {
-				ATTRIBUTES = (
-					Public,
-				);
-			};
-		};
 		4C52ACA10540B32300536F78 = {
 			fileRef = C25F98A0052C9E3200EDA739;
 			isa = PBXBuildFile;
@@ -188,6 +179,7 @@
 				4C52AC960540B32300536F78,
 				4C52AC970540B32300536F78,
 				4C52AC980540B32300536F78,
+				C2CFE2DC06BB078B00D98609,
 				4C52AC990540B32300536F78,
 				4C52AC9A0540B32300536F78,
 				4C52AC9B0540B32300536F78,
@@ -195,11 +187,14 @@
 				4C52AC9D0540B32300536F78,
 				4C52AC9E0540B32300536F78,
 				4C52AC9F0540B32300536F78,
-				4C52ACA00540B32300536F78,
 				4C52ACA10540B32300536F78,
 				4C52ACA20540B32300536F78,
 				4C52ACA30540B32300536F78,
 				4C52ACA40540B32300536F78,
+				C2B3F4AF0666A5850010FCA5,
+				C2B3F6C9066804440010FCA5,
+				C2EF2AC0066D04EB00F205D4,
+				C2828D830678F6B400AF941B,
 			);
 			isa = PBXHeadersBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -246,15 +241,14 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>20</string>
 </dict>
 </plist>
 ";
 		};
 		4C5634E60540A4AD00DCF0C8 = {
 			explicitFileType = wrapper.framework;
-			fallbackIsa = PBXFileReference;
-			isa = PBXFrameworkReference;
+			isa = PBXFileReference;
 			path = security_cdsa_client.framework;
 			refType = 3;
 			sourceTree = BUILT_PRODUCTS_DIR;
@@ -282,8 +276,6 @@
 			sourceTree = "<group>";
 		};
 		4CA1FEA9052A3C3800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = debug;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -295,8 +287,6 @@
 			name = Development;
 		};
 		4CA1FEAA052A3C3800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				ZERO_LINK = NO;
@@ -337,11 +327,16 @@
 				C25F98BB052C9E3200EDA739,
 				C25F98BD052C9E3200EDA739,
 				C25F98BF052C9E3200EDA739,
-				C25F98C1052C9E3200EDA739,
 				C25F98C3052C9E3200EDA739,
 				C25F98C5052C9E3200EDA739,
 				C25F98C7052C9E3200EDA739,
 				C25F98C9052C9E3200EDA739,
+				C2B3F49A0666992F0010FCA5,
+				C2B3F6C70667FFFB0010FCA5,
+				C2EF2AB7066CFFC000F205D4,
+				C261C8BA0675444A0031FA9C,
+				C2828D7F0678EF2E00AF941B,
+				C2CFE2C206BB009800D98609,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -362,23 +357,30 @@
 				4CD0D4BB055B0F79001715CB,
 			);
 			buildSettings = {
-				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 3;
+				BUILD_VARIANTS = "normal debug nopic";
+				CURRENT_PROJECT_VERSION = 22;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				HEADER_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers\" \"$(BUILT_PRODUCTS_DIR)/SecurityPieces/PrivateHeaders\"";
 				LIBRARY_STYLE = STATIC;
+				OPT_CFLAGS = "-DNDEBUG -Os $(OPT_INLINEFLAGS)";
+				OPT_CPPFLAGS = "$(OPT_CFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_INLINEFLAGS = "-finline-functions --param max-inline-insns-single=100 --param max-inline-insns-auto=150 --param max-inline-insns=180 --param min-inline-insns=60";
+				OPT_LDFLAGS = "";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
 				OTHER_CFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CFLAGS_nopic = "-mdynamic-no-pic $(OPT_CFLAGS) $(OTHER_CFLAGS)";
+				OTHER_CFLAGS_normal = "$(OPT_CFLAGS)  $(OTHER_CFLAGS)";
+				OTHER_CFLAGS_profile = "$(OPT_CFLAGS)  $(OTHER_CFLAGS) -pg";
 				OTHER_CPLUSPLUSFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CPLUSPLUSFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CPLUSPLUSFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CPLUSPLUSFLAGS_nopic = "-mdynamic-no-pic $(OPT_CPPFLAGS) $(OTHER_CFLAGS)";
+				OTHER_CPLUSPLUSFLAGS_normal = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS)";
+				OTHER_CPLUSPLUSFLAGS_profile = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS) -pg";
 				OTHER_LDFLAGS_debug = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_normal = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_profile = "$(OTHER_LDFLAGS) -pg";
+				OTHER_LDFLAGS_nopic = "-dead_strip $(OPT_LDFLAGS) $(OTHER_LDFLAGS)";
+				OTHER_LDFLAGS_normal = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS)";
+				OTHER_LDFLAGS_profile = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS) -pg";
 				PRODUCT_NAME = security_cdsa_client;
 				VERSIONING_SYSTEM = "apple-generic";
 				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
@@ -394,8 +396,7 @@
 		};
 		4CA1FEBE052A3C8100F22E42 = {
 			explicitFileType = "compiled.mach-o.dylib";
-			fallbackIsa = PBXFileReference;
-			isa = PBXLibraryReference;
+			isa = PBXFileReference;
 			path = security_cdsa_client;
 			refType = 3;
 			sourceTree = BUILT_PRODUCTS_DIR;
@@ -446,7 +447,14 @@
 				C25F988B052C9E3100EDA739,
 				C25F988C052C9E3100EDA739,
 				C25F988D052C9E3100EDA739,
+				C261C8B90675444A0031FA9C,
 				C25F988E052C9E3100EDA739,
+				C2828D7D0678EF2E00AF941B,
+				C2828D7E0678EF2E00AF941B,
+				C2EF2AB5066CFFC000F205D4,
+				C2EF2AB6066CFFC000F205D4,
+				C2CFE2C006BB009800D98609,
+				C2CFE2C106BB009800D98609,
 				C25F988F052C9E3100EDA739,
 				C25F9890052C9E3100EDA739,
 				C25F9891052C9E3100EDA739,
@@ -457,12 +465,14 @@
 				C25F9896052C9E3200EDA739,
 				C25F9897052C9E3200EDA739,
 				C25F9898052C9E3200EDA739,
+				C2B3F4980666992F0010FCA5,
+				C2B3F4990666992F0010FCA5,
+				C2B3F6C50667FFFB0010FCA5,
+				C2B3F6C60667FFFB0010FCA5,
 				C25F9899052C9E3200EDA739,
 				C25F989A052C9E3200EDA739,
 				C25F989B052C9E3200EDA739,
 				C25F989C052C9E3200EDA739,
-				C25F989D052C9E3200EDA739,
-				C25F989E052C9E3200EDA739,
 				C25F989F052C9E3200EDA739,
 				C25F98A0052C9E3200EDA739,
 				C25F98A1052C9E3200EDA739,
@@ -685,22 +695,6 @@
 			refType = 4;
 			sourceTree = "<group>";
 		};
-		C25F989D052C9E3200EDA739 = {
-			fileEncoding = 30;
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.cpp.cpp;
-			path = osxsigning.cpp;
-			refType = 4;
-			sourceTree = "<group>";
-		};
-		C25F989E052C9E3200EDA739 = {
-			fileEncoding = 30;
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.c.h;
-			path = osxsigning.h;
-			refType = 4;
-			sourceTree = "<group>";
-		};
 		C25F989F052C9E3200EDA739 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
@@ -843,12 +837,6 @@
 			settings = {
 			};
 		};
-		C25F98C1052C9E3200EDA739 = {
-			fileRef = C25F989D052C9E3200EDA739;
-			isa = PBXBuildFile;
-			settings = {
-			};
-		};
 		C25F98C3052C9E3200EDA739 = {
 			fileRef = C25F989F052C9E3200EDA739;
 			isa = PBXBuildFile;
@@ -873,12 +861,181 @@
 			settings = {
 			};
 		};
+		C261C8B90675444A0031FA9C = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = dlclientpriv.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C261C8BA0675444A0031FA9C = {
+			fileRef = C261C8B90675444A0031FA9C;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		C2828D7D0678EF2E00AF941B = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = dliterators.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2828D7E0678EF2E00AF941B = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = dliterators.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2828D7F0678EF2E00AF941B = {
+			fileRef = C2828D7D0678EF2E00AF941B;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		C2828D830678F6B400AF941B = {
+			fileRef = C2828D7E0678EF2E00AF941B;
+			isa = PBXBuildFile;
+			settings = {
+				ATTRIBUTES = (
+					Public,
+				);
+			};
+		};
+		C2B3F4980666992F0010FCA5 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = mdsclient.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2B3F4990666992F0010FCA5 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = mdsclient.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2B3F49A0666992F0010FCA5 = {
+			fileRef = C2B3F4980666992F0010FCA5;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		C2B3F4AF0666A5850010FCA5 = {
+			fileRef = C2B3F4990666992F0010FCA5;
+			isa = PBXBuildFile;
+			settings = {
+				ATTRIBUTES = (
+					Public,
+				);
+			};
+		};
+		C2B3F6C50667FFFB0010FCA5 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = mds_standard.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2B3F6C60667FFFB0010FCA5 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = mds_standard.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2B3F6C70667FFFB0010FCA5 = {
+			fileRef = C2B3F6C50667FFFB0010FCA5;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		C2B3F6C9066804440010FCA5 = {
+			fileRef = C2B3F6C60667FFFB0010FCA5;
+			isa = PBXBuildFile;
+			settings = {
+				ATTRIBUTES = (
+					Public,
+				);
+			};
+		};
+		C2CFE2C006BB009800D98609 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = dl_standard.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2CFE2C106BB009800D98609 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = dl_standard.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2CFE2C206BB009800D98609 = {
+			fileRef = C2CFE2C006BB009800D98609;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		C2CFE2DC06BB078B00D98609 = {
+			fileRef = C2CFE2C106BB009800D98609;
+			isa = PBXBuildFile;
+			settings = {
+				ATTRIBUTES = (
+					Public,
+				);
+			};
+		};
 		C2EDE99A0545D8AD00E31CF9 = {
 			buildActionMask = 2147483647;
 			files = (
 			);
 			isa = PBXHeadersBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C2EF2AB5066CFFC000F205D4 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.cpp.cpp;
+			path = dlquery.cpp;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2EF2AB6066CFFC000F205D4 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = dlquery.h;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		C2EF2AB7066CFFC000F205D4 = {
+			fileRef = C2EF2AB5066CFFC000F205D4;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		C2EF2AC0066D04EB00F205D4 = {
+			fileRef = C2EF2AB6066CFFC000F205D4;
+			isa = PBXBuildFile;
+			settings = {
+				ATTRIBUTES = (
+					Public,
+				);
+			};
 		};
 	};
 	rootObject = 4CA1FEAB052A3C3800F22E42;

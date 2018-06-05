@@ -21,7 +21,8 @@
 //
 #include <security_cdsa_client/wrapkey.h>
 
-using namespace CssmClient;
+namespace Security {
+namespace CssmClient {
 
 
 Key
@@ -29,7 +30,7 @@ WrapKey::operator () (Key &keyToBeWrapped, const CssmData *descriptiveData)
 {
 	Key wrappedKey;
 
-	check(CSSM_WrapKey(handle(), mCred, keyToBeWrapped, descriptiveData,
+	check(CSSM_WrapKey(handle(), neededCred(), keyToBeWrapped, descriptiveData,
 					   wrappedKey.makeNewKey(attachment())));
 	wrappedKey->activate();
 
@@ -40,7 +41,8 @@ void
 WrapKey::operator () (const CssmKey &keyToBeWrapped, CssmKey &wrappedKey,
 					  const CssmData *descriptiveData)
 {
-	check(CSSM_WrapKey(handle(), mCred, &keyToBeWrapped, descriptiveData, &wrappedKey));
+	check(CSSM_WrapKey(handle(), neededCred(), &keyToBeWrapped,
+		descriptiveData, &wrappedKey));
 }
 
 void
@@ -57,15 +59,11 @@ WrapKey::activate()
 Key
 UnwrapKey::operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec)
 {
-	Key unwrappedKey;
-
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
 	CssmData data(reinterpret_cast<uint8 *>(1), 0);
-
+	Key unwrappedKey;
 	check(CSSM_UnwrapKey(handle(), NULL,
 						 &keyToBeUnwrapped, spec.usage, spec.attributes,
-						 spec.label, &resourceControlContext,
+						 spec.label, &compositeRcc(),
 						 unwrappedKey.makeNewKey(attachment()), &data));
 	unwrappedKey->activate();
 
@@ -76,12 +74,9 @@ void
 UnwrapKey::operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec,
 						CssmKey &unwrappedKey)
 {
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
 	CssmData data(reinterpret_cast<uint8 *>(1), 0);
-
 	check(CSSM_UnwrapKey(handle(), NULL, &keyToBeUnwrapped, spec.usage,
-						 spec.attributes, spec.label, &resourceControlContext,
+						 spec.attributes, spec.label, &compositeRcc(),
 						 &unwrappedKey, &data));
 }
 
@@ -89,15 +84,11 @@ Key
 UnwrapKey::operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec,
 						Key &optionalPublicKey)
 {
-	Key unwrappedKey;
-
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
 	CssmData data(reinterpret_cast<uint8 *>(1), 0);
-
+	Key unwrappedKey;
 	check(CSSM_UnwrapKey(handle(), optionalPublicKey,
 						 &keyToBeUnwrapped, spec.usage, spec.attributes,
-						 spec.label, &resourceControlContext,
+						 spec.label, &compositeRcc(),
 						 unwrappedKey.makeNewKey(attachment()), &data));
 
 	unwrappedKey->activate();
@@ -110,13 +101,10 @@ UnwrapKey::operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec,
 						CssmKey &unwrappedKey,
 						const CssmKey *optionalPublicKey)
 {
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
 	CssmData data(reinterpret_cast<uint8 *>(1), 0);
-
 	check(CSSM_UnwrapKey(handle(), optionalPublicKey, &keyToBeUnwrapped,
 						 spec.usage, spec.attributes, spec.label,
-						 &resourceControlContext, &unwrappedKey, &data));
+						 &compositeRcc(), &unwrappedKey, &data));
 }
 
 
@@ -125,12 +113,8 @@ UnwrapKey::operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec,
 						CssmData *descriptiveData)
 {
 	Key unwrappedKey;
-
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
-
 	check(CSSM_UnwrapKey(handle(), NULL, &keyToBeUnwrapped, spec.usage,
-						 spec.attributes, spec.label, &resourceControlContext,
+						 spec.attributes, spec.label, &compositeRcc(),
 						 unwrappedKey.makeNewKey(attachment()),
 						 descriptiveData));
 	unwrappedKey->activate();
@@ -142,26 +126,19 @@ void
 UnwrapKey::operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec,
 						CssmKey &unwrappedKey, CssmData *descriptiveData)
 {
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
-
 	check(CSSM_UnwrapKey(handle(), NULL, &keyToBeUnwrapped, spec.usage,
-						 spec.attributes, spec.label, &resourceControlContext,
+						 spec.attributes, spec.label, &compositeRcc(),
 						 &unwrappedKey, descriptiveData));
 }
 
 Key
 UnwrapKey::operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec,
-						Key &optionalPublicKey, CssmData *descriptiveData)
+						const Key &optionalPublicKey, CssmData *descriptiveData)
 {
 	Key unwrappedKey;
-
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
-
 	check(CSSM_UnwrapKey(handle(), optionalPublicKey, &keyToBeUnwrapped,
 						 spec.usage, spec.attributes, spec.label,
-						 &resourceControlContext,
+						 &compositeRcc(),
 						 unwrappedKey.makeNewKey(attachment()),
 						 descriptiveData));
 	unwrappedKey->activate();
@@ -174,12 +151,9 @@ UnwrapKey::operator () (const CssmKey &keyToBeUnwrapped, const KeySpec &spec,
 						CssmKey &unwrappedKey, CssmData *descriptiveData,
 						const CssmKey *optionalPublicKey)
 {
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
-
 	check(CSSM_UnwrapKey(handle(), optionalPublicKey, &keyToBeUnwrapped,
 						 spec.usage, spec.attributes, spec.label,
-						 &resourceControlContext, &unwrappedKey,
+						 &compositeRcc(), &unwrappedKey,
 						 descriptiveData));
 }
 
@@ -199,12 +173,8 @@ Key
 DeriveKey::operator () (CssmData *param, const KeySpec &spec)
 {
 	Key derivedKey;
-
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
-
 	check(CSSM_DeriveKey(handle(), param, spec.usage, spec.attributes,
-						 spec.label, &resourceControlContext,
+						 spec.label, &compositeRcc(),
 						 derivedKey.makeNewKey(attachment())));
 	derivedKey->activate();
 
@@ -215,9 +185,9 @@ void
 DeriveKey::operator () (CssmData *param, const KeySpec &spec,
 						CssmKey &derivedKey)
 {
-	const ResourceControlContext resourceControlContext
-		(mAclEntry, const_cast<AccessCredentials *>(mCred));
-
 	check(CSSM_DeriveKey(handle(), param, spec.usage, spec.attributes,
-						 spec.label, &resourceControlContext, &derivedKey));
+						 spec.label, &compositeRcc(), &derivedKey));
 }
+
+} // end namespace CssmClient
+} // end namespace Security

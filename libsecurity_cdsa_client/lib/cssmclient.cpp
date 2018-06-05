@@ -306,7 +306,9 @@ CssmImpl::autoModule(const Guid &guid)
 // parent ::= the session object (usually Cssm::standard)
 // active ::= module is loaded.
 //
-ModuleImpl::ModuleImpl(const Guid &guid) : ObjectImpl(Cssm::standard())
+ModuleImpl::ModuleImpl(const Guid &guid) : ObjectImpl(Cssm::standard()),
+	mAppNotifyCallback(NULL),
+	mAppNotifyCallbackCtx(NULL)
 {
 	setGuid(guid);
 }
@@ -322,6 +324,67 @@ ModuleImpl::~ModuleImpl()
 }
 
 
+//
+// RawModuleEvent objects encapsulate CSSM module callbacks
+//
+RawModuleEvents::~RawModuleEvents()
+{ }
+
+CSSM_RETURN RawModuleEvents::sendNotify(const CSSM_GUID *, void *context,
+	uint32 subService, CSSM_SERVICE_TYPE type, CSSM_MODULE_EVENT event)
+{
+	try {
+		reinterpret_cast<RawModuleEvents *>(context)->notify(subService, type, event);
+		return CSSM_OK;
+	} catch (const CommonError &error) {
+		return CssmError::cssmError(error, CSSM_CSSM_BASE_ERROR);
+	} catch (...) {
+		return CSSMERR_CSSM_INTERNAL_ERROR;	// whatever...
+	}
+}
+
+
+//
+// ModuleEvents enhance RawModuleEvents by splitting the callback up by type
+//
+void ModuleEvents::notify(uint32 subService,
+	CSSM_SERVICE_TYPE type, CSSM_MODULE_EVENT event)
+{
+	switch (event) {
+	case CSSM_NOTIFY_INSERT:
+		insertion(subService, type);
+		break;
+	case CSSM_NOTIFY_REMOVE:
+		removal(subService, type);
+		break;
+	case CSSM_NOTIFY_FAULT:
+		fault(subService, type);
+		break;
+	}
+}
+
+// default callbacks do nothing
+void ModuleEvents::insertion(uint32 subService, CSSM_SERVICE_TYPE type) { }
+void ModuleEvents::removal(uint32 subService, CSSM_SERVICE_TYPE type) { }
+void ModuleEvents::fault(uint32 subService, CSSM_SERVICE_TYPE type) { }
+
+
+void
+ModuleImpl::appNotifyCallback(CSSM_API_ModuleEventHandler appNotifyCallback, void *appNotifyCallbackCtx)
+{
+	if (mActive)
+		Error::throwMe(Error::objectBusy);
+
+	mAppNotifyCallback = appNotifyCallback;
+	mAppNotifyCallbackCtx = appNotifyCallbackCtx;
+}
+
+void
+ModuleImpl::appNotifyCallback(RawModuleEvents *handler)
+{
+	appNotifyCallback(RawModuleEvents::sendNotify, handler);
+}
+
 void
 ModuleImpl::activate()
 {
@@ -329,7 +392,7 @@ ModuleImpl::activate()
 	{
 		session()->init();
 		// @@@ install handler here (use central dispatch with override)
-		check(CSSM_ModuleLoad(&guid(), CSSM_KEY_HIERARCHY_NONE, NULL, NULL));
+		check(CSSM_ModuleLoad(&guid(), CSSM_KEY_HIERARCHY_NONE, mAppNotifyCallback, mAppNotifyCallbackCtx));
 		mActive = true;
 		session()->catchExit();
 	}
@@ -343,7 +406,7 @@ ModuleImpl::deactivate()
 	if (mActive)
 	{
 		mActive = false;
-		check(CSSM_ModuleUnload(&guid(), NULL, NULL));
+		check(CSSM_ModuleUnload(&guid(), mAppNotifyCallback, mAppNotifyCallbackCtx));
 	}
 }
 

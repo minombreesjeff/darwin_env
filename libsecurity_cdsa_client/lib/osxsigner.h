@@ -22,19 +22,13 @@
 #ifndef _H_OSXSIGNER
 #define _H_OSXSIGNER
 
-#include <security_cdsa_client/osxsigning.h>
+#include <security_utilities/osxcode.h>
 #include <security_cdsa_client/cspclient.h>
 #include <string>
 
-#ifdef _CPP_OSXSIGNER
-#pragma export on
-#endif
+namespace Security {
+namespace CodeSigning {
 
-namespace Security
-{
-
-namespace CodeSigning
-{
 
 //
 // The OSX standard signer object
@@ -48,7 +42,7 @@ public:
 	OSXSignature *sign(const Signable &target);
 	bool verify(const Signable &target, const Signature *signature);
 	
-	OSXSignature *restore(uint32 type, const void *data, size_t length);
+	OSXSignature *restore(u_int32_t type, const void *data, size_t length);
 
 public:
 	class OSXSignature : public Signature {
@@ -69,7 +63,7 @@ public:
 		bool operator == (void *bytes) const
 		{ return !memcmp(mData, bytes, hashLength); }
 		
-		uint32 type() const		{ return standardOSXSignature; }
+		u_int32_t type() const		{ return standardOSXSignature; }
 		const void *data() const { return mData; }
 		size_t length() const	{ return hashLength; }
 	
@@ -91,12 +85,7 @@ private:
 };
 
 } // end namespace CodeSigning
-
 } // end namespace Security
-
-#ifdef _CPP_OSXSIGNER
-#pragma export off
-#endif
 
 
 #endif //_H_OSXSIGNER

@@ -34,8 +34,11 @@ void MacContext::activate()
 		check(CSSM_CSP_CreateMacContext(attachment()->handle(), mAlgorithm,
 			  mKey, &mHandle));
 		mActive = true;
+		if (cred())
+			cred(cred());		// install explicitly
 	}
 }
+
 
 //
 // Signing

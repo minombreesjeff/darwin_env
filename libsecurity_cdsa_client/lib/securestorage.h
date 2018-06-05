@@ -182,7 +182,7 @@ public:
 
 	explicit SSDb(Impl *impl) : Db(impl) {}
 	SSDb(const SSCSPDL &cspdl, const char *inDbName,
-		 const CSSM_NET_ADDRESS *inDbLocation)
+		 const CSSM_NET_ADDRESS *inDbLocation = NULL)
 		: Db(cspdl->newDb(inDbName, inDbLocation)) {}
 
 	Impl *operator ->() const { return &impl<Impl>(); }

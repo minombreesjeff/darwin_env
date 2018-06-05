@@ -26,11 +26,9 @@
 #include <security_cdsa_utilities/context.h>
 #include <security_cdsa_utilities/cssmacl.h>
 
-namespace Security
-{
+namespace Security {
+namespace CssmClient {
 
-namespace CssmClient
-{
 
 //
 // A CSP attachment
@@ -75,6 +73,10 @@ public:
 	CSSM_ALGORITHMS algorithm() const { return mAlgorithm; }
 	void algorithm(CSSM_ALGORITHMS alg);
 
+	const AccessCredentials *cred() const	{ return mCred; }
+	void cred(const CSSM_ACCESS_CREDENTIALS *cred);
+	void cred(const CSSM_ACCESS_CREDENTIALS &cred) { this->cred(&cred); }
+
 public:
 	CSSM_CC_HANDLE handle() { activate(); return mHandle; }
     
@@ -110,10 +112,6 @@ public:
     { activate(); set(type, value); }
 
 protected:
-	CSSM_ALGORITHMS mAlgorithm;		// intended algorithm
-	CSSM_CC_HANDLE mHandle;			// CSSM CC handle
-	bool mStaged;					// staged in progress
-
 	void deactivate();
 
 	virtual void init(); // Subclasses must implement if they support staged operations.
@@ -123,6 +121,57 @@ protected:
 	
 	void staged()
 	{ if (!mStaged) init(); }
+
+	const AccessCredentials *neededCred()
+	{ return AccessCredentials::needed(mCred); }
+
+protected:
+	CSSM_ALGORITHMS mAlgorithm;		// intended algorithm
+	CSSM_CC_HANDLE mHandle;			// CSSM CC handle
+	bool mStaged;					// staged in progress
+	const AccessCredentials *mCred;	// if explicitly set
+};
+
+
+//
+// An RccBearer holds a ResourceControlContext. Note that this is a composite
+// of an AccessCredentials and an AclEntryInput. We allow setting the whole
+// thing, or its two components separately. A complete rcc set (via ::rcc)
+// overrides any components.
+// @@@ Perhaps we should merge components into a specified rcc? Iffy, though...
+// Note: We call the credential components "opCred" to distinguish it from
+// the "cred" of a CredBearer; some classes are both. As a rule, the "cred" goes
+// into the context, while the "opCred" gets passed as an argument.
+//
+class RccBearer {
+public:
+	RccBearer() : mOpCred(NULL), mOwner(NULL), mRcc(NULL) { }
+	
+	const AccessCredentials *opCred() const		{ return mOpCred; }
+	void opCred(const CSSM_ACCESS_CREDENTIALS *cred) { mOpCred = AccessCredentials::overlay(cred); }
+	void opCred(const CSSM_ACCESS_CREDENTIALS &cred) { this->opCred(&cred); }
+	const AclEntryInput *owner() const			{ return mOwner; }
+	void owner(const CSSM_ACL_ENTRY_INPUT *owner) { mOwner = AclEntryInput::overlay(owner); }
+	void owner(const CSSM_ACL_ENTRY_INPUT &owner) { this->owner(&owner); }
+	void owner(const CSSM_ACL_ENTRY_PROTOTYPE *owner);
+	void owner(const CSSM_ACL_ENTRY_PROTOTYPE &owner) { this->owner(&owner); }
+	const ResourceControlContext *rcc() const	{ return mRcc; }
+	void rcc(const CSSM_RESOURCE_CONTROL_CONTEXT *rcc)
+			{ mRcc = ResourceControlContext::overlay(rcc); }
+	void rcc(const CSSM_RESOURCE_CONTROL_CONTEXT &rcc) { this->rcc(&rcc); }
+	
+protected:
+	const ResourceControlContext &compositeRcc() const;
+
+private:
+	// an RCC contains both a cred and entryInput
+	// mCred/mAcl are only considered if mRcc is not set (NULL)
+	const AccessCredentials *mOpCred;
+	const AclEntryInput *mOwner;
+	const ResourceControlContext *mRcc;
+	
+	mutable ResourceControlContext mWorkRcc; // work area
+	mutable AclEntryInput mWorkInput;		// work area
 };
 
 
@@ -214,7 +263,6 @@ private:
 
 
 } // end namespace CssmClient
-
 } // end namespace Security
 
 #endif // _H_CDSA_CLIENT_CSPCLIENT
