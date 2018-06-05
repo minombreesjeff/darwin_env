@@ -31,7 +31,10 @@ typedef CSPFullPluginSession::CSPContext CSPContext;
 // PluginContext construction
 //
 CSPPluginSession::PluginContext::~PluginContext()
-{ }
+{ /* virtual */ }
+
+CSPFullPluginSession::AlgorithmFactory::~AlgorithmFactory()
+{ /* virtual */ }
 
 
 //

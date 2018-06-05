@@ -219,6 +219,8 @@ public:
     // an algorithm factory. This is an optional feature
     class AlgorithmFactory {
     public:
+		virtual ~AlgorithmFactory();
+		
         // set ctx and return true if you can handle this
         virtual bool setup(CSPContext * &ctx, const Context &context) = 0;
     };

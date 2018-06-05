@@ -162,6 +162,7 @@ namespace Security {
 //
 class ${type}AbstractPluginSession {
 public:
+	virtual ~${type}AbstractPluginSession();
 HDRHEAD
 
   $functionCount = 0;
@@ -190,6 +191,10 @@ HDREND
 #include <security_cdsa_plugin/cssmplugin.h>
 #include <security_cdsa_utilities/cssmbridge.h>
 #include <Security/cssm${typelower}i.h>
+
+
+${type}AbstractPluginSession::~${type}AbstractPluginSession()
+{ /* virtual */ }
 
 BODY
 
