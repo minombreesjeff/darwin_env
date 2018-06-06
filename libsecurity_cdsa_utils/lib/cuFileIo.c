@@ -71,7 +71,7 @@ int readFile(
 {
 	int rtn;
 	int fd;
-	char *buf;
+	unsigned char *buf;
 	struct stat	sb;
 	unsigned size;
 	
