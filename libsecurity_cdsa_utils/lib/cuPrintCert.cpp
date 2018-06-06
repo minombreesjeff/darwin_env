@@ -221,7 +221,8 @@ static void printDerThing(
 			return;
 		case BER_TAG_PRINTABLE_STRING:
 		case BER_TAG_IA5_STRING:	
-		case BER_TAG_T61_STRING:		// mostly printable....	
+		case BER_TAG_T61_STRING:		
+		case BER_TAG_PKIX_UTF8_STRING:	// mostly printable....	
 			printString(thing);
 			return;
 		case BER_TAG_OCTET_STRING:
@@ -536,22 +537,9 @@ static int printCdsaExtensionCommon(
 			}
 			break;
 		case CSSM_X509_DATAFORMAT_PAIR:
-			/* both parsed and encoded forms present */
-			if(!expectParsed) {
-				printf("Bad CSSM_X509_EXTENSION; expected FORMAT_ENCODED\n");
-				return 1;
-			}
-			if(verbose) {
-				/* also print some of the encoded form */
-				if(extraIndent) {
-					printf("      Unparsed data   : "); 
-				}
-				else {
-					printf("   Unparsed data   : "); 
-				}
-				printDataAsHex(&cssmExt->BERvalue, 8);
-			}
-			break;
+			/* unsupported */
+			printf("Bad CSSM_X509_EXTENSION format:FORMAT_PAIR\n");
+			return 1;
 		default:
 			printf("***Unknown CSSM_X509_EXTENSION.format\n");
 			return 1;
@@ -679,10 +667,10 @@ static void printDistPointName(
 {
 	switch(dpn->nameType) {
 		case CE_CDNT_FullName:
-			printGeneralNames(dpn->fullName, parser);
+			printGeneralNames(dpn->dpn.fullName, parser);
 			break;
 		case CE_CDNT_NameRelativeToCrlIssuer:
-			printRdn(dpn->rdn, parser);
+			printRdn(dpn->dpn.rdn, parser);
 			break;
 		default:
 			printf("***BOGUS CE_DistributionPointName.nameType\n");
@@ -1091,7 +1079,7 @@ void printCrlExten(
 		}
 		printf("   Unparsed data   : "); printDataAsHex(&exten->BERvalue, 8);
 	}
-	else if(exten->format != CSSM_X509_DATAFORMAT_PAIR) {
+	else if(exten->format != CSSM_X509_DATAFORMAT_PARSED) {
 		printf("***Badly formatted CSSM_X509_EXTENSION\n");
 		return;
 	}
@@ -1146,7 +1134,7 @@ void printCrlEntryExten(
 		}
 		printf("      Unparsed data: "); printDataAsHex(&exten->BERvalue, 8);
 	}
-	else if(exten->format != CSSM_X509_DATAFORMAT_PAIR) {
+	else if(exten->format != CSSM_X509_DATAFORMAT_PARSED) {
 		printf("***Badly formatted CSSM_X509_EXTENSION\n");
 		return;
 	}

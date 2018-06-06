@@ -26,6 +26,7 @@
 #include <time.h>
 #include <Security/x509defs.h>
 
+#define UTC_TIME_NOSEC_LEN			11
 #define UTC_TIME_STRLEN				13
 #define CSSM_TIME_STRLEN			14		/* no trailing 'Z' */
 #define GENERALIZED_TIME_STRLEN		15

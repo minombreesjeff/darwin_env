@@ -24,7 +24,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <ctype.h>
-#include <security_utilities/threading.h>
+#include <pthread.h>
 
 /*
  * Given a string containing either a UTC-style or "generalized time"
@@ -37,7 +37,8 @@ int cuTimeStringToTm(
 	struct tm			*tmp)
 {
 	char 		szTemp[5];
-	unsigned 	isUtc;
+	unsigned 	isUtc = 0;
+	unsigned	noSeconds = 0;
 	unsigned 	x;
 	unsigned 	i;
 	char 		*cp;
@@ -51,11 +52,14 @@ int cuTimeStringToTm(
   		len--;
   	}
   	switch(len) {
+		case UTC_TIME_NOSEC_LEN:		// 2-digit year, no seconds, not y2K compliant
+			isUtc = 1;
+			noSeconds = 1;
+			break;
   		case UTC_TIME_STRLEN:			// 2-digit year, not Y2K compliant
   			isUtc = 1;
   			break;
   		case GENERALIZED_TIME_STRLEN:	// 4-digit year
-  			isUtc = 0;
   			break;
   		default:						// unknown format 
   			return 1;
@@ -155,20 +159,26 @@ int cuTimeStringToTm(
   	tmp->tm_min = x;
 
   	/* SECOND */
-	szTemp[0] = *cp++;
-	szTemp[1] = *cp++;
-	szTemp[2] = '\0';
-  	x = atoi( szTemp );
-	if((x > 59) || (x < 0)) {
-		return 1;
+	if(noSeconds) {
+		tmp->tm_sec = 0;
 	}
-  	tmp->tm_sec = x;
+	else {
+		szTemp[0] = *cp++;
+		szTemp[1] = *cp++;
+		szTemp[2] = '\0';
+		x = atoi( szTemp );
+		if((x > 59) || (x < 0)) {
+			return 1;
+		}
+		tmp->tm_sec = x;
+	}
 	return 0;
 }
 
 #define MAX_TIME_STR_LEN  	30
 
-static Mutex timeMutex;		// protects time(), gmtime()
+/* protects time(), gmtime() */
+static pthread_mutex_t timeMutex = PTHREAD_MUTEX_INITIALIZER;	
 
 char *cuTimeAtNowPlus(int secFromNow, 
 	timeSpec spec)
@@ -177,11 +187,11 @@ char *cuTimeAtNowPlus(int secFromNow,
 	char *outStr;
 	time_t baseTime;
 	
-	timeMutex.lock();
+	pthread_mutex_lock(&timeMutex);
 	baseTime = time(NULL);
 	baseTime += (time_t)secFromNow;
 	utc = *gmtime(&baseTime);
-	timeMutex.unlock();
+	pthread_mutex_unlock(&timeMutex);
 	
 	outStr = (char *)APP_MALLOC(MAX_TIME_STR_LEN);
 	

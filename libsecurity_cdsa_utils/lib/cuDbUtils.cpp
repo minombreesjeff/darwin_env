@@ -164,7 +164,7 @@ static bool cuSearchNumericExtension(
 		if(!cuCompareOid(&exten->extnId, oid)) {
 			continue;
 		}
-		if(exten->format != CSSM_X509_DATAFORMAT_PAIR) {
+		if(exten->format != CSSM_X509_DATAFORMAT_PARSED) {
 			printf("***Malformed extension\n");
 			continue;
 		}
@@ -421,10 +421,7 @@ CSSM_RETURN cuAddCrlToDb(
 				&recordPtr);
 		}
 	}
-	if(crtn) {
-		cuPrintError("CSSM_DL_DataInsert", crtn);
-	}
-	else {
+	if(crtn == CSSM_OK) {
 		CSSM_DL_FreeUniqueRecord(dlDbHand, recordPtr);
 	}
 	
