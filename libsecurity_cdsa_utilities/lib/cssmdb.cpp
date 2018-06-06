@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -59,6 +57,31 @@ CssmDLPolyData::operator Guid () const
 //
 // CssmDbAttributeInfo
 //
+CssmDbAttributeInfo::CssmDbAttributeInfo(const char *name, CSSM_DB_ATTRIBUTE_FORMAT vFormat)
+{
+	clearPod();
+	AttributeNameFormat = CSSM_DB_ATTRIBUTE_NAME_AS_STRING;
+	Label.AttributeName = const_cast<char *>(name); // silly CDSA
+	AttributeFormat = vFormat;
+}
+
+CssmDbAttributeInfo::CssmDbAttributeInfo(const CSSM_OID &oid, CSSM_DB_ATTRIBUTE_FORMAT vFormat)
+{
+	clearPod();
+	AttributeNameFormat = CSSM_DB_ATTRIBUTE_NAME_AS_OID;
+	Label.AttributeOID = oid;
+	AttributeFormat = vFormat;
+}
+
+CssmDbAttributeInfo::CssmDbAttributeInfo(uint32 id, CSSM_DB_ATTRIBUTE_FORMAT vFormat)
+{
+	clearPod();
+	AttributeNameFormat = CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER;
+	Label.AttributeID = id;
+	AttributeFormat = vFormat;
+}
+
+
 bool
 CssmDbAttributeInfo::operator <(const CssmDbAttributeInfo& other) const
 {
@@ -110,31 +133,129 @@ CssmDbAttributeInfo::operator ==(const CssmDbAttributeInfo& other) const
 //
 // CssmDbAttributeData
 //
-void
-CssmDbAttributeData::deleteValues(Allocator &inAllocator)
+CssmDbAttributeData::operator string() const
 {
-	// Loop over all values and delete each one.
-	if (Value)
-	{
-		for (uint32 anIndex = 0; anIndex < NumberOfValues; anIndex++)
-		{
-			if (Value[anIndex].Data)
-			{
-				inAllocator.free(Value[anIndex].Data);
-			}
-
-			Value[anIndex].Length = 0;
-		}
-
-		inAllocator.free(Value);
-		Value = NULL;
+	switch (format()) {
+	case CSSM_DB_ATTRIBUTE_FORMAT_STRING:
+	case CSSM_DB_ATTRIBUTE_FORMAT_BLOB:
+		return at(0).toString();
+	default:
+		CssmError::throwMe(CSSMERR_DL_INCOMPATIBLE_FIELD_FORMAT);
 	}
-
-	NumberOfValues = 0;
+}
+CssmDbAttributeData::operator const Guid &() const
+{
+	if (format() == CSSM_DB_ATTRIBUTE_FORMAT_BLOB)
+		return *at(0).interpretedAs<Guid>();
+	else
+		CssmError::throwMe(CSSMERR_DL_INCOMPATIBLE_FIELD_FORMAT);
 }
 
-bool
-CssmDbAttributeData::operator <(const CssmDbAttributeData &other) const
+CssmDbAttributeData::operator bool() const
+{
+	switch (format()) {
+	case CSSM_DB_ATTRIBUTE_FORMAT_UINT32:
+	case CSSM_DB_ATTRIBUTE_FORMAT_SINT32:
+		return *at(0).interpretedAs<uint32>();
+	default:
+		CssmError::throwMe(CSSMERR_DL_INCOMPATIBLE_FIELD_FORMAT);
+	}
+}
+
+CssmDbAttributeData::operator uint32() const
+{
+	if (format() == CSSM_DB_ATTRIBUTE_FORMAT_UINT32)
+		return *at(0).interpretedAs<uint32>();
+	else
+		CssmError::throwMe(CSSMERR_DL_INCOMPATIBLE_FIELD_FORMAT);
+}
+
+CssmDbAttributeData::operator const uint32 *() const
+{
+	if (format() == CSSM_DB_ATTRIBUTE_FORMAT_MULTI_UINT32)
+		return reinterpret_cast<const uint32 *>(Value[0].Data);
+	else
+		CssmError::throwMe(CSSMERR_DL_INCOMPATIBLE_FIELD_FORMAT);
+}
+
+CssmDbAttributeData::operator sint32() const
+{
+	if (format() == CSSM_DB_ATTRIBUTE_FORMAT_SINT32)
+		return *at(0).interpretedAs<sint32>();
+	else
+		CssmError::throwMe(CSSMERR_DL_INCOMPATIBLE_FIELD_FORMAT);
+}
+
+CssmDbAttributeData::operator double() const
+{
+	if (format() == CSSM_DB_ATTRIBUTE_FORMAT_REAL)
+		return *at(0).interpretedAs<double>();
+	else
+		CssmError::throwMe(CSSMERR_DL_INCOMPATIBLE_FIELD_FORMAT);
+}
+
+CssmDbAttributeData::operator const CssmData &() const
+{
+	switch (format()) {
+	case CSSM_DB_ATTRIBUTE_FORMAT_STRING:
+	case CSSM_DB_ATTRIBUTE_FORMAT_BIG_NUM:
+	case CSSM_DB_ATTRIBUTE_FORMAT_TIME_DATE:
+	case CSSM_DB_ATTRIBUTE_FORMAT_BLOB:
+	case CSSM_DB_ATTRIBUTE_FORMAT_MULTI_UINT32:
+		return at(0);
+	default:
+		CssmError::throwMe(CSSMERR_DL_INCOMPATIBLE_FIELD_FORMAT);
+	}
+}
+
+void CssmDbAttributeData::set(const CSSM_DB_ATTRIBUTE_INFO &inInfo, const CssmPolyData &inValue,
+		 Allocator &inAllocator)
+{
+	info(inInfo);
+	NumberOfValues = 0;
+	Value = inAllocator.alloc<CSSM_DATA>();
+	Value[0].Length = 0;
+	Value[0].Data = inAllocator.alloc<uint8>(inValue.Length);
+	Value[0].Length = inValue.Length;
+	memcpy(Value[0].Data, inValue.Data, inValue.Length);
+	NumberOfValues = 1;
+}
+
+void CssmDbAttributeData::add(const CssmPolyData &inValue, Allocator &inAllocator)
+{
+	Value = reinterpret_cast<CSSM_DATA *>(inAllocator.realloc(Value, sizeof(*Value) * (NumberOfValues + 1)));
+	CssmAutoData valueCopy(inAllocator, inValue);
+	Value[NumberOfValues++] = valueCopy.release();
+}
+
+
+void CssmDbAttributeData::copyValues(const CssmDbAttributeData &source, Allocator &alloc)
+{
+	assert(size() == 0);	// must start out empty
+
+	// we're too lazy to arrange for exception safety here
+	CssmData *vector = alloc.alloc<CssmData>(source.size());
+	for (uint32 n = 0; n < source.size(); n++)
+		vector[n] = CssmAutoData(alloc, source[n]).release();
+
+	// atomic set results
+	info().format(source.info().format());
+	NumberOfValues = source.size();
+	values() = vector;
+}
+
+void CssmDbAttributeData::deleteValues(Allocator &alloc)
+{
+	// Loop over all values and delete each one.
+	if (values())
+		for (uint32 n = 0; n < size(); n++)
+			alloc.free(at(n).data());
+		alloc.free(values());
+	NumberOfValues = 0;
+	values() = NULL;
+}
+
+bool CssmDbAttributeData::operator <(const CssmDbAttributeData &other) const
 {
 	if (info() < other.info()) return true;
 	if (other.info() < info()) return false;

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -28,7 +26,12 @@
 // acl_protectedpw - protected-path password-based ACL subject types.
 //
 // This implements "protected path" password-based subject types as per CSSM standard.
-// The actual protected path is not implemented in this class; it's up to the user to provide it.
+// A "protected path" is something that is outside the scope of the computer proper,
+// like e.g. a PINpad directly attached to a smartcard token.
+// Note: A password prompted through securityd/SecurityAgent is a "prompted password",
+// not a "protected password". See acl_prompted.h.
+//
+// @@@ Warning: This is not quite implemented.
 //
 #ifndef _ACL_PROTECTED_PASSWORD
 #define _ACL_PROTECTED_PASSWORD

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -162,6 +160,54 @@ private:
 
 
 //
+// A CSSM_DL_DB_LIST wrapper.
+// Note that there is a DLDBList class elsewhere that is quite
+// unrelated to this structure.
+//
+class CssmDlDbHandle : public PodWrapper<CssmDlDbHandle, CSSM_DL_DB_HANDLE> {
+public:
+	CssmDlDbHandle() { clearPod(); }
+	CssmDlDbHandle(CSSM_DL_HANDLE dl, CSSM_DB_HANDLE db) { DLHandle = dl; DBHandle = db; }
+	
+	CSSM_DL_HANDLE dl() const	{ return DLHandle; }
+	CSSM_DB_HANDLE db() const	{ return DBHandle; }
+	
+	operator bool() const		{ return DLHandle && DBHandle; }
+};
+
+inline bool operator < (const CSSM_DL_DB_HANDLE &h1, const CSSM_DL_DB_HANDLE &h2)
+{
+	return h1.DLHandle < h2.DLHandle
+		|| (h1.DLHandle == h2.DLHandle && h1.DBHandle < h2.DBHandle);
+}
+
+inline bool operator == (const CSSM_DL_DB_HANDLE &h1, const CSSM_DL_DB_HANDLE &h2)
+{
+	return h1.DLHandle == h2.DLHandle && h1.DBHandle == h2.DBHandle;
+}
+
+inline bool operator != (const CSSM_DL_DB_HANDLE &h1, const CSSM_DL_DB_HANDLE &h2)
+{
+	return h1.DLHandle != h2.DLHandle || h1.DBHandle != h2.DBHandle;
+}
+
+
+class CssmDlDbList : public PodWrapper<CssmDlDbList, CSSM_DL_DB_LIST> {
+public:
+	uint32 count() const		{ return NumHandles; }
+	uint32 &count()				{ return NumHandles; }
+	CssmDlDbHandle *handles() const { return CssmDlDbHandle::overlay(DLDBHandle); }
+	CssmDlDbHandle * &handles()	{ return CssmDlDbHandle::overlayVar(DLDBHandle); }
+
+	CssmDlDbHandle &operator [] (uint32 ix) const
+	{ assert(ix < count()); return CssmDlDbHandle::overlay(DLDBHandle[ix]); }
+	
+	void setDlDbList(uint32 n, CSSM_DL_DB_HANDLE *list)
+	{ count() = n; handles() = CssmDlDbHandle::overlay(list); }
+};
+
+
+//
 // CssmDLPolyData
 //
 class CssmDLPolyData
@@ -225,7 +271,14 @@ class CssmDbAttributeInfo : public PodWrapper<CssmDbAttributeInfo, CSSM_DB_ATTRI
 {
 public:
 	CssmDbAttributeInfo(const CSSM_DB_ATTRIBUTE_INFO &attr)
-	{ (CSSM_DB_ATTRIBUTE_INFO &)*this = attr; }
+	{ assignPod(attr); }
+	
+	CssmDbAttributeInfo(const char *name,
+		CSSM_DB_ATTRIBUTE_FORMAT vFormat = CSSM_DB_ATTRIBUTE_FORMAT_COMPLEX);
+	CssmDbAttributeInfo(const CSSM_OID &oid,
+		CSSM_DB_ATTRIBUTE_FORMAT vFormat = CSSM_DB_ATTRIBUTE_FORMAT_COMPLEX);
+	CssmDbAttributeInfo(uint32 id,
+		CSSM_DB_ATTRIBUTE_FORMAT vFormat = CSSM_DB_ATTRIBUTE_FORMAT_COMPLEX);
 
 	CSSM_DB_ATTRIBUTE_NAME_FORMAT nameFormat() const { return AttributeNameFormat; }
 	void nameFormat(CSSM_DB_ATTRIBUTE_NAME_FORMAT nameFormat) { AttributeNameFormat = nameFormat; }
@@ -233,28 +286,30 @@ public:
 	CSSM_DB_ATTRIBUTE_FORMAT format() const { return AttributeFormat; }
 	void format(CSSM_DB_ATTRIBUTE_FORMAT format) { AttributeFormat = format; }
 
-	operator const char *() const
+	const char *stringName() const
 	{
 		assert(nameFormat() == CSSM_DB_ATTRIBUTE_NAME_AS_STRING);
 		return Label.AttributeName;
 	}
-	operator const CssmOid &() const
+	const CssmOid &oidName() const
 	{
 		assert(nameFormat() == CSSM_DB_ATTRIBUTE_NAME_AS_OID);
 		return CssmOid::overlay(Label.AttributeOID);
 	}
-	operator uint32() const
+	uint32 intName() const
 	{
 		assert(nameFormat() == CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER);
 		return Label.AttributeID;
 	}
 
+	operator const char *() const { return stringName(); }
+	operator const CssmOid &() const { return oidName(); }
+	operator uint32() const { return intName(); }
+
 	bool operator <(const CssmDbAttributeInfo& other) const;
 	bool operator ==(const CssmDbAttributeInfo& other) const;
 	bool operator !=(const CssmDbAttributeInfo& other) const
 	{ return !(*this == other); }
-
-	// XXX Add setting member functions.
 };
 
 //
@@ -279,16 +334,15 @@ public:
 
 	uint32 size() const { return NumberOfAttributes; }
 
-	// Attributes by position
-    CssmDbAttributeInfo &at(uint32 ix)
-	{ return CssmDbAttributeInfo::overlay(AttributeInfo[ix]); }
-    const CssmDbAttributeInfo &at(uint32 ix) const
-	{ return CssmDbAttributeInfo::overlay(AttributeInfo[ix]); }
+	// attribute access
+	CssmDbAttributeInfo *&attributes()
+	{ return CssmDbAttributeInfo::overlayVar(AttributeInfo); }
+	CssmDbAttributeInfo *attributes() const
+	{ return CssmDbAttributeInfo::overlay(AttributeInfo); }
+    CssmDbAttributeInfo &at(uint32 ix) const
+	{ assert(ix < size()); return attributes()[ix]; }
 
-    CssmDbAttributeInfo &operator [](uint32 ix)
-    { assert(ix < size()); return at(ix); }
-    const CssmDbAttributeInfo &operator [](uint32 ix) const
-    { assert(ix < size()); return at(ix); }
+    CssmDbAttributeInfo &operator [] (uint32 ix) const { return at(ix); }
 };
 
 //
@@ -312,7 +366,7 @@ class CssmDbAttributeData : public PodWrapper<CssmDbAttributeData, CSSM_DB_ATTRI
 public:
 	CssmDbAttributeData() { NumberOfValues = 0; Value = NULL; }
 	CssmDbAttributeData(const CSSM_DB_ATTRIBUTE_DATA &attr)
-	{ (CSSM_DB_ATTRIBUTE_DATA &)*this = attr; }
+	{ assignPod(attr); }
 	CssmDbAttributeData(const CSSM_DB_ATTRIBUTE_INFO &info)
 	{ Info = info; NumberOfValues = 0; Value = NULL; }
 
@@ -321,107 +375,71 @@ public:
 	void info (const CSSM_DB_ATTRIBUTE_INFO &inInfo) { Info = inInfo; }
 
 	CSSM_DB_ATTRIBUTE_FORMAT format() const { return info().format(); }
+	void format(CSSM_DB_ATTRIBUTE_FORMAT f) { info().format(f); }
 
 	uint32 size() const { return NumberOfValues; }
+	CssmData *&values() { return CssmData::overlayVar(Value); }
+	CssmData *values() const { return CssmData::overlay(Value); }
+
+	CssmData &at(unsigned int ix) const
+	{
+		if (ix >= size()) CssmError::throwMe(CSSMERR_DL_MISSING_VALUE);
+		return values()[ix];
+	}
+	
+	CssmData &operator [] (unsigned int ix) const { return at(ix); }
 
 	template <class T>
     T at(unsigned int ix) const { return CssmDLPolyData(Value[ix], format()); }
-
-	template <class T>
-    T operator [](unsigned int ix) const
-	{ if (ix >= size()) CssmError::throwMe(CSSMERR_DL_MISSING_VALUE); return at(ix); }
 
 	// this is intentionally unspecified since it could lead to bugs; the
 	// data is not guaranteed to be NULL-terminated
 	// operator const char *() const;
 
-	// XXX Don't use assert, but throw an exception.
-	operator string() const
-	{
-		if (size() < 1) CssmError::throwMe(CSSMERR_DL_MISSING_VALUE);
-		assert(format() == CSSM_DB_ATTRIBUTE_FORMAT_STRING);
-		return Value[0].Length ? string(reinterpret_cast<const char *>(Value[0].Data), Value[0].Length) : string();
-	}		
-	operator bool() const
-	{
-		if (size() < 1) CssmError::throwMe(CSSMERR_DL_MISSING_VALUE);
-		assert(format() == CSSM_DB_ATTRIBUTE_FORMAT_UINT32 || format() == CSSM_DB_ATTRIBUTE_FORMAT_SINT32);
-		return *reinterpret_cast<uint32 *>(Value[0].Data);
-	}
-	operator uint32() const
-	{
-		if (size() < 1) CssmError::throwMe(CSSMERR_DL_MISSING_VALUE);
-		assert(format() == CSSM_DB_ATTRIBUTE_FORMAT_UINT32);
-		return *reinterpret_cast<uint32 *>(Value[0].Data);
-	}
-	operator const uint32 *() const
-	{
-		if (size() < 1) CssmError::throwMe(CSSMERR_DL_MISSING_VALUE);
-		assert(format() == CSSM_DB_ATTRIBUTE_FORMAT_MULTI_UINT32);
-		return reinterpret_cast<const uint32 *>(Value[0].Data);
-	}
-	operator sint32() const
-	{
-		if (size() < 1) CssmError::throwMe(CSSMERR_DL_MISSING_VALUE);
-		assert(format() == CSSM_DB_ATTRIBUTE_FORMAT_SINT32);
-		return *reinterpret_cast<sint32 *>(Value[0].Data);
-	}
-	operator double() const
-	{
-		if (size() < 1) CssmError::throwMe(CSSMERR_DL_MISSING_VALUE);
-		assert(format() == CSSM_DB_ATTRIBUTE_FORMAT_REAL);
-		return *reinterpret_cast<double *>(Value[0].Data);
-	}
-	operator CssmData &() const
-	{
-		if (size() < 1) CssmError::throwMe(CSSMERR_DL_MISSING_VALUE);
-		assert(format() == CSSM_DB_ATTRIBUTE_FORMAT_STRING
-				|| format() == CSSM_DB_ATTRIBUTE_FORMAT_BIG_NUM
-				|| format() == CSSM_DB_ATTRIBUTE_FORMAT_TIME_DATE
-				|| format() == CSSM_DB_ATTRIBUTE_FORMAT_BLOB
-				|| format() == CSSM_DB_ATTRIBUTE_FORMAT_MULTI_UINT32);
-		return CssmData::overlay(Value[0]);
-	}
+	operator string() const;
+	operator const Guid &() const;
+	operator bool() const;
+	operator uint32() const;
+	operator const uint32 *() const;
+	operator sint32() const;
+	operator double() const;
+	operator const CssmData &() const;
+	
+	// set values without allocation (caller owns the data contents)
+	void set(CssmData &data)	{ set(1, &data); }
+	void set(uint32 count, CssmData *datas) { NumberOfValues = count; Value = datas; }
 
 	// Set the value of this Attr (assuming it was not set before).
 	void set(const CSSM_DB_ATTRIBUTE_INFO &inInfo, const CssmPolyData &inValue,
-			 Allocator &inAllocator)
-	{
-		info(inInfo);
-		NumberOfValues = 0;
-		Value = inAllocator.alloc<CSSM_DATA>();
-		Value[0].Length = 0;
-		Value[0].Data = inAllocator.alloc<uint8>(inValue.Length);
-		Value[0].Length = inValue.Length;
-		memcpy(Value[0].Data, inValue.Data, inValue.Length);
-		NumberOfValues = 1;
-	}
+			 Allocator &inAllocator);
 
-	// Set the value of this Attr (assuming it was not set before).
-	void set(const CSSM_DB_ATTRIBUTE_DATA &other, Allocator &inAllocator)
+	// copy (just) the return-value part from another AttributeData to this one
+	void copyValues(const CssmDbAttributeData &source, Allocator &alloc);
+
+	// Set the value of this Attr (which must be unset so far)
+	void set(const CSSM_DB_ATTRIBUTE_DATA &source, Allocator &alloc)
 	{
-		info(other.Info);
-		Value = inAllocator.alloc<CSSM_DATA>(other.NumberOfValues);
-		NumberOfValues = other.NumberOfValues;
-		for (NumberOfValues = 0; NumberOfValues < other.NumberOfValues; NumberOfValues++)
-		{
-			Value[NumberOfValues].Length = 0;
-			Value[NumberOfValues].Data = inAllocator.alloc<uint8>(other.Value[NumberOfValues].Length);
-			Value[NumberOfValues].Length = other.Value[NumberOfValues].Length;
-			memcpy(Value[NumberOfValues].Data, other.Value[NumberOfValues].Data,
-				   other.Value[NumberOfValues].Length);
-		}
+		info(source.Info);
+		copyValues(source, alloc);
 	}
 
 	// Add a value to this attribute.
-	void add(const CssmPolyData &inValue, Allocator &inAllocator)
-	{
-		Value = reinterpret_cast<CSSM_DATA *>(inAllocator.realloc(Value, sizeof(*Value) * (NumberOfValues + 1)));
-		Value[NumberOfValues].Length = 0;
-		Value[NumberOfValues].Data = inAllocator.alloc<uint8>(inValue.Length);
-		Value[NumberOfValues].Length = inValue.Length;
-		memcpy(Value[NumberOfValues++].Data, inValue.Data, inValue.Length);
-	}
+	void add(const CssmPolyData &inValue, Allocator &inAllocator);
+
+	void add(const char *value, Allocator &alloc)
+	{ format(CSSM_DB_ATTRIBUTE_FORMAT_STRING); add(CssmPolyData(value), alloc); }
+	
+	void add(const std::string &value, Allocator &alloc)
+	{ format(CSSM_DB_ATTRIBUTE_FORMAT_STRING); add(CssmPolyData(value), alloc); }
+	
+	void add(uint32 value, Allocator &alloc)
+	{ format(CSSM_DB_ATTRIBUTE_FORMAT_UINT32); add(CssmPolyData(value), alloc); }
+	
+	void add(sint32 value, Allocator &alloc)
+	{ format(CSSM_DB_ATTRIBUTE_FORMAT_SINT32); add(CssmPolyData(value), alloc); }
+	
+	void add(const CssmData &value, Allocator &alloc)
+	{ format(CSSM_DB_ATTRIBUTE_FORMAT_BLOB); add(CssmPolyData(value), alloc); }
 
 	void add(const CssmDbAttributeData &src, Allocator &inAllocator);
 
@@ -442,7 +460,7 @@ class CssmDbRecordAttributeData : public PodWrapper<CssmDbRecordAttributeData, C
 {
 public:
 	CssmDbRecordAttributeData()
-	{ DataRecordType = CSSM_DL_DB_RECORD_ANY; SemanticInformation = 0; }
+	{ clearPod(); DataRecordType = CSSM_DL_DB_RECORD_ANY; }
 
 	CSSM_DB_RECORDTYPE recordType() const { return DataRecordType; }
 	void recordType(CSSM_DB_RECORDTYPE recordType) { DataRecordType = recordType; }
@@ -451,17 +469,16 @@ public:
 	void semanticInformation(uint32 semanticInformation) { SemanticInformation = semanticInformation; }
 
 	uint32 size() const { return NumberOfAttributes; }
+	CssmDbAttributeData *&attributes()
+	{ return CssmDbAttributeData::overlayVar(AttributeData); }
+	CssmDbAttributeData *attributes() const
+	{ return CssmDbAttributeData::overlay(AttributeData); }
 
 	// Attributes by position
-    CssmDbAttributeData &at(unsigned int ix)
-	{ return CssmDbAttributeData::overlay(AttributeData[ix]); }
-    const CssmDbAttributeData &at(unsigned int ix) const
-	{ return CssmDbAttributeData::overlay(AttributeData[ix]); }
+    CssmDbAttributeData &at(unsigned int ix) const
+	{ assert(ix < size()); return attributes()[ix]; }
 
-    CssmDbAttributeData &operator [](unsigned int ix)
-    { assert(ix < size()); return at(ix); }
-    const CssmDbAttributeData &operator [](unsigned int ix) const
-    { assert(ix < size()); return at(ix); }
+    CssmDbAttributeData &operator [] (unsigned int ix) const { return at(ix); }
 
     void deleteValues(Allocator &allocator)
 	{ for (uint32 ix = 0; ix < size(); ++ix) at(ix).deleteValues(allocator); }
@@ -509,7 +526,7 @@ private:
 //
 class CssmSelectionPredicate : public PodWrapper<CssmSelectionPredicate, CSSM_SELECTION_PREDICATE> {
 public:
-	CssmSelectionPredicate() { /*IFDEBUG(*/ memset(this, 0, sizeof(*this)) /*)*/ ; }
+	CssmSelectionPredicate() { clearPod(); }
 
 	CSSM_DB_OPERATOR dbOperator() const { return DbOperator; }
 	void dbOperator(CSSM_DB_OPERATOR dbOperator) { DbOperator = dbOperator; }
@@ -538,12 +555,16 @@ public:
 
 class CssmQuery : public PodWrapper<CssmQuery, CSSM_QUERY> {
 public:
-    CssmQuery()
-    { memset(this, 0, sizeof(*this)) ; RecordType = CSSM_DL_DB_RECORD_ANY; }
-    //CssmDLQuery(const CSSM_QUERY &q) { memcpy(this, &q, sizeof(*this)); }
-
-    //CssmDLQuery &operator = (const CSSM_QUERY &q)
-    //{ memcpy(this, &q, sizeof(*this)); return *this; }
+    CssmQuery(CSSM_DB_RECORDTYPE type = CSSM_DL_DB_RECORD_ANY)
+    { clearPod(); RecordType = type; }
+	
+	// copy or assign flat from CSSM_QUERY
+	CssmQuery(const CSSM_QUERY &q) { assignPod(q); }
+	CssmQuery &operator = (const CSSM_QUERY &q) { assignPod(q); return *this; }
+	
+	// flat copy and change record type
+	CssmQuery(const CssmQuery &q, CSSM_DB_RECORDTYPE type)
+	{ *this = q; RecordType = type; }
 
 	CSSM_DB_RECORDTYPE recordType() const { return RecordType; }
 	void recordType(CSSM_DB_RECORDTYPE recordType)  { RecordType = recordType; }
@@ -558,14 +579,19 @@ public:
 	void queryFlags(CSSM_QUERY_FLAGS queryFlags)  { QueryFlags = queryFlags; }
 
 	uint32 size() const { return NumSelectionPredicates; }
+	
+	CssmSelectionPredicate *&predicates()
+	{ return CssmSelectionPredicate::overlayVar(SelectionPredicate); }
+	CssmSelectionPredicate *predicates() const
+	{ return CssmSelectionPredicate::overlay(SelectionPredicate); }
 
-	CssmSelectionPredicate &at(uint32 ix)
-	{ return CssmSelectionPredicate::overlay(SelectionPredicate[ix]); }
-	const CssmSelectionPredicate &at(uint32 ix) const
-	{ return CssmSelectionPredicate::overlay(SelectionPredicate[ix]); }
+	CssmSelectionPredicate &at(uint32 ix) const
+	{ assert(ix < size()); return predicates()[ix]; }
 
-	CssmSelectionPredicate &operator[] (uint32 ix) { assert(ix < size()); return at(ix); }
-	const CssmSelectionPredicate &operator[] (uint32 ix) const { assert(ix < size()); return at(ix); }
+	CssmSelectionPredicate &operator[] (uint32 ix) const { return at(ix); }
+	
+	void set(uint32 count, CSSM_SELECTION_PREDICATE *preds)
+	{ NumSelectionPredicates = count; SelectionPredicate = preds; }
 
     void deleteValues(Allocator &allocator)
 	{ for (uint32 ix = 0; ix < size(); ++ix) at(ix).deleteValues(allocator); }
@@ -608,7 +634,7 @@ protected:
 
         // Accessors
         const CssmSubserviceUid &ssuid() const { return mCssmSubserviceUid; }
-        const char *dbName() const { return mDbName.dbName().c_str(); }
+        const char *dbName() const { return mDbName.dbName(); }
         const CssmNetAddress *dbLocation() const { return mDbName.dbLocation(); }
 
         // comparison (simple lexicographic)
@@ -628,8 +654,11 @@ protected:
 public:
     // Constructors
     DLDbIdentifier() {}
-    DLDbIdentifier(const CSSM_SUBSERVICE_UID &ssuid,const char *DbName,const CSSM_NET_ADDRESS *DbLocation)
+    DLDbIdentifier(const CSSM_SUBSERVICE_UID &ssuid, const char *DbName, const CSSM_NET_ADDRESS *DbLocation)
         : mImpl(new Impl(ssuid, DbName, DbLocation)) {}
+	DLDbIdentifier(const char *name, const Guid &guid, uint32 ssid, uint32 sstype,
+		const CSSM_NET_ADDRESS *location = NULL)
+		: mImpl(new Impl(CssmSubserviceUid(guid, NULL, ssid, sstype), name, location)) { }
 
 	// Conversion Operators
 	bool operator !() const { return !mImpl; }
@@ -675,8 +704,8 @@ public:
 };
 
 
-namespace DataWalkers
-{
+namespace DataWalkers {
+
 
 //
 // DLDbIdentifiers don't walk directly because they have Impl structure and use strings.
@@ -708,172 +737,134 @@ DLDbFlatIdentifier *walk(Action &operate, DLDbFlatIdentifier * &ident)
     return ident;
 }
 
+
+//
+// Walkers for the byzantine data structures of the DL universe.
+// Geez, what WERE they smoking when they invented this?
+//
+
+// DbAttributeInfos
 template<class Action>
-void walk(Action &operate, CSSM_DB_ATTRIBUTE_INFO &info)
+void enumerate(Action &operate, CssmDbAttributeInfo &info)
 {
-	operate(info);
-	switch (info.AttributeNameFormat)
-	{
+	switch (info.nameFormat()) {
 	case CSSM_DB_ATTRIBUTE_NAME_AS_STRING:
 		walk(operate, info.Label.AttributeName);
 		break;
 	case CSSM_DB_ATTRIBUTE_NAME_AS_OID:
 		walk(operate, info.Label.AttributeOID);
 		break;
-	case CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER:
 	default:
 		break;
 	}
 }
 
-template<class Action>
-void walk(Action &operate, CSSM_DB_INDEX_INFO &info)
+template <class Action>
+void walk(Action &operate, CssmDbAttributeInfo &info)
 {
 	operate(info);
-	walk(operate, info.Info);
+	enumerate(operate, info);
 }
 
-template<class Action>
-void walk(Action &operate, CSSM_DB_PARSING_MODULE_INFO &info)
+template <class Action>
+CssmDbAttributeInfo *walk(Action &operate, CssmDbAttributeInfo * &info)
 {
 	operate(info);
+	enumerate(operate, *info);
+	return info;
 }
 
-template<class Action>
-void walk(Action &operate, CSSM_DB_RECORD_ATTRIBUTE_INFO &info)
+// DbRecordAttributeInfo
+template <class Action>
+void walk(Action &operate, CssmDbRecordAttributeInfo &info)
 {
 	operate(info);
-	operate.blob(info.AttributeInfo, info.NumberOfAttributes * sizeof(*info.AttributeInfo));
-	for (uint32 ix = 0; ix < info.NumberOfAttributes; ++ix)
-		walk(operate, info.AttributeInfo[ix]);
+	enumerateArray(operate, info, &CssmDbRecordAttributeInfo::attributes);
 }
 
-template<class Action>
-void walk(Action &operate, CSSM_DB_RECORD_INDEX_INFO &info)
+template <class Action>
+CssmDbRecordAttributeInfo *walk(Action &operate, CssmDbRecordAttributeInfo * &info)
 {
 	operate(info);
-	operate.blob(info.IndexInfo, info.NumberOfIndexes * sizeof(*info.IndexInfo));
-	for (uint32 ix = 0; ix < info.NumberOfIndexes; ++ix)
-		walk(operate, info.IndexInfo[ix]);
+	enumerateArray(operate, *info, &CssmDbRecordAttributeInfo::attributes);
+	return info;
 }
 
-template<class Action>
-CSSM_DBINFO *walk(Action &operate, CSSM_DBINFO * &info)
-{
-    operate(info);
-	operate.blob(info->DefaultParsingModules, info->DefaultParsingModules ?
-		info->NumberOfRecordTypes * sizeof(*info->DefaultParsingModules) : 0);
-	if (info->DefaultParsingModules)
-	{
-		for (uint32 ix = 0; ix < info->NumberOfRecordTypes; ++ix)
-			walk(operate, info->DefaultParsingModules[ix]);
-	}
-
-	operate.blob(info->RecordAttributeNames, info->RecordAttributeNames ? 
-		info->NumberOfRecordTypes * sizeof(*info->RecordAttributeNames) : 0);
-	if (info->RecordAttributeNames)
-	{
-		for (uint32 ix = 0; ix < info->NumberOfRecordTypes; ++ix)
-			walk(operate, info->RecordAttributeNames[ix]);
-	}
-
-	operate.blob(info->RecordIndexes, info->RecordIndexes ?
-		info->NumberOfRecordTypes * sizeof(*info->RecordIndexes) : 0);
-	if (info->RecordIndexes)
-	{
-		for (uint32 ix = 0; ix < info->NumberOfRecordTypes; ++ix)
-			walk(operate, info->RecordIndexes[ix]);
-	}
-
-	walk(operate, info->AccessPath);
-    return info;
-}
-
-template<class Action>
-CSSM_NAME_LIST_PTR walk(Action &operate, CSSM_NAME_LIST_PTR &nameList)
-{
-	operate(nameList);
-	operate.blob(nameList->String, nameList->NumStrings * sizeof(*nameList->String));
-	for (uint32 ix = 0; ix < nameList->NumStrings; ++ix)
-		walk(operate, nameList->String[ix]);
-	return nameList;
-}
-
-template<class Action>
-void walk(Action &operate, CSSM_DB_SCHEMA_ATTRIBUTE_INFO &info)
-{
-	operate(info);
-	walk(operate, info.AttributeName);
-	walk(operate, info.AttributeNameID);
-}
-
-template<class Action>
-void walk(Action &operate, CSSM_DB_SCHEMA_INDEX_INFO &info)
-{
-	operate(info);
-}
-
-template<class Action>
-void walk(Action &operate, CSSM_DB_ATTRIBUTE_DATA &data)
+// DbAttributeData (Info + value vector)
+template <class Action>
+void walk(Action &operate, CssmDbAttributeData &data)
 {
 	operate(data);
-	operate(data.Info);
-	operate.blob(data.Value, data.Value ?
-		data.NumberOfValues * sizeof(*data.Value) : 0);
-	for (uint32 ix = 0; ix < data.NumberOfValues; ++ix)
-		walk(operate, data.Value[ix]);
+	walk(operate, data.info());
+	enumerateArray(operate, data, &CssmDbAttributeData::values);
 }
 
-template<class Action>
-CSSM_DB_RECORD_ATTRIBUTE_DATA *walk(Action &operate, CSSM_DB_RECORD_ATTRIBUTE_DATA *&data)
+template <class Action>
+CssmDbAttributeData *walk(Action &operate, CssmDbAttributeData * &data)
 {
 	operate(data);
-	operate.blob(data->AttributeData, data->AttributeData ?
-		data->NumberOfAttributes * sizeof(*data->AttributeData) : 0);
-	for (uint32 ix = 0; ix < data->NumberOfAttributes; ++ix)
-		walk(operate, data->AttributeData[ix]);
+	walk(operate, data->info());
+	enumerateArray(operate, *data, &CssmDbAttributeData::values);
 	return data;
 }
 
-template<class Action>
-CssmDbRecordAttributeData *walk(Action &operate, CssmDbRecordAttributeData *&data)
+// DbRecordAttributeData (array of ...datas)
+template <class Action>
+void walk(Action &operate, CssmDbRecordAttributeData &data)
 {
-	return CssmDbRecordAttributeData::overlay(walk(operate,
-		reinterpret_cast<CSSM_DB_RECORD_ATTRIBUTE_DATA *&>(data)));
+	operate(data);
+	enumerateArray(operate, data, &CssmDbRecordAttributeData::attributes);
 }
 
-template<class Action>
-void walk(Action &operate, CSSM_SELECTION_PREDICATE &predicate)
+template <class Action>
+CssmDbRecordAttributeData *walk(Action &operate, CssmDbRecordAttributeData * &data)
+{
+	operate(data);
+	enumerateArray(operate, *data, &CssmDbRecordAttributeData::attributes);
+	return data;
+}
+
+// SelectionPredicates
+template <class Action>
+CssmSelectionPredicate *walk(Action &operate, CssmSelectionPredicate * &predicate)
 {
 	operate(predicate);
-	operate(predicate.Attribute);
+	walk(operate, predicate->attribute());
+	return predicate;
 }
 
 template<class Action>
-CSSM_QUERY_PTR walk(Action &operate, CSSM_QUERY_PTR &query)
+void walk(Action &operate, CssmSelectionPredicate &predicate)
+{
+	operate(predicate);
+	walk(operate, predicate.attribute());
+}
+
+// Queries
+template <class Action>
+void walk(Action &operate, CssmQuery &query)
 {
 	operate(query);
-	operate.blob(query->SelectionPredicate, query->SelectionPredicate ?
-		query->NumSelectionPredicates * sizeof(*query->SelectionPredicate) : 0);
-	for (uint32 ix = 0; ix < query->NumSelectionPredicates; ++ix)
-		walk(operate, query->SelectionPredicate[ix]);
+	enumerateArray(operate, query, &CssmQuery::predicates);
+}
+
+template <class Action>
+CssmQuery *walk(Action &operate, CssmQuery * &query)
+{
+	operate(query);
+	enumerateArray(operate, *query, &CssmQuery::predicates);
 	return query;
 }
 
-template<class Action>
-CssmQuery *walk(Action &operate, CssmQuery *&query)
+template <class Action>
+CSSM_QUERY *walk(Action &operate, CSSM_QUERY * &query)
 {
-	return CssmQuery::overlay(walk(operate,
-		reinterpret_cast<CSSM_QUERY *&>(query)));
+	return walk(operate, CssmQuery::overlayVar(query));
 }
 
+
 } // end namespace DataWalkers
-
 } // end namespace Security
-
-#ifdef _CPP_UTILITIES
-#pragma export off
-#endif
 
 
 #endif // _H_CDSA_UTILITIES_CSSMDB

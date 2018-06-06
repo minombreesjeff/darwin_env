@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -32,11 +30,7 @@
 
 #include <security_cdsa_utilities/cssmdata.h>
 #include <security_cdsa_utilities/cssmacl.h>
-#include <security_cdsa_utilities/codesigning.h>
-
-#ifdef _CPP_ACL_CODESIGNING
-#pragma export on
-#endif
+#include <security_utilities/codesigning.h>
 
 namespace Security
 {
@@ -90,10 +84,6 @@ private:
 
 } // end namespace Security
 
-
-#ifdef _CPP_ACL_CODESIGNING
-#pragma export off
-#endif
 
 
 #endif //_H_ACL_CODESIGNING

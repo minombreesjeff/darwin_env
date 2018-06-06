@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -92,6 +90,23 @@ extern const CSSM_DB_SCHEMA_ATTRIBUTE_INFO UserTrustSchemaAttributeList[];
 extern const CSSM_DB_SCHEMA_INDEX_INFO UserTrustSchemaIndexList[];
 extern const uint32 UserTrustSchemaAttributeCount;
 extern const uint32 UserTrustSchemaIndexCount;
+
+// UnlockReferral records attributes and schema
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralType;
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralDbName;
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralDbGuid;
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralDbSSID;
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralDbSSType;
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralDbNetname;
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralKeyLabel;
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralKeyAppTag;
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralPrintName;
+extern const CSSM_DB_ATTRIBUTE_INFO kUnlockReferralAlias;
+
+extern const CSSM_DB_SCHEMA_ATTRIBUTE_INFO UnlockReferralSchemaAttributeList[];
+extern const CSSM_DB_SCHEMA_INDEX_INFO UnlockReferralSchemaIndexList[];
+extern const uint32 UnlockReferralSchemaAttributeCount;
+extern const uint32 UnlockReferralSchemaIndexCount;
 
 } // end namespace Schema
 

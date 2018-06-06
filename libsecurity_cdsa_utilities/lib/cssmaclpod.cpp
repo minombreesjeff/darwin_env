@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -27,20 +25,43 @@
 //
 // cssmaclpod - enhanced PodWrappers for ACL-related CSSM data structures
 //
-#ifdef __MWERKS__
-#define _CPP_CSSMACLPOD
-#endif
-
 #include <security_cdsa_utilities/cssmaclpod.h>
 #include <security_cdsa_utilities/cssmwalkers.h>
+#include <cstdarg>
 
 
-AuthorizationGroup::AuthorizationGroup(const AclAuthorizationSet &auths,
-	Allocator &alloc)
+//
+// AclAuthorizationSets
+//
+AclAuthorizationSet::AclAuthorizationSet(AclAuthorization auth0, AclAuthorization auth, ...)
+{
+	insert(auth0);
+
+	va_list args;
+	va_start(args, auth);
+	while (auth) {
+		insert(auth);
+		auth = va_arg(args, AclAuthorization);
+	}
+	va_end(args);
+}
+
+
+//
+// AclAuthorizationGroups
+//
+AuthorizationGroup::AuthorizationGroup(const AclAuthorizationSet &auths, Allocator &alloc)
 {
 	NumberOfAuthTags = auths.size();
 	AuthTags = alloc.alloc<CSSM_ACL_AUTHORIZATION_TAG>(NumberOfAuthTags);
 	copy(auths.begin(), auths.end(), AuthTags);	// happens to be sorted
+}
+
+AuthorizationGroup::AuthorizationGroup(CSSM_ACL_AUTHORIZATION_TAG tag, Allocator &alloc)
+{
+	AuthTags = alloc.alloc<CSSM_ACL_AUTHORIZATION_TAG>(1);
+	AuthTags[0] = tag;
+	NumberOfAuthTags = 1;
 }
 
 void AuthorizationGroup::destroy(Allocator &alloc)
@@ -72,7 +93,16 @@ void AclEntryPrototype::tag(const char *tagString)
 		EntryTag[0] = '\0';
 	else if (strlen(tagString) > CSSM_MODULE_STRING_SIZE)
 		CssmError::throwMe(CSSM_ERRCODE_INVALID_ACL_ENTRY_TAG);
-	strcpy(EntryTag, tagString);
+	else
+		strcpy(EntryTag, tagString);
+}
+
+void AclEntryPrototype::tag(const string &tagString)
+{
+	if (tagString.length() > CSSM_MODULE_STRING_SIZE)
+		CssmError::throwMe(CSSM_ERRCODE_INVALID_ACL_ENTRY_TAG);
+	else
+		memcpy(EntryTag, tagString.c_str(), tagString.length() + 1);
 }
 
 
@@ -98,20 +128,54 @@ AutoAclOwnerPrototype::allocator(Allocator &allocator)
 }
 
 
+void AutoAclEntryInfoList::size(uint32 newSize)
+{
+	assert(mAllocator);
+	mEntries = mAllocator->alloc<AclEntryInfo>(mEntries, newSize);
+	for (uint32 n = mCount; n < newSize; n++)
+		mEntries[n].clearPod();
+	mCount = newSize;
+}
+
+
+AclEntryInfo &AutoAclEntryInfoList::at(uint32 ix)
+{
+	if (ix >= mCount)
+		size(ix + 1);	// expand vector
+	return mEntries[ix];
+}
+
+
 AutoAclEntryInfoList::~AutoAclEntryInfoList()
 {
 	if (mAllocator)
 	{
 		DataWalkers::ChunkFreeWalker w(*mAllocator);
-		for (uint32 ix = 0; ix < mNumberOfAclEntries; ix++)
-			walk(w, mAclEntryInfo[ix]);
-		//DataWalkers::chunkFree(mAclEntryInfo[ix], *mAllocator);	
-		mAllocator->free(mAclEntryInfo);
+		for (uint32 ix = 0; ix < mCount; ix++)
+			walk(w, mEntries[ix]);
+		//DataWalkers::chunkFree(mEntries[ix], *mAllocator);	
+		mAllocator->free(mEntries);
 	}
 }
 
-void
-AutoAclEntryInfoList::allocator(Allocator &allocator)
+void AutoAclEntryInfoList::allocator(Allocator &allocator)
 {
 	mAllocator = &allocator;
+}
+
+
+void AutoAclEntryInfoList::add(const TypedList &subj, const AclAuthorizationSet &auths, const char *tag /* = NULL */)
+{
+	AclEntryInfo &info = at(size());
+	info.proto() = AclEntryPrototype(subj);
+	info.proto().authorization() = AuthorizationGroup(auths, allocator());
+	info.proto().tag(tag);
+	info.handle(size());
+}
+
+void AutoAclEntryInfoList::addPin(const TypedList &subj, uint32 slot)
+{
+	char tag[10];
+	snprintf(tag, sizeof(tag), "PIN%ld", slot);
+	add(subj, CSSM_ACL_AUTHORIZATION_PREAUTH(slot), tag);
 }

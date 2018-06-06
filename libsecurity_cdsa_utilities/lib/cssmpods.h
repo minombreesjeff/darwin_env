@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -32,6 +30,7 @@
 
 #include <security_utilities/utilities.h>
 #include <security_cdsa_utilities/cssmdata.h>
+#include <string>
 
 
 namespace Security {
@@ -44,6 +43,8 @@ class Guid : public PodWrapper<Guid, CSSM_GUID> {
 public:
     Guid() { /*IFDEBUG(*/ memset(this, 0, sizeof(*this)) /*)*/ ; }
     Guid(const CSSM_GUID &rGuid) { memcpy(this, &rGuid, sizeof(*this)); }
+    Guid(const char *string);
+	Guid(const std::string &s);
 
     Guid &operator = (const CSSM_GUID &rGuid)
     { memcpy(this, &rGuid, sizeof(CSSM_GUID)); return *this; }
@@ -60,7 +61,10 @@ public:
 
     static const unsigned stringRepLength = 38;	// "{x8-x4-x4-x4-x12}"
     char *toString(char buffer[stringRepLength+1]) const;	// will append \0
-    Guid(const char *string);
+	string toString() const;	// make std::string
+	
+private:
+	void parseGuid(const char *string);
 };
 
 class CssmGuidData : public CssmData {
@@ -208,20 +212,6 @@ inline bool operator != (const CSSM_QUERY_SIZE_DATA &s1, const CSSM_QUERY_SIZE_D
 class CSPOperationalStatistics : 
 	public PodWrapper<CSPOperationalStatistics, CSSM_CSP_OPERATIONAL_STATISTICS> {
 public:
-};
-
-
-//
-// User-friendli(er) DL queries.
-// @@@ Preliminary (flesh out as needed)
-//
-class DLQuery : public PodWrapper<DLQuery, CSSM_QUERY> {
-public:
-    DLQuery() { /*IFDEBUG(*/ memset(this, 0, sizeof(*this)) /*)*/ ; }
-    DLQuery(const CSSM_QUERY &q) { memcpy(this, &q, sizeof(*this)); }
-
-    DLQuery &operator = (const CSSM_QUERY &q)
-    { memcpy(this, &q, sizeof(*this)); return *this; }
 };
 
 

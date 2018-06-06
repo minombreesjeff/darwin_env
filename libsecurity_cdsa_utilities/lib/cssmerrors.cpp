@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -35,13 +33,25 @@
 namespace Security {
 
 
-CssmError::CssmError(CSSM_RETURN err) : error(err) { }
+CssmError::CssmError(CSSM_RETURN err) : error(err)
+{
+	IFDEBUG(debugDiagnose(this));
+}
 
 
 const char *CssmError::what() const throw ()
 {
 	return "CSSM exception";
 }
+
+#if !defined(NDEBUG)
+extern "C" const char *cssmErrorString(OSStatus status);
+
+void CssmError::debugDiagnose(const void *id) const
+{
+	secdebug("exception", "%p CSSM %s (0x%lx)", id, cssmErrorString(error), error);
+}
+#endif //NDEBUG
 
 
 OSStatus CssmError::osStatus() const

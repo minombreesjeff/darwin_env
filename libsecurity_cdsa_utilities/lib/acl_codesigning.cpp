@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -27,10 +25,6 @@
 //
 // acl_codesigning - ACL subject for signature of calling application
 //
-#ifdef __MWERKS__
-#define _CPP_ACL_CODESIGNING
-#endif
-
 #include <security_cdsa_utilities/acl_codesigning.h>
 #include <security_cdsa_utilities/cssmdata.h>
 #include <security_utilities/endian.h>
@@ -102,15 +96,19 @@ CodeSignatureAclSubject *CodeSignatureAclSubject::Maker::make(const TypedList &l
 		ListElement *elem[3];
 		crack(list, 3, elem, 
 			CSSM_LIST_ELEMENT_WORDID, CSSM_LIST_ELEMENT_DATUM, CSSM_LIST_ELEMENT_DATUM);
+		u_int32_t sigType = *elem[0];
+		CssmData &sigData(*elem[1]);
 		CssmData &commentData(*elem[2]);
-		return new CodeSignatureAclSubject(alloc, signer.restore(*elem[0], *elem[1]), 
-			commentData.data(), commentData.length());
+		return new CodeSignatureAclSubject(alloc,
+			signer.restore(sigType, sigData), commentData.data(), commentData.length());
 	} else {
 		// signature type: int, signature data: datum [no comment]
 		ListElement *elem[2];
 		crack(list, 2, elem, 
 			CSSM_LIST_ELEMENT_WORDID, CSSM_LIST_ELEMENT_DATUM);
-		return new CodeSignatureAclSubject(alloc, signer.restore(*elem[0], *elem[1]));
+		u_int32_t sigType = *elem[0];
+		CssmData &sigData(*elem[1]);
+		return new CodeSignatureAclSubject(alloc, signer.restore(sigType, sigData));
 	}
 }
 

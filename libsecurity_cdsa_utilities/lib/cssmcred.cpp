@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -66,6 +64,19 @@ bool SampleGroup::collect(CSSM_SAMPLE_TYPE sampleType, list<CssmSample> &matches
 }
 
 
+//
+// AccessCredentials
+//
+void AccessCredentials::tag(const char *tagString)
+{
+	if (tagString == NULL)
+		EntryTag[0] = '\0';
+	else if (strlen(tagString) > CSSM_MODULE_STRING_SIZE)
+		CssmError::throwMe(CSSM_ERRCODE_INVALID_ACL_ENTRY_TAG);
+	else
+		strcpy(EntryTag, tagString);
+}
+
 
 //
 // AutoCredentials self-constructing credentials structure
@@ -78,6 +89,7 @@ AutoCredentials::AutoCredentials(Allocator &alloc) : allocator(alloc)
 AutoCredentials::AutoCredentials(Allocator &alloc, uint32 nSamples) : allocator(alloc)
 {
 	init();
+	getSample(nSamples - 1);	// extend array to nSamples elements
 }
 
 void AutoCredentials::init()

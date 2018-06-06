@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -27,10 +25,6 @@
 //
 // acl_threshold - Threshold-based group ACL subjects
 //
-#ifdef __MWERKS__
-#define _CPP_ACL_THRESHOLD
-#endif
-
 #include <security_cdsa_utilities/acl_threshold.h>
 #include <algorithm>
 #include <security_utilities/endian.h>
@@ -53,7 +47,9 @@ public:
     uint32 count() const { return sampleList.length() - 1; }
     const TypedList &sample(uint32 n) const
     { return TypedList::overlay(sampleList[n+1].list()); }
-    
+
+	void matched(const TypedList *) const { }	//@@@ ignore sub-matches for now
+
     const TypedList &sampleList;
 };
 
@@ -133,7 +129,7 @@ ThresholdAclSubject *ThresholdAclSubject::Maker::make(Version, Reader &pub, Read
 
 ThresholdAclSubject::ThresholdAclSubject(uint32 n, uint32 k,
     const AclSubjectVector &subSubjects)
-: SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_THRESHOLD, CSSM_SAMPLE_TYPE_THRESHOLD),
+: SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_THRESHOLD),
   minimumNeeded(k), totalSubjects(n), elements(subSubjects)
 {
 }

@@ -299,6 +299,19 @@ newAttribute(`UISs', TrustedPolicy, kSecTrustPolicyAttr, "TrustedPolicy", 0, NUL
 newAttribute(`  Ss', PrintName, kSecLabelItemAttr, "PrintName", 0, NULL, BLOB)
 endNewClass()
 
+startNewClass(UnlockReferral)
+newAttribute(`UISs', Type, kSecReferralTypeAttr, "Type", 0, NULL, UINT32)
+newAttribute(`UISs', DbName, kSecReferralDbNameAttr, "DbName", 0, NULL, STRING)
+newAttribute(`UISs', DbNetname, kSecReferralDbNetnameAttr, "DbNetname", 0, NULL, BLOB)
+newAttribute(`UISs', DbGuid, kSecReferralDbGuidAttr, "DbGuid", 0, NULL, BLOB)
+newAttribute(`UISs', DbSSID, kSecReferralDbSSIDAttr, "DbSSID", 0, NULL, UINT32)
+newAttribute(`UISs', DbSSType, kSecReferralDbSSTypeAttr, "DbSSType", 0, NULL, UINT32)
+newAttribute(` ISs', KeyLabel, kSecReferralKeyLabelAttr, "KeyLabel", 0, NULL, BLOB)
+newAttribute(` ISs', KeyAppTag, kSecReferralKeyAppTagAttr, "KeyAppTag", 0, NULL, BLOB)
+newAttribute(`  Ss', PrintName, kSecLabelItemAttr, "PrintName", 0, NULL, BLOB)
+newAttribute(`  Ss', Alias, kSecAliasItemAttr, "Alias", 0, NULL, BLOB)
+endNewClass()
+
 
 divert(3)
 static const CSSM_DB_RECORD_ATTRIBUTE_INFO Attributes[] =
@@ -407,8 +420,31 @@ attributeInfo(SecKeychainAttrType attrType)
 	/* Unique UserTrust attributes */
 	case kSecTrustCertAttr: return kUserTrustTrustedCertificate;
 	case kSecTrustPolicyAttr: return kUserTrustTrustedPolicy;
-    default: MacOSError::throwMe(errSecNoSuchAttr); // @@@ Not really but whatever.
+	/* Unique UnlockReferral attributes */
+	case kSecReferralTypeAttr: return kUnlockReferralType;
+	case kSecReferralDbNameAttr: return kUnlockReferralDbName;
+	case kSecReferralDbGuidAttr: return kUnlockReferralDbGuid;
+	case kSecReferralDbSSIDAttr: return kUnlockReferralDbSSID;
+	case kSecReferralDbSSTypeAttr: return kUnlockReferralDbSSType;
+	case kSecReferralDbNetnameAttr: return kUnlockReferralDbNetname;
+	case kSecReferralKeyLabelAttr: return kUnlockReferralKeyLabel;
+	case kSecReferralKeyAppTagAttr: return kUnlockReferralKeyAppTag;
+
+	/* ??? */
+	case kSecProtectedDataItemAttr:  return kGenericProtected;
+    default:
+	{
+		if (attrType == 7)
+		{
+			return kGenericPrintName;
+		}
+		else if (attrType == 8)
+		{
+			return kGenericAlias;
+		}
+		MacOSError::throwMe(errSecNoSuchAttr);
     }
+	}
 }
 
 } // end namespace Schema

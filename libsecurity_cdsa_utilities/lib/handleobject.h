@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -118,7 +116,13 @@ public:
 
 	template <class Subtype>
 	static RefPointer<Subtype> findRefAndKill(CSSM_HANDLE handle, CSSM_RETURN error);
-
+    
+    // @@@  Remove when 4003540 is fixed
+    template <class Subtype>
+    static void findAllRefs(std::vector<CSSM_HANDLE> &refs) {
+        state().findAllRefs<Subtype>(refs);
+    }
+    
 protected:
     virtual void lock();
     virtual bool tryLock();
@@ -133,7 +137,9 @@ private:
         HandleMap::iterator locate(Handle h, CSSM_RETURN error);
         void erase(HandleObject *obj);
 		void erase(HandleMap::iterator &it);
-
+		// @@@  Remove when 4003540 is fixed
+        template <class Subtype> void findAllRefs(std::vector<CSSM_HANDLE> &refs);
+        
     private:
         HandleMap handleMap;
         uint32 sequence;
@@ -233,6 +239,27 @@ inline RefPointer<Subclass> HandleObject::findRefAndKill(CSSM_HANDLE handle,
 		}
 		Thread::yield();				// object lock failed, backoff and retry
 	}
+}
+
+//
+// @@@  Remove when 4003540 is fixed
+//
+// This is a hack to fix 3981388 and should NOT be used elsewhere.  
+// Also, do not follow this code's example: HandleObject::State methods 
+// should not implement type-specific behavior.  
+//
+template <class Subtype>
+inline void HandleObject::State::findAllRefs(std::vector<CSSM_HANDLE> &refs)
+{
+    StLock<Mutex> _(*this);
+    HandleMap::iterator it = handleMap.begin();
+    for (; it != handleMap.end(); ++it)
+    {
+        HandleObject *h = it->second;
+        Subtype *obj = dynamic_cast<Subtype *>(h);
+        if (obj)
+            refs.push_back(it->first);
+    }
 }
 
 

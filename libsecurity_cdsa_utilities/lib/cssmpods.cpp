@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -50,7 +48,23 @@ char *Guid::toString(char buffer[stringRepLength+1]) const
     return buffer;
 }
 
-Guid::Guid(const char *string)
+string Guid::toString() const
+{
+	char buffer[stringRepLength+1];
+	return toString(buffer);
+}
+
+Guid::Guid(const char *s)
+{
+	parseGuid(s);
+}
+
+Guid::Guid(const string &s)
+{
+	parseGuid(s.c_str());
+}
+
+void Guid::parseGuid(const char *string)
 {
 	// Arguably, we should be more flexible on input. But exactly what
 	// padding rules should we follow, and how should we try to interprete
@@ -128,6 +142,9 @@ bool CssmSubserviceUid::operator < (const CSSM_SUBSERVICE_UID &otherUid) const
 //
 // CryptoData & friends
 //
+CryptoDataClass::~CryptoDataClass()
+{ }
+
 CSSM_RETURN CryptoDataClass::callbackShim(CSSM_DATA *output, void *ctx)
 {
 	BEGIN_API

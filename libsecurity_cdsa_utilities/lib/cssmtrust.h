@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -33,6 +31,7 @@
 #include <security_cdsa_utilities/cssmbridge.h>
 #include <security_cdsa_utilities/cssmcert.h>
 #include <security_cdsa_utilities/cssmcred.h>
+#include <security_cdsa_utilities/cssmdb.h>
 
 
 namespace Security {
@@ -54,54 +53,6 @@ public:
     
     void setPolicies(uint32 n, CSSM_FIELD *p)
     { count() = n; policies() = CssmField::overlay(p); }
-};
-
-
-//
-// A CSSM_DL_DB_LIST wrapper.
-// Note that there is a DLDBList class elsewhere that is quite
-// unrelated to this structure.
-//
-class CssmDlDbHandle : public PodWrapper<CssmDlDbHandle, CSSM_DL_DB_HANDLE> {
-public:
-	CssmDlDbHandle(CSSM_DL_HANDLE dl, CSSM_DB_HANDLE db)
-	{ DLHandle = dl; DBHandle = db; }
-	
-	CSSM_DL_HANDLE dl() const	{ return DLHandle; }
-	CSSM_DB_HANDLE db() const	{ return DBHandle; }
-	
-	operator bool() const		{ return DLHandle && DBHandle; }
-};
-
-inline bool operator < (const CSSM_DL_DB_HANDLE &h1, const CSSM_DL_DB_HANDLE &h2)
-{
-	return h1.DLHandle < h2.DLHandle
-		|| (h1.DLHandle == h2.DLHandle && h1.DBHandle < h2.DBHandle);
-}
-
-inline bool operator == (const CSSM_DL_DB_HANDLE &h1, const CSSM_DL_DB_HANDLE &h2)
-{
-	return h1.DLHandle == h2.DLHandle && h1.DBHandle == h2.DBHandle;
-}
-
-inline bool operator != (const CSSM_DL_DB_HANDLE &h1, const CSSM_DL_DB_HANDLE &h2)
-{
-	return h1.DLHandle != h2.DLHandle || h1.DBHandle != h2.DBHandle;
-}
-
-
-class CssmDlDbList : public PodWrapper<CssmDlDbList, CSSM_DL_DB_LIST> {
-public:
-	uint32 count() const		{ return NumHandles; }
-	uint32 &count()				{ return NumHandles; }
-	CssmDlDbHandle *handles() const { return CssmDlDbHandle::overlay(DLDBHandle); }
-	CssmDlDbHandle * &handles()	{ return CssmDlDbHandle::overlayVar(DLDBHandle); }
-
-	CssmDlDbHandle &operator [] (uint32 ix) const
-	{ assert(ix < count()); return CssmDlDbHandle::overlay(DLDBHandle[ix]); }
-	
-	void setDlDbList(uint32 n, CSSM_DL_DB_HANDLE *list)
-	{ count() = n; handles() = CssmDlDbHandle::overlay(list); }
 };
 
 

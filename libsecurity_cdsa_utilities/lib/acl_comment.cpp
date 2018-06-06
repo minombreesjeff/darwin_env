@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -102,3 +100,12 @@ void CommentAclSubject::exportBlob(Writer &pub, Writer &)
 	pub.countedData(mComment, mSize);
 }
 
+
+#ifdef DEBUGDUMP
+
+void CommentAclSubject::debugDump() const
+{
+	Debug::dump("Comment[never]");
+}
+
+#endif //DEBUGDUMP

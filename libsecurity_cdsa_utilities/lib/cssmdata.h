@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -33,7 +31,7 @@
 #include <security_utilities/alloc.h>
 #include <security_utilities/refcount.h>
 #include <security_cdsa_utilities/cssmerrors.h>
-
+#include <Security/cssmerr.h>
 
 namespace Security {
 
@@ -82,7 +80,7 @@ public:
 	
 	template <class T>
 	static CssmData wrap(T *data, size_t length)
-	{ return CssmData(static_cast<void *>(data), length); }
+	{ return CssmData(const_cast<void *>(static_cast<const void *>(data)), length); }
 
 	//
 	// Automatically convert a CssmData to any pointer-to-byte-sized-type.
@@ -122,6 +120,9 @@ public:
 	
     unsigned char operator [] (size_t pos) const
     { assert(pos < Length); return Data[pos]; }
+	unsigned char &operator [] (size_t pos)
+	{ assert(pos < Length); return Data[pos]; }
+	
     void *use(size_t taken)			// logically remove some bytes
     { assert(taken <= Length); void *r = Data; Length -= taken; Data += taken; return r; }
 	
@@ -129,6 +130,8 @@ public:
 	{ Data = NULL; Length = 0; }
 
     string toString () const;	// convert to string type (no trailing null)
+	string toHex() const;		// hex string of binary blob
+	void fromHex(const char *digits); // fill myself with hex data (no allocation)
 
     operator bool () const { return Data != NULL; }
     bool operator ! () const { return Data == NULL; }
@@ -201,7 +204,7 @@ inline bool operator != (const CSSM_DATA &d1, const CSSM_DATA &d2)
 
 //
 // The following pseudo-code describes what (at minimum) is required for a class
-// to be a "PseudoData". PseudoData arguments are used in templates.
+// to be a "PseudoData". PseudoData arguments ("DataOids") are used in templates.
 //
 // class PseudoData {
 //	void *data() const ...
@@ -315,6 +318,7 @@ public:
 	
 	void *append(const CssmData &data)
 	{ return append(data.data(), data.length()); }
+
 	
 	//
 	// set() replaces current data with new, taking over ownership to the extent possible.
@@ -362,7 +366,7 @@ public:
 	void operator = (CssmOwnedData &source) { set(source); }
 	void operator = (const CSSM_DATA &source) { copy(source); }
 	
-	CssmData &get() const throw()			{ return referent; }
+	CssmData &get() const throw();
 	
 protected:
 	CssmData &referent;
@@ -462,6 +466,7 @@ public:
 	CssmPolyData(const sint32 &t) : CssmData(set(t), sizeof(t)) { }
 	CssmPolyData(const sint64 &t) : CssmData(set(t), sizeof(t)) { }
 	CssmPolyData(const double &t) : CssmData(set(t), sizeof(t)) { }
+	CssmPolyData(const CSSM_GUID &t) : CssmData(set(t), sizeof(t)) { }
 	CssmPolyData(const StringPtr s) : CssmData (reinterpret_cast<char*>(s + 1), uint32 (s[0])) {}
 };
 
@@ -536,7 +541,7 @@ public:
 	RefPointer<Container>(new Container(data.Data, data.Length, inAllocator)) {}
 	CssmBuffer(const CssmBuffer& other) : RefPointer<Container>(other) {}
 	CssmBuffer(Container *p) : RefPointer<Container>(p) {}
-	bool CssmBuffer::operator < (const CssmBuffer &other) const { return (**this) < (*other); }
+	bool operator < (const CssmBuffer &other) const { return (**this) < (*other); }
 };
 
 

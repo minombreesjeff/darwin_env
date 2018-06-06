@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -68,14 +66,18 @@ public:
 class DbName
 {
 public:
-    DbName (const char *inDbName, const CSSM_NET_ADDRESS *inDbLocation);
+    DbName (const char *inDbName = NULL, const CSSM_NET_ADDRESS *inDbLocation = NULL);
     DbName(const DbName &other);
     DbName &operator =(const DbName &other);
     ~DbName ();
-    const string &dbName() const { return mDbName; }
+	const char *dbName() const { return mDbNameValid ? mDbName.c_str() : NULL; }
     const CssmNetAddress *dbLocation() const { return mDbLocation; }
     bool operator <(const DbName &other) const
     {
+		// invalid is always smaller than valid
+		if (!mDbNameValid || !other.mDbNameValid)
+			return mDbNameValid < other.mDbNameValid;
+	
         // If mDbNames are not equal return whether our mDbName is less than others mDbName.
         if (mDbName != other.mDbName)
             return mDbName < other.mDbName;
@@ -98,6 +100,7 @@ public:
 
 private:
     string mDbName;
+	bool mDbNameValid;
     CssmNetAddress *mDbLocation;
 };
 

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -27,10 +25,6 @@
 //
 // acl_password - password-based ACL subject types
 //
-#ifdef __MWERKS__
-#define _CPP_ACL_PASSWORD
-#endif
-
 #include <security_cdsa_utilities/acl_password.h>
 #include <security_utilities/debugging.h>
 #include <security_utilities/endian.h>
@@ -38,29 +32,21 @@
 
 
 //
-// Construct a password ACL subject
+// PasswordAclSubject always pre-loads its secret, and thus never has to
+// "get" its secret. If we ever try, it's a bug.
 //
-PasswordAclSubject::PasswordAclSubject(Allocator &alloc, const CssmData &password)
-    : SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_PASSWORD, CSSM_SAMPLE_TYPE_PASSWORD),
-    allocator(alloc), mPassword(alloc, password)
-{ }
-
-PasswordAclSubject::PasswordAclSubject(Allocator &alloc, CssmManagedData &password)
-    : SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_PASSWORD, CSSM_SAMPLE_TYPE_PASSWORD),
-    allocator(alloc), mPassword(alloc, password)
-{ }
-
-
-//
-// Validate a credential set against this subject
-//
-bool PasswordAclSubject::validate(const AclValidationContext &context,
-    const TypedList &sample) const
+bool PasswordAclSubject::getSecret(const AclValidationContext &context,
+	const TypedList &sample, CssmOwnedData &secret) const
 {
-	if (sample[1].type() != CSSM_LIST_ELEMENT_DATUM)
+	switch (sample.length()) {
+	case 1:
+		return false;	// no password in sample
+	case 2:
+		secret = sample[1];
+		return true;
+	default:
 		CssmError::throwMe(CSSM_ERRCODE_INVALID_SAMPLE_VALUE);
-    const CssmData &password = sample[1];
-    return password == mPassword;
+	}
 }
 
 
@@ -79,16 +65,27 @@ CssmList PasswordAclSubject::toList(Allocator &alloc) const
 //
 PasswordAclSubject *PasswordAclSubject::Maker::make(const TypedList &list) const
 {
-	ListElement *password;
-	crack(list, 1, &password, CSSM_LIST_ELEMENT_DATUM);
-	return new PasswordAclSubject(Allocator::standard(Allocator::sensitive), *password);
+    Allocator &alloc = Allocator::standard(Allocator::sensitive);
+	switch (list.length()) {
+	case 1:
+		return new PasswordAclSubject(alloc, true);
+	case 2:
+		{
+			ListElement *password;
+			crack(list, 1, &password, CSSM_LIST_ELEMENT_DATUM);
+			return new PasswordAclSubject(alloc, password->data());
+		}
+	default:
+		CssmError::throwMe(CSSM_ERRCODE_INVALID_ACL_SUBJECT_VALUE);
+	}
 }
 
 PasswordAclSubject *PasswordAclSubject::Maker::make(Version, Reader &pub, Reader &priv) const
 {
     Allocator &alloc = Allocator::standard(Allocator::sensitive);
 	const void *data; uint32 length; priv.countedData(data, length);
-	return new PasswordAclSubject(alloc, CssmAutoData(alloc, data, length));
+	CssmAutoData passwordData(alloc, data, length);
+	return new PasswordAclSubject(alloc, passwordData);
 }
 
 
@@ -97,12 +94,12 @@ PasswordAclSubject *PasswordAclSubject::Maker::make(Version, Reader &pub, Reader
 //
 void PasswordAclSubject::exportBlob(Writer::Counter &pub, Writer::Counter &priv)
 {
-	priv.countedData(mPassword);
+	priv.countedData(secret());
 }
 
 void PasswordAclSubject::exportBlob(Writer &pub, Writer &priv)
 {
-	priv.countedData(mPassword);
+	priv.countedData(secret());
 }
 
 
@@ -110,8 +107,8 @@ void PasswordAclSubject::exportBlob(Writer &pub, Writer &priv)
 
 void PasswordAclSubject::debugDump() const
 {
-	Debug::dump("Password ");
-	Debug::dumpData(mPassword.data(), mPassword.length());
+	Debug::dump("Password");
+	SecretAclSubject::debugDump();
 }
 
 #endif //DEBUGDUMP

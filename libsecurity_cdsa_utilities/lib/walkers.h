@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -29,11 +27,15 @@
 //
 // Very briefly, this facility allows for deep traversals of (potentially) recursive
 // data structures through templated structure "walkers." Standard operations include
-// deep copying to a contiguous memory buffer, size calculation, and reconstitution
-// after relocation (e.g. via IPC). You can add other operations (e.g. scattered deep
+// deep copying to a contiguous memory buffer, size calculation, deep freeing, reconstitution
+// after relocation (e.g. via IPC), and others. You can add other operations (e.g. scattered deep
 // copy, debug dumping, etc.) by defining operations classes and applying them to the
 // existing walkers. You can also extend the reach of the facility to new data structures
 // by writing appropriate walker functions for them.
+//
+// NOTE: We no longer have a default walker for flat structures. You must define
+// a walk(operate, foo * &) function for every data type encountered during a walk
+// or you will get compile-time errors.
 //
 // For more detailed rules and regulations, see the accompanying documentation.
 //
@@ -62,7 +64,10 @@ namespace DataWalkers {
 
 
 //
-// Standard operators for sizing, copying, and reinflating
+// SizeWalker simply walks a structure and calculates how many bytes
+// CopyWalker would use to make a flat copy. This is naturally at least
+// the sum of all relevant sizes, but can be more due to alignment and
+// counting overhead.
 //
 class SizeWalker : public LowLevelMemoryUtilities::Writer::Counter {
 public:
@@ -83,6 +88,12 @@ public:
     static const bool needsSize = true;
 };
 
+
+//
+// CopyWalker makes a deep, flat copy of a structure. The result will work
+// just like the original (with all elements recursively copied), except that
+// it occupies contiguous memory.
+//
 class CopyWalker : public LowLevelMemoryUtilities::Writer {
 public:
     CopyWalker() { }
@@ -109,6 +120,12 @@ public:
     static const bool needsSize = true;
 };
 
+
+//
+// Walk a structure and apply a constant linear shift to all pointers
+// encountered. This is useful when a structure and its deep components
+// have been linearly shifted by something (say, an IPC transit).
+//
 class ReconstituteWalker {
 public:
     ReconstituteWalker(off_t offset) : mOffset(offset) { }
@@ -138,6 +155,11 @@ private:
     off_t mOffset;
 };
 
+
+//
+// Make an element-by-element copy of a structure. Each pointer followed
+// uses a separate allocation for its pointed-to storage.
+//
 class ChunkCopyWalker {
 public:
     ChunkCopyWalker(Allocator &alloc = Allocator::standard()) : allocator(alloc) { }
@@ -169,6 +191,12 @@ public:
     static const bool needsSize = true;
 };
 
+
+//
+// Walk a structure and call an Allocator to separate free each node.
+// This is safe for non-trees (i.e. shared subsidiary nodes); such will
+// only be freed once.
+//
 class ChunkFreeWalker {
 public:
     ChunkFreeWalker(Allocator &alloc = Allocator::standard()) : allocator(alloc) { }
@@ -201,7 +229,8 @@ private:
 
 
 //
-// Stand-alone operations for a single structure web
+// Stand-alone operations for a single structure web.
+// These simply create, use, and discard their operator objects internally.
 //
 template <class T>
 size_t size(T obj)
@@ -223,8 +252,8 @@ T *copy(const T *obj, void *addr)
     if (obj == NULL)
         return NULL;
     CopyWalker w(addr);
-    walk(w, const_cast<T *>(obj));
-    return reinterpret_cast<T *>(addr);
+	walk(w, const_cast<T * &>(obj));
+	return const_cast<T *>(obj);
 }
 
 template <class T>
@@ -241,21 +270,6 @@ T *copy(const T *obj, Allocator &alloc, size_t size)
     return copy(obj, alloc.malloc(size));
 }
 
-template <class T>
-void copy(const T *obj, Allocator &alloc, CssmData &data)
-{
-    if (obj == NULL) {
-        data.Length = 0;
-        return;
-    }
-    if (data.data() == NULL) {
-        size_t length = size(obj);
-        data = CssmData(alloc.malloc(length), length);
-    } else
-        assert(size(obj) <= data.length());
-    copy(obj, data.data());
-}
-
 
 template <class T>
 void relocate(T *obj, T *base)
@@ -267,25 +281,52 @@ void relocate(T *obj, T *base)
 }
 
 
+//
+// chunkCopy and chunkFree can take pointer and non-pointer arguments.
+// Don't try to declare the T arguments const (overload resolution will
+// mess you over if you try). Just take const and nonconst Ts and take
+// the const away internally.
+//
 template <class T>
-T *chunkCopy(const T *obj, Allocator &alloc = Allocator::standard())
+typename Nonconst<T>::Type *chunkCopy(T *obj, Allocator &alloc = Allocator::standard())
 {
 	if (obj) {
 		ChunkCopyWalker w(alloc);
-		return walk(w, const_cast<T *>(obj));
+		return walk(w, unconst_ref_cast<T *>(obj));
 	} else
 		return NULL;
 }
 
 template <class T>
-void chunkFree(const T *obj, Allocator &alloc = Allocator::standard())
+T chunkCopy(T obj, Allocator &alloc = Allocator::standard())
+{
+	ChunkCopyWalker w(alloc);
+	walk(w, obj);
+	return obj;
+}
+
+template <class T>
+void chunkFree(T *obj, Allocator &alloc = Allocator::standard())
 {
     if (obj) {
 		ChunkFreeWalker w(alloc);
-		walk(w, const_cast<T *>(obj));
+		walk(w, unconst_ref_cast<T *>(obj));
 	}
 }
 
+template <class T>
+void chunkFree(const T &obj, Allocator &alloc = Allocator::standard())
+{
+	ChunkFreeWalker w(alloc);
+	walk(w, obj);
+}
+
+
+//
+// Copier combines SizeWalker and CopyWalker into one operational package.
+// this is useful if you need both the copy and its size (and don't want
+// to re-run size()). Copier (like copy()) only applies to one object.
+//
 template <class T>
 class Copier {
 public:
@@ -299,7 +340,7 @@ public:
 #if BUG_GCC
             mValue = reinterpret_cast<T *>(alloc.malloc(mLength));
 #else
-            mValue = alloc.malloc<T>(mLength);
+			mValue = alloc.malloc<T>(mLength);
 #endif
             mValue = copy(obj, mValue);
         }

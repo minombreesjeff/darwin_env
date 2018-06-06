@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -27,10 +25,6 @@
 //
 // acl_protectedpw - protected-path password-based ACL subject types.
 //
-#ifdef __MWERKS__
-#define _CPP_ACL_PASSWORD
-#endif
-
 #include <security_cdsa_utilities/acl_protectedpw.h>
 #include <security_utilities/debugging.h>
 #include <algorithm>
@@ -40,12 +34,12 @@
 // Construct a password ACL subject
 //
 ProtectedPasswordAclSubject::ProtectedPasswordAclSubject(Allocator &alloc, const CssmData &password)
-    : SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_PROTECTED_PASSWORD, CSSM_SAMPLE_TYPE_PROTECTED_PASSWORD),
+    : SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_PROTECTED_PASSWORD),
     allocator(alloc), mPassword(alloc, password)
 { }
 
 ProtectedPasswordAclSubject::ProtectedPasswordAclSubject(Allocator &alloc, CssmManagedData &password)
-    : SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_PROTECTED_PASSWORD, CSSM_SAMPLE_TYPE_PROTECTED_PASSWORD),
+    : SimpleAclSubject(CSSM_ACL_SUBJECT_TYPE_PROTECTED_PASSWORD),
     allocator(alloc), mPassword(alloc, password)
 { }
 

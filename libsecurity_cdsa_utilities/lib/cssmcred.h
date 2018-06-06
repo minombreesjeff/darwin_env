@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -51,7 +49,6 @@ public:
 	TypedList &value() { return TypedList::overlay(TypedSample); }
 	const TypedList &value() const { return TypedList::overlay(TypedSample); }
 	operator TypedList & () { return value(); }
-	operator const TypedList & () const { return value(); }
 	
 	const CssmSubserviceUid *verifier() const { return CssmSubserviceUid::overlay(Verifier); }
 	CssmSubserviceUid * &verifier()
@@ -60,10 +57,16 @@ public:
 
 class SampleGroup : public PodWrapper<SampleGroup, CSSM_SAMPLEGROUP> {
 public:
-	uint32 length() const { return NumberOfSamples; }
+	SampleGroup() { clearPod(); }
+	SampleGroup(CssmSample &single)	{ NumberOfSamples = 1; Samples = &single; }
 
-	const CssmSample &operator [] (uint32 n) const
-	{ assert(n < length()); return CssmSample::overlay(Samples[n]); }
+	uint32 size() const { return NumberOfSamples; }
+	uint32 length() const { return size(); }	// legacy; prefer size()
+	CssmSample *&samples() { return CssmSample::overlayVar(const_cast<CSSM_SAMPLE *&>(Samples)); }
+	CssmSample *samples() const { return CssmSample::overlay(const_cast<CSSM_SAMPLE *>(Samples)); }
+
+	CssmSample &operator [] (uint32 ix) const
+	{ assert(ix < size()); return samples()[ix]; }
 	
 public:
 	// extract all samples of a given sample type. return true if any found
@@ -78,11 +81,22 @@ public:
 class AccessCredentials : public PodWrapper<AccessCredentials, CSSM_ACCESS_CREDENTIALS> {
 public:
 	AccessCredentials() { clearPod(); }
+	explicit AccessCredentials(const SampleGroup &samples, const char *tag = NULL)
+	{ this->samples() = samples; this->tag(tag); }
+	explicit AccessCredentials(const SampleGroup &samples, const std::string &tag)
+	{ this->samples() = samples; this->tag(tag); }
 	
-	const char *tag() const { return EntryTag; }
+	const char *tag() const { return EntryTag[0] ? EntryTag : NULL; }
+	std::string s_tag() const { return EntryTag; }
+	void tag(const char *tagString);
+	void tag(const std::string &tagString) { return tag(tagString.c_str()); }
 
 	SampleGroup &samples() { return SampleGroup::overlay(Samples); }
 	const SampleGroup &samples() const { return SampleGroup::overlay(Samples); }
+	
+	// pass-throughs to our SampleGroup
+	uint32 size() const { return samples().size(); }
+	CssmSample &operator [] (uint32 ix) const { return samples()[ix]; }
     
 public:
     static const AccessCredentials &null;	// all null credential
@@ -106,10 +120,13 @@ public:
 	
 	CssmSample &sample(uint32 n) { return getSample(n); }
 	
-	CssmSample &operator += (const CssmSample &sample)
+	CssmSample &append(const CssmSample &sample)
 	{ return getSample(samples().length()) = sample; }
-	TypedList &operator += (const TypedList &exhibit)
+	TypedList &append(const TypedList &exhibit)
 	{ return (getSample(samples().length()) = exhibit).value(); }
+	
+	CssmSample &operator += (const CssmSample &sample)	{ return append(sample); }
+	TypedList &operator += (const TypedList &exhibit)	{ return append(exhibit); }
 	
 private:
 	void init();
@@ -144,10 +161,7 @@ template <class Action>
 void walk(Action &operate, SampleGroup &samples)
 {
 	operate(samples);
-	operate.blob(const_cast<CSSM_SAMPLE * &>(samples.Samples),
-		samples.length() * sizeof(CSSM_SAMPLE));
-	for (uint32 n = 0; n < samples.length(); n++)
-		walk(operate, const_cast<CssmSample &>(samples[n]));
+	enumerateArray(operate, samples, &SampleGroup::samples);
 }
 
 // AccessCredentials

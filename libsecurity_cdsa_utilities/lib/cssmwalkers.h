@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -36,8 +34,30 @@
 #include <security_cdsa_utilities/cssmkey.h>
 
 
+
 namespace Security {
 namespace DataWalkers {
+
+
+//
+// There are lots of CSSM data structures that are variable-length records
+// of the form { count, pointer-to-array }. If you have a regular PodWrapper
+// for it, we can enumerate the array for you right here. Minimum requirement:
+//		size_t size() const;
+//		Element &operator [] (uint32 index);
+//      // and some Element *&foo() that returns a reference-to-array-pointer
+// and a reference walker for the element type (as returned by operator []).
+//
+template <class Action, class Record, class Element>
+void enumerateArray(Action &operate, Record &record, Element *& (Record::*pointer)())
+{
+	if (record.size()) {
+		Element *&root = (record.*pointer)();
+		operate.blob(root, record.size() * sizeof(Element));
+		for (uint32 ix = 0; ix < record.size(); ++ix)
+			walk(operate, record[ix]);
+	}
+}
 
 
 //
@@ -75,35 +95,20 @@ CSSM_DATA *walk(Action &operate, CSSM_DATA * &data)
 template <class Action>
 char *walk(Action &operate, char * &s)
 {
-	operate(s, operate.needsSize ? (strlen(s) + 1) : 0);
+	if (s)
+		operate(s, operate.needsSize ? (strlen(s) + 1) : 0);
 	return s;
 }
 
 
 //
-// We "walk" an integer by simply returning it unchanged.
-// This is a degenerate special case that makes some templated
-// uses of walking easier (notably for Context use). Note that
-// the action is never called, so operations don't need to be able
-// to cope with integer (non-ref) arguments. This is strictly for
-// notational convenience.
-//
-template <class Action>
-uint32 walk(Action &, uint32 arg)
-{
-	return arg;
-}
-
-
-//
-// Flattener functions for common CSSM data types that have internal
-// structure. (The flat ones are handled by the default above.)
+// Flattener functions for common CSSM data types that have internal structure.
 //
 template <class Action>
 CssmKey *walk(Action &operate, CssmKey * &key)
 {
 	operate(key);
-	walk(operate, static_cast<CssmData &>(*key));
+	walk(operate, key->keyData());
 	return key;
 }
 
@@ -124,11 +129,10 @@ CSSM_CRYPTO_DATA *walk(Action &operate, CSSM_CRYPTO_DATA * &data)
 { return walk(operate, CssmCryptoData::overlayVar(data)); }
 
 template <class Action>
-CSSM_PKCS5_PBKDF2_PARAMS *walk(Action &operate, CSSM_PKCS5_PBKDF2_PARAMS * &data)
+void walk(Action &operate, CSSM_PKCS5_PBKDF2_PARAMS &data)
 {
     operate(data);
-    walk(operate, data->Passphrase);
-    return data;
+    walk(operate, data.Passphrase);
 }
 
 //
@@ -168,6 +172,59 @@ CssmSubserviceUid *walk(Action &operate, CssmSubserviceUid * &ssUid)
     operate(ssUid);
 	return ssUid;
 }
+
+
+//
+// A synthetic variant of CssmData to model key derivation (input) parameters,
+// which have algorithm dependent structure. This is not likely to be useful
+// for anything else; but here's the common ancestor of all its users.
+//
+class CssmDeriveData {
+public:
+	CssmDeriveData(const CssmData &dat, CSSM_ALGORITHMS alg)
+		: baseData(dat), algorithm(alg) { }
+	
+	CssmData baseData;
+	CSSM_ALGORITHMS algorithm;
+	
+	template <class Action>
+	void enumerate(Action &operate)
+	{
+		walk(operate, baseData);
+		switch (algorithm) {
+		case CSSM_ALGID_PKCS5_PBKDF2:
+#if BUG_3762664
+			walk(operate, *baseData.interpretedAs<CSSM_PKCS5_PBKDF2_PARAMS>
+				(CSSMERR_CSP_INVALID_ATTR_ALG_PARAMS));
+#else
+			if (baseData.length() != sizeof(CSSM_PKCS5_PBKDF2_PARAMS))
+				CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_ALG_PARAMS);
+			walk(operate, *(CSSM_PKCS5_PBKDF2_PARAMS *)baseData.data());
+#endif
+			break;
+		default:
+			break;
+		}
+	}
+};
+
+
+template <class Action>
+void walk(Action &operate, CssmDeriveData &data)
+{
+	operate(data);
+	data.enumerate(operate);
+}
+
+template <class Action>
+CssmDeriveData *walk(Action &operate, CssmDeriveData * &data)
+{
+	operate(data);
+	if (data)
+		data->enumerate(operate);
+	return data;
+}
+
 
 
 } // end namespace DataWalkers

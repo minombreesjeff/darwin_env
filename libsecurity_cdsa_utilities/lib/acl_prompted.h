@@ -23,12 +23,13 @@
 
 
 //
-// acl_password - password-based ACL subject types.
+// acl_prompted - password-based validation with out-of-band prompting.
 //
-// This implements simple password-based subject types as per CSSM standard.
+// This implements simple password-based subject types with out-of-band
+// prompting (via SecurityAgent), somewhat as per the CSSM standard.
 //
-#ifndef _ACL_PASSWORD
-#define _ACL_PASSWORD
+#ifndef _ACL_PROMPTED
+#define _ACL_PROMPTED
 
 #include <security_cdsa_utilities/acl_secret.h>
 
@@ -37,39 +38,48 @@ namespace Security {
 
 
 //
-// A PasswordAclSubject simply contains its secret.
-// The environment is never consulted; we just compare against our known secret.
+// A PromptedAclSubject obtains its sample by prompting the user interactively
+// through some prompting mechanism defined in the environment.
 //
-class PasswordAclSubject : public SecretAclSubject {
+class PromptedAclSubject : public SecretAclSubject {
 public:
     CssmList toList(Allocator &alloc) const;
     
-    PasswordAclSubject(Allocator &alloc, const CssmData &password)
-		: SecretAclSubject(alloc, CSSM_ACL_SUBJECT_TYPE_PASSWORD, password) { }
-    PasswordAclSubject(Allocator &alloc, CssmManagedData &password)
-		: SecretAclSubject(alloc, CSSM_ACL_SUBJECT_TYPE_PASSWORD, password) { }
-	PasswordAclSubject(Allocator &alloc, bool cache)
-		: SecretAclSubject(alloc, CSSM_ACL_SUBJECT_TYPE_PASSWORD, cache) { }
+    PromptedAclSubject(Allocator &alloc,
+		const CssmData &prompt, const CssmData &password);
+    PromptedAclSubject(Allocator &alloc,
+		CssmManagedData &prompt, CssmManagedData &password);
+	PromptedAclSubject(Allocator &alloc, const CssmData &prompt, bool cache = false);
     
     void exportBlob(Writer::Counter &pub, Writer::Counter &priv);
     void exportBlob(Writer &pub, Writer &priv);
 	
 	IFDUMP(void debugDump() const);
+	
+public:
+	class Environment : virtual public AclValidationEnvironment {
+	public:
+		virtual bool getSecret(CssmOwnedData &secret,
+			const CssmData &prompt) const = 0;
+	};
 
 public:
     class Maker : public SecretAclSubject::Maker {
     public:
-    	Maker() : SecretAclSubject::Maker(CSSM_ACL_SUBJECT_TYPE_PASSWORD) { }
-    	PasswordAclSubject *make(const TypedList &list) const;
-    	PasswordAclSubject *make(Version, Reader &pub, Reader &priv) const;
+    	Maker() : SecretAclSubject::Maker(CSSM_ACL_SUBJECT_TYPE_PROMPTED_PASSWORD) { }
+    	PromptedAclSubject *make(const TypedList &list) const;
+    	PromptedAclSubject *make(Version, Reader &pub, Reader &priv) const;
     };
 	
 protected:
 	bool getSecret(const AclValidationContext &context,
 		const TypedList &subject, CssmOwnedData &secret) const;
+
+private:
+	CssmAutoData mPrompt;		// transparently handled prompt data
 };
 
 } // end namespace Security
 
 
-#endif //_ACL_PASSWORD
+#endif //_ACL_PROMPTED

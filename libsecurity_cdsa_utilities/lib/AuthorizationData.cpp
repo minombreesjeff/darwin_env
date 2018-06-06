@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -245,9 +243,6 @@ AuthItem::getBool(bool &value)
 bool
 AuthItem::getString(string &value)
 {
-    if (mValue.data && ( *(static_cast<char*>(mValue.data)+mValue.length-1) == '\0' ))
-    	value = string(static_cast<char*>(mValue.data), mValue.length - 1);
-    else
     	value = string(static_cast<char*>(mValue.data), mValue.length);
 	return true;
 }

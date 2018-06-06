@@ -20,10 +20,6 @@ changecom(/*, */)
 define(`startClass',
 `define(`indexIndex', 0)dnl
 define(`class', $1)dnl
-divert(1)dnl
-// $1 `attribute numbers
-enum
-{'
 divert(2)dnl
 // $1 attributes
 const CSSM_DB_SCHEMA_ATTRIBUTE_INFO $1SchemaAttributeList[] =
@@ -34,10 +30,7 @@ const CSSM_DB_SCHEMA_INDEX_INFO $1SchemaIndexList[] =
 {')
 
 define(`endClass',
-`divert(1)dnl
-};
-
-divert(2)dnl
+`divert(2)dnl
 };
 
 const uint32 class()SchemaAttributeCount = sizeof(class()SchemaAttributeList) / sizeof(CSSM_DB_SCHEMA_ATTRIBUTE_INFO);
@@ -73,9 +66,7 @@ attributeBody($*);
 ')
 
 define(`attribute',
-`divert(1)dnl
-    $3,
-divert(2)dnl
+`divert(2)dnl
     { $3, $4, { $5, $6 }, CSSM_DB_ATTRIBUTE_FORMAT_$7 },
 divert(-1)
 ifelse(index(`$1',`S'),-1,`',
@@ -100,38 +91,39 @@ divert(0)dnl
  */
 
 `#include <security_cdsa_utilities/KeySchema.h>'
+#include <Security/SecKey.h>
 
 namespace KeySchema {
 
 divert(-1)
 startClass(Key)
-attribute(`  Ss', KeyClass, kKeyClass, "KeyClass", 0, NULL, UINT32)
-attribute(`  Ss', PrintName, kPrintName, "PrintName", 0, NULL, BLOB)
-attribute(`  Ss', Alias, kAlias, "Alias", 0, NULL, BLOB)
-attribute(`  Ss', Permanent, kPermanent, "Permanent", 0, NULL, UINT32)
-attribute(`  Ss', Private, kPrivate, "Private", 0, NULL, UINT32)
-attribute(`  Ss', Modifiable, kModifiable, "Modifiable", 0, NULL, UINT32)
-attribute(`UISs', Label, kLabel, "Label", 0, NULL, BLOB)
-attribute(`U Ss', ApplicationTag, kApplicationTag, "ApplicationTag", 0, NULL, BLOB)
-attribute(`U Ss', KeyCreator, kKeyCreator, "KeyCreator", 0, NULL, BLOB)
-attribute(`U Ss', KeyType, kKeyType, "KeyType", 0, NULL, UINT32)
-attribute(`U Ss', KeySizeInBits, kKeySizeInBits, "KeySizeInBits", 0, NULL, UINT32)
-attribute(`U Ss', EffectiveKeySize, kEffectiveKeySize, "EffectiveKeySize", 0, NULL, UINT32)
-attribute(`U Ss', StartDate, kStartDate, "StartDate", 0, NULL, BLOB)
-attribute(`U Ss', EndDate, kEndDate, "EndDate", 0, NULL, BLOB)
-attribute(`  Ss', Sensitive, kSensitive, "Sensitive", 0, NULL, UINT32)
-attribute(`  Ss', AlwaysSensitive, kAlwaysSensitive, "AlwaysSensitive", 0, NULL, UINT32)
-attribute(`  Ss', Extractable, kExtractable, "Extractable", 0, NULL, UINT32)
-attribute(`  Ss', NeverExtractable, kNeverExtractable, "NeverExtractable", 0, NULL, UINT32)
-attribute(` ISs', Encrypt, kEncrypt, "Encrypt", 0, NULL, UINT32)
-attribute(` ISs', Decrypt, kDecrypt, "Decrypt", 0, NULL, UINT32)
-attribute(` ISs', Derive, kDerive, "Derive", 0, NULL, UINT32)
-attribute(` ISs', Sign, kSign, "Sign", 0, NULL, UINT32)
-attribute(` ISs', Verify, kVerify, "Verify", 0, NULL, UINT32)
-attribute(` ISs', SignRecover, kSignRecover, "SignRecover", 0, NULL, UINT32)
-attribute(` ISs', VerifyRecover, kVerifyRecover, "VerifyRecover", 0, NULL, UINT32)
-attribute(` ISs', Wrap, kWrap, "Wrap", 0, NULL, UINT32)
-attribute(` ISs', Unwrap, kUnwrap, "Unwrap", 0, NULL, UINT32)
+attribute(`  Ss', KeyClass, kSecKeyKeyClass, "KeyClass", 0, NULL, UINT32)
+attribute(`  Ss', PrintName, kSecKeyPrintName, "PrintName", 0, NULL, BLOB)
+attribute(`  Ss', Alias, kSecKeyAlias, "Alias", 0, NULL, BLOB)
+attribute(`  Ss', Permanent, kSecKeyPermanent, "Permanent", 0, NULL, UINT32)
+attribute(`  Ss', Private, kSecKeyPrivate, "Private", 0, NULL, UINT32)
+attribute(`  Ss', Modifiable, kSecKeyModifiable, "Modifiable", 0, NULL, UINT32)
+attribute(`UISs', Label, kSecKeyLabel, "Label", 0, NULL, BLOB)
+attribute(`U Ss', ApplicationTag, kSecKeyApplicationTag, "ApplicationTag", 0, NULL, BLOB)
+attribute(`U Ss', KeyCreator, kSecKeyKeyCreator, "KeyCreator", 0, NULL, BLOB)
+attribute(`U Ss', KeyType, kSecKeyKeyType, "KeyType", 0, NULL, UINT32)
+attribute(`U Ss', KeySizeInBits, kSecKeyKeySizeInBits, "KeySizeInBits", 0, NULL, UINT32)
+attribute(`U Ss', EffectiveKeySize, kSecKeyEffectiveKeySize, "EffectiveKeySize", 0, NULL, UINT32)
+attribute(`U Ss', StartDate, kSecKeyStartDate, "StartDate", 0, NULL, BLOB)
+attribute(`U Ss', EndDate, kSecKeyEndDate, "EndDate", 0, NULL, BLOB)
+attribute(`  Ss', Sensitive, kSecKeySensitive, "Sensitive", 0, NULL, UINT32)
+attribute(`  Ss', AlwaysSensitive, kSecKeyAlwaysSensitive, "AlwaysSensitive", 0, NULL, UINT32)
+attribute(`  Ss', Extractable, kSecKeyExtractable, "Extractable", 0, NULL, UINT32)
+attribute(`  Ss', NeverExtractable, kSecKeyNeverExtractable, "NeverExtractable", 0, NULL, UINT32)
+attribute(` ISs', Encrypt, kSecKeyEncrypt, "Encrypt", 0, NULL, UINT32)
+attribute(` ISs', Decrypt, kSecKeyDecrypt, "Decrypt", 0, NULL, UINT32)
+attribute(` ISs', Derive, kSecKeyDerive, "Derive", 0, NULL, UINT32)
+attribute(` ISs', Sign, kSecKeySign, "Sign", 0, NULL, UINT32)
+attribute(` ISs', Verify, kSecKeyVerify, "Verify", 0, NULL, UINT32)
+attribute(` ISs', SignRecover, kSecKeySignRecover, "SignRecover", 0, NULL, UINT32)
+attribute(` ISs', VerifyRecover, kSecKeyVerifyRecover, "VerifyRecover", 0, NULL, UINT32)
+attribute(` ISs', Wrap, kSecKeyWrap, "Wrap", 0, NULL, UINT32)
+attribute(` ISs', Unwrap, kSecKeyUnwrap, "Unwrap", 0, NULL, UINT32)
 endClass()
 
 } // end namespace KeySchema

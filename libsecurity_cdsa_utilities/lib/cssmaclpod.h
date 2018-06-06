@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -38,7 +36,19 @@ namespace Security {
 
 // a nicer name for an authorization tag
 typedef CSSM_ACL_AUTHORIZATION_TAG AclAuthorization;
-typedef std::set<AclAuthorization> AclAuthorizationSet;
+
+
+//
+// An STL set of authorization tags, with some convenience features
+//
+class AclAuthorizationSet : public std::set<AclAuthorization> {
+public:
+	AclAuthorizationSet() { }
+	AclAuthorizationSet(AclAuthorization auth) { insert(auth); }
+	AclAuthorizationSet(AclAuthorization *authBegin, AclAuthorization *authEnd)
+		: set<AclAuthorization>(authBegin, authEnd) { }
+	AclAuthorizationSet(AclAuthorization a1, AclAuthorization a2, ...);	// list of auths, end with zero
+};
 
 
 //
@@ -46,16 +56,16 @@ typedef std::set<AclAuthorization> AclAuthorizationSet;
 //
 class AuthorizationGroup : public PodWrapper<AuthorizationGroup, CSSM_AUTHORIZATIONGROUP> {
 public:
-	AuthorizationGroup() { NumberOfAuthTags = 0; }
-	AuthorizationGroup(AclAuthorization auth);
-	
-	explicit AuthorizationGroup(const AclAuthorizationSet &, Allocator &alloc);
+	AuthorizationGroup() { NumberOfAuthTags = 0; }	
+	AuthorizationGroup(const AclAuthorizationSet &, Allocator &alloc);
+	AuthorizationGroup(AclAuthorization tag, Allocator &alloc);
 	void destroy(Allocator &alloc);
 	
     bool empty() const			{ return NumberOfAuthTags == 0; }
+	unsigned int size() const	{ return NumberOfAuthTags; }
 	unsigned int count() const	{ return NumberOfAuthTags; }
 	CSSM_ACL_AUTHORIZATION_TAG operator [] (unsigned ix) const
-	{ assert(ix < count()); return AuthTags[ix]; }
+	{ assert(ix < size()); return AuthTags[ix]; }
 	
 	bool contains(CSSM_ACL_AUTHORIZATION_TAG tag) const;
 	operator AclAuthorizationSet () const;
@@ -72,10 +82,16 @@ public:
 	
 	TypedList &subject() { return TypedList::overlay(TypedSubject); }
 	const TypedList &subject() const { return TypedList::overlay(TypedSubject); }
+
 	bool delegate() const { return Delegate; }
-	char *tag() { return EntryTag; }
-	const char *tag() const { return EntryTag; }
+	void delegate(bool d) { Delegate = d; }
+
+	char *tag() { return EntryTag[0] ? EntryTag : NULL; }
 	void tag(const char *tagString);
+	void tag(const std::string &tagString);
+	const char *tag() const { return EntryTag[0] ? EntryTag : NULL; }
+	std::string s_tag() const { return EntryTag; }
+
 	AuthorizationGroup &authorization() { return AuthorizationGroup::overlay(Authorization); }
 	const AuthorizationGroup &authorization() const
 	{ return AuthorizationGroup::overlay(Authorization); }
@@ -85,17 +101,22 @@ class AclOwnerPrototype : public PodWrapper<AclOwnerPrototype, CSSM_ACL_OWNER_PR
 public:
 	AclOwnerPrototype() { clearPod(); }
 	explicit AclOwnerPrototype(const AclEntryPrototype &proto)
-	{ TypedSubject = proto.subject(); Delegate = proto.delegate(); }
-	AclOwnerPrototype(const CSSM_LIST &subj, bool delegate = false)
-	{ TypedSubject = subj; Delegate = delegate; }
+	{ TypedSubject = proto.subject(); delegate(proto.delegate()); }
+	AclOwnerPrototype(const CSSM_LIST &subj, bool del = false)
+	{ TypedSubject = subj; delegate(del); }
 	
 	TypedList &subject() { return TypedList::overlay(TypedSubject); }
 	const TypedList &subject() const { return TypedList::overlay(TypedSubject); }
 	bool delegate() const { return Delegate; }
+	void delegate(bool d) { Delegate = d; }
 };
 
 class AclEntryInfo : public PodWrapper<AclEntryInfo, CSSM_ACL_ENTRY_INFO> {
 public:
+	AclEntryInfo() { clearPod(); }
+	AclEntryInfo(const AclEntryPrototype &prot, CSSM_ACL_HANDLE h = 0)
+	{ proto() = prot; handle() = h; }
+
 	AclEntryPrototype &proto() { return AclEntryPrototype::overlay(EntryPublicInfo); }
 	const AclEntryPrototype &proto() const
 	{ return AclEntryPrototype::overlay(EntryPublicInfo); }
@@ -105,13 +126,17 @@ public:
 
 	CSSM_ACL_HANDLE &handle() { return EntryHandle; }
 	const CSSM_ACL_HANDLE &handle() const { return EntryHandle; }
+	void handle(CSSM_ACL_HANDLE h) { EntryHandle = h; }
 };
 
 class AclEntryInput : public PodWrapper<AclEntryInput, CSSM_ACL_ENTRY_INPUT> {
 public:
 	AclEntryInput() { clearPod(); }
-	AclEntryInput(const AclEntryPrototype &prot)
+	AclEntryInput(const CSSM_ACL_ENTRY_PROTOTYPE &prot)
 	{ Prototype = prot; Callback = NULL; CallerContext = NULL; }
+
+	AclEntryInput &operator = (const CSSM_ACL_ENTRY_PROTOTYPE &prot)
+	{ Prototype = prot; Callback = NULL; CallerContext = NULL; return *this; }
 
 	AclEntryPrototype &proto() { return AclEntryPrototype::overlay(Prototype); }
 	const AclEntryPrototype &proto() const { return AclEntryPrototype::overlay(Prototype); }
@@ -146,11 +171,29 @@ public:
 		: mAclOwnerPrototype(NULL), mAllocator(allocator) { }
 	~AutoAclOwnerPrototype();
 	
-	operator CSSM_ACL_OWNER_PROTOTYPE *()	{ return make(); }
+	operator bool () const					{ return mAllocator; }
+	bool operator ! () const				{ return !mAllocator; }
+	
+	operator AclOwnerPrototype * ()			{ return make(); }
+	operator AclOwnerPrototype & ()			{ return *make(); }
 	AclOwnerPrototype &operator * ()		{ return *make(); }
+	
+	TypedList &subject()					{ return make()->subject(); }
+	TypedList &subject() const
+	{ assert(mAclOwnerPrototype); return mAclOwnerPrototype->subject(); }
+	bool delegate() const
+	{ assert(mAclOwnerPrototype); return mAclOwnerPrototype->delegate(); }
+	void delegate(bool d)					{ make()->delegate(d); }
 
 	void allocator(Allocator &allocator);
-
+	Allocator &allocator() const { assert(mAllocator); return *mAllocator; }
+	
+	AclOwnerPrototype &operator = (const TypedList &subj)
+	{ make()->subject() = subj; make()->delegate(false); return *mAclOwnerPrototype; }
+	
+	const AclOwnerPrototype *release()
+	{ AclOwnerPrototype *r = mAclOwnerPrototype; mAclOwnerPrototype = NULL; return r; }
+	
 private:
 	AclOwnerPrototype *mAclOwnerPrototype;
 	Allocator *mAllocator;
@@ -164,28 +207,38 @@ class AutoAclEntryInfoList {
 public:
 	// allocator can be set after construction
 	AutoAclEntryInfoList(Allocator *allocator = NULL)
-    : mAclEntryInfo(NULL), mNumberOfAclEntries(0), mAllocator(allocator) { }
+    : mEntries(NULL), mCount(0), mAllocator(allocator) { }
 	~AutoAclEntryInfoList();
 
-	operator CSSM_ACL_ENTRY_INFO_PTR *()
-	{ return reinterpret_cast<CSSM_ACL_ENTRY_INFO_PTR *>(&mAclEntryInfo); }
-	operator uint32 *() { return &mNumberOfAclEntries; }
+	operator bool () const							{ return mAllocator; }
+	bool operator ! () const						{ return !mAllocator; }
+	operator uint32 *()								{ return &mCount; }
+	operator CSSM_ACL_ENTRY_INFO ** ()				{ return reinterpret_cast<CSSM_ACL_ENTRY_INFO **>(&mEntries); }
 
 	void allocator(Allocator &allocator);
+	Allocator &allocator() const { assert(mAllocator); return *mAllocator; }
 
-	const AclEntryInfo &at(uint32 ix) const { return mAclEntryInfo[ix]; }
-	const AclEntryInfo &operator[](uint32 ix) const
-	{ assert(ix < mNumberOfAclEntries); return mAclEntryInfo[ix]; }
-	AclEntryInfo &operator[](uint32 ix)
-	{ assert(ix < mNumberOfAclEntries); return mAclEntryInfo[ix]; }
+	const AclEntryInfo &at(uint32 ix) const
+	{ assert(ix < mCount); return mEntries[ix]; }
+	const AclEntryInfo &operator [] (uint32 ix) const		{ return at(ix); }
+	AclEntryInfo &at(uint32 ix);
+	AclEntryInfo &operator[] (uint32 ix)					{ return at(ix); }
 
-	uint32 size() const { return mNumberOfAclEntries; }	// obsolete
-	uint32 count() const { return mNumberOfAclEntries; }
-	AclEntryInfo *entries() const { return mAclEntryInfo; }
+	uint32 size() const { return mCount; }
+	uint32 count() const { return mCount; }
+	AclEntryInfo *entries() const { return mEntries; }
+	
+	void size(uint32 newSize);
+	
+	// structured adders. Inputs must be chunk-allocated with our Allocator
+	void add(const TypedList &subj, const AclAuthorizationSet &auths, const char *tag = NULL);
+	void addPin(const TypedList &subj, uint32 slot);
+	
+	void release()		{ mAllocator = NULL; }
 
 private:
-	AclEntryInfo *mAclEntryInfo;
-	uint32 mNumberOfAclEntries;
+	AclEntryInfo *mEntries;
+	uint32 mCount;
 	Allocator *mAllocator;
 };
 
@@ -236,8 +289,6 @@ void walk(Action &operate, AuthorizationGroup &auth)
 	operate(auth);
 	uint32 count = auth.count();
 	operate.blob(auth.AuthTags, count * sizeof(AclAuthorization));
-	for (uint32 n = 0; n < count; n++)
-		walk(operate, auth.AuthTags[n]);
 }
 
 template <class Action>

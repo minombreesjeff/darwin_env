@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -59,8 +57,7 @@ CssmNetAddress::~CssmNetAddress()
 }
 
 DbName::DbName(const char *inDbName, const CSSM_NET_ADDRESS *inDbLocation)
-:mDbName(&Required(inDbName)),
-mDbLocation(nil)
+	: mDbName(inDbName ? inDbName : ""), mDbNameValid(inDbName), mDbLocation(NULL)
 {
     if (inDbLocation)
     {
@@ -69,8 +66,7 @@ mDbLocation(nil)
 }
 
 DbName::DbName(const DbName &other)
-:mDbName(other.mDbName),
-mDbLocation(nil)
+	: mDbName(other.mDbName), mDbNameValid(other.mDbNameValid), mDbLocation(NULL)
 {
     if (other.mDbLocation)
     {
@@ -82,6 +78,7 @@ DbName &
 DbName::operator =(const DbName &other)
 {
 	mDbName = other.mDbName;
+	mDbNameValid = other.mDbNameValid;
     if (other.mDbLocation)
     {
         mDbLocation = new CssmNetAddress(*other.mDbLocation);
@@ -92,8 +89,5 @@ DbName::operator =(const DbName &other)
 
 DbName::~DbName()
 {
-    if (mDbLocation)
-    {
-        delete mDbLocation;
-    }
+	delete mDbLocation;
 }

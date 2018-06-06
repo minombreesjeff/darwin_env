@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -37,12 +35,8 @@
 #include <security_cdsa_utilities/cssmacl.h>	// to serialize/copy access credentials
 #include <security_cdsa_utilities/cssmdates.h>
 
-#ifdef _CPP_CONTEXT
-# pragma export on
-#endif
+namespace Security {
 
-namespace Security
-{
 
 //
 // Context is a POD overlay for the CSSM_CONTEXT type. It does
@@ -219,39 +213,40 @@ protected:
 };
 
 
-namespace DataWalkers
-{
+namespace DataWalkers {
+
 
 template <class Action>
 void walk(Action &operate, CSSM_CONTEXT_ATTRIBUTE &attr)
 {
 	operate(attr);
-    switch (attr.AttributeType & CSSM_ATTRIBUTE_TYPE_MASK) {
-        case CSSM_ATTRIBUTE_DATA_CSSM_DATA:
-            walk(operate, attr.Attribute.Data); break;
+	if (attr.Attribute.String)	// non-NULL pointer (imprecise but harmless)
+		switch (attr.AttributeType & CSSM_ATTRIBUTE_TYPE_MASK) {
+		case CSSM_ATTRIBUTE_DATA_CSSM_DATA:
+			walk(operate, attr.Attribute.Data); break;
 		case CSSM_ATTRIBUTE_DATA_CRYPTO_DATA:
-            walk(operate, attr.Attribute.CryptoData); break;
-        case CSSM_ATTRIBUTE_DATA_KEY:
-            walk(operate, attr.Attribute.Key); break;
-        case CSSM_ATTRIBUTE_DATA_STRING:
-            walk(operate, attr.Attribute.String); break;
-        case CSSM_ATTRIBUTE_DATA_DATE:
-            walk(operate, attr.Attribute.Date); break;
-        case CSSM_ATTRIBUTE_DATA_RANGE:
-            walk(operate, attr.Attribute.Range); break;
-        case CSSM_ATTRIBUTE_DATA_ACCESS_CREDENTIALS:
-            walk(operate, attr.Attribute.AccessCredentials); break;
-        case CSSM_ATTRIBUTE_DATA_VERSION:
-            walk(operate, attr.Attribute.Version); break;
-        case CSSM_ATTRIBUTE_DATA_DL_DB_HANDLE:
-            walk(operate, attr.Attribute.DLDBHandle); break;
-        case CSSM_ATTRIBUTE_NONE:
-        case CSSM_ATTRIBUTE_DATA_UINT32:
-            break;
-        default:
+			walk(operate, attr.Attribute.CryptoData); break;
+		case CSSM_ATTRIBUTE_DATA_KEY:
+			walk(operate, attr.Attribute.Key); break;
+		case CSSM_ATTRIBUTE_DATA_STRING:
+			walk(operate, attr.Attribute.String); break;
+		case CSSM_ATTRIBUTE_DATA_DATE:
+			walk(operate, attr.Attribute.Date); break;
+		case CSSM_ATTRIBUTE_DATA_RANGE:
+			walk(operate, attr.Attribute.Range); break;
+		case CSSM_ATTRIBUTE_DATA_ACCESS_CREDENTIALS:
+			walk(operate, attr.Attribute.AccessCredentials); break;
+		case CSSM_ATTRIBUTE_DATA_VERSION:
+			walk(operate, attr.Attribute.Version); break;
+		case CSSM_ATTRIBUTE_DATA_DL_DB_HANDLE:
+			walk(operate, attr.Attribute.DLDBHandle); break;
+		case CSSM_ATTRIBUTE_NONE:
+		case CSSM_ATTRIBUTE_DATA_UINT32:
+			break;
+		default:
 			secdebug("walkers", "invalid attribute (%lx) in context", attr.AttributeType);
 			break;
-    }
+		}
 }
 
 template <class Action>
@@ -308,15 +303,19 @@ public:
     {
         if (p) {
             slotCount++;
-			walk(sizer, p);
+			walk(sizer, unconst_ref_cast(p));
         } else if (invalidError)
             CssmError::throwMe(invalidError);
     }
 
-	// Special version for const pointer's
-    template <class T>
-    void setup(const T *p, CSSM_RETURN invalidError = CSSM_OK)
-    { setup(const_cast<T *>(p), invalidError); }
+	void setup(uint32 n, CSSM_RETURN invalidError = CSSM_OK)
+	{
+		if (n)
+			slotCount++;
+		else if (invalidError)
+			CssmError::throwMe(invalidError);
+	}
+
 	// dynamic attribute type
     void setup(const CSSM_CONTEXT_ATTRIBUTE &attr)
 	{ slotCount++; walk(sizer, const_cast<CSSM_CONTEXT_ATTRIBUTE &>(attr)); }
@@ -333,7 +332,8 @@ public:
             Attr &attribute = attributes[slot++];
             attribute.AttributeType = type;
             attribute.AttributeLength = size(p); //@@@ needed? how/when/what for?
-			attribute = walk(copier, const_cast<T *>(p));
+            T *tmp = const_cast<T *>(p);
+            attribute = walk(copier, tmp);
         }
     }
     void put(CSSM_ATTRIBUTE_TYPE type, uint32 value)
@@ -367,9 +367,5 @@ private:
 };
 
 } // end namespace Security
-
-#ifdef _CPP_CONTEXT
-# pragma export off
-#endif
 
 #endif //_H_CONTEXT

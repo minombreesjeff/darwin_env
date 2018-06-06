@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -59,7 +57,43 @@ string CssmData::toString() const
         string(reinterpret_cast<const char *>(data()), length())
         :
         string();
-}   
+}
+
+
+//
+// Conversion from/to hex digits.
+// This could be separate functions, or Rep templates, but we just hang
+// it onto generic CssmData.
+//
+string CssmData::toHex() const
+{
+	static const char digits[] = "0123456789abcdef";
+	string result;
+	unsigned char *p = Data;
+	for (uint32 n = 0; n < length(); n++) {
+		result.push_back(digits[p[n] >> 4]);
+		result.push_back(digits[p[n] & 0xf]);
+	}
+	return result;
+}
+
+static unsigned char hexValue(char c)
+{
+	static const char digits[] = "0123456789abcdef";
+	if (const char *p = strchr(digits, tolower(c)))
+		return p - digits;
+	else
+		return 0;
+}
+
+void CssmData::fromHex(const char *hexDigits)
+{
+	size_t bytes = strlen(hexDigits) / 2;	// (discards malformed odd end)
+	length(bytes);	// (will assert if we try to grow it)
+	for (size_t n = 0; n < bytes; n++) {
+		Data[n] = hexValue(hexDigits[2*n]) << 4 | hexValue(hexDigits[2*n+1]);
+	}
+}
 
 
 //
@@ -135,5 +169,10 @@ CssmDateData::CssmDateData(const CSSM_DATE &date)
 	memcpy(buffer + 6, date.Day, 2);
 }
 
+
+CssmData& CssmOwnedData::get() const throw()
+{
+	return referent;
+}
 
 }	// end namespace Security
