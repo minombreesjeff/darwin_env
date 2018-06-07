@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2008 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2008 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,10 +22,22 @@
  */
 
 
+#ifndef _H_U32HANDLEOBJECT
+#define _H_U32HANDLEOBJECT
+
+#include <stdint.h>
+#include <security_cdsa_utilities/handletemplates.h>
+
 //
-// handleobject - give an object a process-global unique handle
+// 32-bit unsigned handle object
+// Specifically meant for securityd handles sent to clients
 //
 
-#include <security_cdsa_utilities/handletemplates_defs.h>
-#include <security_cdsa_utilities/handleobject.h>
+namespace Security
+{
 
+typedef MappingHandle<uint32_t> U32HandleObject;
+
+} // end namespace Security
+
+#endif //_H_U32HANDLEOBJECT

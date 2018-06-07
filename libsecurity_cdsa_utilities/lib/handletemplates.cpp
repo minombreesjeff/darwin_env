@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2008 Apple Inc. All Rights Reserved.
+ * Copyright (c) 2008 Apple Inc. All Rights Reserved.
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,10 +22,18 @@
  */
 
 
-//
-// handleobject - give an object a process-global unique handle
-//
-
 #include <security_cdsa_utilities/handletemplates_defs.h>
-#include <security_cdsa_utilities/handleobject.h>
+#include <Security/cssm.h>
+#include <stdint.h>
 
+// 
+// Instantiate the explicit MappingHandle subclasses.  If there start to be
+// a lot of these, break this into multiple .cpp files so useless classes
+// aren't linked in everywhere.  
+//
+
+template class TypedHandle<CSSM_HANDLE>;        // HandledObject
+
+template class MappingHandle<CSSM_HANDLE>;      // HandleObject
+
+template class MappingHandle<uint32_t>;         // U32HandleObject
