@@ -288,7 +288,9 @@ void walk(Action &operate, AuthorizationGroup &auth)
 {
 	operate(auth);
 	uint32 count = auth.count();
-	operate.blob(auth.AuthTags, count * sizeof(AclAuthorization));
+	operate.blob(auth.AuthTags, count * sizeof(auth.AuthTags[0]));
+	for (uint32 n = 0; n < count; n++)
+		operate(auth.AuthTags[n]);
 }
 
 template <class Action>

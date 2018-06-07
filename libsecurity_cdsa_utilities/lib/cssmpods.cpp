@@ -27,7 +27,7 @@
 //
 #include <security_cdsa_utilities/cssmpods.h>
 #include <security_cdsa_utilities/cssmbridge.h>
-
+#include <security_utilities/endian.h>
 
 //
 // GUID <-> string conversions.
@@ -37,7 +37,7 @@
 char *Guid::toString(char buffer[stringRepLength+1]) const
 {
     sprintf(buffer, "{%8.8lx-%4.4x-%4.4x-",
-            (unsigned long)Data1, unsigned(Data2), unsigned(Data3));
+            (unsigned long)n2h(Data1), unsigned(n2h(Data2)), unsigned(n2h(Data3)));
     for (int n = 0; n < 2; n++)
         sprintf(buffer + 20 + 2*n, "%2.2x", Data4[n]);
 	buffer[24] = '-';
@@ -75,7 +75,9 @@ void Guid::parseGuid(const char *string)
     unsigned int d2, d3;
     if (sscanf(string, "{%lx-%x-%x-", &d1, &d2, &d3) != 3)
         CssmError::throwMe(CSSM_ERRCODE_INVALID_GUID);
-	Data1 = d1;	Data2 = d2;	Data3 = d3;
+	Data1 = h2n(d1);
+	Data2 = h2n((unsigned short) d2);
+	Data3 = h2n((unsigned short) d3);
 	// once, we did not expect the - after byte 2 of Data4
 	bool newForm = string[24] == '-';
     for (int n = 0; n < 8; n++) {
