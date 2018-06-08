@@ -96,8 +96,8 @@
 			buildRules = (
 			);
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 25421;
-				DYLIB_CURRENT_VERSION = 25421;
+				CURRENT_PROJECT_VERSION = 25433;
+				DYLIB_CURRENT_VERSION = 25433;
 				FRAMEWORK_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)\" /usr/local/SecurityPieces/Frameworks/ /usr/local/SecurityPieces/Frameworks";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/common";
 				INSTALL_PATH = /usr/sbin;

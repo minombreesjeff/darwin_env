@@ -274,7 +274,7 @@ CSSM_RETURN ocspdHttpPost(
 		goto errOut;
     }
 	
-	/* set a reasonable timeout */
+	/* SUTiDenver: set a reasonable timeout */
 	ito = READ_STREAM_TIMEOUT;
 	cfnTo = CFNumberCreate(NULL, kCFNumberSInt32Type, &ito);
     if(!CFReadStreamSetProperty(cfStream, _kCFStreamPropertyReadTimeout, cfnTo)) {
