@@ -28,13 +28,14 @@
 #include "ocspdNetwork.h"
 #include <security_ocspd/ocspdUtils.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <CoreServices/CoreServices.h>
 #include <security_cdsa_utils/cuEnc64.h>
 #include <stdlib.h>
 #include <Security/cssmapple.h>
+#include <LDAP/ldap.h>
 #include <security_utilities/cfutilities.h>
 #include <CoreServices/CoreServices.h>
 #include <SystemConfiguration/SCDynamicStoreCopySpecific.h>
-#include <LDAP/ldap.h>
 
 #define ocspdHttpDebug(args...)     secdebug("ocspdHttp", ## args)
 
@@ -279,7 +280,7 @@ CSSM_RETURN ocspdHttpPost(
 		goto errOut;
     }
 	
-	/* set a reasonable timeout */
+	/* SUTiDenver: set a reasonable timeout */
 	ito = READ_STREAM_TIMEOUT;
 	cfnTo = CFNumberCreate(NULL, kCFNumberSInt32Type, &ito);
     if(!CFReadStreamSetProperty(cfStream, _kCFStreamPropertyReadTimeout, cfnTo)) {
@@ -293,7 +294,7 @@ CSSM_RETURN ocspdHttpPost(
 		ocspdHttpDebug("ocspdHttpPost setting proxy dict");
 		CFReadStreamSetProperty(cfStream, kCFStreamPropertyHTTPProxy, proxyDict);
 	}
-	
+
 	/* go, synchronously */
 	if(!CFReadStreamOpen(cfStream)) {
 		ocspdErrorLog("ocspdHttpPost: error opening CFReadStream\n");
