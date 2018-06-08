@@ -2,11 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>Command</key>
-	<string>/usr/sbin/ocspd</string>
+	<key>Label</key>
+	<string>com.apple.ocspd</string>
+	<key>MachServices</key>
+	<dict>
+		<key>com.apple.ocspd</key>
+		<true/>
+	</dict>
 	<key>OnDemand</key>
 	<true/>
-	<key>ServiceName</key>
-	<string>com.apple.ocspd</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/sbin/ocspd</string>
+	</array>
 </dict>
 </plist>
