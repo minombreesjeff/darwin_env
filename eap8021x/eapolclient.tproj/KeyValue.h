@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2001-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2002 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,26 +25,22 @@
 /* 
  * Modification History
  *
- * November 8, 2001	Dieter Siegmund
+ * November 13, 2001	Dieter Siegmund
  * - created
  */
 
-#ifndef _S_CONVERT_H
-#define _S_CONVERT_H
+#ifndef _S_KEYVALUE_H
+#define _S_KEYVALUE_H
 
-#include <sys/types.h>
+typedef struct KeyValueList_s KeyValueList;
 
-static __inline__ u_short
-u_short_get_ntoh(char * p)
-{
-    return (ntohs(*((u_short *)p)));
-}
+char *
+KeyValueList_find(KeyValueList * list, char * key, int * where);
 
-static __inline__ void
-u_short_set_hton(char * p, u_short val)
-{
-    *((u_short *)p) = htons(val);
-    return;
-}
-#endif _S_CONVERT_H
+void
+KeyValueList_free(KeyValueList * * list_p);
 
+KeyValueList *
+KeyValueList_create(void * buf, int buflen);
+
+#endif _S_KEYVALUE_H
