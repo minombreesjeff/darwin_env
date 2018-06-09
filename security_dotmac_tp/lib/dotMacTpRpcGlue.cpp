@@ -421,7 +421,7 @@ OSStatus dotMacPostArchiveReq(
 		pfxOut->Length = 0;
 	}
 	if(numArchives) {
-		*numArchives = NULL;
+		*numArchives = 0;
 	}
 	if(archives) {
 		*archives = NULL;

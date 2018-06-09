@@ -409,7 +409,7 @@
 			buildRules = (
 			);
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 25077;
+				CURRENT_PROJECT_VERSION = 25085;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks /usr/local/SecurityPieces/Components/Security";
 				INFOPLIST_FILE = "dotmac_tp-Info.plist";
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Security";
@@ -439,7 +439,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>25077</string>
+	<string>25085</string>
 </dict>
 </plist>
 ";
@@ -644,7 +644,7 @@
 			);
 			buildSettings = {
 				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 25077;
+				DYLIB_CURRENT_VERSION = 25085;
 				FRAMEWORK_VERSION = A;
 				INSTALL_PATH = /usr/local/SecurityPieces/Frameworks;
 				PRODUCT_NAME = security_dotmac_tp;
@@ -673,7 +673,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>25077</string>
+	<string>25085</string>
 </dict>
 </plist>
 ";
