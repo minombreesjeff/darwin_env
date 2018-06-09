@@ -435,7 +435,7 @@
 			buildRules = (
 			);
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 25420;
+				CURRENT_PROJECT_VERSION = 25435;
 				DEAD_CODE_STRIPPING = YES;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				GCC_PRECOMPILE_PREFIX_HEADER = NO;
@@ -469,7 +469,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>25420</string>
+	<string>25435</string>
 	<key>CSResourcesFileMapped</key>
 	<string>yes</string>
 </dict>
