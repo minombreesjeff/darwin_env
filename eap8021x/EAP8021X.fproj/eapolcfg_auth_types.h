@@ -1,9 +1,5 @@
-
-#ifndef _S_NDRV_SOCKET_H
-#define _S_NDRV_SOCKET_H
-
 /*
- * Copyright (c) 2001-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2010 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -25,25 +21,36 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
+#ifndef _EAPOLCFG_AUTH_TYPES_H
+#define _EAPOLCFG_AUTH_TYPES_H
+
 /*
- * ndrv_socket.h
- * - wrapper for allocating an NDRV socket
+ * Keep IPC functions private to the framework
  */
+#ifdef mig_external
+#undef mig_external
+#endif
+#define mig_external __private_extern__
 
-/* 
- * Modification History
- *
- * October 26, 2001	Dieter Siegmund (dieter@apple)
- * - created
+#if 0
+/* Turn MIG type checking on by default */
+#ifdef __MigTypeCheck
+#undef __MigTypeCheck
+#endif
+#define __MigTypeCheck	1
+#endif /* 0 */
+
+/*
+ * Mach server port name
  */
+#define EAPOLCFG_AUTH_SERVER	"com.apple.eapolcfg_auth"
 
-#include <sys/types.h>
+enum {
+    keapolcfg_auth_set_name		= 0x1,
+    keapolcfg_auth_set_password		= 0x2
+};
+typedef const char * xmlData_t;
+typedef const char * OOBData_t;
+typedef char * OOBDataOut_t;
 
-int	ndrv_socket(const char * ifname);
-int	ndrv_socket_bind(int s, u_int32_t family,
-			 const u_int16_t * ether_types, int ether_types_count);
-int	ndrv_socket_add_multicast(int s, const struct sockaddr_dl * dl_p);
-int	ndrv_socket_remove_multicast(int s, const struct sockaddr_dl * dl_p);
-
-#endif _S_NDRV_SOCKET_H
-
+#endif /* _EAPOLCFG_AUTH_TYPES_H */
