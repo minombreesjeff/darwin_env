@@ -32,7 +32,7 @@
  * OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
  * THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-/* $Id: ucdata.c,v 1.5 2004/03/30 01:32:51 jtownsen Exp $" */
+/* $Id: ucdata.c,v 1.5.24.1 2006/05/05 01:16:11 sjones Exp $" */
 
 #include "portable.h"
 #include "ldap_config.h"
@@ -1146,7 +1146,7 @@ _ucnumb_load(char *paths, int reload)
          * Determine the number of values that have to be adjusted.
          */
         size = (hdr.size.bytes -
-                (_ucnum_size * (sizeof(ac_uint4) << 1))) /
+                (_ucnum_size * sizeof(ac_uint4))) /
             sizeof(short);
 
         for (i = 0; i < size; i++)
