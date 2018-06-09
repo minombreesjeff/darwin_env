@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2012-2013 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,16 +21,53 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef _S_MYCFUTIL_H
-#define _S_MYCFUTIL_H
+/*
+ * EAPLog.h
+ * - function to log information for EAP-related routines
+ */
 
 /* 
  * Modification History
  *
- * November 8, 2001	Dieter Siegmund
+ * December 26, 2012	Dieter Siegmund (dieter@apple.com)
  * - created
  */
 
-void my_CFRelease(void * t);
+#ifndef _EAP8021X_EAPLOG_H
+#define _EAP8021X_EAPLOG_H
 
-#endif /* _S_MYCFUTIL_H */
+#include <SystemConfiguration/SCPrivate.h>
+#include "symbol_scope.h"
+
+void
+EAPLogSetVerbose(bool verbose);
+
+void
+EAPLog(int level, CFStringRef format, ...);
+
+INLINE const char *
+EAPLogFileName(const char * file)
+{
+    const char *	ret;
+
+    ret = strrchr(file, '/');
+    if (ret != NULL) {
+	ret++;
+    }
+    else {
+	ret = file;
+    }
+    return (ret);
+}
+
+#define EAPLOG(__level, __format, ...)				\
+    EAPLog(__level, CFSTR(__format),				\
+	   ## __VA_ARGS__)
+
+#define EAPLOG_FL(__level, __format, ...)				\
+    EAPLog(__level,							\
+	   CFSTR("[%s:%d] %s(): " __format),				\
+	   EAPLogFileName(__FILE__), __LINE__, __FUNCTION__,		\
+	   ## __VA_ARGS__)
+
+#endif /* _EAP8021X_EAPLOG_H */

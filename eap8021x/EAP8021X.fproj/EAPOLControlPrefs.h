@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2013 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,36 +21,36 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <ctype.h>
-#include <SystemConfiguration/SCPrivate.h>
-#include "mylog.h"
+#ifndef _EAP8021X_EAPOLCONTROLPREFS_H
+#define _EAP8021X_EAPOLCONTROLPREFS_H
 
-static bool S_verbose;
+/*
+ * EAPOLControlPrefs.h
+ * - definitions for accessing EAPOL preferences and being notified
+ *   when they change
+ */
+
+/* 
+ * Modification History
+ *
+ * January 9, 2013	Dieter Siegmund (dieter@apple)
+ * - created
+ */
+#include <CoreFoundation/CFRunLoop.h>
+#include <SystemConfiguration/SCPreferences.h>
+
+typedef void (*EAPOLControlPrefsCallBack)(SCPreferencesRef prefs);
+
+SCPreferencesRef
+EAPOLControlPrefsInit(CFRunLoopRef runloop, EAPOLControlPrefsCallBack callback);
 
 void
-my_log_init(bool verbose)
-{
-    S_verbose = verbose;
-    return;
-}
+EAPOLControlPrefsSynchronize(void);
 
-void
-my_log(int priority, const char *message, ...)
-{
-    va_list 		ap;
-    char		buffer[256];
+uint32_t
+EAPOLControlPrefsGetLogFlags(void);
 
-    if (priority == LOG_DEBUG) {
-	if (S_verbose == FALSE)
-	    return;
-	priority = LOG_NOTICE;
-    }
-    va_start(ap, message);
-    vsnprintf(buffer, sizeof(buffer), message, ap);
-    SCLog(TRUE, priority, CFSTR("%s"), buffer);
-    return;
-}
+Boolean
+EAPOLControlPrefsSetLogFlags(uint32_t flags);
+
+#endif /* _EAP8021X_EAPOLCONTROLPREFS_H */
