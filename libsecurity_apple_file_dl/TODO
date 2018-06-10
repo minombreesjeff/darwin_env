@@ -1,4 +1,4 @@
-* Make the pAttributeInfo and pIndexInfo arguments to CSSM_DL_CreateRelation optional.
+* Make the pAttributeInfo and pIndexInfo arguments to CSSM_DL_CreateRelation optional (DONE).
 
 * Enhance POD wrappers and use them everywhere (DONE for insert still needs work for get).
 

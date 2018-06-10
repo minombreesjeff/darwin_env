@@ -15,7 +15,7 @@
 	<key>MdsFileType</key>
 	<string>PluginCommon</string>
 	<key>ModuleID</key>
-	<string>{87191ca1-0fc9-11d4-849a000502b52122}</string>
+	<string>{87191ca1-0fc9-11d4-849a-000502b52122}</string>
 	<key>ModuleName</key>
 	<string>AppleDL</string>
 	<key>MultiThreadFlag</key>
@@ -24,5 +24,7 @@
 	<string>1.0</string>
 	<key>ServiceMask</key>
 	<string>CSSM_SERVICE_DL</string>
+    <key>Path</key>
+    <string>*AppleDL</string>
 </dict>
 </plist>
