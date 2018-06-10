@@ -39,9 +39,7 @@ public:
 		mRsaKey(NULL),
 		mAllocdRsaKey(false),
 		mInitFlag(false),
-		mPadding(RSA_ASYM_PADDING_DEFAULT),
-		mOaep(false),
-		mLabel(Allocator::standard()) 	{ }
+		mPadding(RSA_ASYM_PADDING_DEFAULT) 	{ }
 		
 	~RSA_CryptContext();
 	
@@ -69,15 +67,7 @@ private:
 		RSA				*mRsaKey;
 		bool			mAllocdRsaKey;
 		bool			mInitFlag;			// allows easy reuse
-		int				mPadding;			// RSA_NO_PADDING, RSA_PKCS1_PADDING
-
-		/* 
-		 * optional fields for OEAP keys 
-		 * (mKeyHeader.AlgorithmId == CSSM_ALGMODE_PKCS1_EME_OAEP) 
-		 */
-		bool					mOaep;
-		CssmAutoData			mLabel;
-		
+	int					mPadding;			// RSA_NO_PADDING, RSA_PKCS1_PADDING
 };	/* RSA_CryptContext */
 
 

@@ -66,18 +66,11 @@ void RSA_CryptContext::init(const Context &context, bool encoding /*= true*/)
 	/* fetch key from context */
 	if(mRsaKey == NULL) {
 		assert(!opStarted());
-		CSSM_DATA label = {0, NULL};
 		mRsaKey = contextToRsaKey(context,
 			session(),
 			keyClass,
 			encoding ? CSSM_KEYUSE_ENCRYPT : CSSM_KEYUSE_DECRYPT,
-			mAllocdRsaKey,
-			label);
-		if(label.Data) {
-			mLabel.copy(label);
-			mOaep = true;
-			free(label.Data);
-		}
+			mAllocdRsaKey);
 	}
 	else {
 		assert(opStarted());	
@@ -133,7 +126,6 @@ void RSA_CryptContext::encryptBlock(
 {
 	int irtn;
 	
-	/* FIXME do OAEP encoding here */
 	if(mRsaKey->d == NULL) {
 		irtn =	RSA_public_encrypt(plainTextLen, 
 			(unsigned char *)plainText,
@@ -166,7 +158,6 @@ void RSA_CryptContext::decryptBlock(
 {
 	int irtn;
 	
-	/* FIXME do OAEP encoding here */
 	if(mRsaKey->d == NULL) {
 		irtn = RSA_public_decrypt(inBlockSize(), 
 			(unsigned char *)cipherText,

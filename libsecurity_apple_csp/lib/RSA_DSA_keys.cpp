@@ -41,11 +41,8 @@
  ***/
  
 /* constructor with optional existing RSA key */
-/* FIXME how to transmit OAEP params? */
 RSABinaryKey::RSABinaryKey(RSA *rsaKey)
-	: mRsaKey(rsaKey),
-	  mOaep(false),
-	  mLabel(Allocator::standard())
+	: mRsaKey(rsaKey)
 {
 }
 
@@ -57,15 +54,8 @@ RSABinaryKey::~RSABinaryKey()
 	}
 }
 
-void RSABinaryKey::setOaep(
-	const CSSM_DATA		&label)
-{
-	mLabel.copy(label);
-	mOaep = true;
-}
-
 void RSABinaryKey::generateKeyBlob(
-	Allocator			&allocator,
+	Allocator 		&allocator,
 	CssmData			&blob,
 	CSSM_KEYBLOB_FORMAT	&format,	/* IN/OUT */
 	AppleCSPSession		&session,
@@ -74,8 +64,6 @@ void RSABinaryKey::generateKeyBlob(
 {
 	bool			isPub;
 	CSSM_RETURN		crtn;
-	
-	/* FIXME get label from context here for OAEP */
 	
 	/* 
 	 * Here, the incoming default of CSSM_KEYBLOB_RAW_FORMAT_NONE
@@ -89,14 +77,8 @@ void RSABinaryKey::generateKeyBlob(
 					format = RSA_PUB_KEY_FORMAT;	// default
 					break;
 				case CSSM_KEYBLOB_RAW_FORMAT_DIGEST:
-					if(mOaep) {
-						/* have to take digest of the whole thing including label */
-						format = CSSM_KEYBLOB_RAW_FORMAT_X509;
-					}
-					else {
-						/* calculate digest on PKCS1 blob */
-						format = CSSM_KEYBLOB_RAW_FORMAT_PKCS1;	
-					}
+					/* calculate digest on PKCS1 blob */
+					format = CSSM_KEYBLOB_RAW_FORMAT_PKCS1;	
 					break;
 				case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:
 				case CSSM_KEYBLOB_RAW_FORMAT_X509:
@@ -112,14 +94,8 @@ void RSABinaryKey::generateKeyBlob(
 					format = RSA_PRIV_KEY_FORMAT;	
 					break;
 				case CSSM_KEYBLOB_RAW_FORMAT_DIGEST:
-					if(mOaep) {
-						/* have to take digest of the whole thing including label */
-						format = CSSM_KEYBLOB_RAW_FORMAT_X509;
-					}
-					else {
-						/* calculate digest on PKCS1 blob */
-						format = CSSM_KEYBLOB_RAW_FORMAT_PKCS1;	
-					}
+					/* calculate digest on Public PKCS1 blob */
+					format = CSSM_KEYBLOB_RAW_FORMAT_PKCS1;	
 					isPub = true;
 					break;
 				case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:
@@ -134,22 +110,11 @@ void RSABinaryKey::generateKeyBlob(
 	}
 
 	CssmAutoData encodedKey(allocator);
-	if(mOaep) {
-		CSSM_DATA label = mLabel;
-		if(isPub) {
-			crtn = RSAOAEPPublicKeyEncode(mRsaKey, &label, encodedKey);
-		}
-		else {
-			crtn = RSAOAEPPrivateKeyEncode(mRsaKey, &label, encodedKey);
-		}
+	if(isPub) {
+		crtn = RSAPublicKeyEncode(mRsaKey, format, encodedKey);
 	}
 	else {
-		if(isPub) {
-			crtn = RSAPublicKeyEncode(mRsaKey, format, encodedKey);
-		}
-		else {
-			crtn = RSAPrivateKeyEncode(mRsaKey, format, encodedKey);
-		}
+		crtn = RSAPrivateKeyEncode(mRsaKey, format, encodedKey);
 	}
 	if(crtn) {
 		CssmError::throwMe(crtn);
@@ -213,6 +178,9 @@ void RSAKeyPairGenContext::generate(
 	 */
 	keyBits = context.getInt(CSSM_ATTRIBUTE_KEY_LENGTH,
 				CSSMERR_CSP_MISSING_ATTR_KEY_LENGTH);
+	if(keyBits > rsaMaxKeySize()) {
+		CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_KEY_LENGTH);
+	}
 				
 	/* generate the private key */
 	rPrivBinKey.mRsaKey = RSA_generate_key(keyBits,
@@ -255,7 +223,6 @@ CSPKeyInfoProvider *RSAKeyInfoProvider::provider(
 {
 	switch(cssmKey.algorithm()) {
 		case CSSM_ALGID_RSA:
-		case CSSM_ALGMODE_PKCS1_EME_OAEP:
 			break;
 		default:
 			return NULL;
@@ -279,16 +246,11 @@ void RSAKeyInfoProvider::CssmKeyToBinary(
 {
 	*binKey = NULL;
 	RSA *rsaKey = NULL;
-	CSSM_DATA label = {0, NULL};
 	
 	/* first cook up an RSA key, then drop that into a BinaryKey */
-	rsaKey = rawCssmKeyToRsa(mKey, label);
+	rsaKey = rawCssmKeyToRsa(mKey);
 	RSABinaryKey *rsaBinKey = new RSABinaryKey(rsaKey);
 	*binKey = rsaBinKey;
-	if(label.Data) {
-		rsaBinKey->setOaep(label);
-		free(label.Data);
-	}
 }
 		
 /* 
@@ -298,18 +260,14 @@ void RSAKeyInfoProvider::QueryKeySizeInBits(
 	CSSM_KEY_SIZE &keySize)
 {
 	RSA *rsaKey = NULL;
-	CSSM_DATA label = {0, NULL};
 	
 	if(mKey.blobType() != CSSM_KEYBLOB_RAW) {
 		CssmError::throwMe(CSSMERR_CSP_INVALID_KEY_FORMAT);
 	}
-	rsaKey = rawCssmKeyToRsa(mKey, label);
+	rsaKey = rawCssmKeyToRsa(mKey);
 	keySize.LogicalKeySizeInBits = RSA_size(rsaKey) * 8;
 	keySize.EffectiveKeySizeInBits = keySize.LogicalKeySizeInBits;
 	RSA_free(rsaKey);
-	if(label.Data) {
-		free(label.Data);
-	}	
 }
 
 /* 
@@ -542,6 +500,9 @@ void DSAKeyPairGenContext::generate(
 	 */
 	keyBits = context.getInt(CSSM_ATTRIBUTE_KEY_LENGTH,
 				CSSMERR_CSP_MISSING_ATTR_KEY_LENGTH);
+	if(keyBits > DSA_MAX_KEY_SIZE) {
+		CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_KEY_LENGTH);
+	}
 	CssmData *paramData = context.get<CssmData>(CSSM_ATTRIBUTE_ALG_PARAMS);
 
 	NSS_DSAAlgParams algParams;

@@ -221,15 +221,11 @@ void RSASigner::keyFromContext(
 		keyUse   = CSSM_KEYUSE_VERIFY;
 	}
 	if(mRsaKey == NULL) {
-		CSSM_DATA label = {0, NULL};
 		mRsaKey = contextToRsaKey(context,
 			mSession,
 			keyClass,
 			keyUse,
-			mWeMallocdRsaKey,
-			label);
-		/* cannot have label param for signing */
-		assert(label.Data == NULL);
+			mWeMallocdRsaKey);
 	}
 }
 

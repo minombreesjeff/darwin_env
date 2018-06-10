@@ -30,8 +30,102 @@
 #include <openssl/rsa.h>
 #include <openssl/dsa.h>
 #include <openssl/err.h>
+#include <security_utilities/simpleprefs.h>
+#include <security_utilities/threading.h>
+#include <security_utilities/globalizer.h>
+#include <CoreFoundation/CFNumber.h>
 
 #define rsaMiscDebug(args...)	secdebug("rsaMisc", ## args)
+
+/*
+ * Obtain and cache max key sizes. System preferences only consulted 
+ * at most once per process.
+ */
+
+/* 
+ * Do dictionary lookup, convert possible CFNumber to uint32.
+ * Does not alter val if valid number is not found.
+ */
+static void rsaLookupVal(
+	Dictionary &prefs,
+	CFStringRef key,
+	uint32 &val)
+{
+	CFNumberRef cfVal = (CFNumberRef)prefs.getValue(key);
+	if(cfVal == NULL) {
+		return;
+	}
+	if(CFGetTypeID(cfVal) != CFNumberGetTypeID()) {
+		return;
+	}
+	
+	/* ensure the number is positive, not relying on gcc 64-bit arithmetic */
+	SInt32 s32 = 0;
+	CFNumberRef cfLimit = CFNumberCreate(NULL, kCFNumberSInt32Type, &s32); 
+	CFComparisonResult result = CFNumberCompare(cfVal, cfLimit, NULL);
+	CFRelease(cfLimit);
+	if(result == kCFCompareLessThan) {
+		/* negative value in preference */
+		return;
+	}
+	
+	/* ensure the number fits in 31 bits (the useful size of a SInt32 for us) */
+	s32 = 0x7fffffff;
+	cfLimit = CFNumberCreate(NULL, kCFNumberSInt32Type, &s32); 
+	result = CFNumberCompare(cfVal, cfLimit, NULL);
+	CFRelease(cfLimit);
+	if(result == kCFCompareGreaterThan) {
+		/* too large; discard it */
+		return;
+	}
+	SInt64 s64;
+	if(!CFNumberGetValue(cfVal, kCFNumberSInt64Type, &s64)) {
+		/* impossible, right? We already range checked */
+		return;
+	}
+	val = (uint32)s64;
+}
+
+struct RSAKeySizes {
+	uint32 maxKeySize;
+	uint32 maxPubExponentSize;
+	RSAKeySizes();
+};
+
+/* one-time only prefs lookup */
+RSAKeySizes::RSAKeySizes()
+{
+	/* set defaults, these might get overridden */
+	maxKeySize = RSA_MAX_KEY_SIZE;
+	maxPubExponentSize = RSA_MAX_PUB_EXPONENT_SIZE;
+	
+	/* now see if there are prefs set for either of these */
+	try {
+		Dictionary prefs(kRSAKeySizePrefsDomain, Dictionary::US_System);
+		rsaLookupVal(prefs, kRSAMaxKeySizePref, maxKeySize);
+		rsaLookupVal(prefs, kRSAMaxPublicExponentPref, maxPubExponentSize);
+	}
+	catch(...) {
+		/* no prefs dictionary, we're done */
+		return;
+	}
+}
+
+static ModuleNexus<RSAKeySizes> rsaKeySizes;
+
+/* 
+ * Public functions to obtain the currently configured max sizes of 
+ * RSA key and public exponent.
+ */
+uint32 rsaMaxKeySize()
+{
+	return rsaKeySizes().maxKeySize;
+}
+
+uint32 rsaMaxPubExponentSize()
+{
+	return rsaKeySizes().maxPubExponentSize;
+}
 
 /* 
  * Given a Context:
@@ -45,8 +139,7 @@ RSA *contextToRsaKey(
 	AppleCSPSession	 	&session,
 	CSSM_KEYCLASS		keyClass,	  // CSSM_KEYCLASS_{PUBLIC,PRIVATE}_KEY
 	CSSM_KEYUSE			usage,		  // CSSM_KEYUSE_ENCRYPT, CSSM_KEYUSE_SIGN, etc.
-	bool				&mallocdKey,  // RETURNED
-	CSSM_DATA			&label)		  // mallocd and RETURNED for OAEP
+	bool				&mallocdKey)  // RETURNED
 {
     CssmKey &cssmKey = 
 		context.get<CssmKey>(CSSM_ATTRIBUTE_KEY, CSSMERR_CSP_MISSING_ATTR_KEY);
@@ -59,7 +152,7 @@ RSA *contextToRsaKey(
 	}
 	cspValidateIntendedKeyUsage(&hdr, usage);
 	cspVerifyKeyTimes(hdr);
-	return cssmKeyToRsa(cssmKey, session, mallocdKey, label);
+	return cssmKeyToRsa(cssmKey, session, mallocdKey);
 }
 /* 
  * Convert a CssmKey to an RSA * key. May result in the creation of a new
@@ -69,8 +162,7 @@ RSA *contextToRsaKey(
 RSA *cssmKeyToRsa(
 	const CssmKey	&cssmKey,
 	AppleCSPSession	&session,
-	bool			&allocdKey,		// RETURNED
-	CSSM_DATA		&label)			// mallocd and RETURNED for OAEP
+	bool			&allocdKey)		// RETURNED
 {
 	RSA *rsaKey = NULL;
 	allocdKey = false;
@@ -82,7 +174,7 @@ RSA *cssmKeyToRsa(
 	}
 	switch(hdr->BlobType) {
 		case CSSM_KEYBLOB_RAW:
-			rsaKey = rawCssmKeyToRsa(cssmKey, label);
+			rsaKey = rawCssmKeyToRsa(cssmKey);
 			allocdKey = true;
 			break;
 		case CSSM_KEYBLOB_REFERENCE:
@@ -109,26 +201,17 @@ RSA *cssmKeyToRsa(
  * Convert a raw CssmKey to a newly alloc'd RSA key.
  */
 RSA *rawCssmKeyToRsa(
-	const CssmKey	&cssmKey,
-	CSSM_DATA		&label)			// mallocd and RETURNED for OAEP keys
+	const CssmKey	&cssmKey)
 {
 	const CSSM_KEYHEADER *hdr = &cssmKey.KeyHeader;
 	bool isPub;
-	bool isOaep = false;
 	
 	assert(hdr->BlobType == CSSM_KEYBLOB_RAW); 
 	
-	switch(hdr->AlgorithmId) {
-		case CSSM_ALGID_RSA:
-			break;
-		case CSSM_ALGMODE_PKCS1_EME_OAEP:
-			isOaep = true;
-			break;
-		default:
-			// someone else's key (should never happen)
-			CssmError::throwMe(CSSMERR_CSP_INVALID_ALGORITHM);
+	if(hdr->AlgorithmId != CSSM_ALGID_RSA) {
+		// someone else's key (should never happen)
+		CssmError::throwMe(CSSMERR_CSP_INVALID_ALGORITHM);
 	}
-	
 	/* validate and figure out what we're dealing with */
 	switch(hdr->KeyClass) {
 		case CSSM_KEYCLASS_PUBLIC_KEY:
@@ -141,9 +224,6 @@ RSA *rawCssmKeyToRsa(
 				default:
 					CssmError::throwMe(
 						CSSMERR_CSP_INVALID_ATTR_PUBLIC_KEY_FORMAT);
-			}
-			if(isOaep && (hdr->Format != CSSM_KEYBLOB_RAW_FORMAT_X509)) {
-				CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_PUBLIC_KEY_FORMAT);
 			}
 			isPub = true;
 			break;
@@ -158,9 +238,6 @@ RSA *rawCssmKeyToRsa(
 					CssmError::throwMe(
 						CSSMERR_CSP_INVALID_ATTR_PRIVATE_KEY_FORMAT);
 			}
-			if(isOaep && (hdr->Format != CSSM_KEYBLOB_RAW_FORMAT_PKCS8)) {
-				CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_PRIVATE_KEY_FORMAT);
-			}
 			isPub = false;
 			break;
 		default:
@@ -172,30 +249,35 @@ RSA *rawCssmKeyToRsa(
 		CssmError::throwMe(CSSMERR_CSP_MEMORY_ERROR);
 	}
 	CSSM_RETURN crtn;
-	if(isOaep) {
-		if(isPub) {
-			crtn = RSAOAEPPublicKeyDecode(rsaKey, 
-				cssmKey.KeyData.Data, cssmKey.KeyData.Length,
-				&label);
-		}
-		else {
-			crtn = RSAOAEPPrivateKeyDecode(rsaKey, 
-				cssmKey.KeyData.Data, cssmKey.KeyData.Length,
-				&label);
-		}
+	if(isPub) {
+		crtn = RSAPublicKeyDecode(rsaKey, hdr->Format,
+			cssmKey.KeyData.Data, cssmKey.KeyData.Length);
 	}
 	else {
-		if(isPub) {
-			crtn = RSAPublicKeyDecode(rsaKey, hdr->Format,
-				cssmKey.KeyData.Data, cssmKey.KeyData.Length);
-		}
-		else {
-			crtn = RSAPrivateKeyDecode(rsaKey, hdr->Format,
-				cssmKey.KeyData.Data, cssmKey.KeyData.Length);
-		}
+		crtn = RSAPrivateKeyDecode(rsaKey, hdr->Format,
+			cssmKey.KeyData.Data, cssmKey.KeyData.Length);
 	}
 	if(crtn) {
 		CssmError::throwMe(crtn);
+	}
+	
+	/* enforce max key size and max public exponent size */
+	bool badKey = false;
+	uint32 keySize = RSA_size(rsaKey) * 8;
+	if(keySize > rsaMaxKeySize()) {
+		rsaMiscDebug("rawCssmKeyToRsa: key size exceeded");
+		badKey = true;
+	}
+	else {
+		keySize = BN_num_bytes(rsaKey->e) * 8;
+		if(keySize > rsaMaxPubExponentSize()) {
+			badKey = true;
+			rsaMiscDebug("rawCssmKeyToRsa: pub exponent size exceeded"); 
+		}
+	}
+	if(badKey) {
+		RSA_free(rsaKey);
+		CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_KEY_LENGTH);
 	}
 	return rsaKey;
 }
@@ -444,6 +526,14 @@ DSA *rawCssmKeyToDsa(
 		if(crtn) {
 			DSA_free(dsaKey);
 			CssmError::throwMe(crtn);
+		}
+	}
+	if(dsaKey->p != NULL) {
+		/* avoid use of provided DSA key which exceeds the max size */
+		uint32 keySize = BN_num_bits(dsaKey->p);
+		if(keySize > DSA_MAX_KEY_SIZE) {
+			DSA_free(dsaKey);
+			CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_KEY_LENGTH);
 		}
 	}
 	return dsaKey;
