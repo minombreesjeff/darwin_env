@@ -433,7 +433,7 @@
 			buildRules = (
 			);
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 24742;
 				DEAD_CODE_STRIPPING = YES;
 				FRAMEWORK_SEARCH_PATHS = /usr/local/SecurityPieces/Frameworks;
 				INFOPLIST_FILE = Info.plist;
