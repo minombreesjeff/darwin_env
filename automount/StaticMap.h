@@ -21,4 +21,16 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-char *version = "23";
+#ifndef __STATIC_MAP_H__
+#define __STATIC_MAP_H__
+
+#import "FstabMap.h"
+#import "Server.h"
+
+@interface StaticMap : FstabMap
+{
+}
+
+@end
+
+#endif __STATIC_MAP_H__

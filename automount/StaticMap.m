@@ -1,9 +1,9 @@
 /*
- * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * "Portions Copyright (c) 2001 Apple Computer, Inc.  All Rights
  * Reserved.  This file contains Original Code and/or Modifications of
  * Original Code as defined in and that are subject to the Apple Public
  * Source License Version 1.0 (the 'License').  You may not use this file
@@ -21,28 +21,28 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-#import "FileMap.h"
+#import "StaticMap.h"
 #import "Controller.h"
-#import "AMVnode.h"
-#import "Server.h"
 #import "AMString.h"
+#import "AMVnode.h"
 #import "automount.h"
 #import "log.h"
-#import <stdio.h>
+#import <fstab.h>
 #import <stdlib.h>
 #import <unistd.h>
 #import <errno.h>
 #import <string.h>
-#import <syslog.h>
-#import <sys/mount.h>
+#import <sys/stat.h>
 
-@implementation FileMap
+@implementation StaticMap
 
 - (void)newMount:(String *)src dir:(String *)dst opts:(Array *)opts vfsType:(String *)type
 {
-	String *servername, *serversrc;
+	String *servername, *serversrc, *link;
 	Vnode *v;
 	Server *server;
+	int status;
+	struct stat sb;
 
 	serversrc = [src postfix:':'];
 	if (serversrc == nil) return;
@@ -69,12 +69,39 @@
 
 	if (![self acceptOptions:opts])
 	{
-		sys_msg(debug, LOG_DEBUG, "Rejected options for %s on %s (FileMap)",
+		sys_msg(debug, LOG_DEBUG, "Rejected options for %s on %s (StaticMap)",
 			[src value], [dst value]);
 		[servername release];
 		[serversrc release];
 		return;
 	}
+
+	status = lstat([dst value], &sb);
+	if (status == 0)
+	{
+		if (sb.st_mode & S_IFDIR) status = rmdir([dst value]);
+		else status = unlink([dst value]);
+
+		if (status < 0)
+		{
+			sys_msg(debug, LOG_WARNING, "Cannot unlink %s: %s", [dst value], strerror(errno));
+			[servername release];
+			[serversrc release];
+			return;
+		}
+	}
+
+	link = [String concatStrings:[root path] :dst];
+	status = symlink([link value], [dst value]);
+	if (status < 0)
+	{
+		sys_msg(debug, LOG_WARNING, "Cannot symlink %s to %s: %s", [dst value], [link value], strerror(errno));
+		[servername release];
+		[serversrc release];
+		[link release];
+		return;
+	}
+	[link release];
 
 	v = [self createVnodePath:dst from:root];
 	if ([v type] == NFLNK)
@@ -97,57 +124,44 @@
 
 - (void)loadMounts
 {
-	FILE *fp;
-	char line[1024], cloc[1024], copts[1024], csrc[1024];
-	String *src, *loc, *opts;
+	struct fstab *f;
+	String *spec, *file, *type, *opts, *vfstype;
+	String *netopt;
 	Array *options;
-	int n;
+	BOOL hasnet;
 
-	if (dataStore == nil) return;
+	netopt = [String uniqueString:"net"];
 
-	fp = fopen([dataStore value], "r");
-	if (fp == NULL)
+	setfsent();
+	while (NULL != (f = getfsent()))
 	{
-		sys_msg(debug, LOG_ERR, "%s: %s", [dataStore value], strerror(errno));
-		return;
-	}
-
-	sys_msg(debug_proc, LOG_DEBUG, "  FileMap/loadMounts: reading %s", [dataStore value]);
-
-	while (fgets(line, 1024, fp) != NULL)
-	{
-		n = sscanf(line, "%s %s %s", cloc, copts, csrc);
-		if ((n < 2) || (n > 3))
+		opts = [String uniqueString:f->fs_mntops];
+		options = [opts explode:','];
+		hasnet = [options containsObject:netopt];
+		if (hasnet)
 		{
-			sys_msg(debug, LOG_ERR, "Bad input line in map %s: %s",
-				[dataStore value], line);
+			[opts release];
+			[options release];
 			continue;
 		}
 
-		loc = [String uniqueString:cloc];
-		if (n == 3)
-		{
-			opts = [String uniqueString:copts];
-			src = [String uniqueString:csrc];
-		}
-		else
-		{
-			/* n == 2 */
-			opts = [String uniqueString:""];
-			src = [String uniqueString:copts];
-		}
+		spec = [String uniqueString:f->fs_spec];
+		file = [String uniqueString:f->fs_file];
+		type = [String uniqueString:f->fs_type];
+		vfstype = [String uniqueString:f->fs_vfstype];
 
-		options = [opts explode:','];
+		if (type != nil) [options addObject:type];
 
-		[self newMount:src dir:loc opts:options vfsType:nil];
+		[self newMount:spec dir:file opts:options vfsType:nil];
 
-		[src release];
-		[loc release];
+		[spec release];
+		[file release];
+		[type release];
 		[opts release];
 		[options release];
+		[vfstype release];
 	}
-
-	fclose(fp);
+	endfsent();
 }
 
 @end
