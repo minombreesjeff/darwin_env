@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007 Apple Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,9 +21,16 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#import <Cocoa/Cocoa.h>
 
-int main(int argc, char *argv[])
-{
-    return NSApplicationMain(argc,  (const char **) argv);
-}
+#ifndef __AUTHFILE_H__
+#define __AUTHFILE_H__
+
+#include <CoreFoundation/CoreFoundation.h>
+
+__BEGIN_DECLS
+int pwsf_ShadowHashDataToArray( const char *inAAData, CFMutableArrayRef *outHashTypeArray );
+char * pwsf_ShadowHashArrayToData( CFArrayRef inHashTypeArray, long *outResultLen );
+__END_DECLS
+
+#endif
+
