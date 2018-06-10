@@ -116,6 +116,15 @@ void AESContext::init(
 		encrypting ? CSSM_KEYUSE_ENCRYPT : CSSM_KEYUSE_DECRYPT,
 		keyData, keyLen);
 	
+	switch(keyLen) {
+		case MIN_AES_KEY_BITS / 8:
+		case MID_AES_KEY_BITS / 8:
+		case MAX_AES_KEY_BITS / 8:
+			break;
+		default:
+			CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_KEY);
+	}
+
 	/* 
 	 * Validate context 
 	 * block size is optional 

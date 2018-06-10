@@ -28,6 +28,7 @@
 #include "RSA_DSA_keys.h"
 #include "RSA_asymmetric.h"
 #include <MD2Object.h>
+#include <SHA2_Object.h>
 #include <Security/cssmapple.h>
 
 #define OPENSSL_DSA_ENABLE	1
@@ -145,6 +146,33 @@ bool RSA_DSA_Factory::setup(
 								session,
 								// set later via setDigestAlgorithm
 								CSSM_ALGID_NONE)));	
+					}
+					return true;
+				case CSSM_ALGID_SHA256WithRSA:
+					if(cspCtx == NULL) {
+						cspCtx = new SignatureContext(session,
+							*(new SHA256Object()),
+							*(new RSASigner(*privAllocator,	
+								session,
+								CSSM_ALGID_SHA256)));
+					}
+					return true;
+				case CSSM_ALGID_SHA384WithRSA:
+					if(cspCtx == NULL) {
+						cspCtx = new SignatureContext(session,
+							*(new SHA384Object()),
+							*(new RSASigner(*privAllocator,	
+								session,
+								CSSM_ALGID_SHA384)));
+					}
+					return true;
+				case CSSM_ALGID_SHA512WithRSA:
+					if(cspCtx == NULL) {
+						cspCtx = new SignatureContext(session,
+							*(new SHA512Object()),
+							*(new RSASigner(*privAllocator,	
+								session,
+								CSSM_ALGID_SHA512)));
 					}
 					return true;
 				default:

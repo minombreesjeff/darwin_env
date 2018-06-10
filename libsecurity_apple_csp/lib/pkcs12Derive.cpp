@@ -176,7 +176,7 @@ static CSSM_RETURN p12PbeGen(
 	memset(hashHand, 0, sizeof(hashHand));
 	
 	/* reused inside the loop */
-	unsigned char *p12_B = (unsigned char *)coder.malloc(p12_v);
+	unsigned char *p12_B = (unsigned char *)coder.malloc(p12_v + 1);
 	BIGNUM *Ij = BN_new();
 	BIGNUM *Bpl1 = BN_new();
 	

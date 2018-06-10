@@ -23,22 +23,20 @@
 #define _PBKD_DIGEST_H_
 
 #include <Security/cssmtype.h>
-#include <openssl/md5.h>
-#include <openssl/md2.h>
-#include <openssl/sha.h>
+#include <CommonCrypto/CommonDigest.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define kSHA1DigestSize  		SHA_DIGEST_LENGTH
-#define kSHA1BlockSize  		SHA_CBLOCK
+#define kSHA1DigestSize  		CC_SHA1_DIGEST_LENGTH
+#define kSHA1BlockSize  		CC_SHA1_BLOCK_BYTES
 
-#define kMD5DigestSize  		MD5_DIGEST_LENGTH
-#define kMD5BlockSize  			MD5_CBLOCK
+#define kMD5DigestSize  		CC_MD5_DIGEST_LENGTH
+#define kMD5BlockSize  			CC_MD5_BLOCK_BYTES
 
-#define kMD2DigestSize  		MD2_DIGEST_LENGTH
-#define kMD2BlockSize  			(MD2_BLOCK * 4)
+#define kMD2DigestSize  		CC_MD2_DIGEST_LENGTH
+#define kMD2BlockSize  			CC_MD2_BLOCK_BYTES
 
 #define kMaxDigestSize			kSHA1DigestSize
 
@@ -55,9 +53,9 @@ typedef struct {
 
 typedef	struct {
 	union {
-		SHA_CTX 	sha1Context;
-		MD5_CTX		md5Context;
-		MD2_CTX		md2Context;
+		CC_SHA1_CTX 	sha1Context;
+		CC_MD5_CTX		md5Context;
+		CC_MD2_CTX		md2Context;
 	} dig;
 	DigestOps 		*ops;
 	CSSM_ALGORITHMS hashAlg;

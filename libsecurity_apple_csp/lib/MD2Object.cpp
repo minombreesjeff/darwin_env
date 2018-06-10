@@ -25,7 +25,7 @@
 void MD2Object::digestInit()
 {
 	setIsDone(false);
-	MD2_Init(&mCtx);
+	CC_MD2_Init(&mCtx);
 }
 
 void MD2Object::digestUpdate(
@@ -35,7 +35,7 @@ void MD2Object::digestUpdate(
 	if(isDone()) {
 		throw std::runtime_error("MD2 digestUpdate after final");
 	}
-	MD2_Update(&mCtx, (unsigned char *)data, len);
+	CC_MD2_Update(&mCtx, (unsigned char *)data, len);
 }
 
 void MD2Object::digestFinal(
@@ -44,7 +44,7 @@ void MD2Object::digestFinal(
 	if(isDone()) {
 		throw std::runtime_error("MD2 digestFinal after final");
 	}
-	MD2_Final((unsigned char *)digest, &mCtx);
+	CC_MD2_Final((unsigned char *)digest, &mCtx);
 	setIsDone(true);
 }
 
@@ -56,6 +56,6 @@ DigestObject *MD2Object::digestClone() const
 
 UInt32 MD2Object::digestSizeInBytes() const
 {
-	return MD2_DIGEST_LENGTH;
+	return CC_MD2_DIGEST_LENGTH;
 }
 

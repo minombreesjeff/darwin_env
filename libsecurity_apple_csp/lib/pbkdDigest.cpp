@@ -25,19 +25,19 @@
 
 /* the casts are necessary to cover the polymorphous context types */
 DigestOps Md2Ops = { 
-	(DigestInitFcn)MD2_Init, 
-	(DigestUpdateFcn)MD2_Update, 
-	(DigestFinalFcn)MD2_Final
+	(DigestInitFcn)CC_MD2_Init, 
+	(DigestUpdateFcn)CC_MD2_Update, 
+	(DigestFinalFcn)CC_MD2_Final
 };
 DigestOps Md5Ops = { 
-	(DigestInitFcn)MD5_Init, 
-	(DigestUpdateFcn)MD5_Update, 
-	(DigestFinalFcn)MD5_Final
+	(DigestInitFcn)CC_MD5_Init, 
+	(DigestUpdateFcn)CC_MD5_Update, 
+	(DigestFinalFcn)CC_MD5_Final
 };
 DigestOps Sha1Ops = { 
-	(DigestInitFcn)SHA1_Init, 
-	(DigestUpdateFcn)SHA1_Update, 
-	(DigestFinalFcn)SHA1_Final
+	(DigestInitFcn)CC_SHA1_Init, 
+	(DigestUpdateFcn)CC_SHA1_Update, 
+	(DigestFinalFcn)CC_SHA1_Final
 };
 
 /* Ops on a DigestCtx - all return zero on error, like the underlying digests do */

@@ -23,22 +23,22 @@
 
 
 /*
- * SHA1_MD5_Object.h - SHA1, MD5 digest objects 
+ * SHA2_Object.h - SHA2 digest objects 
  *
- * Created 2/19/2001 by dmitch.
+ * Created 8/12/2004 by dmitch.
  */
 
-#ifndef	_SHA1_MD5_OBJECT_H_
-#define _SHA1_MD5_OBJECT_H_
+#ifndef	_SHA2_OBJECT_H_
+#define _SHA2_OBJECT_H_
 
 #include <security_cdsa_utilities/digestobject.h>
 #include <CommonCrypto/CommonDigest.h>
 
-class SHA1Object : public DigestObject
+class SHA256Object : public DigestObject
 {
 public:
-	SHA1Object() { }
-	virtual ~SHA1Object() { };
+	SHA256Object() { }
+	virtual ~SHA256Object() { };
 	virtual void digestInit();
 	virtual void digestUpdate(
 		const void 	*data, 
@@ -48,14 +48,14 @@ public:
 	virtual DigestObject *digestClone() const;
 	virtual size_t digestSizeInBytes() const;
 private:
-	CC_SHA1_CTX		mCtx;
+	CC_SHA256_CTX		mCtx;
 };
 
-class MD5Object : public DigestObject
+class SHA384Object : public DigestObject
 {
 public:
-	MD5Object() { }
-	virtual ~MD5Object() { }
+	SHA384Object() { }
+	virtual ~SHA384Object() { };
 	virtual void digestInit();
 	virtual void digestUpdate(
 		const void 	*data, 
@@ -65,7 +65,24 @@ public:
 	virtual DigestObject *digestClone() const;
 	virtual size_t digestSizeInBytes() const;
 private:
-	CC_MD5_CTX mCtx;
+	CC_SHA512_CTX		mCtx;
 };
 
-#endif	/* _SHA1_MD5_OBJECT_H_ */
+class SHA512Object : public DigestObject
+{
+public:
+	SHA512Object() { }
+	virtual ~SHA512Object() { };
+	virtual void digestInit();
+	virtual void digestUpdate(
+		const void 	*data, 
+		size_t 		len);
+	virtual void digestFinal(
+		void 		*digest);
+	virtual DigestObject *digestClone() const;
+	virtual size_t digestSizeInBytes() const;
+private:
+	CC_SHA512_CTX		mCtx;
+};
+
+#endif	/* _SHA2_OBJECT_H_ */

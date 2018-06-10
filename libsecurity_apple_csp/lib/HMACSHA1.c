@@ -24,8 +24,6 @@
 */
 #include "HMACSHA1.h"
 #include "pbkdDigest.h"
-#include <openssl/sha.h>
-#include <MD5.h>
 #include <string.h>
 #include <stdlib.h>		// for malloc - maybe we should use Allocator?
 #include <Security/cssmerr.h>
@@ -61,7 +59,7 @@ CSSM_RETURN hmacInit(
 	UInt32 keyLen,
 	CSSM_BOOL isSha1)		// true -> SHA1; false -> MD5
 {	
-	UInt8 	tk[SHA_DIGEST_LENGTH];
+	UInt8 	tk[kMaxDigestSize];
 	UInt8 	*key;
 	UInt32 	byte;
 	UInt8 	k_ipad[kSHA1BlockSize];

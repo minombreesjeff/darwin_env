@@ -45,21 +45,6 @@
 
 #include "YarrowConnection.h"
 
-/* 
- * For debugging, we allow use of FEE PRNG when Yarrow is not available
- * (i.e., no SecurityServer is running).
- */
-#ifdef	NDEBUG
-#define CSP_ALLOW_FEE_RNG		0
-#else
-#ifdef	CRYPTKIT_CSP_ENABLE
-#define CSP_ALLOW_FEE_RNG		1
-#else
-#define CSP_ALLOW_FEE_RNG		0
-#endif
-#endif
-
-
 //
 // Make and break the plugin object
 //
@@ -335,6 +320,16 @@ static void keyRefToCssmData(
 	CSSM_DATA		&data,
 	Allocator	&allocator)
 {
+	if(data.Length > sizeof(keyRef)) {
+		/* don't leave old raw key material lying around */
+		memset(data.Data + sizeof(keyRef), 0, data.Length - sizeof(keyRef));
+	}
+	else if(data.Length < sizeof(keyRef)) {
+		/* not enough space for even a keyRef, force realloc */
+		allocator.free(data.Data);
+		data.Data = NULL;
+		data.Length = 0;
+	}
 	setUpData(data, sizeof(keyRef), allocator);
 	
 	uint8 *cp = data.Data;
@@ -589,40 +584,13 @@ void AppleCSPSession::getKeySize(const CssmKey &key,
 	delete provider;
 }
 
-/*
- * Per-session RNG, which currently just redirects to YarrowConnection.
- * CSP_ALLOW_FEE_RNG enables a fallback to the internal FEE-based PRNG if
- * SecurityServer is not running. 
- */
- 
-#if	CSP_ALLOW_FEE_RNG
-#include <security_cryptkit/feeRandom.h>
-
-static Mutex feeRngMutex;
-static feeRand	feeRng = NULL;
-
-static void cspRandViaFee(size_t length, uint8 *cp)
-{
-	StLock<Mutex> _(feeRngMutex);
-	if(feeRng == NULL) {
-		feeRng = feeRandAlloc();
-	}
-	feeRandBytes(feeRng, cp, length);
-}
-#endif	/* CSP_ALLOW_FEE_RNG */
-
 void AppleCSPSession::getRandomBytes(size_t length, uint8 *cp)
 {
 	try {
 		cspGetRandomBytes(cp, (unsigned)length);
 	}
 	catch(...) {
-		#if		CSP_ALLOW_FEE_RNG
-		errorLog0("CSP: YarrowClient failure; using FEE RNG\n");
-		cspRandViaFee(length, cp);
-		#else
 		errorLog0("CSP: YarrowClient failure\n");
-		#endif
 	}
 }
 

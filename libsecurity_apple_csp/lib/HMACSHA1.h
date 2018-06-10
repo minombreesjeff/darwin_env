@@ -28,8 +28,6 @@
 #include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacTypes.h>
 #include <Security/cssmtype.h>
 #include <pbkdDigest.h>
-#include <MD5.h>
-#include <openssl/sha.h>
 
 #ifdef	__cplusplus
 extern "C" {

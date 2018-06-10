@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist SYSTEM "file://localhost/System/Library/DTDs/PropertyList.dtd">
-<plist version="0.9">
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
 <array>
 	<dict>
 		<key>AlgType</key>
@@ -175,6 +175,44 @@
 	</dict>
 	<dict>
 		<key>AlgType</key>
+		<string>CSSM_ALGID_CAST</string>
+		<key>Attributes</key>
+		<array>
+			<dict>
+				<key>AttributeType</key>
+				<string>CSSM_ATTRIBUTE_NONE</string>
+				<key>New item</key>
+				<array/>
+			</dict>
+		</array>
+		<key>ContextType</key>
+		<string>CSSM_ALGCLASS_KEYGEN</string>
+		<key>Description</key>
+		<string>CAST Key Generation</string>
+		<key>UseeTag</key>
+		<string>CSSM_USEE_NONE</string>
+	</dict>
+	<dict>
+		<key>AlgType</key>
+		<string>CSSM_ALGID_BLOWFISH</string>
+		<key>Attributes</key>
+		<array>
+			<dict>
+				<key>AttributeType</key>
+				<string>CSSM_ATTRIBUTE_NONE</string>
+				<key>AttributeValue</key>
+				<array/>
+			</dict>
+		</array>
+		<key>ContextType</key>
+		<string>CSSM_ALGCLASS_KEYGEN</string>
+		<key>Description</key>
+		<string>Blowfish Key Generation</string>
+		<key>UseeTag</key>
+		<string>CSSM_USEE_NONE</string>
+	</dict>
+	<dict>
+		<key>AlgType</key>
 		<string>CSSM_ALGID_SHA1HMAC</string>
 		<key>Attributes</key>
 		<array>
@@ -189,6 +227,25 @@
 		<string>CSSM_ALGCLASS_KEYGEN</string>
 		<key>Description</key>
 		<string>SHA1HMAC Key Generation</string>
+		<key>UseeTag</key>
+		<string>CSSM_USEE_NONE</string>
+	</dict>
+	<dict>
+		<key>AlgType</key>
+		<string>CSSM_ALGID_MD5HMAC</string>
+		<key>Attributes</key>
+		<array>
+			<dict>
+				<key>AttributeType</key>
+				<string>CSSM_ATTRIBUTE_NONE</string>
+				<key>AttributeValue</key>
+				<array/>
+			</dict>
+		</array>
+		<key>ContextType</key>
+		<string>CSSM_ALGCLASS_KEYGEN</string>
+		<key>Description</key>
+		<string>MD5HMAC Key Generation</string>
 		<key>UseeTag</key>
 		<string>CSSM_USEE_NONE</string>
 	</dict>
@@ -294,6 +351,63 @@
 		<string>CSSM_ALGCLASS_DERIVEKEY</string>
 		<key>Description</key>
 		<string>PKCS5 Key Derivation</string>
+		<key>UseeTag</key>
+		<string>CSSM_USEE_NONE</string>
+	</dict>
+	<dict>
+		<key>AlgType</key>
+		<string>CSSM_ALGID_PKCS5_PBKDF1_MD5</string>
+		<key>Attributes</key>
+		<array>
+			<dict>
+				<key>AttributeType</key>
+				<string>CSSM_ATTRIBUTE_NONE</string>
+				<key>AttributeValue</key>
+				<array/>
+			</dict>
+		</array>
+		<key>ContextType</key>
+		<string>CSSM_ALGCLASS_DERIVEKEY</string>
+		<key>Description</key>
+		<string>PKCS5 PBKDF1 MD5 Key Derivation</string>
+		<key>UseeTag</key>
+		<string>CSSM_USEE_NONE</string>
+	</dict>
+	<dict>
+		<key>AlgType</key>
+		<string>CSSM_ALGID_PKCS5_PBKDF1_MD2</string>
+		<key>Attributes</key>
+		<array>
+			<dict>
+				<key>AttributeType</key>
+				<string>CSSM_ATTRIBUTE_NONE</string>
+				<key>AttributeValue</key>
+				<array/>
+			</dict>
+		</array>
+		<key>ContextType</key>
+		<string>CSSM_ALGCLASS_DERIVEKEY</string>
+		<key>Description</key>
+		<string>PKCS5 PBKDF1 MD2 Key Derivation</string>
+		<key>UseeTag</key>
+		<string>CSSM_USEE_NONE</string>
+	</dict>
+	<dict>
+		<key>AlgType</key>
+		<string>CSSM_ALGID_PKCS5_PBKDF1_SHA1</string>
+		<key>Attributes</key>
+		<array>
+			<dict>
+				<key>AttributeType</key>
+				<string>CSSM_ATTRIBUTE_NONE</string>
+				<key>AttributeValue</key>
+				<array/>
+			</dict>
+		</array>
+		<key>ContextType</key>
+		<string>CSSM_ALGCLASS_DERIVEKEY</string>
+		<key>Description</key>
+		<string>PKCS5 PBKDF1 SHA1 Key Derivation</string>
 		<key>UseeTag</key>
 		<string>CSSM_USEE_NONE</string>
 	</dict>
@@ -411,6 +525,54 @@
 		<string>CSSM_ALGCLASS_SYMMETRIC</string>
 		<key>Description</key>
 		<string>RC5 Encryption</string>
+		<key>UseeTag</key>
+		<string>CSSM_USEE_NONE</string>
+	</dict>
+	<dict>
+		<key>AlgType</key>
+		<string>CSSM_ALGID_BLOWFISH</string>
+		<key>Attributes</key>
+		<array>
+			<dict>
+				<key>AttributeType</key>
+				<string>CSSM_ATTRIBUTE_MODE</string>
+				<key>AttributeValue</key>
+				<array>
+					<integer>2</integer>
+					<integer>3</integer>
+					<integer>5</integer>
+					<integer>6</integer>
+				</array>
+			</dict>
+		</array>
+		<key>ContextType</key>
+		<string>CSSM_ALGCLASS_SYMMETRIC</string>
+		<key>Description</key>
+		<string>Blowfish Encryption</string>
+		<key>UseeTag</key>
+		<string>CSSM_USEE_NONE</string>
+	</dict>
+	<dict>
+		<key>AlgType</key>
+		<string>CSSM_ALGID_CAST</string>
+		<key>Attributes</key>
+		<array>
+			<dict>
+				<key>AttributeType</key>
+				<string>CSSM_ATTRIBUTE_MODE</string>
+				<key>AttributeValue</key>
+				<array>
+					<integer>2</integer>
+					<integer>3</integer>
+					<integer>5</integer>
+					<integer>6</integer>
+				</array>
+			</dict>
+		</array>
+		<key>ContextType</key>
+		<string>CSSM_ALGCLASS_SYMMETRIC</string>
+		<key>Description</key>
+		<string>CAST Encryption</string>
 		<key>UseeTag</key>
 		<string>CSSM_USEE_NONE</string>
 	</dict>

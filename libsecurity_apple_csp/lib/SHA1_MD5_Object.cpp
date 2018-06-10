@@ -1,18 +1,24 @@
 /*
- * Copyright (c) 2000-2001 Apple Computer, Inc. All Rights Reserved.
+ * Copyright (c) 2000-2004 Apple Computer, Inc. All Rights Reserved.
  * 
- * The contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License. Please obtain
- * a copy of the License at http://www.apple.com/publicsource and read it before
- * using this file.
+ * @APPLE_LICENSE_HEADER_START@
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS
- * OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES, INCLUDING WITHOUT
- * LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
- * PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT. Please see the License for the
- * specific language governing rights and limitations under the License.
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
+ * 
+ * @APPLE_LICENSE_HEADER_END@
  */
 
 
@@ -32,7 +38,7 @@
 void MD5Object::digestInit()
 {
 	mIsDone = false;
-	MD5_Init(&mCtx);
+	CC_MD5_Init(&mCtx);
 }
 
 void MD5Object::digestUpdate(
@@ -42,7 +48,7 @@ void MD5Object::digestUpdate(
 	if(mIsDone) {
 		throw std::runtime_error("MD5 digestUpdate after final");
 	}
-	MD5_Update(&mCtx, data, len);
+	CC_MD5_Update(&mCtx, data, len);
 }
 
 void MD5Object::digestFinal(
@@ -51,7 +57,7 @@ void MD5Object::digestFinal(
 	if(mIsDone) {
 		throw std::runtime_error("MD5 digestFinal after final");
 	}
-	MD5_Final((unsigned char *)digest, &mCtx);
+	CC_MD5_Final((unsigned char *)digest, &mCtx);
 	mIsDone = true;
 }
 
@@ -63,7 +69,7 @@ DigestObject *MD5Object::digestClone() const
 
 UInt32 MD5Object::digestSizeInBytes() const
 {
-	return MD5_DIGEST_LENGTH;
+	return CC_MD5_DIGEST_LENGTH;
 }
 
 /***
@@ -72,20 +78,20 @@ UInt32 MD5Object::digestSizeInBytes() const
 void SHA1Object::digestInit()
 {
 	mIsDone = false;
-	SHA1_Init(&mCtx);
+	CC_SHA1_Init(&mCtx);
 }
 
 void SHA1Object::digestUpdate(
 	const void 	*data, 
 	size_t 		len)
 {
-	SHA1_Update(&mCtx, (const unsigned char *)data, len);
+	CC_SHA1_Update(&mCtx, (const unsigned char *)data, len);
 }
 
 void SHA1Object::digestFinal(
 	void 		*digest)
 {
-	SHA1_Final((unsigned char *)digest, &mCtx);
+	CC_SHA1_Final((unsigned char *)digest, &mCtx);
 	mIsDone = true;
 }
 
@@ -97,6 +103,6 @@ DigestObject *SHA1Object::digestClone() const
 
 UInt32 SHA1Object::digestSizeInBytes() const
 {
-	return SHA_DIGEST_LENGTH;
+	return CC_SHA1_DIGEST_LENGTH;
 }
 

@@ -31,6 +31,7 @@
 #include "MacContext.h"
 #include "DigestContext.h"
 #include "SHA1_MD5_Object.h"			/* raw digest */
+#include "SHA2_Object.h"
 #include "MD2Object.h"
 #include "NullCryptor.h"
 #include "bfContext.h"
@@ -66,177 +67,6 @@
 		!MAF_RC5_ENABLE || !MAF_MAC_ENABLE)
 #warning	Internal DES/RC2/RC4/RC5/Mac implementation disabled! 
 #endif
-
-/*
- * Synthetic secure passphrase generation context. This eventually
- * goes away in favor of the real code in Security server. 
- */
-#ifndef NDEBUG
-#define SECURE_PASSPHRASE_ENABLE	1
-#else
-#define SECURE_PASSPHRASE_ENABLE	0
-#endif
-
-#if SECURE_PASSPHRASE_ENABLE
-
-/* 
- * HACK! DO not even think of enabling this for a checked-in NDEBUG configuration!
- */
-#include <CoreFoundation/CoreFoundation.h>
-/* 
- * Safe gets().
- * -- guaranteed no buffer overflow
- * -- guaranteed NULL-terminated string
- * -- handles empty string (i.e., response is just CR) properly
- */
-void getString(
-	char *buf,
-	unsigned bufSize)
-{
-	unsigned dex;
-	char c;
-	char *cp = buf;
-	*cp = '\0';
-	
-	for(dex=0; dex<bufSize-1; dex++) {
-		c = getchar();
-		if (c == EOF) {
-			break;
-		}
-		
-		if(!isprint(c)) {
-			break;
-		}
-		switch(c) {
-			case '\n':
-			case '\r':
-				goto done;
-			default:
-				*cp++ = c;
-		}
-	}
-done:
-	*cp = '\0';
-}
-
-class SecurePhraseGenerator : public AppleCSPContext {
-public:
-	SecurePhraseGenerator(
-		AppleCSPSession &session) :
-			AppleCSPContext(session) { }
-	
-	void init(const Context &context, bool encoding = true) { }
-			
-	void generate(
-		const Context 	&context, 
-		CssmKey 		&symKey, 
-		CssmKey 		&dummyKey);
-};
-
-static void showStringAttr(
-	const Context		&context, 
-	const char			*label,
-	CSSM_ATTRIBUTE_TYPE attrType)
-{
-	CssmData *dataAttr = context.get<CssmData>(attrType);
-	if(dataAttr == NULL) {
-		return;
-	}
-	CFDataRef cfData = CFDataCreate(NULL, dataAttr->Data, dataAttr->Length);
-	CFStringRef cfStr = CFStringCreateFromExternalRepresentation(NULL,
-		cfData, kCFStringEncodingUTF8);
-	if(cfStr == NULL) {
-		printf("***Bad context attr string\n");
-		CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_SEED);
-	}
-	char buf[1000];
-	CFStringGetCString(cfStr, buf, 1000, kCFStringEncodingUTF8);
-	printf("%s: %s\n", label, buf);
-	CFRelease(cfData);
-	CFRelease(cfStr);
-}
-
-void SecurePhraseGenerator::generate(
-		const Context 	&context, 
-		CssmKey 		&cssmKey, 
-		CssmKey 		&dummyKey)
-{
-
-	/* here's the hack: get a attributes from context and string from the user */
-	printf("====== secure passphrase acquisition =====\n");
-	showStringAttr(context, "Alert Title", CSSM_ATTRIBUTE_ALERT_TITLE);
-	showStringAttr(context, "Alert Prompt", CSSM_ATTRIBUTE_PROMPT);
-	try {
-		uint32 vfyBit = context.getInt(CSSM_ATTRIBUTE_VERIFY_PASSPHRASE,
-			CSSMERR_CSP_INVALID_ATTR_PASSPHRASE);
-		printf("Verify Phrase bit: %lu\n", vfyBit);
-	}
-	catch(...) {
-		printf("***No CSSM_ATTRIBUTE_VERIFY_PASSPHRASE attribute!\n");
-	}
-	char phraseStr[512];
-	
-	printf("Enter passphrase: ");
-	getString(phraseStr, 512);
-	if(phraseStr[0] == 0) {
-		CssmError::throwMe(CSSMERR_CSP_USER_CANCELED);
-	}
-	printf("==========================================\n");
-
-	CFStringRef cfStr = CFStringCreateWithCString(NULL, phraseStr, kCFStringEncodingASCII);
-	CFDataRef cfData = CFStringCreateExternalRepresentation(NULL,
-		cfStr, kCFStringEncodingUTF8, 0);
-	unsigned phraseLen = CFDataGetLength(cfData);
-	unsigned char *phrase = (unsigned char *)CFDataGetBytePtr(cfData);
-	
-	/* remainder copied from AppleSymmKeyGenContext::generateSymKey() */
-	
-	// validate KeyAtrr and KeyUsage already present in header
-	cspKeyStorage 	keyStorage;
-	CssmKey::Header	&hdr  = cssmKey.header(); 
-	
-	keyStorage = cspParseKeyAttr(CKT_Session,  hdr.KeyAttr);
-	cspValidateKeyUsageBits(CKT_Session, hdr.KeyUsage);
-	hdr.KeyAttr  &= ~KEY_ATTR_RETURN_MASK;
-	
-	hdr.LogicalKeySizeInBits = phraseLen * 8;
-	SymmetricBinaryKey *binKey = NULL;
-	CssmData *keyData = NULL;
-	
-	switch(keyStorage) {
-		case CKS_None:
-			/* no way */
-			CssmError::throwMe(CSSMERR_CSP_INVALID_KEYATTR_MASK);
-		case CKS_Ref:
-			/* cook up a symmetric binary key */
-			binKey = new SymmetricBinaryKey(phraseLen * 8);
-			keyData = &binKey->mKeyData;
-			break;
-		case CKS_Data:
-			/* key bytes --> caller's cssmKey */
-			keyData = &(CssmData::overlay(cssmKey.KeyData));
-			setUpCssmData(*keyData, phraseLen, 
-				session().normAlloc());
-			break;
-	}
-	
-	// in any case, fill key bytes with phrase data
-	memmove(keyData->Data, phrase, phraseLen);
-	// orig: session.getRandomBytes(keySizeInBytes, keyData->Data);
-
-	if(keyStorage == CKS_Ref) {
-		session().addRefKey(*binKey, cssmKey);
-	}
-	else {
-		/* Raw data */
-		hdr.BlobType = CSSM_KEYBLOB_RAW;
-		hdr.Format = CSSM_KEYBLOB_RAW_FORMAT_OCTET_STRING; 
-	}
-	CFRelease(cfData);
-	CFRelease(cfStr);
-}
-
-#endif  /* SECURE_PASSPHRASE_ENABLE */
 
 bool MiscAlgFactory::setup(
 	AppleCSPSession &session,
@@ -363,6 +193,27 @@ bool MiscAlgFactory::setup(
 								*(new MD2Object));
 					}
 					return true;
+				case CSSM_ALGID_SHA256:
+					if(cspCtx == NULL) {
+						/* reuse is OK */
+						cspCtx = new DigestContext(session, 
+								*(new SHA256Object));
+					}
+					return true;
+				case CSSM_ALGID_SHA384:
+					if(cspCtx == NULL) {
+						/* reuse is OK */
+						cspCtx = new DigestContext(session, 
+								*(new SHA384Object));
+					}
+					return true;
+				case CSSM_ALGID_SHA512:
+					if(cspCtx == NULL) {
+						/* reuse is OK */
+						cspCtx = new DigestContext(session, 
+								*(new SHA512Object));
+					}
+					return true;
 				default:
 					break;		// not our digest alg
 			}					// switch digest alg
@@ -479,14 +330,6 @@ bool MiscAlgFactory::setup(
 					}
 					return true;
 				#endif	/* NULL_CRYPT_ENABLE */
-				
-				#if		SECURE_PASSPHRASE_ENABLE
-				case CSSM_ALGID_SECURE_PASSPHRASE:
-					if(cspCtx == NULL) {
-						cspCtx = new SecurePhraseGenerator(session);
-					}
-					return true;
-				#endif  /* SECURE_PASSPHRASE_ENABLE */
 				
 				default:
 					break;	// not our keygen alg

@@ -40,7 +40,7 @@
 #define DSA_PRIV_KEY_FORMAT		CSSM_KEYBLOB_RAW_FORMAT_FIPS186
 
 #define	DSA_MIN_KEY_SIZE		512
-#define DSA_MAX_KEY_SIZE		1024
+#define DSA_MAX_KEY_SIZE		4096
 #define DSA_KEY_BITS_MASK		(64 - 1)	/* these bits must be zero */
 											/* i.e., aligned to 64 bits */
 /*

@@ -1674,6 +1674,18 @@ CSSM_RETURN generateDigestInfo(
 		case CSSM_ALGID_SHA1:
 			algId.algorithm = CSSMOID_SHA1;
 			break;
+		case CSSM_ALGID_SHA224:
+			algId.algorithm = CSSMOID_SHA224;
+			break;
+		case CSSM_ALGID_SHA256:
+			algId.algorithm = CSSMOID_SHA256;
+			break;
+		case CSSM_ALGID_SHA384:
+			algId.algorithm = CSSMOID_SHA384;
+			break;
+		case CSSM_ALGID_SHA512:
+			algId.algorithm = CSSMOID_SHA512;
+			break;
 		default:
 			return CSSMERR_CSP_INVALID_ALGORITHM;
 	}

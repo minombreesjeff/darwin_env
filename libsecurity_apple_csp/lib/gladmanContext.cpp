@@ -30,20 +30,11 @@
 class GladmanInit
 {
 public:
-	GladmanInit() :  mTablesGenerated(false) { }
-	void genTables();
-private:
-	bool mTablesGenerated;
-	Mutex mLock;
+	GladmanInit();
 };
 
-void GladmanInit::genTables()
+GladmanInit::GladmanInit()
 {
-	StLock<Mutex> _(mLock);
-	if(mTablesGenerated) {
-		return;
-	}
-	
 	/* allocate the tables */
 	Allocator &alloc = Allocator::standard(Allocator::sensitive);
 	pow_tab = (u1byte *)alloc.malloc(POW_TAB_SIZE * sizeof(u1byte));
@@ -64,7 +55,6 @@ void GladmanInit::genTables()
 	
 	/* now fill them */
 	gen_tabs();
-	mTablesGenerated = true;
 }
 
 static ModuleNexus<GladmanInit> gladmanInit;
@@ -79,7 +69,7 @@ GAESContext::GAESContext(AppleCSPSession &session) :
 	mRawKeySize(0)	
 { 
 	/* one-time only init */
-	gladmanInit().genTables();
+	gladmanInit();
 }
 
 GAESContext::~GAESContext()
@@ -116,6 +106,15 @@ void GAESContext::init(
 	symmetricKeyBits(context, session(), CSSM_ALGID_AES, 
 		encrypting ? CSSM_KEYUSE_ENCRYPT : CSSM_KEYUSE_DECRYPT,
 		keyData, keyLen);
+	
+	switch(keyLen) {
+		case MIN_AES_KEY_BITS / 8:
+		case MID_AES_KEY_BITS / 8:
+		case MAX_AES_KEY_BITS / 8:
+			break;
+		default:
+			CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_KEY);
+	}
 	
 	/*
 	 * Delete existing key if key size changed
