@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,20 +21,24 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-/*
- *  dsexport main.m
- *  DSTools
+/*!
+ * @header PathRecordConfig
  */
 
-#import "ExportController.h"
 
-int main (int argc, const char * argv[]) {
-    NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
+#import <Foundation/Foundation.h>
+#import "PathRecord.h"
 
-	ExportController* exportController = [[ExportController alloc] initWithArgs:argv numArgs:argc];
+@class DSoRecord;
 
-	[exportController export];
-
-    [pool release];
-    return 0;
+@interface PathRecordConfig : PathRecord
+{
+	AuthorizationExternalForm _authExternalForm;
+	BOOL _haveRights;
 }
+
+- (void)setAuthExternalForm:(AuthorizationExternalForm*)externalForm;
+
+- (tDirStatus)setPluginEnabled:(NSString*)newState;
+
+@end
