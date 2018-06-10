@@ -29,7 +29,7 @@
 	<key>MdsRecordType</key>
 	<string>MDS_CDSADIR_DL_PRIMARY_RECORDTYPE</string>
 	<key>ModuleID</key>
-	<string>{87191ca3-0fc9-11d4-849a000502b52122}</string>
+	<string>{87191ca3-0fc9-11d4-849a-000502b52122}</string>
 	<key>ModuleName</key>
 	<string>AppleCSPDL</string>
 	<key>ProductVersion</key>
@@ -47,7 +47,7 @@
 		<string></string>
 	</array>
 	<key>SSID</key>
-	<integer>1</integer>
+	<integer>0</integer>
 	<key>SampleTypes</key>
 	<array>
 		<string>CSSM_SAMPLE_TYPE_PASSWORD</string>

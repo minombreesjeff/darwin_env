@@ -70,7 +70,7 @@ public:
                         CSSM_DB_RECORDTYPE RelationID,
                         const char *RelationName,
                         uint32 NumberOfAttributes,
-                        const CSSM_DB_SCHEMA_ATTRIBUTE_INFO &pAttributeInfo,
+                        const CSSM_DB_SCHEMA_ATTRIBUTE_INFO *pAttributeInfo,
                         uint32 NumberOfIndexes,
                         const CSSM_DB_SCHEMA_INDEX_INFO &pIndexInfo);
     void DestroyRelation(CSSM_DB_HANDLE DBHandle,
@@ -107,7 +107,7 @@ public:
                     const CssmData *DataToBeModified,
                     CSSM_DB_MODIFY_MODE ModifyMode);
     CSSM_HANDLE DataGetFirst(CSSM_DB_HANDLE DBHandle,
-                             const DLQuery *Query,
+                             const CssmQuery *Query,
                              CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR Attributes,
                              CssmData *Data,
                              CSSM_DB_UNIQUE_RECORD_PTR &UniqueId);
@@ -135,6 +135,33 @@ public:
 protected:
 	CSSM_DB_HANDLE makeDbHandle(SSDatabase &inDb);
 	SSDatabase killDbHandle(CSSM_DB_HANDLE inDbHandle);
+
+	CSSM_DB_ATTRIBUTE_DATA_PTR reconstructRecordFromBlob (const CSSM_DATA& blob,
+														  CssmDataContainer &recordData,
+														  uint32 &numAttributes);
+
+	void getWrappedAttributesAndData (SSDatabase &db,
+									  CSSM_DB_RECORDTYPE recordType,
+									  CSSM_DB_UNIQUE_RECORD_PTR recordPtr,
+									  CssmDataContainer &output,
+									  CSSM_DATA *blobData);
+								
+	void unwrapAttributesAndData (uint32 &numAttributes,
+								  CSSM_DB_ATTRIBUTE_DATA_PTR &attributes,
+								  CSSM_DATA &data,
+								  CSSM_DATA &input);
+	
+	void cleanupAttributes (uint32 numAttributes, CSSM_DB_ATTRIBUTE_DATA_PTR attributes);
+	
+	void getUniqueIdForSymmetricKey (SSDatabase &db, CSSM_DATA &label,
+									 CSSM_DB_UNIQUE_RECORD_PTR &uniqueRecord);
+
+	void getCorrespondingSymmetricKey (SSDatabase &db, CSSM_DATA& label, CssmDataContainer &key);
+	
+	void doGetWithoutEncryption (SSDatabase &db, const void* inInputParams, void **outOutputParams);
+	void doModifyWithoutEncryption (SSDatabase &db, const void* inInputParams, void **outOutputParams);
+	void doInsertWithoutEncryption (SSDatabase &db, const void* inInputParams, void** outOutputParams);
+	void doConvertRecordIdentifier (SSDatabase &db, const void* inInputParams, void **outOutputParams);
 
 	Mutex mDbHandleLock;
 	typedef map<CSSM_DB_HANDLE, SSDatabase> DbHandleMap;

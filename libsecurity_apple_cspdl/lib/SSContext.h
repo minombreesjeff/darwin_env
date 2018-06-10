@@ -25,6 +25,7 @@
 #include <security_cdsa_plugin/CSPsession.h>
 #include <securityd_client/ssclient.h>
 #include <security_cdsa_utilities/digestobject.h>
+#include <security_cdsa_client/cspclient.h>
 
 //
 // Parent class for all CSPContexts implemented in this CSP.  Currently the

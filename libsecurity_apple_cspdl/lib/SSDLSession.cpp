@@ -24,6 +24,7 @@
 #include "CSPDLPlugin.h"
 #include "SSKey.h"
 #include <security_cdsa_utilities/cssmbridge.h>
+#include <Security/cssmapplePriv.h>
 
 using namespace CssmClient;
 using namespace SecurityServer;
@@ -149,14 +150,14 @@ SSDLSession::CreateRelation(CSSM_DB_HANDLE inDbHandle,
 							CSSM_DB_RECORDTYPE inRelationID,
 							const char *inRelationName,
 							uint32 inNumberOfAttributes,
-							const CSSM_DB_SCHEMA_ATTRIBUTE_INFO &inAttributeInfo,
+							const CSSM_DB_SCHEMA_ATTRIBUTE_INFO *inAttributeInfo,
 							uint32 inNumberOfIndexes,
 							const CSSM_DB_SCHEMA_INDEX_INFO &inIndexInfo)
 {
 	SSDatabase db = findDbHandle(inDbHandle);
 	// @@@ Fix inAttributeInfo and inIndexInfo arguments (might be NULL if NumberOf = 0)
 	db->createRelation(inRelationID, inRelationName,
-					  inNumberOfAttributes, &inAttributeInfo,
+					  inNumberOfAttributes, inAttributeInfo,
 					  inNumberOfIndexes, &inIndexInfo);
 }
 
@@ -186,7 +187,9 @@ SSDLSession::GetDbAcl(CSSM_DB_HANDLE inDbHandle,
 					  CSSM_ACL_ENTRY_INFO_PTR &outAclInfos)
 {
 	SSDatabase db = findDbHandle(inDbHandle);
-    CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+	mClientSession.getDbAcl(db->dbHandle(),
+		inSelectionTag ? *inSelectionTag : NULL,
+		outNumberOfAclInfos, AclEntryInfo::overlayVar(outAclInfos), allocator());
 }
 
 void
@@ -195,7 +198,7 @@ SSDLSession::ChangeDbAcl(CSSM_DB_HANDLE inDbHandle,
 						 const CSSM_ACL_EDIT &inAclEdit)
 {
 	SSDatabase db = findDbHandle(inDbHandle);
-    CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+	mClientSession.changeDbAcl(db->dbHandle(), inAccessCred, AclEdit::overlay(inAclEdit));
 }
 
 void
@@ -203,7 +206,8 @@ SSDLSession::GetDbOwner(CSSM_DB_HANDLE inDbHandle,
 						CSSM_ACL_OWNER_PROTOTYPE &outOwner)
 {
 	SSDatabase db = findDbHandle(inDbHandle);
-    CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+	mClientSession.getDbOwner(db->dbHandle(),
+		AclOwnerPrototype::overlay(outOwner), allocator());
 }
 
 void
@@ -212,7 +216,8 @@ SSDLSession::ChangeDbOwner(CSSM_DB_HANDLE inDbHandle,
 						   const CSSM_ACL_OWNER_PROTOTYPE &inNewOwner)
 {
 	SSDatabase db = findDbHandle(inDbHandle);
-    CssmError::throwMe(CSSM_ERRCODE_FUNCTION_NOT_IMPLEMENTED);
+	mClientSession.changeDbOwner(db->dbHandle(), inAccessCred,
+		AclOwnerPrototype::overlay(inNewOwner));
 }
 
 void
@@ -265,7 +270,7 @@ SSDLSession::DataModify(CSSM_DB_HANDLE inDbHandle,
 
 CSSM_HANDLE
 SSDLSession::DataGetFirst(CSSM_DB_HANDLE inDbHandle,
-						  const DLQuery *inQuery,
+						  const CssmQuery *inQuery,
 						  CSSM_DB_RECORD_ATTRIBUTE_DATA_PTR inoutAttributes,
 						  CssmData *inoutData,
 						  CSSM_DB_UNIQUE_RECORD_PTR &outUniqueRecord)
@@ -452,6 +457,638 @@ SSDLSession::FreeUniqueRecord(CSSM_DB_HANDLE inDbHandle,
 	killSSUniqueRecord(inUniqueRecordIdentifier);
 }
 
+static const uint32 kGenericAttributeNames[] =
+{
+	'cdat', 'mdat', 'desc', 'icmt', 'crtr', 'type', 'scrp', 7, 8, 'invi', 'nega', 'cusi', 'prot', 'acct', 'svce',
+	'gena'
+};
+
+const uint32 kNumGenericAttributes = sizeof (kGenericAttributeNames) / sizeof (uint32);
+
+static const uint32 kApplesharePasswordNames[] =
+{
+	'cdat', 'mdat', 'desc', 'icmt', 'crtr', 'type', 'scrp', 7, 8, 'invi', 'nega', 'cusi', 'prot', 'acct', 'vlme',
+	'srvr', 'ptcl', 'addr', 'ssig'
+};
+
+const uint32 kNumApplesharePasswordAttributes = sizeof (kApplesharePasswordNames) / sizeof (uint32);
+
+static const uint32 kInternetPasswordNames[] =
+{
+	'cdat', 'mdat', 'desc', 'icmt', 'crtr', 'type', 'scrp', 7, 8, 'invi', 'nega', 'cusi', 'prot', 'acct', 'sdmn',
+	'srvr', 'ptcl', 'atyp', 'port', 'path'
+};
+
+const uint32 kNumInternetPasswordAttributes = sizeof (kInternetPasswordNames) / sizeof (uint32);
+
+const uint32 kKeyAttributeNames[] =
+{
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
+};
+
+const uint32 kNumKeyAttributes = sizeof (kKeyAttributeNames) / sizeof (uint32);
+
+const uint32 kCertificateAttributeNames[] =
+{
+	'ctyp', 'cenc', 'labl', 'alis', 'subj', 'issu', 'snbr', 'skid', 'hpky'
+};
+
+const uint32 kNumCertificateAttributes = sizeof (kCertificateAttributeNames) / sizeof (uint32);
+
+const unsigned kSymmetricKeyLabel = 6; // record id for the symmetric key
+const unsigned kLabelSize = 20;
+const unsigned kNumSymmetricAttributes = 27; // number of attributes to request
+
+static void appendUInt32ToData (const uint32 value, CssmDataContainer &data)
+{
+	data.append (CssmPolyData (uint32 (htonl (value))));
+}
+
+static inline uint32 GetUInt32AtFinger (uint8 *&finger)
+{
+	uint32 a = ntohl ((finger[0] << 24) | (finger[1] << 16) | (finger[2] << 8) | finger[3]);
+	finger += sizeof (uint32);
+	return a;
+}
+
+void
+SSDLSession::unwrapAttributesAndData (uint32 &numAttributes,
+									  CSSM_DB_ATTRIBUTE_DATA_PTR &attributes,
+									  CSSM_DATA &data,
+									  CSSM_DATA &input)
+{
+	// get the number of attributes
+	uint8* finger = input.Data;
+	numAttributes = GetUInt32AtFinger (finger);
+	
+	// compute the end of the data for sanity checking later
+	uint8* maximum = input.Data + input.Length;
+	
+	// make the attribute array
+	attributes = (CSSM_DB_ATTRIBUTE_DATA*) allocator ().malloc (numAttributes * sizeof (CSSM_DB_ATTRIBUTE_DATA));
+	
+	// for each attribute, retrieve the name format, name, type, and number of values
+	unsigned i;
+	for (i = 0; i < numAttributes; ++i)
+	{
+		attributes[i].Info.AttributeNameFormat = GetUInt32AtFinger (finger);
+		attributes[i].Info.Label.AttributeID = GetUInt32AtFinger (finger);
+		attributes[i].Info.AttributeFormat = GetUInt32AtFinger (finger);
+		attributes[i].NumberOfValues = GetUInt32AtFinger (finger);
+		
+		// for each value, get the length and data
+		attributes[i].Value = (CSSM_DATA*) allocator ().malloc (sizeof (CSSM_DATA) * attributes[i].NumberOfValues);
+		unsigned j;
+		for (j = 0; j < attributes[i].NumberOfValues; ++j)
+		{
+			attributes[i].Value[j].Length = GetUInt32AtFinger (finger);
+			if (attributes[i].Value[j].Length != 0)
+			{
+				// sanity check what we are about to do
+				if (finger > maximum || finger + attributes[i].Value[j].Length > maximum)
+				{
+					CssmError::throwMe (CSSM_ERRCODE_INVALID_POINTER);
+				}
+
+				attributes[i].Value[j].Data = (uint8*) allocator ().malloc (attributes[i].Value[j].Length);
+				memmove (attributes[i].Value[j].Data, finger, attributes[i].Value[j].Length);
+				finger += attributes[i].Value[j].Length;
+			}
+			else
+			{
+				attributes[i].Value[j].Data = NULL;
+			}
+		}
+	}
+	
+	// get the data
+	data.Length = GetUInt32AtFinger (finger);
+	if (data.Length != 0)
+	{
+		// sanity check the pointer
+		if (finger + data.Length > maximum)
+		{
+			CssmError::throwMe (CSSM_ERRCODE_INVALID_POINTER);
+		}
+
+		data.Data = (uint8*) allocator ().malloc (data.Length);
+		memmove (data.Data, finger, data.Length);
+		finger += data.Length;
+	}
+	else
+	{
+		data.Data = NULL;
+	}
+}
+
+void
+SSDLSession::getWrappedAttributesAndData (SSDatabase &db,
+										  CSSM_DB_RECORDTYPE recordType,
+										  CSSM_DB_UNIQUE_RECORD_PTR recordPtr,
+										  CssmDataContainer &output,
+										  CSSM_DATA *dataBlob)
+{
+	// figure out which attributes to use
+	const uint32* attributeNameArray;
+	uint32 numAttributeNames;
+	
+	switch (recordType)
+	{
+		case CSSM_DL_DB_RECORD_GENERIC_PASSWORD:
+		{
+			attributeNameArray = kGenericAttributeNames;
+			numAttributeNames = kNumGenericAttributes;
+			break;
+		}
+		
+		case CSSM_DL_DB_RECORD_INTERNET_PASSWORD:
+		{
+			attributeNameArray = kInternetPasswordNames;
+			numAttributeNames = kNumInternetPasswordAttributes;
+			break;
+		}
+		
+		case CSSM_DL_DB_RECORD_APPLESHARE_PASSWORD:
+		{
+			attributeNameArray = kApplesharePasswordNames;
+			numAttributeNames = kNumApplesharePasswordAttributes;
+			break;
+		}
+		
+		case CSSM_DL_DB_RECORD_X509_CERTIFICATE:
+		{
+			attributeNameArray = kCertificateAttributeNames;
+			numAttributeNames = kNumCertificateAttributes;
+			break;
+		}
+		
+		case CSSM_DL_DB_RECORD_PUBLIC_KEY:
+		case CSSM_DL_DB_RECORD_PRIVATE_KEY:
+		case CSSM_DL_DB_RECORD_SYMMETRIC_KEY:
+		{
+			attributeNameArray = kKeyAttributeNames;
+			numAttributeNames = kNumKeyAttributes;
+			break;
+		}
+
+		default:
+		{
+			CssmError::throwMe (CSSMERR_DL_FUNCTION_NOT_IMPLEMENTED);
+		}
+	}
+	
+	// make the attribute array
+	size_t arraySize = numAttributeNames * sizeof (CSSM_DB_ATTRIBUTE_DATA);
+	
+	CSSM_DB_ATTRIBUTE_DATA_PTR attributes =
+		(CSSM_DB_ATTRIBUTE_DATA_PTR) allocator ().malloc (arraySize);
+	
+	// initialize the array
+	memset (attributes, 0, arraySize);
+	unsigned i;
+	for (i = 0; i < numAttributeNames; ++i)
+	{
+		attributes[i].Info.AttributeNameFormat = CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER;
+		attributes[i].Info.Label.AttributeID = attributeNameArray[i];
+	}
+	
+	// make the attribute record
+	CSSM_DB_RECORD_ATTRIBUTE_DATA attrData;
+	attrData.DataRecordType = recordType;
+	attrData.SemanticInformation = 0;
+	attrData.NumberOfAttributes = numAttributeNames;
+	attrData.AttributeData = attributes;
+	
+	// get the data
+	CssmDataContainer data;
+	CSSM_RETURN result = CSSM_DL_DataGetFromUniqueRecordId (db->handle (),
+															recordPtr,
+															&attrData,
+															&data);
+	if (result != 0)
+	{
+		CssmError::throwMe (result);
+	}
+	
+	// wrap the data -- write the number of attributes
+	appendUInt32ToData (numAttributeNames, output);
+	
+	// for each attribute, write the type and number of values
+	for (i = 0; i < numAttributeNames; ++i)
+	{
+		appendUInt32ToData (attributes[i].Info.AttributeNameFormat, output);
+		appendUInt32ToData (attributes[i].Info.Label.AttributeID, output);
+		appendUInt32ToData (attributes[i].Info.AttributeFormat, output);
+		appendUInt32ToData (attributes[i].NumberOfValues, output);
+		
+		// for each value, write the name format, name, length and the data
+		unsigned j;
+		for (j = 0; j < attributes[i].NumberOfValues; ++j)
+		{
+			appendUInt32ToData (attributes[i].Value[j].Length, output);
+			if (attributes[i].Value[j].Length != 0)
+			{
+				output.append (CssmPolyData (attributes[i].Value[j]));
+			}
+		}
+	}
+	
+	// write the length of the data
+	appendUInt32ToData (data.Length, output);
+	
+	// write the data itself
+	if (data.Length != 0)
+	{
+		output.append (CssmPolyData (data));
+	}
+	
+	// clean up
+	for (i = 0; i < numAttributeNames; ++i)
+	{
+		unsigned j;
+		for (j = 0; j < attributes[i].NumberOfValues; ++j)
+		{
+			allocator ().free (attributes[i].Value[j].Data);
+		}
+		
+		allocator ().free (attributes[i].Value);
+	}
+	
+	allocator ().free (attributes);
+	
+	// copy out the data if the caller needs it
+	if (dataBlob)
+	{
+		dataBlob->Data = data.Data;
+		dataBlob->Length = data.Length;
+		data.Data = NULL;
+		data.Length = 0;
+	}
+}
+
+void
+SSDLSession::getUniqueIdForSymmetricKey (SSDatabase &db, CSSM_DATA &label,
+										 CSSM_DB_UNIQUE_RECORD_PTR &uniqueRecord)
+{
+	// set up a query to get the key
+	CSSM_SELECTION_PREDICATE predicate;
+	predicate.DbOperator = CSSM_DB_EQUAL;
+	predicate.Attribute.Info.AttributeNameFormat = CSSM_DB_ATTRIBUTE_NAME_AS_INTEGER;
+	predicate.Attribute.Info.Label.AttributeID = kSymmetricKeyLabel;
+	predicate.Attribute.Info.AttributeFormat = CSSM_DB_ATTRIBUTE_FORMAT_BLOB;
+	predicate.Attribute.NumberOfValues = 1;
+	// the label of the corresponding key is the first 20 bytes of the blob we returned
+	predicate.Attribute.Value = &label;
+
+	CSSM_QUERY query;
+	query.RecordType = CSSM_DL_DB_RECORD_SYMMETRIC_KEY;
+	query.Conjunctive = CSSM_DB_NONE;
+	query.NumSelectionPredicates = 1;
+	query.SelectionPredicate = &predicate;
+	
+	// fill out the record data
+	CSSM_DB_RECORD_ATTRIBUTE_DATA recordAttributeData;
+	recordAttributeData.DataRecordType = CSSM_DL_DB_RECORD_SYMMETRIC_KEY;
+	recordAttributeData.SemanticInformation = 0;
+	recordAttributeData.NumberOfAttributes = 0;
+	recordAttributeData.AttributeData = NULL;
+	
+	// get the data
+	CSSM_HANDLE handle;
+	CSSM_RETURN result = CSSM_DL_DataGetFirst (db->handle (), &query, &handle, &recordAttributeData, NULL,
+											   &uniqueRecord);
+	if (result)
+	{
+		CssmError::throwMe (result);
+	}
+
+	// clean up
+	CSSM_DL_DataAbortQuery (db->handle (), handle);
+}
+
+void
+SSDLSession::getCorrespondingSymmetricKey (SSDatabase &db, CSSM_DATA &labelData, CssmDataContainer &data)
+{
+	// get the unique ID
+	CSSM_DB_UNIQUE_RECORD_PTR uniqueRecord;
+	getUniqueIdForSymmetricKey (db, labelData, uniqueRecord);
+
+	// from this. get the wrapped attributes and data
+	getWrappedAttributesAndData (db, CSSM_DL_DB_RECORD_SYMMETRIC_KEY, uniqueRecord, data, NULL);
+	
+	// clean up after the query
+	CSSM_DL_FreeUniqueRecord (db->handle (), uniqueRecord);
+}
+
+void SSDLSession::doGetWithoutEncryption (SSDatabase &db, const void *inInputParams, void **outOutputParams)
+{
+	CSSM_APPLECSPDL_DB_GET_WITHOUT_ENCRYPTION_PARAMETERS* params =
+		(CSSM_APPLECSPDL_DB_GET_WITHOUT_ENCRYPTION_PARAMETERS*) inInputParams;
+		
+	SSUniqueRecord uniqueID = findSSUniqueRecord(*(params->uniqueID));
+	
+	CSSM_DATA *outputData = (CSSM_DATA*) outOutputParams;
+	CssmDataContainer output;
+	
+	// get the record type and requested attributes from the DL
+	CssmDataContainer data;
+	CSSM_RETURN result = CSSM_DL_DataGetFromUniqueRecordId(db->handle(),
+														   uniqueID,
+														   params->attributes,
+														   NULL);
+	
+	if (result)
+	{
+		CssmError::throwMe(result);
+	}
+
+	// get the real data and all of the attributes from the DL
+	CssmDataContainer blobData;
+	getWrappedAttributesAndData (db, params->attributes->DataRecordType, uniqueID, data, &blobData);
+	
+	// write out the data blob
+	appendUInt32ToData (data.Length, output);
+	output.append (CssmPolyData (data));
+	
+	// figure out what we need to do with the key blob
+	CssmDataContainer key;
+	switch (params->attributes->DataRecordType)
+	{
+		case CSSM_DL_DB_RECORD_GENERIC_PASSWORD:
+		case CSSM_DL_DB_RECORD_INTERNET_PASSWORD:
+		case CSSM_DL_DB_RECORD_APPLESHARE_PASSWORD:
+		{
+			// the label is the first kLabelSize bytes of the resultant data blob
+			CSSM_DATA label = {kLabelSize, blobData.Data};
+
+			// get the key
+			getCorrespondingSymmetricKey (db, label, key);
+		}
+		break;
+		
+		default:
+		{
+			break;
+		}
+	}
+	
+	
+	// write out the length of the key blob
+	appendUInt32ToData (key.Length, output);
+
+	if (key.Length != 0)
+	{
+		// write the key
+		output.append (CssmPolyData (key));
+	}
+	
+	// copy out the results
+	outputData->Data = output.Data;
+	output.Data = NULL;
+	outputData->Length = output.Length;
+	output.Length = NULL;
+}
+
+void
+SSDLSession::cleanupAttributes (uint32 numAttributes, CSSM_DB_ATTRIBUTE_DATA_PTR attributes)
+{
+	unsigned i;
+	for (i = 0; i < numAttributes; ++i)
+	{
+		unsigned j;
+		for (j = 0; j < attributes[i].NumberOfValues; ++j)
+		{
+			free (attributes[i].Value[j].Data);
+		}
+		
+		free (attributes[i].Value);
+	}
+	
+	free (attributes);
+}
+
+void
+SSDLSession::doModifyWithoutEncryption (SSDatabase &db, const void* inInputParams, void** outOutputParams)
+{
+	CSSM_RETURN result;
+	CSSM_APPLECSPDL_DB_MODIFY_WITHOUT_ENCRYPTION_PARAMETERS* params =
+		(CSSM_APPLECSPDL_DB_MODIFY_WITHOUT_ENCRYPTION_PARAMETERS*) inInputParams;
+	
+	// extract the data for this modify.
+	uint8* finger = params->data->Data;
+	CSSM_DATA data;
+	data.Length = GetUInt32AtFinger (finger);
+	data.Data = finger;
+	if (data.Length + sizeof (UInt32) > params->data->Length)
+	{
+		CssmError::throwMe (CSSM_ERRCODE_INVALID_POINTER);
+	}
+	
+	// point to the key
+	finger += data.Length;
+	
+	// reconstruct the attributes and data
+	uint32 numAttributes;
+	CSSM_DB_ATTRIBUTE_DATA_PTR attributes;
+	CssmDataContainer dataBlob;
+	
+	unwrapAttributesAndData (numAttributes, attributes, dataBlob, data);
+	
+	CSSM_DB_RECORD_ATTRIBUTE_DATA attrData;
+	attrData.DataRecordType = params->attributes->DataRecordType;
+	attrData.SemanticInformation = 0;
+	attrData.NumberOfAttributes = numAttributes;
+	attrData.AttributeData = attributes;
+	
+	// get the unique ID for this record (from the db's perspective)
+	SSUniqueRecord uniqueID = findSSUniqueRecord(*(params->uniqueID));
+	CSSM_DB_UNIQUE_RECORD *uniqueIDPtr = uniqueID; // for readability.  There's cast overloading
+												   // going on here.
+	
+	switch (attrData.DataRecordType)
+	{
+		case CSSM_DL_DB_RECORD_GENERIC_PASSWORD:
+		case CSSM_DL_DB_RECORD_INTERNET_PASSWORD:
+		case CSSM_DL_DB_RECORD_APPLESHARE_PASSWORD:
+		{
+			// read off the data so that we can update the key
+			CssmDataContainer oldData;
+			result = CSSM_DL_DataGetFromUniqueRecordId (db->handle(),
+														uniqueIDPtr,
+														NULL,
+														&oldData);
+			if (result)
+			{
+				CssmError::throwMe (result);
+			}
+	
+			CSSM_DB_MODIFY_MODE modifyMode = params->modifyMode;
+
+			// parse the key data blob
+			CssmDataContainer keyBlob;
+			data.Length = GetUInt32AtFinger (finger);
+			data.Data = finger;
+				
+			CSSM_DB_RECORD_ATTRIBUTE_DATA* attrDataPtr = NULL;
+			CSSM_DB_RECORD_ATTRIBUTE_DATA attrData;
+			
+			CSSM_DATA labelData = {kLabelSize, oldData.Data};
+			CSSM_DB_UNIQUE_RECORD_PTR recordID;
+			getUniqueIdForSymmetricKey (db, labelData, recordID);
+				
+			CSSM_DB_ATTRIBUTE_DATA_PTR keyAttributes;
+			uint32 numKeyAttributes;
+			unwrapAttributesAndData (numKeyAttributes, keyAttributes, keyBlob, data);
+				
+			// make the attribute data
+			attrData.DataRecordType = params->recordType;
+			attrData.SemanticInformation = 0;
+			attrData.NumberOfAttributes = numKeyAttributes;
+			attrData.AttributeData = keyAttributes;
+			
+			attrDataPtr = &attrData;
+		
+			result = CSSM_DL_DataModify (db->handle(),
+							 CSSM_DL_DB_RECORD_SYMMETRIC_KEY,
+							 recordID,
+							 attrDataPtr,
+							 &keyBlob,
+							 modifyMode);
+
+			// clean up
+			CSSM_DL_FreeUniqueRecord (db->handle (), recordID);
+			
+			cleanupAttributes (numKeyAttributes, keyAttributes);
+			break;
+		}
+		
+		default:
+		{
+			break;
+		}
+	}
+
+	// save off the new data
+	result = CSSM_DL_DataModify(db->handle(),
+								params->recordType,
+								uniqueIDPtr,
+								&attrData,
+								&dataBlob,
+								params->modifyMode);
+
+	// clean up
+	cleanupAttributes (numAttributes, attributes);
+	
+	if (result)
+	{
+		CssmError::throwMe(result);
+	}
+
+}
+
+void
+SSDLSession::doInsertWithoutEncryption (SSDatabase &db, const void* inInputParams, void** outOutputParams)
+{
+	CSSM_RETURN result;
+
+	CSSM_APPLECSPDL_DB_INSERT_WITHOUT_ENCRYPTION_PARAMETERS* params =
+		(CSSM_APPLECSPDL_DB_INSERT_WITHOUT_ENCRYPTION_PARAMETERS*) inInputParams;
+	
+	// extract the data for this insert.
+	uint8* finger = params->data.Data;
+	CSSM_DATA data;
+	data.Length = GetUInt32AtFinger (finger);
+	data.Data = finger;
+	finger += data.Length;
+	
+	// reconstruct the attributes and data
+	uint32 numAttributes;
+	CSSM_DB_ATTRIBUTE_DATA_PTR attributes;
+	CSSM_DATA dataBlob;
+	
+	unwrapAttributesAndData (numAttributes, attributes, dataBlob, data);
+	
+	// make the attribute data
+	CSSM_DB_RECORD_ATTRIBUTE_DATA attrData;
+	attrData.DataRecordType = params->recordType;
+	attrData.SemanticInformation = 0;
+	attrData.NumberOfAttributes = numAttributes;
+	attrData.AttributeData = attributes;
+	
+	// insert into the database
+	SSUniqueRecord uniqueID (db);
+	result = CSSM_DL_DataInsert (db->handle(), params->recordType,
+								 &attrData,
+								 &dataBlob,
+								 uniqueID);
+
+	// cleanup
+	allocator ().free (dataBlob.Data);
+	cleanupAttributes (numAttributes, attributes);
+
+	// attach into the CSP/DL mechanism
+	CSSM_DB_UNIQUE_RECORD_PTR newRecord = makeSSUniqueRecord(uniqueID);
+	*(CSSM_DB_UNIQUE_RECORD_PTR*) outOutputParams = newRecord;
+	
+	if (result)
+	{
+		CssmError::throwMe(result);
+	}
+
+	// Get the key data for this insert
+	data.Length = GetUInt32AtFinger (finger);
+	if (data.Length != 0)
+	{
+		data.Data = finger;
+
+		// parse the key data blob
+		unwrapAttributesAndData (numAttributes, attributes, dataBlob, data);
+		
+		// make the attribute data
+		CSSM_DB_RECORD_ATTRIBUTE_DATA attrData;
+		attrData.DataRecordType = params->recordType;
+		attrData.SemanticInformation = 0;
+		attrData.NumberOfAttributes = numAttributes;
+		attrData.AttributeData = attributes;
+
+		// insert the key data into the symmetric key table
+		CSSM_DB_UNIQUE_RECORD_PTR uniqueRecord;
+		result = CSSM_DL_DataInsert (db->handle(), CSSM_DL_DB_RECORD_SYMMETRIC_KEY, &attrData, &dataBlob,
+									 &uniqueRecord);
+		if (result)
+		{
+			CssmError::throwMe (result);
+		}
+		
+		// clean up after inserting the key
+		CSSM_DL_FreeUniqueRecord (db->handle (), uniqueRecord);
+		allocator ().free (dataBlob.Data);
+		cleanupAttributes (numAttributes, attributes);
+	}
+}
+
+void
+SSDLSession::doConvertRecordIdentifier (SSDatabase &db, const void *inInputParams, void **outOutputParams)
+{
+	SSUniqueRecord uniqueId (db);
+
+	// clone the unique record
+	CSSM_DB_UNIQUE_RECORD_PTR clone = (CSSM_DB_UNIQUE_RECORD_PTR) allocator ().malloc (sizeof (CSSM_DB_UNIQUE_RECORD));
+	*clone = *(CSSM_DB_UNIQUE_RECORD_PTR) inInputParams;
+
+	// set the value of the unique record
+	uniqueId->setUniqueRecordPtr (clone);
+	
+	// byte swap the retrieved record pointer to host order
+	uint32* idArray = (uint32*) clone->RecordIdentifier.Data;
+	idArray[0] = ntohl (idArray[0]);
+	idArray[1] = ntohl (idArray[1]);
+	idArray[2] = ntohl (idArray[2]);
+	
+	CSSM_DB_UNIQUE_RECORD_PTR newRecord = makeSSUniqueRecord(uniqueId);
+	*(CSSM_DB_UNIQUE_RECORD_PTR*) outOutputParams = newRecord;
+}
+
 void
 SSDLSession::PassThrough(CSSM_DB_HANDLE inDbHandle,
 						 uint32 inPassThroughId,
@@ -536,8 +1173,51 @@ SSDLSession::PassThrough(CSSM_DB_HANDLE inDbHandle,
 		{
 			using SecurityServer::DbHandle;
 			Required(outOutputParams, CSSM_ERRCODE_INVALID_OUTPUT_POINTER);
-			DbHandle &dbHandle = *(DbHandle *)outOutputParams;
-			dbHandle = db->dbHandle();
+			*reinterpret_cast<CSSM_DL_DB_HANDLE *>(outOutputParams) = db->handle();
+			break;
+		}
+		case CSSM_APPLECSPDL_CSP_RECODE:
+		{
+			if (!inInputParams)
+				CssmError::throwMe(CSSM_ERRCODE_INVALID_INPUT_POINTER);
+
+			const CSSM_APPLECSPDL_RECODE_PARAMETERS *params =
+				reinterpret_cast<const CSSM_APPLECSPDL_RECODE_PARAMETERS *>(inInputParams);
+			
+			db->recode(CssmData::overlay(params->dbBlob),
+				CssmData::overlay(params->extraData));
+			break;
+		}
+		case CSSM_APPLECSPDL_DB_GET_RECORD_IDENTIFIER:
+		{
+			SSUniqueRecord uniqueID = findSSUniqueRecord(*(CSSM_DB_UNIQUE_RECORD_PTR) inInputParams);
+			db->getRecordIdentifier(uniqueID, *reinterpret_cast<CSSM_DATA *>(outOutputParams));
+			break;
+		}
+		case CSSM_APPLECSPDL_DB_COPY_BLOB:
+		{
+			// make the output parameters
+			db->copyBlob(*reinterpret_cast<CSSM_DATA *>(outOutputParams));
+			break;
+		}
+		case CSSM_APPLECSPDL_DB_INSERT_WITHOUT_ENCRYPTION:
+		{
+			doInsertWithoutEncryption (db, inInputParams, outOutputParams);
+			break;
+		}
+		case CSSM_APPLECSPDL_DB_MODIFY_WITHOUT_ENCRYPTION:
+		{
+			doModifyWithoutEncryption (db, inInputParams, outOutputParams);
+			break;
+		}
+		case CSSM_APPLECSPDL_DB_GET_WITHOUT_ENCRYPTION:
+		{
+			doGetWithoutEncryption (db, inInputParams, outOutputParams);
+			break;
+		}
+		case CSSM_APPLECSPDL_DB_CONVERT_RECORD_IDENTIFIER:
+		{
+			doConvertRecordIdentifier (db, inInputParams, outOutputParams);
 			break;
 		}
 		default:

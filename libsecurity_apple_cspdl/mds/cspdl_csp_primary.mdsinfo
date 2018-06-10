@@ -27,7 +27,7 @@
 	<key>MdsRecordType</key>
 	<string>MDS_CDSADIR_CSP_PRIMARY_RECORDTYPE</string>
 	<key>ModuleID</key>
-	<string>{87191ca3-0fc9-11d4-849a000502b52122}</string>
+	<string>{87191ca3-0fc9-11d4-849a-000502b52122}</string>
 	<key>ModuleName</key>
 	<string>AppleCSPDL</string>
 	<key>ProductVersion</key>

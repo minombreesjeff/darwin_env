@@ -32,12 +32,14 @@ class SSUniqueRecord;
 //
 // Protected please ignore this class unless subclassing SSDatabase.
 //
+class SSDatabase;
+
 class SSDatabaseImpl : public CssmClient::DbImpl
 {
+public:
 	static const char *const DBBlobRelationName;
-	enum {
-		DBBlobRelationID = CSSM_DB_RECORDTYPE_APP_DEFINED_START + 0x8000
-	};
+	static const CSSM_DB_RECORDTYPE DBBlobRelationID =
+		CSSM_DB_RECORDTYPE_APP_DEFINED_START + 0x8000;
 
 public:
 	SSDatabaseImpl(SecurityServer::ClientSession &inClientSession,
@@ -61,23 +63,25 @@ public:
 	void setSettings(uint32 inIdleTimeout, bool inLockOnSleep);
 	bool isLocked();
 	void changePassphrase(const CSSM_ACCESS_CREDENTIALS *cred);
-
+	void recode(const CssmData &data, const CssmData &extraData);
 	// DbUniqueRecordMaker
 	CssmClient::DbUniqueRecordImpl *newDbUniqueRecord();
 
 	// New methods not inherited from DbImpl
 	SecurityServer::DbHandle dbHandle();
 
+	void getRecordIdentifier(const CSSM_DB_UNIQUE_RECORD_PTR uniqueRecord, CSSM_DATA &data);
+	void copyBlob(CSSM_DATA &blob);
+	
 protected:
-	CssmClient::DbUniqueRecord getDbBlobId(CssmDataContainer *dbb);
+	CssmClient::DbUniqueRecord getDbBlobId(CssmDataContainer *dbb = NULL);
 
 private:
-	enum
-	{
-		kDefaultIdleTimeout		= 5 * 60, // 5 minute default autolock time
-		kDefaultLockOnSleep		= true
-	};
-	
+	// 5 minute default autolock time
+ 	static const uint32 kDefaultIdleTimeout = 5 * 60;
+	static const uint8 kDefaultLockOnSleep = true;
+	static const unsigned kNumIDWords = 4;
+
 	DLDbIdentifier mIdentifier;
 	UnixPlusPlus::ForkMonitor mForked;
 	

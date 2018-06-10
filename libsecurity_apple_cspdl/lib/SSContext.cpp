@@ -101,7 +101,7 @@ SSRandomContext::outputSize(bool final, size_t inSize)
 void
 SSRandomContext::final(CssmData &out)
 {
-	clientSession().generateRandom(out);
+	clientSession().generateRandom(*mContext, out);
 }
 
 
@@ -161,6 +161,18 @@ void SSSignatureContext::init(const Context &context, bool signing)
 			break;
 		case CSSM_ALGID_MD2WithRSA:
 			mDigestAlg = CSSM_ALGID_MD2;
+			mSigAlg = CSSM_ALGID_RSA;
+			break;
+		case CSSM_ALGID_SHA256WithRSA:
+			mDigestAlg = CSSM_ALGID_SHA256;
+			mSigAlg = CSSM_ALGID_RSA;
+			break;
+		case CSSM_ALGID_SHA384WithRSA:
+			mDigestAlg = CSSM_ALGID_SHA384;
+			mSigAlg = CSSM_ALGID_RSA;
+			break;
+		case CSSM_ALGID_SHA512WithRSA:
+			mDigestAlg = CSSM_ALGID_SHA512;
 			mSigAlg = CSSM_ALGID_RSA;
 			break;
 		case CSSM_ALGID_RSA:				// Raw
@@ -330,11 +342,19 @@ SSSignatureContext::final(const CssmData &sig)
 			mDigestAlg);
 	}
 	else {
-		clientSession().verifySignature(tempContext,
-			mKeyHandle,
-			(*mDigest)(), 
-			sig,
-			mDigestAlg);
+		CssmData digst = (*mDigest)();
+		try {
+			clientSession().verifySignature(tempContext,
+				mKeyHandle,
+				digst, 
+				sig,
+				mDigestAlg);
+		}
+		catch (...) {
+			mDigest->allocator().free(digst.Data);
+			throw;
+		}
+		mDigest->allocator().free(digst.Data);
 	}
 }
 

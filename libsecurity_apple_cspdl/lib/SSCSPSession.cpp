@@ -385,16 +385,14 @@ SSCSPSession::GenerateRandom(CSSM_CC_HANDLE ccHandle,
 	{
         if (randomNumber.length() < needed)
             CssmError::throwMe(CSSMERR_CSP_OUTPUT_LENGTH_ERROR);
-		randomNumber.Length = needed;
-		clientSession().generateRandom(randomNumber);
+		clientSession().generateRandom(context, randomNumber);
     }
 	else
 	{
         randomNumber.Data = alloc<uint8>(needed);
 		try
 		{
-			randomNumber.Length = needed;
-			clientSession().generateRandom(randomNumber);
+			clientSession().generateRandom(context, randomNumber);
 		}
 		catch(...)
 		{

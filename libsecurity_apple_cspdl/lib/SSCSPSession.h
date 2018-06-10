@@ -25,6 +25,7 @@
 #include "SSCSPDLSession.h"
 
 #include <securityd_client/ssclient.h>
+#include <security_cdsa_client/cspclient.h>
 
 
 class CSPDLPlugin;

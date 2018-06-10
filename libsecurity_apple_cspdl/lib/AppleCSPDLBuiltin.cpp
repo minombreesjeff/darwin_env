@@ -18,7 +18,7 @@ n
 
   
 // 
-// Produce the "genuine plugin version" of the Apple "file DL"
+// Produce the "genuine plugin version" of the AppleCSPDL
 //
 #include <CSPDLPlugin.h>
 

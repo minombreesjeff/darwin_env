@@ -27,7 +27,7 @@
 		4094B0AB057EA69D00B44BCC = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
-			lastKnownFileType = text.plist.xml;
+			lastKnownFileType = text.xml;
 			path = cspdl_common.mdsinfo;
 			refType = 4;
 			sourceTree = "<group>";
@@ -35,7 +35,7 @@
 		4094B0AC057EA69D00B44BCC = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
-			lastKnownFileType = text.plist.xml;
+			lastKnownFileType = text.xml;
 			path = cspdl_csp_capabilities.mdsinfo;
 			refType = 4;
 			sourceTree = "<group>";
@@ -43,7 +43,7 @@
 		4094B0AD057EA69D00B44BCC = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
-			lastKnownFileType = text.plist.xml;
+			lastKnownFileType = text.xml;
 			path = cspdl_csp_primary.mdsinfo;
 			refType = 4;
 			sourceTree = "<group>";
@@ -51,7 +51,7 @@
 		4094B0AE057EA69D00B44BCC = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
-			lastKnownFileType = text.plist.xml;
+			lastKnownFileType = text.xml;
 			path = cspdl_dl_primary.mdsinfo;
 			refType = 4;
 			sourceTree = "<group>";
@@ -117,15 +117,14 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>16</string>
 </dict>
 </plist>
 ";
 		};
 		4C31804D0540C085006FC739 = {
 			explicitFileType = wrapper.framework;
-			fallbackIsa = PBXFileReference;
-			isa = PBXFrameworkReference;
+			isa = PBXFileReference;
 			path = security_apple_cspdl.framework;
 			refType = 3;
 			sourceTree = BUILT_PRODUCTS_DIR;
@@ -432,8 +431,6 @@
 			shellScript = "for variant in ${BUILD_VARIANTS}\ndo\n\tpostfix=`echo _${variant} | sed 's/_normal//'`\n\tln -fs \"../../../${PRODUCT_NAME}${postfix}\" ${SYMROOT}/${PRODUCT_NAME}.framework/Versions/A\n\tln -fs \"Versions/Current/${PRODUCT_NAME}${postfix}\" ${SYMROOT}/${PRODUCT_NAME}.framework\n\tnmedit -p \"${SYMROOT}/${PRODUCT_NAME}${postfix}\"\n\tranlib \"${SYMROOT}/${PRODUCT_NAME}${postfix}\"\ndone";
 		};
 		4CA1CC0705D435090067025E = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = normal;
 				CSSM_HEADERS = "$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers/Security";
@@ -445,8 +442,6 @@
 			name = "normal from build folder";
 		};
 		4CA1CC0805D435180067025E = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = debug;
 				CSSM_HEADERS = "$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers/Security";
@@ -458,8 +453,6 @@
 			name = "debug from build folder";
 		};
 		4CA1CC0905D435B50067025E = {
-			buildRules = (
-			);
 			buildSettings = {
 				BUILD_VARIANTS = profile;
 				CSSM_HEADERS = "$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers/Security";
@@ -471,8 +464,6 @@
 			name = "profile from build folder";
 		};
 		4CA1CC0A05D4363E0067025E = {
-			buildRules = (
-			);
 			buildSettings = {
 				CSSM_HEADERS = "$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers/Security";
 				LDFLAGS_BUILDFOLDER_OSSERVICES = "-dylib_file \"$(SYSTEM_LIBRARY_DIR)/Frameworks/CoreServices.framework/Versions/A/Frameworks/OSServices.framework/Versions/A/OSServices:$(SYMROOT)/OSServices.framework/Versions/A/OSServices\"";
@@ -494,8 +485,6 @@
 			sourceTree = "<group>";
 		};
 		4CA1FEAA052A3C3800F22E42 = {
-			buildRules = (
-			);
 			buildSettings = {
 			};
 			isa = PBXBuildStyle;
@@ -570,23 +559,27 @@
 				4CD0D4E6055B1084001715CB,
 			);
 			buildSettings = {
-				BUILD_VARIANTS = "normal debug profile";
-				CURRENT_PROJECT_VERSION = 4;
+				BUILD_VARIANTS = "normal debug";
+				CURRENT_PROJECT_VERSION = 21;
 				FRAMEWORK_SEARCH_PATHS = "/usr/local/SecurityPieces/Frameworks /usr/local/SecurityPieces/Components/Security";
 				HEADER_SEARCH_PATHS = "\"$(BUILT_PRODUCTS_DIR)/SecurityPieces/Headers\" \"$(BUILT_PRODUCTS_DIR)/SecurityPieces/PrivateHeaders\"";
 				LIBRARY_STYLE = STATIC;
+				OPT_CFLAGS = "-DNDEBUG -Os $(OPT_INLINEFLAGS)";
+				OPT_CPPFLAGS = "$(OPT_CFLAGS) -fno-enforce-eh-specs -fno-implement-inlines -fcoalesce-templates";
+				OPT_INLINEFLAGS = "-finline-functions --param max-inline-insns-single=100 --param max-inline-insns-auto=150 --param max-inline-insns=180 --param min-inline-insns=60";
+				OPT_LDFLAGS = "";
 				OTHER_ASFLAGS_debug = "$(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
 				OTHER_ASFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
 				OTHER_CFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CFLAGS_normal = "$(OPT_CFLAGS)  $(OTHER_CFLAGS)";
+				OTHER_CFLAGS_profile = "$(OPT_CFLAGS)  $(OTHER_CFLAGS) -pg";
 				OTHER_CPLUSPLUSFLAGS_debug = "$(OTHER_CFLAGS) -O0 -fno-inline";
-				OTHER_CPLUSPLUSFLAGS_normal = "-DNDEBUG $(OTHER_CFLAGS)";
-				OTHER_CPLUSPLUSFLAGS_profile = "-DNDEBUG $(OTHER_CFLAGS) -pg";
+				OTHER_CPLUSPLUSFLAGS_normal = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS)";
+				OTHER_CPLUSPLUSFLAGS_profile = "$(OPT_CPPFLAGS) $(OTHER_CFLAGS) -pg";
 				OTHER_LDFLAGS_debug = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_normal = "$(OTHER_LDFLAGS)";
-				OTHER_LDFLAGS_profile = "$(OTHER_LDFLAGS) -pg";
+				OTHER_LDFLAGS_normal = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS)";
+				OTHER_LDFLAGS_profile = "$(OPT_LDFLAGS) $(OTHER_LDFLAGS) -pg";
 				PRODUCT_NAME = security_apple_cspdl;
 				VERSIONING_SYSTEM = "apple-generic";
 				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
@@ -602,8 +595,7 @@
 		};
 		4CA1FEBE052A3C8100F22E42 = {
 			explicitFileType = "compiled.mach-o.dylib";
-			fallbackIsa = PBXFileReference;
-			isa = PBXLibraryReference;
+			isa = PBXFileReference;
 			path = security_apple_cspdl;
 			refType = 3;
 			sourceTree = BUILT_PRODUCTS_DIR;
