@@ -21,11 +21,11 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
+#import "AMString.h"
 #import "AMMap.h"
 #import "Controller.h"
 #import "AMVnode.h"
 #import "Server.h"
-#import "AMString.h"
 #import "automount.h"
 #import "log.h"
 #import "vfs_sysctl.h"
@@ -653,6 +653,12 @@ Std_Exit:
 	rsp.body.result = -1;
 	str = (char *)&rsp.body.returnBuffer;
 	
+	/*
+	 * Put integral values in the request message body into host
+	 * byte order.
+	 */
+	body->request = ntohl(body->request);
+
 	/* Check if any unknown or unsupported options are being requested: */
 	if (body->request & ~(AMI_MOUNTOPTIONS | AMI_URL | AMI_MOUNTDIR | AMI_TRIGGERPATH)) {
 		rsp.body.result = EINVAL;
@@ -763,6 +769,17 @@ Send_Response:
 	rsp.header.msgh_local_port = MACH_PORT_NULL;
 	rsp.header.msgh_id = msg->msgh_id + 100;
 	
+	/*
+	 * Put integral values in the reply message body into network
+	 * byte order.
+	 */
+	rsp.body.result = htonl(rsp.body.result);
+	rsp.body.flags = htonl(rsp.body.flags);
+	rsp.body.mountOptions = htonl(rsp.body.mountOptions);
+	rsp.body.URLOffset = htonl(rsp.body.URLOffset);
+	rsp.body.mountDirOffset = htonl(rsp.body.mountDirOffset);
+	rsp.body.triggerPathOffset = htonl(rsp.body.triggerPathOffset);
+
 #if 0
 	sys_msg(debug, LOG_DEBUG, "handlePendingAMInfoRequests: sending %d-byte response to port 0x%lx.",
 						str - (char *)&rsp.header,
