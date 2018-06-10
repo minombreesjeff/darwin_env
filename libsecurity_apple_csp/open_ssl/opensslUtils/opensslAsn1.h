@@ -77,6 +77,27 @@ CSSM_RETURN	RSAPrivateKeyEncode(
 	RSA 				*openKey, 
 	CSSM_KEYBLOB_FORMAT	format,
 	CssmOwnedData		&encodedKey);
+CSSM_RETURN RSAOAEPPublicKeyDecode(
+	RSA 				*openKey, 
+	void 				*p, 
+	size_t				length,
+	/* mallocd and returned label */
+	CSSM_DATA			*label);
+CSSM_RETURN	RSAOAEPPublicKeyEncode(
+	RSA 				*openKey, 
+	const CSSM_DATA		*label,
+	CssmOwnedData		&encodedKey);
+CSSM_RETURN RSAOAEPPrivateKeyDecode(
+	RSA 				*openKey, 
+	void 				*p, 
+	size_t				length,
+	/* mallocd and returned label */
+	CSSM_DATA			*label);
+CSSM_RETURN	RSAOAEPPrivateKeyEncode(
+	RSA 				*openKey, 
+	const CSSM_DATA		*label,
+	CssmOwnedData		&encodedKey);
+
 CSSM_RETURN generateDigestInfo(
 	const void		*messageDigest,
 	size_t			digestLen,

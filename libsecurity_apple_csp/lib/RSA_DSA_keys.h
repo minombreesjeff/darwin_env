@@ -43,7 +43,7 @@
 #define DSA_MAX_KEY_SIZE		4096
 #define DSA_KEY_BITS_MASK		(64 - 1)	/* these bits must be zero */
 											/* i.e., aligned to 64 bits */
-											
+
 #define RSA_MAX_KEY_SIZE			4096
 #define RSA_MAX_PUB_EXPONENT_SIZE	64
 
@@ -60,7 +60,7 @@ public:
 	RSABinaryKey(RSA *rsaKey = NULL);
 	~RSABinaryKey();
 	void generateKeyBlob(
-		Allocator 		&allocator,
+		Allocator			&allocator,
 		CssmData			&blob,
 		CSSM_KEYBLOB_FORMAT	&format,
 		AppleCSPSession		&session,
@@ -68,6 +68,18 @@ public:
 		CSSM_KEYATTR_FLAGS	&attrFlags);	/* IN/OUT */
 
 	RSA						*mRsaKey;
+	
+	bool isOaep()				{ return mOaep; }
+	const CSSM_DATA &label()	{ return mLabel; }
+	void setOaep(
+		const CSSM_DATA		&label);
+private:
+	/* 
+	 * optional fields for OEAP keys 
+	 * (mKeyHeader.AlgorithmId == CSSM_ALGMODE_PKCS1_EME_OAEP) 
+	 */
+	bool					mOaep;
+	CssmAutoData			mLabel;
 };
 
 class RSAKeyPairGenContext : 

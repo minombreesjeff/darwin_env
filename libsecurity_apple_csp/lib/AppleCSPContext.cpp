@@ -85,6 +85,9 @@ void AppleCSPContext::symmetricKeyBits(
 	return;
 }
 
+AppleKeyPairGenContext::~AppleKeyPairGenContext()
+{ /* virtual */ }
+
 // Called from subclass after it allocates its BinaryKeys.
 // Caller frees BinaryKeys if we throw any exception. 
 void AppleKeyPairGenContext::generate(

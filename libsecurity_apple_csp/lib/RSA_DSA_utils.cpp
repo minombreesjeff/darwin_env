@@ -139,7 +139,8 @@ RSA *contextToRsaKey(
 	AppleCSPSession	 	&session,
 	CSSM_KEYCLASS		keyClass,	  // CSSM_KEYCLASS_{PUBLIC,PRIVATE}_KEY
 	CSSM_KEYUSE			usage,		  // CSSM_KEYUSE_ENCRYPT, CSSM_KEYUSE_SIGN, etc.
-	bool				&mallocdKey)  // RETURNED
+	bool				&mallocdKey,  // RETURNED
+	CSSM_DATA			&label)		  // mallocd and RETURNED for OAEP
 {
     CssmKey &cssmKey = 
 		context.get<CssmKey>(CSSM_ATTRIBUTE_KEY, CSSMERR_CSP_MISSING_ATTR_KEY);
@@ -152,7 +153,7 @@ RSA *contextToRsaKey(
 	}
 	cspValidateIntendedKeyUsage(&hdr, usage);
 	cspVerifyKeyTimes(hdr);
-	return cssmKeyToRsa(cssmKey, session, mallocdKey);
+	return cssmKeyToRsa(cssmKey, session, mallocdKey, label);
 }
 /* 
  * Convert a CssmKey to an RSA * key. May result in the creation of a new
@@ -162,7 +163,8 @@ RSA *contextToRsaKey(
 RSA *cssmKeyToRsa(
 	const CssmKey	&cssmKey,
 	AppleCSPSession	&session,
-	bool			&allocdKey)		// RETURNED
+	bool			&allocdKey,		// RETURNED
+	CSSM_DATA		&label)			// mallocd and RETURNED for OAEP
 {
 	RSA *rsaKey = NULL;
 	allocdKey = false;
@@ -174,7 +176,7 @@ RSA *cssmKeyToRsa(
 	}
 	switch(hdr->BlobType) {
 		case CSSM_KEYBLOB_RAW:
-			rsaKey = rawCssmKeyToRsa(cssmKey);
+			rsaKey = rawCssmKeyToRsa(cssmKey, label);
 			allocdKey = true;
 			break;
 		case CSSM_KEYBLOB_REFERENCE:
@@ -201,17 +203,26 @@ RSA *cssmKeyToRsa(
  * Convert a raw CssmKey to a newly alloc'd RSA key.
  */
 RSA *rawCssmKeyToRsa(
-	const CssmKey	&cssmKey)
+	const CssmKey	&cssmKey,
+	CSSM_DATA		&label)			// mallocd and RETURNED for OAEP keys
 {
 	const CSSM_KEYHEADER *hdr = &cssmKey.KeyHeader;
 	bool isPub;
+	bool isOaep = false;
 	
 	assert(hdr->BlobType == CSSM_KEYBLOB_RAW); 
 	
-	if(hdr->AlgorithmId != CSSM_ALGID_RSA) {
-		// someone else's key (should never happen)
-		CssmError::throwMe(CSSMERR_CSP_INVALID_ALGORITHM);
+	switch(hdr->AlgorithmId) {
+		case CSSM_ALGID_RSA:
+			break;
+		case CSSM_ALGMODE_PKCS1_EME_OAEP:
+			isOaep = true;
+			break;
+		default:
+			// someone else's key (should never happen)
+			CssmError::throwMe(CSSMERR_CSP_INVALID_ALGORITHM);
 	}
+	
 	/* validate and figure out what we're dealing with */
 	switch(hdr->KeyClass) {
 		case CSSM_KEYCLASS_PUBLIC_KEY:
@@ -224,6 +235,9 @@ RSA *rawCssmKeyToRsa(
 				default:
 					CssmError::throwMe(
 						CSSMERR_CSP_INVALID_ATTR_PUBLIC_KEY_FORMAT);
+			}
+			if(isOaep && (hdr->Format != CSSM_KEYBLOB_RAW_FORMAT_X509)) {
+				CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_PUBLIC_KEY_FORMAT);
 			}
 			isPub = true;
 			break;
@@ -238,6 +252,9 @@ RSA *rawCssmKeyToRsa(
 					CssmError::throwMe(
 						CSSMERR_CSP_INVALID_ATTR_PRIVATE_KEY_FORMAT);
 			}
+			if(isOaep && (hdr->Format != CSSM_KEYBLOB_RAW_FORMAT_PKCS8)) {
+				CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_PRIVATE_KEY_FORMAT);
+			}
 			isPub = false;
 			break;
 		default:
@@ -249,18 +266,32 @@ RSA *rawCssmKeyToRsa(
 		CssmError::throwMe(CSSMERR_CSP_MEMORY_ERROR);
 	}
 	CSSM_RETURN crtn;
-	if(isPub) {
-		crtn = RSAPublicKeyDecode(rsaKey, hdr->Format,
-			cssmKey.KeyData.Data, cssmKey.KeyData.Length);
+	if(isOaep) {
+		if(isPub) {
+			crtn = RSAOAEPPublicKeyDecode(rsaKey, 
+				cssmKey.KeyData.Data, cssmKey.KeyData.Length,
+				&label);
+		}
+		else {
+			crtn = RSAOAEPPrivateKeyDecode(rsaKey, 
+				cssmKey.KeyData.Data, cssmKey.KeyData.Length,
+				&label);
+		}
 	}
 	else {
-		crtn = RSAPrivateKeyDecode(rsaKey, hdr->Format,
-			cssmKey.KeyData.Data, cssmKey.KeyData.Length);
+		if(isPub) {
+			crtn = RSAPublicKeyDecode(rsaKey, hdr->Format,
+				cssmKey.KeyData.Data, cssmKey.KeyData.Length);
+		}
+		else {
+			crtn = RSAPrivateKeyDecode(rsaKey, hdr->Format,
+				cssmKey.KeyData.Data, cssmKey.KeyData.Length);
+		}
 	}
 	if(crtn) {
 		CssmError::throwMe(crtn);
 	}
-	
+
 	/* enforce max key size and max public exponent size */
 	bool badKey = false;
 	uint32 keySize = RSA_size(rsaKey) * 8;
@@ -528,6 +559,7 @@ DSA *rawCssmKeyToDsa(
 			CssmError::throwMe(crtn);
 		}
 	}
+
 	if(dsaKey->p != NULL) {
 		/* avoid use of provided DSA key which exceeds the max size */
 		uint32 keySize = BN_num_bits(dsaKey->p);
