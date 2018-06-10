@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -20,8 +20,11 @@
 /*
     auto_trace.h
     DTrace support.
-    Copyright (c) 2006-2009 Apple Inc. All rights reserved.
+    Copyright (c) 2006-2011 Apple Inc. All rights reserved.
  */
+
+#ifndef AUTO_TRACE_H
+#define AUTO_TRACE_H
 
 #include <sys/cdefs.h>
 #include <stddef.h>
@@ -42,12 +45,6 @@ typedef enum {
 	AUTO_TRACE_LOCAL = 2
 } auto_collection_type_t;
 
-typedef struct {
-    uint32_t size; // size of this structure
-    void (*auto_trace_collection_begin)(auto_zone_t *zone, boolean_t generational);
-    void (*auto_trace_collection_end)(auto_zone_t *zone, boolean_t generational, size_t objectsReclaimed, size_t bytesReclaimed, size_t totalObjectsInUse, size_t totalBytesInUse);
-} auto_trace_collection_callouts;
-
-void auto_trace_collection_set_callouts(auto_trace_collection_callouts *new_callouts);
-
 __END_DECLS
+
+#endif

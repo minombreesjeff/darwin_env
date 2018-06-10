@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -18,12 +18,8 @@
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
 /*
- *  auto_tester.h
- *  auto
- *
- *  Created by Josh Behnke on 5/16/08.
- *  Copyright 2008 Apple Inc. All rights reserved.
- *
+    auto_tester.h
+    Copyright (c) 2008-2011 Apple Inc. All rights reserved.
  */
 
 #ifndef AUTO_TESTER_H
@@ -36,12 +32,13 @@ __BEGIN_DECLS
 #include "auto_zone.h"
 
 typedef struct {
-    void (*auto_probe_auto_collect)(auto_collection_mode_t mode);
+    void (*auto_probe_auto_zone_collect)(auto_zone_options_t options);
+    void (*auto_probe_admin_deallocate)(void *address);
     void (*auto_probe_begin_heap_scan)(boolean_t generational);
     void (*auto_probe_begin_local_scan)();
     void (*auto_probe_collection_complete)();
-    void (*auto_probe_end_heap_scan)(size_t garbage_count, vm_address_t *garbage_blocks);
-    void (*auto_probe_end_local_scan)(size_t garbage_count, vm_address_t *garbage_blocks);
+    void (*auto_probe_end_heap_scan)(size_t garbage_count, void **garbage_blocks);
+    void (*auto_probe_end_local_scan)(size_t garbage_count, void **garbage_blocks);
     void (*auto_scan_barrier)();
     void (*auto_probe_end_thread_scan)();
     void (*auto_probe_heap_collection_complete)();
@@ -51,7 +48,6 @@ typedef struct {
     void (*auto_probe_scan_range)(void *address, void *end);
     void (*auto_probe_scan_with_layout)(void *address, void *end, const unsigned char *map);
     void (*auto_probe_did_scan_with_layout)(void *address, void *end, const unsigned char *map);
-    void (*auto_probe_scan_with_weak_layout)(void *address, void *end, const unsigned char *map);
     void (*auto_probe_set_pending)(void *block);
     void (*auto_probe_unregistered_thread_error)();
 } AutoProbeFunctions;
@@ -62,12 +58,13 @@ extern AutoProbeFunctions *auto_probe_functions;
 
 #else /* AUTO_TESTER */
 
-typedef void AutoProbeFunctions;
+typedef struct AutoProbeFunctions AutoProbeFunctions;
 #define AUTO_PROBE(probe_func)
 
 #endif /* AUTO_TESTER */
 
-extern bool auto_set_probe_functions(AutoProbeFunctions *func);
+AUTO_EXPORT bool auto_set_probe_functions(AutoProbeFunctions *func)
+    __OSX_AVAILABLE_STARTING(__MAC_10_6, __IPHONE_NA);
 
 __END_DECLS
 

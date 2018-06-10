@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -20,7 +20,7 @@
 /*
     auto_impl_utilities.h
     Implementation Utilities
-    Copyright (c) 2002-2009 Apple Inc. All rights reserved.
+    Copyright (c) 2002-2011 Apple Inc. All rights reserved.
 */
 
 #ifndef __AUTO_IMPL_UTILITIES__
@@ -32,6 +32,7 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <libkern/OSAtomic.h>
 
 #include <mach/mach_time.h>
 #include <mach/mach_init.h>
@@ -55,9 +56,19 @@ __BEGIN_DECLS
 #define INLINE inline
 #endif
 
+
+/* clang allows always_inline on template functions; gcc does not */
+#if DEBUG_IMPL
+#   define TEMPLATE_INLINE
+#elif __clang__
+#   define TEMPLATE_INLINE __attribute__((always_inline))
+#else
+#   define TEMPLATE_INLINE
+#endif
+
 /*********  Various types   ************/
 
-typedef long spin_lock_t;
+typedef OSSpinLock spin_lock_t;
 
 /*********  ptr set utilities ************/
 //
@@ -83,9 +94,7 @@ extern void *ptr_map_remove(ptr_map *map, void *key);
 
 /*********  zone definition ************/
 
-typedef spin_lock_t auto_lock_t;             // must be a spin lock, to be compatible with fork()
-
-#define AUTO_ZONE_VERSION           5                                       // stored in malloc_zone_t version field, so that
+#define AUTO_ZONE_VERSION           7                                       // stored in malloc_zone_t version field, so that
                                                                             // zone enumeration can validate the data structures.
 
 /*********  Malloc Logging (see Libc/gen/malloc.c) ************/
@@ -100,16 +109,16 @@ extern malloc_logger_t *malloc_logger;
 
 /*********  Locking ************/
 
-extern int __is_threaded;
-extern void _spin_lock(spin_lock_t *lockp);
-extern int  _spin_lock_try(spin_lock_t *lockp);
-extern void _spin_unlock(spin_lock_t *lockp);
-
-inline void spin_lock(spin_lock_t *lockp) { if (__is_threaded) _spin_lock(lockp); }
-inline int spin_lock_try(spin_lock_t *lockp) { return (__is_threaded ? _spin_lock_try(lockp) : 1); }
-inline void spin_unlock(spin_lock_t *lockp) { if (__is_threaded) _spin_unlock(lockp); }
+inline void spin_lock(spin_lock_t *lockp) { OSSpinLockLock(lockp); }
+inline bool spin_lock_try(spin_lock_t *lockp) { return OSSpinLockTry(lockp); }
+inline void spin_unlock(spin_lock_t *lockp) { OSSpinLockUnlock(lockp); }
 
 /*********  Implementation utilities    ************/
+
+#define auto_expect_true(expression) __builtin_expect((expression)?1:0, 1)
+#define auto_expect_false(expression) __builtin_expect((expression)?1:0, 0)
+
+extern int auto_ncpus();
 
 extern vm_address_t auto_get_sp();
 
@@ -121,6 +130,10 @@ extern const char *auto_prelude(void);
 
 extern void auto_error(void *azone, const char *msg, const void *ptr);
 extern void auto_fatal(const char *format, ...);
+
+inline bool is_scanned(auto_memory_type_t layout) { return (layout & AUTO_UNSCANNED) != AUTO_UNSCANNED; }
+inline bool is_object(auto_memory_type_t layout) { return (layout & AUTO_OBJECT) != 0; }
+inline bool is_allocated_cleared(auto_memory_type_t layout) { return is_scanned(layout) || (layout == AUTO_MEMORY_ALL_WEAK_POINTERS); }
 
 /*********  Dealing with time   ************/
 
@@ -206,6 +219,10 @@ static inline void aux_free(void *ptr) {
     return malloc_zone_free(aux_zone, ptr);
 }
 
+static inline size_t aux_malloc_size(const void *ptr) {
+    return aux_zone->size(aux_zone, ptr);
+}
+
 /*********  debug utilities ************/
 
 extern void auto_collect_print_trace_stats(void);
@@ -213,12 +230,22 @@ extern void auto_collect_print_trace_stats(void);
 extern void auto_record_refcount_stack(auto_zone_t *azone, void *ptr, int delta);
 extern void auto_print_refcount_stacks(void *ptr);
 
-__private_extern__ void auto_refcount_underflow_error(void *);
-__private_extern__ void auto_zone_resurrection_error();
-__private_extern__ void auto_zone_thread_local_error(void);
-__private_extern__ void auto_zone_thread_registration_error(void);
-__private_extern__ void auto_zone_global_data_memmove_error(void);
-__private_extern__ void auto_zone_association_error(void *address);
+extern void auto_refcount_underflow_error(void *);
+extern void auto_zone_resurrection_error();
+extern void auto_zone_thread_local_error(void);
+extern void auto_zone_thread_registration_error(void);
+extern void auto_zone_global_data_memmove_error(void);
+extern void auto_zone_association_error(void *address);
+extern void auto_zone_unscanned_store_error(const void *destination, const void *value);
+
+extern auto_zone_t *auto_zone_from_pointer(void *pointer);
+
+typedef void (^watch_block_t) (void);
+
+extern void auto_zone_watch(const void *ptr);
+extern void auto_zone_watch_free(const void *ptr, watch_block_t block);
+extern void auto_zone_watch_apply(void *ptr, watch_block_t block);
+
 
 __END_DECLS
 

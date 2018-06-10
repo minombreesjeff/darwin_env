@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -20,7 +20,7 @@
 /*
     auto_gdb_interface.h
     Routines called by gdb to implement its info gc-references and gc-roots commands.
-    Copyright (c) 2007-2009 Apple Inc. All rights reserved.
+    Copyright (c) 2007-2011 Apple Inc. All rights reserved.
  */
 
 #ifndef __AUTO_GDB_INTERFACE__
@@ -57,13 +57,15 @@ typedef struct auto_memory_reference_list auto_memory_reference_list_t;
 
 struct auto_root_list {
     uint32_t                        count;
-    auto_memory_reference_list_t    roots[0];       // variable length structure, size = count * sizeof(auto_memory_reference_t) + sum(i, 0, count) { roots[i].count * sizeof(auto_memory_reference_t) }
+    auto_memory_reference_list_t    roots[0];       // variable length structure, size = count * sizeof(auto_memory_reference_list_t) + sum(i, 0, count) { roots[i].count * sizeof(auto_memory_reference_t) }
 };
 typedef struct auto_root_list auto_root_list_t;
 
-extern auto_memory_reference_list_t *auto_gdb_enumerate_references(auto_zone_t *zone, void *address, void *stack_base);
+AUTO_EXPORT auto_memory_reference_list_t *auto_gdb_enumerate_references(auto_zone_t *zone, void *address, void *stack_base)
+    __OSX_AVAILABLE_STARTING(__MAC_10_6, __IPHONE_NA);
 
-extern auto_root_list_t *auto_gdb_enumerate_roots(auto_zone_t *zone, void *address, void *stack_base);
+AUTO_EXPORT auto_root_list_t *auto_gdb_enumerate_roots(auto_zone_t *zone, void *address, void *stack_base)
+    __OSX_AVAILABLE_STARTING(__MAC_10_5, __IPHONE_NA);
 
 __END_DECLS
 

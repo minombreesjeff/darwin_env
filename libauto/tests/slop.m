@@ -24,9 +24,10 @@
 //  Created by Blaine Garst on 10/21/08.
 //  Copyright 2008-2009 Apple, Inc. All rights reserved.
 //
-// CONFIG GC -C99
+// CONFIG GC -C99 -lauto
 
 #import <Foundation/Foundation.h>
+#import "auto_zone.h"
 
 @interface NotSoSmall : NSObject {
     // 4 items per quantum, 3 quantum in TLC
@@ -63,17 +64,16 @@
 
 
 void test() {
-    NSGarbageCollector *collector = [NSGarbageCollector defaultCollector];
     for (int i = 0; i < 30; ++i) {
         // allocate a bunch of Bigger
         for (int j = 0; j < 300; ++j) {
             [[Bigger alloc] init];
         }
-        [collector collectExhaustively];
+        auto_collect(auto_zone(), AUTO_COLLECT_FULL_COLLECTION|AUTO_COLLECT_SYNCHRONOUS, NULL);
         for (int j = 0; j < 300; ++j) {
             [[NotSoSmall alloc] init];
         }
-        [collector collectExhaustively];
+        auto_collect(auto_zone(), AUTO_COLLECT_FULL_COLLECTION|AUTO_COLLECT_SYNCHRONOUS, NULL);
     }
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -20,7 +20,7 @@
 /*
     auto_impl_utilities.c
     Implementation Utilities
-    Copyright (c) 2002-2009 Apple Inc. All rights reserved.
+    Copyright (c) 2002-2011 Apple Inc. All rights reserved.
 */
 
 #include "auto_impl_utilities.h"
@@ -30,35 +30,21 @@
 #include <mach/mach.h>
 #include <libc.h>
 #include <stdarg.h>
+#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/sysctl.h>
+
+#if !TARGET_OS_IPHONE
+#   include <CrashReporterClient.h>
+#else
+    // CrashReporterClient not available on iOS
+    static void CRSetCrashLogMessage(const char *buffer) { }
+#endif
 
 /*********  Implementation utilities    ************/
 
-__private_extern__ char *__crashreporter_info__ = NULL;
-
 vm_address_t auto_get_sp() {
-#if __GNUC__ >= 4
     return (vm_address_t)__builtin_frame_address(0);
-#else
-    register vm_address_t result;
-#if defined(__ppc__)
-    // get caller sp
-    __asm__ volatile ("lwz r3, 0(r1)" : : : "r3");
-    // get original callers sp
-    __asm__ volatile ("lwz %[result], 0(r3)" : [result] "=r" (result));
-    return result;
-#elif defined(__ppc64__)
-    // get caller sp
-    __asm__ volatile ("ld r3, 0(r1)" : : : "r3");
-    // get original callers sp
-    __asm__ volatile ("ld %[result], 0(r3)" : [result] "=r" (result));
-    return result;
-#elif defined(__i386__)
-    // get esp (could be better)
-    __asm__ volatile ("movl %%esp,%%eax" : : : "eax");
-#else
-#error architecture unsupported
-#endif
-#endif
 }
 
 size_t auto_round_page(size_t size) {
@@ -67,6 +53,22 @@ size_t auto_round_page(size_t size) {
 }
 
 /*********  Utilities   ************/
+int auto_ncpus()
+{
+    static int ncpus = 0;
+    if (ncpus == 0) {
+        int mib[2];
+        size_t len = sizeof(ncpus);
+        mib[0] = CTL_HW;
+        mib[1] = HW_NCPU;
+        if (sysctl(mib, 2, &ncpus, &len, NULL, 0) != 0) {
+            // sysctl failed. just return 1 and try again next time
+            ncpus = 0;
+            return 1;
+        }
+    }
+    return ncpus;
+}
 
 const char *auto_prelude(void) {
     static char buf[32] = { 0 };
@@ -94,7 +96,7 @@ void auto_fatal(const char *format, ...) {
     va_start(args, format);
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
-    __crashreporter_info__ = buffer;
+    CRSetCrashLogMessage(buffer);
     malloc_printf("%s", buffer);
     __builtin_trap();
 }
@@ -693,6 +695,48 @@ __private_extern__ void *ptr_map_remove(ptr_map *map, void *ptr) {
     return result;
 }
 
+/************ Miscellany **************************/
+
+
+// Watching
+
+#define WatchLimit 16
+static const void *WatchPoints[WatchLimit];
+
+void auto_zone_watch(const void *ptr) {
+    for (int i = 0; i < WatchLimit; ++i) {
+        if (WatchPoints[i]) {
+            if (WatchPoints[i] == ptr) return;
+        } else {
+            WatchPoints[i] = ptr;
+            return;
+        }
+    }
+    printf("too many watchpoints already, skipping %p\n", ptr);
+}
+
+void auto_zone_watch_free(const void *ptr, watch_block_t block) {
+    for (int i = 0; i < WatchLimit; ++i) {
+        if (WatchPoints[i] == NULL) return;
+        if (WatchPoints[i] == ptr) {
+            block();
+            while(++i < WatchLimit)
+                WatchPoints[i-1] = WatchPoints[i];
+            WatchPoints[WatchLimit-1] = NULL;
+            return;
+        }
+    }
+}
+
+void auto_zone_watch_apply(void *ptr, watch_block_t block) {
+    for (int i = 0; i < WatchLimit; ++i) {
+        if (WatchPoints[i] == NULL) return;
+        if (WatchPoints[i] == ptr) {
+            block();
+            return;
+        }
+    }
+}
 
 __private_extern__ void auto_refcount_underflow_error(void *block) { }
 
@@ -710,3 +754,5 @@ __private_extern__ void auto_zone_thread_registration_error()
 __private_extern__ void auto_zone_global_data_memmove_error() { }
 
 __private_extern__ void auto_zone_association_error(void *address) { }
+
+__private_extern__ void auto_zone_unscanned_store_error(const void *destination, const void *value) { }

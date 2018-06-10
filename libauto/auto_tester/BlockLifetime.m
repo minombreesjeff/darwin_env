@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -19,14 +19,47 @@
  */
 //
 //  BlockLifetime.m
-//  auto
-//
-//  Created by Josh Behnke on 5/19/08.
-//  Copyright 2008 Apple Inc. All rights reserved.
+//  Copyright (c) 2008-2011 Apple Inc. All rights reserved.
 //
 
-#import "BlockLifetime.h"
-#import "AutoConfiguration.h"
+#import "Configuration.h"
+#import "WhiteBoxTest.h"
+
+/*
+ BlockLifetime implements the following test scenario:
+ Allocate a test block.
+ Perform full collection.
+ Verify test block was scanned exactly once.
+ Verify test block remained local.
+ Assign test block to a global variable.
+ Verify test block became global.
+ Clear global variable, assign test block to ivar.
+ Loop:
+ run generational collection
+ verify block is scanned exactly once and age decrements by 1
+ until test block age becomes 0.
+ Run a full collection (to clear write barriers).
+ Verify block is scanned exactly once.
+ Run a generational collection.
+ Verify block *not* scanned.
+ Clear test block ivar.
+ Run generational collection.
+ Verify block *not* scanned and *not* collected.
+ Run a full collection.
+ Verify block was collected.
+ */
+
+@interface BlockLifetime : WhiteBoxTest {
+    BOOL _becameGlobal;
+    BOOL _scanned;
+    BOOL _collected;
+    BOOL _shouldCollect;
+    uint32_t _age;
+    id _testBlock;
+    vm_address_t _disguisedTestBlock;
+}
+
+@end
 
 @interface BlockLifetimeTestObject : NSObject
 {
@@ -37,36 +70,41 @@
 @implementation BlockLifetimeTestObject
 @end
 
+@interface BlockLifetime(internal)
+- (void)globalTransition;
+- (void)ageLoop;
+- (void)clearBarriers;
+- (void)generationalScan;
+- (void)verifyGenerationalScan;
+- (void)uncollectedCheck;
+- (void)collectedCheck;
+@end
+
 
 @implementation BlockLifetime
 
 static id _globalTestBlock = nil;
 
+- (void)allocLocalBlock
+{
+    _disguisedTestBlock = [self disguise:[BlockLifetimeTestObject new]];
+    [self testThreadStackBuffer][0] = (id)[self undisguise:_disguisedTestBlock];
+}
+
+- (void)makeTestBlockGlobal
+{
+    _globalTestBlock = (id)[self undisguise:_disguisedTestBlock];
+    [self testThreadStackBuffer][0] = nil;
+}
+
 // First step: allocate a new object and request a full collection.
 // The new object should be thread local at this point.
-- (void)startTest
+- (void)performTest
 {
-    
-    // We need our test object to live in a space in memory that has its own write barrier card.
-    // We try to accomplish this by allocating a bunch of objects that we then throw away.
-//    BlockLifetimeTestObject *first = [BlockLifetimeTestObject new];
-//    BlockLifetimeTestObject *current = first;
-//    for (int i=0; i<Auto::write_barrier_quantum / sizeof(BlockLifetimeTestObject) * 10; i++) {
-//        current->anObject = [BlockLifetimeTestObject new];
-//        current = (BlockLifetimeTestObject *)current->anObject;
-//    }
-
-    // Create the test block and assign it directly to _disguisedBlock. 
-    // This enables all the probes that look for the test block.
-    _disguisedTestBlock = [self disguise:[BlockLifetimeTestObject new]];
-    
-    // We store the test block on the stack.
-    STACK_POINTER_TYPE *stackPointers = [self stackPointers];
-    stackPointers[0] = (id)[self undisguise:_disguisedTestBlock];
-    
+    [self performSelectorOnTestThread:@selector(allocLocalBlock)];
+        
     // Run a full collection
-    [self requestFullCollection];
-    _testThreadSynchronizer = [self setNextTestSelector:@selector(globalTransition)];
+    [self requestFullCollectionWithCompletionCallback:^{ [self globalTransition]; }];
 }
 
 // defeat the write barrier card optimization by touching the object
@@ -78,39 +116,38 @@ static id _globalTestBlock = nil;
 }
 
 // verify the block got scanned, flag an error if it did not
-- (void)verifyScanned
-{
-    if (!_scanned)
-        [self fail:"block was not scanned as expected"];
-    _scanned = NO;
-}
+#define verifyScanned() \
+do { if (!_scanned) { [self fail:[NSString stringWithFormat:@"block was not scanned as expected in %@", NSStringFromSelector(_cmd)]]; [self testFinished]; return; } _scanned = NO; } while(0)
 
 
 // Second step: transition the block to global
 - (void)globalTransition
 {
-    [self verifyScanned];
+    verifyScanned();
     
     // verify the block isn't global already
-    if (_becameGlobal)
-        [self fail:"block became global prematurely"];
+    if (_becameGlobal) {
+        [self fail:@"block became global prematurely"];
+        [self testFinished];
+        return;
+    }
     
     // make the block go global and verify that we saw the transition
     // it's possible we never saw the transition because it went global before we started watching
     // that situation probably merits investigation
-    _globalTestBlock = (id)[self undisguise:_disguisedTestBlock];
-    if (!_becameGlobal)
-        [self fail:"block failed to become global"];
+    [self performSelectorOnTestThread:@selector(makeTestBlockGlobal)];
+
+    if (!_becameGlobal) {
+        [self fail:@"block failed to become global"];
+        [self testFinished];
+        return;
+    }
     
-    // now switch the block's reference off the stack and into an ivar
-    STACK_POINTER_TYPE *stackPointers = [self stackPointers];
-    stackPointers[0] = nil;
-    // now the only reference is in _globalTestBlock
+    // now the only reference to the test block is in _globalTestBlock
 
     // do generational collections until the block becomes old
     [self touchObject];
-    [self requestGenerationalCollection];
-    _testThreadSynchronizer = [self setNextTestSelector:@selector(ageLoop)];
+    [self requestGenerationalCollectionWithCompletionCallback:^{ [self ageLoop]; }];
 }
 
 
@@ -118,30 +155,26 @@ static id _globalTestBlock = nil;
 - (void)ageLoop
 {
     SEL next;
-    [self verifyScanned];
+    verifyScanned();
 
     if (_age != 0) {
         // set up for the next iteration
-        next = _cmd;
         [self touchObject];
-        [self requestGenerationalCollection];
+        [self requestGenerationalCollectionWithCompletionCallback:^{ [self ageLoop]; }];
     } else {
         // We are done iterating, the block is now age 0.
         // Now we want to verify that the block does *NOT* get scanned during a generational collection.
         // First must run a full collection to clear write barrier cards.
-        next = @selector(clearBarriers);
-        [self requestFullCollection];
+        [self requestFullCollectionWithCompletionCallback:^{ [self clearBarriers]; }];
     }
-    _testThreadSynchronizer = [self setNextTestSelector:next];
 }
 
 
 // The full collection does not clear write barrier cards. Run a generational to clear them.
 - (void)clearBarriers
 {
-    [self verifyScanned];
-    [self requestGenerationalCollection];
-    _testThreadSynchronizer = [self setNextTestSelector:@selector(generationalScan)];
+    verifyScanned();
+    [self requestGenerationalCollectionWithCompletionCallback:^{ [self generationalScan]; }];
 }
 
 
@@ -149,37 +182,40 @@ static id _globalTestBlock = nil;
 // Verify that a generational scan does *not* scan the block.
 - (void)generationalScan
 {
-    [self verifyScanned];
-    [self requestGenerationalCollection];
-    _testThreadSynchronizer = [self setNextTestSelector:@selector(verifyGenerationalScan)];
+    verifyScanned();
+    [self requestGenerationalCollectionWithCompletionCallback:^{ [self verifyGenerationalScan]; }];
 }
 
 
 // The last scan was generational, the block is old, and write barriers were cleared. Verify the block was *not* scanned.
 - (void)verifyGenerationalScan
 {
-    if (_scanned)
-        [self fail:"age 0 block scanned during generational collection"];
+    if (_scanned) {
+        [self fail:@"age 0 block scanned during generational collection"];
+        [self testFinished];
+        return;
+    }
     
     // Now just verify that the block gets collected
     _globalTestBlock = nil;
     _shouldCollect = YES;
     
     // Run a generational and verify the old block was not collected.
-    [self requestGenerationalCollection];
-    _testThreadSynchronizer = [self setNextTestSelector:@selector(uncollectedCheck)];
+    [self requestGenerationalCollectionWithCompletionCallback:^{ [self uncollectedCheck]; }];
 }
 
 
 // We expect that the old garbage block would not be collected by a generational collection
 - (void)uncollectedCheck
 {
-    if (_collected)
-        [self fail:"old block collected by generational collection"];
+    if (_collected) {
+        [self fail:@"old block collected by generational collection"];
+        [self testFinished];
+        return;
+    }
     
     // now run a full collection
-    [self requestFullCollection];
-    _testThreadSynchronizer = [self setNextTestSelector:@selector(collectedCheck)];
+    [self requestFullCollectionWithCompletionCallback:^{ [self collectedCheck]; }];
 }
 
 
@@ -187,17 +223,12 @@ static id _globalTestBlock = nil;
 - (void)collectedCheck
 {
     if (!_collected)
-        [self fail:"block not collected after full collection"];
-    // done with test
+        [self fail:@"block not collected after full collection"];
+    else
+        [self passed];
+    [self testFinished];
 }
 
-
-// In this test we always want to wake up the test thread when a collection completes.
-- (void)collectionComplete
-{
-    [_testThreadSynchronizer signal];
-    [super heapCollectionComplete];
-}
 
 
 // Watch for our test block becoming global.
@@ -216,7 +247,7 @@ static id _globalTestBlock = nil;
 {
     if (block == [self undisguise:_disguisedTestBlock]) {
         if (age != _age - 1)
-            [self fail:"Age decrease != 1 after mature"];
+            [self fail:@"Age decrease != 1 after mature"];
         _age = age;
     }
     [super blockMatured:block newAge:age];
@@ -228,7 +259,7 @@ static id _globalTestBlock = nil;
 {
     if ([self block:[self undisguise:_disguisedTestBlock] isInList:garbage_list count:count]) {
         if (!_shouldCollect)
-            [self fail:"block was collected prematurely"];
+            [self fail:@"block was collected prematurely"];
         _collected = YES;
     }
     [super endHeapScanWithGarbage:garbage_list count:count];
@@ -240,7 +271,7 @@ static id _globalTestBlock = nil;
 {
     if (block == [self undisguise:_disguisedTestBlock]) {
         if (_scanned) {
-            [self fail:"block scanned twice"];
+            [self fail:@"block scanned twice"];
         }
         _scanned = YES;
     }
@@ -251,12 +282,6 @@ static id _globalTestBlock = nil;
 {
     [self scanBlock:block endAddress:end];
     [super scanBlock:block endAddress:end withLayout:map];
-}
-
-- (void)scanBlock:(void *)block endAddress:(void *)end withWeakLayout:(const unsigned char *)map
-{
-    [self scanBlock:block endAddress:end];
-    [super scanBlock:block endAddress:end withWeakLayout:map];
 }
 
 @end

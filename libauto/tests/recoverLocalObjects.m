@@ -20,8 +20,9 @@
 #import <Foundation/Foundation.h>
 #import <pthread.h>
 #import <objc/objc-auto.h>
+#import "auto_zone.h"
 
-// CONFIG GC -C99
+// CONFIG GC -C99 -lauto
 
 int Counter = 0;
 
@@ -46,7 +47,6 @@ void *doOnPthread(void *unused) {
     for (int i = 0; i < howmany; ++i) {
         [[TestObject alloc] init];
     }
-    objc_unregisterThreadWithCollector();
     return NULL;
 }
 
@@ -56,8 +56,7 @@ int main(int argc, char *argv[]) {
     pthread_t thread;
     pthread_create(&thread, NULL, doOnPthread, NULL);
     pthread_join(thread, NULL);
-    //sleep(1);   // hack to wait for GCD based collection to finish
-    [[NSGarbageCollector defaultCollector] collectExhaustively];
+    auto_collect(auto_zone(), AUTO_COLLECT_FULL_COLLECTION|AUTO_COLLECT_SYNCHRONOUS, NULL);
     if (Counter*2 < howmany) {
         printf("recovered %d of %d local thread only objects\n", Counter, howmany);
         return 1;

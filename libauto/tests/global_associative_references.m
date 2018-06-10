@@ -20,6 +20,7 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <objc/objc-auto.h>
+#import "auto_zone.h"
 
 // CONFIG GC -C99 -lauto
 
@@ -52,18 +53,18 @@ static void breakReferences(id object) {
 
 int main(int argc, char *argv[]) {
     id object = createReferences();
-    [[NSGarbageCollector defaultCollector] collectExhaustively];
+    auto_collect(auto_zone(), AUTO_COLLECT_FULL_COLLECTION|AUTO_COLLECT_SYNCHRONOUS, NULL);
     if (finalized) {
-        printf("Failure\n");
+        printf("Failure 1\n");
         return 1;
     }
     breakReferences(object);
-    [[NSGarbageCollector defaultCollector] collectExhaustively];
+    auto_collect(auto_zone(), AUTO_COLLECT_FULL_COLLECTION|AUTO_COLLECT_SYNCHRONOUS, NULL);
     if (finalized) { 
         printf("%s: Success\n", argv[0]);
         return 0;
     } else {
-        printf("Failure\n");
+        printf("Failure 2\n");
         return 2;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -19,24 +19,31 @@
  */
 //
 //  UnregisteredThread.m
-//  auto
-//
-//  Created by Josh Behnke on 7/31/08.
-//  Copyright 2008 Apple Inc. All rights reserved.
+//  Copyright (c) 2008-2001 Apple Inc. All rights reserved.
 //
 
-#import "UnregisteredThread.h"
+#import <objc/objc-auto.h>
+#import "BlackBoxTest.h"
+#import "WhiteBoxTest.h"
 
+@interface UnregisteredThread : BlackBoxTest
+{
+    pthread_t _thread;
+    BOOL _sawWarning;
+}
+@end
 
-@implementation UnregisteredThread
+@interface RegisteredThread : BlackBoxTest
+{
+    pthread_t _thread;
+}
+@end
 
 static void *registerTest(UnregisteredThread *tester)
 {
     @synchronized (tester) {
-        auto_zone_register_thread([tester auto_zone]);
-        auto_zone_assert_thread_registered([tester auto_zone]);
-        auto_zone_unregister_thread([tester auto_zone]);
-        [tester->_synchronizer signal];
+        auto_zone_register_thread(objc_collectableZone());
+        auto_zone_assert_thread_registered(objc_collectableZone());
     }
     return NULL;
 }
@@ -44,49 +51,58 @@ static void *registerTest(UnregisteredThread *tester)
 static void *unregisterTest(UnregisteredThread *tester)
 {
     @synchronized (tester) {
-        printf("Should see an error message about an unregistered thread here:\n");
-        auto_zone_assert_thread_registered([tester auto_zone]);
-        [tester->_synchronizer signal];
+        auto_zone_assert_thread_registered(objc_collectableZone());
     }
     return NULL;
 }
 
-- (void)startTest
+
+@implementation UnregisteredThread
+
+- (void)processOutputLine:(NSString *)line
 {
-    _synchronizer = [self setNextTestSelector:@selector(verifyUnregistered)];
-    _probeTriggered = NO;
-    if (pthread_create(&_testThread, NULL, (void *(*)(void *))unregisterTest, self) != 0) {
-        [self fail:"failed to create thread\n"];
+    NSString *expectedString = @"error: GC operation on unregistered thread. Thread registered implicitly. Break on auto_zone_thread_registration_error() to debug.";
+    NSRange r = [line rangeOfString:expectedString];
+    if (r.location == NSNotFound) {
+        [super processOutputLine:line];
+    } else {
+        _sawWarning = YES;
+    }
+}
+
+- (void)performTest
+{
+    if (pthread_create(&_thread, NULL, (void *(*)(void *))unregisterTest, self) != 0) {
+        [self fail:@"failed to create thread\n"];
         return;
     }
+    pthread_join(_thread, NULL);
+    [self testFinished];
 }
 
-- (void)verifyUnregistered
+- (void)outputComplete
 {
-    pthread_join(_testThread, NULL);
-    if (!_probeTriggered) {
-        [self fail:"unregistered thread error failed to trigger"];
-    }
-    
-    _synchronizer = [self setNextTestSelector:@selector(verifyRegistered)];    
-    _probeTriggered = NO;
-    if (pthread_create(&_testThread, NULL, (void *(*)(void *))registerTest, self) != 0) {
-        [self fail:"failed to create thread\n"];
-        return;
-    }
-}
-
-- (void)verifyRegistered
-{
-    pthread_join(_testThread, NULL);
-    if (_probeTriggered) {
-        [self fail:"unregistered thread error triggered on registered thread"];
-    }
-}
-
-- (void)threadRegistrationError
-{
-    _probeTriggered = YES;
+    if (_sawWarning)
+        [self passed];
+    else
+        [self fail:@"did not see thread registration warning"];
+    [super outputComplete];
 }
 
 @end
+
+@implementation RegisteredThread
+
+- (void)performTest
+{
+    if (pthread_create(&_thread, NULL, (void *(*)(void *))registerTest, self) != 0) {
+        [self fail:@"failed to create thread\n"];
+        return;
+    }
+    pthread_join(_thread, NULL);
+    [self passed];
+    [self testFinished];
+}
+
+@end
+

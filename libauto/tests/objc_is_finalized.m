@@ -19,8 +19,9 @@
  */
 #import <Foundation/Foundation.h>
 #import <objc/objc-auto.h>
+#import "auto_zone.h"
 
-// CONFIG GC -C99
+// CONFIG GC -C99 -lauto
 
 id global;
 int Errors = 0;
@@ -62,7 +63,7 @@ int main(int argc, char *argv[]) {
         [[Collectable alloc] init];
     for (int i = 0; i < howmany; ++i)
         [[[Collectable alloc] init] makeGlobal];
-    objc_collect(OBJC_EXHAUSTIVE_COLLECTION | OBJC_WAIT_UNTIL_DONE);
+    auto_collect(auto_zone(), AUTO_COLLECT_FULL_COLLECTION|AUTO_COLLECT_SYNCHRONOUS, NULL);
     //sleep(3);   // hack to try to avoid thread reaping bug
     if (Globals == 0) {
         printf("%s: *** didn't collect any Globals!\n", argv[0]);

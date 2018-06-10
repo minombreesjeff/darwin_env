@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -19,15 +19,17 @@
  */
 //
 //  EnliveningRace.m
-//  auto
-//
-//  Created by Patrick Beard on 10/22/08.
-//  Copyright 2008 Apple Inc.. All rights reserved.
+//  Copyright (c) 2008-2011 Apple Inc.. All rights reserved.
 //
 
-#import "EnliveningRace.h"
-#import <auto_zone.h>
 #import <alloca.h>
+
+#import "WhiteBoxTest.h"
+
+@interface EnliveningRace : WhiteBoxTest {
+}
+@end
+
 
 @interface ERList : NSObject {
     ERList *next;
@@ -192,9 +194,18 @@ static void *rest_address;
 
 @implementation EnliveningRace
 
-- (id)init {
-    self = [super init];
+#warning this test isn't working right
+- (NSString *)shouldSkip
+{
+    return @"This test isn't working right";
+}
 
+- (void)testDone {
+    if ([self result] != FAILED)
+        [self passed];
+}
+
+- (void)performTest {
     queue = [ERQueue new];
     worker_address = queue.owner = [ERWorker new];
     
@@ -206,17 +217,8 @@ static void *rest_address;
     [condition wait];
     [condition unlock];
 
-    return self;
-}
-
-- (void)startTest {
     // start a collection. when "list" is scanned, transfer control from collector to us.
-    [self requestFullCollection];
-    _testThreadSynchronizer = [self setNextTestSelector:@selector(testDone)];
-}
-
-- (void)testDone {
-    queue = nil;
+    [self requestFullCollectionWithCompletionCallback:^{ [self testDone]; }];
 }
 
 - (void)scanBlock:(void *)block endAddress:(void *)end withLayout:(const unsigned char *)map {
@@ -251,11 +253,10 @@ static void *rest_address;
     [worker advance];
     for (size_t i = 0; i < count; i++) {
         if (garbage_list[i] == rest_address) {
-            [self fail:"Enlivening Race Condition Detected."];
+            [self fail:@"Enlivening Race Condition Detected."];
             break;
         }
     }
-    [_testThreadSynchronizer signal];
 }
 
 @end

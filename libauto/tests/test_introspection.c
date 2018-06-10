@@ -40,7 +40,7 @@ static void blockRecorder(task_t task, void *context, unsigned type, vm_range_t 
     }
 }
 
-void test_introspection(malloc_zone_t *zone) {
+void test_introspection(malloc_zone_t *zone, boolean_t exact) {
     static void* pointers[1000];
     BlockRecorderContext context = { 0, 0, zone };
     malloc_statistics_t stats;
@@ -54,18 +54,28 @@ void test_introspection(malloc_zone_t *zone) {
     
     // deallocate a random number of the blocks.
     for (i = 0; i < 1000; ++i) {
-        if (random() & 0x1) malloc_zone_free(zone, pointers[i]);
+        if (random() & 0x1) {
+            malloc_zone_free(zone, pointers[i]);
+            pointers[i] = NULL;
+        }
     }
     
     // validate that these agree with the values returned by the enumeration APIs.
     zone->introspect->enumerator(mach_task_self(), &context, MALLOC_PTR_IN_USE_RANGE_TYPE, (vm_address_t)zone, NULL, blockRecorder);
     malloc_zone_statistics(zone, &stats);
-    assert(stats.blocks_in_use == context.blocks_in_use);
-    assert(stats.size_in_use == context.size_in_use);
+    if (exact) {
+        assert(stats.blocks_in_use == context.blocks_in_use);
+        assert(stats.size_in_use == context.size_in_use);
+    } else {
+        // the malloc default zone enumerators don't currently match the statistics.
+        assert(stats.blocks_in_use >= context.blocks_in_use);
+        assert(stats.size_in_use >= context.size_in_use);
+    }
 }
 
 int main() {
-    test_introspection(auto_zone());
-    test_introspection(malloc_default_zone());
-    test_introspection(malloc_create_zone(8192, 0));
+    test_introspection(auto_zone_create("auto zone"), true);
+    test_introspection(malloc_default_zone(), false);
+    test_introspection(malloc_create_zone(8192, 0), false);
+    return 0;
 }

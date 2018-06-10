@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -20,37 +20,42 @@
 /* 
     auto_zone.cpp
     Automatic Garbage Collection
-    Copyright (c) 2002-2009 Apple Inc. All rights reserved.
+    Copyright (c) 2002-2011 Apple Inc. All rights reserved.
  */
 
 #include "auto_zone.h"
 #include "auto_impl_utilities.h"
 #include "auto_weak.h"
-#include "AutoReferenceRecorder.h"
 #include "auto_trace.h"
 #include "auto_dtrace.h"
-#include "AutoZone.h"
-#include "AutoLock.h"
-#include "AutoInUseEnumerator.h"
-#include "AutoThreadLocalCollector.h"
+#include "Zone.h"
+#include "Locks.h"
+#include "InUseEnumerator.h"
+#include "ThreadLocalCollector.h"
 #include "auto_tester/auto_tester.h"
+#include "BlockIterator.h"
 
 #include <stdlib.h>
 #include <libc.h>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
+
+#ifdef __BLOCKS__
 #include <Block.h>
 #include <notify.h>
+#include <dispatch/source_private.h>
+#endif
 
 #define USE_INTERPOSING 0
-#define LOG_TIMINGS 0
 
 #if USE_INTERPOSING
 #include <mach-o/dyld-interposing.h>
 #endif
 
 using namespace Auto;
+
+static char *b2s(uint64_t bytes, char *buf, int bufsize);
 
 /*********  Globals     ************/
 
@@ -67,18 +72,6 @@ bool auto_set_probe_functions(AutoProbeFunctions *functions) {
 #endif
 }
 
-static void __auto_trace_collection_begin__(auto_zone_t *zone, boolean_t generational) {}
-static void __auto_trace_collection_end__(auto_zone_t *zone, boolean_t generational, size_t objectsReclaimed, size_t bytesReclaimed, size_t totalObjectsInUse, size_t totalBytesInUse) {}
-static auto_trace_collection_callouts auto_trace_callouts = { sizeof(auto_trace_collection_callouts), __auto_trace_collection_begin__, __auto_trace_collection_end__ };
-
-void auto_trace_collection_set_callouts(auto_trace_collection_callouts *new_callouts) {
-    if (new_callouts->size == sizeof(auto_trace_collection_callouts)) {
-        auto_trace_callouts = *new_callouts;
-    } else {
-        malloc_printf("auto_trace_collection_set_callouts() called with incompatible size (ignored)\n");
-    }
-}
-
 // Reference count logging support for ObjectAlloc et. al.
 void (*__auto_reference_logger)(uint32_t eventtype, void *ptr, uintptr_t data) = NULL;
 
@@ -86,77 +79,6 @@ void (*__auto_reference_logger)(uint32_t eventtype, void *ptr, uintptr_t data) =
 
 #define VM_COPY_THRESHOLD       (40 * 1024)
 
-/*********  Functions ****************/
-
-#if LOG_TIMINGS
-
-#define LOG_ALLOCATION_THRESHOLD 64*1024
-
-static void log_allocation_threshold(auto_date_t time, size_t allocated, size_t finger);
-static void log_collection_begin(auto_date_t time, size_t allocated, size_t finger, bool isFull);
-static void log_collection_end(auto_date_t time, size_t allocated, size_t finger, size_t recovered);
-
-#endif LOG_TIMINGS
-
-/*********  Allocation Meter ************/
-
-#if defined(AUTO_ALLOCATION_METER)
-
-static bool allocate_meter_inited = false;
-static bool allocate_meter = false;
-static double allocate_meter_interval = 1.0;
-static double allocate_meter_start_time = 0.0;
-static double allocate_meter_report_time = 0.0;
-static double allocate_meter_count = 0;
-static double allocate_meter_total_time = 0.0;
-
-static double nano_time() {
-    static mach_timebase_info_data_t timebase_info;
-    static double scale = 1.0;
-    static unsigned long long delta; 
-    if (!timebase_info.denom) {
-        mach_timebase_info(&timebase_info);
-        scale = ((double)timebase_info.numer / (double)timebase_info.denom) * 1.0E-9;
-        delta = mach_absolute_time();
-    }
-    return (double)(mach_absolute_time() - delta) * scale;
-}
-
-static void allocate_meter_init() {
-  if (!allocate_meter_inited) {
-    const char *env_str = getenv("AUTO_ALLOCATION_METER");
-    allocate_meter = env_str != NULL;
-    allocate_meter_interval = allocate_meter ? atof(env_str) : 1.0;
-    if (allocate_meter_interval <= 0.0) allocate_meter_interval = 1.0;
-    allocate_meter_inited = true;
-  }
-}
-
-static unsigned long long allocate_meter_average() {
-  double daverage = allocate_meter_total_time / allocate_meter_count;
-  unsigned long long iaverage = (unsigned long long)(daverage * 1000000000.0);
-  allocate_meter_count = 1;
-  allocate_meter_total_time = daverage;
-  return iaverage;
-}
-
-static void allocate_meter_start() {
-  allocate_meter_start_time = nano_time();
-  if (allocate_meter_count == 0.0)
-    allocate_meter_report_time = allocate_meter_start_time + allocate_meter_interval;
-}
-
-static void allocate_meter_stop() {
-  double stoptime = nano_time();
-  allocate_meter_count++;
-  allocate_meter_total_time += stoptime - allocate_meter_start_time;
-  if (stoptime > allocate_meter_report_time) {
-    malloc_printf("%u nanosecs/alloc\n", (unsigned)allocate_meter_average());
-    allocate_meter_report_time = stoptime + allocate_meter_interval;
-  }
-}
-
-#endif
 
 /*********  Zone callbacks  ************/
 
@@ -168,44 +90,38 @@ boolean_t auto_zone_is_finalized(auto_zone_t *zone, const void *ptr) {
 }
 
 static void auto_collect_internal(Zone *zone, boolean_t generational) {
-    size_t garbage_count;
-    vm_address_t *garbage;
-
-    // Avoid simultaneous collections.
-    if (!OSAtomicCompareAndSwap32(0, 1, &zone->collector_collecting)) return;
-
-    zone->reset_threshold(); // clear threshold.  Till now we might back off & miss a needed collection.
-     
-    auto_date_t start = auto_date_now();
+    if (zone->_collector_disable_count) return;
+    CollectionTimer timer;
+    
     Statistics &zone_stats = zone->statistics();
+    
+    timer.total_time().start();
+    zone_stats.idle_timer().stop();
+    if (zone->control.log & AUTO_LOG_TIMINGS) timer.enable_scan_timer();
+    
+    zone_stats.reset_for_heap_collection();
     
     AUTO_PROBE(auto_probe_begin_heap_scan(generational));
     
     // bound the bottom of the stack.
     vm_address_t stack_bottom = auto_get_sp();
     if (zone->control.disable_generational) generational = false;
-    auto_trace_callouts.auto_trace_collection_begin((auto_zone_t*)zone, generational); // XXX Collection checker.
 	GARBAGE_COLLECTION_COLLECTION_BEGIN((auto_zone_t*)zone, generational ? AUTO_TRACE_GENERATIONAL : AUTO_TRACE_FULL);
-#if LOG_TIMINGS
-    log_collection_begin(start, zone_stats.size(), zone_stats.allocated(), generational);
-#endif
     zone->set_state(scanning);
     
     Thread &collector_thread = zone->register_thread();
     collector_thread.set_in_collector(true);
     zone->collect_begin();
 
-    auto_date_t scan_end;
-    zone->collect((bool)generational, (void *)stack_bottom, &scan_end);
-
+    zone->collect((bool)generational, (void *)stack_bottom, timer);
     PointerList &list = zone->garbage_list();
-    garbage_count = list.count();
-    garbage = (vm_address_t *)list.buffer();
+    size_t garbage_count = list.count();
+    void **garbage = list.buffer();
+    size_t large_garbage_count = zone->large_garbage_count();
+    void **large_garbage = (large_garbage_count ? garbage + garbage_count - large_garbage_count : NULL);
 
     AUTO_PROBE(auto_probe_end_heap_scan(garbage_count, garbage));
     
-    auto_date_t enlivening_end = auto_date_now();
-    auto_date_t finalize_end;
     size_t bytes_freed = 0;
 
     // note the garbage so the write-barrier can detect resurrection
@@ -215,246 +131,320 @@ static void auto_collect_internal(Zone *zone, boolean_t generational) {
     zone->invalidate_garbage(garbage_count, garbage);
 	GARBAGE_COLLECTION_COLLECTION_PHASE_END((auto_zone_t*)zone, AUTO_TRACE_FINALIZING_PHASE, (uint64_t)block_count, (uint64_t)byte_count);
     zone->set_state(reclaiming);
-    finalize_end = auto_date_now();
 	GARBAGE_COLLECTION_COLLECTION_PHASE_BEGIN((auto_zone_t*)zone, AUTO_TRACE_SCAVENGING_PHASE);
-    bytes_freed = zone->free_garbage(generational, garbage_count, garbage, block_count, byte_count);
+    bytes_freed = zone->free_garbage(garbage_count - large_garbage_count, garbage, large_garbage_count, large_garbage, block_count, byte_count);
     zone->clear_zombies();
 	GARBAGE_COLLECTION_COLLECTION_PHASE_END((auto_zone_t*)zone, AUTO_TRACE_SCAVENGING_PHASE, (uint64_t)block_count, (uint64_t)bytes_freed);
 
-    zone->collect_end();
+    timer.total_time().stop();
+    zone->collect_end(timer, bytes_freed);
     collector_thread.set_in_collector(false);
 
-    intptr_t after_in_use = zone_stats.size();
-    intptr_t after_allocated = after_in_use + zone_stats.unused();
-    auto_date_t collect_end = auto_date_now();
-    
 	GARBAGE_COLLECTION_COLLECTION_END((auto_zone_t*)zone, (uint64_t)garbage_count, (uint64_t)bytes_freed, (uint64_t)zone_stats.count(), (uint64_t)zone_stats.size());
-	auto_trace_callouts.auto_trace_collection_end((auto_zone_t*)zone, generational, garbage_count, bytes_freed, zone_stats.count(), zone_stats.size());
-#if LOG_TIMINGS
-    log_collection_end(collect_end, after_in_use, after_allocated, bytes_freed);
-#endif
 
     zone->set_state(idle);
-    zone->collector_collecting = 0;
     AUTO_PROBE(auto_probe_heap_collection_complete());
 
-    // update collection part of statistics
-    auto_statistics_t   *stats = &zone->stats;
-    
-    int which = generational ? 1 : 0;
-    stats->num_collections[which]++;
-    stats->bytes_in_use_after_last_collection[which] = after_in_use;
-    stats->bytes_allocated_after_last_collection[which] = after_allocated;
-    stats->bytes_freed_during_last_collection[which] = bytes_freed;
-    stats->last_collection_was_generational = generational;
-    
-    auto_collection_durations_t *max = &stats->maximum[which];
-    auto_collection_durations_t *last = &stats->last[which];
-    auto_collection_durations_t *total = &stats->total[which];
-
-    last->scan_duration = scan_end - start;
-    last->enlivening_duration = enlivening_end - scan_end;
-    last->finalize_duration = finalize_end - enlivening_end;;
-    last->reclaim_duration = collect_end - finalize_end;
-    last->total_duration = collect_end - start;
-    
-    // compute max individually (they won't add up, but we'll get max scan & max finalize split out
-    if (max->scan_duration < last->scan_duration) max->scan_duration = last->scan_duration;
-    if (max->enlivening_duration < last->enlivening_duration) max->enlivening_duration = last->enlivening_duration;
-    if (max->finalize_duration < last->finalize_duration) max->finalize_duration = last->finalize_duration;
-    if (max->reclaim_duration < last->reclaim_duration) max->reclaim_duration = last->reclaim_duration;
-    if (max->total_duration < last->total_duration) max->total_duration = last->total_duration;
-
-    total->scan_duration += last->scan_duration;
-    total->enlivening_duration += last->enlivening_duration;
-    total->finalize_duration += last->finalize_duration;
-    total->reclaim_duration += last->reclaim_duration;
-    total->total_duration += last->total_duration;
-
-    if (zone->control.log & AUTO_LOG_COLLECTIONS)
-        malloc_printf("%s: %s GC collected %lu objects (%lu bytes) (%lu bytes in use) %d usec "
-                      "(%d + %d + %d + %d [scan + freeze + finalize + reclaim])\n", 
+    WallClockTimer &idle_timer = zone->statistics().idle_timer();
+    if (zone->control.log & AUTO_LOG_TIMINGS) {
+        const char *idle = idle_timer.time_string();
+        char bytes[16];
+        b2s(zone->statistics().bytes_scanned(), bytes, sizeof(bytes));
+        malloc_printf("%s: %s GC completed in %s after %s idle. scanned %5llu blocks (%s) in %s\n",
+                      auto_prelude(), (generational ? "gen." : "full"), timer.total_time().time_string(), idle,
+                      zone->statistics().blocks_scanned(), bytes, timer.scan_timer().time_string());
+    }
+    if (zone->control.log & AUTO_LOG_COLLECTIONS) {
+        malloc_statistics_t stats;
+        zone->malloc_statistics(&stats);
+        char freed[16], in_use[16];
+        b2s(zone->statistics().size(), in_use, sizeof(in_use));
+        b2s(bytes_freed, freed, sizeof(freed));
+        malloc_printf("%s: %s GC collected %5llu blocks (%s). blocks in use: %7llu (%s)\n", 
                       auto_prelude(), (generational ? "gen." : "full"),
-                      garbage_count, bytes_freed, after_in_use,
-                      (int)(collect_end - start), // total
-                      (int)(scan_end - start), 
-                      (int)(enlivening_end - scan_end), 
-                      (int)(finalize_end - enlivening_end), 
-                      (int)(collect_end - finalize_end));
-}
-
-extern "C" void auto_zone_stats(void);
-
-static void auto_collect_with_mode(Zone *zone, auto_collection_mode_t mode) {
-    if (mode & AUTO_COLLECT_IF_NEEDED) {
-        if (!zone->threshold_reached())
-            return;
+                      (unsigned long long)garbage_count, freed, 
+                      zone->statistics().count(), in_use);
     }
-    bool generational = true, exhaustive = false;
-    switch (mode & 0x3) {
-      case AUTO_COLLECT_RATIO_COLLECTION:
-        // enforce the collection ratio to keep the heap from getting too big.
-        if (zone->collection_count++ >= zone->control.full_vs_gen_frequency) {
-            zone->collection_count = 0;
-            generational = false;
-        }
-        break;
-      case AUTO_COLLECT_GENERATIONAL_COLLECTION:
-        generational = true;
-        break;
-      case AUTO_COLLECT_FULL_COLLECTION:
-        generational = false;
-        break;
-      case AUTO_COLLECT_EXHAUSTIVE_COLLECTION:
-        exhaustive = true;
-    }
-    if (exhaustive) {
-         // run collections until objects are no longer reclaimed.
-        Statistics &stats = zone->statistics();
-        usword_t count, collections = 0;
-        //if (zone->control.log & AUTO_LOG_COLLECTIONS) malloc_printf("beginning exhaustive collections\n");
-        do {
-            count = stats.count();
-            auto_collect_internal(zone, false);
-        } while (stats.count() < count && ((Environment::exhaustive_collection_limit == 0) || (++collections < Environment::exhaustive_collection_limit)));
-        //if (zone->control.log & AUTO_LOG_COLLECTIONS) malloc_printf("ending exhaustive collections\n");
-    } else {
-        auto_collect_internal(zone, generational);
-    }
+#ifdef MEASURE_TLC_STATS
+    zone->statistics().print_tlc_stats();
+#endif
+    idle_timer.reset();
+    idle_timer.start();
 }
-
-#if USE_DISPATCH_QUEUE
-
-static void auto_collection_work(Zone *zone) {
-    // inform other threads that collection has started.
-    pthread_mutex_lock(&zone->collection_mutex);
-    zone->collection_status_state = 1;
-    pthread_mutex_unlock(&zone->collection_mutex);
-    
-    auto_collect_with_mode(zone, zone->collection_requested_mode);
-
-    // inform blocked threads that collection has finished.
-    pthread_mutex_lock(&zone->collection_mutex);
-    zone->collection_requested_mode = 0;
-    zone->collection_status_state = 0;
-    pthread_cond_broadcast(&zone->collection_status);
-    AUTO_PROBE(auto_probe_collection_complete());
-    pthread_mutex_unlock(&zone->collection_mutex);
-}
-
-#else
-
-static void *auto_collection_thread(void *arg) {
-    Zone *zone = (Zone *)arg;
-    if (zone->control.log & AUTO_LOG_COLLECTIONS) auto_zone_stats();
-    pthread_mutex_lock(&zone->collection_mutex);
-    for (;;) {
-        uint32_t mode_flags;
-        while ((mode_flags = zone->collection_requested_mode) == 0) {
-            // block until explicity requested to collect.
-            pthread_cond_wait(&zone->collection_requested, &zone->collection_mutex);
-        }
-
-        // inform other threads that collection has started.
-        zone->collection_status_state = 1;
-        // no clients
-        // pthread_cond_broadcast(&zone->collection_status);
-        pthread_mutex_unlock(&zone->collection_mutex);
-
-        auto_collect_with_mode(zone, zone->collection_requested_mode);
-        
-        // inform blocked threads that collection has finished.
-        pthread_mutex_lock(&zone->collection_mutex);
-        zone->collection_requested_mode = 0;
-        zone->collection_status_state = 0;
-        pthread_cond_broadcast(&zone->collection_status);
-        AUTO_PROBE(auto_probe_collection_complete());
-    }
-    
-    return NULL;
-}
-
-#endif /* USE_DISPATCH_QUEUE */
 
 //
-// Primary external entry point for collection
+// old external entry point for collection
 //
 void auto_collect(auto_zone_t *zone, auto_collection_mode_t mode, void *collection_context) {
-    Zone *azone = (Zone *)zone;
-
-    // The existence of this probe allows the test machinery to tightly control which collection requests are executed. See AutoTestScript.h for more.
-    AUTO_PROBE(auto_probe_auto_collect(mode));
-    if (azone->collector_disable_count)
-        return;
-    // see if now would be a good time to run a Thread Local collection (TLC).
-    const bool collectIfNeeded = ((mode & AUTO_COLLECT_IF_NEEDED) != 0);
-    Thread *thread = azone->current_thread();
-    if (thread) {
-        // if a thread is calling calls us with the AUTO_COLLECT_IF_NEEDED mode, assume it is safe to run finalizers immediately.
-        // otherwise, finalizers will be called asynchronously using the collector dispatch queue.
-        const bool exhaustiveCollection = (mode & AUTO_COLLECT_EXHAUSTIVE_COLLECTION) == AUTO_COLLECT_EXHAUSTIVE_COLLECTION;
-        const bool finalizeNow = collectIfNeeded || exhaustiveCollection;
-        if (exhaustiveCollection || ThreadLocalCollector::should_collect(azone, *thread, finalizeNow)) {
-            ThreadLocalCollector tlc(azone, (void *)auto_get_sp(), *thread);
-            tlc.collect(finalizeNow);
-        }
-    }
-    if (collectIfNeeded && !azone->threshold_reached())
-        return;
-    if (azone->collector_collecting)
-        return;  // if already running the collector bail early
-    if (azone->multithreaded) {
-        // request a collection by setting the requested flags, and signaling the collector thread.
-        pthread_mutex_lock(&azone->collection_mutex);
-        if (azone->collection_requested_mode) {
-            // request already in progress
-        }
-        else {
-            azone->collection_requested_mode = mode | 0x1000;         // force non-zero value
-#if USE_DISPATCH_QUEUE
-            // dispatch a call to auto_collection_work() to begin a collection.
-            dispatch_async(azone->collection_queue, azone->collection_block);
-#else
-            // wake up the collector, telling it to begin a collection.
-            pthread_cond_signal(&azone->collection_requested);
-#endif
-        }
+    auto_collection_mode_t heap_mode = mode & 0x3;
+    if ((mode & AUTO_COLLECT_IF_NEEDED) || (mode == 0)) {
+        auto_zone_collect(zone, AUTO_ZONE_COLLECT_NO_OPTIONS);
+    } else {
+        static uintptr_t options_translation[] = {AUTO_ZONE_COLLECT_RATIO_COLLECTION, AUTO_ZONE_COLLECT_GENERATIONAL_COLLECTION, AUTO_ZONE_COLLECT_FULL_COLLECTION, AUTO_ZONE_COLLECT_EXHAUSTIVE_COLLECTION};
+        
+        auto_zone_options_t request_mode = options_translation[heap_mode];
+        auto_zone_collect(zone, request_mode);
         if (mode & AUTO_COLLECT_SYNCHRONOUS) {
-            // wait for the collector to finish the current collection. wait at most 1 second, to avoid deadlocks.
-            const struct timespec one_second = { 1, 0 };
-            pthread_cond_timedwait_relative_np(&azone->collection_status, &azone->collection_mutex, &one_second);
+            Zone *azone = (Zone *)zone;
+            // For synchronous requests we have a problem: we must avoid deadlock with main thread finalization.
+            // For dispatch, use a group to implement a wait with timeout.
+            dispatch_group_t group = dispatch_group_create();
+            dispatch_group_async(group, azone->_collection_queue, ^{});
+            dispatch_group_wait(group, dispatch_time(0, 10*NSEC_PER_SEC));
+            dispatch_release(group);
         }
-        pthread_mutex_unlock(&azone->collection_mutex);
-    }
-    else {
-        auto_collect_with_mode(azone, mode);
     }
 }
 
-static inline size_t auto_size(auto_zone_t *zone, const void *ptr) {
-    Zone *azone = (Zone *)zone;
-    return azone->is_block((void *)ptr) ? azone->block_size((void *)ptr) : 0L;
+
+static inline bool _increment_pending_count(Zone *azone, auto_zone_options_t global_mode, bool coalesce_requested) {
+    bool did_coalesce = true;
+    Mutex lock(&azone->_collection_mutex);
+    if (global_mode < AUTO_ZONE_COLLECT_GLOBAL_MODE_COUNT) {
+        if (!coalesce_requested || azone->_pending_collections[global_mode] == 0) {
+            /* Check for overflow on the pending count. This should only happen if someone is doing something wrong. */ 
+            if (azone->_pending_collections[global_mode] == UINT8_MAX) {
+                /* Overflow. Force the request to coalesce. We already have many of the same type queued, so probably benign. */
+                auto_error(azone, "pending collection count overflowed", NULL);
+            } else {
+                azone->_pending_collections[global_mode]++;
+                did_coalesce = false;
+            }
+        }
+    }
+    return did_coalesce;
 }
+
+static inline void _decrement_pending_count(Zone *azone, auto_zone_options_t global_mode) {
+    Mutex lock(&azone->_collection_mutex);
+    assert(global_mode < AUTO_ZONE_COLLECT_GLOBAL_MODE_COUNT);
+    assert(azone->_pending_collections[global_mode] > 0);
+    azone->_pending_collections[global_mode]--;
+    AUTO_PROBE(auto_probe_collection_complete());
+}
+
+static void auto_zone_generational_collection(Zone *zone)
+{
+    auto_collect_internal(zone, true);
+    _decrement_pending_count(zone, AUTO_ZONE_COLLECT_GENERATIONAL_COLLECTION);
+}
+
+static void auto_zone_full_collection(Zone *zone)
+{
+    auto_collect_internal(zone, false);
+    _decrement_pending_count(zone, AUTO_ZONE_COLLECT_FULL_COLLECTION);
+    
+    // If collection checking is enabled, run a check.
+    if (zone->collection_checking_enabled())
+        zone->increment_check_counts();
+}
+
+static void auto_zone_exhaustive_collection(Zone *zone)
+{
+    // run collections until objects are no longer reclaimed.
+    Statistics &stats = zone->statistics();
+    uint64_t count, collections = 0;
+    do {
+        count = stats.count();
+        auto_collect_internal(zone, false);
+    } while (stats.count() < count && ((Environment::exhaustive_collection_limit == 0) || (++collections < Environment::exhaustive_collection_limit)));
+    _decrement_pending_count(zone, AUTO_ZONE_COLLECT_EXHAUSTIVE_COLLECTION);
+    
+    // If collection checking is enabled, run a check.
+    if (zone->collection_checking_enabled())
+        zone->increment_check_counts();
+}
+
+static void auto_zone_ratio_collection(Zone *zone)
+{
+    if (zone->_collection_count++ == zone->control.full_vs_gen_frequency) {
+        zone->_collection_count = 0;
+        auto_collect_internal(zone, false);
+    } else {
+        auto_collect_internal(zone, true);
+    }
+    _decrement_pending_count(zone, AUTO_ZONE_COLLECT_RATIO_COLLECTION);
+}
+
+void auto_zone_collect(auto_zone_t *zone, auto_zone_options_t options)
+{
+    AUTO_PROBE(auto_probe_auto_zone_collect(options));
+    Zone *azone = (Zone *)zone;
+    Thread &thread = azone->registered_thread();
+    
+    // First, handle the no options case by promoting to the appropriate mode.
+    if (options == AUTO_ZONE_COLLECT_NO_OPTIONS) {
+        if (azone->should_collect())
+            options = AUTO_ZONE_COLLECT_COALESCE|AUTO_ZONE_COLLECT_RATIO_COLLECTION;
+        if (ThreadLocalCollector::should_collect(azone, thread, true))
+            options |= AUTO_ZONE_COLLECT_LOCAL_COLLECTION;
+    }
+    
+    // Run TLC modes
+    if (options & AUTO_ZONE_COLLECT_LOCAL_COLLECTION) {
+        ThreadLocalCollector tlc(azone, (void *)auto_get_sp(), thread);
+        tlc.collect(true);
+    }
+    
+    // Volunteer for parallel scanning work.
+    if (!pthread_main_np()) azone->volunteer_for_work(true);
+    
+    auto_zone_options_t global_mode = options & AUTO_ZONE_COLLECT_GLOBAL_COLLECTION_MODE_MASK;
+    
+    if (global_mode != 0) {
+        if (!_increment_pending_count(azone, global_mode, options & AUTO_ZONE_COLLECT_COALESCE)) {
+            // Enqueue global collection request
+            dispatch_block_t collect_func;
+            switch (global_mode) {
+                case AUTO_ZONE_COLLECT_NO_OPTIONS:
+                    /* This case is impossible */
+                    collect_func = NULL;
+                    break;
+                case AUTO_ZONE_COLLECT_RATIO_COLLECTION:
+                    collect_func =  ^{ 
+                        auto_zone_ratio_collection((Zone *)dispatch_get_context(dispatch_get_current_queue())); 
+                    };
+                    break;
+                case AUTO_ZONE_COLLECT_GENERATIONAL_COLLECTION:
+                    collect_func =  ^{ 
+                        auto_zone_generational_collection((Zone *)dispatch_get_context(dispatch_get_current_queue())); 
+                    };
+                    break;
+                case AUTO_ZONE_COLLECT_FULL_COLLECTION:
+                    collect_func =  ^{ 
+                        auto_zone_full_collection((Zone *)dispatch_get_context(dispatch_get_current_queue())); 
+                    };
+                    break;
+                case AUTO_ZONE_COLLECT_EXHAUSTIVE_COLLECTION:
+                    collect_func =  ^{ 
+                        auto_zone_exhaustive_collection((Zone *)dispatch_get_context(dispatch_get_current_queue())); 
+                    };
+                    break;
+                default:
+                    collect_func = NULL;
+                    malloc_printf("%s: Unknown mode %d passed to auto_zone_collect() ignored.\n", auto_prelude(), global_mode);
+                    break;
+            }
+            if (collect_func) {
+                dispatch_async(azone->_collection_queue, collect_func);
+            }
+        }
+    }
+}
+
+extern void auto_zone_reap_all_local_blocks(auto_zone_t *zone)
+{
+    Zone *azone = (Zone *)zone;
+    Thread *thread = azone->current_thread();
+    if (thread)
+        thread->reap_all_local_blocks();
+}
+
+void auto_zone_collect_and_notify(auto_zone_t *zone, auto_zone_options_t options, dispatch_queue_t callback_queue, dispatch_block_t completion_callback) {
+    Zone *azone = (Zone *)zone;
+    auto_zone_collect(zone, options);
+    if (callback_queue && completion_callback) {
+        // ensure the proper lifetimes of the callback queue/block.
+        dispatch_retain(callback_queue);
+        completion_callback = Block_copy(completion_callback);
+        dispatch_async(azone->_collection_queue, ^{
+            dispatch_async(callback_queue, completion_callback);
+            Block_release(completion_callback);
+            dispatch_release(callback_queue);
+        });
+    }
+}
+
+void auto_zone_compact(auto_zone_t *zone, auto_zone_compact_options_t options, dispatch_queue_t callback_queue, dispatch_block_t completion_callback) {
+    Zone *azone = (Zone *)zone;
+    if (!azone->compaction_disabled()) {
+        switch (options) {
+        case AUTO_ZONE_COMPACT_ANALYZE: {
+            if (callback_queue && completion_callback) {
+                dispatch_retain(callback_queue);
+                completion_callback = Block_copy(completion_callback);
+            }
+            dispatch_async(azone->_collection_queue, ^{
+                Zone *zone = (Zone *)dispatch_get_context(dispatch_get_current_queue());
+                static const char *analyze_name = Environment::get("AUTO_ANALYZE_NOTIFICATION");
+                zone->analyze_heap(analyze_name);
+                if (callback_queue && completion_callback) {
+                    dispatch_async(callback_queue, completion_callback);
+                    Block_release(completion_callback);
+                    dispatch_release(callback_queue);
+                }
+            });
+            break;
+        }
+        case AUTO_ZONE_COMPACT_IF_IDLE: {
+            if (azone->_compaction_timer && !azone->_compaction_pending) {
+                // schedule a compaction for 10 seconds in the future or _compaction_next_time, whichever is later.
+                // this will be canceled if more dispatch threads arrive sooner.
+                dispatch_time_t when = dispatch_time(0, 10 * NSEC_PER_SEC);
+                if (when < azone->_compaction_next_time)
+                    when = azone->_compaction_next_time;
+                if (when != DISPATCH_TIME_FOREVER) {
+                    dispatch_source_set_timer(azone->_compaction_timer, when, 0, 0);
+                    azone->_compaction_pending = true;
+                }
+            }
+            break;
+        }
+        case AUTO_ZONE_COMPACT_NO_OPTIONS: {
+            if (callback_queue && completion_callback) {
+                dispatch_retain(callback_queue);
+                completion_callback = Block_copy(completion_callback);
+            }
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC), azone->_collection_queue, ^{
+                Zone *zone = (Zone *)dispatch_get_context(dispatch_get_current_queue());
+                zone->compact_heap();
+                if (callback_queue && completion_callback) {
+                    dispatch_async(callback_queue, completion_callback);
+                    Block_release(completion_callback);
+                    dispatch_release(callback_queue);
+                }
+            });
+            break;
+        }
+        }
+    }
+}
+
+void auto_zone_disable_compaction(auto_zone_t *zone) {
+    Zone *azone = (Zone *)zone;
+    azone->disable_compaction();
+}
+
+void auto_zone_register_resource_tracker(auto_zone_t *zone, const char *description, boolean_t (^should_collect)(void))
+{
+    Zone *azone = (Zone *)zone;
+    azone->register_resource_tracker(description, should_collect);
+}
+
+void auto_zone_unregister_resource_tracker(auto_zone_t *zone, const char *description)
+{
+    Zone *azone = (Zone *)zone;
+    azone->unregister_resource_tracker(description);
+}
+
 
 boolean_t auto_zone_is_valid_pointer(auto_zone_t *zone, const void *ptr) {
-    Zone* azone = (Zone *)zone;
-    boolean_t result;
-    result = azone->is_block((void *)ptr);
-    return result;
+    auto_block_info_sieve<AUTO_BLOCK_INFO_IS_BLOCK> sieve((Zone *)zone, (void *)ptr);
+    return sieve.is_block();
 }
 
 size_t auto_zone_size(auto_zone_t *zone, const void *ptr) {
-    return auto_size(zone, ptr);
+    auto_block_info_sieve<AUTO_BLOCK_INFO_SIZE> sieve((Zone *)zone, (void *)ptr);
+    return sieve.size();
 }
 
 const void *auto_zone_base_pointer(auto_zone_t *zone, const void *ptr) {
-    Zone *azone = (Zone *)zone;
-    const void *base = (const void *)azone->block_start((void *)ptr);
-    return base;
+    auto_block_info_sieve<AUTO_BLOCK_INFO_BASE_POINTER> sieve((Zone *)zone, (void *)ptr);
+    return sieve.base();
 }
 
 #if DEBUG
-void *WatchPoint = (void*)0xFFFFFFFF;
+void *WatchPoint = (void *)-1L;
 void blainer() {
     sleep(0);
 }
@@ -464,17 +454,37 @@ void blainer() {
 static inline void *auto_malloc(auto_zone_t *zone, size_t size) {
     Zone *azone = (Zone *)zone;
     Thread &thread = azone->registered_thread();
-    void *result = azone->block_allocate(thread, size, AUTO_MEMORY_UNSCANNED, 0, true);
+    void *result = azone->block_allocate(thread, size, AUTO_MEMORY_UNSCANNED, false, true);
     return result;
 }
 
+// Sieve class that deallocates a block.
+class auto_free_sieve : public sieve_base {
+    Zone *_zone;
+    
+public:
+    
+    auto_free_sieve(Zone *zone, const void *ptr) __attribute__((always_inline)) : _zone(zone) {
+        sieve_base_pointer(zone, ptr, *this);
+    }
+    
+    template <class BlockRef> inline void processBlock(BlockRef ref) TEMPLATE_INLINE {
+        unsigned refcount = ref.refcount();
+        if (refcount != 1) {
+            malloc_printf("*** free() called on collectable block with %p with refcount %d (ignored)\n", ref.address(), refcount);
+        } else {
+            _zone->block_deallocate(ref);
+        }
+    }
+    
+    inline void nonBlock(const void *ptr) {
+        if (ptr != NULL)
+            error("Deallocating a non-block", ptr);
+    }
+};
+
 static void auto_free(auto_zone_t *azone, void *ptr) {
-    if (ptr == NULL) return; // XXX_PCB don't mess with NULL pointers.
-    Zone *zone = (Zone *)azone;
-    unsigned    refcount = zone->block_refcount(ptr);
-    if (refcount != 1)
-        malloc_printf("*** free() called with %p with refcount %d\n", ptr, refcount);
-    zone->block_deallocate(ptr);
+    auto_free_sieve sieve((Zone *)azone, (void *)ptr);
 }
 
 static void *auto_calloc(auto_zone_t *zone, size_t size1, size_t size2) {
@@ -482,32 +492,29 @@ static void *auto_calloc(auto_zone_t *zone, size_t size1, size_t size2) {
     size1 *= size2;
     void *ptr;
     Thread &thread = azone->registered_thread();
-    ptr = azone->block_allocate(thread, size1, AUTO_MEMORY_UNSCANNED, 1, true);
+    ptr = azone->block_allocate(thread, size1, AUTO_MEMORY_UNSCANNED, true, true);
     return ptr;
 }
 
 static void *auto_valloc(auto_zone_t *zone, size_t size) {
     Zone *azone = (Zone *)zone;
     Thread &thread = azone->registered_thread();
-    void *result = azone->block_allocate(thread, auto_round_page(size), AUTO_MEMORY_UNSCANNED, 1, true);
+    void *result = azone->block_allocate(thread, auto_round_page(size), AUTO_MEMORY_UNSCANNED, true, true);
     return result;
-}
-
-static boolean_t get_type_and_retain_count(Zone *zone, void *ptr, auto_memory_type_t *type, int *rc) {
-    boolean_t is_block = zone->is_block(ptr);
-    if (is_block) zone->block_refcount_and_layout(ptr, rc, type);
-    return is_block;
 }
 
 static void *auto_realloc(auto_zone_t *zone, void *ptr, size_t size) {
     Zone *azone = (Zone*)zone;
     if (!ptr) return auto_malloc(zone, size);
-    size_t old_size = auto_size(zone, ptr);
+    
+    auto_block_info_sieve<AUTO_BLOCK_INFO_SIZE|AUTO_BLOCK_INFO_LAYOUT|AUTO_BLOCK_INFO_REFCOUNT> block_info(azone, (void *)ptr);
+    size_t block_size = block_info.size();
+    auto_memory_type_t layout = block_info.layout();
 
     // preserve the layout type, and retain count of the realloc'd object.
-    auto_memory_type_t type; int rc = 0;
-    if (!get_type_and_retain_count(azone, ptr, &type, &rc)) {
-        auto_error(azone, "auto_realloc: can't get type or retain count, ptr (%p) from ordinary malloc zone?", ptr);
+    
+    if (!block_info.is_block()) {
+        auto_error(azone, "auto_realloc: can't get type or retain count, ptr from ordinary malloc zone?", ptr);
         // If we're here because someone used the wrong zone we should let them have what they intended.
         return malloc_zone_realloc(malloc_zone_from_ptr(ptr), ptr, size);
     }
@@ -515,19 +522,21 @@ static void *auto_realloc(auto_zone_t *zone, void *ptr, size_t size) {
     // malloc man page says to allocate a "minimum sized" object if size==0
     if (size == 0) size = allocate_quantum_small;
     
-    if (old_size > size) {
-        size_t delta = old_size - size;
+    if (block_size >= size) {
+        size_t delta = block_size - size;
         // When reducing the size check if the reduction would result in a smaller block being used. If not, reuse the same block.
         // We can reuse the same block if any of these are true:
         // 1) original is a small block, reduced by less than small quanta
         // 2) original is a medium block, new size is still medium, and reduced by less than medium quanta
         // 3) original is a large block, new size is still large, and block occupies the same number of pages
-        if ((old_size <= allocate_quantum_medium && delta < allocate_quantum_small) ||
-            (old_size <= allocate_quantum_large && size >= allocate_quantum_medium && delta < allocate_quantum_medium) ||
-            (size > allocate_quantum_large && auto_round_page(old_size) == auto_round_page(size))) {
+        if ((block_size <= allocate_quantum_medium && delta < allocate_quantum_small) ||
+            (block_size <= allocate_quantum_large && size >= allocate_quantum_medium && delta < allocate_quantum_medium) ||
+            (size > allocate_quantum_large && auto_round_page(block_size) == auto_round_page(size))) {
             // if the block is scanned, resizing smaller should clear the extra space
-            if (type == AUTO_MEMORY_SCANNED)
-                bzero(displace(ptr,size), old_size-size);
+            if (layout == AUTO_MEMORY_SCANNED)
+                bzero(displace(ptr,size), delta);
+            else if (layout == AUTO_MEMORY_ALL_WEAK_POINTERS)
+                weak_unregister_range(azone, (void **)displace(ptr, size), delta / sizeof(void*));
             return ptr;
         }
     }
@@ -535,10 +544,23 @@ static void *auto_realloc(auto_zone_t *zone, void *ptr, size_t size) {
     // We could here optimize realloc by adding a primitive for small blocks to try to grow in place
     // But given that this allocator is intended for objects, this is not necessary
     Thread &thread = azone->registered_thread();
-    void *new_ptr = azone->block_allocate(thread, size, type, (type & AUTO_UNSCANNED) != AUTO_UNSCANNED, (rc != 0));
-    auto_zone_write_barrier_memmove((auto_zone_t *)azone, new_ptr, ptr, MIN(size, old_size));
-    
-    if (rc != 0) azone->block_decrement_refcount(ptr); // don't forget to let go rdar://6593098
+    void *new_ptr = azone->block_allocate(thread, size, layout, is_allocated_cleared(layout), (block_info.refcount() != 0));
+    if (new_ptr) {
+        size_t min_size = MIN(size, block_size);
+        if (is_scanned(layout)) {
+            auto_zone_write_barrier_memmove((auto_zone_t *)azone, new_ptr, ptr, min_size);
+        } else if (layout == AUTO_MEMORY_ALL_WEAK_POINTERS) {
+            memmove(new_ptr, ptr, min_size);
+            Auto::SpinLock lock(&azone->weak_refs_table_lock);
+            weak_transfer_weak_contents_unscanned(azone, (void **)ptr, (void **)new_ptr, min_size, false);
+            if (block_size > size) weak_unregister_range_no_lock(azone, (void **)displace(ptr, size), (block_size - size) / sizeof(void*));
+        } else {
+            memmove(new_ptr, ptr, min_size);
+        }
+        
+        // BlockRef FIXME: we have already categorized ptr above, we should not need to do it again here
+        if (block_info.refcount() != 0) auto_zone_release(zone, ptr); // don't forget to let go rdar://6593098
+    }
     
     // Don't bother trying to eagerly free old memory, even if it seems to be from malloc since,
     // well, that's just a hueristic that can be wrong.  In particular CF has on occasion bumped
@@ -548,9 +570,13 @@ static void *auto_realloc(auto_zone_t *zone, void *ptr, size_t size) {
     return new_ptr;
 }
 
+static unsigned	auto_batch_malloc(auto_zone_t *zone, size_t size, void **results, unsigned num_requested) {
+    return auto_zone_batch_allocate(zone, size, AUTO_MEMORY_UNSCANNED, true, false, results, num_requested);
+}
+
 static void auto_zone_destroy(auto_zone_t *zone) {
     Zone *azone = (Zone*)zone;
-    auto_error(azone, "auto_zone_destroy:  %p", zone);
+    auto_error(azone, "auto_zone_destroy", zone);
 }
 
 static kern_return_t auto_default_reader(task_t task, vm_address_t address, vm_size_t size, void **ptr) {
@@ -594,23 +620,26 @@ static boolean_t auto_check(malloc_zone_t *zone) {
     return 1;
 }
 
-static char *b2s(int bytes, char *buf, int bufsize) {
-    if (bytes < 10*1024) {
-        snprintf(buf, bufsize, "%dbytes", bytes);
-    } else if (bytes < 10*1024*1024) {
-        snprintf(buf, bufsize, "%dKB", bytes / 1024);
+static char *b2s(uint64_t bytes, char *buf, int bufsize) {
+    if (bytes < 1024) {
+        snprintf(buf, bufsize, "%4llu bytes", bytes);
+    } else if (bytes < 1024*1024) {
+        snprintf(buf, bufsize, "%4.3g Kb", (float)bytes / 1024);
+    } else if (bytes < 1024*1024*1024) {
+        snprintf(buf, bufsize, "%4.3g Mb", (float)bytes / (1024*1024));
     } else {
-        snprintf(buf, bufsize, "%dMB", bytes / (1024*1024));
+        snprintf(buf, bufsize, "%4.3g Gb", (float)bytes / (1024*1024*1024));
     }
     return buf;
 }
 
 static void auto_zone_print(malloc_zone_t *zone, boolean_t verbose) {
+    malloc_statistics_t stats;
+    Zone *azone = (Zone *)zone;
+    azone->malloc_statistics(&stats);
     char    buf1[256];
     char    buf2[256];
-    Zone             *azone = (Zone *)zone;
-    auto_statistics_t   *stats = &azone->stats;
-    printf("auto zone %p: in_use=%u  used=%s allocated=%s\n", azone, stats->malloc_statistics.blocks_in_use, b2s(stats->malloc_statistics.size_in_use, buf1, sizeof(buf1)), b2s(stats->malloc_statistics.size_allocated, buf2, sizeof(buf2)));
+    printf("auto zone %p: in_use=%u  used=%s allocated=%s\n", azone, stats.blocks_in_use, b2s(stats.size_in_use, buf1, sizeof(buf1)), b2s(stats.size_allocated, buf2, sizeof(buf2)));
     if (verbose) azone->print_all_blocks();
 }
 
@@ -629,33 +658,9 @@ static void auto_zone_force_unlock(malloc_zone_t *zone) {
     // if (azone->control.log & AUTO_LOG_UNUSUAL) malloc_printf("%s: auto_zone_force_unlock\n", auto_prelude());
 }
 
-#if 0
-
-these are buggy 
-
-// copy, from the internals, the malloc_zone_statistics data wanted from the malloc_introspection API
-static void auto_malloc_statistics_new(malloc_zone_t *zone, malloc_statistics_t *stats) {
-    ((Zone *)zone)->malloc_statistics(stats);
-}
-static void auto_malloc_statistics_old(malloc_zone_t *zone, malloc_statistics_t *stats) {
-    Zone *azone = (Zone *)zone;
-    Statistics statistics;
-    azone->statistics(statistics);
-    stats->blocks_in_use = statistics.count();
-    stats->size_in_use = statistics.size();
-    stats->max_size_in_use = statistics.dirty_size();  // + aux_zone max_size_in_use ??
-    stats->size_allocated = statistics.allocated();    // + aux_zone size_allocated ??
-}
-#endif
-
-
 static void auto_malloc_statistics(malloc_zone_t *zone, malloc_statistics_t *stats) {
     Zone *azone = (Zone *)zone;
-    Statistics &statistics = azone->statistics();
-    stats->blocks_in_use = statistics.count();
-    stats->size_in_use = statistics.size();
-    stats->max_size_in_use = statistics.dirty_size();  // + aux_zone max_size_in_use ??
-    stats->size_allocated = statistics.allocated();    // + aux_zone size_allocated ??
+    azone->malloc_statistics(stats);
 }
 
 static boolean_t auto_malloc_zone_locked(malloc_zone_t *zone) {
@@ -675,7 +680,11 @@ static struct malloc_introspection_t auto_zone_introspect = {
     auto_zone_force_lock, 
     auto_zone_force_unlock,
     auto_malloc_statistics,
-    auto_malloc_zone_locked
+    auto_malloc_zone_locked,
+    auto_zone_enable_collection_checking,
+    auto_zone_disable_collection_checking,
+    auto_zone_track_pointer,
+    (void (*)(malloc_zone_t *, void (^)(void *,void *)))auto_zone_enumerate_uncollected
 };
 
 struct malloc_introspection_t auto_zone_introspection() {
@@ -689,109 +698,173 @@ auto_zone_t *auto_zone(void) {
     return gc_zone;
 }
 
-static void willgrow(auto_zone_t *collector, auto_heap_growth_info_t info) {  }
-
-static void getenv_ulong(const char *name, unsigned long *dest) {
-    const char *str = getenv(name);
-    if (str) *dest = strtoul(str, NULL, 0);
-}
-
-static boolean_t getenv_bool(const char *name) {
-    const char *str = getenv(name);
-    return str && !strcmp(str, "YES");
+auto_zone_t *auto_zone_from_pointer(void *pointer) {
+    malloc_zone_t *zone = malloc_zone_from_ptr(pointer);
+    return (zone && zone->introspect == &auto_zone_introspect) ? zone : NULL;
 }
 
 // there can be several autonomous auto_zone's running, in theory at least.
 auto_zone_t *auto_zone_create(const char *name) {
     aux_init();
-#if defined(AUTO_ALLOCATION_METER)
-    allocate_meter_init();
-#endif
     pthread_key_t key = Zone::allocate_thread_key();
     if (key == 0) return NULL;
     
     Zone  *azone = new Zone(key);
-    azone->basic_zone.size = auto_size;
+    azone->basic_zone.size = auto_zone_size;
     azone->basic_zone.malloc = auto_malloc;
     azone->basic_zone.free = auto_free;
     azone->basic_zone.calloc = auto_calloc;
     azone->basic_zone.valloc = auto_valloc;
     azone->basic_zone.realloc = auto_realloc;
     azone->basic_zone.destroy = auto_zone_destroy;
+    azone->basic_zone.batch_malloc = auto_batch_malloc;
     azone->basic_zone.zone_name = name; // ;
     azone->basic_zone.introspect = &auto_zone_introspect;
     azone->basic_zone.version = AUTO_ZONE_VERSION;
     azone->basic_zone.memalign = NULL;
-    azone->control.disable_generational = getenv_bool("AUTO_DISABLE_GENERATIONAL");
-    azone->control.malloc_stack_logging = (getenv("MallocStackLogging") != NULL  ||  getenv("MallocStackLoggingNoCompact") != NULL);
+    // mark version field with current size of structure.
+    azone->control.version = sizeof(auto_collection_control_t);
+    azone->control.disable_generational = Environment::read_bool("AUTO_DISABLE_GENERATIONAL", false);
+    azone->control.malloc_stack_logging = (Environment::get("MallocStackLogging") != NULL  ||  Environment::get("MallocStackLoggingNoCompact") != NULL);
     azone->control.log = AUTO_LOG_NONE;
-    if (getenv_bool("AUTO_LOG_NOISY"))       azone->control.log |= AUTO_LOG_COLLECTIONS;
-    if (getenv_bool("AUTO_LOG_ALL"))         azone->control.log |= AUTO_LOG_ALL;
-    if (getenv_bool("AUTO_LOG_COLLECTIONS")) azone->control.log |= AUTO_LOG_COLLECTIONS;
-    if (getenv_bool("AUTO_LOG_REGIONS"))     azone->control.log |= AUTO_LOG_REGIONS;
-    if (getenv_bool("AUTO_LOG_UNUSUAL"))     azone->control.log |= AUTO_LOG_UNUSUAL;
-    if (getenv_bool("AUTO_LOG_WEAK"))        azone->control.log |= AUTO_LOG_WEAK;
+    if (Environment::read_bool("AUTO_LOG_TIMINGS"))     azone->control.log |= AUTO_LOG_TIMINGS;
+    if (Environment::read_bool("AUTO_LOG_ALL"))         azone->control.log |= AUTO_LOG_ALL;
+    if (Environment::read_bool("AUTO_LOG_COLLECTIONS")) azone->control.log |= AUTO_LOG_COLLECTIONS;
+    if (Environment::read_bool("AUTO_LOG_REGIONS"))     azone->control.log |= AUTO_LOG_REGIONS;
+    if (Environment::read_bool("AUTO_LOG_UNUSUAL"))     azone->control.log |= AUTO_LOG_UNUSUAL;
+    if (Environment::read_bool("AUTO_LOG_WEAK"))        azone->control.log |= AUTO_LOG_WEAK;
 
-    azone->control.collection_threshold = 1024L * 1024L;
-    getenv_ulong("AUTO_COLLECTION_THRESHOLD", &azone->control.collection_threshold);
-    azone->control.full_vs_gen_frequency = 10;
-    getenv_ulong("AUTO_COLLECTION_RATIO", &azone->control.full_vs_gen_frequency);
-    azone->control.will_grow = willgrow;
+    azone->control.collection_threshold = (size_t)Environment::read_long("AUTO_COLLECTION_THRESHOLD", 1024L * 1024L);
+    azone->control.full_vs_gen_frequency = Environment::read_long("AUTO_COLLECTION_RATIO", 10);
 
     malloc_zone_register((auto_zone_t*)azone);
 
-#if USE_DISPATCH_QUEUE
-    azone->collection_queue = NULL;
-    azone->collection_block = NULL;
-#else
-    azone->collection_thread = pthread_self();
-    pthread_cond_init(&azone->collection_requested, NULL);
-#endif
-    pthread_mutex_init(&azone->collection_mutex, NULL);
-    azone->collection_requested_mode = 0;
-    pthread_cond_init(&azone->collection_status, NULL);
-    azone->collection_status_state = 0;
+    pthread_mutex_init(&azone->_collection_mutex, NULL);
     
     // register our calling thread so that the zone is ready to go
     azone->register_thread();
     
-#if USE_DISPATCH_QUEUE
-    char *notify_name = getenv("AUTO_COLLECT_EXHAUSTIVE_NOTIFICATION");
+    // In general libdispatch limits the number of concurrent jobs based on various factors (# cpus).
+    // But we don't want the collector to be kept waiting while long running jobs generate garbage.
+    // We avoid collection latency using a special attribute which tells dispatch this queue should 
+    // service jobs immediately even if that requires exceeding the usual concurrent limit.
+    azone->_collection_queue = dispatch_queue_create("Garbage Collection Work Queue", NULL);
+    dispatch_queue_t target_queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, DISPATCH_QUEUE_OVERCOMMIT);
+    dispatch_set_target_queue(azone->_collection_queue, target_queue);
+    dispatch_set_context(azone->_collection_queue, azone);
+    const char *notify_name;
+
+#if COMPACTION_ENABLED
+    // compaction trigger:  a call to notify_post() with $AUTO_COMPACT_NOTIFICATION
+    notify_name = Environment::get("AUTO_COMPACT_NOTIFICATION");
     if (notify_name != NULL) {
-        int token;
-        notify_register_dispatch(notify_name, &token, dispatch_get_concurrent_queue(DISPATCH_QUEUE_PRIORITY_HIGH), ^(int token) {
-            auto_collect((auto_zone_t *)azone, AUTO_COLLECT_EXHAUSTIVE_COLLECTION, NULL);
+        int compact_token_unused = 0;
+        notify_register_dispatch(notify_name, &compact_token_unused, azone->_collection_queue, ^(int token) {
+            Zone *zone = (Zone *)dispatch_get_context(dispatch_get_current_queue());
+            auto_date_t start = auto_date_now();
+            zone->compact_heap();
+            auto_date_t end = auto_date_now();
+            if (Environment::log_compactions) malloc_printf("compaction took %lld microseconds.\n", (end - start));
+        });
+    } else {
+        // compaction timer:  prime it to run forever in the future.
+        azone->_compaction_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+        dispatch_source_set_timer(azone->_compaction_timer, DISPATCH_TIME_FOREVER, 0, 0);
+        dispatch_source_set_event_handler(azone->_compaction_timer, ^{
+            if (!azone->compaction_disabled()) {
+                azone->_compaction_next_time = DISPATCH_TIME_FOREVER;
+                dispatch_source_set_timer(azone->_compaction_timer, DISPATCH_TIME_FOREVER, 0, 0);
+                dispatch_async(azone->_collection_queue, ^{
+                    auto_date_t start = auto_date_now();
+                    azone->compact_heap();
+                    auto_date_t end = auto_date_now();
+                    malloc_printf("compaction took %lld microseconds.\n", (end - start));
+                    // compute the next allowed time to start a compaction; must wait at least 30 seconds.
+                    azone->_compaction_next_time = dispatch_time(0, 30 * NSEC_PER_SEC);
+                    azone->_compaction_pending = false;
+                });
+            }
+        });
+        dispatch_resume(azone->_compaction_timer);
+    }
+    
+    // analysis trigger:  a call to notify_post() with $AUTO_ANALYZE_NOTIFICATION
+    // currently used by HeapVisualizer to generate an analyis file in /tmp/AppName.analyze.
+    notify_name = Environment::get("AUTO_ANALYZE_NOTIFICATION");
+    if (notify_name != NULL) {
+        int analyze_token_unused = 0;
+        notify_register_dispatch(notify_name, &analyze_token_unused, azone->_collection_queue, ^(int token) {
+            Zone *zone = (Zone *)dispatch_get_context(dispatch_get_current_queue());
+            static const char *analyze_name = Environment::get("AUTO_ANALYZE_NOTIFICATION");
+            zone->analyze_heap(analyze_name);
+            static const char *reply_name = Environment::get("AUTO_ANALYZE_REPLY");
+            if (reply_name) notify_post(reply_name);
         });
     }
-#endif
+#endif /* COMPACTION_ENABLED */
 
+    // simulated memory pressure notification.
+    notify_name = Environment::get("AUTO_MEMORY_PRESSURE_NOTIFICATION");
+    if (notify_name != NULL) {
+        int pressure_token_unused = 0;
+        notify_register_dispatch(notify_name, &pressure_token_unused, azone->_collection_queue, ^(int token) {
+            Zone *zone = (Zone *)dispatch_get_context(dispatch_get_current_queue());
+            usword_t size = zone->purge_free_space();
+            printf("purged %ld bytes.\n", size);
+        });
+    } else {
+        // If not simulated, then field memory pressure triggers directly from the kernel.
+        // TODO:  consider using a concurrent queue to allow purging to happen concurrently with collection/compaction.
+#if TARGET_OS_IPHONE
+#       warning no memory pressure dispatch source on iOS
+#else
+        dispatch_source_t pressure_source = dispatch_source_create(DISPATCH_SOURCE_TYPE_VM, 0, DISPATCH_VM_PRESSURE, azone->_collection_queue);
+        if (pressure_source != NULL) {
+            dispatch_source_set_event_handler(pressure_source, ^{
+                Zone *zone = (Zone *)dispatch_get_context(dispatch_get_current_queue());
+                zone->purge_free_space();
+            });
+            dispatch_resume(pressure_source);
+        }
+#endif
+    }
+    
+    // exhaustive collection notification.
+    notify_name = Environment::get("AUTO_COLLECT_NOTIFICATION");
+    if (notify_name != NULL) {
+        int collect_token_unused = 0;
+        notify_register_dispatch(notify_name, &collect_token_unused, dispatch_get_main_queue(), ^(int token) {
+            malloc_printf("collecting on demand.\n");
+            auto_zone_collect((auto_zone_t *)azone, AUTO_ZONE_COLLECT_LOCAL_COLLECTION | AUTO_ZONE_COLLECT_EXHAUSTIVE_COLLECTION);
+            const char *reply_name = Environment::get("AUTO_COLLECT_REPLY");
+            if (reply_name) notify_post(reply_name);
+        });
+    }
+    
     if (!gc_zone) gc_zone = (auto_zone_t *)azone;   // cache first one for debugging, monitoring
     return (auto_zone_t*)azone;
 }
-
-// Obsoleted by <rdar://problem/6628775> remove ZoneMonitor support.
-void auto_zone_start_monitor(boolean_t force) {}
-void auto_zone_set_class_list(int (*class_list)(void **buffer, int count)) {}
 
 /*********  Reference counting  ************/
 
 void auto_zone_retain(auto_zone_t *zone, void *ptr) {
     Zone *azone = (Zone *)zone;
+    auto_refcount_sieve<AUTO_REFCOUNT_INCREMENT> refcount_sieve(azone, ptr);
 #if DEBUG
     if (ptr == WatchPoint) {
         malloc_printf("auto_zone_retain watchpoint: %p\n", WatchPoint);
         blainer();
     }
 #endif
-    int refcount = azone->block_increment_refcount(ptr);
-    if (__auto_reference_logger) __auto_reference_logger(AUTO_RETAIN_EVENT, ptr, uintptr_t(refcount));
+    if (__auto_reference_logger) __auto_reference_logger(AUTO_RETAIN_EVENT, ptr, uintptr_t(refcount_sieve.refcount));
     if (Environment::log_reference_counting && malloc_logger) {
-        malloc_logger(MALLOC_LOG_TYPE_ALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE, uintptr_t(zone), azone->block_size(ptr), 0, uintptr_t(ptr), 0);
+        malloc_logger(MALLOC_LOG_TYPE_ALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE, uintptr_t(zone), auto_zone_size(zone, ptr), 0, uintptr_t(ptr), 0);
     }
 }
 
 unsigned int auto_zone_release(auto_zone_t *zone, void *ptr) {
     Zone *azone = (Zone *)zone;
+    auto_refcount_sieve<AUTO_REFCOUNT_DECREMENT> refcount_sieve(azone, ptr);
 
 #if DEBUG
     if (ptr == WatchPoint) {
@@ -799,39 +872,55 @@ unsigned int auto_zone_release(auto_zone_t *zone, void *ptr) {
         blainer();
     }
 #endif
-    int refcount = azone->block_decrement_refcount(ptr);
-    if (__auto_reference_logger) __auto_reference_logger(AUTO_RELEASE_EVENT, ptr, uintptr_t(refcount));
+    if (__auto_reference_logger) __auto_reference_logger(AUTO_RELEASE_EVENT, ptr, uintptr_t(refcount_sieve.refcount));
     if (Environment::log_reference_counting && malloc_logger) {
         malloc_logger(MALLOC_LOG_TYPE_DEALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE, uintptr_t(zone), uintptr_t(ptr), 0, 0, 0);
     }
-    return refcount;
+    return refcount_sieve.refcount;
 }
 
 
 unsigned int auto_zone_retain_count(auto_zone_t *zone, const void *ptr) {
-    Zone *azone = (Zone *)zone;
-    return azone->block_refcount((void *)ptr);
+    auto_block_info_sieve<AUTO_BLOCK_INFO_REFCOUNT> refcount_sieve((Zone *)zone, ptr);
+    return refcount_sieve.refcount();
 }
 
 /*********  Write-barrier   ************/
 
 
+// BlockRef FIXME: retire
 static void handle_resurrection(Zone *azone, const void *recipient, bool recipient_is_block, const void *new_value, size_t offset) 
 {
     if (!recipient_is_block || ((auto_memory_type_t)azone->block_layout((void*)recipient) & AUTO_UNSCANNED) != AUTO_UNSCANNED) {
         auto_memory_type_t new_value_type = (auto_memory_type_t) azone->block_layout((void*)new_value);
         char msg[256];
         snprintf(msg, sizeof(msg), "resurrection error for block %p while assigning %p[%d] = %p", new_value, recipient, (int)offset, new_value);
-        if (new_value_type == AUTO_OBJECT_SCANNED) {
+        if ((new_value_type & AUTO_OBJECT_UNSCANNED) == AUTO_OBJECT) {
             // mark the object for zombiehood.
+            bool thread_local = false;
+            if (azone->in_subzone_memory((void*)new_value)) {
+                Subzone *sz = Subzone::subzone((void*)new_value);
+                usword_t q = sz->quantum_index((void*)new_value);
+                if (sz->is_thread_local(q)) {
+                    thread_local = true;
+                    Thread &thread = azone->registered_thread();
+                    ThreadLocalCollector *tlc = thread.thread_local_collector();
+                    if (tlc) {
+                        thread.thread_local_collector()->add_zombie((void*)new_value);
+                    } else {
+                        auto_error(azone, "resurrection of thread local garbage belonging to another thread", new_value);
+                    }
+                }
+            }
             auto_zone_retain((auto_zone_t*)azone, (void*)new_value); // mark the object ineligible for freeing this time around.
-            azone->add_zombie((void*)new_value);
+            if (!thread_local) {
+                azone->add_zombie((void*)new_value);
+            }
             if (azone->control.name_for_address) {
-                // note, the auto lock is held until the callback has had a chance to examine each block.
                 char *recipient_name = azone->control.name_for_address((auto_zone_t *)azone, (vm_address_t)recipient, offset);
                 char *new_value_name = azone->control.name_for_address((auto_zone_t *)azone, (vm_address_t)new_value, 0);
                 snprintf(msg, sizeof(msg), "resurrection error for object %p while assigning %s(%p)[%d] = %s(%p)",
-                              new_value, recipient_name, recipient, (int)offset, new_value_name, new_value);
+                         new_value, recipient_name, recipient, (int)offset, new_value_name, new_value);
                 free(recipient_name);
                 free(new_value_name);
             }
@@ -841,9 +930,51 @@ static void handle_resurrection(Zone *azone, const void *recipient, bool recipie
     }
 }
 
+template <class BlockRef> static void handle_resurrection(Zone *azone, void *recipient, BlockRef new_value, size_t offset) 
+{
+    char msg[256];
+    snprintf(msg, sizeof(msg), "resurrection error for block %p while assigning %p[%d] = %p", new_value.address(), recipient, (int)offset, new_value.address());
+    if (new_value.is_object()) {
+        // mark the object for zombiehood.
+        bool thread_local = false;
+        if (new_value.is_thread_local()) {
+            thread_local = true;
+            Thread &thread = azone->registered_thread();
+            ThreadLocalCollector *tlc = thread.thread_local_collector();
+            if (tlc) {
+                thread.thread_local_collector()->add_zombie((void*)new_value.address());
+            } else {
+                auto_error(azone, "resurrection of thread local garbage belonging to another thread", new_value.address());
+            }
+        }
+        auto_zone_retain((auto_zone_t*)azone, (void*)new_value.address()); // mark the object ineligible for freeing this time around.
+        if (!thread_local) {
+            azone->add_zombie((void*)new_value.address());
+        }
+        if (azone->control.name_for_address) {
+            char *recipient_name = azone->control.name_for_address((auto_zone_t *)azone, (vm_address_t)recipient, offset);
+            char *new_value_name = azone->control.name_for_address((auto_zone_t *)azone, (vm_address_t)new_value.address(), 0);
+            snprintf(msg, sizeof(msg), "resurrection error for object %p while assigning %s(%p)[%d] = %s(%p)",
+                     new_value.address(), recipient_name, recipient, (int)offset, new_value_name, new_value.address());
+            free(recipient_name);
+            free(new_value_name);
+        }
+    }
+    malloc_printf("%s\ngarbage pointer stored into reachable memory, break on auto_zone_resurrection_error to debug\n", msg);
+    auto_zone_resurrection_error();
+}
+
+template <class DestBlockRef, class ValueBlockRef> static void handle_resurrection(Zone *azone, DestBlockRef recipient, ValueBlockRef new_value, size_t offset) 
+{
+    if (recipient.is_scanned()) {
+        handle_resurrection(azone, recipient.address(), new_value, offset);
+    }
+}
+
 // make the resurrection test an inline to be as fast as possible in the write barrier
 // recipient may be a GC block or not, as determined by recipient_is_block
 // returns true if a resurrection occurred, false if not
+// BlockRef FIXME: retire
 inline static bool check_resurrection(Thread &thread, Zone *azone, void *recipient, bool recipient_is_block, const void *new_value, size_t offset) {
     if (new_value &&
         azone->is_block((void *)new_value) &&
@@ -855,23 +986,98 @@ inline static bool check_resurrection(Thread &thread, Zone *azone, void *recipie
     return false;
 }
 
-// called by objc assignIvar assignStrongCast
-boolean_t auto_zone_set_write_barrier(auto_zone_t *zone, const void *dest, const void *new_value) {
-    Zone *azone = (Zone *)zone;
-    if (!new_value || azone->block_start((void *)new_value) != new_value) {
-        *(void **)dest = (void *)new_value;
+template <class DestBlockRef, class ValueBlockRef> inline static bool check_resurrection(Thread &thread, Zone *azone, DestBlockRef recipient, ValueBlockRef new_value, size_t offset) {
+    if (new_value.is_garbage() && (!recipient.is_garbage())) {
+        handle_resurrection(azone, recipient, new_value, offset);
         return true;
     }
-    const void *recipient = azone->block_start((void *)dest);
-    if (!recipient) return false;
-    Thread &thread = azone->registered_thread();
-    size_t offset_in_bytes = (char *)dest - (char *)recipient;
-    check_resurrection(thread, azone, (void *)recipient, true, new_value, offset_in_bytes);
-    return azone->set_write_barrier(thread, (void *)dest, (void *)new_value);
+    return false;
 }
 
-inline bool is_scanned(int layout) {
-    return (layout & AUTO_UNSCANNED) != AUTO_UNSCANNED;
+template <class BlockRef> inline static bool check_resurrection(Thread &thread, Zone *azone, void *global_recipient, BlockRef new_value, size_t offset) {
+    if (new_value.is_garbage()) {
+        handle_resurrection(azone, global_recipient, new_value, offset);
+        return true;
+    }
+    return false;
+}
+
+//
+// set_write_barrier_dest_sieve
+//
+// set_write_barrier_dest_sieve performs write barrier processing based on the block type of the destination.
+// If the destination is a GC block then a resurrection check is performed and the assignment is done.
+// Otherwise no operation is performed.
+template <class ValueBlockRef> class set_write_barrier_dest_sieve : public sieve_base {
+public:
+    Zone *_zone;
+    const void *_dest;
+    ValueBlockRef _new_value;
+    const void *_new_value_addr;
+    bool _result;
+
+    set_write_barrier_dest_sieve(Zone *zone, const void *dest, ValueBlockRef new_value, const void *new_value_addr) __attribute__((always_inline)) : _zone(zone), _dest(dest), _new_value(new_value), _new_value_addr(new_value_addr), _result(true) {
+        sieve_interior_pointer(_zone, _dest, *this);
+    }
+    
+    template <class DestBlockRef> inline void processBlock(DestBlockRef ref) TEMPLATE_INLINE {
+        Thread &thread = _zone->registered_thread();
+        size_t offset_in_bytes = (char *)_dest - (char *)ref.address();
+        check_resurrection(thread, _zone, ref, _new_value, offset_in_bytes);
+
+        if (Environment::unscanned_store_warning && _zone->compaction_enabled() && !ref.is_scanned() && !_new_value.has_refcount()) {
+            auto_error(_zone, "auto_zone_set_write_barrier:  Storing a GC-managed pointer in unscanned memory location. Break on auto_zone_unscanned_store_error() to debug.", _new_value_addr);
+            auto_zone_unscanned_store_error(_dest, _new_value_addr);
+        }
+
+        _zone->set_write_barrier(thread, ref, (const void **)_dest, _new_value, _new_value_addr);
+    }
+
+    inline void nonBlock(const void *ptr) __attribute__((always_inline)) {
+        Thread &thread = _zone->registered_thread();
+        if (thread.is_stack_address((void *)_dest)) {
+            *(const void **)_dest = _new_value_addr;
+        } else {
+            if (Environment::unscanned_store_warning && _zone->compaction_enabled() && !_new_value.has_refcount() && !_zone->is_global_address((void*)_dest)) {
+                auto_error(_zone, "auto_zone_set_write_barrier:  Storing a GC-managed pointer in unscanned memory location. Break on auto_zone_unscanned_store_error() to debug.", _new_value_addr);
+                auto_zone_unscanned_store_error(_dest, _new_value_addr);
+            }
+            _result = false;
+        }
+    }
+};
+
+//
+// set_write_barrier_value_sieve
+//
+// set_write_barrier_value_sieve determines whether the value being assigned is a block start pointer.
+// If it is, then set_write_barrier_dest_sieve is used to do further write barrier procession based on the destination.
+// If it is not then the value is simply assigned.
+class set_write_barrier_value_sieve : public sieve_base {
+public:
+    Zone *_zone;
+    const void *_dest;
+    const void *_new_value;
+    bool _result;
+    
+    set_write_barrier_value_sieve(Zone *zone, const void *dest, const void *new_value) __attribute__((always_inline)) : _zone(zone), _dest(dest), _new_value(new_value), _result(true) {
+        sieve_base_pointer(_zone, _new_value, *this);
+    }
+    
+    template <class BlockRef> inline void processBlock(BlockRef ref) TEMPLATE_INLINE {
+        set_write_barrier_dest_sieve<BlockRef> dest(_zone, _dest, ref, _new_value);
+        _result = dest._result;
+    }
+
+    inline void nonBlock(const void *ptr) __attribute__((always_inline)) {
+        *(void **)_dest = (void *)ptr;
+    }
+};
+
+// called by objc assignIvar assignStrongCast
+boolean_t auto_zone_set_write_barrier(auto_zone_t *zone, const void *dest, const void *new_value) {
+    set_write_barrier_value_sieve value((Zone *)zone, dest, new_value);
+    return value._result;
 }
 
 void *auto_zone_write_barrier_memmove(auto_zone_t *zone, void *dst, const void *src, size_t size) {
@@ -885,7 +1091,7 @@ void *auto_zone_write_barrier_memmove(auto_zone_t *zone, void *dst, const void *
     // and we don't want to choke on a false positive.
     if (base && is_scanned(azone->block_layout(base))) {
         // range check for extra safety.
-        size_t block_size = azone->block_size(base);
+        size_t block_size = auto_zone_size(zone, base);
         ptrdiff_t block_overrun = (ptrdiff_t(dst) + size) - (ptrdiff_t(base) + block_size);
         if (block_overrun > 0) {
             auto_fatal("auto_zone_write_barrier_memmove: will overwrite block %p, size %ld by %ld bytes.", base, block_size, block_overrun);
@@ -911,23 +1117,23 @@ void *auto_zone_write_barrier_memmove(auto_zone_t *zone, void *dst, const void *
             Thread &thread = azone->registered_thread();
             // Pass in aligned src/size. Since dst is only used to determine thread locality it is ok to not align that value
             // Even if we're storing into garbage it might be visible to other garbage long after a TLC collects it, so we need to escape it.
-            thread.track_local_memcopy(azone, ptrSrc, dst, ptrSize);
+            thread.track_local_memcopy(ptrSrc, dst, ptrSize);
             if (azone->set_write_barrier_range(dst, size)) {
                 // must hold enlivening lock for duration of the move; otherwise if we get scheduled out during the move
                 // and GC starts and scans our destination before we finish filling it with unique values we lose them
-                EnliveningHelper<UnconditionalBarrier> barrier(thread);
+                UnconditionalBarrier barrier(thread.needs_enlivening());
                 if (barrier) {
                     // add all values in the range.
                     // We could/should only register those that are as yet unmarked.
                     // We also only add values that are objects.
                     void **start = (void **)ptrSrc;
-                    void **end = start + ptrSize/sizeof(void *);
+                    void **end = (void **)displace(start, ptrSize);
                     while (start < end) {
-                        void *candidate = *start;
-                        if (azone->is_block(candidate) && !azone->block_is_marked(candidate)) barrier.enliven_block(candidate);
-                        start++;
+                        void *candidate = *start++;
+                        if (azone->is_block(candidate)) thread.enliven_block(candidate);
                     }
                 }
+                return memmove(dst, src, size);
             }
         }
     } else if (base == NULL) {
@@ -936,12 +1142,35 @@ void *auto_zone_write_barrier_memmove(auto_zone_t *zone, void *dst, const void *
         void *srcbase = azone->block_start((void*)src);
         if (srcbase && is_scanned(azone->block_layout(srcbase)) && azone->is_global_address(dst)) {
             // make this a warning in SnowLeopard.
-            auto_error(zone, "auto_zone_write_barrier_memmove:  Copying a scanned block into global data. Break on auto_zone_global_data_memmove_error() to debug.\n", dst);
+            auto_error(zone, "auto_zone_write_barrier_memmove:  Copying a scanned block into global data. Break on auto_zone_global_data_memmove_error() to debug.", dst);
             auto_zone_global_data_memmove_error();
         }
     }
     // perform the copy
     return memmove(dst, src, size);
+}
+
+#define CHECK_STACK_READS 0
+
+void *auto_zone_strong_read_barrier(auto_zone_t *zone, void **source) {
+    // block a thread during compaction.
+    void *volatile *location = (void *volatile *)source;
+    void *value = *location;
+    Zone *azone = (Zone*)zone;
+    if (azone->in_subzone_memory(value)) {
+        Thread &thread = azone->registered_thread();
+        if (CHECK_STACK_READS) {
+            // TODO:  how common are indirections through the stack?
+            // allow reads from the stack without blocking, since these will always be pinned.
+            if (thread.is_stack_address(source)) return value;
+        }
+        SpinLock lock(&thread.in_compaction().lock);
+        value = *location;
+        usword_t q;
+        Subzone *subzone = Subzone::subzone(value);
+        if (subzone->block_start(value, q)) subzone->mark_pinned(q);
+    }
+    return value;
 }
 
 /*********  Layout  ************/
@@ -952,32 +1181,51 @@ void* auto_zone_allocate_object(auto_zone_t *zone, size_t size, auto_memory_type
     Zone *azone = (Zone *)zone;
     Thread &thread = azone->registered_thread();
     // ALWAYS clear if scanned memory <rdar://problem/5341463>.
-    ptr = azone->block_allocate(thread, size, type, clear || (type & AUTO_UNSCANNED) != AUTO_UNSCANNED, initial_refcount_to_one);
+    // ALWAYS clear if type is AUTO_MEMORY_ALL_WEAK_POINTERS.
+    ptr = azone->block_allocate(thread, size, type, clear || is_allocated_cleared(type), initial_refcount_to_one);
     // We only log here because this is the only entry point that normal malloc won't already catch
     if (ptr && malloc_logger) malloc_logger(MALLOC_LOG_TYPE_ALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE | (clear ? MALLOC_LOG_TYPE_CLEARED : 0), uintptr_t(zone), size, initial_refcount_to_one ? 1 : 0, uintptr_t(ptr), 0);
 //    if (allocate_meter) allocate_meter_stop();
     return ptr;
 }
 
+extern unsigned auto_zone_batch_allocate(auto_zone_t *zone, size_t size, auto_memory_type_t type, boolean_t initial_refcount_to_one, boolean_t clear, void **results, unsigned num_requested) {
+    Zone *azone = (Zone *)zone;
+    Thread &thread = azone->registered_thread();
+    unsigned count = azone->batch_allocate(thread, size, type, clear || is_allocated_cleared(type), initial_refcount_to_one, results, num_requested);
+    if (count && malloc_logger) {
+        for (unsigned i=0; i<count; i++)
+            malloc_logger(MALLOC_LOG_TYPE_ALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE | MALLOC_LOG_TYPE_CLEARED, uintptr_t(zone), size, initial_refcount_to_one ? 1 : 0, uintptr_t(results[i]), 0);
+    }
+    return count;
+}
+
 extern "C" void *auto_zone_create_copy(auto_zone_t *zone, void *ptr) {
     Zone *azone = (Zone *)zone;
-    auto_memory_type_t type; int rc = 0;
-    if (!get_type_and_retain_count(azone, ptr, &type, &rc)) {
+
+    auto_block_info_sieve<AUTO_BLOCK_INFO_SIZE|AUTO_BLOCK_INFO_LAYOUT|AUTO_BLOCK_INFO_REFCOUNT> block_info(azone, ptr);
+
+    auto_memory_type_t type; 
+    int rc = 0;
+    size_t size;
+    if (block_info.is_block()) {
+        type = block_info.layout();
+        rc = block_info.refcount();
+        size = block_info.size();
+    } else {
         // from "somewhere else"
         type = AUTO_MEMORY_UNSCANNED;
         rc = 0;
+        size = malloc_size(ptr);
     }
-    if (type == AUTO_OBJECT_SCANNED || type == AUTO_OBJECT_UNSCANNED) {
+    
+    if (type & AUTO_OBJECT) {
         // if no weak layouts we could be more friendly
-        auto_error(azone, "auto_zone_copy_memory called on object %p\n", ptr);
+        auto_error(azone, "auto_zone_copy_memory called on object", ptr);
         return (void *)0;
     }
-    size_t size = auto_size(zone, ptr);
     void *result = auto_zone_allocate_object(zone, size, type, (rc == 1), false);
-    if (type == AUTO_OBJECT_SCANNED)
-        auto_zone_write_barrier_memmove(zone, result, ptr, size);
-    else
-        memmove(result, ptr, size);
+    if (result) memmove(result, ptr, size);
     return result;
 }
 
@@ -987,7 +1235,7 @@ void auto_zone_set_nofinalize(auto_zone_t *zone, void *ptr) {
     auto_memory_type_t type = azone->block_layout(ptr);
     if (type == AUTO_TYPE_UNKNOWN) return;
     // preserve scanned-ness but drop AUTO_OBJECT
-    if (type == AUTO_OBJECT && azone->weak_layout_map_for_block(ptr))
+    if ((type & AUTO_OBJECT) && azone->weak_layout_map_for_block(ptr))
         return;  // ignore request for objects that have weak instance variables
     azone->block_set_layout(ptr, type & ~AUTO_OBJECT);
 }
@@ -1001,6 +1249,16 @@ void auto_zone_set_unscanned(auto_zone_t *zone, void *ptr) {
     azone->block_set_layout(ptr, type|AUTO_UNSCANNED);
 }
 
+// Turn on the AUTO_POINTERS_ONLY flag for scanned blocks only. This tells the collector
+// to treat the remainder of an object as containing pointers only, which is
+// needed for compaction.
+void auto_zone_set_scan_exactly(auto_zone_t *zone, void *ptr) {
+    Zone *azone = (Zone *)zone;
+    auto_memory_type_t type = azone->block_layout(ptr);
+    if (type & AUTO_UNSCANNED) return;  // not appropriate for unscanned memory types.
+    azone->block_set_layout(ptr, type|AUTO_POINTERS_ONLY);
+}
+
 extern void auto_zone_clear_stack(auto_zone_t *zone, unsigned long options)
 {
     Zone *azone = (Zone *)zone;
@@ -1012,7 +1270,8 @@ extern void auto_zone_clear_stack(auto_zone_t *zone, unsigned long options)
 
 
 auto_memory_type_t auto_zone_get_layout_type(auto_zone_t *zone, void *ptr) {
-    return (auto_memory_type_t) ((Zone *)zone)->block_layout(ptr);
+    auto_block_info_sieve<AUTO_BLOCK_INFO_LAYOUT> block_info((Zone *)zone, ptr);
+    return block_info.layout();
 }
 
 
@@ -1038,24 +1297,6 @@ void auto_zone_unregister_datasegment(auto_zone_t *zone, void *address, size_t s
     ((Zone *)zone)->remove_datasegment(address, size);
 }
 
-/**
- * Computes a conservative estimate of the amount of memory touched by the collector. Examines each
- * small region, determining the high watermark of used blocks, and subtracts out the unused block sizes
- * (to the nearest page boundary). Assumes all of the book keeping bitmaps have been touched. Also subtracts
- * out the sizes of the allocate big entries, since these aren't touched by the allocator itself.
- */
-unsigned auto_zone_touched_size(auto_zone_t *zone) {
-    Statistics stats;
-    ((Zone *)zone)->statistics(stats);
-    return stats.size();
-}
-
-double auto_zone_utilization(auto_zone_t *zone) {
-    Statistics stats;
-    ((Zone *)zone)->statistics(stats);
-    return (double)stats.small_medium_size() / (double)(stats.small_medium_size() + stats.unused());
-}
-
 /*********  Garbage Collection and Compaction   ************/
 
 auto_collection_control_t *auto_collection_parameters(auto_zone_t *zone) {
@@ -1068,18 +1309,7 @@ auto_collection_control_t *auto_collection_parameters(auto_zone_t *zone) {
 // public entry point.
 void auto_zone_statistics(auto_zone_t *zone, auto_statistics_t *stats) {
     if (!stats) return;
-    Zone *azone = (Zone *)zone;
-    Statistics &statistics = azone->statistics();
-    
-    azone->stats.malloc_statistics.blocks_in_use = statistics.count();
-    azone->stats.malloc_statistics.size_in_use = statistics.size();
-    azone->stats.malloc_statistics.max_size_in_use = statistics.dirty_size();
-    azone->stats.malloc_statistics.size_allocated = statistics.allocated() + statistics.admin_size();
-    // now copy the whole thing over
-    if (stats->version == 1) *stats = azone->stats;
-    else if (stats->version == 0) {
-        memmove(stats, &azone->stats, sizeof(auto_statistics_t)-3*sizeof(long long));
-    }
+    bzero(stats, sizeof(auto_statistics_t));
 }
 
 // work in progress
@@ -1090,144 +1320,26 @@ typedef struct {
     size_t buff_pos;
 } AutoZonePrintInfo;
 
-static void _auto_zone_stats_printf(AutoZonePrintInfo *info, const char *fmt, ...)
-{
-    if (info->f) {
-        va_list valist;
-        va_start(valist, fmt);
-        vfprintf(info->f, fmt, valist);
-        va_end(valist);
-    }
-    if (info->buff) {
-        if (info->buff_pos < info->buff_size) {
-            va_list valist;
-            va_start(valist, fmt);
-            info->buff_pos += vsnprintf(&info->buff[info->buff_pos], info->buff_size - info->buff_pos, fmt, valist);
-            va_end(valist);
-        }
-    }
-}
-
-static void print_zone_stats(AutoZonePrintInfo *info, malloc_statistics_t &stats, const char *message) {
-    _auto_zone_stats_printf(info, "%s %10lu %10u %10lu %10lu        %0.2f\n", message,
-        stats.size_in_use, stats.blocks_in_use, stats.max_size_in_use, stats.size_allocated,
-        ((float)stats.size_in_use)/stats.max_size_in_use);
-}
-
 __private_extern__ malloc_zone_t *aux_zone;
-
-static void _auto_zone_stats(AutoZonePrintInfo *info) {
-    // Memory first
-    malloc_statistics_t mstats;
-    _auto_zone_stats_printf(info, "\n            bytes     blocks      dirty     vm     bytes/dirty\n");
-    if (gc_zone) {
-        malloc_zone_statistics(gc_zone, &mstats);
-        print_zone_stats(info, mstats, "auto  ");
-        //auto_malloc_statistics_new(gc_zone, &mstats);  // has deadlock; see rdar://5954569
-        //print_zone_stats(info, mstats, "newa  ");
-        //auto_malloc_statistics_old(gc_zone, &mstats);
-        //print_zone_stats(info, mstats, "olda  ");
-        malloc_zone_statistics(aux_zone, &mstats);
-        print_zone_stats(info, mstats, "aux   ");
-    }
-    malloc_zone_statistics(malloc_default_zone(), &mstats);
-    print_zone_stats(info, mstats, "malloc");
-    malloc_zone_statistics(NULL, &mstats);
-    print_zone_stats(info, mstats, "total ");
-    if (!gc_zone) return;
-    
-    Zone *azone = (Zone *)gc_zone;
-    Statistics &statistics = azone->statistics();
-    
-    _auto_zone_stats_printf(info, "Regions In Use: %ld\nSubzones In Use: %ld\n", statistics.regions_in_use(), statistics.subzones_in_use());
-    
-    
-    auto_statistics_t *stats = &azone->stats;
-    // CPU
-//    _auto_zone_stats_printf(info, "\ncpu (microseconds):\n\ntotal %lld usecs = scan %lld + finalize %lld + reclaim %lld\n",
-    _auto_zone_stats_printf(info, "\n%ld generational\n%ld full\ncpu (microseconds):\n               total =     scan   + freeze + finalize  + reclaim\nfull+gen  %10lld %10lld %10lld %10lld %10lld\n", statistics.partial_gc_count(), statistics.full_gc_count(),
-        // full + gen
-        stats->total[0].total_duration + stats->total[1].total_duration,
-        stats->total[0].scan_duration + stats->total[1].scan_duration,
-        stats->total[0].enlivening_duration + stats->total[1].enlivening_duration,
-        stats->total[0].finalize_duration + stats->total[1].finalize_duration,
-        stats->total[0].reclaim_duration + stats->total[1].reclaim_duration);
-    _auto_zone_stats_printf(info, "gen. max  %10lld %10lld %10lld %10lld %10lld\n",
-        stats->maximum[1].total_duration, 
-        stats->maximum[1].scan_duration,
-        stats->maximum[1].enlivening_duration,
-        stats->maximum[1].finalize_duration,
-        stats->maximum[1].reclaim_duration);
-    _auto_zone_stats_printf(info, "full max  %10lld %10lld %10lld %10lld %10lld\n\n",
-        stats->maximum[0].total_duration, 
-        stats->maximum[0].scan_duration,
-        stats->maximum[0].enlivening_duration,
-        stats->maximum[0].finalize_duration,
-        stats->maximum[0].reclaim_duration);
-    long count = statistics.partial_gc_count();
-    if (!count) count = 1;
-    _auto_zone_stats_printf(info, "gen. avg  %10lld %10lld %10lld %10lld %10lld\n",
-        stats->total[1].total_duration/count, 
-        stats->total[1].scan_duration/count,
-        stats->total[1].enlivening_duration/count,
-        stats->total[1].finalize_duration/count,
-        stats->total[1].reclaim_duration/count);
-    count = statistics.full_gc_count();
-    if (!count) count = 1;
-    _auto_zone_stats_printf(info, "full avg  %10lld %10lld %10lld %10lld %10lld\n\n",
-        stats->total[0].total_duration/count, 
-        stats->total[0].scan_duration/count,
-        stats->total[0].enlivening_duration/count,
-        stats->total[0].finalize_duration/count,
-        stats->total[0].reclaim_duration/count);
-    _auto_zone_stats_printf(info, "\nthread collections %lld; total blocks %lld; total bytes %lld\n",
-        stats->thread_collections_total,
-        stats->thread_blocks_recovered_total,
-        stats->thread_bytes_recovered_total);
-}
-
-void auto_zone_write_stats(FILE *f) {
-    AutoZonePrintInfo info;
-    info.f = f;
-    info.buff = NULL;
-    _auto_zone_stats(&info);
-}
-
-void auto_zone_stats() {
-    auto_zone_write_stats(stdout);
-}
-
-char *auto_zone_stats_string()
-{
-    AutoZonePrintInfo info;
-    info.f = NULL;
-    info.buff = NULL;
-    info.buff_size = 0;
-    do {
-        info.buff_size += 2048;
-        if (info.buff) free(info.buff);
-        info.buff = (char *)malloc(info.buff_size);
-        info.buff_pos = 0;
-        _auto_zone_stats(&info);
-    } while (info.buff_pos > info.buff_size);
-    return info.buff;
-}
 
 void auto_collector_reenable(auto_zone_t *zone) {
     Zone *azone = (Zone *)zone;
     // although imperfect, try to avoid dropping below zero
-    if (azone->collector_disable_count == 0) return;
-    OSAtomicDecrement32(&azone->collector_disable_count);
+    Mutex lock(&azone->_collection_mutex);
+    if (azone->_collector_disable_count == 0) return;
+    azone->_collector_disable_count--;
 }
 
 void auto_collector_disable(auto_zone_t *zone) {
     Zone *azone = (Zone *)zone;
-    OSAtomicIncrement32(&azone->collector_disable_count);
+    Mutex lock(&azone->_collection_mutex);
+    azone->_collector_disable_count++;
 }
 
 boolean_t auto_zone_is_enabled(auto_zone_t *zone) {
     Zone *azone = (Zone *)zone;
-    return azone->collector_disable_count == 0;
+    Mutex lock(&azone->_collection_mutex);
+    return azone->_collector_disable_count == 0;
 }
 
 boolean_t auto_zone_is_collecting(auto_zone_t *zone) {
@@ -1236,39 +1348,7 @@ boolean_t auto_zone_is_collecting(auto_zone_t *zone) {
     return !azone->is_state(idle);
 }
 
-#if USE_DISPATCH_QUEUE
-static void auto_collection_work(Zone *zone);
-#endif
-
 void auto_collect_multithreaded(auto_zone_t *zone) {
-    Zone *azone = (Zone *)zone;
-    if (! azone->multithreaded) {
-        if (azone->control.log & AUTO_LOG_COLLECTIONS) malloc_printf("starting dedicated collection thread\n");
-#if USE_DISPATCH_QUEUE
-        // disable the collector while creating the queue/block to avoid starting the collector while
-        // copying collection_block.
-        auto_collector_disable(zone);
-        
-#if 1
-        // In general libdispatch limits the number of concurrent jobs based on various factors (# cpus).
-        // But we don't want the collector to be kept waiting while long running jobs generate garbage.
-        // We avoid collection latency using a special attribute which tells dispatch this queue should 
-        // service jobs immediately even if that requires exceeding the usual concurrent limit.
-        dispatch_queue_attr_t collection_queue_attrs = dispatch_queue_attr_create();
-        dispatch_queue_attr_set_flags(collection_queue_attrs, DISPATCH_QUEUE_OVERCOMMIT);
-        dispatch_queue_attr_set_priority(collection_queue_attrs, DISPATCH_QUEUE_PRIORITY_HIGH);
-        azone->collection_queue = dispatch_queue_create("Garbage Collection Work Queue", collection_queue_attrs);
-        dispatch_release(collection_queue_attrs);
-#else
-        azone->collection_queue = dispatch_queue_create("Garbage Collection Work Queue", NULL);
-#endif
-        azone->collection_block = Block_copy(^{ auto_collection_work(azone); });
-        auto_collector_reenable(zone);
-#else
-        pthread_create(&azone->collection_thread, NULL, auto_collection_thread, azone);
-#endif
-        azone->multithreaded = true;
-    }
 }
 
 
@@ -1279,14 +1359,7 @@ void auto_enumerate_references(auto_zone_t *zone, void *referent,
                                auto_reference_recorder_t callback, // f(zone, ctx, {ref, referrer, offset})
                                void *stack_bottom, void *ctx)
 {
-    Zone *azone = (Zone *)zone;
-    azone->block_collector();
-    {
-        ReferenceRecorder recorder(azone, referent, callback, stack_bottom, ctx);
-        recorder.scan();
-        azone->reset_all_marks_and_pending();
-    }
-    azone->unblock_collector();
+    // obsolete. use auto_gdb_enumerate_references() or auto_zone_dump().
 }
 
 
@@ -1297,14 +1370,17 @@ void auto_enumerate_references(auto_zone_t *zone, void *referent,
 // The new and improved one-stop entry point to the weak system
 // Atomically assign value to *location and track it for zero'ing purposes.
 // Assign a value of NULL to deregister from the system.
-void auto_assign_weak_reference(auto_zone_t *zone, const void *value, void *const*location, auto_weak_callback_block_t *block) {
+void auto_assign_weak_reference(auto_zone_t *zone, const void *value, const void **location, auto_weak_callback_block_t *block) {
     Zone *azone = (Zone *)zone;
-    void *base = azone->block_start((void *)location);
     Thread &thread = azone->registered_thread();
-    if (check_resurrection(thread, azone, (void *)base, base != NULL, value, (size_t)location - (size_t)base)) {
-        // Never allow garbage to be registered since it will never be cleared.
-        // Go further and zero it out since it would have been cleared had it been done earlier
-        value = NULL;
+    void *base = azone->block_start((void *)location);
+    if (value) {
+        if ((base && azone->block_is_garbage(base)) || check_resurrection(thread, azone, (void *)base, base != NULL, value, (size_t)location - (size_t)base)) {
+            // Never allow garbage to be registered since it will never be cleared.
+            // Go further and zero it out since it would have been cleared had it been done earlier
+            // To address <rdar://problem/7217252>, disallow forming new weak references inside garbage objects.
+            value = NULL;
+        }
     }
     
     // Check if this is a store to the stack and don't register it.
@@ -1315,11 +1391,14 @@ void auto_assign_weak_reference(auto_zone_t *zone, const void *value, void *cons
         if (value != NULL) {
             // note: we could check to see if base is local, but then we have to change
             // all weak references on make_global.
-            if (base) thread.block_escaped(azone, NULL, base);
-            thread.block_escaped(azone, NULL, (void *)value);
+            if (base) thread.block_escaped(base);
+            thread.block_escaped((void *)value);
             // also zap destination so that dead locals don't need to be pulled out of weak tables
             //thread->track_local_assignment(azone, (void *)location, (void *)value);
         }
+    } else {
+        // write the value even though the location is not registered, for __block __weak foo=x case.
+        *location = value;
     }
 }
 
@@ -1333,16 +1412,26 @@ void *auto_read_weak_reference(auto_zone_t *zone, void **referrer) {
         // load *referrer
         Zone *azone = (Zone*)zone;
         Thread &thread = azone->registered_thread();
-        EnliveningHelper<ConditionBarrier> barrier(thread);
+        ConditionBarrier barrier(thread.needs_enlivening());
         if (barrier) {
             // need to tell the collector this block should be scanned.
             result = *referrer;
-            if (result && !azone->block_is_marked(result)) barrier.enliven_block(result);
+            if (result) thread.enliven_block(result);
         } else {
             result = *referrer;
         }
     }
     return result;
+}
+
+extern char CompactionObserverKey;
+
+void auto_zone_set_compaction_observer(auto_zone_t *zone, void *block, void (^observer) (void)) {
+    if (observer) {
+        observer = Block_copy(observer);
+        Block_release(observer);
+    }
+    auto_zone_set_associative_ref(zone, block, &CompactionObserverKey, observer);
 }
 
 /********* Associative References ************/
@@ -1371,21 +1460,48 @@ void auto_zone_erase_associative_refs(auto_zone_t *zone, void *object) {
     return azone->erase_associations(object);
 }
 
+void auto_zone_enumerate_associative_refs(auto_zone_t *zone, void *key, boolean_t (^block) (void *object, void *value)) {
+    Zone *azone = (Zone*)zone;
+    azone->visit_associations_for_key(key, block);
+}
+
+size_t auto_zone_get_associative_hash(auto_zone_t *zone, void *object) {
+    Zone *azone = (Zone*)zone;
+    return azone->get_associative_hash(object);
+}
+
 /********* Root References ************/
+
+class auto_zone_add_root_sieve : public sieve_base {
+public:
+    Zone * const _zone;
+    void * const _root;
+    
+    auto_zone_add_root_sieve(Zone *zone, void *root, void *ptr) __attribute__((always_inline)) : _zone(zone), _root(root) {
+        sieve_base_pointer(zone, ptr, *this);
+    }
+    
+    template <class BlockRef> inline void processBlock(BlockRef ref) TEMPLATE_INLINE {
+        Thread &thread = _zone->registered_thread();
+        check_resurrection(thread, _zone, _root, ref, 0);
+        _zone->add_root(_root, ref);
+    }
+    
+    inline void nonBlock(const void *ptr) __attribute__((always_inline)) {
+        *(void **)_root = (void *)ptr;
+    }
+};
 
 void auto_zone_add_root(auto_zone_t *zone, void *root, void *value)
 {
-    Zone *azone = (Zone*)zone;
-    Thread &thread = azone->registered_thread();
-    check_resurrection(thread, azone, root, false, value, 0);
-    (azone)->add_root(root, value);
+    auto_zone_add_root_sieve((Zone *)zone, root, value);
 }
 
 void auto_zone_remove_root(auto_zone_t *zone, void *root) {
     ((Zone *)zone)->remove_root(root);
 }
 
-extern void auto_zone_root_write_barrier(auto_zone_t *zone, void *address_of_possible_root_ptr, void *value) {
+void auto_zone_root_write_barrier(auto_zone_t *zone, void *address_of_possible_root_ptr, void *value) {
     if (!value) {
         *(void **)address_of_possible_root_ptr = NULL;
         return;
@@ -1398,10 +1514,10 @@ extern void auto_zone_root_write_barrier(auto_zone_t *zone, void *address_of_pos
         *(void **)address_of_possible_root_ptr = value;
     } else if (azone->is_root(address_of_possible_root_ptr)) {
         // if local make global before possibly enlivening
-        thread.block_escaped(azone, NULL, value);
+        thread.block_escaped(value);
         // might need to tell the collector this block should be scanned.
-        EnliveningHelper<UnconditionalBarrier> barrier(thread);
-        if (barrier && !azone->block_is_marked(value)) barrier.enliven_block(value);
+        UnconditionalBarrier barrier(thread.needs_enlivening());
+        if (barrier) thread.enliven_block(value);
         check_resurrection(thread, azone, address_of_possible_root_ptr, false, value, 0);
         *(void **)address_of_possible_root_ptr = value;
     } else if (azone->is_global_address(address_of_possible_root_ptr)) {
@@ -1413,18 +1529,26 @@ extern void auto_zone_root_write_barrier(auto_zone_t *zone, void *address_of_pos
         // by GC at some other location and they're storing a go-stale pointer.
         // That "some other location" might in fact be the stack.
         // If so we can't really assert that it's either not-thread-local or retained.
-        thread.block_escaped(azone, NULL, value);
+        thread.block_escaped(value);
         check_resurrection(thread, azone, address_of_possible_root_ptr, false, value, 0);
         // Always write
         *(void **)address_of_possible_root_ptr = value;
+        
+        if (Environment::unscanned_store_warning && azone->compaction_enabled()) {
+            // catch writes to unscanned memory.
+            auto_block_info_sieve<AUTO_BLOCK_INFO_REFCOUNT> info(azone, value);
+            if (info.is_block() && info.refcount() == 0) {
+                auto_error(zone, "auto_zone_root_write_barrier:  Storing a GC-managed pointer in unscanned memory location. Break on auto_zone_unscanned_store_error() to debug.", value);
+                auto_zone_unscanned_store_error(address_of_possible_root_ptr, value);
+            }
+        }
     }
 }
 
 
 void auto_zone_print_roots(auto_zone_t *zone) {
     Zone *azone = (Zone *)zone;
-    Statistics junk;
-    PointerList roots(junk);
+    PointerList roots;
     azone->copy_roots(roots);
     usword_t count = roots.count();
     printf("### %lu roots. ###\n", count);
@@ -1444,8 +1568,8 @@ boolean_t auto_zone_atomicCompareAndSwap(auto_zone_t *zone, void *existingValue,
         azone->add_root_no_barrier((void *)location);
     }
     check_resurrection(thread, azone, (void *)location, !isGlobal, newValue, 0);
-    thread.block_escaped(azone, NULL, newValue);
-    EnliveningHelper<UnconditionalBarrier> barrier(thread);
+    thread.block_escaped(newValue);
+    UnconditionalBarrier barrier(thread.needs_enlivening());
     boolean_t result;
     if (issueBarrier)
         result = OSAtomicCompareAndSwapPtrBarrier(existingValue, newValue, location);
@@ -1455,10 +1579,38 @@ boolean_t auto_zone_atomicCompareAndSwap(auto_zone_t *zone, void *existingValue,
         // mark write-barrier w/o storing
         azone->set_write_barrier((char*)location);
     }
-    if (result && barrier && !azone->block_is_marked(newValue)) barrier.enliven_block(newValue);
+    if (result && barrier) thread.enliven_block(newValue);
     return result;
 }
+
+/************ Collection Checking ***********************/
+
+boolean_t auto_zone_enable_collection_checking(auto_zone_t *zone) {
+    Zone *azone = (Zone *)zone;
+    azone->enable_collection_checking();
+    return true;
+}
+
+void auto_zone_disable_collection_checking(auto_zone_t *zone) {
+    Zone *azone = (Zone *)zone;
+    azone->disable_collection_checking();
+}
+
+void auto_zone_track_pointer(auto_zone_t *zone, void *pointer) {
+    Zone *azone = (Zone *)zone;
+    if (azone->collection_checking_enabled())
+        azone->track_pointer(pointer);
+}
+
+void auto_zone_enumerate_uncollected(auto_zone_t *zone, auto_zone_collection_checking_callback_t callback) {
+    Zone *azone = (Zone *)zone;
+    azone->enumerate_uncollected(callback);
+}
+
+
 /************ Experimental ***********************/
+
+#ifdef __BLOCKS__
 
 void auto_zone_dump(auto_zone_t *zone,
             auto_zone_stack_dump stack_dump,
@@ -1470,7 +1622,12 @@ void auto_zone_dump(auto_zone_t *zone,
     ) {
     
     Auto::Zone *azone = (Auto::Zone *)zone;
-    azone->dump(stack_dump, register_dump, thread_local_node_dump, root_dump, global_node_dump, weak_dump);
+    azone->dump_zone(stack_dump, register_dump, thread_local_node_dump, root_dump, global_node_dump, weak_dump);
+}
+
+void auto_zone_visit(auto_zone_t *zone, auto_zone_visitor_t *visitor) {
+    Auto::Zone *azone = (Auto::Zone *)zone;
+    azone->visit_zone(visitor);
 }
 
 auto_probe_results_t auto_zone_probe_unlocked(auto_zone_t *zone, void *address) {
@@ -1491,7 +1648,7 @@ void auto_zone_scan_exact(auto_zone_t *zone, void *address, void (^callback)(voi
             map = azone->layout_map_for_block((void *)address);
         }
         unsigned int byte_offset = 0;
-        unsigned int size = azone->block_size(address);
+        unsigned int size = auto_zone_size(zone, address);
         if (map) {
             while (*map) {
                 int skip = (*map >> 4) & 0xf;
@@ -1510,6 +1667,7 @@ void auto_zone_scan_exact(auto_zone_t *zone, void *address, void (^callback)(voi
         }
     }
 }
+#endif
 
 
 /************* API ****************/
@@ -1519,53 +1677,6 @@ boolean_t auto_zone_atomicCompareAndSwapPtr(auto_zone_t *zone, void *existingVal
     return auto_zone_atomicCompareAndSwap(zone, existingValue, newValue, location, azone->is_global_address((void*)location), issueBarrier);
 }
 
-/************ Miscellany **************************/
-
-
-#if 0
-// Watching
-
-#define WatchLimit 16
-static const void *WatchPoints[WatchLimit];
-
-void auto_zone_watch(const void *ptr) {
-    for (int i = 0; i < WatchLimit; ++i) {
-        if (WatchPoints[i]) 
-            if (WatchPoints[i] == ptr) return;
-            else
-                continue;
-        WatchPoints[i] = ptr;
-        return;
-    }
-    printf("too many watchpoints already, skipping %p\n", ptr);
-}
-
-void auto_zone_watch_free(const void *ptr, const char *msg) {
-    for (int i = 0; i < WatchLimit; ++i) {
-        if (WatchPoints[i] == NULL) return;
-        if (WatchPoints[i] == ptr) {
-            printf(msg, ptr);
-            while(++i < WatchLimit)
-                WatchPoints[i-1] = WatchPoints[i];
-            WatchPoints[WatchLimit-1] = NULL;
-            return;
-        }
-    }
-}
-
-boolean_t auto_zone_watch_msg(void *ptr, const char *format,  void *extra) {
-    for (int i = 0; i < WatchLimit; ++i) {
-        if (WatchPoints[i] == NULL) return false;
-        if (WatchPoints[i] == ptr) {
-            printf(format, ptr, extra);
-            return true;
-        }
-    }
-    return false;
-}
-#endif
-
-
 #if DEBUG
 ////////////////// SmashMonitor ///////////////////
 
@@ -1574,7 +1685,7 @@ static void range_check(void *pointer, size_t size) {
     if (azone) {
         void *base_pointer = azone->block_start(pointer);
         if (base_pointer) {
-            size_t block_size = azone->block_size(base_pointer);
+            size_t block_size = auto_zone_size((auto_zone_t *)azone,base_pointer);
             if ((uintptr_t(pointer) + size) > (uintptr_t(base_pointer) + block_size)) {
                 malloc_printf("SmashMonitor: range check violation for pointer = %p, size = %lu", pointer, size);
                 __builtin_trap();
@@ -1616,93 +1727,3 @@ DYLD_INTERPOSE(SmashMonitor_bzero, bzero)
 #endif
 
 #endif
-
-#if LOG_TIMINGS
-// allocation & collection rate logging
-
-typedef struct {
-    auto_date_t stamp;
-    size_t  allocated;
-    size_t  finger;
-    size_t  recovered;
-    char    purpose;    // G or F - start GC; E - end GC; A - allocation threshold
-} log_record_t;
-
-#define NRECORDS 2048
-
-log_record_t AutoRecords[NRECORDS];
-int AutoRecordsIndex = 0;
-
-
-static void dumpRecords() {
-    int fd = open("/tmp/records", O_CREAT|O_APPEND, 0666);
-    int howmany = AutoRecordsIndex - 1;
-    write(fd, &AutoRecords[0], howmany*sizeof(log_record_t));
-    close(fd);
-    AutoRecordsIndex = 0;
-}
-static log_record_t *getRecord(int dump) {
-    for (;;) {
-        int index = OSAtomicIncrement32(&AutoRecordsIndex);
-        if (index == NRECORDS || dump) {
-            dumpRecords();
-        }
-        else if (index < NRECORDS) return &AutoRecords[index];
-    }
-}
-static void log_allocation_threshold(auto_date_t time, size_t allocated, size_t finger) {
-    log_record_t *record = getRecord(0);
-    record->stamp = time;
-    record->allocated = allocated;
-    record->finger = finger;
-    record->purpose = 'A';
-}
-static void log_collection_begin(auto_date_t time, size_t allocated, size_t finger, bool isGen) {
-    log_record_t *record = getRecord(0);
-    record->stamp = time;
-    record->allocated = allocated;
-    record->finger = finger;
-    record->purpose = isGen ? 'G' : 'F';
-}
-
-static void log_collection_end(auto_date_t time, size_t allocated, size_t finger, size_t recovered) {
-    log_record_t *record = getRecord(0);
-    record->stamp = time;
-    record->allocated = allocated;
-    record->finger = finger;
-    record->recovered = recovered;
-    record->purpose = 'E';
-}
-
-static double rateps(size_t quant, auto_date_t interval) {
-    double quantity = quant;
-    return (quantity/interval);
-}
-
-void log_analysis() {
-    int lastAllocation = -1;
-    int collectionBegin = -1;
-    for (int index = 0; index < AutoRecordsIndex; ++index) {
-        if (AutoRecords[index].purpose == 'A') {
-            if (lastAllocation == -1) { lastAllocation = index; continue; }
-            auto_date_t interval = AutoRecords[index].stamp - AutoRecords[lastAllocation].stamp;
-            size_t quantity = AutoRecords[index].allocated - AutoRecords[lastAllocation].allocated;
-            printf("%ld bytes in %lld microseconds, %gmegs/sec allocation rate\n", quantity, interval, rateps(quantity, interval));
-            lastAllocation = index;
-        }
-        else if (AutoRecords[index].purpose == 'G' || AutoRecords[index].purpose == 'F') {
-            collectionBegin = index;
-            printf("begining %c collection\n", AutoRecords[index].purpose);
-        }
-        else if (AutoRecords[index].purpose == 'E') {
-            auto_date_t interval = AutoRecords[index].stamp - AutoRecords[collectionBegin].stamp;
-            size_t quantity = AutoRecords[index].allocated - AutoRecords[collectionBegin].allocated;
-            size_t recovered  = AutoRecords[index].recovered;
-            quantity += recovered;
-            printf("%ld bytes in %lld microseconds, %gmegs/sec rate during collection\n", quantity, interval, rateps(quantity, interval));
-            printf("%ld bytes %lld microseconds, %gmegs/sec recovery rate\n", recovered, interval, rateps(recovered, interval));
-        }
-    }
-}
-
-#endif LOG_TIMINGS

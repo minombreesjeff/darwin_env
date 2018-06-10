@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -20,22 +20,24 @@
 /*
     auto_gdb_interface.cpp
     Routines called by gdb to implement its info gc-references and gc-roots commands.
-    Copyright (c) 2007-2009 Apple Inc. All rights reserved.
+    Copyright (c) 2007-2011 Apple Inc. All rights reserved.
  */
 
 #include <vector>
 #include <deque>
 #include "auto_gdb_interface.h"
-#include "AutoZone.h"
-#include "AutoRootScanner.h"
-#include "AutoBlockIterator.h"
-#include "AutoReferenceIterator.h"
+#include "auto_impl_utilities.h"
+#include "Zone.h"
+#include "BlockIterator.h"
+#include "ReferenceIterator.h"
 
 namespace Auto {
     template <typename ReferenceIterator> class GDBPendingStack {
         typedef std::vector<uintptr_t, AuxAllocator<uintptr_t> > uintptr_vector;
         uintptr_vector _small_stack, _large_stack;
     public:
+        const PendingStackHint hints() { return PendingStackWantsEagerScanning; }
+
         void push(Subzone *subzone, usword_t q) {
             assert(q <= 65536);
             assert(uintptr_t(subzone) == (uintptr_t(subzone) & ~0x1FFFF));
@@ -45,6 +47,12 @@ namespace Auto {
         void push(Large *large) {
             _large_stack.push_back(uintptr_t(large));
         }
+
+        static bool mark(Subzone *subzone, usword_t q) { return subzone->test_and_set_mark(q); }
+        static bool mark(Large *large) { return large->test_and_set_mark(); }
+        
+        static bool is_marked(Subzone *subzone, usword_t q) { return subzone->is_marked(q); }
+        static bool is_marked(Large *large) { return large->is_marked(); }
         
         void scan(ReferenceIterator &scanner) {
             for (;;) {
@@ -97,7 +105,7 @@ namespace Auto {
     public:
         GDBReferenceRecorder(Zone *zone, void *block, void *stack_bottom) : _zone(zone), _block(block), _stack_bottom(stack_bottom) {}
         
-        void visit(ReferenceInfo &info, void **slot, void *block) {
+        void visit(const ReferenceInfo &info, void **slot, void *block) {
             if (block == _block) {
                 auto_memory_reference_t ref = { NULL };
                 switch (info.kind()) {
@@ -112,21 +120,23 @@ namespace Auto {
                     ref.kind = auto_memory_block_stack;
                     break;
                 case kConservativeHeapReference:
+                case kAllPointersHeapReference:
                     ref.address = _zone->block_start((void*)slot);
                     ref.offset = (intptr_t)slot - (intptr_t)ref.address;
                     ref.kind = auto_memory_block_bytes;
-                    ref.retainCount = _zone->block_refcount(ref.address);
+                    ref.retainCount = auto_zone_retain_count((auto_zone_t *)_zone,ref.address);
                     break;
                 case kExactHeapReference:
                     ref.address = _zone->block_start((void*)slot);
                     ref.offset = (intptr_t)slot - (intptr_t)ref.address;
                     ref.kind = auto_memory_block_object;
-                    ref.retainCount = _zone->block_refcount(ref.address);
+                    ref.retainCount = auto_zone_retain_count((auto_zone_t *)_zone,ref.address);
                     break;
                 case kAssociativeReference:
-                    ref.address = (void *)slot;
+                    ref.address = info.object();
                     ref.offset = (intptr_t)info.key();
                     ref.kind = auto_memory_block_association;
+                    ref.retainCount = auto_zone_retain_count((auto_zone_t *)_zone,ref.address);
                     break;
                 default:
                     break;
@@ -135,11 +145,11 @@ namespace Auto {
             }
         }
         
-        void visit(ReferenceInfo &info, void **slot, Subzone *subzone, usword_t q) {
+        void visit(const ReferenceInfo &info, void **slot, Subzone *subzone, usword_t q) {
             visit(info, slot, subzone->quantum_address(q));
         }
         
-        void visit(ReferenceInfo &info, void **slot, Large *large) {
+        void visit(const ReferenceInfo &info, void **slot, Large *large) {
             visit(info, slot, large->address());
         }
         
@@ -184,16 +194,18 @@ namespace Auto {
         //
         struct Node {
             void *_address;                         // base address of this node.
-            NodeRefMap _references;                 // references to THIS Node, keyed by slotNode addresses.
-            enum Color { White, Gray, Black };      // states a Node can be in during predecessor discovery.
-            Color _color;
             Node *_target;                          // used by shortest path algorithm.
+            NodeRefMap _references;                 // references to THIS Node, keyed by slotNode addresses.
+            enum Color { White = 0, Gray, Black };  // states a Node can be in during predecessor discovery.
+            Color _color : 2;
+            char _is_thread_local : 1;              // true if this node is thread local.
+            char _is_retained : 1;                  // true if this node has a retain count.
 
-            Node(void *address) : _address(address), _references(), _color(White), _target(NULL) {}
+            Node(void *address) : _address(address), _target(NULL), _references(), _color(White), _is_thread_local(0), _is_retained(0) {}
             
             Color darken() { if (_color < Black) _color = (Color)(_color + 1); return _color; }
             
-            void addRef(Zone *zone, Node *slotNode, ReferenceInfo &info, void **slot) {
+            void addRef(Zone *zone, Node *slotNode, const ReferenceInfo &info, void **slot) {
                 if (_references.find(slotNode) == _references.end()) {
                     auto_memory_reference_t ref = { NULL };
                     switch (info.kind()) {
@@ -208,22 +220,23 @@ namespace Auto {
                         ref.kind = auto_memory_block_stack;
                         break;
                     case kConservativeHeapReference:
+                    case kAllPointersHeapReference:
                         ref.address = slotNode->_address;
                         ref.offset = (intptr_t)slot - (intptr_t)ref.address;
                         ref.kind = auto_memory_block_bytes;
-                        ref.retainCount = zone->block_refcount(ref.address);
+                        ref.retainCount = auto_zone_retain_count((auto_zone_t *)zone,ref.address);
                         break;
                     case kExactHeapReference:
                         ref.address = slotNode->_address;
                         ref.offset = (intptr_t)slot - (intptr_t)ref.address;
                         ref.kind = auto_memory_block_object;
-                        ref.retainCount = zone->block_refcount(ref.address);
+                        ref.retainCount = auto_zone_retain_count((auto_zone_t *)zone,ref.address);
                         break;
                     case kAssociativeReference:
                         ref.address = slotNode->_address;
                         ref.offset = (intptr_t)info.key();
                         ref.kind = auto_memory_block_association;
-                        ref.retainCount = zone->block_refcount(ref.address);
+                        ref.retainCount = auto_zone_retain_count((auto_zone_t *)zone,ref.address);
                         break;
                     default:
                         return;
@@ -265,9 +278,8 @@ namespace Auto {
             _nodes[_blockNode->_address] = _blockNode;
             _nodesToExplore[_blockNode->_address] = _blockNode;
 
-            int refcount, layout;
-            _zone->block_refcount_and_layout(_blockNode->_address, &refcount, &layout);
-            _blockRef = (auto_memory_reference_t) { _blockNode->_address, 0, (layout & AUTO_OBJECT) ? auto_memory_block_object : auto_memory_block_bytes, refcount };
+            auto_block_info_sieve<AUTO_BLOCK_INFO_REFCOUNT|AUTO_BLOCK_INFO_LAYOUT> block_info(_zone, _blockNode->_address);
+            _blockRef = (auto_memory_reference_t) { _blockNode->_address, 0, is_object(block_info.layout()) ? auto_memory_block_object : auto_memory_block_bytes, block_info.refcount() };
         }
         
         ~GDBRootFinder() {
@@ -276,7 +288,7 @@ namespace Auto {
             }
         }
         
-        Node *nodeForSlot(ReferenceInfo &info, void **slot) {
+        Node *nodeForSlot(const ReferenceInfo &info, void **slot) {
             Node *node = NULL;
             NodeSet::iterator i;
             switch (info.kind()) {
@@ -301,6 +313,7 @@ namespace Auto {
                 }
                 break;
             case kConservativeHeapReference:
+            case kAllPointersHeapReference:
             case kExactHeapReference:
                 {
                     void *start = _zone->block_start(slot);
@@ -325,20 +338,30 @@ namespace Auto {
         // subsequent passes will be neeeded if new nodes are added. A node is known to be have been fully explored once it has been around through a complete pass, and it can be
         // removed from the set of nodes still being explored. When this set goes empty, the subgraph is complete.
         
-        void visit(ReferenceInfo &info, void **slot, void *block) {
+        void visit(const ReferenceInfo &info, void **slot, void *block) {
             NodeSet::iterator i = _nodesToExplore.find(block);
             if (i != _nodesToExplore.end()) {
                 Node *node = i->second;
-                Node *slotNode = nodeForSlot(info, slot);
-                if (slotNode) node->addRef(_zone, slotNode, info, slot);
+                switch (info.kind()) {
+                case kThreadLocalReference:
+                    node->_is_thread_local = 1;
+                    break;
+                case kRetainedReference:
+                    node->_is_retained = 1;
+                    break;
+                default:
+                    // otherwise, this is a reference that comes from a slot in memory.
+                    Node *slotNode = nodeForSlot(info, slot);
+                    if (slotNode) node->addRef(_zone, slotNode, info, slot);
+                }
             }
         }
         
-        void visit(ReferenceInfo &info, void **slot, Subzone *subzone, usword_t q) {
+        void visit(const ReferenceInfo &info, void **slot, Subzone *subzone, usword_t q) {
             visit(info, slot, subzone->quantum_address(q));
         }
         
-        void visit(ReferenceInfo &info, void **slot, Large *large) {
+        void visit(const ReferenceInfo &info, void **slot, Large *large) {
             visit(info, slot, large->address());
         }
         
@@ -383,6 +406,7 @@ namespace Auto {
             
             // use Djikstra's algorithm (breadth-first search) to discover the shortest path to each root.
             __block PathsVector paths;
+            __block bool considerThreadLocalGarbage = false;
             
             Node::ref_visitor_t visitor = ^(Node *targetNode, Node *slotNode, auto_memory_reference_t &ref) {
                 assert(slotNode->_target == NULL);
@@ -395,9 +419,12 @@ namespace Auto {
                     break;
                 case auto_memory_block_bytes:
                 case auto_memory_block_object:
-                    // retained blocks are roots too.
-                    if (ref.retainCount)
+                    // retained  and thread local blocks are roots too.
+                    if (slotNode->_is_retained) {
                         addPath(paths, slotNode);
+                    } else if (considerThreadLocalGarbage && slotNode->_is_thread_local) {
+                        addPath(paths, slotNode);
+                    }
                     break;
                 default:
                     break;
@@ -407,6 +434,17 @@ namespace Auto {
             
             // <rdar://problem/6426033>:  If block is retained, it roots itself.
             if (_blockRef.retainCount) addPath(paths, _blockNode);
+
+            // <rdar://problem/8026966>:  If no roots were found, consider thread local garbage.
+            if (paths.empty()) {
+                // reset all nodes to run another search, collecting paths from thread-local objects.
+                std::for_each(_nodes.begin(), _nodes.end(), ^(NodeSet::value_type &value) {
+                    value.second->_color = Node::White;
+                    value.second->_target = NULL;
+                });
+                considerThreadLocalGarbage = true;
+                _blockNode->visitRefs(visitor);
+            }
             
             size_t count = paths.size();
             size_t list_size = sizeof(auto_root_list_t) + count * sizeof(auto_memory_reference_list_t);
@@ -422,7 +460,7 @@ namespace Auto {
             }
             return result;
         }
-    };
+   };
 };
 
 using namespace Auto;
@@ -432,7 +470,8 @@ using namespace Auto;
 
 struct MallocLoggerInhibitor {
     malloc_logger_t *_old_logger;
-    MallocLoggerInhibitor() : _old_logger(malloc_logger) { if (_old_logger) malloc_logger = NULL; }
+    static void inhibited_logger(uint32_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uint32_t) {}
+    MallocLoggerInhibitor() : _old_logger(malloc_logger) { if (_old_logger) malloc_logger = &inhibited_logger; }
     ~MallocLoggerInhibitor() { if (_old_logger) malloc_logger = _old_logger; }
 };
 
@@ -464,10 +503,10 @@ auto_root_list_t *auto_gdb_enumerate_roots(auto_zone_t *zone, void *address, voi
 }
 
 extern "C" bool gdb_is_local(void *address) {
-    Zone *azone = (Zone *)auto_zone();
-    if (azone->in_subzone_memory(address)) {
+    Zone *azone = (Zone *)auto_zone_from_pointer(address);
+    if (azone && azone->in_subzone_memory(address)) {
         Subzone *subzone = Subzone::subzone(address);
-        return subzone->is_live_thread_local(address);
+        return subzone->is_live_thread_local(subzone->quantum_index(address));
     }
     return false;
 }
@@ -475,17 +514,23 @@ extern "C" bool gdb_is_local(void *address) {
 #if DEBUG
 
 extern "C" void gdb_refs(void *address) {
-    auto_memory_reference_list_t *refs = auto_gdb_enumerate_references(auto_zone(), address, (void *)auto_get_sp());
-    if (refs) aux_free(refs);
+    auto_zone_t *zone = auto_zone_from_pointer(address);
+    if (zone) {
+        auto_memory_reference_list_t *refs = auto_gdb_enumerate_references(zone, address, (void *)auto_get_sp());
+        if (refs) aux_free(refs);
+    }
 }
 
 extern "C" void gdb_roots(void *address) {
-    auto_root_list_t *roots = auto_gdb_enumerate_roots(auto_zone(), address, (void *)auto_get_sp());
-    if (roots) aux_free(roots);
+    auto_zone_t *zone = auto_zone_from_pointer(address);
+    if (zone) {
+        auto_root_list_t *roots = auto_gdb_enumerate_roots(zone, address, (void *)auto_get_sp());
+        if (roots) aux_free(roots);
+    }
 }
 
-extern "C" bool gdb_is_root(void *address) {
-    Zone *azone = (Zone *)auto_zone();
+extern "C" bool gdb_is_root(auto_zone_t *zone, void *address) {
+    Zone *azone = (Zone *)zone;
     return azone->is_root(address);
 }
 
@@ -505,14 +550,15 @@ struct RetainedBlocksVisitor {
     
     RetainedBlocksVisitor(Zone *zone) : _zone(zone) {}
 
-    void visit(ReferenceInfo &info, void **ref, Subzone *subzone, usword_t q) {
+    void visit(const ReferenceInfo &info, void **ref, Subzone *subzone, usword_t q) {
         if (subzone->has_refcount(q)) {
             void *block = subzone->quantum_address(q);
-            printf("small/medium block %p (sz = %ld, rc = %d)\n", block, subzone->size(q), _zone->get_refcount_small_medium(subzone, block));
+            SubzoneBlockRef blockRef(subzone, q);
+            printf("small/medium block %p (sz = %ld, rc = %d)\n", block, subzone->size(q), (int)blockRef.refcount());
         }
     }
     
-    void visit(ReferenceInfo &info, void **ref, Large *large) {
+    void visit(const ReferenceInfo &info, void **ref, Large *large) {
         if (large->refcount()) {
             printf("large block %p (sz = %ld, rc = %lu)\n", large->address(), large->size(), large->refcount());
         } else if (info.kind() == kAssociativeReference) {
@@ -521,22 +567,13 @@ struct RetainedBlocksVisitor {
     }
 };
 
-extern "C" void gdb_print_retained_blocks() {
-    Zone *azone = (Zone *)auto_zone();
+extern "C" void gdb_print_retained_blocks(auto_zone_t *zone) {
+    Zone *azone = (Zone *)zone;
     if (azone->block_collector()) {
-        Thread &thread = azone->registered_thread();
-        void *object = azone->block_allocate(thread, 16, AUTO_UNSCANNED, false, true);
-        void **value = (void**) azone->block_allocate(thread, 128 * 1024, AUTO_MEMORY_SCANNED, false, false);
-        azone->set_associative_ref(object, (void*)"value", value);
-        value[0] = object;
-
         RetainedBlocksVisitor visitor(azone);
         RetainedBlocksVisitor::Configuration::PendingStack pending_stack;
-        RetainedBlocksVisitor::Iterator scanner(azone, visitor, pending_stack);
+        RetainedBlocksVisitor::Iterator scanner(azone, visitor, pending_stack, (void *)auto_get_sp());
         scanner.scan();
-        
-        azone->block_decrement_refcount(object);
-
         azone->reset_all_marks();
         azone->unblock_collector();
     }
@@ -554,14 +591,14 @@ struct NewBlocksVisitor {
 
     NewBlocksVisitor() : _small_count(0), _large_count(0) {}
 
-    void visit(ReferenceInfo &info, void **ref, Subzone *subzone, usword_t q) {
+    void visit(const ReferenceInfo &info, void **ref, Subzone *subzone, usword_t q) {
         if (subzone->is_new(q)) {
             ++_small_count;
             // printf("small/medium block %p (sz = %lu, age = %lu)\n", subzone->quantum_address(q), subzone->size(q), subzone->age(q));
         }
     }
     
-    void visit(ReferenceInfo &info, void **ref, Large *large) {
+    void visit(const ReferenceInfo &info, void **ref, Large *large) {
         if (large->is_new()) {
             ++_large_count;
             // printf("large block %p (sz = %lu, age = %lu)\n", large->address(), large->size(), large->age());
@@ -569,12 +606,12 @@ struct NewBlocksVisitor {
     }
 };
 
-extern "C" void gdb_print_new_blocks() {
-    Zone *azone = (Zone *)auto_zone();
+extern "C" void gdb_print_new_blocks(auto_zone_t *zone) {
+    Zone *azone = (Zone *)zone;
     if (azone->block_collector()) {
         NewBlocksVisitor visitor;
         NewBlocksVisitor::Configuration::PendingStack pending_stack;
-        NewBlocksVisitor::Iterator scanner(azone, visitor, pending_stack);
+        NewBlocksVisitor::Iterator scanner(azone, visitor, pending_stack, (void *)auto_get_sp());
         scanner.scan();
         printf("new blocks:  %lu small/medium, %ld large\n", visitor._small_count, visitor._large_count);
         
@@ -583,8 +620,8 @@ extern "C" void gdb_print_new_blocks() {
     }
 }
 
-extern "C" void gdb_print_large_blocks() {
-    Zone *azone = (Zone *)auto_zone();
+extern "C" void gdb_print_large_blocks(auto_zone_t *zone) {
+    Zone *azone = (Zone *)zone;
     SpinLock lock(azone->large_lock());
     if (azone->large_list()) {
         printf("global large blocks:\n");

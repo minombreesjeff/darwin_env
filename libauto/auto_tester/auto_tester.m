@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -19,148 +19,97 @@
  */
 //
 //  auto_tester.m
-//  auto
-//
-//  Created by Josh Behnke on 5/16/08.
-//  Copyright 2008 Apple Inc. All rights reserved.
+//  Copyright (c) 2008-2011 Apple Inc. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>
-#import "AutoTestScript.h"
+#import <objc/objc-auto.h>
+#import "TestCase.h"
 #import "auto_tester.h"
 
-/* Test probe functions */
-#define PROBE_IMPL(message) do { AutoTestScript *script = [AutoTestScript runningScript]; if (script) { @synchronized(script) { if ([script testRunning]) { message; } } [script probeDidComplete]; } } while (0)
+static BOOL logTestOutput = NO;
 
-void auto_probe_auto_collect(auto_collection_mode_t mode)
+void testLoop(NSMutableArray *testCases);
+
+void cleanup(NSMutableArray *testCases)
 {
-    PROBE_IMPL([script autoCollect:mode]);
+    void (^completionCallback)(void) = ^{ testLoop(testCases); };
+    dispatch_queue_t current = dispatch_get_current_queue();
+    auto_zone_collect_and_notify(objc_collectableZone(), AUTO_ZONE_COLLECT_EXHAUSTIVE_COLLECTION|AUTO_ZONE_COLLECT_LOCAL_COLLECTION, current, completionCallback);
 }
 
-void auto_probe_begin_heap_scan(boolean_t generational)
+void testLoop(NSMutableArray *testCases)
 {
-    PROBE_IMPL([script beginHeapScan:generational]);
-}
+    __block BOOL allTestsComplete = YES;
+    __block int successCount = 0;
+    __block int failCount = 0;
+    __block int skipCount = 0;
+    dispatch_queue_t current = dispatch_get_current_queue();    
+    void (^completionCallback)(void) = Block_copy(^{ cleanup(testCases); });
 
-void auto_probe_begin_local_scan()
-{
-    PROBE_IMPL([script beginLocalScan]);
+    [testCases enumerateObjectsUsingBlock:(void (^)(id obj, NSUInteger idx, BOOL *stop))^(id obj, NSUInteger idx, BOOL *stop){
+        TestCase *t = (TestCase *)obj;
+        switch ([t result]) {
+            case PENDING:
+            {
+                NSString *skipMessage = [t shouldSkip];
+                if (skipMessage) {
+                    skipCount++;
+                    [t setTestResult:SKIPPED message:skipMessage];
+                } else {
+                    *stop = YES;
+                    allTestsComplete = NO;
+                    [t setCompletionCallback:completionCallback];
+                    [t startTest];
+                }
+            }
+                break;
+            case PASSED:
+                successCount++;
+                break;
+            case FAILED:
+                failCount++;
+                break;
+            case SKIPPED:
+                skipCount++;
+                break;
+            default:
+                NSLog(@"unexpected test status in testLoop(): %@ = %d\n", [t className], [t result]);
+                exit(-1);
+                break;
+        }                
+    }];
+    Block_release(completionCallback);
+    
+    // report results
+    if (allTestsComplete) {
+        [testCases enumerateObjectsUsingBlock:(void (^)(id obj, NSUInteger idx, BOOL *stop))^(id obj, NSUInteger idx, BOOL *stop){
+            TestCase *t = (TestCase *)obj;
+            NSLog(@"%@: %@", [t className], [t resultString]);
+            NSString *output = [t testOutput];
+            if (logTestOutput && output)
+                NSLog(@"Test output:\n%@", output);
+        }];
+        NSLog(@"%d test cases: %d passed, %d failed, %d skipped", [testCases count], successCount, failCount, skipCount);
+        exit(failCount);
+    }
 }
-
-void auto_probe_collection_complete()
-{
-    PROBE_IMPL([script collectionComplete]);
-}
-
-void auto_probe_end_heap_scan(size_t garbage_count, vm_address_t *garbage_blocks)
-{
-    PROBE_IMPL([script endHeapScanWithGarbage:(void **)garbage_blocks count:garbage_count]);
-}
-
-void auto_probe_end_local_scan(size_t garbage_count, vm_address_t *garbage_blocks)
-{
-    PROBE_IMPL([script endLocalScanWithGarbage:(void **)garbage_blocks count:garbage_count]);
-}
-
-void auto_scan_barrier()
-{
-    PROBE_IMPL([script scanBarrier]);
-}
-
-void auto_probe_end_thread_scan()
-{
-    PROBE_IMPL([script endThreadScan]);
-}
-
-void auto_probe_heap_collection_complete()
-{
-    PROBE_IMPL([script heapCollectionComplete]);
-}
-
-void auto_probe_local_collection_complete()
-{
-    PROBE_IMPL([script localCollectionComplete]);
-}
-
-void auto_probe_mature(void *address, unsigned char age)
-{
-    PROBE_IMPL([script blockMatured:address newAge:age]);
-}
-
-void auto_probe_make_global(void *address, unsigned char age)
-{
-    PROBE_IMPL([script blockBecameGlobal:address withAge:age]);
-}
-
-void auto_probe_scan_range(void *address, void *end)
-{
-    PROBE_IMPL([script scanBlock:address endAddress:end]);
-}
-
-void auto_probe_scan_with_layout(void *address, void *end, const unsigned char *map)
-{
-    PROBE_IMPL([script scanBlock:address endAddress:end withLayout:map]);
-}
-
-void auto_probe_did_scan_with_layout(void *address, void *end, const unsigned char *map)
-{
-    PROBE_IMPL([script didScanBlock:address endAddress:end withLayout:map]);
-}
-
-void auto_probe_scan_with_weak_layout(void *address, void *end, const unsigned char *map)
-{
-    PROBE_IMPL([script scanBlock:address endAddress:end withWeakLayout:map]);
-}
-
-void auto_probe_set_pending(void *block)
-{
-    PROBE_IMPL([script setPending:block]);
-}
-
-void auto_probe_unregistered_thread_error()
-{
-    PROBE_IMPL([script threadRegistrationError]);
-}
-
-AutoProbeFunctions auto_tester_probe_runctions = {
-    auto_probe_auto_collect,
-    auto_probe_begin_heap_scan,
-    auto_probe_begin_local_scan,
-    auto_probe_collection_complete,
-    auto_probe_end_heap_scan,
-    auto_probe_end_local_scan,
-    auto_scan_barrier,
-    auto_probe_end_thread_scan,
-    auto_probe_heap_collection_complete,
-    auto_probe_local_collection_complete,
-    auto_probe_mature,
-    auto_probe_make_global,
-    auto_probe_scan_range,
-    auto_probe_scan_with_layout,
-    auto_probe_did_scan_with_layout,
-    auto_probe_scan_with_weak_layout,
-    auto_probe_set_pending,
-    auto_probe_unregistered_thread_error,
-};
 
 int main(int argc, char *argv[])
 {
-    int passed = 0, failed = 0, repeat = 1;
-    BOOL debug = NO;
+    int repeat = 1;
     
-    auto_zone_t *second_zone = auto_zone_create("auto_tester second zone");
-    auto_zone_register_thread(second_zone);
-    auto_zone_unregister_thread(second_zone);
-    
+    NSMutableArray *testCases = [NSMutableArray array];
+    NSMutableArray *testClasses = [NSMutableArray array];
     NSProcessInfo *pi = [NSProcessInfo processInfo];
     NSMutableArray *args = [[pi arguments] mutableCopy];
     [args removeObjectAtIndex:0];
     while ([args count] > 0) {
         int argCount = 0;
         NSString *arg = [args objectAtIndex:0];
-        if ([arg isEqual:@"-debug"]) {
+        if ([arg isEqual:@"-logTestOutput"]) {
             argCount++;
-            debug = YES;
+            logTestOutput = YES;
         }
         if ([arg hasPrefix:@"-repeat="]) {
             argCount++;
@@ -168,35 +117,26 @@ int main(int argc, char *argv[])
             if (repeat < 1)
                 repeat = 1;
         }
+        Class c = NSClassFromString(arg);
+        if (c) {
+            [testClasses addObject:c];
+            argCount++;
+        }
         [args removeObjectsInRange:NSMakeRange(0, argCount)];
     }
     
     // Simple test driver that just runs all the tests.
-    NSArray *tests = [AutoTestScript testClasses:debug];
+    if ([testClasses count] == 0)
+        [testClasses addObjectsFromArray:[TestCase testClasses]];
+    [testClasses enumerateObjectsUsingBlock:(void (^)(id obj, NSUInteger idx, BOOL *stop))^(id obj, NSUInteger idx, BOOL *stop){
+        for (int i=0; i<repeat; i++)
+            [testCases addObject:[[obj alloc] init]];
+    }];
     
-    if (!auto_set_probe_functions(&auto_tester_probe_runctions)) {
-        NSLog(@"Probe callouts not supported in loaded version of libauto.");
-        exit(1);
-    }
-    
-    for (int i=0; i<repeat; i++) {
-        for (Class testClass in tests) {
-            AutoTestScript *test = [[testClass alloc] init];
-            
-            [test runTest];
-            [test waitForCompletion];
-            
-            const char *result = [test failureMessage];
-            if (result) {
-                NSLog(@"%@ failed: %s", [test className], result);
-                failed++;
-            } else {
-                NSLog(@"%@ passed", [test className]);
-                passed++;
-            }
-        }
-    }
-    
-    NSLog(@"Summary: %d passed, %d failed", passed, failed);
-    return failed == 0 ? 0 : 1;
+    dispatch_queue_t testQ = dispatch_queue_create("Test Runner", NULL);
+    dispatch_async(testQ, ^{testLoop(testCases);});
+
+    [[NSRunLoop mainRunLoop] run];
+    dispatch_main();
+    return 0;
 }

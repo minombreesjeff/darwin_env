@@ -18,8 +18,9 @@
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
 #import <Foundation/Foundation.h>
+#import <auto_zone.h>
 
-// CONFIG GC -C99
+// CONFIG GC -C99 -lauto
 
 bool doGarbage = false;
 bool doKeeper = false;
@@ -50,15 +51,15 @@ int finalized = 0;
 - (void)finalize {
     if (doGarbage) {
         weakObject = strongObject; // garbage object
-        if (!weakObject) {
-            printf("weak object has no strong value!\n");
+        if (weakObject == strongObject) {
+            printf("weakObject points to strongObject! As of <rdar://problem/7217252> this is no longer allowed.\n");
             exit(1);
         }
     }
     if (doKeeper) {
         weakObject = keeperObject; // real object
-        if (!weakObject) {
-            printf("weak object has no keepr value!\n");
+        if (weakObject == keeperObject) {
+            printf("weakObject points to keeperObject! As of <rdar://problem/7217252> this is no longer allowed.\n");
             exit(1);
         }
     }
@@ -80,7 +81,7 @@ void test1() {
         [to1 setKeeper:object];
         [to2 setKeeper:object];
     }
-    [[NSGarbageCollector defaultCollector] collectIfNeeded];
+    auto_collect(auto_zone(), AUTO_COLLECT_FULL_COLLECTION|AUTO_COLLECT_SYNCHRONOUS, NULL);
     if (finalized == 0) {
         printf("Whoops, nothing local collected\n");
         exit(1);

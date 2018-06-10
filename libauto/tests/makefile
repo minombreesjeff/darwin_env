@@ -19,3 +19,10 @@ tests:
 
 fast:
 	grep CONFIG *.m | $(TFR) -fast --
+
+arr_test.o: arr_test.m
+	gcc -g -c arr_test.m
+
+
+arr_test: arr_test.o
+	gcc -g arr_test.o -o arr_test -L/GC/build/Release -lauto -framework Foundation

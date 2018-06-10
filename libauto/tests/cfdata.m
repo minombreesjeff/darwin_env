@@ -22,7 +22,7 @@
 //  gctests
 //
 //  Created by Blaine Garst on 11/13/08.
-//  Copyright 2008-2009 Apple Inc. All rights reserved.
+//  Copyright 2008 Apple. All rights reserved.
 //
 
 // CONFIG GC -C99
@@ -31,6 +31,7 @@
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CFData.h>
 #include <malloc/malloc.h>
+
 
 @interface TestObject : NSObject {
     __strong CFDataRef  subject;

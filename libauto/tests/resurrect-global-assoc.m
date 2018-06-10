@@ -22,7 +22,7 @@
 //  gctests
 //
 //  Created by Blaine Garst on 12/9/08.
-//  Copyright 2008-2009 Apple Inc. All rights reserved.
+//  Copyright 2008 Apple. All rights reserved.
 //
 
 // CONFIG open GC -C99 runtime: auto_zone_resurrection_error
