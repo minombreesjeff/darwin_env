@@ -97,20 +97,30 @@ static char * bootstrap_error_string(int errNum);
 
 - (Map *)initWithParent:(Vnode *)p directory:(String *)dir
 {
-	return [self initWithParent:p directory:dir from:nil mountdirectory:nil];
+	return [self initWithParent:p directory:dir from:nil mountdirectory:nil mountedon:nil];
 }
 
 - (Map *)initWithParent:(Vnode *)p directory:(String *)dir from:(String *)ds
 {
-	return [self initWithParent:p directory:dir from:ds mountdirectory:nil];
+	return [self initWithParent:p directory:dir from:ds mountdirectory:nil mountedon:nil];
 }
 
 - (Map *)initWithParent:(Vnode *)p directory:(String *)dir from:(String *)ds mountdirectory:(String *)mnt
 {
-	return [self initWithParent:p directory:dir from:ds mountdirectory:mnt withRootVnodeClass:[Vnode class]];
+	return [self initWithParent:p directory:dir from:ds mountdirectory:mnt mountedon:nil];
+}
+
+- (Map *)initWithParent:(Vnode *)p directory:(String *)dir from:(String *)ds mountdirectory:(String *)mnt mountedon:(String *)mnton
+{
+	return [self initWithParent:p directory:dir from:ds mountdirectory:mnt mountedon:mnton withRootVnodeClass:[Vnode class]];
 }
 
 - (Map *)initWithParent:(Vnode *)p directory:(String *)dir from:(String *)ds mountdirectory:(String *)mnt withRootVnodeClass:(Class)rootVnodeClass
+{
+	return [self initWithParent:p directory:dir from:ds mountdirectory:mnt mountedon:nil withRootVnodeClass:rootVnodeClass];
+}
+
+- (Map *)initWithParent:(Vnode *)p directory:(String *)dir from:(String *)ds mountdirectory:(String *)mnt mountedon:(String *)mnton withRootVnodeClass:(Class)rootVnodeClass
 {
 	char mountdirpath[MAXPATHLEN];
 	
