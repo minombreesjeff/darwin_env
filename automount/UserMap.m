@@ -1,9 +1,9 @@
 /*
- * Copyright (c) 1999 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * "Portions Copyright (c) 1999 Apple Computer, Inc.  All Rights
+ * "Portions Copyright (c) 2001 Apple Computer, Inc.  All Rights
  * Reserved.  This file contains Original Code and/or Modifications of
  * Original Code as defined in and that are subject to the Apple Public
  * Source License Version 1.0 (the 'License').  You may not use this file
@@ -21,4 +21,29 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-char *version = "26";
+#import "UserMap.h"
+#import "AMString.h"
+#import <pwd.h>
+
+@implementation UserMap
+
+- (void)loadMounts
+{
+	struct passwd *p;
+	String *user, *home;
+
+	setpwent();
+	while (NULL != (p = getpwent()))
+	{
+		user = [String uniqueString:p->pw_name];
+		home = [String uniqueString:p->pw_dir];
+
+		[self symlink:home name:user atVnode:root];
+
+		[user release];
+		[home release];
+	}
+	endpwent();
+}
+
+@end

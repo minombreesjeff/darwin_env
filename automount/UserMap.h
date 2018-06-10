@@ -21,52 +21,16 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <string.h>
-#if NS_TARGET_MAJOR == 3
-#include <libc.h>
-#endif
-#include "log.h"
+#ifndef __USER_MAP_H__
+#define __USER_MAP_H__
 
-static char *msg_str = NULL;
+#import "FstabMap.h"
+#import "Server.h"
 
-void
-sys_openlog(char *str, int flags, int facility)
+@interface UserMap : FstabMap
 {
-	if (msg_str != NULL) free(msg_str);
-	msg_str = NULL;
-	if (str != NULL)
-	{
-		msg_str = malloc(strlen(str) + 1);
-		strcpy(msg_str, str);
-	}
-
-	openlog(msg_str, flags, facility);
 }
-	
-void
-sys_msg(int debug, int priority, char *message, ...)
-{
-	va_list ap;
 
-	if (debug == 0) return;
+@end
 
-	va_start(ap, message);
-
-	if (debug & DEBUG_SYSLOG)
-		vsyslog(priority, message, ap);
-
-	if (debug & DEBUG_STDERR)
-	{
-		if (msg_str != NULL) fprintf(stderr, "%s[%u]: ", msg_str, getpid());
-		vfprintf(stderr, message, ap);
-		fprintf(stderr, "\n");
-		fflush(stderr);
-	}
-
-	va_end(ap);
-}
-	
+#endif __USER_MAP_H__
