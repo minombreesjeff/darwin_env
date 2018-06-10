@@ -57,6 +57,7 @@ public:
 		bool			final);
 	void decryptBlock(
 		const void		*cipherText,		// length implied (one cipher block)
+		size_t			cipherTextLen,
 		void			*plainText,	
 		size_t			&plainTextLen,		// in/out, throws on overflow
 		bool			final);
@@ -69,7 +70,8 @@ private:
 		RSA				*mRsaKey;
 		bool			mAllocdRsaKey;
 		bool			mInitFlag;			// allows easy reuse
-		int				mPadding;			// RSA_NO_PADDING, RSA_PKCS1_PADDING
+		int				mPadding;			// RSA_NO_PADDING, RSA_PKCS1_PADDING,
+											//    RSA_SSLV23_PADDING
 
 		/* 
 		 * optional fields for OEAP keys 

@@ -6,9 +6,31 @@
 	objectVersion = 42;
 	objects = {
 
+/* Begin PBXAggregateTarget section */
+		0539107D0A37721E00B9E848 /* Copy Open Source Docs */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 053910860A37725A00B9E848 /* Build configuration list for PBXAggregateTarget "Copy Open Source Docs" */;
+			buildPhases = (
+				0539107C0A37721E00B9E848 /* CopyFiles */,
+				053910850A37725A00B9E848 /* CopyFiles */,
+			);
+			dependencies = (
+			);
+			name = "Copy Open Source Docs";
+			productName = "Copy Open Source Docs";
+		};
+/* End PBXAggregateTarget section */
+
 /* Begin PBXBuildFile section */
+		053910830A37725A00B9E848 /* libsecurity_apple_csp.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 053910810A37725A00B9E848 /* libsecurity_apple_csp.plist */; };
+		0539108B0A37726600B9E848 /* libsecurity_apple_csp.txt in CopyFiles */ = {isa = PBXBuildFile; fileRef = 053910820A37725A00B9E848 /* libsecurity_apple_csp.txt */; };
+		053ABEFF0AA4C94900CA6DC3 /* opensshCoding.h in Headers */ = {isa = PBXBuildFile; fileRef = 053ABEFD0AA4C94900CA6DC3 /* opensshCoding.h */; };
+		053ABF000AA4C94900CA6DC3 /* opensshCoding.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 053ABEFE0AA4C94900CA6DC3 /* opensshCoding.cpp */; };
+		053ABF620AA4F3EB00CA6DC3 /* opensshWrap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 053ABF600AA4F3EB00CA6DC3 /* opensshWrap.cpp */; };
 		05622BAC06CC352100784EED /* SHA2_Object.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 05622BAA06CC352100784EED /* SHA2_Object.cpp */; };
 		05622BAD06CC352100784EED /* SHA2_Object.h in Headers */ = {isa = PBXBuildFile; fileRef = 05622BAB06CC352100784EED /* SHA2_Object.h */; };
+		05BFEE0E09E1D71800F3D7E0 /* HMACSHA1.c in Sources */ = {isa = PBXBuildFile; fileRef = 05BFEE0C09E1D71800F3D7E0 /* HMACSHA1.c */; };
+		05BFEE0F09E1D71800F3D7E0 /* HMACSHA1.h in Headers */ = {isa = PBXBuildFile; fileRef = 05BFEE0D09E1D71800F3D7E0 /* HMACSHA1.h */; };
 		4CCB00B805800F3800981D43 /* csp_capabilities.mdsinfo in CopyFiles */ = {isa = PBXBuildFile; fileRef = 4094B0DC057EA70300B44BCC /* csp_capabilities.mdsinfo */; };
 		4CCB00B905800F3800981D43 /* csp_capabilities_common.mds in CopyFiles */ = {isa = PBXBuildFile; fileRef = 4094B0DD057EA70300B44BCC /* csp_capabilities_common.mds */; };
 		4CCB00BA05800F3800981D43 /* csp_common.mdsinfo in CopyFiles */ = {isa = PBXBuildFile; fileRef = 4094B0DE057EA70300B44BCC /* csp_common.mdsinfo */; };
@@ -49,11 +71,6 @@
 		C280AE8B0534BBD900F7E802 /* bn_word.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE080534BBD900F7E802 /* bn_word.c */; };
 		C280AE930534BBD900F7E802 /* buf_err.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE110534BBD900F7E802 /* buf_err.c */; };
 		C280AE940534BBD900F7E802 /* buffer.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE120534BBD900F7E802 /* buffer.c */; };
-		C280AE950534BBD900F7E802 /* c_ecb.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE140534BBD900F7E802 /* c_ecb.c */; };
-		C280AE960534BBD900F7E802 /* c_enc.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE150534BBD900F7E802 /* c_enc.c */; };
-		C280AE970534BBD900F7E802 /* c_skey.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE160534BBD900F7E802 /* c_skey.c */; };
-		C280AE980534BBD900F7E802 /* cast_lcl.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE170534BBD900F7E802 /* cast_lcl.h */; };
-		C280AE990534BBD900F7E802 /* cast_s.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE180534BBD900F7E802 /* cast_s.h */; };
 		C280AE9A0534BBD900F7E802 /* cryptlib.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE190534BBD900F7E802 /* cryptlib.c */; };
 		C280AE9B0534BBD900F7E802 /* cryptlib.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE1A0534BBD900F7E802 /* cryptlib.h */; };
 		C280AE9C0534BBD900F7E802 /* dh_check.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE1C0534BBD900F7E802 /* dh_check.c */; };
@@ -77,8 +94,6 @@
 		C280AEAF0534BBD900F7E802 /* rc2_cbc.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE340534BBD900F7E802 /* rc2_cbc.c */; };
 		C280AEB00534BBD900F7E802 /* rc2_locl.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE350534BBD900F7E802 /* rc2_locl.h */; };
 		C280AEB10534BBD900F7E802 /* rc2_skey.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE360534BBD900F7E802 /* rc2_skey.c */; };
-		C280AEB20534BBD900F7E802 /* rc4_enc.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE370534BBD900F7E802 /* rc4_enc.c */; };
-		C280AEB30534BBD900F7E802 /* rc4_skey.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE380534BBD900F7E802 /* rc4_skey.c */; };
 		C280AEB40534BBD900F7E802 /* rc5_enc.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE390534BBD900F7E802 /* rc5_enc.c */; };
 		C280AEB50534BBD900F7E802 /* rc5_locl.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE3A0534BBD900F7E802 /* rc5_locl.h */; };
 		C280AEB60534BBD900F7E802 /* rc5_skey.c in Sources */ = {isa = PBXBuildFile; fileRef = C280AE3B0534BBD900F7E802 /* rc5_skey.c */; };
@@ -102,7 +117,6 @@
 		C280AEC90534BBD900F7E802 /* opensslv.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE4F0534BBD900F7E802 /* opensslv.h */; };
 		C280AECA0534BBD900F7E802 /* rand.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE500534BBD900F7E802 /* rand.h */; };
 		C280AECB0534BBD900F7E802 /* rc2.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE510534BBD900F7E802 /* rc2.h */; };
-		C280AECC0534BBD900F7E802 /* rc4.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE520534BBD900F7E802 /* rc4.h */; };
 		C280AECD0534BBD900F7E802 /* rc5.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE530534BBD900F7E802 /* rc5.h */; };
 		C280AECE0534BBD900F7E802 /* rsa.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE540534BBD900F7E802 /* rsa.h */; };
 		C280AECF0534BBD900F7E802 /* safestack.h in Headers */ = {isa = PBXBuildFile; fileRef = C280AE550534BBD900F7E802 /* safestack.h */; };
@@ -166,8 +180,6 @@
 		C28437A6053488AC000AE0FC /* cspdebugging.h in Headers */ = {isa = PBXBuildFile; fileRef = C2843727053488AB000AE0FC /* cspdebugging.h */; };
 		C28437A7053488AC000AE0FC /* cssmplugin.exp in Sources */ = {isa = PBXBuildFile; fileRef = C2843728053488AB000AE0FC /* cssmplugin.exp */; };
 		C28437A8053488AC000AE0FC /* deriveKey.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C2843729053488AB000AE0FC /* deriveKey.cpp */; };
-		C28437A9053488AC000AE0FC /* DES.c in Sources */ = {isa = PBXBuildFile; fileRef = C284372A053488AB000AE0FC /* DES.c */; };
-		C28437AA053488AC000AE0FC /* DES.h in Headers */ = {isa = PBXBuildFile; fileRef = C284372B053488AB000AE0FC /* DES.h */; };
 		C28437AB053488AC000AE0FC /* desContext.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C284372C053488AB000AE0FC /* desContext.cpp */; };
 		C28437AC053488AC000AE0FC /* desContext.h in Headers */ = {isa = PBXBuildFile; fileRef = C284372D053488AB000AE0FC /* desContext.h */; };
 		C28437AD053488AC000AE0FC /* DH_csp.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C284372E053488AB000AE0FC /* DH_csp.cpp */; };
@@ -190,8 +202,6 @@
 		C28437BE053488AC000AE0FC /* FEESignatureObject.h in Headers */ = {isa = PBXBuildFile; fileRef = C284373F053488AB000AE0FC /* FEESignatureObject.h */; };
 		C28437BF053488AC000AE0FC /* gladmanContext.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C2843740053488AB000AE0FC /* gladmanContext.cpp */; };
 		C28437C0053488AC000AE0FC /* gladmanContext.h in Headers */ = {isa = PBXBuildFile; fileRef = C2843741053488AB000AE0FC /* gladmanContext.h */; };
-		C28437C1053488AC000AE0FC /* HMACSHA1.c in Sources */ = {isa = PBXBuildFile; fileRef = C2843742053488AB000AE0FC /* HMACSHA1.c */; };
-		C28437C2053488AC000AE0FC /* HMACSHA1.h in Headers */ = {isa = PBXBuildFile; fileRef = C2843743053488AB000AE0FC /* HMACSHA1.h */; };
 		C28437C3053488AC000AE0FC /* MacContext.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C2843744053488AB000AE0FC /* MacContext.cpp */; };
 		C28437C4053488AC000AE0FC /* MacContext.h in Headers */ = {isa = PBXBuildFile; fileRef = C2843745053488AB000AE0FC /* MacContext.h */; };
 		C28437C5053488AC000AE0FC /* MD2Object.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C2843746053488AB000AE0FC /* MD2Object.cpp */; };
@@ -220,8 +230,6 @@
 		C28437DF053488AC000AE0FC /* rijndael-alg-ref.h in Headers */ = {isa = PBXBuildFile; fileRef = C2843760053488AC000AE0FC /* rijndael-alg-ref.h */; };
 		C28437E0053488AC000AE0FC /* rijndaelApi.c in Sources */ = {isa = PBXBuildFile; fileRef = C2843761053488AC000AE0FC /* rijndaelApi.c */; };
 		C28437E1053488AC000AE0FC /* rijndaelApi.h in Headers */ = {isa = PBXBuildFile; fileRef = C2843762053488AC000AE0FC /* rijndaelApi.h */; };
-		C28437E2053488AC000AE0FC /* rijndaelGladman.c in Sources */ = {isa = PBXBuildFile; fileRef = C2843763053488AC000AE0FC /* rijndaelGladman.c */; };
-		C28437E3053488AC000AE0FC /* rijndaelGladman.h in Headers */ = {isa = PBXBuildFile; fileRef = C2843764053488AC000AE0FC /* rijndaelGladman.h */; };
 		C28437E4053488AC000AE0FC /* RSA_asymmetric.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C2843765053488AC000AE0FC /* RSA_asymmetric.cpp */; };
 		C28437E5053488AC000AE0FC /* RSA_asymmetric.h in Headers */ = {isa = PBXBuildFile; fileRef = C2843766053488AC000AE0FC /* RSA_asymmetric.h */; };
 		C28437E6053488AC000AE0FC /* RSA_DSA_csp.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C2843767053488AC000AE0FC /* RSA_DSA_csp.cpp */; };
@@ -244,6 +252,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		0539107F0A37724600B9E848 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4CA1FEAB052A3C3800F22E42 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0539107D0A37721E00B9E848;
+			remoteInfo = "Copy Open Source Docs";
+		};
 		4094B01F057EA49B00B44BCC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 4CA1FEAB052A3C3800F22E42 /* Project object */;
@@ -254,6 +269,26 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		0539107C0A37721E00B9E848 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 8;
+			dstPath = /usr/local/OpenSourceVersions/;
+			dstSubfolderSpec = 0;
+			files = (
+				053910830A37725A00B9E848 /* libsecurity_apple_csp.plist in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		053910850A37725A00B9E848 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 8;
+			dstPath = /usr/local/OpenSourceLicenses/;
+			dstSubfolderSpec = 0;
+			files = (
+				0539108B0A37726600B9E848 /* libsecurity_apple_csp.txt in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
 		4CCB00B005800EB100981D43 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -283,8 +318,15 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		053910810A37725A00B9E848 /* libsecurity_apple_csp.plist */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xml; path = libsecurity_apple_csp.plist; sourceTree = "<group>"; };
+		053910820A37725A00B9E848 /* libsecurity_apple_csp.txt */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text; path = libsecurity_apple_csp.txt; sourceTree = "<group>"; };
+		053ABEFD0AA4C94900CA6DC3 /* opensshCoding.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = opensshCoding.h; sourceTree = "<group>"; };
+		053ABEFE0AA4C94900CA6DC3 /* opensshCoding.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = opensshCoding.cpp; sourceTree = "<group>"; };
+		053ABF600AA4F3EB00CA6DC3 /* opensshWrap.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = opensshWrap.cpp; sourceTree = "<group>"; };
 		05622BAA06CC352100784EED /* SHA2_Object.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = SHA2_Object.cpp; sourceTree = "<group>"; };
 		05622BAB06CC352100784EED /* SHA2_Object.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = SHA2_Object.h; sourceTree = "<group>"; };
+		05BFEE0C09E1D71800F3D7E0 /* HMACSHA1.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = HMACSHA1.c; sourceTree = "<group>"; };
+		05BFEE0D09E1D71800F3D7E0 /* HMACSHA1.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = HMACSHA1.h; sourceTree = "<group>"; };
 		4094B0DC057EA70300B44BCC /* csp_capabilities.mdsinfo */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xml; path = csp_capabilities.mdsinfo; sourceTree = "<group>"; };
 		4094B0DD057EA70300B44BCC /* csp_capabilities_common.mds */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xml; path = csp_capabilities_common.mds; sourceTree = "<group>"; };
 		4094B0DE057EA70300B44BCC /* csp_common.mdsinfo */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.xml; path = csp_common.mdsinfo; sourceTree = "<group>"; };
@@ -332,11 +374,6 @@
 		C280AE0F0534BBD900F7E802 /* vms-helper.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = "vms-helper.c"; sourceTree = "<group>"; };
 		C280AE110534BBD900F7E802 /* buf_err.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = buf_err.c; sourceTree = "<group>"; };
 		C280AE120534BBD900F7E802 /* buffer.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = buffer.c; sourceTree = "<group>"; };
-		C280AE140534BBD900F7E802 /* c_ecb.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = c_ecb.c; sourceTree = "<group>"; };
-		C280AE150534BBD900F7E802 /* c_enc.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = c_enc.c; sourceTree = "<group>"; };
-		C280AE160534BBD900F7E802 /* c_skey.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = c_skey.c; sourceTree = "<group>"; };
-		C280AE170534BBD900F7E802 /* cast_lcl.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = cast_lcl.h; sourceTree = "<group>"; };
-		C280AE180534BBD900F7E802 /* cast_s.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = cast_s.h; sourceTree = "<group>"; };
 		C280AE190534BBD900F7E802 /* cryptlib.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = cryptlib.c; sourceTree = "<group>"; };
 		C280AE1A0534BBD900F7E802 /* cryptlib.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = cryptlib.h; sourceTree = "<group>"; };
 		C280AE1C0534BBD900F7E802 /* dh_check.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = dh_check.c; sourceTree = "<group>"; };
@@ -361,8 +398,6 @@
 		C280AE340534BBD900F7E802 /* rc2_cbc.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = rc2_cbc.c; sourceTree = "<group>"; };
 		C280AE350534BBD900F7E802 /* rc2_locl.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = rc2_locl.h; sourceTree = "<group>"; };
 		C280AE360534BBD900F7E802 /* rc2_skey.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = rc2_skey.c; sourceTree = "<group>"; };
-		C280AE370534BBD900F7E802 /* rc4_enc.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = rc4_enc.c; sourceTree = "<group>"; };
-		C280AE380534BBD900F7E802 /* rc4_skey.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = rc4_skey.c; sourceTree = "<group>"; };
 		C280AE390534BBD900F7E802 /* rc5_enc.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = rc5_enc.c; sourceTree = "<group>"; };
 		C280AE3A0534BBD900F7E802 /* rc5_locl.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = rc5_locl.h; sourceTree = "<group>"; };
 		C280AE3B0534BBD900F7E802 /* rc5_skey.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = rc5_skey.c; sourceTree = "<group>"; };
@@ -386,7 +421,6 @@
 		C280AE4F0534BBD900F7E802 /* opensslv.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = opensslv.h; sourceTree = "<group>"; };
 		C280AE500534BBD900F7E802 /* rand.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = rand.h; sourceTree = "<group>"; };
 		C280AE510534BBD900F7E802 /* rc2.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = rc2.h; sourceTree = "<group>"; };
-		C280AE520534BBD900F7E802 /* rc4.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = rc4.h; sourceTree = "<group>"; };
 		C280AE530534BBD900F7E802 /* rc5.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = rc5.h; sourceTree = "<group>"; };
 		C280AE540534BBD900F7E802 /* rsa.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = rsa.h; sourceTree = "<group>"; };
 		C280AE550534BBD900F7E802 /* safestack.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = safestack.h; sourceTree = "<group>"; };
@@ -451,8 +485,6 @@
 		C2843727053488AB000AE0FC /* cspdebugging.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = cspdebugging.h; sourceTree = "<group>"; };
 		C2843728053488AB000AE0FC /* cssmplugin.exp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.exports; path = cssmplugin.exp; sourceTree = "<group>"; };
 		C2843729053488AB000AE0FC /* deriveKey.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = deriveKey.cpp; sourceTree = "<group>"; };
-		C284372A053488AB000AE0FC /* DES.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = DES.c; sourceTree = "<group>"; };
-		C284372B053488AB000AE0FC /* DES.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DES.h; sourceTree = "<group>"; };
 		C284372C053488AB000AE0FC /* desContext.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = desContext.cpp; sourceTree = "<group>"; };
 		C284372D053488AB000AE0FC /* desContext.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = desContext.h; sourceTree = "<group>"; };
 		C284372E053488AB000AE0FC /* DH_csp.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = DH_csp.cpp; sourceTree = "<group>"; };
@@ -475,8 +507,6 @@
 		C284373F053488AB000AE0FC /* FEESignatureObject.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = FEESignatureObject.h; sourceTree = "<group>"; };
 		C2843740053488AB000AE0FC /* gladmanContext.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = gladmanContext.cpp; sourceTree = "<group>"; };
 		C2843741053488AB000AE0FC /* gladmanContext.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = gladmanContext.h; sourceTree = "<group>"; };
-		C2843742053488AB000AE0FC /* HMACSHA1.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = HMACSHA1.c; sourceTree = "<group>"; };
-		C2843743053488AB000AE0FC /* HMACSHA1.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = HMACSHA1.h; sourceTree = "<group>"; };
 		C2843744053488AB000AE0FC /* MacContext.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = MacContext.cpp; sourceTree = "<group>"; };
 		C2843745053488AB000AE0FC /* MacContext.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = MacContext.h; sourceTree = "<group>"; };
 		C2843746053488AB000AE0FC /* MD2Object.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = MD2Object.cpp; sourceTree = "<group>"; };
@@ -505,8 +535,6 @@
 		C2843760053488AC000AE0FC /* rijndael-alg-ref.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = "rijndael-alg-ref.h"; sourceTree = "<group>"; };
 		C2843761053488AC000AE0FC /* rijndaelApi.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = rijndaelApi.c; sourceTree = "<group>"; };
 		C2843762053488AC000AE0FC /* rijndaelApi.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = rijndaelApi.h; sourceTree = "<group>"; };
-		C2843763053488AC000AE0FC /* rijndaelGladman.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = rijndaelGladman.c; sourceTree = "<group>"; };
-		C2843764053488AC000AE0FC /* rijndaelGladman.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = rijndaelGladman.h; sourceTree = "<group>"; };
 		C2843765053488AC000AE0FC /* RSA_asymmetric.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = RSA_asymmetric.cpp; sourceTree = "<group>"; };
 		C2843766053488AC000AE0FC /* RSA_asymmetric.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = RSA_asymmetric.h; sourceTree = "<group>"; };
 		C2843767053488AC000AE0FC /* RSA_DSA_csp.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = RSA_DSA_csp.cpp; sourceTree = "<group>"; };
@@ -531,7 +559,7 @@
 /* Begin PBXFrameworkTarget section */
 		4C3180440540C03B006FC739 /* security_apple_csp */ = {
 			isa = PBXFrameworkTarget;
-			buildConfigurationList = 05EC40150ACA05340002FB0A /* Build configuration list for PBXFrameworkTarget "security_apple_csp" */;
+			buildConfigurationList = C27AD24B0987FCDC001272E0 /* Build configuration list for PBXFrameworkTarget "security_apple_csp" */;
 			buildPhases = (
 				4C31803F0540C03B006FC739 /* Headers */,
 				4CCB00B005800EB100981D43 /* CopyFiles */,
@@ -576,6 +604,9 @@
 				C2843769053488AC000AE0FC /* RSA_DSA_keys.cpp */,
 				C284376A053488AC000AE0FC /* RSA_DSA_keys.h */,
 				C2843766053488AC000AE0FC /* RSA_asymmetric.h */,
+				053ABEFD0AA4C94900CA6DC3 /* opensshCoding.h */,
+				053ABEFE0AA4C94900CA6DC3 /* opensshCoding.cpp */,
+				053ABF600AA4F3EB00CA6DC3 /* opensshWrap.cpp */,
 			);
 			name = RSA_DSA;
 			sourceTree = "<group>";
@@ -616,8 +647,6 @@
 				C2843760053488AC000AE0FC /* rijndael-alg-ref.h */,
 				C2843761053488AC000AE0FC /* rijndaelApi.c */,
 				C2843762053488AC000AE0FC /* rijndaelApi.h */,
-				C2843763053488AC000AE0FC /* rijndaelGladman.c */,
-				C2843764053488AC000AE0FC /* rijndaelGladman.h */,
 				C2843777053488AC000AE0FC /* vRijndael-alg-ref.c */,
 			);
 			name = AES;
@@ -699,8 +728,8 @@
 		0506531D056A9709008AD683 /* PBKDF2 */ = {
 			isa = PBXGroup;
 			children = (
-				C2843742053488AB000AE0FC /* HMACSHA1.c */,
-				C2843743053488AB000AE0FC /* HMACSHA1.h */,
+				05BFEE0C09E1D71800F3D7E0 /* HMACSHA1.c */,
+				05BFEE0D09E1D71800F3D7E0 /* HMACSHA1.h */,
 				C284374F053488AC000AE0FC /* pbkdDigest.cpp */,
 				C2843750053488AC000AE0FC /* pbkdDigest.h */,
 				C2843751053488AC000AE0FC /* pbkdf2.c */,
@@ -731,8 +760,6 @@
 				C284370F053488AB000AE0FC /* bfContext.h */,
 				C284371E053488AB000AE0FC /* castContext.cpp */,
 				C284371F053488AB000AE0FC /* castContext.h */,
-				C284372A053488AB000AE0FC /* DES.c */,
-				C284372B053488AB000AE0FC /* DES.h */,
 				C284372C053488AB000AE0FC /* desContext.cpp */,
 				C284372D053488AB000AE0FC /* desContext.h */,
 				C284374E053488AC000AE0FC /* NullCryptor.h */,
@@ -770,6 +797,15 @@
 			name = PKCS;
 			sourceTree = "<group>";
 		};
+		053910790A3771EF00B9E848 /* docs */ = {
+			isa = PBXGroup;
+			children = (
+				053910810A37725A00B9E848 /* libsecurity_apple_csp.plist */,
+				053910820A37725A00B9E848 /* libsecurity_apple_csp.txt */,
+			);
+			path = docs;
+			sourceTree = "<group>";
+		};
 		4094B0DB057EA70300B44BCC /* mds */ = {
 			isa = PBXGroup;
 			children = (
@@ -787,6 +823,7 @@
 				C28436FC053488AB000AE0FC /* lib */,
 				4094B0DB057EA70300B44BCC /* mds */,
 				C280ADE60534BBD900F7E802 /* open_ssl */,
+				053910790A3771EF00B9E848 /* docs */,
 				4CA1FEBF052A3C8100F22E42 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -807,7 +844,6 @@
 				C280ADEF0534BBD900F7E802 /* bio */,
 				C280ADF20534BBD900F7E802 /* bn */,
 				C280AE100534BBD900F7E802 /* buffer */,
-				C280AE130534BBD900F7E802 /* cast */,
 				C280AE190534BBD900F7E802 /* cryptlib.c */,
 				C280AE1A0534BBD900F7E802 /* cryptlib.h */,
 				C280AE1B0534BBD900F7E802 /* dh */,
@@ -893,18 +929,6 @@
 			path = buffer;
 			sourceTree = "<group>";
 		};
-		C280AE130534BBD900F7E802 /* cast */ = {
-			isa = PBXGroup;
-			children = (
-				C280AE140534BBD900F7E802 /* c_ecb.c */,
-				C280AE150534BBD900F7E802 /* c_enc.c */,
-				C280AE160534BBD900F7E802 /* c_skey.c */,
-				C280AE170534BBD900F7E802 /* cast_lcl.h */,
-				C280AE180534BBD900F7E802 /* cast_s.h */,
-			);
-			path = cast;
-			sourceTree = "<group>";
-		};
 		C280AE1B0534BBD900F7E802 /* dh */ = {
 			isa = PBXGroup;
 			children = (
@@ -955,8 +979,6 @@
 				C280AE340534BBD900F7E802 /* rc2_cbc.c */,
 				C280AE350534BBD900F7E802 /* rc2_locl.h */,
 				C280AE360534BBD900F7E802 /* rc2_skey.c */,
-				C280AE370534BBD900F7E802 /* rc4_enc.c */,
-				C280AE380534BBD900F7E802 /* rc4_skey.c */,
 				C280AE390534BBD900F7E802 /* rc5_enc.c */,
 				C280AE3A0534BBD900F7E802 /* rc5_locl.h */,
 				C280AE3B0534BBD900F7E802 /* rc5_skey.c */,
@@ -987,7 +1009,6 @@
 				C280AE4F0534BBD900F7E802 /* opensslv.h */,
 				C280AE500534BBD900F7E802 /* rand.h */,
 				C280AE510534BBD900F7E802 /* rc2.h */,
-				C280AE520534BBD900F7E802 /* rc4.h */,
 				C280AE530534BBD900F7E802 /* rc5.h */,
 				C280AE540534BBD900F7E802 /* rsa.h */,
 				C280AE550534BBD900F7E802 /* safestack.h */,
@@ -1088,7 +1109,6 @@
 				C28437A2053488AC000AE0FC /* cryptkitcsp.h in Headers */,
 				C28437A4053488AC000AE0FC /* CryptKitSpace.h in Headers */,
 				C28437A6053488AC000AE0FC /* cspdebugging.h in Headers */,
-				C28437AA053488AC000AE0FC /* DES.h in Headers */,
 				C28437AC053488AC000AE0FC /* desContext.h in Headers */,
 				C28437AE053488AC000AE0FC /* DH_csp.h in Headers */,
 				C28437B0053488AC000AE0FC /* DH_exchange.h in Headers */,
@@ -1100,7 +1120,6 @@
 				C28437BC053488AC000AE0FC /* FEEKeys.h in Headers */,
 				C28437BE053488AC000AE0FC /* FEESignatureObject.h in Headers */,
 				C28437C0053488AC000AE0FC /* gladmanContext.h in Headers */,
-				C28437C2053488AC000AE0FC /* HMACSHA1.h in Headers */,
 				C28437C4053488AC000AE0FC /* MacContext.h in Headers */,
 				C28437C6053488AC000AE0FC /* MD2Object.h in Headers */,
 				C28437CB053488AC000AE0FC /* miscAlgFactory.h in Headers */,
@@ -1115,7 +1134,6 @@
 				C28437DD053488AC000AE0FC /* rc5Context.h in Headers */,
 				C28437DF053488AC000AE0FC /* rijndael-alg-ref.h in Headers */,
 				C28437E1053488AC000AE0FC /* rijndaelApi.h in Headers */,
-				C28437E3053488AC000AE0FC /* rijndaelGladman.h in Headers */,
 				C28437E5053488AC000AE0FC /* RSA_asymmetric.h in Headers */,
 				C28437E7053488AC000AE0FC /* RSA_DSA_csp.h in Headers */,
 				C28437E9053488AC000AE0FC /* RSA_DSA_keys.h in Headers */,
@@ -1128,8 +1146,6 @@
 				C280AE720534BBD900F7E802 /* bf_pi.h in Headers */,
 				C280AE7F0534BBD900F7E802 /* bn_lcl.h in Headers */,
 				C280AE850534BBD900F7E802 /* bn_prime.h in Headers */,
-				C280AE980534BBD900F7E802 /* cast_lcl.h in Headers */,
-				C280AE990534BBD900F7E802 /* cast_s.h in Headers */,
 				C280AE9B0534BBD900F7E802 /* cryptlib.h in Headers */,
 				C280AEB00534BBD900F7E802 /* rc2_locl.h in Headers */,
 				C280AEB50534BBD900F7E802 /* rc5_locl.h in Headers */,
@@ -1153,7 +1169,6 @@
 				C280AEC90534BBD900F7E802 /* opensslv.h in Headers */,
 				C280AECA0534BBD900F7E802 /* rand.h in Headers */,
 				C280AECB0534BBD900F7E802 /* rc2.h in Headers */,
-				C280AECC0534BBD900F7E802 /* rc4.h in Headers */,
 				C280AECD0534BBD900F7E802 /* rc5.h in Headers */,
 				C280AECE0534BBD900F7E802 /* rsa.h in Headers */,
 				C280AECF0534BBD900F7E802 /* safestack.h in Headers */,
@@ -1163,6 +1178,8 @@
 				C280AED50534BBD900F7E802 /* opensslAsn1.h in Headers */,
 				C280AED70534BBD900F7E802 /* opensslUtils.h in Headers */,
 				05622BAD06CC352100784EED /* SHA2_Object.h in Headers */,
+				05BFEE0F09E1D71800F3D7E0 /* HMACSHA1.h in Headers */,
+				053ABEFF0AA4C94900CA6DC3 /* opensshCoding.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1171,7 +1188,7 @@
 /* Begin PBXLibraryTarget section */
 		4CA1FEBD052A3C8100F22E42 /* libsecurity_apple_csp */ = {
 			isa = PBXLibraryTarget;
-			buildConfigurationList = 05EC401A0ACA05340002FB0A /* Build configuration list for PBXLibraryTarget "libsecurity_apple_csp" */;
+			buildConfigurationList = C27AD2500987FCDC001272E0 /* Build configuration list for PBXLibraryTarget "libsecurity_apple_csp" */;
 			buildPhases = (
 				4CA1FEB9052A3C8100F22E42 /* Headers */,
 				4CA1FEBA052A3C8100F22E42 /* Sources */,
@@ -1181,6 +1198,7 @@
 			);
 			dependencies = (
 				4C7502B40540C89500056564 /* PBXTargetDependency */,
+				053910800A37724600B9E848 /* PBXTargetDependency */,
 			);
 			name = libsecurity_apple_csp;
 			productInstallPath = /usr/local/lib;
@@ -1192,16 +1210,18 @@
 /* Begin PBXProject section */
 		4CA1FEAB052A3C3800F22E42 /* Project object */ = {
 			isa = PBXProject;
-			buildConfigurationList = 05EC401F0ACA05340002FB0A /* Build configuration list for PBXProject "libsecurity_apple_csp" */;
+			buildConfigurationList = C27AD2550987FCDC001272E0 /* Build configuration list for PBXProject "libsecurity_apple_csp" */;
 			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 4CA1FEA7052A3C3800F22E42;
 			productRefGroup = 4CA1FEBF052A3C8100F22E42 /* Products */;
 			projectDirPath = "";
+			projectRoot = "";
 			shouldCheckCompatibility = 1;
 			targets = (
 				4CA1FEBD052A3C8100F22E42 /* libsecurity_apple_csp */,
 				4C3180440540C03B006FC739 /* security_apple_csp */,
+				0539107D0A37721E00B9E848 /* Copy Open Source Docs */,
 			);
 		};
 /* End PBXProject section */
@@ -1252,7 +1272,6 @@
 				C28437A5053488AC000AE0FC /* cspdebugging.c in Sources */,
 				C28437A7053488AC000AE0FC /* cssmplugin.exp in Sources */,
 				C28437A8053488AC000AE0FC /* deriveKey.cpp in Sources */,
-				C28437A9053488AC000AE0FC /* DES.c in Sources */,
 				C28437AB053488AC000AE0FC /* desContext.cpp in Sources */,
 				C28437AD053488AC000AE0FC /* DH_csp.cpp in Sources */,
 				C28437AF053488AC000AE0FC /* DH_exchange.cpp in Sources */,
@@ -1264,7 +1283,6 @@
 				C28437BB053488AC000AE0FC /* FEEKeys.cpp in Sources */,
 				C28437BD053488AC000AE0FC /* FEESignatureObject.cpp in Sources */,
 				C28437BF053488AC000AE0FC /* gladmanContext.cpp in Sources */,
-				C28437C1053488AC000AE0FC /* HMACSHA1.c in Sources */,
 				C28437C3053488AC000AE0FC /* MacContext.cpp in Sources */,
 				C28437C5053488AC000AE0FC /* MD2Object.cpp in Sources */,
 				C28437C9053488AC000AE0FC /* memory.cpp in Sources */,
@@ -1279,7 +1297,6 @@
 				C28437DC053488AC000AE0FC /* rc5Context.cpp in Sources */,
 				C28437DE053488AC000AE0FC /* rijndael-alg-ref.c in Sources */,
 				C28437E0053488AC000AE0FC /* rijndaelApi.c in Sources */,
-				C28437E2053488AC000AE0FC /* rijndaelGladman.c in Sources */,
 				C28437E4053488AC000AE0FC /* RSA_asymmetric.cpp in Sources */,
 				C28437E6053488AC000AE0FC /* RSA_DSA_csp.cpp in Sources */,
 				C28437E8053488AC000AE0FC /* RSA_DSA_keys.cpp in Sources */,
@@ -1318,9 +1335,6 @@
 				C280AE8B0534BBD900F7E802 /* bn_word.c in Sources */,
 				C280AE930534BBD900F7E802 /* buf_err.c in Sources */,
 				C280AE940534BBD900F7E802 /* buffer.c in Sources */,
-				C280AE950534BBD900F7E802 /* c_ecb.c in Sources */,
-				C280AE960534BBD900F7E802 /* c_enc.c in Sources */,
-				C280AE970534BBD900F7E802 /* c_skey.c in Sources */,
 				C280AE9A0534BBD900F7E802 /* cryptlib.c in Sources */,
 				C280AE9C0534BBD900F7E802 /* dh_check.c in Sources */,
 				C280AE9D0534BBD900F7E802 /* dh_err.c in Sources */,
@@ -1342,8 +1356,6 @@
 				C280AEAD0534BBD900F7E802 /* mem.c in Sources */,
 				C280AEAF0534BBD900F7E802 /* rc2_cbc.c in Sources */,
 				C280AEB10534BBD900F7E802 /* rc2_skey.c in Sources */,
-				C280AEB20534BBD900F7E802 /* rc4_enc.c in Sources */,
-				C280AEB30534BBD900F7E802 /* rc4_skey.c in Sources */,
 				C280AEB40534BBD900F7E802 /* rc5_enc.c in Sources */,
 				C280AEB60534BBD900F7E802 /* rc5_skey.c in Sources */,
 				C280AED40534BBD900F7E802 /* opensslAsn1.cpp in Sources */,
@@ -1362,12 +1374,20 @@
 				C280AEE50534BBD900F7E802 /* stack.c in Sources */,
 				C2196B3A053B5905005808D4 /* AppleCSPBuiltin.cpp in Sources */,
 				05622BAC06CC352100784EED /* SHA2_Object.cpp in Sources */,
+				05BFEE0E09E1D71800F3D7E0 /* HMACSHA1.c in Sources */,
+				053ABF000AA4C94900CA6DC3 /* opensshCoding.cpp in Sources */,
+				053ABF620AA4F3EB00CA6DC3 /* opensshWrap.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		053910800A37724600B9E848 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0539107D0A37721E00B9E848 /* Copy Open Source Docs */;
+			targetProxy = 0539107F0A37724600B9E848 /* PBXContainerItemProxy */;
+		};
 		4C7502B40540C89500056564 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 4C3180440540C03B006FC739 /* security_apple_csp */;
@@ -1376,7 +1396,43 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		05EC40160ACA05340002FB0A /* Development */ = {
+		053910870A37725A00B9E848 /* Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				PRODUCT_NAME = "Copy Open Source Docs";
+			};
+			name = Development;
+		};
+		053910880A37725A00B9E848 /* Deployment */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				PRODUCT_NAME = "Copy Open Source Docs";
+				ZERO_LINK = NO;
+			};
+			name = Deployment;
+		};
+		053910890A37725A00B9E848 /* Darwin */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "Copy Open Source Docs";
+			};
+			name = Darwin;
+		};
+		0539108A0A37725A00B9E848 /* Default */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "Copy Open Source Docs";
+			};
+			name = Default;
+		};
+		C27AD24C0987FCDC001272E0 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_VARIANTS = debug;
@@ -1392,7 +1448,7 @@
 			};
 			name = Development;
 		};
-		05EC40170ACA05340002FB0A /* Deployment */ = {
+		C27AD24D0987FCDC001272E0 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				FRAMEWORK_VERSION = A;
@@ -1404,7 +1460,7 @@
 			};
 			name = Deployment;
 		};
-		05EC40180ACA05340002FB0A /* Darwin */ = {
+		C27AD24E0987FCDC001272E0 /* Darwin */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				FRAMEWORK_VERSION = A;
@@ -1415,7 +1471,7 @@
 			};
 			name = Darwin;
 		};
-		05EC40190ACA05340002FB0A /* Default */ = {
+		C27AD24F0987FCDC001272E0 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				FRAMEWORK_VERSION = A;
@@ -1425,11 +1481,11 @@
 			};
 			name = Default;
 		};
-		05EC401B0ACA05340002FB0A /* Development */ = {
+		C27AD2510987FCDC001272E0 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_VARIANTS = debug;
-				CURRENT_PROJECT_VERSION = 29774;
+				CURRENT_PROJECT_VERSION = 32567;
 				FRAMEWORK_SEARCH_PATHS = (
 					/usr/local/SecurityPieces/Components/Security,
 					/usr/local/SecurityPieces/Frameworks,
@@ -1480,14 +1536,14 @@
 			};
 			name = Development;
 		};
-		05EC401C0ACA05340002FB0A /* Deployment */ = {
+		C27AD2520987FCDC001272E0 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_VARIANTS = (
 					normal,
 					debug,
 				);
-				CURRENT_PROJECT_VERSION = 29774;
+				CURRENT_PROJECT_VERSION = 32567;
 				FRAMEWORK_SEARCH_PATHS = (
 					/usr/local/SecurityPieces/Components/Security,
 					/usr/local/SecurityPieces/Frameworks,
@@ -1535,14 +1591,14 @@
 			};
 			name = Deployment;
 		};
-		05EC401D0ACA05340002FB0A /* Darwin */ = {
+		C27AD2530987FCDC001272E0 /* Darwin */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_VARIANTS = (
 					normal,
 					debug,
 				);
-				CURRENT_PROJECT_VERSION = 29774;
+				CURRENT_PROJECT_VERSION = 32567;
 				FRAMEWORK_SEARCH_PATHS = (
 					/usr/local/SecurityPieces/Components/Security,
 					/usr/local/SecurityPieces/Frameworks,
@@ -1583,14 +1639,14 @@
 			};
 			name = Darwin;
 		};
-		05EC401E0ACA05340002FB0A /* Default */ = {
+		C27AD2540987FCDC001272E0 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_VARIANTS = (
 					normal,
 					debug,
 				);
-				CURRENT_PROJECT_VERSION = 29774;
+				CURRENT_PROJECT_VERSION = 32567;
 				FRAMEWORK_SEARCH_PATHS = (
 					/usr/local/SecurityPieces/Components/Security,
 					/usr/local/SecurityPieces/Frameworks,
@@ -1636,62 +1692,82 @@
 			};
 			name = Default;
 		};
-		05EC40200ACA05340002FB0A /* Development */ = {
+		C27AD2560987FCDC001272E0 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)";
+				CONFIGURATION_TEMP_DIR = "$(PROJECT_TEMP_DIR)";
 			};
 			name = Development;
 		};
-		05EC40210ACA05340002FB0A /* Deployment */ = {
+		C27AD2570987FCDC001272E0 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)";
+				CONFIGURATION_TEMP_DIR = "$(PROJECT_TEMP_DIR)";
 			};
 			name = Deployment;
 		};
-		05EC40220ACA05340002FB0A /* Darwin */ = {
+		C27AD2580987FCDC001272E0 /* Darwin */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)";
+				CONFIGURATION_TEMP_DIR = "$(PROJECT_TEMP_DIR)";
 			};
 			name = Darwin;
 		};
-		05EC40230ACA05340002FB0A /* Default */ = {
+		C27AD2590987FCDC001272E0 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)";
+				CONFIGURATION_TEMP_DIR = "$(PROJECT_TEMP_DIR)";
+				UNSTRIPPED_PRODUCT = YES;
 			};
 			name = Default;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		05EC40150ACA05340002FB0A /* Build configuration list for PBXFrameworkTarget "security_apple_csp" */ = {
+		053910860A37725A00B9E848 /* Build configuration list for PBXAggregateTarget "Copy Open Source Docs" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				05EC40160ACA05340002FB0A /* Development */,
-				05EC40170ACA05340002FB0A /* Deployment */,
-				05EC40180ACA05340002FB0A /* Darwin */,
-				05EC40190ACA05340002FB0A /* Default */,
+				053910870A37725A00B9E848 /* Development */,
+				053910880A37725A00B9E848 /* Deployment */,
+				053910890A37725A00B9E848 /* Darwin */,
+				0539108A0A37725A00B9E848 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		05EC401A0ACA05340002FB0A /* Build configuration list for PBXLibraryTarget "libsecurity_apple_csp" */ = {
+		C27AD24B0987FCDC001272E0 /* Build configuration list for PBXFrameworkTarget "security_apple_csp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				05EC401B0ACA05340002FB0A /* Development */,
-				05EC401C0ACA05340002FB0A /* Deployment */,
-				05EC401D0ACA05340002FB0A /* Darwin */,
-				05EC401E0ACA05340002FB0A /* Default */,
+				C27AD24C0987FCDC001272E0 /* Development */,
+				C27AD24D0987FCDC001272E0 /* Deployment */,
+				C27AD24E0987FCDC001272E0 /* Darwin */,
+				C27AD24F0987FCDC001272E0 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		05EC401F0ACA05340002FB0A /* Build configuration list for PBXProject "libsecurity_apple_csp" */ = {
+		C27AD2500987FCDC001272E0 /* Build configuration list for PBXLibraryTarget "libsecurity_apple_csp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				05EC40200ACA05340002FB0A /* Development */,
-				05EC40210ACA05340002FB0A /* Deployment */,
-				05EC40220ACA05340002FB0A /* Darwin */,
-				05EC40230ACA05340002FB0A /* Default */,
+				C27AD2510987FCDC001272E0 /* Development */,
+				C27AD2520987FCDC001272E0 /* Deployment */,
+				C27AD2530987FCDC001272E0 /* Darwin */,
+				C27AD2540987FCDC001272E0 /* Default */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Default;
+		};
+		C27AD2550987FCDC001272E0 /* Build configuration list for PBXProject "libsecurity_apple_csp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C27AD2560987FCDC001272E0 /* Development */,
+				C27AD2570987FCDC001272E0 /* Deployment */,
+				C27AD2580987FCDC001272E0 /* Darwin */,
+				C27AD2590987FCDC001272E0 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;

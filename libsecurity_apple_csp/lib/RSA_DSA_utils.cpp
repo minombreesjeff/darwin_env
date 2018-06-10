@@ -101,9 +101,11 @@ RSAKeySizes::RSAKeySizes()
 	
 	/* now see if there are prefs set for either of these */
 	try {
-		Dictionary prefs(kRSAKeySizePrefsDomain, Dictionary::US_System);
-		rsaLookupVal(prefs, kRSAMaxKeySizePref, maxKeySize);
-		rsaLookupVal(prefs, kRSAMaxPublicExponentPref, maxPubExponentSize);
+		Dictionary prefs(kRSAKeySizePrefsDomain, Dictionary::US_System, false);
+		if (prefs.dict()) {
+			rsaLookupVal(prefs, kRSAMaxKeySizePref, maxKeySize);
+			rsaLookupVal(prefs, kRSAMaxPublicExponentPref, maxPubExponentSize);
+		}
 	}
 	catch(...) {
 		/* no prefs dictionary, we're done */
@@ -229,9 +231,9 @@ RSA *rawCssmKeyToRsa(
 			switch(hdr->Format) {
 				case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:	
 				case CSSM_KEYBLOB_RAW_FORMAT_X509:
-					break;
-				/* openssh real soon now */
 				case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH:
+				case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH2:
+					break;
 				default:
 					CssmError::throwMe(
 						CSSMERR_CSP_INVALID_ATTR_PUBLIC_KEY_FORMAT);
@@ -245,9 +247,8 @@ RSA *rawCssmKeyToRsa(
 			switch(hdr->Format) {
 				case CSSM_KEYBLOB_RAW_FORMAT_PKCS8:	// default
 				case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:	// openssl style
-					break;
-				/* openssh real soon now */
 				case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH:
+					break;
 				default:
 					CssmError::throwMe(
 						CSSMERR_CSP_INVALID_ATTR_PRIVATE_KEY_FORMAT);
@@ -291,7 +292,7 @@ RSA *rawCssmKeyToRsa(
 	if(crtn) {
 		CssmError::throwMe(crtn);
 	}
-
+	
 	/* enforce max key size and max public exponent size */
 	bool badKey = false;
 	uint32 keySize = RSA_size(rsaKey) * 8;
@@ -499,9 +500,8 @@ DSA *rawCssmKeyToDsa(
 			switch(hdr->Format) {
 				case CSSM_KEYBLOB_RAW_FORMAT_FIPS186:	
 				case CSSM_KEYBLOB_RAW_FORMAT_X509:
+				case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH2:
 					break;
-				/* openssh real soon now */
-				case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH:
 				default:
 					CssmError::throwMe(
 						CSSMERR_CSP_INVALID_ATTR_PUBLIC_KEY_FORMAT);
@@ -559,7 +559,7 @@ DSA *rawCssmKeyToDsa(
 			CssmError::throwMe(crtn);
 		}
 	}
-
+	
 	if(dsaKey->p != NULL) {
 		/* avoid use of provided DSA key which exceeds the max size */
 		uint32 keySize = BN_num_bits(dsaKey->p);

@@ -67,6 +67,7 @@ CSSM_RETURN RSAPublicKeyDecode(
 CSSM_RETURN	RSAPublicKeyEncode(
 	RSA 				*openKey, 
 	CSSM_KEYBLOB_FORMAT	format,
+	const CssmData		&descData,
 	CssmOwnedData		&encodedKey);
 CSSM_RETURN RSAPrivateKeyDecode(
 	RSA 				*openKey, 
@@ -76,6 +77,7 @@ CSSM_RETURN RSAPrivateKeyDecode(
 CSSM_RETURN	RSAPrivateKeyEncode(
 	RSA 				*openKey, 
 	CSSM_KEYBLOB_FORMAT	format,
+	const CssmData		&descData,
 	CssmOwnedData		&encodedKey);
 CSSM_RETURN RSAOAEPPublicKeyDecode(
 	RSA 				*openKey, 
@@ -112,6 +114,7 @@ CSSM_RETURN DSAPublicKeyDecode(
 CSSM_RETURN	DSAPublicKeyEncode(
 	DSA 				*openKey, 
 	CSSM_KEYBLOB_FORMAT	format,
+	const CssmData		&descData,
 	CssmOwnedData		&encodedKey);
 CSSM_RETURN DSAPrivateKeyDecode(
 	DSA 				*openKey, 
@@ -121,6 +124,7 @@ CSSM_RETURN DSAPrivateKeyDecode(
 CSSM_RETURN	DSAPrivateKeyEncode(
 	DSA 				*openKey, 
 	CSSM_KEYBLOB_FORMAT	format,
+	const CssmData		&descData,
 	CssmOwnedData		&encodedKey);
 
 CSSM_RETURN DSASigEncode(

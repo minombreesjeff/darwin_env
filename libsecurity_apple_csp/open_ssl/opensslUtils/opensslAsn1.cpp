@@ -22,6 +22,7 @@
 #include "opensslAsn1.h"
 #include "BinaryKey.h"
 #include "AppleCSPUtils.h"
+#include "opensshCoding.h"
 #include <Security/osKeyTemplates.h>
 #include <openssl/err.h>
 #include <openssl/bn.h>
@@ -32,7 +33,7 @@
 #include <Security/keyTemplates.h>
 #include <security_utilities/debugging.h>
 #include <Security/oidsalg.h>
-#include <Security/asn1Templates.h>
+#include <Security/SecAsn1Templates.h>
 
 #include <assert.h>
 
@@ -228,10 +229,10 @@ static CSSM_RETURN RSAPublicKeyDecodeX509(
 	SecNssCoder 	&coder,
 	RSA 			*openKey, 
 	void 			*p, 
-	size_t			length,
+	CSSM_SIZE		length,
 	/* mallocd/returned encoded alg params for OAEP key */
 	uint8			**algParams,
-	uint32			*algParamLen)
+	CSSM_SIZE		*algParamLen)
 {
 	CSSM_X509_SUBJECT_PUBLIC_KEY_INFO nssPubKeyInfo;
 	PRErrorCode perr;
@@ -396,10 +397,10 @@ static CSSM_RETURN RSAPrivateKeyDecodePKCS8(
 	SecNssCoder 	&coder,
 	RSA 			*openKey, 
 	void 			*p, 
-	size_t			length,
+	CSSM_SIZE		length,
 	/* mallocd/returned encoded alg params for OAEP key */
 	uint8			**algParams,
-	uint32			*algParamLen)
+	CSSM_SIZE		*algParamLen)
 {
 	NSS_PrivateKeyInfo nssPrivKeyInfo;
 	PRErrorCode perr;
@@ -500,6 +501,10 @@ CSSM_RETURN RSAPublicKeyDecode(
 			return RSAPublicKeyDecodePKCS1(coder, openKey, p, length);
 		case CSSM_KEYBLOB_RAW_FORMAT_X509:
 			return RSAPublicKeyDecodeX509(coder, openKey, p, length, NULL, NULL);
+		case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH:
+			return RSAPublicKeyDecodeOpenSSH1(openKey, p, length);
+		case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH2:
+			return RSAPublicKeyDecodeOpenSSH2(openKey, p, length);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
@@ -509,6 +514,7 @@ CSSM_RETURN RSAPublicKeyDecode(
 CSSM_RETURN	RSAPublicKeyEncode(
 	RSA 				*openKey, 
 	CSSM_KEYBLOB_FORMAT	format,
+	const CssmData		&descData,
 	CssmOwnedData		&encodedKey)
 {
 	SecNssCoder coder;
@@ -518,6 +524,10 @@ CSSM_RETURN	RSAPublicKeyEncode(
 			return RSAPublicKeyEncodePKCS1(coder, openKey, encodedKey);
 		case CSSM_KEYBLOB_RAW_FORMAT_X509:
 			return RSAPublicKeyEncodeX509(coder, openKey, encodedKey, NULL, 0);
+		case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH:
+			return RSAPublicKeyEncodeOpenSSH1(openKey, descData, encodedKey);
+		case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH2:
+			return RSAPublicKeyEncodeOpenSSH2(openKey, descData, encodedKey);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
@@ -537,6 +547,8 @@ CSSM_RETURN RSAPrivateKeyDecode(
 			return RSAPrivateKeyDecodePKCS1(coder, openKey, p, length);
 		case CSSM_KEYBLOB_RAW_FORMAT_PKCS8:
 			return RSAPrivateKeyDecodePKCS8(coder, openKey, p, length, NULL, NULL);
+		case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH:
+			return RSAPrivateKeyDecodeOpenSSH1(openKey, p, length);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
@@ -546,6 +558,7 @@ CSSM_RETURN RSAPrivateKeyDecode(
 CSSM_RETURN	RSAPrivateKeyEncode(
 	RSA 				*openKey, 
 	CSSM_KEYBLOB_FORMAT	format,
+	const CssmData		&descData,
 	CssmOwnedData		&encodedKey)
 {
 	SecNssCoder coder;
@@ -555,6 +568,8 @@ CSSM_RETURN	RSAPrivateKeyEncode(
 			return RSAPrivateKeyEncodePKCS1(coder, openKey, encodedKey);
 		case CSSM_KEYBLOB_RAW_FORMAT_PKCS8:
 			return RSAPrivateKeyEncodePKCS8(coder, openKey, encodedKey, NULL, 0);
+		case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH:
+			return RSAPrivateKeyEncodeOpenSSH1(openKey, descData, encodedKey);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
@@ -1154,6 +1169,8 @@ CSSM_RETURN DSAPublicKeyDecode(
 			return DSAPublicKeyDecodeFIPS186(coder, openKey, p, length);
 		case CSSM_KEYBLOB_RAW_FORMAT_X509:
 			return DSAPublicKeyDecodeX509(coder, openKey, p, length);
+		case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH2:
+			return DSAPublicKeyDecodeOpenSSH2(openKey, p, length);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
@@ -1163,6 +1180,7 @@ CSSM_RETURN DSAPublicKeyDecode(
 CSSM_RETURN	DSAPublicKeyEncode(
 	DSA 				*openKey, 
 	CSSM_KEYBLOB_FORMAT	format,
+	const CssmData		&descData,
 	CssmOwnedData		&encodedKey)
 {
 	SecNssCoder coder;
@@ -1174,6 +1192,8 @@ CSSM_RETURN	DSAPublicKeyEncode(
 			return DSAPublicKeyEncodeX509(coder, openKey, encodedKey);
 		case CSSM_KEYBLOB_RAW_FORMAT_DIGEST:
 			return DSAPublicKeyEncodeHashable(coder, openKey, encodedKey);
+		case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH2:
+			return DSAPublicKeyEncodeOpenSSH2(openKey, descData, encodedKey);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
@@ -1204,6 +1224,7 @@ CSSM_RETURN DSAPrivateKeyDecode(
 CSSM_RETURN	DSAPrivateKeyEncode(
 	DSA 				*openKey, 
 	CSSM_KEYBLOB_FORMAT	format,
+	const CssmData		&descData,
 	CssmOwnedData		&encodedKey)
 {
 	SecNssCoder coder;

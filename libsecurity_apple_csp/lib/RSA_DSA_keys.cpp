@@ -36,6 +36,7 @@
 
 #define rsaKeyDebug(args...)	secdebug("rsaKey", ## args)
 
+
 /***
  *** RSA-style BinaryKey
  ***/
@@ -100,6 +101,8 @@ void RSABinaryKey::generateKeyBlob(
 					break;
 				case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:
 				case CSSM_KEYBLOB_RAW_FORMAT_X509:
+				case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH:
+				case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH2:
 					break;
 				default:
 					CssmError::throwMe(CSSMERR_CSP_UNSUPPORTED_KEY_FORMAT);
@@ -124,6 +127,7 @@ void RSABinaryKey::generateKeyBlob(
 					break;
 				case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:
 				case CSSM_KEYBLOB_RAW_FORMAT_PKCS8:
+				case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH:
 					break;
 				default:
 					CssmError::throwMe(CSSMERR_CSP_UNSUPPORTED_KEY_FORMAT);
@@ -145,10 +149,10 @@ void RSABinaryKey::generateKeyBlob(
 	}
 	else {
 		if(isPub) {
-			crtn = RSAPublicKeyEncode(mRsaKey, format, encodedKey);
+			crtn = RSAPublicKeyEncode(mRsaKey, format, descData(), encodedKey);
 		}
 		else {
-			crtn = RSAPrivateKeyEncode(mRsaKey, format, encodedKey);
+			crtn = RSAPrivateKeyEncode(mRsaKey, format, descData(), encodedKey);
 		}
 	}
 	if(crtn) {
@@ -216,7 +220,7 @@ void RSAKeyPairGenContext::generate(
 	if(keyBits > rsaMaxKeySize()) {
 		CssmError::throwMe(CSSMERR_CSP_INVALID_ATTR_KEY_LENGTH);
 	}
-				
+	
 	/* generate the private key */
 	rPrivBinKey.mRsaKey = RSA_generate_key(keyBits,
 		RSA_PUB_EXPONENT,
@@ -284,8 +288,10 @@ void RSAKeyInfoProvider::CssmKeyToBinary(
 	RSA *rsaKey = NULL;
 	CSSM_DATA label = {0, NULL};
 	
-	/* first cook up an RSA key, then drop that into a BinaryKey */
+	/* first cook up an RSA key */
 	rsaKey = rawCssmKeyToRsa(mKey, label);
+	
+	/* now drop that into a BinaryKey */
 	RSABinaryKey *rsaBinKey = new RSABinaryKey(rsaKey);
 	*binKey = rsaBinKey;
 	if(label.Data) {
@@ -401,6 +407,7 @@ void DSABinaryKey::generateKeyBlob(
 				case CSSM_KEYBLOB_RAW_FORMAT_FIPS186:
 				case CSSM_KEYBLOB_RAW_FORMAT_X509:
 				case CSSM_KEYBLOB_RAW_FORMAT_DIGEST:
+				case CSSM_KEYBLOB_RAW_FORMAT_OPENSSH2:
 					break;
 				default:
 					CssmError::throwMe(CSSMERR_CSP_UNSUPPORTED_KEY_FORMAT);
@@ -471,10 +478,10 @@ void DSABinaryKey::generateKeyBlob(
 	
 	CssmAutoData 	encodedKey(allocator);
 	if(isPub) {
-		crtn = DSAPublicKeyEncode(dsaToEncode, format, encodedKey);
+		crtn = DSAPublicKeyEncode(dsaToEncode, format, descData(), encodedKey);
 	}
 	else {
-		crtn = DSAPrivateKeyEncode(dsaToEncode, format, encodedKey);
+		crtn = DSAPrivateKeyEncode(dsaToEncode, format, descData(), encodedKey);
 	}
 	if(dsaUpgrade != NULL) {
 		/* temp key, get rid of it */
