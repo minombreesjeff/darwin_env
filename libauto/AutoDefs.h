@@ -20,7 +20,7 @@
 /*
     AutoDefs.h
     Global Definitions
-    Copyright (c) 2004-2009 Apple Inc. All rights reserved.
+    Copyright (c) 2004-2010 Apple Inc. All rights reserved.
  */
 
 #pragma once
@@ -560,7 +560,7 @@ namespace Auto {
                                      0,                                         // offset into object
                                      FALSE,                                     // no need to copy the object
                                      VM_PROT_DEFAULT,                           // current protection
-                                     VM_PROT_DEFAULT,                           // maximum protection
+                                     VM_PROT_ALL,                               // maximum protection (see <rdar://problem/7792285&7971810>)
                                      VM_INHERIT_DEFAULT);                       // standard copy-on-write at fork()
         
         // verify allocation

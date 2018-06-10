@@ -19,7 +19,7 @@
  */
 /*
     AutoZone.cpp
-    Copyright (c) 2004-2009 Apple Inc. All rights reserved.
+    Copyright (c) 2004-2010 Apple Inc. All rights reserved.
  */
 
 #include "AutoAdmin.h"
@@ -236,7 +236,7 @@ namespace Auto {
         // look through our arena for free space on this alignment
         usword_t start = 0;
         // someday... track _first_free
-        usword_t end = 1ul << (arena_size_log2 - allocate_quantum_large_log2 - 1);
+        usword_t end = ((1ul << arena_size_log2) - ((uintptr_t)_large_start - (uintptr_t)_arena)) >> allocate_quantum_large_log2;
         if (nbits > (end - start)) {
             return NULL;
         }
@@ -246,7 +246,9 @@ namespace Auto {
             // actually, find last clear bit. If 0, we have an allocation, otherwise we have a new start XXX
             if (_large_bits.bits_are_clear(start, nbits)) {
                 _large_bits.set_bits(start, nbits);
-                return displace(_large_start, start << allocate_quantum_large_log2);
+                void *address = displace(_large_start, start << allocate_quantum_large_log2);
+                madvise(address, seeksize, MADV_FREE_REUSE);
+                return address;
             }
             start += 1;
         }
@@ -274,7 +276,7 @@ namespace Auto {
         usword_t start = ((char *)address - (char *)_large_start) >> allocate_quantum_large_log2;
         SpinLock lock(&_large_bits_lock);
         _large_bits.clear_bits(start, nbits);
-        madvise(address, size, MADV_FREE);
+        madvise(address, seeksize, MADV_FREE_REUSABLE);
         //if (address < _first_free) _first_free = address;
     }
 #else
@@ -477,7 +479,7 @@ namespace Auto {
     void *Zone::block_allocate(Thread &thread, const size_t size, const unsigned layout, bool clear, bool refcount_is_one) {
         void *block;
         usword_t allocated_size = size;
-        bool did_grow = false;
+        bool did_grow = false, is_large = false;
 
         // make sure we allocate at least one byte
         if (!allocated_size) allocated_size = 1;
@@ -509,6 +511,7 @@ namespace Auto {
         } else {
             // allocate more directly (32 bit: from vm, 64 bit: from top of arena)
             block = allocate_large(thread, allocated_size, layout, clear, refcount_is_one);
+            is_large = true;
         }
     
         // if we could not allocate memory then we return here
@@ -528,7 +531,7 @@ namespace Auto {
         }
 
         // <rdar://problem/6150518> large blocks always come back fully cleared, either by VM itself, or by a bzero() in allocate_large().
-        if (allocated_size >= allocate_quantum_large) return block;
+        if (is_large) return block;
 
         // initialize block
         if (clear) {
