@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,36 +17,45 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoRootScanner.h
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #include "AutoMemoryScanner.h"
 #include "AutoZone.h"
 
 namespace Auto {
+    typedef std::vector<Range, AuxAllocator<Range> > RangeVector;
+
     struct ReferenceNode : Range {
-        RangeList _incoming;
-        RangeList _outgoing;
+        RangeVector _incoming;
+        RangeVector _outgoing;
         
-        enum Kind { HEAP, ROOT, STACK };
-        Kind _kind;
+        enum Kind { HEAP, ROOT, STACK, KEY };
+        Kind _kind : 2;
         
         // used by shortest path algorithm, ReferenceGraph::findPath() below.
-        bool _visited;
+        bool _visited : 1;
         ReferenceNode* _parent;
         ReferenceNode* _next;
+
+        // used if reference is a KEY reference.
+        void *_key;
         
         ReferenceNode() : _kind(HEAP), _visited(false), _parent(NULL), _next(NULL) {}
         
         void pointsFrom(void *address, usword_t offset) {
-            _incoming.add(Range(address, offset));
+            _incoming.push_back(Range(address, offset));
         }
         
         void pointsTo(void *address, usword_t offset) {
-            _outgoing.add(Range(address, offset));
+            _outgoing.push_back(Range(address, offset));
         }
         
         usword_t offsetOf(ReferenceNode *node) {
             if (node != NULL) {
-                usword_t count = _outgoing.length();
+                usword_t count = _outgoing.size();
                 for (usword_t i = 0; i < count; ++i) {
                     if (node->address() == _outgoing[i].address())
                         return _outgoing[i].size();
@@ -86,49 +95,60 @@ namespace Auto {
             return _head == NULL;
         }
     };
+
+    typedef __gnu_cxx::hash_map<void *, ReferenceNode, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> > PtrReferenceNodeHashMap;
+    typedef std::vector<ReferenceNode *, AuxAllocator<ReferenceNode *> > ReferenceNodeVector;
     
     struct ReferenceGraph {
-        HashList<ReferenceNode> _nodes;
+        PtrReferenceNodeHashMap _nodes;
         
         ReferenceGraph() : _nodes() {}
         
         bool contains(void *block) {
-            return _nodes.find(block) != NULL;
+            return _nodes.find(block) != _nodes.end();
         }
         
         ReferenceNode *addNode(const Range& range) {
-            return _nodes.addRange(range);
+            ReferenceNode &node = _nodes[range.address()];
+            if (node.address() == 0) {
+                node.range() = range;
+            }
+            return &node;
         }
         
         ReferenceNode* addNode(void *block, usword_t size) {
-            return _nodes.addRange(Range(block, size));
+            return addNode(Range(block, size));
         }
         
         void removeNode(ReferenceNode *node) {
-            _nodes.remove(node);
+            _nodes.erase(node->address());
         }
         
-        ReferenceNode *node(void *block) {
-            return _nodes.find(block);
+        ReferenceNode *find(void *block) {
+            PtrReferenceNodeHashMap::iterator i = _nodes.find(block);
+            if (i != _nodes.end()) {
+                return &i->second;
+            }
+            return NULL;
         }
         
         // performs a bread-first-search traversal starting at the from node, until the to node is reached, and returns the path.
-        bool findPath(void *from, void *to, List<ReferenceNode*>& path) {
+        bool findPath(void *from, void *to, ReferenceNodeVector& path) {
             ReferenceNodeQueue queue;
-            ReferenceNode *node = _nodes.find(from);
+            ReferenceNode *node = find(from);
             node->_visited = true;
             queue.enqueue(node);
             while (!queue.empty()) {
                 node = queue.deque();
-                usword_t count = node->_outgoing.length();
+                usword_t count = node->_outgoing.size();
                 for (usword_t i = 0; i < count; ++i) {
-                    ReferenceNode *child = _nodes.find(node->_outgoing[i].address());
+                    ReferenceNode *child = find(node->_outgoing[i].address());
                     if (!child->_visited) {
                         child->_visited = true;
                         child->_parent = node;
                         if (child->address() == to) {
                             while (child != NULL) {
-                                path.add(child);
+                                path.push_back(child);
                                 child = child->_parent;
                             }
                             return true;
@@ -141,9 +161,8 @@ namespace Auto {
         }
         
         void resetNodes() {
-            usword_t count = _nodes.length();
-            for (usword_t i = 0; i < count; ++i) {
-                ReferenceNode& node = _nodes[i];
+            for (PtrReferenceNodeHashMap::iterator i = _nodes.begin(), end = _nodes.end(); i != end; ++i) {
+                ReferenceNode& node = i->second;
                 node._visited = false;
                 node._parent = node._next = NULL;
             }
@@ -154,23 +173,22 @@ namespace Auto {
     protected:
         void    *_block;                                    // current block to find
         int     _first_register;                            // current first register or -1 if not registers
-        RangeList _thread_ranges;                           // thread stacks we're scanning.
+        RangeVector _thread_ranges;                         // thread stacks we're scanning.
         ReferenceGraph _graph;                              // graph we are building.
-        List<void*> _block_stack;                           // blocks whose successors we still need to find.
+        PtrVector _block_stack;                             // blocks whose successors we still need to find.
     
     public:
         RootScanner(Zone *zone, void *block, void* stack_bottom)
-            : MemoryScanner(zone, stack_bottom, false, true),
+            : MemoryScanner(zone, stack_bottom, true),
               _block(block), _first_register(-1), _thread_ranges(), _graph(), _block_stack()
         {
             _graph.addNode(block, zone->block_size(block));
         }
         
         bool on_thread_stack(void *address, Range &range) {
-            usword_t count = _thread_ranges.length();
-            for (usword_t i = 0; i < count; ++i) {
-                if (_thread_ranges[i].in_range(address)) {
-                    range = _thread_ranges[i];
+            for (RangeVector::iterator i = _thread_ranges.begin(), end = _thread_ranges.end(); i != end; ++i) {
+                if (i->in_range(address)) {
+                    range = *i;
                     return true;
                 }
             }
@@ -190,8 +208,8 @@ namespace Auto {
                         if (!_graph.contains(owner)) {
                             ReferenceNode *ownerNode = _graph.addNode(owner, _zone->block_size(owner));
                             ownerNode->pointsTo(block, offset);
-                            _block_stack.push(owner);
-                            ReferenceNode *blockNode = _graph.node(block);
+                            _block_stack.push_back(owner);
+                            ReferenceNode *blockNode = _graph.find(block);
                             blockNode->pointsFrom(owner, offset);
                         }
                     } else if (_zone->is_root(reference)) {
@@ -200,7 +218,7 @@ namespace Auto {
                             referenceNode->_kind = ReferenceNode::ROOT;
                             referenceNode->pointsTo(block, 0);
                             // note the root reference in the graph.
-                            ReferenceNode *blockNode = _graph.node(block);
+                            ReferenceNode *blockNode = _graph.find(block);
                             blockNode->pointsFrom(reference, 0);
                         }
                     }
@@ -209,28 +227,44 @@ namespace Auto {
                     ReferenceNode *referenceNode = _graph.addNode(Range(reference, thread_range.end()));
                     referenceNode->_kind = ReferenceNode::STACK;
                     referenceNode->pointsTo(block, 0);
-                    ReferenceNode *blockNode = _graph.node(block);
+                    ReferenceNode *blockNode = _graph.find(block);
                     blockNode->pointsFrom(referenceNode->address(), 0); // really offset
                 }
             }
         }
         
+        virtual void associate_block(void **reference, void *key, void *block) {
+            if (block == _block && reference != NULL) {
+                // block is ASSOCIATED with reference via key.
+                if (!_graph.contains(reference)) {
+                    ReferenceNode *referenceNode = _graph.addNode(Range(reference, sizeof(void**)));
+                    referenceNode->_kind = ReferenceNode::KEY;
+                    referenceNode->_key = key;
+                    referenceNode->pointsTo(block, 0);
+                    _block_stack.push_back(reference);
+                    ReferenceNode *blockNode = _graph.find(block);
+                    blockNode->pointsFrom(reference, 0);
+                }
+            }
+            MemoryScanner::associate_block(reference, key, block);
+        }
         
-        void scan_range_from_thread(Range &range, Thread *thread) {
-            _thread_ranges.add(range);
+        void scan_range_from_thread(Range &range, Thread &thread) {
+            _thread_ranges.push_back(range);
             MemoryScanner::scan_range_from_thread(range, thread);
         }
         
         
-        void scan_range_from_registers(Range &range, Thread *thread, int first_register) {
+        void scan_range_from_registers(Range &range, Thread &thread, int first_register) {
             _first_register = first_register;
             MemoryScanner::scan_range_from_registers(range, thread, first_register);
             _first_register = -1;
         }
         
         bool has_pending_blocks() {
-            if (!_block_stack.is_empty()) {
-                _block = _block_stack.pop();
+            if (!_block_stack.empty()) {
+                _block = _block_stack.back();
+                _block_stack.pop_back();
                 return true;
             }
             return false;

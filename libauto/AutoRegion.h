@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,10 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoRegion.h
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #pragma once
 #ifndef __AUTO_REGION__
@@ -25,10 +29,8 @@
 #include "AutoAdmin.h"
 #include "AutoConfiguration.h"
 #include "AutoDefs.h"
-#include "AutoList.h"
 #include "AutoRange.h"
 #include "AutoStatistics.h"
-#include "AutoSubzone.h"
 
 
 namespace Auto {
@@ -36,6 +38,7 @@ namespace Auto {
     // Forward declarations
     
     class Zone;
+    class Subzone;
     
 
     //----- Region -----//
@@ -50,12 +53,10 @@ namespace Auto {
         usword_t    _i_subzones;                            // number of active subzones
         usword_t    _n_subzones;                            // total number of subzones
         usword_t    _n_quantum;                             // total number of quantum avalable
-        Admin       _small_admin;                           // small quantum admin
-        Admin       _medium_admin;                          // medium quantum admin
         Range       _scan_space;                            // space used during scanning - may be used as
                                                             // a stack or pending bits
         Bitmap      _pending;                               // "ready to use" bitmap overlayed on _scan_space
-        Bitmap      _marks;                                 // "ready to use" bitmap overlayed on _scan_space
+        Bitmap      _marks;                                 // bitmap for the marks used during reachability analysis
 
       public:
         
@@ -73,7 +74,7 @@ namespace Auto {
         //
         // Return the number of bytes needed for N subzones.
         //
-        static usword_t Region::managed_size(usword_t nsubzones) { return (nsubzones << subzone_quantum_log2) + nsubzones * bitmaps_per_region * subzone_bitmap_bytes; }
+        static usword_t managed_size(usword_t nsubzones) { return (nsubzones << subzone_quantum_log2) + nsubzones * bitmaps_per_region * subzone_bitmap_bytes; }
         
         //
         // allocator
@@ -118,7 +119,13 @@ namespace Auto {
         inline Region *next()               const { return _next; }
         inline Zone *zone()                 const { return _zone; }
         inline Range scan_space()           const { return _scan_space; }
-        
+        inline spin_lock_t *subzone_lock()        { return &_subzone_lock; }
+
+        //
+        //
+        // number of subzones remaining
+        //
+        inline usword_t subzones_remaining() const { return _n_subzones - _i_subzones; }
         
         //
         // new_region
@@ -126,7 +133,6 @@ namespace Auto {
         // Construct and initialize a new region.
         //
         static Region *new_region(Zone *zone );
-        
         
         //
         // subzone_index
@@ -168,22 +174,6 @@ namespace Auto {
         //
         inline Range subzone_range() const { return Range(address(), subzone_size(_i_subzones)); }
         
-
-        //
-        // allocate
-        //
-        // Allocate a block of memory from a subzone.
-        //
-        void *allocate(const size_t size, const unsigned layout, bool clear, bool refcount_is_one);
-
-
-        //
-        // deallocate
-        //
-        // Release memory allocated for a block.
-        //
-        void deallocate(Subzone *subzone, void *block);
-
 
         //
         // add_subzone
@@ -262,26 +252,14 @@ namespace Auto {
         // Used at the end of collection
         //
         inline void clear_all_marks() { _marks.clear(); }
-        
+
         //
-        // lock
+        // malloc_statistics
         //
-        // used to hold up allocations just before starting a collection
+        // Adds the region's memory use to stats.
         //
-        void lock() {
-            spin_lock(_small_admin.lock());
-            spin_lock(_medium_admin.lock());
-        }
-        
-        //
-        // unlock
-        //
-        // used to hold up allocations just before starting a collection
-        //
-        void unlock() {
-            spin_unlock(_small_admin.lock());
-            spin_unlock(_medium_admin.lock());
-        }
+        void malloc_statistics(malloc_statistics_t *stats);
+
     };
     
     

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -16,6 +16,11 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
+ */
+/*
+    AutoDefs.h
+    Global Definitions
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
  */
 
 #pragma once
@@ -43,6 +48,7 @@
 #include <ext/hash_map>
 #include <ext/hash_set>
 #include <libkern/OSAtomic.h>
+#include <System/pthread_machdep.h>
 
 #include "AutoEnvironment.h"
 #include "auto_impl_utilities.h"
@@ -51,16 +57,14 @@
 // utilities and definitions used throughout the Auto namespace
 //
 
-#ifndef AUTO_STANDALONE
 #ifdef DEBUG
 extern "C" void* WatchPoint;
 #endif
 extern "C" malloc_zone_t *aux_zone;
 extern "C" const char *auto_prelude(void);
-#endif
 
 
-extern "C" unsigned _cpu_capabilities;
+extern "C" char *__crashreporter_info__;
 
 
 namespace Auto {
@@ -70,11 +74,7 @@ namespace Auto {
     //
     // Generate the prelude used for error reporting
     //
-#ifndef AUTO_STANDALONE
     inline const char *prelude(void) { return auto_prelude(); }
-#else
-    const char *prelude(void);
-#endif
     
     
 #if defined(DEBUG)
@@ -89,8 +89,8 @@ namespace Auto {
     //
     // Workaround for declaration problems
     //
-    typedef kern_return_t (*memory_reader_t)(task_t remote_task, vm_address_t remote_address, vm_size_t size, void **local_memory);
-    typedef void (*vm_range_recorder_t)(task_t, void *, unsigned type, vm_range_t *, unsigned);
+    typedef kern_return_t (*auto_memory_reader_t)(task_t remote_task, vm_address_t remote_address, vm_size_t size, void **local_memory);
+    typedef void (*auto_vm_range_recorder_t)(task_t, void *, unsigned type, vm_range_t *, unsigned);
 
     
     typedef unsigned long usword_t;                         // computational word guaranteed to be unsigned
@@ -132,8 +132,8 @@ namespace Auto {
         
         not_found = all_ones,                               // a negative result of search methods
         
-        pointer_alignment = 2u,                             // bit alignment required for pointers 
-        block_alignment = 4u,                               // bit alignment required for allocated blocks 
+        pointer_alignment = is_64BitWord ? 3u : 2u,         // bit alignment required for pointers
+        block_alignment = is_64BitWord ? 5u : 4u,           // bit alignment required for allocated blocks
     };
     
 
@@ -409,7 +409,7 @@ namespace Auto {
     //
     // is_block_aligned
     //
-    // Returns true if the specified address is aligned on a block boundary (16 bytes.)
+    // Returns true if the specified address is aligned on a block boundary (16/32 bytes.)
     //
     inline bool is_block_aligned(void *address) { return is_bit_aligned(address, block_alignment); }
     
@@ -505,7 +505,7 @@ namespace Auto {
     //
     // Prefetch memory known to be needed in the near future.
     //
-    extern "C" unsigned _cpu_capabilities;
+    extern "C" int _cpu_capabilities;
     
     inline void touch_cache(register void *address) {
       __asm__ volatile ("dcbt 0, %[address]" : : [address] "r" (address));
@@ -570,7 +570,7 @@ namespace Auto {
         }
         
 #if defined(DEBUG)
-        if (Environment::_agc_env._print_allocs) malloc_printf("vm_map @%p %d\n", address, size);
+        if (Environment::print_allocs) malloc_printf("vm_map @%p %d\n", address, size);
 #endif
         // return result
         return (void *)address;
@@ -584,12 +584,21 @@ namespace Auto {
     //
     inline void deallocate_memory(void *address, usword_t size) {
 #if defined(DEBUG)
-        if (Environment::_agc_env._print_allocs) malloc_printf("vm_deallocate @%p %d\n", address, size);
+        if (Environment::print_allocs) malloc_printf("vm_deallocate @%p %d\n", address, size);
 #endif
         kern_return_t err = vm_deallocate(mach_task_self(), (vm_address_t)address, size);
         ASSERTION(err == KERN_SUCCESS);
     }
-    
+
+    //
+    // copy_memory
+    //
+    // Copy vm pages.
+    //
+    inline void copy_memory(void *dest, void *source, usword_t size) {
+        kern_return_t err = vm_copy(mach_task_self(), (vm_address_t)source, size, (vm_address_t)dest);
+        ASSERTION(err == KERN_SUCCESS);
+    }
     
     //
     // uncommit_memory
@@ -711,10 +720,10 @@ namespace Auto {
     //
 
     class MemoryReader {
-        task_t              _task;                          // task being probed
-        memory_reader_t     _reader;                        // reader used to laod task memory
+        task_t                  _task;                          // task being probed
+        auto_memory_reader_t    _reader;                        // reader used to laod task memory
       public:
-        MemoryReader(task_t task, memory_reader_t reader) : _task(task), _reader(reader) {}
+        MemoryReader(task_t task, auto_memory_reader_t reader) : _task(task), _reader(reader) {}
         
         //
         // read
@@ -812,7 +821,7 @@ namespace Auto {
             return static_cast<pointer>(aux_calloc(n, sizeof(T)));
         }
 
-        void deallocate(pointer p, size_type) { aux_free(p); }
+        void deallocate(pointer p, size_type) { ::aux_free(p); }
 
         size_type max_size() const { 
             return static_cast<size_type>(-1) / sizeof(T);
@@ -877,6 +886,206 @@ namespace Auto {
     typedef __gnu_cxx::hash_map<void *, size_t, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> > PtrSizeHashMap;
     typedef __gnu_cxx::hash_set<void *, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> > PtrHashSet;
     
+    //
+    // PointerArray
+    // Stores a contiguous array of pointers, which is resized by amortized doubling.
+    // Uses a MemoryAllocator template parameter which must implement the methods:
+    //   void *allocator_memory(size_t size);
+    //   void deallocator_memory(void *pointer, size_t size);
+    //   void uncommit_memory(void *pointer, size_t size);
+    //   void copy_memory(void *dest, void *source, size_t size);
+    //
+
+    template <typename MemoryAllocator>
+    class PointerArray : AuxAllocated {
+        usword_t                        _count;
+        usword_t                        _capacity;
+        void                          **_buffer;
+        MemoryAllocator                 _allocator;
+    public:
+        PointerArray() : _count(0), _capacity(0), _buffer(NULL) {}
+        PointerArray(MemoryAllocator allocator) : _count(0), _capacity(0), _buffer(NULL), _allocator(allocator) {}
+        ~PointerArray()                 { if (_buffer) _allocator.deallocate_memory(_buffer, _capacity * sizeof(void *)); }
+        
+        usword_t count()          const { return _count; }
+        void clear_count()              { _count = 0; }
+        void set_count(usword_t n)      { _count = n; }
+        void **buffer()                 { return _buffer; }
+        usword_t size()                 { return _capacity * sizeof(void*); }
+
+        void uncommit()                 { if (_buffer) _allocator.uncommit_memory(_buffer, _capacity * sizeof(void*)); }
+
+        void grow() {
+            if (!_buffer) {
+                // start off with 1 page.
+                _capacity = page_size / sizeof(void*);
+                _buffer = (void **) _allocator.allocate_memory(page_size);
+             } else {
+                // double the capacity.
+                vm_size_t old_size = _capacity * sizeof(void *);
+                void **new_buffer = (void **) _allocator.allocate_memory(old_size * 2);
+                if (!new_buffer) {
+                    auto_fatal("PointerArray::grow() _capacity=%lu failed.\n", _capacity * 2);
+                }
+                _capacity *= 2;
+                _allocator.copy_memory(new_buffer, _buffer, old_size);
+                _allocator.deallocate_memory(_buffer, old_size);
+                _buffer = new_buffer;
+            }
+        }
+        
+        void grow(usword_t count) {
+            if (count > _capacity) {
+                usword_t old_size = _capacity * sizeof(void *);
+                if (_capacity == 0L) _capacity = page_size / sizeof(void *);
+                while (count > _capacity) _capacity *= 2;
+                void **new_buffer = (void **) _allocator.allocate_memory(_capacity * sizeof(void*));
+                if (!new_buffer) {
+                    auto_fatal("PointerArray::grow(count=%lu) failed.\n", _capacity);
+                }
+                if (_buffer) {
+                    // only copy contents if _count != 0.
+                    if (new_buffer && _count) {
+                        _allocator.copy_memory(new_buffer, _buffer, old_size);
+                    }
+                    _allocator.deallocate_memory(_buffer, old_size);
+                }
+                _buffer = new_buffer;
+            }
+        }
+        
+        void add(void *pointer) {
+            if (_count == _capacity) grow();
+            _buffer[_count++] = pointer;
+        }
+    };
+    
+    //
+    // PointerQueue
+    // Manages a set of pointers as a queue of discontinguous page-sized chunks. This uses memory more efficiently
+    // since it never has to copy the buffers themselves, and grows mores slowly than a PointerArray. Also parametrized
+    // with a MemoryAllocator type.
+    // 
+    struct PointerChunk : Preallocated {
+        PointerChunk *_next;
+        enum { chunk_size = (Auto::page_size / sizeof(void*)) - 1 };
+        void *_pointers[chunk_size];
+
+        void **pointers() { return _pointers; }
+        void **limit() { return _pointers + chunk_size; }
+        PointerChunk *next() { return _next; }
+    };
+    
+    template <class Visitor> inline void visitPointerChunks(PointerChunk *chunks, usword_t count, Visitor& visitor) {
+        PointerChunk *chunk = chunks;
+        while (chunk != NULL) {
+            PointerChunk *next = chunk->next();
+            void **pointers = chunk->pointers();
+            void **limit = pointers + (count > PointerChunk::chunk_size ? PointerChunk::chunk_size : count);
+            visitor.visitPointerChunk(pointers, limit);
+            count -= (limit - pointers);
+            chunk = next;
+        }
+    }
+    
+    inline void visitPointerChunksBlock(PointerChunk *chunks, usword_t count, void (^block) (void **, void**)) {
+        PointerChunk *chunk = chunks;
+        while (chunk != NULL) {
+            PointerChunk *next = chunk->next();
+            void **pointers = chunk->pointers();
+            void **limit = pointers + (count > PointerChunk::chunk_size ? PointerChunk::chunk_size : count);
+            block(pointers, limit);
+            count -= (limit - pointers);
+            chunk = next;
+        }
+    }
+    
+    template <typename MemoryAllocator>
+    class PointerQueue : AuxAllocated {
+        MemoryAllocator _allocator;
+        PointerChunk *_head;
+        PointerChunk *_tail;
+        PointerChunk *_current;
+        void **_cursor, **_limit;
+        usword_t _count;
+        
+        void next_chunk() {
+            if (_current == NULL) {
+                // reset() pointed back to the beginning.
+                _current = _head;
+            } else {
+                _current = _current->_next;
+            }
+            if (_current == NULL) {
+                _current = (PointerChunk *)_allocator.allocate_memory(sizeof(PointerChunk));
+                if (_head == NULL) {
+                    _head = _tail = _current;
+                } else {
+                    _tail->_next = _current;
+                    _tail = _current;
+                }
+            }
+            _cursor = _current->pointers();
+            _limit = _current->limit();
+        }
+
+    public:
+        PointerQueue() : _head(NULL), _tail(NULL), _current(NULL), _cursor(NULL), _limit(NULL), _count(0) {}
+        PointerQueue(MemoryAllocator allocator) : _allocator(allocator), _head(NULL), _tail(NULL), _current(NULL), _cursor(NULL), _limit(NULL), _count(0) {}
+        
+        ~PointerQueue() {
+            PointerChunk *chunk = _head;
+            while (chunk != NULL) {
+                PointerChunk *next = chunk->_next;
+                _allocator.deallocate_memory(chunk, sizeof(PointerChunk));
+                chunk = next;
+            }
+        }
+        
+        void add(void *pointer) {
+            if (_cursor == _limit) next_chunk();
+            *_cursor++ = pointer;
+            ++_count;
+        }
+        
+        void reset() {
+            _current = NULL;
+            _cursor = _limit = NULL;
+            _count = 0;
+        }
+
+        PointerChunk *chunks() { return _head; }
+        usword_t count() { return _count; }
+        
+        usword_t size() {
+            usword_t size = 0;
+            PointerChunk *chunk = _head;
+            while (chunk != NULL) {
+                size += Auto::page_size;
+                chunk = chunk->_next;
+            }
+            return size;
+        }
+    };
+    
+    class VMMemoryAllocator {
+    public:
+        inline void *allocate_memory(usword_t size) {
+            return Auto::allocate_memory(size);
+        }
+        
+        inline void deallocate_memory(void *address, usword_t size) {
+            Auto::deallocate_memory(address, size);
+        }
+        
+        inline void uncommit_memory(void *address, usword_t size) {
+            Auto::uncommit_memory(address, size);
+        }
+        
+        inline void copy_memory(void *dest, void *source, usword_t size) {
+            Auto::copy_memory(dest, source, size);
+        }
+    };
 };
 
 #endif // __AUTO_DEFS__

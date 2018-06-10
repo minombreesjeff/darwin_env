@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,10 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoWriteBarrierIterator.h
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #pragma once
 #ifndef __AUTO_WRITEBARRIERITERATOR__
@@ -26,7 +30,6 @@
 #include "AutoAdmin.h"
 #include "AutoDefs.h"
 #include "AutoLarge.h"
-#include "AutoListTypes.h"
 #include "AutoRangeIterator.h"
 #include "AutoRegion.h"
 #include "AutoSubzone.h"
@@ -56,8 +59,12 @@ namespace Auto {
             }
         }
 
-        // iterate through the large
-        for (Large *large = zone->large_list(); large; large = large->next()) {
+        // iterate through the large blocks list. we assume that either the large_lock() is held,
+        // or that the collector has made large block deallocation lazy.
+        for (Large *large = zone->large_list(); large != NULL; large = large->next()) {
+            // skip unscanned large blocks, which have no write-barrier cards.
+            if (!large->is_scanned()) continue;
+            
             // extract the write barrier information
             WriteBarrier& wb = large->write_barrier();
             
@@ -68,25 +75,6 @@ namespace Auto {
         return true;
     }
     
-    template<class T>class WriteBarrierIterator {
-    
-      private:
-        
-        Zone *_zone;                                        // zone containing write barriers
-        T    &_visitor;                                     // object visiting write barriers
-        
-      public:
-      
-        //
-        // Constructor
-        //
-        WriteBarrierIterator(Zone *zone, T &visitor) : _zone(zone), _visitor(visitor) {}
-      
-        inline bool visit() {
-            return visitWriteBarriers(_zone, _visitor);
-        }
-        
-    };
 };
 
 #endif // __AUTO_WRITEBARRIERITERATOR__

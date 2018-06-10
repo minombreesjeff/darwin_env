@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,11 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoFreeList.h
+    Free list for memory allocator
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #pragma once
 #ifndef __AUTO_FREELIST__
@@ -24,6 +29,7 @@
 
 #include "AutoConfiguration.h"
 #include "AutoDefs.h"
+#include "AutoRange.h"
 
 namespace Auto {
 
@@ -40,6 +46,7 @@ namespace Auto {
         FreeListNode *_prev;            // previous node or NULL for head
         FreeListNode *_next;            // next node or NULL for tail
         usword_t      _size;            // number of free bytes 
+        bool          _purged;          // note:  this field must only be used for nodes > 2 quanta (see Admin::purge_free_space()).
         // WARNING: No more fields.  Must fit in a 16 byte quantum and size is
         // always stuffed in last word of free bytes.
         //usword_t    _size_again;      // at end of free block
@@ -56,6 +63,7 @@ namespace Auto {
             set_prev(prev);
             set_next(next);
             set_size(size);
+            if (size > Auto::page_size) _purged = false;
         }
         
         
@@ -69,6 +77,11 @@ namespace Auto {
         void set_prev(FreeListNode *prev)  { _prev = flip(prev); }
         void set_next(FreeListNode *next)  { _next = flip(next); }
         
+        //
+        // The following are only used by by Admin::purge_free_space() for medium quanta nodes.
+        //
+        bool purged()                const { ASSERTION(_size > (sizeof(FreeListNode) + sizeof(usword_t))); return _purged; }
+        void set_purged()                  { ASSERTION(_size > (sizeof(FreeListNode) + sizeof(usword_t))); _purged = true; }
 
         //
         // Consistency
@@ -118,6 +131,16 @@ namespace Auto {
         // Return the next adjacent block.
         //
         void *next_block() { return displace(this, _size);  }
+        
+        //
+        // purgeable_range
+        //
+        // Returns the address range of this node that can be safely passed to madvise(address, size, MADV_FREE).
+        //
+        Range purgeable_range() {
+            Range r(align_up(displace(this, sizeof(FreeListNode))), align_down(displace(this, _size - sizeof(usword_t) - 1)));
+            return r;
+        }
     };
     
     

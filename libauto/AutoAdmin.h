@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -16,6 +16,11 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
+ */
+/*
+    AutoAdmin.h
+    Automatic Garbage Collection
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
  */
 
 #pragma once
@@ -37,6 +42,7 @@ namespace Auto {
     class Region;
     class Subzone;
     class Zone;
+    class Thread;
     
     
     //----- Admin -----//
@@ -50,11 +56,11 @@ namespace Auto {
       private:
       
         Zone           *_zone;                              // managing zone
-        Region         *_region;                            // containing region
         usword_t       _quantum_log2;                       // ilog2 of the quantum used in this admin
         FreeList       _cache[cache_size];                  // free lists, one for each quanta size, slot 0 is for large clumps
         Subzone        *_active_subzone;                    // subzone with unused memory
         spin_lock_t    _admin_lock;                         // protects free list, subzone data.
+        usword_t       _freelist_search_cap;                // highest nonempty freelist index (excluding big chunk list), or 0 if all are empty
         
       public:
       
@@ -62,7 +68,6 @@ namespace Auto {
         // Accessors
         //
         Zone *zone()            const { return _zone; }
-        Region *region()        const { return _region; }
         usword_t quantum_log2() const { return _quantum_log2; }
         spin_lock_t *lock()           { return &_admin_lock; }
       
@@ -132,7 +137,7 @@ namespace Auto {
         //
         // Set up the admin for initial use.
         //
-        void initialize(Zone *zone, Region *region, const usword_t quantum_log2);
+        void initialize(Zone *zone, const usword_t quantum_log2);
 
 
         //
@@ -142,6 +147,12 @@ namespace Auto {
         //
         usword_t free_space();
         
+        //
+        // purge_free_space()
+        //
+        // Relinquish free space pages to the system where possible.
+        //
+        void purge_free_space();
         
         //
         // empty_space()
@@ -149,7 +160,6 @@ namespace Auto {
         // Returns the size of the space that has yet to be allocated.
         //
         usword_t empty_space();
-        
         
         //
         // test_freelist_integrity
@@ -171,8 +181,14 @@ namespace Auto {
         // Find the next available quanta for the allocation.  Returns NULL if none found.
         // Allocate otherwise.
         //
-        void *find_allocation(const usword_t size, const unsigned layout, const bool refcount_is_one, bool &did_grow);
-
+        void *find_allocation(Thread &thread, usword_t &size, const unsigned layout, const bool refcount_is_one, bool &did_grow);
+                        
+        //
+        // thread_cache_allocate
+        //
+        // If per-thread cache available, use it, otherwise fill it and use it if possible, otherwise return NULL
+        //
+        void *thread_cache_allocate(Thread &thread, usword_t &size, const unsigned layout, const bool refcount_is_one, bool &did_grow);
 
         //
         // deallocate
@@ -181,59 +197,39 @@ namespace Auto {
         // Currently, this relinks it onto the free lists & clears the side table data.
         //
         void deallocate(void *address);
+
+        //
+        // deallocate_no_lock
+        //
+        // Mark address as available.
+        // Currently, this relinks it onto the free lists & clears the side table data.
+        // Unlike vanilla deallocate (above), this assumes that the admin lock is already held.
+        //
+        void deallocate_no_lock(void *address);
+
+        //
+        // mark_cached
+        //
+        // Set tables with information for cached allocation, one on a per-thread list
+        //
+        void mark_cached(void *address, const usword_t n);
+        void mark_cached_range(void *address, const usword_t n);
         
+        // push_node
+        //
+        // Pushes a new node on to the specified FreeList.
+        // Also tracks the range of active FreeList entries.
+        //
+        void push_node(usword_t index, void *address, usword_t size);
+
+        //
+        // mark_allocated
+        //
+        // Set tables with information for new allocation.
+        //
+        void mark_allocated(void *address, const usword_t n, const unsigned layout, const bool refcount_is_one, const bool is_local);
         
-        //
-        // is_pending
-        //
-        // Used by subzone to get pending bit for quantum.
-        //
-        bool is_pending(usword_t q);
-        
-        
-        //
-        // clear_pending
-        //
-        // Used by subzone to clear pending bit for quantum.
-        //
-        void clear_pending(usword_t q);
-        
-        
-        //
-        // set_pending
-        //
-        // Used by subzone to set pending bit for quantum.
-        //
-        void set_pending(usword_t q);
-        
-        //
-        // set_mark
-        //
-        // Used by subzone to set mark bit for quantum.
-        //
-        void set_mark(usword_t q);
-        
-        //
-        // is_marked
-        //
-        // Used by subzone to get mark bit for quantum.
-        //
-        bool is_marked(usword_t q);
-        
-        //
-        // clear_mark
-        //
-        // Used by subzone to clear mark bit for quantum.
-        //
-        void clear_mark(usword_t q);
-        
-        //
-        // test_set_mark
-        //
-        // Used by subzone to test and set mark bit for quantum.
-        //
-        bool test_set_mark(usword_t q);
-        
+                
       private:
         //
         // pop_node
@@ -243,14 +239,13 @@ namespace Auto {
         //
         FreeListNode *pop_node(usword_t index);
         
-        //
-        // mark_allocated
-        //
-        // Set tables with information for new allocation.
-        // Must be called with _cache_lock acquired.
-        //
-        void mark_allocated(void *address, const usword_t n, const unsigned layout, const bool refcount_is_one);
         
+        //
+        // find_allocation_no_lock
+        //
+        // find a block of suitable size (for use on the per-thread list)
+        //
+        void *find_allocation_no_lock(usword_t n, bool &did_grow);
     };
         
 };

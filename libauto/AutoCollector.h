@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,14 +17,17 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoCollector.h
+    Specialized Memory Scanner
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #pragma once
 #ifndef __AUTO_COLLECTOR__
 #define __AUTO_COLLECTOR__
 
 #include "AutoDefs.h"
-#include "AutoList.h"
-#include "AutoListTypes.h"
 #include "AutoRange.h"
 #include "AutoMemoryScanner.h"
 
@@ -46,10 +49,6 @@ namespace Auto {
 
     class Collector : public MemoryScanner {
     
-      private:
-      
-        bool                      _is_partial;                              // is generational collection
-      
       public:
       
         auto_date_t               scan_end;
@@ -58,11 +57,11 @@ namespace Auto {
         // Constructor
         //
         Collector(Zone *zone, void *current_stack_bottom, bool is_partial)
-        : MemoryScanner(zone, current_stack_bottom, is_partial, false)
-        , _is_partial(is_partial)
+        : MemoryScanner(zone, current_stack_bottom, false)
         {
             // mark instance as a collecting MemoryScanner subclass.
             _is_collector = true;
+            set_is_partial(is_partial);
         }
         virtual ~Collector() {}
         

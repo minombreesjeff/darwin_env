@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,10 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoSubzone.h
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #pragma once
 #ifndef __AUTO_SUBZONE__
@@ -27,8 +31,10 @@
 #include "AutoBitmap.h"
 #include "AutoFreeList.h"
 #include "AutoWriteBarrier.h"
-
+#include "AutoRegion.h"
+#import "auto_tester/auto_tester.h"
 #include "auto_zone.h"
+#include <cassert>
 
 namespace Auto {
 
@@ -54,97 +60,80 @@ namespace Auto {
     
     
     class Subzone : public Preallocated {
-    
-      private:
 
+    private:
         unsigned char  _write_barrier_cards[subzone_write_barrier_max];
         WriteBarrier   _write_barrier;
                                         // write barrier for subzone - must be first
         usword_t       _quantum_log2;   // ilog2 of the quantum used in this admin
-        Admin          *_admin;         // admin managing this subzone
+        Region         *_region;        // region owning this subzone (with bitmaps for these quanta)
+        Admin          *_admin;         // admin for this subzone (reflecting appropriate quanta size)
         usword_t       _quantum_bias;   // the value added to subzone quantum numbers to get a globally
                                         // unique quantum (used to index region pending/mark bits)
         void           *_allocation_address; // base address for allocations
         usword_t       _in_use;         // high water mark
         unsigned char  _side_data[1];   // base for side data
 
-        // The side data byte bits are described below.  A block of quantum size 1 has a zero size bit.
-        // Otherwise, the byte corresponding to the second quantum is used to hold the # of quantums.
         enum {
-            size_bit = 0x80,            // indicates size is continued in low 6 bits of next byte (less 1)
-            size_bit_log2 = 7,
-            
-            start_bit = 0x40,           // indicates beginning of block
-            start_bit_log2 = 6,
-            
-            age_ref_mask = 0x3C,        // combined refcount/age
-            age_ref_mask_log2 = 2,      // shift needed to extract mask
+            /*
+             A quantum with start_bit set indicates the beginning of a block, which may be either allocated or free.
+             The block is allocated if any of the remaining bits are nonzero. If all are zero then the block is free.
+             Minimally, if a block is allocated either global_bit, or alloc_local_bit, or the garbage bit will be set.
+             The block size for an allocated block beginning at quanta q is determined by examining the side data at quanta q+1. 
+             If the start bit at q+1 is set then the block size is 1 quanta. If the start bit at q+1 is not set then the remaining
+             bits hold the block size (in units of quanta.)
+             The block size for a unallocated block can be inferred from the free list it is on.
+             */
+             
+            start_bit_log2 = 7,
+            start_bit = 0x1 << start_bit_log2,                  // indicates beginning of block
 
-            layout_mask = 0x03,         // indicates block organization
+            /*
+             The layout indicates whether the block is an object and whether it is scanned.  Even when a block is marked
+             as garbage the scanned bit is important because the background collector needs to scan through even local garbage
+             to find references - otherwise it might win a race and deallocate something that will be referenced in a finalize
+             run by the local collector.
+            */
+            layout_log2 = 5,
+            layout_mask = 0x3 << layout_log2,                   // indicates block organization
             
-            end_block_mark = size_bit   // marks the end of a block (no start bit, size bit, and size == 0)
+            /*
+             The global bit is consulted in order to determine the interpretation of all remaining bits.
+             When global bit == 1, the age_mask and refcount_mask bits are valid.
+             When global bit == 0, alloc_local_bit and garbage_bit are valid.
+             When garbage_bit == 1, refcount_mask is again valid since blocks may be marked external in a finalize method.
+             When garbage_bit == 0, scan_local_bit is valid.
+            */
+            global_bit_log2 = 0,
+            global_bit = 0x1 << global_bit_log2,                // indicates thread locality of block. 0 -> thread local, 1 -> global
+
+            garbage_bit_log2 = 2,
+            garbage_bit = 0x1 << garbage_bit_log2,              // iff global == 0.  marks garbage, alloc_local_bit marks if local.
+            
+            alloc_local_bit_log2 = 1,
+            alloc_local_bit = 0x1 << alloc_local_bit_log2,      // iff global == 0. marks that a block is thread local
+                        
+            scan_local_bit_log2 = 3,
+            scan_local_bit = 0x1 << scan_local_bit_log2,        // iff global == 0, alloc_local == 1. marks thread local to be scanned
+            
+            refcount_log2 = 3,
+            refcount_mask = 0x3 << refcount_log2,               // if global_bit == 1 else garbage_bit == 1. holds inline refcount
+            
+            age_mask_log2 = 1,
+            age_mask = 0x3 << age_mask_log2,                    // iff global_bit == 1. block age bits for background collector
+            
+            /* Interesting age values. */
+            youngest_age = 3,
+            eldest_age = 0,
+                        
+            quanta_size_mask = 0x7f,                            // quanta size mask for blocks of quanta size 2+
         };
         
-        // The four bits used to represent size and reference count bits are defined below.
-        // We optimize for reference counts of 0 and 1 and somewhat for 2.  Reference counts above 2
-        // are marked as 2 in the side_data byte and held in a map table.
-        // Blocks with reference counts of 0 and 1 will have a generational survival count of 5 before
-        // becoming old and subject to collection only via a full collection.  Blocks with reference count
-        // 2 or above have only a survival count of 3.  We suspect that such objects are likely to be long
-        // lived.
-        //
-        // The bit layouts are somewhat arbitrary.  The only condition that they satisfy is that the calculation
-        // for "youngest" and "eldest" should be fast.  There are three values for each, corresponding to each
-        // of the three reference counts represented.  The bit values are chosen such that the test for either
-        // of the three values can be done with two operations instead of three equality checks.
-        enum {
-            r0_a0 = 0x0, r0_a1 = 0x1, r0_a2 = 0x2, r0_a3 = 0x3,  // 00xx
-            r1_a0 = 0x4, r1_a1 = 0x5, r1_a2 = 0x6, r1_a3 = 0x7,  // 01xx
-            r2_a0 = 0x8, r2_a1 = 0x9, r2_a2 = 0xa, r2_a3 = 0xb,  // 10xx
-            r0_a4 = 0xc, r0_a5 = 0xd,                            // 1100, 1101
-            r1_a4 = 0xe, r1_a5 = 0xf,                            // 1101, 1111
-        };
+        // Does a side data value represent the youngest age (includes thread local)? 
+        static inline bool is_youngest(unsigned char sd) { return ((sd & age_mask)>>age_mask_log2) == youngest_age; }
         
-        // the age that each combined value represents
-        static const unsigned char age_map[16]; //= { 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 4, 5 };
-        
-        // the reference count that each value represents
-        static const unsigned char ref_map[16]; //= { 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 1, 1 };
-        
-        // Aging proceeds from high to low.  This map yields the (unshifted XXX) next age value that preserves
-        // the reference count.  Note that age 0 maps to next age 0.
-        static const unsigned char next_age_map[16];  
-        //= {
-        //    r0_a0, r0_a0, r0_a1, r0_a2,
-        //    r1_a0, r1_a0, r1_a1, r1_a2,
-        //    r2_a0, r2_a0, r2_a1, r2_a2,
-        //    r0_a3, r0_a4,
-        //    r1_a3, r1_a4,
-        //};
-        
-        static const unsigned char incr_refcount_map[16];
-        // = {
-        //    r1_a0, r1_a1, r1_a2, r1_a3, // refcount 0 -> refcount 1
-        //    r2_a0, r2_a1, r2_a2, r2_a3, // refcount 1 -> refcount 2
-        //    0xff, 0xff, 0xff, 0xff,     // not used
-        //    r1_a4, r1_a5,               // refcount 0 -> refcount 1
-        //    r2_a3, r2_a3,               // refcount 1 -> refcount 2 (note (a4,a5)->a3 transition tho)
-        //};
-        
-        static const unsigned char decr_refcount_map[16];
-        //= {
-        //    0xff, 0xff, 0xff, 0xff,     // not used
-        //    r0_a0, r0_a1, r0_a2, r0_a3, // refcount 1 -> refcount 0
-        //    r1_a0, r1_a1, r1_a2, r1_a5, // refcount 2 -> refcount 1  (note r2_a3 -> r1_a5)
-        //    0xff, 0xff,                 // not used
-        //    r0_a4, r0_a5,               // refcount 1 -> refcount 0
-        //};
-        
-        // Does a value represent the youngest age? (r0_a5, r1_a5, r2_a3)
-        static inline bool is_youngest(unsigned char ar) { return ((ar & 9) == 9) && ((ar & 6) != 0); }
-        
-        // Does a value represent the eldest age? (r?_a0)
-        static inline bool is_eldest(unsigned char ar) { return ((ar & 3) == 0) && ((ar & 0xc) != 0xc); }
+        // Does a side data value represent the eldest age?
+        static inline bool is_eldest(unsigned char sd) { return ((sd & age_mask)>>age_mask_log2) == eldest_age; }
 
         //
         // subzone_side_data_max
@@ -201,14 +190,13 @@ namespace Auto {
         //
         // Constructor
         //
-        Subzone(Admin *admin, usword_t quantum_log2, usword_t quantum_bias)
+        Subzone(Region *region, Admin *admin, usword_t quantum_log2, usword_t quantum_bias)
             : _write_barrier(_write_barrier_cards, _write_barrier_cards, WriteBarrier::bytes_needed(subzone_quantum)),
-              _quantum_log2(quantum_log2), _admin(admin), _quantum_bias(quantum_bias), _allocation_address(NULL), _in_use(0)
+              _quantum_log2(quantum_log2), _region(region), _admin(admin), _quantum_bias(quantum_bias), _allocation_address(NULL), _in_use(0)
         {
             usword_t base_data_size = is_small() ?
                                         subzone_base_data_size(allocate_quantum_small_log2) :
                                         subzone_base_data_size(allocate_quantum_medium_log2);
-			// malloc_printf("subzone base_data_size = %lu\n", base_data_size);
             _allocation_address = (void *)displace(this, base_data_size);
         }
         
@@ -217,9 +205,9 @@ namespace Auto {
         // Accessors
         //
         usword_t quantum_log2()                const { return _quantum_log2; }
+        Region *region()                       const { return _region; }
         Admin *admin()                         const { return _admin; }
         usword_t quantum_bias()                const { return _quantum_bias; }
-        //static usword_t initial_age()                { return age_newborn; }
         
         
         //
@@ -309,13 +297,33 @@ namespace Auto {
         // quantum_index
         //
         // Returns a quantum index for a arbitrary pointer.
+        // Unless running DEBUG this could be bogus if the pointer refers to the admin (write-barrier) area of a subzone.
+        // Callers must have already done a successful is_start or be prepared to validate against quantum_limit.
         //
         inline usword_t quantum_index(void *address, usword_t quantum_log2) const {
-            return (((uintptr_t)address & mask(subzone_quantum_log2)) >> quantum_log2) - base_data_quantum_count(quantum_log2);
+            usword_t result = (((uintptr_t)address & mask(subzone_quantum_log2)) >> quantum_log2) - base_data_quantum_count(quantum_log2);
+#if DEBUG
+            if (result > allocation_limit()) { printf("bad quantum index\n"); __builtin_trap(); }
+#endif
+            return result;
         }
         inline usword_t quantum_index(void *address) const {
             return is_small() ? quantum_index(address, allocate_quantum_small_log2) :
                                 quantum_index(address, allocate_quantum_medium_log2);
+        }
+        
+        
+        //
+        // quantum_index_unchecked
+        //
+        // Returns a quantum index for a arbitrary pointer.  Might be bogus if the address is in the admin (writebarrier) area.
+        //
+        inline usword_t quantum_index_unchecked(void *address, usword_t quantum_log2) const {
+            return (((uintptr_t)address & mask(subzone_quantum_log2)) >> quantum_log2) - base_data_quantum_count(quantum_log2);
+         }
+        inline usword_t quantum_index_unchecked(void *address) const {
+            return is_small() ? quantum_index_unchecked(address, allocate_quantum_small_log2) :
+                                quantum_index_unchecked(address, allocate_quantum_medium_log2);
         }
         
         
@@ -343,7 +351,7 @@ namespace Auto {
         //
         // quantum_count
         //
-        // Returns a number of quantum for a given size.
+        // Returns the number of quantum for a given size.
         //
         inline const usword_t quantum_count(const size_t size) const {
             return partition2(size, _quantum_log2);
@@ -353,7 +361,7 @@ namespace Auto {
         //
         // quantum_size
         //
-        // Returns the size if n quantum.
+        // Returns the size in bytes of n quantum.
         //
         inline const usword_t quantum_size(const usword_t n) const { return n << _quantum_log2; }
         
@@ -381,104 +389,165 @@ namespace Auto {
         //
         // Side data accessors
         //
-        inline bool is_free(usword_t q)              const { return _side_data[q] == 0; }
+        inline bool is_free(usword_t q)              const { return (_side_data[q] & ~start_bit) == 0; }
         inline bool is_free(void *address)           const { return is_free(quantum_index(address)); }
         
-        inline bool is_start_lite(usword_t q)        const { return (_side_data[q] & start_bit) != 0; }
-        inline bool is_start(usword_t q)             const { return q < allocation_limit() && (_side_data[q] & start_bit) != 0; }
-        inline bool is_start(void *address)          const {
+        inline bool is_start(usword_t q)             const { return (_side_data[q] & start_bit) != 0 && !is_free(q); }
+        inline bool block_is_start(usword_t q)       const { return q < allocation_limit() && (_side_data[q] & start_bit) != 0 && !is_free(q); }
+        inline bool block_is_start(void *address)    const {
             return (is_small() ? is_bit_aligned(address, allocate_quantum_small_log2) :
                                  is_bit_aligned(address, allocate_quantum_medium_log2)) &&
-                   is_start(quantum_index(address));
+                   block_is_start(quantum_index_unchecked(address));
         }
-
-        inline usword_t length(usword_t q)           const { return !(_side_data[q] & size_bit) ? 1 : (_side_data[q + 1] + 1); }
+        
+        inline usword_t length(usword_t q)           const { 
+            usword_t result;
+            if (q == allocation_limit()-1 || (_side_data[q+1] & start_bit))
+                result = 1;
+            else {
+                ASSERTION(_side_data[q + 1] != 0);
+                result = _side_data[q+1] & quanta_size_mask;
+            }
+            return result;
+        }
         inline usword_t length(void *address)        const { return length(quantum_index(address)); }
         
         inline usword_t size(usword_t q)             const { return quantum_size(length(q)); }
         inline usword_t size(void *address)          const { return size(quantum_index(address)); }
         
-        inline bool is_new(usword_t q)               const { return q < allocation_limit() && !is_eldest((_side_data[q] & age_ref_mask) >> age_ref_mask_log2); }
+        inline bool is_new(usword_t q)               const { return q < allocation_limit() && !is_eldest(_side_data[q]); }
         inline bool is_new(void *address)            const { return is_new(quantum_index(address)); }
         
-        inline bool is_newest(usword_t q)            const { return is_youngest((_side_data[q] & age_ref_mask) >> age_ref_mask_log2); }
+        inline bool is_newest(usword_t q)            const { return is_youngest(_side_data[q]); }
         inline bool is_newest(void *address)         const { return is_newest(quantum_index(address)); }
         
 
-        inline usword_t age(usword_t q)              const { return age_map[(_side_data[q] & age_ref_mask) >> age_ref_mask_log2]; }
+        inline usword_t age(usword_t q)              const { return (_side_data[q] & age_mask) >> age_mask_log2; }
         inline usword_t age(void *address)           const { return age(quantum_index(address)); }
         
-        inline usword_t refcount(usword_t q)         const { return ref_map[(_side_data[q] & age_ref_mask) >> age_ref_mask_log2]; }
+        inline usword_t refcount(usword_t q)         const { return (is_live_thread_local(q)) ? 0 : (_side_data[q] & refcount_mask) >> refcount_log2; }
         inline usword_t refcount(void *address)      const { return refcount(quantum_index(address)); }
         
         inline usword_t sideData(void *address) const { return _side_data[quantum_index(address)]; }
-
+        
         inline void incr_refcount(usword_t q) {
+            // must remove from local list before incrementing
             unsigned char sd = _side_data[q];
-            unsigned char ar = (sd & age_ref_mask) >> age_ref_mask_log2;
-            ar = incr_refcount_map[ar];
-            sd &= ~age_ref_mask;
-            _side_data[q] = sd | (ar << age_ref_mask_log2);
+            unsigned char r = (sd & refcount_mask) >> refcount_log2;
+            sd &= ~refcount_mask;
+            _side_data[q] = sd | ((r+1)<<refcount_log2);
         }
-                                                                
+        
         inline void decr_refcount(usword_t q) {
             unsigned char sd = _side_data[q];
-            unsigned char ar = (sd & age_ref_mask) >> age_ref_mask_log2;
-            ar = decr_refcount_map[ar];
-            sd &= ~age_ref_mask;
-            _side_data[q] = sd | (ar << age_ref_mask_log2);
+            unsigned char r = (sd & refcount_mask) >> refcount_log2;
+            sd &= ~refcount_mask;
+            _side_data[q] = sd | ((r-1) << refcount_log2);
         }
-                                                                
+        
         inline void mature(usword_t q) {
-            unsigned char data = _side_data[q];
-            unsigned char current = (data & age_ref_mask) >> age_ref_mask_log2;
-            data &= ~age_ref_mask;
-            data |= (next_age_map[current] << age_ref_mask_log2);
-            _side_data[q] = data;
+            if (!is_thread_local(q)) {
+                unsigned char data = _side_data[q];
+                unsigned char current = (data & age_mask) >> age_mask_log2;
+                if (current > eldest_age) {
+                    data &= ~age_mask;
+                    data |= ((current-1) << age_mask_log2);
+                    _side_data[q] = data;
+                    AUTO_PROBE(auto_probe_mature(quantum_address(q), current-1));
+                }
+            }
         }
         inline void mature(void *address)                  { mature(quantum_index(address)); }
         
-        inline bool is_marked(usword_t q)            const { return q < allocation_limit() && _admin->is_marked(_quantum_bias + q); }
+        /* Test if the block is marked as thread local in the side data. Note that a true result does not necessarily mean it is local to the calling thread. */
+        inline bool is_thread_local(usword_t q)     const { return (_side_data[q] & (start_bit|alloc_local_bit|global_bit)) == (start_bit|alloc_local_bit); }
+        inline bool is_thread_local(void *address)  const { usword_t q = quantum_index(address); return is_start(q) && is_thread_local(q); }
+        inline bool is_thread_local_block(void *address)  const { usword_t q = quantum_index_unchecked(address); return q < allocation_limit() && is_start(q) && is_thread_local(q); }
+        
+        /* Test if the block is thread local and not garbage. Note that a true result does not necessarily mean it is local to the calling thread. */
+        inline bool is_live_thread_local(usword_t q)     const { return (_side_data[q] & (start_bit | alloc_local_bit | global_bit|garbage_bit)) == (start_bit|alloc_local_bit); }
+        inline bool is_live_thread_local(void *address)  const { return is_live_thread_local(quantum_index(address)); }
+        inline bool is_live_thread_local_block(void *address)  const { usword_t q = quantum_index_unchecked(address); return q < allocation_limit() && is_start(q) &&is_live_thread_local(q); }
+
+        // mark a thread-local object as a global one
+        // NOTE:  this must be called BEFORE the object can be retained, since it starts the object with rc=0, age=youngest.
+        inline void make_global(usword_t q) {
+            assert(!is_garbage(q));
+            unsigned char data = _side_data[q];
+            data &= ~(refcount_mask | age_mask);
+            data |= global_bit | (youngest_age << age_mask_log2);
+            _side_data[q] = data;
+            AUTO_PROBE(auto_probe_make_global(quantum_address(q), youngest_age));
+        }
+        inline void make_global(void *address)  { make_global(quantum_index(address));}
+
+        /*
+         Mark a block as garbage.
+         For global data mark global_bit 0 and garbage_bit 1
+         For local data merely mark the garbage_bit 1 (keeping global_bit 0)
+         When marking garbage also clear the refcount bits since they may get used during finalize, even for local garbage.
+         As is, the full layout is preserved.
+         */
+        inline void mark_global_garbage(usword_t q)          { ASSERTION(!is_thread_local(q)); _side_data[q] = (_side_data[q] & (start_bit|layout_mask)) | garbage_bit; }
+        inline void mark_global_garbage(void *address)       { return mark_global_garbage(quantum_index(address)); }
+        inline bool is_garbage(usword_t q)           const { return (_side_data[q] & (start_bit|garbage_bit|global_bit)) == (start_bit|garbage_bit); }
+        inline bool is_garbage(void *address)        const { return is_garbage(quantum_index(address)); }
+        
+        inline void mark_local_garbage(usword_t q)          { ASSERTION(is_thread_local(q)); _side_data[q] = (_side_data[q] & (start_bit|layout_mask)) | garbage_bit | alloc_local_bit; }
+        inline void mark_local_garbage(void *address)       { return mark_local_garbage(quantum_index(address)); }
+        inline bool is_local_garbage(usword_t q)      const { return (_side_data[q] & (start_bit|garbage_bit|alloc_local_bit)) == (start_bit|garbage_bit|alloc_local_bit); }
+        
+        inline bool is_marked(usword_t q)            const { return q < allocation_limit() && _region->is_marked(_quantum_bias + q); }
         inline bool is_marked(void *address)         const { return is_marked(quantum_index(address)); }
         
-        inline usword_t layout(usword_t q)           const { return _side_data[q] & layout_mask; }
+        inline usword_t layout(usword_t q)           const { return (_side_data[q] & layout_mask) >> layout_log2; }
         inline usword_t layout(void *address)        const { return layout(quantum_index(address)); }
 
         inline bool is_scanned(usword_t q)           const { return !(layout(q) & AUTO_UNSCANNED); }
         inline bool is_scanned(void *address)        const { return is_scanned(quantum_index(address)); }
         
-        inline bool has_refcount(usword_t q)         const { return 0 != ref_map[(_side_data[q] & age_ref_mask)>>age_ref_mask_log2]; }
+        inline bool has_refcount(usword_t q)         const { return !is_thread_local(q) && (_side_data[q] & refcount_mask) != 0; }
         inline bool has_refcount(void *address)      const { return has_refcount(quantum_index(address)); }
         
-        inline void set_mark(usword_t q)                   { _admin->set_mark(_quantum_bias + q); }
+        inline void set_mark(usword_t q)                   { _region->set_mark(_quantum_bias + q); }
         inline void set_mark(void *address)                { set_mark(quantum_index(address)); }
 
-        inline void clear_mark(usword_t q)                 { _admin->clear_mark(_quantum_bias + q); }
+        inline void clear_mark(usword_t q)                 { _region->clear_mark(_quantum_bias + q); }
         inline void clear_mark(void *address)              { clear_mark(quantum_index(address)); }
+        
+        inline bool assert_thread_local(usword_t q)         { return is_thread_local(q); }
+        
+        inline void set_scan_local_block(usword_t q)        { ASSERTION(!is_garbage(q)); if (is_scanned(q)) _side_data[q] |= scan_local_bit; }
+        inline void set_scan_local_block(void *address)     { set_scan_local_block(quantum_index(address)); }
+        
+        inline void clear_scan_local_block(usword_t q)        { _side_data[q] &= ~scan_local_bit; }
+        inline void clear_scan_local_block(void *address)     { clear_scan_local_block(quantum_index(address)); }
+        
+        inline bool should_scan_local_block(usword_t q)     { return assert_thread_local(q) && (_side_data[q] & scan_local_bit); }
+        inline bool should_scan_local_block(void *address)  { return should_scan_local_block(quantum_index(address)); }
         
         // mark (if not already marked)
         // return already-marked
-        inline bool test_set_mark(usword_t q)              { return _admin->test_set_mark(_quantum_bias + q); }
+        inline bool test_set_mark(usword_t q)              { return _region->test_set_mark(_quantum_bias + q); }
         inline bool test_set_mark(void *address)           { return test_set_mark(quantum_index(address)); }
         
         inline void set_layout(usword_t q, usword_t layout) {
             unsigned d = _side_data[q];
             d &= ~layout_mask;
-            d |= layout;
+            d |= (layout << layout_log2);
             _side_data[q] = d;
         }
         inline void set_layout(void *address, usword_t layout) { set_layout(quantum_index(address), layout); }
         
-        inline bool is_pending(usword_t q)           const { return _admin->is_pending(_quantum_bias + q); }
+        inline bool is_pending(usword_t q)           const { return _region->is_pending(_quantum_bias + q); }
         inline bool is_pending(void *address)        const { return is_pending(quantum_index(address)); }
         
-        inline void set_pending(usword_t q)                { _admin->set_pending(_quantum_bias + q); }
+        inline void set_pending(usword_t q)                { _region->set_pending(_quantum_bias + q); }
         inline void set_pending(void *address)             { set_pending(quantum_index(address)); }
         
-        inline void clear_pending(usword_t q)              { _admin->clear_pending(_quantum_bias + q); }
+        inline void clear_pending(usword_t q)              { _region->clear_pending(_quantum_bias + q); }
         inline void clear_pending(void *address)           { clear_pending(quantum_index(address)); }
         
-      
         //
         // is_used
         //
@@ -486,11 +555,11 @@ namespace Auto {
         //
         inline bool is_used(usword_t q) const {
             // any data indicates use
-            if (_side_data[q]) return true;
+            if (!is_free(q)) return true;
             
             // otherwise find the prior start
             for (usword_t s = q; true; s--) {
-                if (is_start_lite(s)) {
+                if (is_start(s)) {
                     usword_t n = length(s);
                     // make sure q is in range
                     return (q - s) < n;
@@ -500,25 +569,21 @@ namespace Auto {
             return false;
         }
         inline bool is_used(void *address)          const { return is_used(quantum_index(address)); }
-        
 
         //
         // should_pend
         //
         // High performance check and set for scanning blocks in a subzone (major hotspot.)
         //
-        bool should_pend(void *address, unsigned char &layout) {
-            usword_t q;
+        bool should_pend(void *address, usword_t q) {
             unsigned char *sdq;
             
             if (is_small()) {
                 if (!is_bit_aligned(address, allocate_quantum_small_log2)) return false;
-                q = quantum_index(address, allocate_quantum_small_log2);
                 sdq = _side_data + q;
                 if (q >= subzone_allocation_limit(allocate_quantum_small_log2)) return false;
             } else {
                 if (!is_bit_aligned(address, allocate_quantum_medium_log2)) return false;
-                q = quantum_index(address, allocate_quantum_medium_log2);
                 sdq = _side_data + q;
                 if (q >= subzone_allocation_limit(allocate_quantum_medium_log2)) return false;
             }
@@ -527,8 +592,8 @@ namespace Auto {
             if ((sd & start_bit) != start_bit) return false;
             if (test_set_mark(q)) return false;
             
-            layout = (sd & layout_mask);
-            return true;
+            usword_t layout = (sd & layout_mask) >> layout_log2;
+            return !(layout & AUTO_UNSCANNED);
         }
         
 
@@ -537,43 +602,26 @@ namespace Auto {
         //
         // High performance check and set for scanning new blocks in a subzone (major hotspot.)
         //
-        bool should_pend_new(void *address, unsigned char &layout) {
-            usword_t q;
+        bool should_pend_new(void *address, usword_t q) {
             unsigned char *sdq;
             
             if (is_small()) {
                 if (!is_bit_aligned(address, allocate_quantum_small_log2)) return false;
-                q = quantum_index(address, allocate_quantum_small_log2);
                 sdq = _side_data + q;
                 if (q >= subzone_allocation_limit(allocate_quantum_small_log2)) return false;
             } else {
                 if (!is_bit_aligned(address, allocate_quantum_medium_log2)) return false;
-                q = quantum_index(address, allocate_quantum_medium_log2);
                 sdq = _side_data + q;
                 if (q >= subzone_allocation_limit(allocate_quantum_medium_log2)) return false;
             }
 
             usword_t sd = *sdq;
-            if ((sd & start_bit) != start_bit || is_eldest((sd & age_ref_mask) >> age_ref_mask_log2)) return false;
+            if ((sd & start_bit) != start_bit || is_eldest(sd)) return false;
             if (test_set_mark(q)) return false;
 
-            layout = (sd & layout_mask);
-            return true;
+            usword_t layout = (sd & layout_mask) >> layout_log2;
+            return !(layout & AUTO_UNSCANNED);
         }
-        
-
-        //
-        // start
-        //
-        // Return the start quantum for the given quantum/address.
-        //
-        inline usword_t start(usword_t q) const {
-            for ( ; 0 < q; q--) {
-                if (is_start_lite(q)) break;
-            } 
-            return q;
-        }
-        inline usword_t start(void *address)        const { return start(quantum_index(address)); }
         
         
         //
@@ -583,7 +631,7 @@ namespace Auto {
         //
         inline usword_t next_quantum(usword_t q = 0) const {
             usword_t nq;
-            if (is_start_lite(q)) {
+            if (is_start(q)) {
                 nq = q + length(q);
             } else {
                 // FIXME:  accessing the free list without holding the allocation lock is a race condition.
@@ -594,16 +642,17 @@ namespace Auto {
                 // return quanta for free blocks.
                 usword_t n = allocation_limit();
                 nq = q + 1;
-                while (nq < n && !is_start_lite(nq)) ++nq;
+                while (nq < n && !is_start(nq)) ++nq;
             }
-            ASSERTION(nq > q);
+            // Until <rdar://problem/6404163> is fixed, nq can equal q. This is mostly harmless, because the
+            // caller will keep looping over the same q value, until _side_data[q + 1] is updated.
+            ASSERTION(nq >= q);
             return nq;
         }
 
         inline usword_t next_quantum(usword_t q, MemoryReader & reader) const {
             return next_quantum(q);
         }
-        
 
         //
         // block_start
@@ -612,9 +661,11 @@ namespace Auto {
         // All clients must (and do) check for NULL return.
         //
         inline void * block_start(void *address) const {
-            usword_t q = quantum_index(address), s = q;
+            usword_t q = quantum_index_unchecked(address), s = q;
+            // an arbitrary address in our admin area will return a neg (very large) number
+            if (q > allocation_limit()) return NULL;
             do {
-                if (is_start_lite(s)) {
+                if (is_start(s)) {
                     usword_t n = length(s);
                     // make sure q is in range
                     return ((q - s) < n) ? quantum_address(s) : NULL;
@@ -622,49 +673,69 @@ namespace Auto {
             } while (s--);
             return NULL;
         }
-        
-        
+
         //
         // allocate
         //
         // Initialize side data for a new block.
         //
-        inline void allocate(usword_t q, const usword_t n, const usword_t layout, const bool refcount_is_one) {
-            bool size_continued = n != 1;
-            ASSERTION(n <= maximum_quanta);
-            _side_data[q] = start_bit |
-                            (size_continued ? size_bit : 0) |
-                            ((refcount_is_one ? r1_a5 : r0_a5) << age_ref_mask_log2) |
-                            layout;
-            if (size_continued) {
-                _side_data[q + 1] = n - 1; // size is continued in low 6 bits of next byte (less 1)
-                if (n > 2) _side_data[q + n - 1] = end_block_mark;
+        inline void allocate(usword_t q, const usword_t n, const usword_t layout, const bool refcount_is_one, const bool is_local) {
+            ASSERTION(n <= maximum_quanta && n > 0);
+            unsigned char sd;
+            sd =    start_bit
+                | (layout << layout_log2) 
+                | (is_local ?  alloc_local_bit : (global_bit | (youngest_age << age_mask_log2)))
+                //| (is_local ?  alloc_local_bit : global_bit) // hides allocation microbenchmark issues
+                | (refcount_is_one ? (1 << refcount_log2) : 0);
+            
+            _side_data[q] = sd;
+            if (n > 1) {
+                _side_data[q + 1] = n;
+                _side_data[q + n - 1] = n;
             }
+            // Only touch the next block if it is zero (free)
+            // Other threads can touching that block's side data (global/local/garbage)
+            if (q+n < allocation_limit() && _side_data[q + n] == 0)
+                _side_data[q + n] |= start_bit;
         }
 
-        
+        //
+        // cache
+        //
+        // Initialize side data for a cached block.
+        //
+        inline void cache(usword_t q, const usword_t n) {
+            ASSERTION(n <= maximum_quanta && n > 0);
+            _side_data[q] = (start_bit | alloc_local_bit | (AUTO_MEMORY_UNSCANNED << layout_log2) | garbage_bit);
+            if (n > 1) {
+                _side_data[q + 1] = n;
+                _side_data[q + n - 1] = n;
+            }
+            // Only touch the next block if it is zero (free)
+            // Other threads can touching that block's side data (global/local/garbage)
+            if (q+n < allocation_limit() && _side_data[q + n] == 0)
+                _side_data[q + n] |= start_bit;
+        }
+
         //
         // deallocate
         //
         // Clear side data for an existing block.
         //
-        inline void deallocate(usword_t q) {
-            if (_side_data[q] & size_bit) {
-                usword_t n = _side_data[q + 1] + 1; // size is continued in low 6 bits of next byte (less 1)
-                ASSERTION(n <= maximum_quanta);
-                _side_data[q + 1] = 0;
-                if (n > 2) _side_data[q + n - 1] = 0;
+        inline void deallocate(usword_t q, usword_t len) {
+            bool prev_quanta_allocated = (q > 0 ? (_side_data[q-1] != 0) : false);
+            
+            _side_data[q] = prev_quanta_allocated ? start_bit : 0;
+            if (len > 1) {
+                _side_data[q+1] = 0;
+                _side_data[q+len-1] = 0;
             }
-            _side_data[q] = 0;
-        }
-        inline void deallocate(usword_t q, usword_t n) {
-            if (n > 1) {
-                ASSERTION(n <= maximum_quanta);
-                _side_data[q + 1] = 0;
-                if (n > 2) _side_data[q + n - 1] = 0;
+            if (q+len < allocation_limit()) {
+                if (_side_data[q+len] == start_bit)
+                    _side_data[q+len] = 0;
             }
-            _side_data[q] = 0;
         }
+        inline void deallocate(usword_t q) { deallocate(q, length(q)); }
 
 
         //
@@ -675,6 +746,13 @@ namespace Auto {
         inline WriteBarrier& write_barrier() {
             return _write_barrier;
         }
+        
+        //
+        // malloc_statistics
+        //
+        // Adds the Subzone's memory use to stats.
+        //
+        void malloc_statistics(malloc_statistics_t *stats);
     };
     
     
@@ -725,6 +803,7 @@ namespace Auto {
         }
         
     };
+    
 };
 
 

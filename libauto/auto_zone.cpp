@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,22 +17,31 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/* 
+    auto_zone.cpp
+    Automatic Garbage Collection
+    Copyright (c) 2002-2009 Apple Inc. All rights reserved.
+ */
 
 #include "auto_zone.h"
 #include "auto_impl_utilities.h"
 #include "auto_weak.h"
-#include "agc_interface.h"
+#include "AutoReferenceRecorder.h"
 #include "auto_trace.h"
+#include "auto_dtrace.h"
 #include "AutoZone.h"
 #include "AutoLock.h"
-#include "AutoMonitor.h"
 #include "AutoInUseEnumerator.h"
+#include "AutoThreadLocalCollector.h"
+#include "auto_tester/auto_tester.h"
 
 #include <stdlib.h>
 #include <libc.h>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
+#include <Block.h>
+#include <notify.h>
 
 #define USE_INTERPOSING 0
 #define LOG_TIMINGS 0
@@ -41,18 +50,43 @@
 #include <mach-o/dyld-interposing.h>
 #endif
 
+using namespace Auto;
+
 /*********  Globals     ************/
 
-// record stack traces when refcounts change?
-static bool AUTO_RECORD_REFCOUNT_STACKS = false;
+#ifdef AUTO_TESTER
+AutoProbeFunctions *auto_probe_functions = NULL;
+#endif
+
+bool auto_set_probe_functions(AutoProbeFunctions *functions) {
+#ifdef AUTO_TESTER
+    auto_probe_functions = functions;
+    return true;
+#else
+    return false;
+#endif
+}
+
+static void __auto_trace_collection_begin__(auto_zone_t *zone, boolean_t generational) {}
+static void __auto_trace_collection_end__(auto_zone_t *zone, boolean_t generational, size_t objectsReclaimed, size_t bytesReclaimed, size_t totalObjectsInUse, size_t totalBytesInUse) {}
+static auto_trace_collection_callouts auto_trace_callouts = { sizeof(auto_trace_collection_callouts), __auto_trace_collection_begin__, __auto_trace_collection_end__ };
+
+void auto_trace_collection_set_callouts(auto_trace_collection_callouts *new_callouts) {
+    if (new_callouts->size == sizeof(auto_trace_collection_callouts)) {
+        auto_trace_callouts = *new_callouts;
+    } else {
+        malloc_printf("auto_trace_collection_set_callouts() called with incompatible size (ignored)\n");
+    }
+}
+
+// Reference count logging support for ObjectAlloc et. al.
+void (*__auto_reference_logger)(uint32_t eventtype, void *ptr, uintptr_t data) = NULL;
 
 /*********  Parameters  ************/
 
 #define VM_COPY_THRESHOLD       (40 * 1024)
 
-/*********  Forward references  ************/
-
-static void auto_really_free(Auto::Zone *zone, void *ptr);
+/*********  Functions ****************/
 
 #if LOG_TIMINGS
 
@@ -126,170 +160,85 @@ static void allocate_meter_stop() {
 
 /*********  Zone callbacks  ************/
 
-struct auto_zone_cursor {
-    auto_zone_t *zone;
-    size_t garbage_count;
-    const vm_address_t *garbage;
-    volatile unsigned index;
-    size_t block_count;
-    size_t byte_count;
-};
-
-#if DEBUG
-extern void* WatchPoint;
-#endif
-
-static void foreach_block_do(auto_zone_cursor_t cursor, void (*op) (void *ptr, void *data), void *data) {
-    Auto::Zone *azone = (Auto::Zone *)cursor->zone;
-    azone->set_thread_finalizing(true);
-    while (cursor->index < cursor->garbage_count) {
-        void *ptr = (void *)cursor->garbage[cursor->index++];
-        auto_memory_type_t type = auto_zone_get_layout_type((auto_zone_t *)azone, ptr);
-        if (type & AUTO_OBJECT) {
-#if DEBUG
-            if (ptr == WatchPoint) {
-                malloc_printf("auto_zone invalidating watchpoint: %p\n", WatchPoint);
-            }
-#endif
-            op(ptr, data);
-            cursor->block_count++;
-            cursor->byte_count += azone->block_size(ptr);
-        }
-    }
-    azone->set_thread_finalizing(false);
-}
-
-
-static void invalidate_garbage(Auto::Zone *azone, boolean_t generational, const size_t garbage_count, const vm_address_t *garbage, void *collection_context) {
-    // begin AUTO_TRACE_FINALIZING_PHASE
-    auto_trace_phase_begin((auto_zone_t*)azone, generational, AUTO_TRACE_FINALIZING_PHASE);
-    
-#if DEBUG
-    // when debugging, sanity check the garbage list in various ways.
-    for (size_t index = 0; index < garbage_count; index++) {
-        void *ptr = (void *)garbage[index];
-        int rc = azone->block_refcount(ptr);
-        if (rc > 0)
-            malloc_printf("invalidate_garbage: garbage ptr = %p, has non-zero refcount = %d\n", ptr, rc);
-    }
-#endif
-    
-    struct auto_zone_cursor cursor = { (auto_zone_t *)azone, garbage_count, garbage, 0, 0, 0 };
-    if (azone->control.batch_invalidate) {
-        azone->control.batch_invalidate((auto_zone_t *)azone, foreach_block_do, &cursor, sizeof(cursor));
-    }    
-    // end AUTO_TRACE_FINALIZING_PHASE
-    auto_trace_phase_end((auto_zone_t*)azone, generational, AUTO_TRACE_FINALIZING_PHASE, cursor.block_count, cursor.byte_count);
-}
-
-static inline void zombify(Auto::Zone *azone, void *ptr) {
-    // callback to morph the object into a zombie.
-    if (azone->control.resurrect) azone->control.resurrect((auto_zone_t*)azone, ptr);
-    azone->block_set_layout(ptr, AUTO_OBJECT_UNSCANNED);
-}
-
-static unsigned free_garbage(Auto::Zone *zone, boolean_t generational, const size_t garbage_count, vm_address_t *garbage) {
-    size_t index;
-    size_t blocks_freed = 0, bytes_freed = 0;
-
-    auto_trace_phase_begin((auto_zone_t*)zone, generational, AUTO_TRACE_SCAVENGING_PHASE);
-
-    // NOTE:  Zone::block_deallocate_internal() now breaks associative references assuming the associations_lock has been aquired.
-    using namespace Auto;
-    SpinLock lock(zone->associations_lock());
-    
-    for (index = 0; index < garbage_count; index++) {
-        void *ptr = (void *)garbage[index];
-        int rc = zone->block_refcount(ptr);
-        if (rc == 0) {
-            if ((zone->block_layout(ptr) & AUTO_OBJECT) && zone->control.weak_layout_for_address) {
-                const unsigned char* weak_layout = zone->control.weak_layout_for_address((auto_zone_t*)zone, ptr);
-                if (weak_layout) weak_unregister_with_layout(zone, (void**)ptr, weak_layout);
-            }
-            blocks_freed++;
-            bytes_freed += zone->block_size(ptr);
-            if (malloc_logger) malloc_logger(MALLOC_LOG_TYPE_DEALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE, uintptr_t(zone), uintptr_t(ptr), 0, 0, 0);
-            zone->block_deallocate_internal(ptr);
-        } else if (zone->is_zombie(ptr)) {
-            zombify(zone, ptr);
-            zone->block_decrement_refcount(ptr);
-        } else {
-            malloc_printf("free_garbage: garbage ptr = %p, has non-zero refcount = %d\n", ptr, rc);
-        }
-    }
-
-    auto_trace_phase_end((auto_zone_t*)zone, generational, AUTO_TRACE_SCAVENGING_PHASE, blocks_freed, bytes_freed);
-    
-    return bytes_freed;
-}
 
 boolean_t auto_zone_is_finalized(auto_zone_t *zone, const void *ptr) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
     // detects if the specified pointer is about to become garbage
-    // only check if azone->collection_garbage is set
-    return (ptr && azone->is_thread_finalizing() && azone->block_is_garbage((void *)ptr));
+    return (ptr && azone->block_is_garbage((void *)ptr));
 }
 
-static void auto_collect_internal(Auto::Zone *zone, boolean_t generational) {
+static void auto_collect_internal(Zone *zone, boolean_t generational) {
     size_t garbage_count;
     vm_address_t *garbage;
 
     // Avoid simultaneous collections.
-    if (!OSAtomicCompareAndSwap32(0, 1, &zone->collector_disable_count)) return;
+    if (!OSAtomicCompareAndSwap32(0, 1, &zone->collector_collecting)) return;
 
-    using namespace Auto;
-    zone->clear_bytes_allocated(); // clear threshold.  Till now we might back off & miss a needed collection.
+    zone->reset_threshold(); // clear threshold.  Till now we might back off & miss a needed collection.
      
     auto_date_t start = auto_date_now();
+    Statistics &zone_stats = zone->statistics();
+    
+    AUTO_PROBE(auto_probe_begin_heap_scan(generational));
     
     // bound the bottom of the stack.
     vm_address_t stack_bottom = auto_get_sp();
     if (zone->control.disable_generational) generational = false;
-    auto_trace_collection_begin((auto_zone_t*)zone, generational);
+    auto_trace_callouts.auto_trace_collection_begin((auto_zone_t*)zone, generational); // XXX Collection checker.
+	GARBAGE_COLLECTION_COLLECTION_BEGIN((auto_zone_t*)zone, generational ? AUTO_TRACE_GENERATIONAL : AUTO_TRACE_FULL);
 #if LOG_TIMINGS
-    log_collection_begin(start, zone->statistics().size(), zone->statistics().allocated(), generational);
+    log_collection_begin(start, zone_stats.size(), zone_stats.allocated(), generational);
 #endif
     zone->set_state(scanning);
     
-    zone->collect_begin(generational);
+    Thread &collector_thread = zone->register_thread();
+    collector_thread.set_in_collector(true);
+    zone->collect_begin();
 
     auto_date_t scan_end;
     zone->collect((bool)generational, (void *)stack_bottom, &scan_end);
 
     PointerList &list = zone->garbage_list();
     garbage_count = list.count();
-    garbage = list.buffer();
+    garbage = (vm_address_t *)list.buffer();
 
-    // now we reset the generation bit and the write_barrier_bitmap
+    AUTO_PROBE(auto_probe_end_heap_scan(garbage_count, garbage));
+    
     auto_date_t enlivening_end = auto_date_now();
     auto_date_t finalize_end;
-    unsigned bytes_freed = 0;
+    size_t bytes_freed = 0;
 
     // note the garbage so the write-barrier can detect resurrection
+	GARBAGE_COLLECTION_COLLECTION_PHASE_BEGIN((auto_zone_t*)zone, AUTO_TRACE_FINALIZING_PHASE);
     zone->set_state(finalizing);
-    if (zone->control.batch_invalidate) invalidate_garbage(zone, generational, garbage_count, garbage, NULL);
+    size_t block_count = garbage_count, byte_count = 0;
+    zone->invalidate_garbage(garbage_count, garbage);
+	GARBAGE_COLLECTION_COLLECTION_PHASE_END((auto_zone_t*)zone, AUTO_TRACE_FINALIZING_PHASE, (uint64_t)block_count, (uint64_t)byte_count);
     zone->set_state(reclaiming);
     finalize_end = auto_date_now();
-    bytes_freed = free_garbage(zone, generational, garbage_count, garbage);
+	GARBAGE_COLLECTION_COLLECTION_PHASE_BEGIN((auto_zone_t*)zone, AUTO_TRACE_SCAVENGING_PHASE);
+    bytes_freed = zone->free_garbage(generational, garbage_count, garbage, block_count, byte_count);
     zone->clear_zombies();
+	GARBAGE_COLLECTION_COLLECTION_PHASE_END((auto_zone_t*)zone, AUTO_TRACE_SCAVENGING_PHASE, (uint64_t)block_count, (uint64_t)bytes_freed);
 
     zone->collect_end();
-    intptr_t after_in_use = zone->statistics().size();
-    intptr_t after_allocated = after_in_use + zone->statistics().unused();
+    collector_thread.set_in_collector(false);
+
+    intptr_t after_in_use = zone_stats.size();
+    intptr_t after_allocated = after_in_use + zone_stats.unused();
     auto_date_t collect_end = auto_date_now();
     
-    Statistics &zone_stats = zone->statistics();
-    auto_trace_collection_end((auto_zone_t*)zone, generational, garbage_count, bytes_freed, zone_stats.count(), zone_stats.size());
+	GARBAGE_COLLECTION_COLLECTION_END((auto_zone_t*)zone, (uint64_t)garbage_count, (uint64_t)bytes_freed, (uint64_t)zone_stats.count(), (uint64_t)zone_stats.size());
+	auto_trace_callouts.auto_trace_collection_end((auto_zone_t*)zone, generational, garbage_count, bytes_freed, zone_stats.count(), zone_stats.size());
 #if LOG_TIMINGS
     log_collection_end(collect_end, after_in_use, after_allocated, bytes_freed);
 #endif
 
     zone->set_state(idle);
-    auto_collector_reenable((auto_zone_t *)zone);
+    zone->collector_collecting = 0;
+    AUTO_PROBE(auto_probe_heap_collection_complete());
 
     // update collection part of statistics
-    auto_stats_lock(zone);
     auto_statistics_t   *stats = &zone->stats;
     
     int which = generational ? 1 : 0;
@@ -322,12 +271,11 @@ static void auto_collect_internal(Auto::Zone *zone, boolean_t generational) {
     total->reclaim_duration += last->reclaim_duration;
     total->total_duration += last->total_duration;
 
-    auto_stats_unlock(zone);
     if (zone->control.log & AUTO_LOG_COLLECTIONS)
-        malloc_printf("%s: %s GC collected %u objects (%u bytes) in %d usec "
+        malloc_printf("%s: %s GC collected %lu objects (%lu bytes) (%lu bytes in use) %d usec "
                       "(%d + %d + %d + %d [scan + freeze + finalize + reclaim])\n", 
                       auto_prelude(), (generational ? "gen." : "full"),
-                      garbage_count, bytes_freed,
+                      garbage_count, bytes_freed, after_in_use,
                       (int)(collect_end - start), // total
                       (int)(scan_end - start), 
                       (int)(enlivening_end - scan_end), 
@@ -337,17 +285,16 @@ static void auto_collect_internal(Auto::Zone *zone, boolean_t generational) {
 
 extern "C" void auto_zone_stats(void);
 
-static void auto_collect_with_mode(Auto::Zone *zone, auto_collection_mode_t mode) {
-    using namespace Auto;
+static void auto_collect_with_mode(Zone *zone, auto_collection_mode_t mode) {
     if (mode & AUTO_COLLECT_IF_NEEDED) {
-        if (zone->bytes_allocated() < zone->control.collection_threshold)
+        if (!zone->threshold_reached())
             return;
     }
     bool generational = true, exhaustive = false;
     switch (mode & 0x3) {
       case AUTO_COLLECT_RATIO_COLLECTION:
         // enforce the collection ratio to keep the heap from getting too big.
-        if (zone->collection_count++ == zone->control.full_vs_gen_frequency) {
+        if (zone->collection_count++ >= zone->control.full_vs_gen_frequency) {
             zone->collection_count = 0;
             generational = false;
         }
@@ -364,20 +311,40 @@ static void auto_collect_with_mode(Auto::Zone *zone, auto_collection_mode_t mode
     if (exhaustive) {
          // run collections until objects are no longer reclaimed.
         Statistics &stats = zone->statistics();
-        usword_t count;
+        usword_t count, collections = 0;
         //if (zone->control.log & AUTO_LOG_COLLECTIONS) malloc_printf("beginning exhaustive collections\n");
         do {
             count = stats.count();
             auto_collect_internal(zone, false);
-        } while (stats.count() < count);
+        } while (stats.count() < count && ((Environment::exhaustive_collection_limit == 0) || (++collections < Environment::exhaustive_collection_limit)));
         //if (zone->control.log & AUTO_LOG_COLLECTIONS) malloc_printf("ending exhaustive collections\n");
     } else {
         auto_collect_internal(zone, generational);
     }
 }
 
+#if USE_DISPATCH_QUEUE
+
+static void auto_collection_work(Zone *zone) {
+    // inform other threads that collection has started.
+    pthread_mutex_lock(&zone->collection_mutex);
+    zone->collection_status_state = 1;
+    pthread_mutex_unlock(&zone->collection_mutex);
+    
+    auto_collect_with_mode(zone, zone->collection_requested_mode);
+
+    // inform blocked threads that collection has finished.
+    pthread_mutex_lock(&zone->collection_mutex);
+    zone->collection_requested_mode = 0;
+    zone->collection_status_state = 0;
+    pthread_cond_broadcast(&zone->collection_status);
+    AUTO_PROBE(auto_probe_collection_complete());
+    pthread_mutex_unlock(&zone->collection_mutex);
+}
+
+#else
+
 static void *auto_collection_thread(void *arg) {
-    using namespace Auto;
     Zone *zone = (Zone *)arg;
     if (zone->control.log & AUTO_LOG_COLLECTIONS) auto_zone_stats();
     pthread_mutex_lock(&zone->collection_mutex);
@@ -401,20 +368,41 @@ static void *auto_collection_thread(void *arg) {
         zone->collection_requested_mode = 0;
         zone->collection_status_state = 0;
         pthread_cond_broadcast(&zone->collection_status);
+        AUTO_PROBE(auto_probe_collection_complete());
     }
     
     return NULL;
 }
 
+#endif /* USE_DISPATCH_QUEUE */
+
+//
+// Primary external entry point for collection
+//
 void auto_collect(auto_zone_t *zone, auto_collection_mode_t mode, void *collection_context) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
 
-    if (azone->collector_disable_count) return;
-    if (mode & AUTO_COLLECT_IF_NEEDED) {
-        if (azone->bytes_allocated() < azone->control.collection_threshold)
-            return;
+    // The existence of this probe allows the test machinery to tightly control which collection requests are executed. See AutoTestScript.h for more.
+    AUTO_PROBE(auto_probe_auto_collect(mode));
+    if (azone->collector_disable_count)
+        return;
+    // see if now would be a good time to run a Thread Local collection (TLC).
+    const bool collectIfNeeded = ((mode & AUTO_COLLECT_IF_NEEDED) != 0);
+    Thread *thread = azone->current_thread();
+    if (thread) {
+        // if a thread is calling calls us with the AUTO_COLLECT_IF_NEEDED mode, assume it is safe to run finalizers immediately.
+        // otherwise, finalizers will be called asynchronously using the collector dispatch queue.
+        const bool exhaustiveCollection = (mode & AUTO_COLLECT_EXHAUSTIVE_COLLECTION) == AUTO_COLLECT_EXHAUSTIVE_COLLECTION;
+        const bool finalizeNow = collectIfNeeded || exhaustiveCollection;
+        if (exhaustiveCollection || ThreadLocalCollector::should_collect(azone, *thread, finalizeNow)) {
+            ThreadLocalCollector tlc(azone, (void *)auto_get_sp(), *thread);
+            tlc.collect(finalizeNow);
+        }
     }
+    if (collectIfNeeded && !azone->threshold_reached())
+        return;
+    if (azone->collector_collecting)
+        return;  // if already running the collector bail early
     if (azone->multithreaded) {
         // request a collection by setting the requested flags, and signaling the collector thread.
         pthread_mutex_lock(&azone->collection_mutex);
@@ -423,8 +411,13 @@ void auto_collect(auto_zone_t *zone, auto_collection_mode_t mode, void *collecti
         }
         else {
             azone->collection_requested_mode = mode | 0x1000;         // force non-zero value
+#if USE_DISPATCH_QUEUE
+            // dispatch a call to auto_collection_work() to begin a collection.
+            dispatch_async(azone->collection_queue, azone->collection_block);
+#else
             // wake up the collector, telling it to begin a collection.
             pthread_cond_signal(&azone->collection_requested);
+#endif
         }
         if (mode & AUTO_COLLECT_SYNCHRONOUS) {
             // wait for the collector to finish the current collection. wait at most 1 second, to avoid deadlocks.
@@ -438,19 +431,13 @@ void auto_collect(auto_zone_t *zone, auto_collection_mode_t mode, void *collecti
     }
 }
 
-
-
-size_t auto_size_no_lock(Auto::Zone *azone, const void *ptr) {
-    return azone->is_block((void *)ptr) ? azone->block_size((void *)ptr) : 0L;
-}
-
 static inline size_t auto_size(auto_zone_t *zone, const void *ptr) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
     return azone->is_block((void *)ptr) ? azone->block_size((void *)ptr) : 0L;
 }
 
 boolean_t auto_zone_is_valid_pointer(auto_zone_t *zone, const void *ptr) {
-    Auto::Zone* azone = (Auto::Zone *)zone;
+    Zone* azone = (Zone *)zone;
     boolean_t result;
     result = azone->is_block((void *)ptr);
     return result;
@@ -460,12 +447,8 @@ size_t auto_zone_size(auto_zone_t *zone, const void *ptr) {
     return auto_size(zone, ptr);
 }
 
-size_t auto_zone_size_no_lock(auto_zone_t *zone, const void *ptr) {
-    return auto_size_no_lock((Auto::Zone *)zone, ptr);
-}
-
 const void *auto_zone_base_pointer(auto_zone_t *zone, const void *ptr) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
     const void *base = (const void *)azone->block_start((void *)ptr);
     return base;
 }
@@ -477,76 +460,46 @@ void blainer() {
 }
 #endif
 
-static void *auto_malloc_internal(Auto::Zone *azone, size_t size, auto_memory_type_t type, boolean_t initial_refcount_to_one, boolean_t clear) {
-    void    *ptr = NULL;
-
-    ptr = azone->block_allocate(size, type, clear, initial_refcount_to_one);
-    //if (azone->control.log & AUTO_LOG_COLLECTIONS) auto_zone_stats();
-    if (!ptr) {
-        return NULL;
-    }
-    if (azone->multithreaded) {
-        auto_collect((auto_zone_t *)azone, AUTO_COLLECT_IF_NEEDED, NULL);
-    }
-    if (AUTO_RECORD_REFCOUNT_STACKS) {
-        auto_record_refcount_stack(azone, ptr, 0);
-    }
-#if LOG_TIMINGS
-    size_t allocated = azone->statistics().size();
-    if ((allocated & ~(LOG_ALLOCATION_THRESHOLD-1)) != ((allocated - size) & ~(LOG_ALLOCATION_THRESHOLD-1)))
-        log_allocation_threshold(auto_date_now(), azone->statistics().size(), azone->statistics().allocated());
-#endif
-    return ptr;
-}
-
 
 static inline void *auto_malloc(auto_zone_t *zone, size_t size) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
-    void *result = auto_malloc_internal(azone, size, AUTO_MEMORY_UNSCANNED, azone->initial_refcount_to_one, 0);
+    Zone *azone = (Zone *)zone;
+    Thread &thread = azone->registered_thread();
+    void *result = azone->block_allocate(thread, size, AUTO_MEMORY_UNSCANNED, 0, true);
     return result;
-}
-
-static void auto_really_free(Auto::Zone *zone, void *ptr) {
-    // updates deltas
-    zone->block_deallocate(ptr);
 }
 
 static void auto_free(auto_zone_t *azone, void *ptr) {
     if (ptr == NULL) return; // XXX_PCB don't mess with NULL pointers.
-    using namespace Auto;
     Zone *zone = (Zone *)azone;
     unsigned    refcount = zone->block_refcount(ptr);
-    if (refcount || zone->initial_refcount_to_one) {
-        if (refcount != 1)
-            malloc_printf("*** free() called with %p with refcount %d\n", ptr, refcount);
-    }
-    auto_really_free(zone, ptr);
+    if (refcount != 1)
+        malloc_printf("*** free() called with %p with refcount %d\n", ptr, refcount);
+    zone->block_deallocate(ptr);
 }
 
 static void *auto_calloc(auto_zone_t *zone, size_t size1, size_t size2) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
     size1 *= size2;
     void *ptr;
-    ptr = auto_malloc_internal(azone, size1, AUTO_MEMORY_UNSCANNED, azone->initial_refcount_to_one, 1);
+    Thread &thread = azone->registered_thread();
+    ptr = azone->block_allocate(thread, size1, AUTO_MEMORY_UNSCANNED, 1, true);
     return ptr;
 }
 
 static void *auto_valloc(auto_zone_t *zone, size_t size) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
-    void *result = auto_malloc_internal(azone, auto_round_page(size), AUTO_MEMORY_UNSCANNED, azone->initial_refcount_to_one, 1);
+    Thread &thread = azone->registered_thread();
+    void *result = azone->block_allocate(thread, auto_round_page(size), AUTO_MEMORY_UNSCANNED, 1, true);
     return result;
 }
 
-static boolean_t get_type_and_retain_count(Auto::Zone *zone, void *ptr, auto_memory_type_t *type, int *rc) {
+static boolean_t get_type_and_retain_count(Zone *zone, void *ptr, auto_memory_type_t *type, int *rc) {
     boolean_t is_block = zone->is_block(ptr);
     if (is_block) zone->block_refcount_and_layout(ptr, rc, type);
     return is_block;
 }
 
 static void *auto_realloc(auto_zone_t *zone, void *ptr, size_t size) {
-    using namespace Auto;
     Zone *azone = (Zone*)zone;
     if (!ptr) return auto_malloc(zone, size);
     size_t old_size = auto_size(zone, ptr);
@@ -581,26 +534,22 @@ static void *auto_realloc(auto_zone_t *zone, void *ptr, size_t size) {
     
     // We could here optimize realloc by adding a primitive for small blocks to try to grow in place
     // But given that this allocator is intended for objects, this is not necessary
-    void *new_ptr = auto_malloc_internal(azone, size, type, (rc != 0), (type & AUTO_UNSCANNED) != AUTO_UNSCANNED);
+    Thread &thread = azone->registered_thread();
+    void *new_ptr = azone->block_allocate(thread, size, type, (type & AUTO_UNSCANNED) != AUTO_UNSCANNED, (rc != 0));
     auto_zone_write_barrier_memmove((auto_zone_t *)azone, new_ptr, ptr, MIN(size, old_size));
     
-    switch (rc) {
-    case 0:
-        // object is collectable.
-        break;
-    case 1:
-        // object can be freed eagerly.
-        auto_really_free(azone, ptr);
-        break;
-    default:
-        auto_error(azone, "auto_realloc: retain count > 1", ptr);
-        break;
-    }
+    if (rc != 0) azone->block_decrement_refcount(ptr); // don't forget to let go rdar://6593098
+    
+    // Don't bother trying to eagerly free old memory, even if it seems to be from malloc since,
+    // well, that's just a hueristic that can be wrong.  In particular CF has on occasion bumped
+    // the refcount of GC memory to guard against use in unregistered threads, and we don't know
+    // how often or where this practice has spread. rdar://6063041
+
     return new_ptr;
 }
 
 static void auto_zone_destroy(auto_zone_t *zone) {
-    Auto::Zone *azone = (Auto::Zone*)zone;
+    Zone *azone = (Zone*)zone;
     auto_error(azone, "auto_zone_destroy:  %p", zone);
 }
 
@@ -622,14 +571,14 @@ static kern_return_t auto_in_use_enumerator(task_t task, void *context, unsigned
     err = reader(task, zone_address + offsetof(malloc_zone_t, version), sizeof(unsigned), &u.voidStarVersion);
     if (err != KERN_SUCCESS || *u.version != AUTO_ZONE_VERSION) return KERN_FAILURE;
         
-    Auto::InUseEnumerator enumerator(task, context, type_mask, zone_address, reader, recorder);
+    InUseEnumerator enumerator(task, context, type_mask, zone_address, reader, recorder);
     err = enumerator.scan();
 
     return err;
 }
 
 static size_t auto_good_size(malloc_zone_t *azone, size_t size) {
-    return ((Auto::Zone *)azone)->good_block_size(size);
+    return ((Zone *)azone)->good_block_size(size);
 }
 
 unsigned auto_check_counter = 0;
@@ -645,13 +594,13 @@ static boolean_t auto_check(malloc_zone_t *zone) {
     return 1;
 }
 
-static char *b2s(int bytes, char *buf) {
+static char *b2s(int bytes, char *buf, int bufsize) {
     if (bytes < 10*1024) {
-        sprintf(buf, "%dbytes", bytes);
+        snprintf(buf, bufsize, "%dbytes", bytes);
     } else if (bytes < 10*1024*1024) {
-        sprintf(buf, "%dKB", bytes / 1024);
+        snprintf(buf, bufsize, "%dKB", bytes / 1024);
     } else {
-        sprintf(buf, "%dMB", bytes / (1024*1024));
+        snprintf(buf, bufsize, "%dMB", bytes / (1024*1024));
     }
     return buf;
 }
@@ -659,9 +608,9 @@ static char *b2s(int bytes, char *buf) {
 static void auto_zone_print(malloc_zone_t *zone, boolean_t verbose) {
     char    buf1[256];
     char    buf2[256];
-    Auto::Zone             *azone = (Auto::Zone *)zone;
+    Zone             *azone = (Zone *)zone;
     auto_statistics_t   *stats = &azone->stats;
-    printf("auto zone %p: in_use=%u  used=%s allocated=%s\n", azone, stats->malloc_statistics.blocks_in_use, b2s(stats->malloc_statistics.size_in_use, buf1), b2s(stats->malloc_statistics.size_allocated, buf2));
+    printf("auto zone %p: in_use=%u  used=%s allocated=%s\n", azone, stats->malloc_statistics.blocks_in_use, b2s(stats->malloc_statistics.size_in_use, buf1, sizeof(buf1)), b2s(stats->malloc_statistics.size_allocated, buf2, sizeof(buf2)));
     if (verbose) azone->print_all_blocks();
 }
 
@@ -674,27 +623,46 @@ static void auto_zone_force_lock(malloc_zone_t *zone) {
     // if (azone->control.log & AUTO_LOG_UNUSUAL) malloc_printf("%s: auto_zone_force_lock\n", auto_prelude());
     // need to grab the allocation locks in each Admin in each Region
     // After we fork, need to zero out the thread list.
-#warning forking needs allocation locks held
 }
 
 static void auto_zone_force_unlock(malloc_zone_t *zone) {
     // if (azone->control.log & AUTO_LOG_UNUSUAL) malloc_printf("%s: auto_zone_force_unlock\n", auto_prelude());
 }
 
+#if 0
+
+these are buggy 
+
 // copy, from the internals, the malloc_zone_statistics data wanted from the malloc_introspection API
+static void auto_malloc_statistics_new(malloc_zone_t *zone, malloc_statistics_t *stats) {
+    ((Zone *)zone)->malloc_statistics(stats);
+}
+static void auto_malloc_statistics_old(malloc_zone_t *zone, malloc_statistics_t *stats) {
+    Zone *azone = (Zone *)zone;
+    Statistics statistics;
+    azone->statistics(statistics);
+    stats->blocks_in_use = statistics.count();
+    stats->size_in_use = statistics.size();
+    stats->max_size_in_use = statistics.dirty_size();  // + aux_zone max_size_in_use ??
+    stats->size_allocated = statistics.allocated();    // + aux_zone size_allocated ??
+}
+#endif
+
+
 static void auto_malloc_statistics(malloc_zone_t *zone, malloc_statistics_t *stats) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
-    
-    auto_stats_lock(azone);
-    using namespace Auto;
+    Zone *azone = (Zone *)zone;
     Statistics &statistics = azone->statistics();
     stats->blocks_in_use = statistics.count();
     stats->size_in_use = statistics.size();
     stats->max_size_in_use = statistics.dirty_size();  // + aux_zone max_size_in_use ??
     stats->size_allocated = statistics.allocated();    // + aux_zone size_allocated ??
-    auto_stats_unlock(azone);
 }
 
+static boolean_t auto_malloc_zone_locked(malloc_zone_t *zone) {
+    // this is called by malloc_gdb_po_unsafe, on behalf of GDB, with all other threads suspended.
+    // we have to check to see if any of our spin locks or mutexes are held.
+    return ((Zone *)zone)->is_locked();
+}
 
 /*********  Entry points    ************/
 
@@ -706,7 +674,8 @@ static struct malloc_introspection_t auto_zone_introspect = {
     auto_zone_log, 
     auto_zone_force_lock, 
     auto_zone_force_unlock,
-    auto_malloc_statistics
+    auto_malloc_statistics,
+    auto_malloc_zone_locked
 };
 
 struct malloc_introspection_t auto_zone_introspection() {
@@ -719,9 +688,6 @@ static auto_zone_t *gc_zone = NULL;
 auto_zone_t *auto_zone(void) {
     return gc_zone;
 }
-
-static void *auto_collection_thread(void *arg);
-
 
 static void willgrow(auto_zone_t *collector, auto_heap_growth_info_t info) {  }
 
@@ -741,7 +707,10 @@ auto_zone_t *auto_zone_create(const char *name) {
 #if defined(AUTO_ALLOCATION_METER)
     allocate_meter_init();
 #endif
-    Auto::Zone  *azone = new Auto::Zone();
+    pthread_key_t key = Zone::allocate_thread_key();
+    if (key == 0) return NULL;
+    
+    Zone  *azone = new Zone(key);
     azone->basic_zone.size = auto_size;
     azone->basic_zone.malloc = auto_malloc;
     azone->basic_zone.free = auto_free;
@@ -752,7 +721,7 @@ auto_zone_t *auto_zone_create(const char *name) {
     azone->basic_zone.zone_name = name; // ;
     azone->basic_zone.introspect = &auto_zone_introspect;
     azone->basic_zone.version = AUTO_ZONE_VERSION;
-    azone->initial_refcount_to_one = 1;  // for CF & regular malloc/free use
+    azone->basic_zone.memalign = NULL;
     azone->control.disable_generational = getenv_bool("AUTO_DISABLE_GENERATIONAL");
     azone->control.malloc_stack_logging = (getenv("MallocStackLogging") != NULL  ||  getenv("MallocStackLoggingNoCompact") != NULL);
     azone->control.log = AUTO_LOG_NONE;
@@ -771,59 +740,42 @@ auto_zone_t *auto_zone_create(const char *name) {
 
     malloc_zone_register((auto_zone_t*)azone);
 
-    AUTO_RECORD_REFCOUNT_STACKS = (getenv("AUTO_RECORD_REFCOUNT_STACKS") != NULL);
-
-    pthread_mutex_init(&azone->collection_mutex, NULL);
+#if USE_DISPATCH_QUEUE
+    azone->collection_queue = NULL;
+    azone->collection_block = NULL;
+#else
+    azone->collection_thread = pthread_self();
     pthread_cond_init(&azone->collection_requested, NULL);
+#endif
+    pthread_mutex_init(&azone->collection_mutex, NULL);
     azone->collection_requested_mode = 0;
     pthread_cond_init(&azone->collection_status, NULL);
     azone->collection_status_state = 0;
-    azone->collection_thread = pthread_self();
     
+    // register our calling thread so that the zone is ready to go
+    azone->register_thread();
+    
+#if USE_DISPATCH_QUEUE
+    char *notify_name = getenv("AUTO_COLLECT_EXHAUSTIVE_NOTIFICATION");
+    if (notify_name != NULL) {
+        int token;
+        notify_register_dispatch(notify_name, &token, dispatch_get_concurrent_queue(DISPATCH_QUEUE_PRIORITY_HIGH), ^(int token) {
+            auto_collect((auto_zone_t *)azone, AUTO_COLLECT_EXHAUSTIVE_COLLECTION, NULL);
+        });
+    }
+#endif
+
     if (!gc_zone) gc_zone = (auto_zone_t *)azone;   // cache first one for debugging, monitoring
     return (auto_zone_t*)azone;
 }
 
-static void *auto_monitor_thread(void *unused) {
-    using namespace Auto;
-    Monitor *monitor = Monitor::monitor();
-    if (monitor) monitor->open_mach_port();
-    return NULL;
-}
-
-static void agc_zone_monitor_open_port() {
-    pthread_t monitor_thread;
-    pthread_create(&monitor_thread, NULL, auto_monitor_thread, NULL);
-}
-
-void auto_zone_start_monitor(boolean_t force) {
-    // starts the zone monitoring thread.
-    if (force && getenv("AUTO_ENABLE_MONITOR") == NULL) {
-        putenv("AUTO_ENABLE_MONITOR=YES");
-    }
-    using namespace Auto;
-    Zone::setup_shared();
-    // XXX_PCB: in case this was called AFTER the Zone was created, need to set the Zone's monitor.
-    Monitor *monitor = Monitor::monitor();
-    Zone *zone = Zone::zone();
-    if (monitor && zone) {
-        if (zone->monitor() != monitor)
-            zone->set_monitor(monitor);
-    }
-    if (force) {
-        static pthread_once_t control = PTHREAD_ONCE_INIT;
-        pthread_once(&control, agc_zone_monitor_open_port);
-    }
-}
-
-void auto_zone_set_class_list(int (*class_list)(void **buffer, int count)) {
-    Auto::Monitor::set_class_list(class_list);
-}
+// Obsoleted by <rdar://problem/6628775> remove ZoneMonitor support.
+void auto_zone_start_monitor(boolean_t force) {}
+void auto_zone_set_class_list(int (*class_list)(void **buffer, int count)) {}
 
 /*********  Reference counting  ************/
 
 void auto_zone_retain(auto_zone_t *zone, void *ptr) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
 #if DEBUG
     if (ptr == WatchPoint) {
@@ -831,22 +783,15 @@ void auto_zone_retain(auto_zone_t *zone, void *ptr) {
         blainer();
     }
 #endif
-
-#if 0
-    if (auto_zone_is_finalized(zone, ptr)) {
-        malloc_printf("auto_zone_retain retaining finalized pointer: %p\n", ptr);
+    int refcount = azone->block_increment_refcount(ptr);
+    if (__auto_reference_logger) __auto_reference_logger(AUTO_RETAIN_EVENT, ptr, uintptr_t(refcount));
+    if (Environment::log_reference_counting && malloc_logger) {
+        malloc_logger(MALLOC_LOG_TYPE_ALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE, uintptr_t(zone), azone->block_size(ptr), 0, uintptr_t(ptr), 0);
     }
-#endif
-
-    if (AUTO_RECORD_REFCOUNT_STACKS) {
-        auto_record_refcount_stack(azone, ptr, +1);
-    }
-
-    azone->block_increment_refcount(ptr);
-} 
+}
 
 unsigned int auto_zone_release(auto_zone_t *zone, void *ptr) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
 
 #if DEBUG
     if (ptr == WatchPoint) {
@@ -854,134 +799,145 @@ unsigned int auto_zone_release(auto_zone_t *zone, void *ptr) {
         blainer();
     }
 #endif
-
-    if (AUTO_RECORD_REFCOUNT_STACKS) {
-        auto_record_refcount_stack(azone, ptr, -1);
+    int refcount = azone->block_decrement_refcount(ptr);
+    if (__auto_reference_logger) __auto_reference_logger(AUTO_RELEASE_EVENT, ptr, uintptr_t(refcount));
+    if (Environment::log_reference_counting && malloc_logger) {
+        malloc_logger(MALLOC_LOG_TYPE_DEALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE, uintptr_t(zone), uintptr_t(ptr), 0, 0, 0);
     }
-
-    return azone->block_decrement_refcount(ptr);
+    return refcount;
 }
 
 
 unsigned int auto_zone_retain_count(auto_zone_t *zone, const void *ptr) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
-    return azone->block_refcount((void *)ptr);
-}
-
-unsigned int auto_zone_retain_count_no_lock(auto_zone_t *zone, const void *ptr) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
     return azone->block_refcount((void *)ptr);
 }
 
 /*********  Write-barrier   ************/
 
 
-void __attribute__ ((noinline)) auto_zone_resurrection(Auto::Zone *azone, const void *new_value) {
-    auto_error(azone, "pointer in garbage list being stored into reachable memory, break on auto_zone_resurrection_error to debug", new_value);
-    auto_zone_resurrection_error();
-}
-
-static void check_resurrection(Auto::Zone *azone, void *recipient, const void *new_value, size_t offset) {
-    if (new_value
-        && azone->is_block((void *)new_value)
-        && azone->block_is_garbage((void *)new_value)
-        && !azone->block_is_garbage(recipient)) {
-        auto_memory_type_t recipient_type = (auto_memory_type_t) azone->block_layout((void*)recipient);
-        if ((recipient_type & AUTO_UNSCANNED) != AUTO_UNSCANNED) {
-            auto_memory_type_t new_value_type = (auto_memory_type_t) azone->block_layout((void*)new_value);
-            if (new_value_type == AUTO_OBJECT_SCANNED) {
-                // mark the object for zombiehood.
-                azone->block_increment_refcount((void*)new_value); // mark the object ineligible for freeing this time around.
-                azone->add_zombie((void*)new_value);
-                if (azone->control.name_for_address) {
-                    // note, the auto lock is held until the callback has had a chance to examine each block.
-                    char *recipient_name = azone->control.name_for_address((auto_zone_t *)azone, (vm_address_t)recipient, offset);
-                    char *new_value_name = azone->control.name_for_address((auto_zone_t *)azone, (vm_address_t)new_value, 0);
-                    malloc_printf("*** resurrection error for object %p: auto_zone_write_barrier: %s(%p)[%d] = %s(%p)\n",
-                                  new_value, recipient_name, recipient, offset, new_value_name, new_value);
-                    free(recipient_name);
-                    free(new_value_name);
-                }
+static void handle_resurrection(Zone *azone, const void *recipient, bool recipient_is_block, const void *new_value, size_t offset) 
+{
+    if (!recipient_is_block || ((auto_memory_type_t)azone->block_layout((void*)recipient) & AUTO_UNSCANNED) != AUTO_UNSCANNED) {
+        auto_memory_type_t new_value_type = (auto_memory_type_t) azone->block_layout((void*)new_value);
+        char msg[256];
+        snprintf(msg, sizeof(msg), "resurrection error for block %p while assigning %p[%d] = %p", new_value, recipient, (int)offset, new_value);
+        if (new_value_type == AUTO_OBJECT_SCANNED) {
+            // mark the object for zombiehood.
+            auto_zone_retain((auto_zone_t*)azone, (void*)new_value); // mark the object ineligible for freeing this time around.
+            azone->add_zombie((void*)new_value);
+            if (azone->control.name_for_address) {
+                // note, the auto lock is held until the callback has had a chance to examine each block.
+                char *recipient_name = azone->control.name_for_address((auto_zone_t *)azone, (vm_address_t)recipient, offset);
+                char *new_value_name = azone->control.name_for_address((auto_zone_t *)azone, (vm_address_t)new_value, 0);
+                snprintf(msg, sizeof(msg), "resurrection error for object %p while assigning %s(%p)[%d] = %s(%p)",
+                              new_value, recipient_name, recipient, (int)offset, new_value_name, new_value);
+                free(recipient_name);
+                free(new_value_name);
             }
-            auto_zone_resurrection(azone, new_value);
         }
+        malloc_printf("%s\ngarbage pointer stored into reachable memory, break on auto_zone_resurrection_error to debug\n", msg);
+        auto_zone_resurrection_error();
     }
 }
 
+// make the resurrection test an inline to be as fast as possible in the write barrier
+// recipient may be a GC block or not, as determined by recipient_is_block
+// returns true if a resurrection occurred, false if not
+inline static bool check_resurrection(Thread &thread, Zone *azone, void *recipient, bool recipient_is_block, const void *new_value, size_t offset) {
+    if (new_value &&
+        azone->is_block((void *)new_value) &&
+        azone->block_is_garbage((void *)new_value) &&
+        (!recipient_is_block || !azone->block_is_garbage(recipient))) {
+        handle_resurrection(azone, recipient, recipient_is_block, new_value, offset);
+        return true;
+    }
+    return false;
+}
 
+// called by objc assignIvar assignStrongCast
 boolean_t auto_zone_set_write_barrier(auto_zone_t *zone, const void *dest, const void *new_value) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
-    if (azone->is_thread_finalizing()) {
-        const void *recipient = auto_zone_base_pointer(zone, dest);
-        if (!recipient) return false;
-        size_t offset_in_bytes = (char *)dest - (char *)recipient;
-        check_resurrection(azone, (void *)recipient, new_value, offset_in_bytes);
+    if (!new_value || azone->block_start((void *)new_value) != new_value) {
+        *(void **)dest = (void *)new_value;
+        return true;
     }
-    return azone->set_write_barrier((void *)dest, (void *)new_value);
+    const void *recipient = azone->block_start((void *)dest);
+    if (!recipient) return false;
+    Thread &thread = azone->registered_thread();
+    size_t offset_in_bytes = (char *)dest - (char *)recipient;
+    check_resurrection(thread, azone, (void *)recipient, true, new_value, offset_in_bytes);
+    return azone->set_write_barrier(thread, (void *)dest, (void *)new_value);
 }
 
-void auto_zone_write_barrier(auto_zone_t *zone, void *recipient, const unsigned long offset_in_bytes, const void *new_value) {
-    using namespace Auto;
-    Zone *azone = (Zone *)zone;
-    // FIXME:  can only do this check if we're in a finalizing thread.
-    if (azone->is_thread_finalizing()) check_resurrection(azone, recipient, new_value, offset_in_bytes);
-    azone->set_write_barrier((char*)recipient + offset_in_bytes, (void *)new_value);
-}
-
-void auto_zone_write_barrier_range(auto_zone_t *zone, void *address, size_t size) {
-    // This is a bogus entry point that does not work if the collector starts up just after this check
-    // THIS IS DEPRECATED UGLY SHOULD NOT BE USED
+inline bool is_scanned(int layout) {
+    return (layout & AUTO_UNSCANNED) != AUTO_UNSCANNED;
 }
 
 void *auto_zone_write_barrier_memmove(auto_zone_t *zone, void *dst, const void *src, size_t size) {
-    if (size && dst != src) {
-        // speculatively determine the object pointer for the destination
-        void *base = (void *)auto_zone_base_pointer(zone, dst);
-        // if the destination is an object then mark the write barrier
-        if (base) {
-            // range check for extra safety.
-            Auto::Zone *azone = (Auto::Zone *)zone;
-            size_t block_size = auto_zone_size(zone, base);
-            if ((uintptr_t(dst) + size) > (uintptr_t(base) + block_size)) {
-                auto_error(azone, "auto_zone_write_barrier_memmove: range check failed", dst);
-                // FIXME:  set __crashreporter_info__
-                __builtin_trap();
+    if (size == 0 || dst == src)
+        return dst;
+    Zone *azone = (Zone *)zone;
+    // speculatively determine the base of the destination
+    void *base = azone->block_start(dst);
+    // If the destination is a scanned block then mark the write barrier
+    // We used to check for resurrection but this is a conservative move without exact knowledge
+    // and we don't want to choke on a false positive.
+    if (base && is_scanned(azone->block_layout(base))) {
+        // range check for extra safety.
+        size_t block_size = azone->block_size(base);
+        ptrdiff_t block_overrun = (ptrdiff_t(dst) + size) - (ptrdiff_t(base) + block_size);
+        if (block_overrun > 0) {
+            auto_fatal("auto_zone_write_barrier_memmove: will overwrite block %p, size %ld by %ld bytes.", base, block_size, block_overrun);
+        }
+        // we are only interested in scanning for pointers, so align to pointer boundaries
+        const void *ptrSrc;
+        size_t ptrSize;
+        if (is_pointer_aligned((void *)src) && ((size & (sizeof(void *)-1)) == 0)) {
+            // common case, src is pointer aligned and size is multiple of pointer size
+            ptrSrc = src;
+            ptrSize = size;
+        } else {
+            // compute pointer aligned src, end, and size within the source buffer
+            ptrSrc = align_up((void *)src, pointer_alignment);
+            const void *ptrEnd = align_down(displace((void *)src, size), pointer_alignment);
+            if ((vm_address_t)ptrEnd > (vm_address_t)ptrSrc) {
+                ptrSize = (vm_address_t)ptrEnd - (vm_address_t)ptrSrc;
+            } else {
+                ptrSize = 0; // copying a range that cannot contain an aligned pointer
             }
-            if (azone->is_thread_finalizing()) {
-                auto_memory_type_t type = auto_zone_get_layout_type(zone, base);
-                if ((type == AUTO_OBJECT_SCANNED || type == AUTO_MEMORY_SCANNED) && !auto_zone_is_finalized(zone, base)) {
-                    void **src_ptr = (void **)src;
-                    int count = size / sizeof(void *);
-                    int i;
-                    for (i = 0; i < count; i++) {
-                        if (auto_zone_is_finalized(zone, src_ptr[i])) {
-                            auto_error(azone, "auto_zone_write_barrier_memmove: resurrecting collected object", src_ptr[i]);
-                            //  make object immortal
-                            azone->block_increment_refcount(src_ptr[i]);
-                            auto_zone_resurrection(azone, src_ptr[i]);
-                        }
-                    }
-                }
-            }
+        }
+        if (ptrSize >= sizeof(void *)) {
+            Thread &thread = azone->registered_thread();
+            // Pass in aligned src/size. Since dst is only used to determine thread locality it is ok to not align that value
+            // Even if we're storing into garbage it might be visible to other garbage long after a TLC collects it, so we need to escape it.
+            thread.track_local_memcopy(azone, ptrSrc, dst, ptrSize);
             if (azone->set_write_barrier_range(dst, size)) {
                 // must hold enlivening lock for duration of the move; otherwise if we get scheduled out during the move
                 // and GC starts and scans our destination before we finish filling it with unique values we lose them
-                Auto::UnconditionalBarrier condition(azone->needs_enlivening(), azone->enlivening_lock());
-                if (condition) {
+                EnliveningHelper<UnconditionalBarrier> barrier(thread);
+                if (barrier) {
                     // add all values in the range.
                     // We could/should only register those that are as yet unmarked.
                     // We also only add values that are objects.
-                    void **start = (void **)src;
-                    void **end = start + size/sizeof(void *);
+                    void **start = (void **)ptrSrc;
+                    void **end = start + ptrSize/sizeof(void *);
                     while (start < end) {
                         void *candidate = *start;
-                        if (azone->is_block(candidate) && !azone->block_is_marked(candidate)) azone->enlivening_queue().add(candidate);
+                        if (azone->is_block(candidate) && !azone->block_is_marked(candidate)) barrier.enliven_block(candidate);
                         start++;
                     }
-                    return memmove(dst, src, size);
                 }
             }
+        }
+    } else if (base == NULL) {
+        // since dst is not in out heap, it is by definition unscanned. unfortunately, many clients already use this on malloc()'d blocks, so we can't warn for that case.
+        // if the source pointer comes from a scanned block in our heap, and the destination pointer is in global data, warn about bypassing global write-barriers.
+        void *srcbase = azone->block_start((void*)src);
+        if (srcbase && is_scanned(azone->block_layout(srcbase)) && azone->is_global_address(dst)) {
+            // make this a warning in SnowLeopard.
+            auto_error(zone, "auto_zone_write_barrier_memmove:  Copying a scanned block into global data. Break on auto_zone_global_data_memmove_error() to debug.\n", dst);
+            auto_zone_global_data_memmove_error();
         }
     }
     // perform the copy
@@ -993,27 +949,26 @@ void *auto_zone_write_barrier_memmove(auto_zone_t *zone, void *dst, const void *
 void* auto_zone_allocate_object(auto_zone_t *zone, size_t size, auto_memory_type_t type, boolean_t initial_refcount_to_one, boolean_t clear) {
     void *ptr;
 //    if (allocate_meter) allocate_meter_start();
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
+    Thread &thread = azone->registered_thread();
     // ALWAYS clear if scanned memory <rdar://problem/5341463>.
-    ptr = auto_malloc_internal(azone, size, type, initial_refcount_to_one, clear || (type & AUTO_UNSCANNED) != AUTO_UNSCANNED);
-    if (ptr && malloc_logger) malloc_logger(MALLOC_LOG_TYPE_ALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE | (clear ? MALLOC_LOG_TYPE_CLEARED : 0), uintptr_t(zone), size, 0, uintptr_t(ptr), 0);
+    ptr = azone->block_allocate(thread, size, type, clear || (type & AUTO_UNSCANNED) != AUTO_UNSCANNED, initial_refcount_to_one);
+    // We only log here because this is the only entry point that normal malloc won't already catch
+    if (ptr && malloc_logger) malloc_logger(MALLOC_LOG_TYPE_ALLOCATE | MALLOC_LOG_TYPE_HAS_ZONE | (clear ? MALLOC_LOG_TYPE_CLEARED : 0), uintptr_t(zone), size, initial_refcount_to_one ? 1 : 0, uintptr_t(ptr), 0);
 //    if (allocate_meter) allocate_meter_stop();
     return ptr;
 }
 
 extern "C" void *auto_zone_create_copy(auto_zone_t *zone, void *ptr) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
     auto_memory_type_t type; int rc = 0;
     if (!get_type_and_retain_count(azone, ptr, &type, &rc)) {
-        auto_error(azone, "auto_zone_copy_memory: can't get type or retain count, ptr (%p) from ordinary malloc zone?", ptr);
-        return (void *)0;
-    }
-    if (rc > 1) {
-        auto_error(azone, "auto_zone_copy_memory: retain count too large for ptr (%p)", ptr);
-        return (void *)0;
+        // from "somewhere else"
+        type = AUTO_MEMORY_UNSCANNED;
+        rc = 0;
     }
     if (type == AUTO_OBJECT_SCANNED || type == AUTO_OBJECT_UNSCANNED) {
+        // if no weak layouts we could be more friendly
         auto_error(azone, "auto_zone_copy_memory called on object %p\n", ptr);
         return (void *)0;
     }
@@ -1026,34 +981,62 @@ extern "C" void *auto_zone_create_copy(auto_zone_t *zone, void *ptr) {
     return result;
 }
 
+// Change type to non-object.  This happens when, obviously, no finalize is needed.
+void auto_zone_set_nofinalize(auto_zone_t *zone, void *ptr) {
+    Zone *azone = (Zone *)zone;
+    auto_memory_type_t type = azone->block_layout(ptr);
+    if (type == AUTO_TYPE_UNKNOWN) return;
+    // preserve scanned-ness but drop AUTO_OBJECT
+    if (type == AUTO_OBJECT && azone->weak_layout_map_for_block(ptr))
+        return;  // ignore request for objects that have weak instance variables
+    azone->block_set_layout(ptr, type & ~AUTO_OBJECT);
+}
 
-void auto_zone_set_layout_type(auto_zone_t *zone, void *ptr, auto_memory_type_t type) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
-    azone->block_set_layout(ptr, type);
+// Change type to unscanned.  This is used in very rare cases where a block sometimes holds
+// a strong reference and sometimes not.
+void auto_zone_set_unscanned(auto_zone_t *zone, void *ptr) {
+    Zone *azone = (Zone *)zone;
+    auto_memory_type_t type = azone->block_layout(ptr);
+    if (type == AUTO_TYPE_UNKNOWN) return;
+    azone->block_set_layout(ptr, type|AUTO_UNSCANNED);
+}
+
+extern void auto_zone_clear_stack(auto_zone_t *zone, unsigned long options)
+{
+    Zone *azone = (Zone *)zone;
+    Thread *thread = azone->current_thread();
+    if (thread) {
+        thread->clear_stack();
+    }
 }
 
 
 auto_memory_type_t auto_zone_get_layout_type(auto_zone_t *zone, void *ptr) {
-    return (auto_memory_type_t) ((Auto::Zone *)zone)->block_layout(ptr);
-}
-
-
-auto_memory_type_t auto_zone_get_layout_type_no_lock(auto_zone_t *zone, void *ptr) {
-    return (auto_memory_type_t) ((Auto::Zone *)zone)->block_layout(ptr);
+    return (auto_memory_type_t) ((Zone *)zone)->block_layout(ptr);
 }
 
 
 void auto_zone_register_thread(auto_zone_t *zone) {
-    static pthread_once_t control = PTHREAD_ONCE_INIT;
-    pthread_once(&control, agc_zone_monitor_open_port);
-    ((Auto::Zone *)zone)->register_thread();
+    ((Zone *)zone)->register_thread();
 }
 
 
 void auto_zone_unregister_thread(auto_zone_t *zone) {
-    ((Auto::Zone *)zone)->unregister_thread();
+    ((Zone *)zone)->unregister_thread();
 }
 
+void auto_zone_assert_thread_registered(auto_zone_t *zone) {
+    Zone *azone = (Zone *)zone;
+    azone->registered_thread();
+}
+
+void auto_zone_register_datasegment(auto_zone_t *zone, void *address, size_t size) {
+    ((Zone *)zone)->add_datasegment(address, size);
+}
+
+void auto_zone_unregister_datasegment(auto_zone_t *zone, void *address, size_t size) {
+    ((Zone *)zone)->remove_datasegment(address, size);
+}
 
 /**
  * Computes a conservative estimate of the amount of memory touched by the collector. Examines each
@@ -1062,14 +1045,12 @@ void auto_zone_unregister_thread(auto_zone_t *zone) {
  * out the sizes of the allocate big entries, since these aren't touched by the allocator itself.
  */
 unsigned auto_zone_touched_size(auto_zone_t *zone) {
-    using namespace Auto;
     Statistics stats;
     ((Zone *)zone)->statistics(stats);
     return stats.size();
 }
 
 double auto_zone_utilization(auto_zone_t *zone) {
-    using namespace Auto;
     Statistics stats;
     ((Zone *)zone)->statistics(stats);
     return (double)stats.small_medium_size() / (double)(stats.small_medium_size() + stats.unused());
@@ -1078,40 +1059,27 @@ double auto_zone_utilization(auto_zone_t *zone) {
 /*********  Garbage Collection and Compaction   ************/
 
 auto_collection_control_t *auto_collection_parameters(auto_zone_t *zone) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
     return &azone->control;
 }
 
 
-// DEPRECATED ENTRY POINT
-const auto_statistics_t *auto_collection_statistics(auto_zone_t *zone) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
-    Auto::Statistics &statistics = azone->statistics();
-    
-    auto_stats_lock(azone);
-    azone->stats.malloc_statistics.blocks_in_use = statistics.count();
-    azone->stats.malloc_statistics.size_in_use = statistics.size();
-    azone->stats.malloc_statistics.max_size_in_use = statistics.dirty_size();
-    azone->stats.malloc_statistics.size_allocated = statistics.allocated();
-    auto_stats_unlock(azone);
-    
-    return (const auto_statistics_t *)&azone->stats;
-}
 
 // public entry point.
 void auto_zone_statistics(auto_zone_t *zone, auto_statistics_t *stats) {
-    if (!stats || stats->version != 0) return;
-    Auto::Zone *azone = (Auto::Zone *)zone;
-    Auto::Statistics &statistics = azone->statistics();
+    if (!stats) return;
+    Zone *azone = (Zone *)zone;
+    Statistics &statistics = azone->statistics();
     
-    auto_stats_lock(azone);
     azone->stats.malloc_statistics.blocks_in_use = statistics.count();
     azone->stats.malloc_statistics.size_in_use = statistics.size();
     azone->stats.malloc_statistics.max_size_in_use = statistics.dirty_size();
     azone->stats.malloc_statistics.size_allocated = statistics.allocated() + statistics.admin_size();
     // now copy the whole thing over
-    *stats = azone->stats;
-    auto_stats_unlock(azone);
+    if (stats->version == 1) *stats = azone->stats;
+    else if (stats->version == 0) {
+        memmove(stats, &azone->stats, sizeof(auto_statistics_t)-3*sizeof(long long));
+    }
 }
 
 // work in progress
@@ -1140,7 +1108,7 @@ static void _auto_zone_stats_printf(AutoZonePrintInfo *info, const char *fmt, ..
     }
 }
 
-static void print_zone_stats(AutoZonePrintInfo *info, malloc_statistics_t &stats, char *message) {
+static void print_zone_stats(AutoZonePrintInfo *info, malloc_statistics_t &stats, const char *message) {
     _auto_zone_stats_printf(info, "%s %10lu %10u %10lu %10lu        %0.2f\n", message,
         stats.size_in_use, stats.blocks_in_use, stats.max_size_in_use, stats.size_allocated,
         ((float)stats.size_in_use)/stats.max_size_in_use);
@@ -1155,6 +1123,10 @@ static void _auto_zone_stats(AutoZonePrintInfo *info) {
     if (gc_zone) {
         malloc_zone_statistics(gc_zone, &mstats);
         print_zone_stats(info, mstats, "auto  ");
+        //auto_malloc_statistics_new(gc_zone, &mstats);  // has deadlock; see rdar://5954569
+        //print_zone_stats(info, mstats, "newa  ");
+        //auto_malloc_statistics_old(gc_zone, &mstats);
+        //print_zone_stats(info, mstats, "olda  ");
         malloc_zone_statistics(aux_zone, &mstats);
         print_zone_stats(info, mstats, "aux   ");
     }
@@ -1164,8 +1136,8 @@ static void _auto_zone_stats(AutoZonePrintInfo *info) {
     print_zone_stats(info, mstats, "total ");
     if (!gc_zone) return;
     
-    Auto::Statistics &statistics = ((Auto::Zone *)gc_zone)->statistics();
-    Auto::Zone *azone = (Auto::Zone *)gc_zone;
+    Zone *azone = (Zone *)gc_zone;
+    Statistics &statistics = azone->statistics();
     
     _auto_zone_stats_printf(info, "Regions In Use: %ld\nSubzones In Use: %ld\n", statistics.regions_in_use(), statistics.subzones_in_use());
     
@@ -1208,6 +1180,10 @@ static void _auto_zone_stats(AutoZonePrintInfo *info) {
         stats->total[0].enlivening_duration/count,
         stats->total[0].finalize_duration/count,
         stats->total[0].reclaim_duration/count);
+    _auto_zone_stats_printf(info, "\nthread collections %lld; total blocks %lld; total bytes %lld\n",
+        stats->thread_collections_total,
+        stats->thread_blocks_recovered_total,
+        stats->thread_bytes_recovered_total);
 }
 
 void auto_zone_write_stats(FILE *f) {
@@ -1238,69 +1214,81 @@ char *auto_zone_stats_string()
 }
 
 void auto_collector_reenable(auto_zone_t *zone) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
     // although imperfect, try to avoid dropping below zero
     if (azone->collector_disable_count == 0) return;
     OSAtomicDecrement32(&azone->collector_disable_count);
 }
 
 void auto_collector_disable(auto_zone_t *zone) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
     OSAtomicIncrement32(&azone->collector_disable_count);
 }
 
 boolean_t auto_zone_is_enabled(auto_zone_t *zone) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
     return azone->collector_disable_count == 0;
 }
 
 boolean_t auto_zone_is_collecting(auto_zone_t *zone) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
     // FIXME: the result of this function only valid on the collector thread (main for now).
     return !azone->is_state(idle);
 }
 
+#if USE_DISPATCH_QUEUE
+static void auto_collection_work(Zone *zone);
+#endif
+
 void auto_collect_multithreaded(auto_zone_t *zone) {
-    Auto::Zone *azone = (Auto::Zone *)zone;
+    Zone *azone = (Zone *)zone;
     if (! azone->multithreaded) {
         if (azone->control.log & AUTO_LOG_COLLECTIONS) malloc_printf("starting dedicated collection thread\n");
-        azone->multithreaded = true;
+#if USE_DISPATCH_QUEUE
+        // disable the collector while creating the queue/block to avoid starting the collector while
+        // copying collection_block.
+        auto_collector_disable(zone);
+        
+#if 1
+        // In general libdispatch limits the number of concurrent jobs based on various factors (# cpus).
+        // But we don't want the collector to be kept waiting while long running jobs generate garbage.
+        // We avoid collection latency using a special attribute which tells dispatch this queue should 
+        // service jobs immediately even if that requires exceeding the usual concurrent limit.
+        dispatch_queue_attr_t collection_queue_attrs = dispatch_queue_attr_create();
+        dispatch_queue_attr_set_flags(collection_queue_attrs, DISPATCH_QUEUE_OVERCOMMIT);
+        dispatch_queue_attr_set_priority(collection_queue_attrs, DISPATCH_QUEUE_PRIORITY_HIGH);
+        azone->collection_queue = dispatch_queue_create("Garbage Collection Work Queue", collection_queue_attrs);
+        dispatch_release(collection_queue_attrs);
+#else
+        azone->collection_queue = dispatch_queue_create("Garbage Collection Work Queue", NULL);
+#endif
+        azone->collection_block = Block_copy(^{ auto_collection_work(azone); });
+        auto_collector_reenable(zone);
+#else
         pthread_create(&azone->collection_thread, NULL, auto_collection_thread, azone);
+#endif
+        azone->multithreaded = true;
     }
 }
 
 
-struct __auto_reference_context {
-    auto_zone_t *zone;
-    auto_reference_recorder_t callback;
-    void *ctx;
-};
-
-static void agc_reference_recorder(void *ctx, agc_reference_t reference)
-{
-    struct __auto_reference_context *context = (struct __auto_reference_context *)ctx;
-    auto_reference_t ref = { reference.referent, reference.referrer_base, reference.referrer_offset };
-    context->callback(context->zone, context->ctx, ref);
-}
-
+//
+// Called by Instruments to lay down a heap dump (via dumpster)
+//
 void auto_enumerate_references(auto_zone_t *zone, void *referent, 
-                               auto_reference_recorder_t callback, 
+                               auto_reference_recorder_t callback, // f(zone, ctx, {ref, referrer, offset})
                                void *stack_bottom, void *ctx)
 {
-    Auto::Zone *azone = (Auto::Zone *)zone;
-    struct __auto_reference_context context = { zone, callback, ctx };
-    agc_enumerate_references(azone, referent, &agc_reference_recorder, stack_bottom, &context);
+    Zone *azone = (Zone *)zone;
+    azone->block_collector();
+    {
+        ReferenceRecorder recorder(azone, referent, callback, stack_bottom, ctx);
+        recorder.scan();
+        azone->reset_all_marks_and_pending();
+    }
+    azone->unblock_collector();
 }
 
-void auto_enumerate_references_no_lock(auto_zone_t *zone, void *referent, 
-                               auto_reference_recorder_t callback, 
-                               void *stack_bottom, void *ctx)
-{
-    Auto::Zone *azone = (Auto::Zone *)zone;
-    struct __auto_reference_context context = { zone, callback, ctx };
-    agc_enumerate_references(azone, referent, &agc_reference_recorder, stack_bottom, &context);
-}
 
 /********* Weak References ************/
 
@@ -1310,15 +1298,29 @@ void auto_enumerate_references_no_lock(auto_zone_t *zone, void *referent,
 // Atomically assign value to *location and track it for zero'ing purposes.
 // Assign a value of NULL to deregister from the system.
 void auto_assign_weak_reference(auto_zone_t *zone, const void *value, void *const*location, auto_weak_callback_block_t *block) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
-    if (azone->is_thread_finalizing()) {
-        const void *base = auto_zone_base_pointer(zone, (const void*)location);
-        if (!base) base = location;
-        size_t offset = uintptr_t(location) - uintptr_t(base);
-        check_resurrection(azone, (void*)base, value, offset);
+    void *base = azone->block_start((void *)location);
+    Thread &thread = azone->registered_thread();
+    if (check_resurrection(thread, azone, (void *)base, base != NULL, value, (size_t)location - (size_t)base)) {
+        // Never allow garbage to be registered since it will never be cleared.
+        // Go further and zero it out since it would have been cleared had it been done earlier
+        value = NULL;
     }
-    weak_register(azone, value, (void **)location, block);
+    
+    // Check if this is a store to the stack and don't register it.
+    // This handles id *__weak as a parameter
+    if (!thread.is_stack_address((void *)location)) {
+        // unregister old, register new (if non-NULL)
+        weak_register(azone, value, (void **)location, block);
+        if (value != NULL) {
+            // note: we could check to see if base is local, but then we have to change
+            // all weak references on make_global.
+            if (base) thread.block_escaped(azone, NULL, base);
+            thread.block_escaped(azone, NULL, (void *)value);
+            // also zap destination so that dead locals don't need to be pulled out of weak tables
+            //thread->track_local_assignment(azone, (void *)location, (void *)value);
+        }
+    }
 }
 
 void *auto_read_weak_reference(auto_zone_t *zone, void **referrer) {
@@ -1329,13 +1331,13 @@ void *auto_read_weak_reference(auto_zone_t *zone, void **referrer) {
         // the transition before we entered this routine, scanned this thread (not seeing the
         // enlivened read), scanned the heap, and scanned this thread exhaustively before we
         // load *referrer
-        using namespace Auto;
         Zone *azone = (Zone*)zone;
-        ConditionBarrier barrier(azone->needs_enlivening(), azone->enlivening_lock());
+        Thread &thread = azone->registered_thread();
+        EnliveningHelper<ConditionBarrier> barrier(thread);
         if (barrier) {
             // need to tell the collector this block should be scanned.
             result = *referrer;
-            if (result && !azone->block_is_marked(result)) azone->enlivening_queue().add(result);
+            if (result && !azone->block_is_marked(result)) barrier.enliven_block(result);
         } else {
             result = *referrer;
         }
@@ -1346,47 +1348,80 @@ void *auto_read_weak_reference(auto_zone_t *zone, void **referrer) {
 /********* Associative References ************/
 
 void auto_zone_set_associative_ref(auto_zone_t *zone, void *object, void *key, void *value) {
-    using namespace Auto;
     Zone *azone = (Zone*)zone;
-    if (azone->is_thread_finalizing()) check_resurrection(azone, object, value, 0);
+    Thread &thread = azone->registered_thread();
+    bool object_is_block = azone->is_block(object);
+    // <rdar://problem/6463922> Treat global pointers as unconditionally live.
+    if (!object_is_block && !azone->is_global_address(object)) {
+        auto_error(zone, "auto_zone_set_associative_ref: object should point to a GC block or a global address, otherwise associations will leak. Break on auto_zone_association_error() to debug.", object);
+        auto_zone_association_error(object);
+        return;
+    }
+    check_resurrection(thread, azone, object, object_is_block, value, 0);
     azone->set_associative_ref(object, key, value);
 }
 
 void *auto_zone_get_associative_ref(auto_zone_t *zone, void *object, void *key) {
-    using namespace Auto;
     Zone *azone = (Zone*)zone;
     return azone->get_associative_ref(object, key);
+}
+
+void auto_zone_erase_associative_refs(auto_zone_t *zone, void *object) {
+    Zone *azone = (Zone*)zone;
+    return azone->erase_associations(object);
 }
 
 /********* Root References ************/
 
 void auto_zone_add_root(auto_zone_t *zone, void *root, void *value)
 {
-    ((Auto::Zone *)zone)->add_root(root, value);
+    Zone *azone = (Zone*)zone;
+    Thread &thread = azone->registered_thread();
+    check_resurrection(thread, azone, root, false, value, 0);
+    (azone)->add_root(root, value);
 }
 
-extern void auto_zone_root_write_barrier(auto_zone_t *auto_zone, void *address_of_possible_root_ptr, void *value) {
+void auto_zone_remove_root(auto_zone_t *zone, void *root) {
+    ((Zone *)zone)->remove_root(root);
+}
+
+extern void auto_zone_root_write_barrier(auto_zone_t *zone, void *address_of_possible_root_ptr, void *value) {
     if (!value) {
         *(void **)address_of_possible_root_ptr = NULL;
         return;
     }
-    using namespace Auto;
-    Zone *azone = (Zone *)auto_zone;
-    if (azone->is_root(address_of_possible_root_ptr)) {
-        UnconditionalBarrier barrier(azone->needs_enlivening(), azone->enlivening_lock());
-        // might need to tell the collector this block should be scanned.
-        if (barrier && !azone->block_is_marked(value)) azone->enlivening_queue().add(value);
+    Zone *azone = (Zone *)zone;
+    Thread &thread = azone->registered_thread();
+    if (thread.is_stack_address(address_of_possible_root_ptr)) {
+        // allow writes to the stack without checking for resurrection to allow finalizers to do work
+        // always write directly to the stack.
         *(void **)address_of_possible_root_ptr = value;
-    }
-    else {
-        // always write
+    } else if (azone->is_root(address_of_possible_root_ptr)) {
+        // if local make global before possibly enlivening
+        thread.block_escaped(azone, NULL, value);
+        // might need to tell the collector this block should be scanned.
+        EnliveningHelper<UnconditionalBarrier> barrier(thread);
+        if (barrier && !azone->block_is_marked(value)) barrier.enliven_block(value);
+        check_resurrection(thread, azone, address_of_possible_root_ptr, false, value, 0);
+        *(void **)address_of_possible_root_ptr = value;
+    } else if (azone->is_global_address(address_of_possible_root_ptr)) {
+        // add_root performs a resurrection check
+        auto_zone_add_root(zone, address_of_possible_root_ptr, value);
+    } else {
+        // This should only be something like storing a globally retained value
+        // into a malloc'ed/vm_allocated hunk of memory.  It might be that it is held
+        // by GC at some other location and they're storing a go-stale pointer.
+        // That "some other location" might in fact be the stack.
+        // If so we can't really assert that it's either not-thread-local or retained.
+        thread.block_escaped(azone, NULL, value);
+        check_resurrection(thread, azone, address_of_possible_root_ptr, false, value, 0);
+        // Always write
         *(void **)address_of_possible_root_ptr = value;
     }
 }
 
 
 void auto_zone_print_roots(auto_zone_t *zone) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
     Statistics junk;
     PointerList roots(junk);
@@ -1403,13 +1438,14 @@ void auto_zone_print_roots(auto_zone_t *zone) {
 /********** Atomic operations *********************/
 
 boolean_t auto_zone_atomicCompareAndSwap(auto_zone_t *zone, void *existingValue, void *newValue, void *volatile *location, boolean_t isGlobal, boolean_t issueBarrier) {
-    using namespace Auto;
     Zone *azone = (Zone *)zone;
-    if (azone->is_thread_finalizing()) check_resurrection(azone, (void *)location, newValue, 0);
+    Thread &thread = azone->registered_thread();
     if (isGlobal) {
         azone->add_root_no_barrier((void *)location);
     }
-    UnconditionalBarrier barrier(azone->needs_enlivening(), azone->enlivening_lock());
+    check_resurrection(thread, azone, (void *)location, !isGlobal, newValue, 0);
+    thread.block_escaped(azone, NULL, newValue);
+    EnliveningHelper<UnconditionalBarrier> barrier(thread);
     boolean_t result;
     if (issueBarrier)
         result = OSAtomicCompareAndSwapPtrBarrier(existingValue, newValue, location);
@@ -1419,10 +1455,69 @@ boolean_t auto_zone_atomicCompareAndSwap(auto_zone_t *zone, void *existingValue,
         // mark write-barrier w/o storing
         azone->set_write_barrier((char*)location);
     }
-    if (result && barrier && !azone->block_is_marked(newValue)) azone->enlivening_queue().add(newValue);
+    if (result && barrier && !azone->block_is_marked(newValue)) barrier.enliven_block(newValue);
     return result;
 }
- 
+/************ Experimental ***********************/
+
+void auto_zone_dump(auto_zone_t *zone,
+            auto_zone_stack_dump stack_dump,
+            auto_zone_register_dump register_dump,
+            auto_zone_node_dump thread_local_node_dump,
+            auto_zone_root_dump root_dump,
+            auto_zone_node_dump global_node_dump,
+            auto_zone_weak_dump weak_dump
+    ) {
+    
+    Auto::Zone *azone = (Auto::Zone *)zone;
+    azone->dump(stack_dump, register_dump, thread_local_node_dump, root_dump, global_node_dump, weak_dump);
+}
+
+auto_probe_results_t auto_zone_probe_unlocked(auto_zone_t *zone, void *address) {
+    Zone *azone = (Zone *)zone;
+    auto_probe_results_t result = azone->block_is_start(address) ? auto_is_auto : auto_is_not_auto;
+    if ((result & auto_is_auto) && azone->is_local(address))
+        result |= auto_is_local;
+    return result;
+}
+
+void auto_zone_scan_exact(auto_zone_t *zone, void *address, void (^callback)(void *base, unsigned long byte_offset, void *candidate)) {
+    Zone *azone = (Zone *)zone;
+    auto_memory_type_t layout = azone->block_layout(address);
+    // invalid addresses will return layout == -1 and hence won't == 0 below
+    if ((layout & AUTO_UNSCANNED) == 0) {
+        const unsigned char *map = NULL;
+        if (layout & AUTO_OBJECT) {
+            map = azone->layout_map_for_block((void *)address);
+        }
+        unsigned int byte_offset = 0;
+        unsigned int size = azone->block_size(address);
+        if (map) {
+            while (*map) {
+                int skip = (*map >> 4) & 0xf;
+                int refs = (*map) & 0xf;
+                byte_offset = byte_offset + skip*sizeof(void *);
+                while (refs--) {
+                    callback(address, byte_offset, *(void **)(((char *)address)+byte_offset));
+                    byte_offset += sizeof(void *);
+                }
+                ++map;
+            }
+        }
+        while (byte_offset < size) {
+            callback(address, byte_offset, *(void **)(((char *)address)+byte_offset));
+            byte_offset += sizeof(void *);
+        }
+    }
+}
+
+
+/************* API ****************/
+
+boolean_t auto_zone_atomicCompareAndSwapPtr(auto_zone_t *zone, void *existingValue, void *newValue, void *volatile *location, boolean_t issueBarrier) {
+    Zone *azone = (Zone *)zone;
+    return auto_zone_atomicCompareAndSwap(zone, existingValue, newValue, location, azone->is_global_address((void*)location), issueBarrier);
+}
 
 /************ Miscellany **************************/
 
@@ -1471,10 +1566,11 @@ boolean_t auto_zone_watch_msg(void *ptr, const char *format,  void *extra) {
 #endif
 
 
+#if DEBUG
 ////////////////// SmashMonitor ///////////////////
 
 static void range_check(void *pointer, size_t size) {
-    Auto::Zone *azone = (Auto::Zone *)gc_zone;
+    Zone *azone = (Zone *)gc_zone;
     if (azone) {
         void *base_pointer = azone->block_start(pointer);
         if (base_pointer) {
@@ -1519,6 +1615,7 @@ DYLD_INTERPOSE(SmashMonitor_memset, memset)
 DYLD_INTERPOSE(SmashMonitor_bzero, bzero)
 #endif
 
+#endif
 
 #if LOG_TIMINGS
 // allocation & collection rate logging

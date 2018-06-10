@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,11 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoLock.h
+    Scoped Locking Primitives
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #pragma once
 #ifndef __AUTO_LOCK__
@@ -30,6 +35,16 @@
 
 namespace Auto {
 
+    //----- LockedBoolean -----//
+    
+    // Interlocked Boolean value.
+    
+    struct LockedBoolean {
+        volatile bool state;
+        spin_lock_t lock;
+        LockedBoolean() : state(false), lock(0) {}
+    };
+
     //----- SpinLock -----//
     
     // Scoped uses of spin_lock() / spin_unlock().
@@ -37,16 +52,25 @@ namespace Auto {
     class SpinLock {
         spin_lock_t *_lock;
     public:
-        SpinLock(spin_lock_t *lock) : _lock(lock)  { spin_lock(_lock); }
-        ~SpinLock()                         { spin_unlock(_lock); }
+        SpinLock(spin_lock_t *lock) : _lock(lock)   { spin_lock(_lock); }
+        ~SpinLock()                                 { spin_unlock(_lock); }
+    };
+    
+    class TrySpinLock {
+        spin_lock_t *_lock;
+    public:
+        TrySpinLock(spin_lock_t *lock) : _lock(lock) { if (_lock && !spin_lock_try(_lock)) _lock = NULL; }
+        operator int()                               { return (_lock != NULL); }
+        ~TrySpinLock()                               { if (_lock) spin_unlock(_lock); }
     };
     
     // Scoped conditional uses of spin_lock() / spin_unlock().
 
     class ConditionBarrier {
+    private:
         spin_lock_t *_lock;
-    public:
-        ConditionBarrier(bool volatile *condition, spin_lock_t *lock) : _lock(NULL) {
+        
+        void check(bool volatile *condition, spin_lock_t *lock) {
             if (*condition) {
                 spin_lock(lock);
                 if (!*condition) {
@@ -55,6 +79,13 @@ namespace Auto {
                     _lock = lock;
                 }
             }
+        }
+    public:
+        ConditionBarrier(bool volatile *condition, spin_lock_t *lock) : _lock(NULL) {
+            check(condition, lock);
+        }
+        ConditionBarrier(LockedBoolean &condition) : _lock(NULL) {
+            check(&condition.state, &condition.lock);
         }
         operator int() { return _lock != NULL; }
         ~ConditionBarrier() { if (_lock) spin_unlock(_lock); }
@@ -65,7 +96,10 @@ namespace Auto {
         spin_lock_t *_lock;
     public:
         UnconditionalBarrier(bool volatile *condition, spin_lock_t *lock) : _condition(condition), _lock(lock) {
-            spin_lock(lock);
+            spin_lock(_lock);
+        }
+        UnconditionalBarrier(LockedBoolean &condition) : _condition(&condition.state), _lock(&condition.lock) {
+            spin_lock(_lock);
         }
         operator int() { return (*_condition != false); }
         ~UnconditionalBarrier() { spin_unlock(_lock); }
@@ -78,6 +112,14 @@ namespace Auto {
     public:
         Mutex(pthread_mutex_t *mutex) : _mutex(mutex) { if (_mutex) pthread_mutex_lock(_mutex); }
         ~Mutex() { if (_mutex) pthread_mutex_unlock(_mutex); }
+    };
+    
+    class TryMutex {
+        pthread_mutex_t *_mutex;
+    public:
+        TryMutex(pthread_mutex_t *mutex) : _mutex(mutex) { if (_mutex && pthread_mutex_trylock(_mutex) != 0) _mutex = NULL; }
+        operator int() { return (_mutex != NULL); }
+        ~TryMutex() { if (_mutex) pthread_mutex_unlock(_mutex); }
     };
 };
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,40 +17,44 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/* 
+    auto_weak.h
+    Weak reference accounting
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
-#import "auto_impl_utilities.h"
+#ifndef __AUTO_WEAK__
+#define __AUTO_WEAK__
+
+#include "auto_impl_utilities.h"
 
 __BEGIN_DECLS
 
-typedef struct {
-    void **referrer;    // clear this address
-    auto_weak_callback_block_t *block;
-} weak_referrer_t;
-
-extern void weak_call_callbacks(auto_weak_callback_block_t *block);
-
-typedef struct weak_referrer_array_t {
-    weak_referrer_t 	*refs;
-    unsigned		num_refs;
-    unsigned		num_allocated;
-    unsigned        max_hash_displacement;
-} weak_referrer_array_t;
-
-typedef struct weak_entry_t {
-    const void *referent;
-    weak_referrer_array_t referrers;
-} weak_entry_t;
+namespace Auto {
+    class Zone;
+}
 
 // clear references to garbage
-extern auto_weak_callback_block_t *weak_clear_references(azone_t *azone, size_t garbage_count, vm_address_t *garbage, uintptr_t *weak_referents_count, uintptr_t *weak_refs_count);
+extern auto_weak_callback_block_t *weak_clear_references(Auto::Zone *azone, size_t garbage_count, vm_address_t *garbage, uintptr_t *weak_referents_count, uintptr_t *weak_refs_count);
 
 // register a new weak reference
-extern void weak_register(azone_t *azone, const void *referent, void **referrer, auto_weak_callback_block_t *block);
+extern void weak_register(Auto::Zone *azone, const void *referent, void **referrer, auto_weak_callback_block_t *block);
 
 // unregister an existing weak reference
-extern void weak_unregister(azone_t *azone, const void *referent, void **referrer);
+extern void weak_unregister(Auto::Zone *azone, const void *referent, void **referrer);
 
 // unregister all weak references from a block.
-extern void weak_unregister_with_layout(azone_t *azone, void *block[], const unsigned char *map);
+extern void weak_unregister_with_layout(Auto::Zone *azone, void *block[], const unsigned char *map);
+
+// call all registered weak reference callbacks.
+extern void weak_call_callbacks(auto_weak_callback_block_t *block);
+
+// unregister all weak references within a known address range.
+extern void weak_unregister_data_segment(Auto::Zone *azone, void *base, size_t size);
+
+// dump all weak registrations
+extern void weak_dump_table(Auto::Zone *azone, void (^weak_dump)(const void **address, const void *item));
 
 __END_DECLS
+
+#endif /* __AUTO_WEAK__ */

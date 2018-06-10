@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -16,6 +16,10 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
+ */
+/*
+    AutoRegion.cpp
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
  */
 
 #include "AutoConfiguration.h"
@@ -98,7 +102,8 @@ namespace Auto {
         // have an assert of something like size/allocate_quantum_small/8
         unsigned long bytes_per_bitmap = nsubzones << subzone_bitmap_bytes_log2;
         size -= bytes_per_bitmap;
-        zone->statistics().add_admin(bytes_per_bitmap);
+        Statistics &zone_stats = _zone->statistics();
+        zone_stats.add_admin(bytes_per_bitmap);
         // we prefer to use the stack, but if it overflows, we have (virtual) space enough
         // to do a pending bit iterative scan as fallback
         _scan_space.set_range(displace(address, size), bytes_per_bitmap);
@@ -109,7 +114,7 @@ namespace Auto {
         // the scanning thread needs exclusive access to the mark bits so they are indpendent
         // of other 'admin' data.  Reserve enough space for the case of all subzones being of smallest quanta.
         size -= bytes_per_bitmap;
-        zone->statistics().add_admin(bytes_per_bitmap);
+        zone_stats.add_admin(bytes_per_bitmap);
         _marks.set_address(displace(address, size));
         _marks.set_size(0);
         
@@ -124,18 +129,14 @@ namespace Auto {
         }
         _n_quantum = 0;
 
-        // initialize the small and medium admin
-        _small_admin.initialize(zone, this, allocate_quantum_small_log2);
-        _medium_admin.initialize(zone, this, allocate_quantum_medium_log2);
-        
         // prime the small and medium admins with a subzone each (will handle correctly if there are no subzones)
-        add_subzone(&_small_admin);
-        add_subzone(&_medium_admin);
+        add_subzone(zone->small_admin());
+        add_subzone(zone->medium_admin());
 
         // update statistics
-        zone->statistics().add_admin(Region::bytes_needed());   // XXX counted via aux I think
-        zone->statistics().add_allocated(size);
-        zone->statistics().increment_regions_in_use();
+        zone_stats.add_admin(Region::bytes_needed());   // XXX counted via aux I think
+        zone_stats.add_allocated(size);
+        zone_stats.increment_regions_in_use();
     }
 
         
@@ -149,111 +150,6 @@ namespace Auto {
         // update other statistics...
     }
         
-        
-    //
-    // allocate
-    //
-    // Allocate a block of memory from a subzone.
-    //
-    void *Region::allocate(const size_t size, const unsigned layout, bool clear, bool refcount_is_one) {
-        // determine which admin should manage the allocation
-        Admin *admin = size < allocate_quantum_medium ? &_small_admin : &_medium_admin;
-        bool did_grow = false;
-        void *block = NULL;
-        
-        while (!(block = admin->find_allocation(size, layout, refcount_is_one, did_grow))) {
-        
-            // Only the last region can add subzones.
-            if (next()) return NULL;
-            _zone->control.will_grow((auto_zone_t *)_zone, AUTO_HEAP_SUBZONE_EXHAUSTED);
-            
-            // We're the last region.
-            if (!add_subzone(admin)) {
-                // No more subzones.
-                _zone->control.will_grow((auto_zone_t *)_zone, AUTO_HEAP_REGION_EXHAUSTED);
-                // allocate another region
-                return NULL;
-            }
-            // try again.
-        }
-        
-        if (did_grow) _zone->control.will_grow((auto_zone_t *)_zone, AUTO_HEAP_HOLES_EXHAUSTED);
-
-        Subzone *subzone = Subzone::subzone(block);
-        usword_t allocated_size = subzone->size(block);
-        
-
-        // initialize block
-        if (clear) {
-            void **end = (void **)displace(block, allocated_size);
-            switch (allocated_size/sizeof(void *)) {
-                    
-                case 12: end[-12] = NULL;
-                case 11: end[-11] = NULL;
-                case 10: end[-10] = NULL;
-                case 9: end[-9] = NULL;
-                case 8: end[-8] = NULL;
-                case 7: end[-7] = NULL;
-                case 6: end[-6] = NULL;
-                case 5: end[-5] = NULL;
-                case 4: end[-4] = NULL;
-                case 3: end[-3] = NULL;
-                case 2: end[-2] = NULL;
-                case 1: end[-1] = NULL;
-                case 0: break;
-                default:
-                    bzero(block, allocated_size);
-                    break;
-            }
-        }
-        // Performance work
-        // before (always use bzero):  allocating 10000 blocks of size 12 took auto 1624 somethings and malloc 1048 somethings
-        // after:                      allocating 10000 blocks of size 12 took auto 1375 microseconds and malloc 1111 microseconds
-        // and no work here is even better
-        else if (layout & AUTO_UNSCANNED) {
-            // for now, need to worry about clients going from scanned to unscanned and finding stray/bad pointers there.
-            // XXX need to outlaw going from scanned to unscanned since this is a very expensive operation. rdar://5558048
-            // XXX or else make all such callers do their zeroing.  This is a leak issue, not correctness issue. rdar://5557990
-            usword_t remainder_size = (allocated_size - size);  
-            void **end = (void **)displace(block, allocated_size);
-            switch (remainder_size/sizeof(void *)) { // ignore remainder - it can't be a pointer
-            case 3: end[-3] = NULL;
-            case 2: end[-2] = NULL;
-            case 1: end[-1] = NULL;
-            case 0: break;
-            default:
-                bzero(displace(block, size), remainder_size);
-                break;
-            }
-        }
-        
-        // update statistics
-        _zone->statistics().add_count(1);
-        _zone->statistics().add_size(allocated_size);
-        _zone->add_allocated_bytes(allocated_size);
-        
-        return block;
-    }
-
-
-    //
-    // deallocate
-    //
-    // Release memory allocated for a block.
-    //
-    void Region::deallocate(Subzone *subzone, void *block) {
-        // update statistics
-        usword_t size = subzone->size(block);
-        _zone->statistics().add_count(-1);
-        _zone->statistics().add_size(-size);
-
-        // get the admin for the subzone
-        Admin *admin = subzone->admin();
-        
-        // remove the block from admin
-        admin->deallocate(block);
-    }
-
 
     //
     // add_subzone
@@ -276,7 +172,7 @@ namespace Auto {
             if (_i_subzones == _n_subzones) return false;
             
             // Get next subzone
-            subzone = new(subzone_address(_i_subzones++)) Subzone(admin, admin->quantum_log2(), _n_quantum);
+            subzone = new(subzone_address(_i_subzones++)) Subzone(this, admin, admin->quantum_log2(), _n_quantum);
 
             // advance quantum count
             _n_quantum += subzone->allocation_limit();
@@ -290,8 +186,9 @@ namespace Auto {
         admin->set_active_subzone(subzone);
 
         // update statistics
-        _zone->statistics().add_admin(subzone_write_barrier_max);
-        _zone->statistics().increment_subzones_in_use();
+        Statistics &zone_stats = _zone->statistics();
+        zone_stats.add_admin(subzone_write_barrier_max);
+        zone_stats.increment_subzones_in_use();
         
         // let the zone know the subzone is active.
         _zone->activate_subzone(subzone);
@@ -299,5 +196,21 @@ namespace Auto {
         // END CRITICAL SECTION
         
         return true;
+    }
+    
+    //
+    // malloc_statistics
+    // add up our contribution to the malloc statistics
+    void Region::malloc_statistics(malloc_statistics_t *stats) {
+        SpinLock lock(&_subzone_lock);
+        //stats->max_size_in_use += subzone_size(_i_subzones);
+        //stats->size_allocated += subzone_size(_n_subzones);
+        for (uint i=0; i<_i_subzones; i++) {
+            Subzone *s = subzone_address(i);
+            s->malloc_statistics(stats);
+        }
+        stats->max_size_in_use += _marks.size();
+        stats->max_size_in_use += _pending.size();
+        stats->max_size_in_use += subzone_write_barrier_max;
     }
 };

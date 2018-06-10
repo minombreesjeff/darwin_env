@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,10 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoZone.h
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #pragma once
 #ifndef __AUTO_ZONE_CORE__
@@ -24,114 +28,74 @@
 
 #include "auto_zone.h"
 #include "auto_impl_utilities.h"
+#include "auto_weak.h"
 
 #include "AutoBitmap.h"
 #include "AutoConfiguration.h"
 #include "AutoDefs.h"
 #include "AutoLarge.h"
-#include "AutoListTypes.h"
 #include "AutoLock.h"
-#include "AutoHashTable.h"
+#include "AutoAdmin.h"
 #include "AutoRegion.h"
 #include "AutoStatistics.h"
 #include "AutoSubzone.h"
 #include "AutoThread.h"
 
 #include <algorithm>
+#include <cassert>
 
-// XXX_JML embedded object pointers
-// XXX_JML resurrection
+#define USE_DISPATCH_QUEUE 1
 
-
+#if USE_DISPATCH_QUEUE
+#include <dispatch/dispatch.h>
+#endif
 
 namespace Auto {
 
     //
     // Forward declarations.
     //
-    
+    class Monitor;
     
     //
-    // PointerList
-    // Holds list of pointers, including potential repeats
-    // Currently used to hold the list of non-repeating garbage
-    // The same list is then also used to hold possibly repeating pointers that need "enlivening"
-    // The enlivening set is the set of pointers operated on by other threads while the collector was
-    // scanning (and we prefer to not have to do interlocks on the scan bits).
+    // TrackedPageAllocator -- Tracks the number of pages in use in a PointerArray by calling Statistics::add_admin() with all
+    // requested allocation and deallocation sizes.
+    //
+    class TrackedPageAllocator {
+    private:
+        Statistics                     &_stats;
 
-    class PointerList {
-        usword_t                        _count;
-        usword_t                        _capacity;
-        vm_address_t                   *_buffer;
-        Statistics                      &_stats;     // from our Zone; track memory use as admin_in_use_size
     public:
-        PointerList(Statistics &s) :    _count(0), _capacity(0), _buffer(NULL), _stats(s) {}
-        ~PointerList()                  { if (_buffer) deallocate_memory(_buffer, _capacity * sizeof(vm_address_t)); }
-        
-        usword_t count()          const { return _count; }
-        void clear_count()              { _count = 0; }
-        void set_count(usword_t n)      { _count = n; }
-        vm_address_t *buffer()          { return _buffer; }
-        usword_t size()                 { return _capacity * sizeof(vm_address_t); }
-
-        void uncommit()                 { if (_buffer) uncommit_memory(_buffer, _capacity * sizeof(vm_address_t)); }
-
-        void grow() {
-            if (!_buffer) {
-                // start off with 4 pages.
-                _capacity = 4 * page_size / sizeof(vm_address_t);
-                _buffer = (vm_address_t*) allocate_memory(page_size * 4);
-                _stats.add_admin(page_size * 4);    // worst case, but once in use probably stays hot
-             } else {
-                // double the capacity.
-                vm_size_t old_size = _capacity * sizeof(vm_address_t);
-                vm_address_t *new_buffer = (vm_address_t*) allocate_memory(old_size * 2);
-                if (!new_buffer) {
-                    malloc_printf("PointerList::grow() failed.\n");
-                    abort();
-                }
-                _stats.add_admin(old_size);
-                _capacity *= 2;
-                // malloc_printf("growing PointerList._buffer old_size = %lu, new_size = %lu\n", old_size, old_size * 2);
-                vm_copy(mach_task_self(), (vm_address_t) _buffer, old_size, (vm_address_t)new_buffer);
-                deallocate_memory(_buffer, old_size);
-                _buffer = new_buffer;
-            }
+        TrackedPageAllocator(Statistics &st) : _stats(st) {}
+        TrackedPageAllocator(const TrackedPageAllocator &allocator) : _stats(allocator._stats) {}
+    
+        inline void *allocate_memory(usword_t size) {
+            _stats.add_admin(size);
+            return Auto::allocate_memory(size);
         }
         
-        void grow(usword_t count) {
-            if (count > _capacity) {
-                usword_t old_size = _capacity * sizeof(vm_address_t);
-                if (_capacity == 0L) _capacity = 4 * page_size / sizeof(vm_address_t);
-                while (count > _capacity) _capacity *= 2;
-                vm_address_t *new_buffer = (vm_address_t*) allocate_memory(_capacity * sizeof(vm_address_t));
-                if (!new_buffer) {
-                    malloc_printf("PointerList::grow(count=%lu) failed.\n", count);
-                    abort();
-                }
-                _stats.add_admin(_capacity * sizeof(vm_address_t) - old_size);
-                if (_buffer) {
-                    // only copy contents if _count != 0.
-                    if (new_buffer && _count) {
-                        // malloc_printf("growing PointerList._buffer old_size = %lu, new_size = %lu\n", old_size, old_size * 2);
-                        vm_copy(mach_task_self(), (vm_address_t) _buffer, old_size, (vm_address_t)new_buffer);
-                    }
-                    deallocate_memory(_buffer, old_size);
-                }
-                _buffer = new_buffer;
-            }
+        inline void deallocate_memory(void *address, usword_t size) {
+            _stats.add_admin(-(intptr_t)size);
+            Auto::deallocate_memory(address, size);
         }
         
-        void add(vm_address_t addr) {
-            if (_count == _capacity) grow();
-            _buffer[_count++] = addr;
+        inline void uncommit_memory(void *address, usword_t size) {
+            Auto::uncommit_memory(address, size);
         }
         
-        void add(void *pointer) {
-            add((vm_address_t)pointer);
+        inline void copy_memory(void *dest, void *source, usword_t size) {
+            Auto::copy_memory(dest, source, size);
         }
     };
-    
+    typedef PointerArray<TrackedPageAllocator> PointerList;
+
+    template <typename BarrierType>
+    class EnliveningHelper : public BarrierType {
+        Thread &_thread;
+    public:
+        EnliveningHelper(Thread &thread) : BarrierType(thread.enlivening_queue().needs_enlivening()), _thread(thread) {}
+        void enliven_block(void *block) { _thread.enlivening_queue().add(block); }
+    };
     
      //----- ScanStack -----//
     
@@ -253,9 +217,20 @@ namespace Auto {
             if (!is_empty() && !is_overflow()) return *--_cursor;
             return NULL;
         }
+        
+        //
+        // max items
+        //
+        // return the maximum number of items on the stack since last reset
+        //
+        inline unsigned long max() {
+            return _highwater - _address;
+        }
     };
 
-   
+    typedef std::vector<Range, AuxAllocator<Range> > RangeVector;
+    class ObjectAssocationHashMap : public __gnu_cxx::hash_map<void *, void *, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> >, public AuxAllocated {};
+    typedef __gnu_cxx::hash_map<void *, ObjectAssocationHashMap*, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> > AssocationsHashMap;
 
     //----- Zone -----//
     
@@ -263,58 +238,93 @@ namespace Auto {
         idle, scanning, enlivening, finalizing, reclaiming
     };
 
-    class Zone : public azone_t {
-    friend class Monitor;
+    class Zone {
     friend class MemoryScanner;
-   
+        
+#define INVALID_THREAD_KEY_VALUE ((Thread *)-1)
+        
+      public:
+
+        malloc_zone_t         basic_zone;
+
+        bool                  multithreaded;                      // if set, will run collector on dedicated thread
+      
+        volatile int32_t      collector_disable_count;            // counter for external disable-collector API
+        volatile int32_t      collector_collecting;               // internal guard to prevent recursion and/or several threads attempting gc at once
+        uint32_t              collection_count;
+
+
+        // collection control
+        auto_collection_control_t       control;
+
+        // statistics
+        auto_lock_t           stats_lock;               // only affects fields below; only a write lock; read access may not be accurate, as we lock statistics independently of the main data structures
+        auto_statistics_t     stats;
+    
+        // weak references
+        unsigned              num_weak_refs;
+        unsigned              max_weak_refs;
+        struct weak_entry_t  *weak_refs_table;
+        spin_lock_t           weak_refs_table_lock;
+
+#if USE_DISPATCH_QUEUE
+        dispatch_queue_t      collection_queue;
+        dispatch_block_t      collection_block;
+#else
+        pthread_t             collection_thread;
+        pthread_cond_t        collection_requested;
+#endif
+        pthread_mutex_t       collection_mutex;
+        volatile uint32_t     collection_requested_mode;
+        pthread_cond_t        collection_status;
+        volatile uint32_t     collection_status_state;
+
       private:
       
         //
         // Shared information
         //
         // watch out for static initialization
-        static bool           _is_auto_initialized;         // initialization flag
-        static Zone           *_last_created;               // last zone created
+        static volatile int32_t _zone_count;                // used to generate _zone_id
+        static Zone           *_first_zone;                 // for debugging
         
         //
-        // system management
+        // thread management
         //
-        pthread_key_t          _registered_thread_key;      // key used to access tsd for a thread
         Thread                *_registered_threads;         // linked list of registered threads
-        spin_lock_t            _registered_threads_lock;    // protects _registered_threads.
+        pthread_key_t          _registered_threads_key;     // pthread key for looking up Thread instance for this zone
+        pthread_mutex_t        _registered_threads_mutex;   // protects _registered_threads and _enlivening_enabled
+        bool                   _enlivening_enabled;         // tracks whether new threads should be initialized with enlivening on
+        bool                   _enlivening_complete;        // tracks whether or not enlivening has been performed on this collection cycle.
         
-        pthread_key_t          _thread_finalizing_key;      // key used to mark a thread currrently involved in finalization.
-        
+        pthread_mutex_t       _mark_bits_mutex;             // protects the per-Region and Large block mark bits.
+
         //
         // memory management
         //
         Bitmap                 _in_subzone;                 // indicates which allocations are used for subzone region
         Bitmap                 _in_large;                   // indicates which allocations are used for large blocks
         Large                 *_large_list;                 // doubly linked list of large allocations
-        spin_lock_t            _large_lock;                 // protects _large_list
+        spin_lock_t            _large_lock;                 // protects _large_list, _in_large, and large block refcounts
         PtrHashSet             _roots;                      // hash set of registered roots (globals)
         spin_lock_t            _roots_lock;                 // protects _roots
+        RangeVector            _datasegments;               // registered data segments.
+        spin_lock_t            _datasegments_lock;          // protects _datasegments
         PtrHashSet             _zombies;                    // hash set of zombies
         spin_lock_t            _zombies_lock;               // protects _zombies
         Region                *_region_list;                // singly linked list of subzone regions
         spin_lock_t            _region_lock;                // protects _region_list
         PtrIntHashMap          _retains;                    // STL hash map of retain counts
         spin_lock_t            _retains_lock;               // protects _retains
-        bool                   _is_partial;                 // true if partial collection
         bool                   _repair_write_barrier;       // true if write barrier needs to be repaired after full collection.
-        bool                   _use_pending;                // use pending bits instead of scan stack
         ScanStack              _scan_stack;                 // stack used suring scanning
-        bool                   _some_pending;               // indicates some blocks are pending scanning
         Range                  _coverage;                   // range of managed memory
         spin_lock_t            _coverage_lock;              // protects _coverage
-        volatile bool          _needs_enlivening;           // true if scanning; blocks need to be added to the envivening queue. 
-        PointerList            _enlivening_queue;           // vm_map allocated pages to keep track of objects to scan at end.
-        spin_lock_t            _enlivening_lock;            // protects _enlivening_queue
+        TrackedPageAllocator   _page_allocator;             // Statistics tracking page allocator.
         Statistics             _stats;                      // statistics for this zone
-        uint32_t               _bytes_allocated;            // byte allocation counter (reset after each collection).
-        Monitor                *_monitor;                   // external debugging monitor
+        int32_t                _allocation_threshold;       // byte allocation counter (reset after each collection).
         PointerList            _garbage_list;               // vm_map allocated pages to hold the garbage list.
-        PtrAssocHashMap        _associations;               // associative references object -> PtrPtrHashMap.
+        AssocationsHashMap     _associations;               // associative references object -> ObjectAssocationHashMap*.
         spin_lock_t            _associations_lock;          // protects _associations
         bool                   _scanning_associations;      // tells 
         volatile enum State    _state;                      // the state of the collector
@@ -325,13 +335,13 @@ namespace Auto {
         Bitmap                  _large_bits;                // bitmap of top half - tracks quanta used for large blocks
         spin_lock_t             _large_bits_lock;           // protects _large_bits
 #endif
+        Admin                   _small_admin;               // small quantum admin
+        Admin                   _medium_admin;              // medium quantum admin
         
         //
         // thread safe Large deallocation routines.
         //
-        void (Zone::*_deallocate_large) (void *block);
-        void deallocate_large_normal(void *block);
-        void deallocate_large_collecting(void *block);
+        void deallocate_large(void *block);
         
         //
         // allocate_region
@@ -346,19 +356,9 @@ namespace Auto {
         //
         // Allocates a large block from the universal pool (directly from vm_memory.)
         //
-        void *allocate_large(const size_t size, const unsigned layout, bool clear, bool refcount_is_one);
+        void *allocate_large(Thread &thread, usword_t &size, const unsigned layout, bool clear, bool refcount_is_one);
     
     
-        //
-        // deallocate_large
-        //
-        // Release memory allocated for a large block
-        //
-        void deallocate_large(void *block) {
-            SpinLock lock(&_large_lock);
-            (this->*_deallocate_large)(block);
-        }
-        
         //
         // find_large
         //
@@ -367,14 +367,6 @@ namespace Auto {
         inline Large *find_large(void *block) { return Large::large(block); }
 
 
-        //
-        // allocate_small_medium
-        //
-        // Allocate a block of memory from a subzone,
-        //
-        void *allocate_small_medium(const size_t size, const unsigned layout, bool clear, bool refcount_is_one);
-        
-        
         //
         // deallocate_small_medium
         //
@@ -433,8 +425,12 @@ namespace Auto {
         // allocator
         //
         inline void *operator new(const size_t size) {
+#if DEBUG
             // allocate zone data
             void *allocation_address = allocate_guarded_memory(bytes_needed());
+#else
+            void *allocation_address = allocate_memory(bytes_needed());
+#endif
         
             if (!allocation_address) error("Can not allocate zone");
             
@@ -447,8 +443,12 @@ namespace Auto {
         // deallocator
         //
         inline void operator delete(void *zone) {
+#if DEBUG
             // release zone data
             if (zone) deallocate_guarded_memory(zone, bytes_needed());
+#else
+            if (zone) deallocate_memory(zone, bytes_needed());
+#endif
         }
        
       
@@ -459,11 +459,18 @@ namespace Auto {
         //
         static void setup_shared();
         
-        
+        //
+        // allocate_thread_key
+        //
+        // attempt to allocate a static pthread key for use when creating a new zone
+        // returns the new key, or 0 if no keys are available.
+        //
+        static pthread_key_t allocate_thread_key();
+
         //
         // Constructors
         //
-        Zone();
+        Zone(pthread_key_t thread_registration_key);
         
         
         //
@@ -475,33 +482,100 @@ namespace Auto {
         //
         // zone
         //
-        // Returns the last zone created - for debugging purposes only (no locks.)
+        // Returns the lowest index zone - for debugging purposes only (no locks.)
         //
-        static inline Zone *zone() { return _last_created; }
+        static inline Zone *zone() { return _first_zone; }
 
 
         //
         // Accessors
         //
+        inline Admin *small_admin()                         { return &_small_admin; }
+        inline Admin *medium_admin()                        { return &_medium_admin; }
         inline Thread         *threads()                    { return _registered_threads; }
-        inline spin_lock_t    *threads_lock()               { return &_registered_threads_lock; }
+        inline pthread_mutex_t *threads_mutex()             { return &_registered_threads_mutex; }
         inline Region         *region_list()                { return _region_list; }
         inline Large          *large_list()                 { return _large_list; }
         inline spin_lock_t    *large_lock()                 { return &_large_lock; }
-        inline pthread_key_t  registered_thread_key() const { return _registered_thread_key; }
         inline Statistics     &statistics()                 { return _stats; }
         inline Range          &coverage()                   { return _coverage; }
-        inline Monitor        *monitor()                    { return _monitor; }
-        inline void           set_monitor(Monitor *monitor) { _monitor = monitor; }
+        inline TrackedPageAllocator &page_allocator()       { return _page_allocator; }
         inline PointerList    &garbage_list()               { return _garbage_list; }
-        inline bool volatile  *needs_enlivening()           { return &_needs_enlivening; }
-        inline spin_lock_t    *enlivening_lock()            { return &_enlivening_lock; }
-        inline PointerList    &enlivening_queue()           { return _enlivening_queue; }
+        
+        
+        inline Thread *current_thread_direct() {
+            if (_pthread_has_direct_tsd()) {
+                #define CASE_FOR_DIRECT_KEY(key) case key: return (Thread *)_pthread_getspecific_direct(key)
+                switch (_registered_threads_key) {
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY0);
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY1);
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY2);
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY3);
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY4);
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY5);
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY6);
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY7);
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY8);
+                CASE_FOR_DIRECT_KEY(__PTK_FRAMEWORK_GC_KEY9);
+                default: return NULL;
+                }
+            } else {
+                return (Thread *)pthread_getspecific(_registered_threads_key);
+            }
+        }
+        
+        //
+        // current_thread
+        //
+        // If the calling thread is registered with the collector, returns the registered Thread object.
+        // If the calling thread is not registered, returns NULL.
+        //
+        inline Thread *current_thread() {
+            Thread *thread = current_thread_direct();
+            if (__builtin_expect(thread == INVALID_THREAD_KEY_VALUE, 0)) {
+                // If we see this then it means some pthread destructor ran after the 
+                // zone's destructor and tried to look up a Thread object (tried to perform a GC operation).
+                // The collector's destructor needs to run last. We treat this as a fatal error so we will notice immediately.
+                // Investigate as a pthreads bug in the ordering of static (Apple internal) pthread keys.
+                auto_fatal("Zone::current_thread(): pthread looked up after unregister. Pthreads static key destructor ordering issue?\n");
+            }
+            return thread;
+        }
+        
+        //
+        // registered_thread
+        //
+        // Returns the Thread object for the calling thread.
+        // If the calling thread is not registered, it is registered implicitly, and if warn_if_unregistered is true an error message is logged.
+        //
+        inline Thread &registered_thread() {
+            Thread *thread = current_thread();
+            if (!thread) {
+                auto_error(this, "GC operation on unregistered thread. Thread registered implicitly. Break on auto_zone_thread_registration_error() to debug.\n", NULL);
+                auto_zone_thread_registration_error();
+                return register_thread();
+            }
+            return *thread;
+        }
+        
+        //
+        // destroy_registered_thread
+        //
+        // Pthread key destructor. The collector has a critical dependency on the ordering of pthread destructors.
+        // This destructor must run after any other code which might possibly call into the collector.
+        // We have arranged with pthreads to have our well known key destructor called after any dynamic keys and
+        // any static (Apple internal) keys that might call into the collector (Foundation, CF). On the last iteration
+        // (PTHREAD_DESTRUCTOR_ITERATIONS) we unregister the thread. 
+        // Note that this implementation is non-portable due to our agreement with pthreads.
+        //
+        static void destroy_registered_thread(void *key_value);
+
         inline ScanStack      &scan_stack()                 { return _scan_stack; }
         inline void           set_state(enum State ns)      { _state = ns; }
         inline bool           is_state(enum State ns)       { return _state == ns; }
         
-        inline spin_lock_t   *associations_lock()           { return &_associations_lock; }
+        inline spin_lock_t     *associations_lock()         { return &_associations_lock; }
+        inline AssocationsHashMap  &assocations()               { return _associations; }
 
 #if UseArena
         inline void *         arena()                       { return _arena; }
@@ -509,9 +583,9 @@ namespace Auto {
         inline void *         arena()                       { return (void *)0; }
 #endif
                 
-        inline uint32_t       bytes_allocated() const       { return _bytes_allocated; }
-        inline void           clear_bytes_allocated()       { _bytes_allocated = 0; }
-        inline void           add_allocated_bytes(usword_t n)   { _bytes_allocated += n; }
+        inline bool           threshold_reached() const       { return _allocation_threshold <= 0; }  // threshold triggers GC as it crosses below zero
+        inline void           reset_threshold()             { _allocation_threshold = control.collection_threshold; }
+        inline void           adjust_threshold_counter(usword_t n)  { _allocation_threshold -= n; }
         
         //
         // subzone_index
@@ -605,7 +679,7 @@ namespace Auto {
         // Allocate a block of memory from the zone.  layout indicates whether the block is an
         // object or not and whether it is scanned or not.
         //
-        void *block_allocate(const size_t size, const unsigned layout, const bool clear, bool refcount_is_one);
+        void *block_allocate(Thread &thread, const size_t size, const unsigned layout, const bool clear, bool refcount_is_one);
 
         
         //
@@ -614,13 +688,6 @@ namespace Auto {
         // Release a block of memory from the zone, lazily while scanning.
         // 
         void block_deallocate(void *block);
-
-        //
-        // block_deallocate_internal
-        //
-        // Release a block memory from the zone. Only to be called by the collector itself.
-        //
-        void block_deallocate_internal(void *block);
          
 
         //
@@ -631,11 +698,10 @@ namespace Auto {
         //
         inline bool block_is_start(void *address) {
             if (in_subzone_memory(address)) {
-                return Subzone::subzone(address)->is_start(address);
+                return Subzone::subzone(address)->block_is_start(address);
             } else if (in_large_memory(address)) {
                 return Large::is_start(address);
             }
-            
             return false;
         }
         
@@ -662,7 +728,7 @@ namespace Auto {
         //
         // Return the size of a specified block.
         //
-        usword_t block_size(void *block);
+        usword_t block_size(void *address);
 
 
         //
@@ -670,7 +736,7 @@ namespace Auto {
         //
         // Return the layout of a block.
         //
-        int block_layout(void *block);
+        int block_layout(void *address);
 
 
         //
@@ -678,18 +744,18 @@ namespace Auto {
         //
         // Set the layout of a block.
         //
-        void block_set_layout(void *block, int layout);
+        void block_set_layout(void *address, int layout);
 
 
-      private:
         //
         // get_refcount_small_medium
         //
-        // Return the refcount of a small/medium block.
+        // Return the refcount of a candidate small/medium block.
         //
-        int get_refcount_small_medium(Subzone *subzone, void *block);
+        int get_refcount_small_medium(Subzone *subzone, void *address);
             
         
+      private:
         //
         // inc_refcount_small_medium
         //
@@ -718,36 +784,43 @@ namespace Auto {
                 // acquire all locks for sections that have predicated enlivening work
             // (These locks are in an arbitary order)
 
-            spin_lock(&_region_lock);
-            for (Region *region = _region_list; region != NULL; region = region->next()) {
-                region->lock();
-            }
-            spin_lock(&_large_lock);            // large allocations
+            spin_lock(_small_admin.lock());
+            spin_lock(_medium_admin.lock());
             
-            // Eventually we'll acquire these as well
+            // Eventually we'll acquire these as well as we reintroduce ConditionBarrier
             //spin_lock(&_retains_lock);          // retain/release
             //spin_lock(&weak_refs_table_lock);   // weak references
             //spin_lock(&_associations_lock);     // associative references
             //spin_lock(&_roots_lock);            // global roots
-            
-            spin_lock(&_enlivening_lock);
         }
         
         inline void open_locks() {
-            spin_unlock(&_enlivening_lock);
-            
             //spin_unlock(&_roots_lock);
             //spin_unlock(&_associations_lock);
             //spin_unlock(&weak_refs_table_lock);
             //spin_unlock(&_retains_lock);
-            spin_unlock(&_large_lock);
-            for (Region *region = _region_list; region != NULL; region = region->next()) {
-                region->unlock();
-            }
-            spin_unlock(&_region_lock);
+            spin_unlock(_medium_admin.lock());
+            spin_unlock(_small_admin.lock());
          }
         
       public:
+      
+        //
+        // is_locked
+        //
+        // Called by debuggers, with all other threads suspended, to determine if any locks are held that might cause a deadlock from this thread.
+        //
+        bool is_locked();
+      
+      
+        //
+        // add_subzone
+        //
+        // when out of subzones, add another one, allocating region if necessary
+        // return false if region can't be allocated
+        //
+        bool add_subzone(Admin *admin);
+
         //
         // block_refcount
         //
@@ -779,20 +852,33 @@ namespace Auto {
         void block_refcount_and_layout(void *block, int *refcount, int *layout);
         
         //
-        // block_is_new
+        // is_new
         //
-        // Returns true if the block was recently created.
+        // Returns true if the known-to-be-a-block was recently created.
         //
-        inline bool block_is_new(void *block) {
+        inline bool is_new(void *block) {
             if (in_subzone_memory(block)) {
                 return Subzone::subzone(block)->is_new(block);
-            } else if (in_large_memory(block)) {
+            } else if (in_large_memory(block) && Large::is_start(block)) {
                 return Large::is_new(block);
             }
             return false;
         }
         
         
+        //
+        // is_local
+        //
+        // Returns true if the known-to-be-a-block is a thread local node.
+        //
+        inline bool is_local(void *block) {
+            if (in_subzone_memory(block)) {
+                return Subzone::subzone(block)->is_thread_local(block);
+            } 
+            return false;
+        }
+
+
         //
         // block_is_garbage
         //
@@ -802,10 +888,9 @@ namespace Auto {
         inline bool block_is_garbage(void *block) {
             if (in_subzone_memory(block)) {
                 Subzone *subzone = Subzone::subzone(block);
-                return !subzone->is_marked(block) && !subzone->is_newest(block);
-            } else if (in_large_memory(block)) {
-                Large *large = Large::large(block);
-                return !large->is_marked() && !large->is_newest();
+                return subzone->block_is_start(block) && subzone->is_garbage(block);
+            } else if (in_large_memory(block) && Large::is_start(block)) {
+                return Large::large(block)->is_garbage();
             }
 
             return false;
@@ -820,12 +905,27 @@ namespace Auto {
         inline bool block_is_marked(void *block) {
             if (in_subzone_memory(block)) {
                 Subzone *subzone = Subzone::subzone(block);
-                return subzone->is_marked(block);
-            } else if (in_large_memory(block)) {
-                Large *large = Large::large(block);
-                return large->is_marked();
+                return subzone->block_is_start(block) && subzone->is_marked(block);
+            } else if (in_large_memory(block) && Large::is_start(block)) {
+                return Large::large(block)->is_marked();
             }
             return false;
+        }
+        
+        //
+        // associations_should_be_marked
+        //
+        // Predicate to test whether a block's associations should be marked.
+        //
+        inline bool associations_should_be_marked(void *address) {
+            if (in_subzone_memory(address)) {
+                Subzone *subzone = Subzone::subzone(address);
+                return subzone->block_is_start(address) && subzone->is_marked(address);
+            } else if (in_large_memory(address) && Large::is_start(address)) {
+                return Large::large(address)->is_marked();
+            }
+            // <rdar://problem/6463922> Treat non-block pointers as unconditionally live.
+            return true;
         }
 
 
@@ -834,50 +934,23 @@ namespace Auto {
         //
         // Creates an association between a given block, a unique pointer-sized key, and a pointer value.
         //
-        void set_associative_ref(void *block, void *key, void *value) {
-            if (value) {
-                // Creating associations must enliven objects that may become garbage otherwise.
-                UnconditionalBarrier barrier(&_needs_enlivening, &_enlivening_lock);
-                SpinLock lock(&_associations_lock);
-                _associations[block][key] = value;
-                if (barrier) _enlivening_queue.add(value);
-            } else {
-                // setting the association to NULL breaks the association.
-                SpinLock lock(&_associations_lock);
-                PtrPtrHashMap &refs = _associations[block];
-                PtrPtrHashMap::iterator i = refs.find(key);
-                if (i != refs.end()) refs.erase(i);
-            }
-        }
+        void set_associative_ref(void *block, void *key, void *value);
+
         
         //
         // get_associative_ref
         //
         // Returns the associated pointer value for a given block and key.
         //
-        void *get_associative_ref(void *block, void *key) {
-            SpinLock lock(&_associations_lock);
-            PtrAssocHashMap::iterator i = _associations.find(block);
-            if (i != _associations.end()) {
-                PtrPtrHashMap &refs = i->second;
-                PtrPtrHashMap::iterator j = refs.find(key);
-                if (j != refs.end()) return j->second;
-            }
-            return NULL;
-        }
-        
-        // called by memory scanners to enliven associative references.
-        void scan_associations(MemoryScanner &scanner);
+        void *get_associative_ref(void *block, void *key);
 
-        void pend_associations(void *block) {
-            PtrAssocHashMap::iterator i = _associations.find(block);
-            if (i != _associations.end()) {
-                PtrPtrHashMap &refs = i->second;
-                for (PtrPtrHashMap::iterator j = refs.begin(); j != refs.end(); j++) {
-                    set_pending(j->second);
-                }
-            }
-        }
+                
+        //
+        // erase_associations_internal
+        //
+        // Assuming association lock held, do the dissassociation dance
+        //
+        void erase_associations_internal(void *block);
         
         //
         // erase_assocations
@@ -887,20 +960,43 @@ namespace Auto {
         // When the collector frees blocks, it uses a different code
         // path, to minimize locking overhead. See free_garbage().
         //
-        void erase_associations(void *block) {
-            SpinLock lock(&_associations_lock);
-            if (_associations.size() == 0) return;
-            PtrAssocHashMap::iterator iter = _associations.find(block);
-            if (iter != _associations.end()) _associations.erase(iter);
-        }
+        void erase_associations(void *block);
+
+        //
+        // erase_associations_in_range
+        //
+        // Called by remove_datasegment() below, when a data segment is unloaded
+        // to automatically break associations referenced by global objects (@string constants).
+        //
+        void erase_associations_in_range(const Range &r);
+        
+        //
+        // scan_assocations
+        //
+        // Called by MemoryScanner classes to enliven associative references.
+        //
+        void scan_associations(MemoryScanner &scanner);
+
+        //
+        // pend_associations
+        //
+        // Called during associative reference scanning to scan a newly discovered blocks
+        // associations.
+        //
+        void pend_associations(void *block, MemoryScanner &scanner);
         
         //
         // add_root
         //
         // Adds the address as a known root.
+        // Performs the assignment in a race-safe way.
+        // Escapes thread-local value if necessary.
         //
         inline void add_root(void *root, void *value) {
-            UnconditionalBarrier barrier(&_needs_enlivening, &_enlivening_lock);
+            Thread &thread = registered_thread();
+            thread.block_escaped(this, NULL, value);
+            
+            EnliveningHelper<UnconditionalBarrier> barrier(thread);
             SpinLock lock(&_roots_lock);
             if (_roots.find(root) == _roots.end()) {
                 _roots.insert(root);
@@ -908,7 +1004,7 @@ namespace Auto {
             // whether new or old, make sure it gets scanned
             // if new, well, that's obvious, but if old the scanner may already have scanned
             // this root and we'll never see this value otherwise
-            if (barrier && !block_is_marked(value)) _enlivening_queue.add(value);
+            if (barrier && !block_is_marked(value)) barrier.enliven_block(value);
             *(void **)root = value;
         }
         
@@ -919,6 +1015,11 @@ namespace Auto {
         // Adds the address as a known root.
         //
         inline void add_root_no_barrier(void *root) {
+#if DEBUG
+            // this currently fires if somebody uses the wrong version of objc_atomicCompareAndSwap*
+            //if (in_subzone_memory(root)) __builtin_trap();
+#endif
+
             SpinLock lock(&_roots_lock);
             if (_roots.find(root) == _roots.end()) {
                 _roots.insert(root);
@@ -939,6 +1040,16 @@ namespace Auto {
             std::copy(_roots.begin(), _roots.end(), (void**)list.buffer());
         }
         
+        // copy_roots
+        //
+        // Takes a snapshot of the registered roots during scanning.
+        //
+        inline void copy_roots(PtrVector &list) {
+            SpinLock lock(&_roots_lock);
+            usword_t count = _roots.size();
+            list.resize(count);
+            std::copy(_roots.begin(), _roots.end(), list.begin());
+        }
 
         // remove_root
         //
@@ -956,14 +1067,155 @@ namespace Auto {
         //
         // is_root
         //
-        // Returns whether or not the address range is a known root range.
+        // Returns whether or not the address has been registered.
         //
         inline bool is_root(void *address) {
             SpinLock lock(&_roots_lock);
             PtrHashSet::iterator iter = _roots.find(address);
             return (iter != _roots.end());
         }
+
+        //
+        // RangeLess
+        //
+        // Compares two ranges, returning true IFF r1 is left of r2 on the number line.
+        // Returns false if the ranges overlap in any way.
+        //
+        struct RangeLess {
+          bool operator()(const Range &r1, const Range &r2) const {
+            return (r1.address() < r2.address()) && (r1.end() <= r2.address()); // overlapping ranges will always return false.
+          }
+        };
         
+        //
+        // add_datasegment
+        //
+        // Adds the given data segment address range to a list of known data segments, which is searched by is_global_address().
+        //
+        inline void add_datasegment(const Range &r) {
+            SpinLock lock(&_datasegments_lock);
+            RangeVector::iterator i = std::lower_bound(_datasegments.begin(), _datasegments.end(), r, RangeLess());
+            _datasegments.insert(i, r);
+        }
+        
+        //
+        // RangeExcludes
+        //
+        // Returns false if the address lies outside the given range.
+        //
+        struct RangeExcludes {
+            Range _range;
+            RangeExcludes(const Range &r) : _range(r) {}
+            bool operator()(void *address) { return !_range.in_range(address); }
+        };
+
+        //
+        // RootRemover
+        //
+        // Used by remove_datasegment() below, removes an address from the
+        // root table. Simply an artifact for use with std::for_each().
+        //
+        struct RootRemover {
+            PtrHashSet &_roots;
+            RootRemover(PtrHashSet &roots) : _roots(roots) {}
+            void operator()(void *address) { 
+                PtrHashSet::iterator iter = _roots.find(address);
+                if (iter != _roots.end()) _roots.erase(iter);
+            }
+        };
+    
+        //
+        // remove_datasegment
+        //
+        // Removes the given data segment address range from the list of known address ranges.
+        //
+        inline void remove_datasegment(const Range &r) {
+            {
+                SpinLock lock(&_datasegments_lock);
+                // could use std::lower_bound(), or std::equal_range() to speed this up, since they use binary search to find the range.
+                // _datasegments.erase(std::remove(_datasegments.begin(), _datasegments.end(), r, _datasegments.end()));
+                RangeVector::iterator i = std::lower_bound(_datasegments.begin(), _datasegments.end(), r, RangeLess());
+                if (i != _datasegments.end()) _datasegments.erase(i);
+            }
+            {
+                // When a bundle gets unloaded, scour the roots table to make sure no stale roots are left behind.
+                SpinLock lock(&_roots_lock);
+                PtrVector rootsToRemove;
+                std::remove_copy_if(_roots.begin(), _roots.end(), std::back_inserter(rootsToRemove), RangeExcludes(r));
+                std::for_each(rootsToRemove.begin(), rootsToRemove.end(), RootRemover(_roots));
+            }
+            erase_associations_in_range(r);
+            weak_unregister_data_segment(this, r.address(), r.size());
+        }
+        
+        inline void add_datasegment(void *address, size_t size) { add_datasegment(Range(address, size)); }
+        inline void remove_datasegment(void *address, size_t size) { remove_datasegment(Range(address, size)); }
+
+        //
+        // is_global_address
+        //
+        // Binary searches the registered data segment address ranges to determine whether the address could be referring to
+        // a global variable.
+        //
+        inline bool is_global_address(void *address) {
+            SpinLock lock(&_datasegments_lock);
+            return std::binary_search(_datasegments.begin(), _datasegments.end(), Range(address, sizeof(void*)), RangeLess());
+        }
+
+#if DEBUG
+        //
+        // DATASEGMENT REGISTRATION UNIT TEST
+        //
+        struct RangePrinter {
+            void operator() (const Range &r) {
+                printf("{ address = %p, end = %p }\n", r.address(), r.end());
+            }
+        };
+        
+        inline void print_datasegments() {
+            SpinLock lock(&_datasegments_lock);
+            std::for_each(_datasegments.begin(), _datasegments.end(), RangePrinter());
+        }
+
+        void test_datasegments() {
+            Range r1((void*)0x1000, 512), r2((void*)0xA000, 512);
+            add_datasegment(r1);
+            add_datasegment(r2);
+            print_datasegments();
+            Range r3(r1), r4(r2);
+            r3.adjust(r1.size()), r4.adjust(-r2.size());
+            add_datasegment(r3);
+            add_datasegment(r4);
+            print_datasegments();
+            assert(is_global_address(r1.address()));
+            assert(is_global_address(displace(r1.address(), 0x10)));
+            assert(is_global_address(displace(r1.end(), -sizeof(void*))));
+            assert(is_global_address(displace(r2.address(), 0xA0)));
+            assert(is_global_address(displace(r3.address(), 0x30)));
+            assert(is_global_address(displace(r4.address(), 0x40)));
+            remove_datasegment(r2);
+            print_datasegments();
+            assert(!is_global_address(displace(r2.address(), 0xA0)));
+            remove_datasegment(r1);
+            assert(!is_global_address(displace(r1.address(), 0x10)));
+            print_datasegments();
+            remove_datasegment(r3);
+            remove_datasegment(r4);
+            print_datasegments();
+        }
+#endif
+
+        //
+        // erase_weak
+        //
+        // unregisters any weak references contained within known AUTO_OBJECT
+        //
+        inline void erase_weak(void *ptr) {
+            if (control.weak_layout_for_address) {
+                const unsigned char* weak_layout = control.weak_layout_for_address((auto_zone_t*)zone, ptr);
+                if (weak_layout) weak_unregister_with_layout(this, (void**)ptr, weak_layout);
+            }
+        }
 
         //
         // add_zombie
@@ -997,22 +1249,6 @@ namespace Auto {
             _zombies.clear();
         }
         
-
-        //
-        // set_pending
-        //
-        // Sets a block as pending during scanning.
-        //
-        bool set_pending(void *block);
-        
-        
-        //
-        // repend
-        //
-        // Force a block to be rescanned.
-        //
-        void repend(void *address);
-        
         
         //
         // set_write_barrier
@@ -1021,7 +1257,7 @@ namespace Auto {
         // If scanning is going on then the value is marked pending.
         // If address is within an allocated block the value is set there and will return true.
         //
-        bool set_write_barrier(void *address, void *value);
+        bool set_write_barrier(Thread &thread, void *address, void *value);
         
         
         //
@@ -1040,14 +1276,6 @@ namespace Auto {
         // Returns if the address is within an allocated block (and barrier set)
         //
         bool set_write_barrier(void *address);
-        
-        
-        //
-        // write_barrier_scan_unmarked_content
-        //
-        // Scan ranges in block that are marked in the write barrier.
-        //
-        void write_barrier_scan_unmarked_content(void *block, const usword_t size, MemoryScanner &scanner);
 
 
         //
@@ -1119,6 +1347,15 @@ namespace Auto {
             _scan_stack.push(displace(range.address(), 1));
         }
         
+        //
+        // scan_stack_push_write_barrier
+        //
+        // Pushes a pointer to a WriteBarrier* that was in effect when a range was pushed.
+        //
+        void scan_stack_push_write_barrier(WriteBarrier *wb) {
+            _scan_stack.push(displace(wb, 3));
+        }
+        
         
         //
         // scan_stack_is_empty
@@ -1134,10 +1371,14 @@ namespace Auto {
         // Returns true if the top of the scan stack is a range.
         //
         bool scan_stack_is_range() {
-            void *block = _scan_stack.top();
-            return !is_bit_aligned(block, 1);
+            void *pointer = _scan_stack.top();
+            return (uintptr_t(pointer) & 0x3) == 0x1;
         }
         
+        bool scan_stack_is_write_barrier() {
+            void *pointer = _scan_stack.top();
+            return (uintptr_t(pointer) & 0x3) == 0x3;
+        }
         
         //
         // scan_stack_pop_block
@@ -1159,44 +1400,47 @@ namespace Auto {
             void *block2 = _scan_stack.pop();
             return Range(displace(block1, -1), block2);
         }
+        
+        WriteBarrier *scan_stack_pop_write_barrier() {
+            void *pointer = _scan_stack.pop();
+            return (WriteBarrier*) displace(pointer, -3);
+        }
 
+        
+        //
+        // scan_stack_max
+        //
+        // Return the maximum words used in this scan
+        //
+        unsigned long int scan_stack_max() { return _scan_stack.max(); }
+
+
+        inline void set_repair_write_barrier(bool repair) { _repair_write_barrier = repair; }
         inline bool repair_write_barrier() const { return _repair_write_barrier; }
-
-        //
-        // Accessors for _some_pending.
-        //
-        inline bool is_some_pending     () const { return _some_pending; }
-        inline void set_some_pending    ()       { _some_pending = true; }
-        inline void clear_some_pending  ()       { _some_pending = false; }
-        
-        
-        //
-        // Accessors for _use_pending.
-        //
-        inline bool use_pending         () const { return _use_pending; }
-        inline void set_use_pending     ()       { _use_pending = true; }
-        inline void clear_use_pending   ()       { _use_pending = false; }
         
         
         //
         // set_needs_enlivening
         //
-        // Informs the write-barrier that blocks need repending.
+        // Inform all known threads that scanning is about to commence, thus blocks will need to be
+        // enlivened to make sure they aren't missed during concurrent scanning.
         //
-        inline void set_needs_enlivening() {
-            close_locks();
-            _needs_enlivening = true;
-            open_locks();
-        }
+        void set_needs_enlivening();
+        
+        //
+        // enlivening_barrier
+        //
+        // Called by Collector::scan_barrier() to enliven all blocks that
+        // would otherwise be missed by concurrent scanning.
+        //
+        void enlivening_barrier(MemoryScanner &scanner);
         
         //
         // clear_needs_enlivening
         //
-        // Write barriers no longer need to repend blocks.
+        // Unblocks threads that may be spinning waiting for enlivening to finish.
         //
-        inline void  clear_needs_enlivening() {
-            _needs_enlivening = false;
-        }
+        void clear_needs_enlivening();
         
         
         //
@@ -1205,10 +1449,7 @@ namespace Auto {
         // Indicate the beginning of the collection period.  New blocks allocated during the time will
         // automatically marked and not treated as garbage.
         //
-        inline void  collect_begin(bool is_partial) {
-            SpinLock lock(&_large_lock);
-            _deallocate_large = &Zone::deallocate_large_collecting;
-            _is_partial = is_partial;
+        inline void  collect_begin() {
         }
         
         
@@ -1219,35 +1460,23 @@ namespace Auto {
         // be collected normally.
         //
         inline void  collect_end() {
-            reset_all_marks();
-        
-            _is_partial = false;
-            
-            // deallocate all Large blocks marked for deletion during collection.
-            SpinLock lock(&_large_lock);
-            Large *large = _large_list;
-            while (large != NULL) {
-                Large *next = large->next();
-                if (large->is_freed()) deallocate_large_normal(large->address());
-                large = next;
-            }
-            _deallocate_large = &Zone::deallocate_large_normal;
-            
             _garbage_list.uncommit();
+            _small_admin.purge_free_space();
+            _medium_admin.purge_free_space();
         }
         
         //
         // block_collector
         //
-        // Called by the monitor to prevent collections. Also suspends all registered threads
-        // to avoid potential heap inconsistency.
+        // Called to lock the global mark bits and thread lists.
+        // Returns true if successful.
         //
-        void block_collector();
+        bool block_collector();
         
         //
         // unblock_collector
         //
-        // Called by the monitor to enable collections.  Also resumes all registered threads.
+        // Called to unlock the global mark bits and thread lists.
         //
         void unblock_collector();
         
@@ -1266,6 +1495,27 @@ namespace Auto {
         //
         void scavenge_blocks();
         
+        //
+        // invalidate_garbage
+        //
+        // Given an array of garbage, do callouts for finalization
+        //
+        void invalidate_garbage(const size_t garbage_count, const vm_address_t *garbage);
+
+        //
+        // handle_overretained_garbage
+        //
+        // called when we detect a garbage block has been over retained during finalization
+        // logs a (fatal, based on the setting) resurrection error
+        // 
+        void handle_overretained_garbage(void *block, int rc);
+        
+        //
+        // free_garbage
+        //
+        // Given an array of garbage, free it en masse
+        //
+        size_t free_garbage(boolean_t generational, const size_t garbage_count, vm_address_t *garbage, size_t &blocks_freed, size_t &bytes_freed);
         
         //
         // release_pages
@@ -1275,28 +1525,49 @@ namespace Auto {
         void release_pages() {
         }
         
+        //
+        // recycle_threads
+        //
+        // Searches for unbound threads, queueing them for deletion.
+        //
+        void recycle_threads();
         
         //
         // register_thread
         //
         // Add the current thread as a thread to be scanned during gc.
         //
-        void register_thread();
+        Thread &register_thread();
 
 
         //
         // unregister_thread
         //
-        // Remove the current thread as a thread to be scanned during gc.
+        // deprecated
         //
         void unregister_thread();
+
+    private:
+        Thread *firstScannableThread();
+        Thread *nextScannableThread(Thread *thread);
+
+    public:
+        //
+        // scan_registered_threads
+        //
+        // Safely enumerates the registered threads, ensuring that their stacks
+        // remain valid during the call to the scanner block.
+        //
+        typedef void (^thread_scanner_t) (Thread *thread);
+        void scan_registered_threads(thread_scanner_t scanner);
+        void scan_registered_threads(void (*scanner) (Thread *, void *), void *arg) { scan_registered_threads(^(Thread *thread) { scanner(thread, arg); }); }
         
 
         //
         // suspend_all_registered_threads
         //
-        // Suspend all registered threads. Only used by the monitor for heap snapshots.
-        // Acquires _registered_threads_lock.
+        // Suspend all registered threads. Provided for heap snapshots.
+        // Acquires _registered_threads_lock so that no new threads can enter the system.
         //
         void suspend_all_registered_threads();
 
@@ -1305,24 +1576,9 @@ namespace Auto {
         // resume_all_registered_threads
         //
         // Resumes all suspended registered threads.  Only used by the monitor for heap snapshots.
+        // Relinquishes the _registered_threads_lock.
         //
         void resume_all_registered_threads();
-        
-        //
-        // set_thread_finalizing
-        //
-        // Marks a thread as currently finalizing. 
-        //
-        void set_thread_finalizing(bool is_finalizing) {
-            pthread_setspecific(_thread_finalizing_key, (void*)is_finalizing);
-        }
-        
-        //
-        // is_thread_finalizing
-        //
-        // Tests whether the current thread is finalizing.
-        //
-        bool is_thread_finalizing() { return is_state(finalizing) && (bool)pthread_getspecific(_thread_finalizing_key); }
         
         //
         // weak references.
@@ -1365,6 +1621,28 @@ namespace Auto {
         void print_block(void *block);
         void print_block(void *block, const char *tag);
         
+        //
+        // malloc_statistics
+        //
+        // computes the necessary malloc statistics
+        //
+        void malloc_statistics(malloc_statistics_t *stats);
+
+        //
+        // dump
+        //
+        // call blocks with everything needed to recreate heap
+        // blocks are called in the order given
+        //
+        void dump(
+            auto_zone_stack_dump stack_dump,
+            auto_zone_register_dump register_dump,
+            auto_zone_node_dump thread_local_node_dump,
+            auto_zone_root_dump root_dump,
+            auto_zone_node_dump global_node_dump,
+            auto_zone_weak_dump weak_dump_entry
+        );
+
         
    };
 

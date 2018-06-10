@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -16,6 +16,10 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
+ */
+/*
+    AutoRange.h
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
  */
 
 #pragma once
@@ -66,6 +70,7 @@ namespace Auto {
         inline       void     set_range(void *address, usword_t size)       { _address = address; _end = displace(address, size); }
         inline       void     adjust_address(intptr_t delta)                { _address = displace(_address, delta); }
         inline       void     adjust_end(intptr_t delta)                    { _end = displace(_end, delta); }
+        inline       void     adjust(intptr_t delta)                        { _address = displace(_address, delta), _end = displace(_end, delta); }
         
         
         //
@@ -96,16 +101,15 @@ namespace Auto {
         // operator ==
         //
         // Used to locate entry in list or hash table (use is_range for exaxt match.)
-        inline const bool operator==(Range *range)  const { return _address == range->_address; }
-        inline const bool operator==(Range &range)  const { return _address == range._address; }
-        
+        inline const bool operator==(const Range *range)  const { return _address == range->_address; }
+        inline const bool operator==(const Range &range)  const { return _address == range._address; }
         
         //
         // is_range
         //
         // Return true if the ranges are equivalent.
         //
-        inline const bool is_range(Range& range) { return _address == range._address && _end == range._end; }
+        inline const bool is_range(const Range& range) const { return _address == range._address && _end == range._end; }
         
         
         //
@@ -148,8 +152,7 @@ namespace Auto {
         
         
     };
-    
-
+        
 };
 
 #endif // __AUTO_RANGE__

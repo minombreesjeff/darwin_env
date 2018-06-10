@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -16,6 +16,11 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
+ */
+/*
+    AutoBitmap.h
+    High Performance Bitmap
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
  */
 
 #pragma once
@@ -145,12 +150,11 @@ namespace Auto {
         //
         // set_bit_atomic
         //
-        // Set a bit in the bit map to 1.
+        // Set a bit in the bit map to 1 atomically.
         //
         inline void set_bit_atomic(const usword_t bp) const {
             usword_t *cursor = bp_cursor(bp);
-            *cursor |= 1L << shift(bp);
-            while(!OSAtomicCompareAndSwapLong((long)*cursor, (long)(*cursor |= 1L << shift(bp)), (volatile long *)cursor)) ;
+            __sync_or_and_fetch(cursor,  1L << shift(bp));
         }
 
         

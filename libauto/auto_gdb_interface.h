@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,11 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    auto_gdb_interface.h
+    Routines called by gdb to implement its info gc-references and gc-roots commands.
+    Copyright (c) 2007-2008 Apple Inc. All rights reserved.
+ */
 
 #ifndef __AUTO_GDB_INTERFACE__
 #define __AUTO_GDB_INTERFACE__
@@ -31,7 +36,8 @@ enum {
     auto_memory_block_global = 0,
     auto_memory_block_stack,
     auto_memory_block_object,
-    auto_memory_block_bytes
+    auto_memory_block_bytes,
+    auto_memory_block_association
 };
 typedef uint32_t auto_memory_block_kind_t;
 

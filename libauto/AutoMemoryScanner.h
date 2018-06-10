@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,14 +17,16 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoMemoryScanner.h
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #pragma once
 #ifndef __AUTO_SCANMEMORY__
 #define __AUTO_SCANMEMORY__
 
 #include "AutoDefs.h"
-#include "AutoList.h"
-#include "AutoListTypes.h"
 #include "AutoRange.h"
 
 
@@ -37,6 +39,8 @@ namespace Auto {
     class Subzone;
     class Thread;
     class Zone;
+    class Large;
+    class WriteBarrier;
     
     
     //----- MemoryScanner -----//
@@ -47,13 +51,6 @@ namespace Auto {
     
     class MemoryScanner {
     
-      private:
-      
-        typedef enum {
-            scan_without_suspend,
-            scan_with_suspend_and_closure,
-        } thread_scan_t;
-    
       protected:
       
         Zone                      *_zone;                                   // zone being scanned
@@ -63,9 +60,11 @@ namespace Auto {
         vector unsigned int       _lo_vector;                               // vector containing lowest valid address x 4
         vector unsigned int       _diff_vector;                             // vector containing range of valid address - 1 x 4
 #endif
-        
+
+        bool                      _use_pending;                             // use bitmap
+        bool                      _some_pending;                            // indicates some blocks are pending scanning
+        bool                      _is_partial;                              // true if this a partial (generational) scan.
         bool                      _is_collector;                            // true if this a collector subclass.
-        bool                      _use_write_barrier;                       // use write barrier when scanning
         bool                      _does_check_block;                        // detailed checking of block
         bool                      _should_coalesce;                         // should coalesce ranges
         bool                      _use_exact_scanning;                      // trust exact layouts when scanning
@@ -83,12 +82,16 @@ namespace Auto {
         //
         // Constructor
         //
-        MemoryScanner(Zone *zone, void *current_stack_bottom, bool use_write_barrier, bool does_check_block);
+        MemoryScanner(Zone *zone, void *current_stack_bottom, bool does_check_block);
         virtual ~MemoryScanner() {}
 
         //
         // Accessors
         //
+        inline bool use_pending()          { return _use_pending; }
+        void set_use_pending(void)         { _use_pending = true; }
+        inline bool is_partial()     const { return _is_partial; }
+        void set_is_partial(bool b)        { _is_partial = b; }
         Zone *zone()                 const { return _zone; }
         void *current_stack_bottom() const { return _current_stack_bottom; }
         bool is_collector()          const { return _is_collector; }
@@ -96,6 +99,14 @@ namespace Auto {
         usword_t bytes_scanned()     const { return _amount_scanned; }
         usword_t blocks_scanned()    const { return _blocks_scanned; }
         
+
+        //
+        // Accessors for _some_pending.  Used for bitmap based scanning.
+        //
+        inline bool is_some_pending     () const { return _some_pending; }
+        inline void set_some_pending    ()       { _some_pending = true; }
+        inline void clear_some_pending  ()       { _some_pending = false; }
+
         //
         // scan_for_unmarked_blocks
         //
@@ -110,7 +121,7 @@ namespace Auto {
         //
         // Scan block using optional layout map
         //
-        void scan_object_range(Range &range);
+        void scan_object_range(Range &range, WriteBarrier *wb);
         
 
         //
@@ -118,7 +129,7 @@ namespace Auto {
         //
         // Scan block using supplied layout
         //
-        void scan_with_layout(Range &block, const unsigned char* map);
+        void scan_with_layout(Range &block, const unsigned char* map, WriteBarrier *wb);
         
 
         //
@@ -126,7 +137,7 @@ namespace Auto {
         //
         // Scan block using supplied (weak) layout
         //
-        void scan_with_weak_layout(Range &block, const unsigned char* map);
+        void scan_with_weak_layout(Range &block, const unsigned char* map, WriteBarrier *wb);
         
         
         //
@@ -139,6 +150,14 @@ namespace Auto {
 
 
         //
+        // repend
+        //
+        // Force a block to be rescanned.
+        //
+        void repend(void *address);
+
+
+        //
         // check_block
         //
         // Purpose driven examination of block.
@@ -146,6 +165,15 @@ namespace Auto {
         //
         virtual void check_block(void **reference, void *block);
 
+
+        //
+        // associate_block
+        //
+        // Called during associative reference scanning, to indicate this block is associated
+        // with reference via key.
+        //
+        virtual void associate_block(void **reference, void *key, void *block);
+        
 
 #if defined(__ppc__)
         //
@@ -178,9 +206,9 @@ namespace Auto {
         //
         // Scans the specified aligned range for references to unmarked blocks.
         //
-        void scan_range(const Range &range, WriteBarrier *wb = NULL);
-        inline void scan_range(void *address, usword_t size) { Range range(address, size); scan_range(range); }
-        inline void scan_range(void *address, void *end)     { Range range(address, end);  scan_range(range); }
+        virtual void scan_range(const Range &range, WriteBarrier *wb = NULL);
+        inline void scan_range(void *address, usword_t size, WriteBarrier *wb = NULL) { scan_range(Range(address, size), wb); }
+        inline void scan_range(void *address, void *end, WriteBarrier *wb = NULL) { scan_range(Range(address, end), wb); }
 
         virtual void scan_external();
 
@@ -190,7 +218,7 @@ namespace Auto {
         // Scan a range of memory in the thread's stack.
         // Subclass may want to record context.
         //
-        virtual void scan_range_from_thread(Range &range, Thread *thread);
+        virtual void scan_range_from_thread(Range &range, Thread &thread);
         
         
         //
@@ -199,7 +227,7 @@ namespace Auto {
         // Scan a range of memory containing an image of the thread's registers.
         // Subclass may want to record context.
         //
-        virtual void scan_range_from_registers(Range &range, Thread *thread, int first_register);
+        virtual void scan_range_from_registers(Range &range, Thread &thread, int first_register);
 
 
         //
@@ -231,7 +259,7 @@ namespace Auto {
         //
         // Scan all the stacks for unmarked references.
         //
-        void scan_thread_ranges(thread_scan_t scan_type);
+        void scan_thread_ranges(bool withSuspend, bool includeCurrentThread);
 
 
         //

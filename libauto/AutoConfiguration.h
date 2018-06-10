@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,11 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoConfiguration.h
+    Garbage collector allocator parameters
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+*/
 
 #pragma once
 #ifndef __AUTO_CONFIGURATION__
@@ -27,16 +32,23 @@
 /*    
     The collector suballocates memory in multiples of 3 different quanta sizes, small, medium, and large.
     Medium is 64*small, large is 64*medium.
-    (64 is a maximum derived from the leftover bits in a secondary 'admin' byte)
+    (64 is a maximum derived from the leftover bits in a secondary 'admin' byte. It is more formally maximum_quanta)
+    The collector is presented to the rest of the system as a malloc-style "Zone" as well as with more
+    direct entry points.  The zone contains two Admin data structures - one for blocks of sizes in small
+    quanta sized multiples, and one for those of medium quanta multiples.  Each Admin principally maintains
+    64 freelists of blocks indexed by the quanta multiple (e.g. list[3] contains a chain of 3*quanta sized blocks).
+    The Zone also maintains a linked list of large quanta allocations that are directly allocated from the system
+    on 32-bit systems (or come from the top of the arena on 64-bit).
+    
     A "Region" is a data structure that manages a large virtual memory space of "subzone"s, each subzone
-    is dedicated to either small or medium quanta (multiples) allocation blocks.  The region has an 'admin'
-    data structure containing 64 free lists of that multiple of quanta sized blocks.  There is one admin
-    for all small quanta blocks and one for all large quanta blcoks.
-    There is a bitmap for all subzones in use so as to help easily deny false pointers - each subzone in use
-    actually starts with a reference to its controlling admin data structure.  Also in this subzone area at
+    is dedicated to either small or medium quanta (multiples) allocation blocks.  Subzones are allocated on large
+    power of two boundaries such that simple masking can quickly access administrative data stored in the first
+    few words of each.
+    The zone maintains a bitmap for all subzones in use so as to help easily deny false pointers. Also in this subzone area at
     the beginning is space for all the write-barrier bytes and the allocation administrative data.
     
-    Regions are chained together.
+    Regions are chained together.  Apart from bitmaps used during collections, they principly serve as sources of
+    as yet unused subzones for when an Admin exhausts its freelist and its new area subzone.
     
     Large quanta objects are freely allocated on large quanta alignment, and are tracked in their own bitmap
     again to easily deny false pointers.  There is administrative data (the "Auto::Large" instance) that
@@ -88,6 +100,14 @@
 namespace Auto {
 
     enum {
+        // pointer size
+        
+#if defined(__ppc64__) || defined(__x86_64__)
+        pointer_size_log2           = 3,
+#else
+        pointer_size_log2           = 2,
+#endif
+
         // Maximum number of quanta per allocation (64) in the small and medium admins
         maximum_quanta_log2          = 6u,
         maximum_quanta               = (1ul << maximum_quanta_log2),
@@ -112,9 +132,9 @@ namespace Auto {
         
         // arena size
 #if defined(__ppc64__) || defined(__x86_64__)
-        arena_size_log2              = 35ul,        // 32G
+        arena_size_log2              = 33ul,        // 8G
 #elif defined(__ppc__) || defined(__i386__)
-        arena_size_log2              = 32ul,         // 4G
+        arena_size_log2              = 32ul,        // 4G
 #else
 #error unknown architecture
 #endif
@@ -148,7 +168,16 @@ namespace Auto {
         write_barrier_quantum        = (1ul << write_barrier_quantum_log2),                
         
         // maximum number of write barrier bytes per subzone
-        subzone_write_barrier_max    = (subzone_quantum >> write_barrier_quantum_log2)
+        subzone_write_barrier_max    = (subzone_quantum >> write_barrier_quantum_log2),
+        
+        // largest quanta multiple cached
+        max_cached_small_multiple    = 3,
+        
+        // number of small_quantum lists cached on a per-thread basis
+        cached_lists_count         = 1+max_cached_small_multiple, // we don't use 0
+        
+        // number of nodes allocated per cached list
+        cached_list_node_initial_count = 10
     };
     
 };

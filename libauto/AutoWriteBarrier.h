@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -16,6 +16,10 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
+ */
+/*
+    AutoWriteBarrier.h
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
  */
 
 #pragma once
@@ -53,8 +57,8 @@ namespace Auto {
         //
         enum {
             card_unmarked = 0,
-            card_marked = 1,
-            card_marked_untouched = 0x3
+            card_marked_untouched = 0x1,
+            card_marked = 0x3
         };
       
       
@@ -92,6 +96,16 @@ namespace Auto {
             return i;
         }
         
+        //
+        // contains_card
+        //
+        // Returns true if the specified address is managed by this write-barrier.
+        //
+        inline bool contains_card(void *address) {
+            usword_t i = card_index(address);
+            return (_protect <= i && i < size());
+        }
+        
         
         //
         // card_address
@@ -114,22 +128,24 @@ namespace Auto {
         //
         // Marks the card at index i.
         //
-        inline void mark_card(usword_t i) { ((unsigned char *)address())[i] = card_marked; }
+        inline void mark_card(usword_t i) {
+            ((unsigned char *)address())[i] = card_marked;
+        }
 
         //
-        // mark_card_untouched
+        // mark_cards_untouched
         //
-        // Used to indicate a card is speculatively marked, but potentially clearable, unless
-        // remarked during full GC scanning.
+        // Used by the write-barrier repair algorithm. Transitions all cards that are currently marked from card_marked -> card_marked_untouched.
         //
-        inline void mark_card_untouched(usword_t i) { ((unsigned char *)address())[i] = card_marked_untouched; }
+        usword_t mark_cards_untouched();
         
-        // clear all the cards in the write barrier
-        inline void clear_cards() { bzero(displace(address(), _protect), size() - _protect); }
+        //
+        // clear_untouched_cards
+        //
+        // Used by the write-barrier repair algorithm. Uses compare and swap to effect the transition card_marked_untouched -> card_unmarked.
+        //
+        usword_t clear_untouched_cards();
         
-        // TODO:  better commentary.
-        void mark_cards_untouched();
-        void clear_untouched_cards();
         
         //
         // is_card_marked
@@ -166,13 +182,24 @@ namespace Auto {
 
         
         //
-        // scan_ranges
+        // scan_marked_ranges
         //
         // Scan ranges in block that are marked in the write barrier.
         //
-        void scan_ranges(void *address, const usword_t size, MemoryScanner &scanner);
+        void scan_marked_ranges(void *address, const usword_t size, void (^scanner) (Range&, WriteBarrier*));
+        void scan_marked_ranges(void *address, const usword_t size, void (*scanner) (Range&, WriteBarrier*, void*), void *arg) {
+            scan_marked_ranges(address, size, ^(Range &range, WriteBarrier *wb) { scanner(range, wb, arg); });
+        }
+        void scan_marked_ranges(void *address, const usword_t size, MemoryScanner &scanner);
+        void scan_marked_ranges(const Range &range, MemoryScanner &scanner) { scan_marked_ranges(range.address(), range.size(), scanner); }
         
         
+        //
+        // range_has_marked_cards
+        //
+        // Returns true if range intersects a range that has cards marked.
+        //
+        bool range_has_marked_cards(void *address, const usword_t size);
     };
 
     

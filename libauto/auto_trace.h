@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,11 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    auto_trace.h
+    DTrace support.
+    Copyright (c) 2006-2008 Apple Inc. All rights reserved.
+ */
 
 #include <sys/cdefs.h>
 #include <stddef.h>
@@ -31,15 +36,18 @@ typedef enum {
     AUTO_TRACE_SCAVENGING_PHASE
 } auto_collection_phase_t;
 
+typedef enum {
+	AUTO_TRACE_FULL = 0,
+	AUTO_TRACE_GENERATIONAL = 1,
+	AUTO_TRACE_LOCAL = 2
+} auto_collection_type_t;
+
 typedef struct {
     uint32_t size; // size of this structure
     void (*auto_trace_collection_begin)(auto_zone_t *zone, boolean_t generational);
     void (*auto_trace_collection_end)(auto_zone_t *zone, boolean_t generational, size_t objectsReclaimed, size_t bytesReclaimed, size_t totalObjectsInUse, size_t totalBytesInUse);
 } auto_trace_collection_callouts;
 
-void auto_trace_collection_begin(auto_zone_t *zone, boolean_t generational);
-void auto_trace_phase_begin(auto_zone_t *zone, boolean_t generational, auto_collection_phase_t phase);
-void auto_trace_phase_end(auto_zone_t *zone, boolean_t generational, auto_collection_phase_t phase, size_t objectsReclaimed, size_t bytesReclaimed);
-void auto_trace_collection_end(auto_zone_t *zone, boolean_t generational, size_t objectsReclaimed, size_t bytesReclaimed, size_t totalObjectsInUse, size_t totalBytesInUse);
+void auto_trace_collection_set_callouts(auto_trace_collection_callouts *new_callouts);
 
 __END_DECLS

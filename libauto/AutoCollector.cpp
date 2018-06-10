@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,12 +17,15 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoCollector.cpp
+    Specialized Memory Scanner
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #include "AutoCollector.h"
 #include "AutoDefs.h"
 #include "AutoEnvironment.h"
-#include "AutoList.h"
-#include "AutoListTypes.h"
 #include "AutoRange.h"
 #include "AutoWriteBarrier.h"
 #include "AutoZone.h"
@@ -39,7 +42,7 @@ namespace Auto {
     // Scan root blocks.
     //
     void Collector::check_roots() {
-        if (_is_partial) {
+        if (is_partial()) {
             scan_retained_and_old_blocks();
         } else {
             scan_retained_blocks();
@@ -57,34 +60,13 @@ namespace Auto {
     //
     void Collector::collect(bool use_pending) {
         // scan memory
-        if (use_pending)
-            _zone->set_use_pending();
-        else
-            _zone->clear_use_pending();
+        _use_pending = use_pending;
         scan();
     }
 
 
-    //
-    // scan_barrier
-    //
-    // Used by collectors to synchronize with concurrent mutators.
-    //
     void Collector::scan_barrier() {
         scan_end = auto_date_now();
-        // write barriers should no longer repend blocks
-        // NOTE:  this assumes NO THREADS ARE SUSPENDED at this point.
-        // NOTE: we exit scanning with the enlivening lock held, so that Zone::collect() can
-        // hold onto it until weak references and generational side data is cleared.
-        spin_lock(_zone->enlivening_lock());
-        PointerList& enlivening_queue = _zone->enlivening_queue();
-        // pointers in the enlivening queue need to be transitively scanned.
-        void **buffer = (void**)enlivening_queue.buffer();
-        for (usword_t i = 0, count = enlivening_queue.count(); i < count; ++i) {
-            _zone->repend(buffer[i]);
-        }
-        enlivening_queue.clear_count();
-        enlivening_queue.uncommit();
+        _zone->enlivening_barrier(*this);
     }
 };
-

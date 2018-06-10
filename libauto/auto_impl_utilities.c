@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,13 +17,19 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    auto_impl_utilities.c
+    Implementation Utilities
+    Copyright (c) 2002-2008 Apple Inc. All rights reserved.
+*/
 
-#import "auto_zone.h"
-#import "auto_impl_utilities.h"
+#include "auto_impl_utilities.h"
+#include "auto_tester.h"
 
-#import <malloc/malloc.h>
-#import <mach/mach.h>
-#import <libc.h>
+#include <malloc/malloc.h>
+#include <mach/mach.h>
+#include <libc.h>
+#include <stdarg.h>
 
 /*********  Implementation utilities    ************/
 
@@ -62,27 +68,10 @@ size_t auto_round_page(size_t size) {
 
 /*********  Utilities   ************/
 
-boolean_t auto_prelude_log_thread = 0;
-
 const char *auto_prelude(void) {
-    static pthread_key_t key;
-    static boolean_t key_created = 0; 
-    if (!key_created) {
-        key_created = 1;
-        if (pthread_key_create(&key, free)) {
-            printf("*** Error creating thread_key\n");
-        }
-    }
-    char    *buf = pthread_getspecific(key);
-    if (!buf) {
-        buf = aux_malloc(48);
-        if (auto_prelude_log_thread) {
-            unsigned long    thread = (unsigned long)(&buf);
-            sprintf(buf, "auto malloc[%d#%lx]", getpid(), thread >> 12);
-        } else {
-            sprintf(buf, "auto malloc[%d]", getpid());
-        }
-        pthread_setspecific(key, buf);
+    static char buf[32] = { 0 };
+    if (!buf[0]) {
+        snprintf(buf, sizeof(buf), "auto malloc[%d]", getpid());
     }
     return (const char *)buf;
 }
@@ -99,6 +88,17 @@ void auto_error(void *azone, const char *msg, const void *ptr) {
 #endif
 }
 
+void auto_fatal(const char *format, ...) {
+    static char buffer[512];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    __crashreporter_info__ = buffer;
+    malloc_printf("%s", buffer);
+    __builtin_trap();
+}
+
 /*********  Internal allocation ************/
 
 // GrP fixme assumes only one auto zone is ever active in a process
@@ -109,7 +109,10 @@ __private_extern__ void aux_init(void) {
     if (!aux_zone) {
         aux_zone = malloc_create_zone(4096, 0); // GrP fixme size?
         malloc_set_zone_name(aux_zone, "aux_zone");
+#if !DEBUG
+        // make it possible to call free() on these blocks while debugging.
         malloc_zone_unregister(aux_zone);       // PCB don't let fork() mess with aux_zone <rdar://problem/4580709>
+#endif
     }
 }
 
@@ -139,8 +142,6 @@ malloc_zone_t *auto_debug_zone(void)
     }
     return z;
 }
-
-
 
 #define CHECK_ADDR(n) \
     entry->stack[n] = (vm_address_t)(__builtin_return_address(n + 1) - 4); \
@@ -199,7 +200,7 @@ static spin_lock_t refcount_stacks_lock;
 #define auto_refcount_stacks_unlock() spin_unlock(&refcount_stacks_lock)
 
 
-void auto_record_refcount_stack(azone_t *azone, void *ptr, int delta)
+void auto_record_refcount_stack(auto_zone_t *azone, void *ptr, int delta)
 {
     int h, e;
     vm_address_t addr = (vm_address_t)ptr;
@@ -695,4 +696,17 @@ __private_extern__ void *ptr_map_remove(ptr_map *map, void *ptr) {
 
 __private_extern__ void auto_refcount_underflow_error(void *block) { }
 
-__private_extern__ void auto_zone_resurrection_error(void) { }
+__private_extern__ void auto_zone_resurrection_error()
+{
+}
+
+__private_extern__ void auto_zone_thread_local_error(void) { }
+
+__private_extern__ void auto_zone_thread_registration_error() 
+{
+    AUTO_PROBE(auto_probe_unregistered_thread_error());
+}
+
+__private_extern__ void auto_zone_global_data_memmove_error() { }
+
+__private_extern__ void auto_zone_association_error(void *address) { }

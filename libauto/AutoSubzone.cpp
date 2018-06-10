@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,36 +17,39 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoSubzone.cpp
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #include "AutoSubzone.h"
-
+#include "AutoZone.h"
 
 namespace Auto {
 
     //----- Subzone -----//
     
-        const unsigned char Subzone::age_map[16] = { 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 4, 5 };
-        const unsigned char Subzone::ref_map[16] = { 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 1, 1 };
-        const unsigned char Subzone::next_age_map[16] = {
-            r0_a0, r0_a0, r0_a1, r0_a2,
-            r1_a0, r1_a0, r1_a1, r1_a2,
-            r2_a0, r2_a0, r2_a1, r2_a2,
-            r0_a3, r0_a4,
-            r1_a3, r1_a4,
-        };
-        const unsigned char Subzone::incr_refcount_map[16] = {
-            r1_a0, r1_a1, r1_a2, r1_a3, // refcount 0 -> refcount 1
-            r2_a0, r2_a1, r2_a2, r2_a3, // refcount 1 -> refcount 2
-            0xff, 0xff, 0xff, 0xff,     // not used
-            r1_a4, r1_a5,               // refcount 0 -> refcount 1
-            r2_a3, r2_a3,               // refcount 1 -> refcount 2 (note (a4,a5)->a3 transition tho)
-        };
-        const unsigned char Subzone::decr_refcount_map[16] = {
-            0xff, 0xff, 0xff, 0xff,     // not used
-            r0_a0, r0_a1, r0_a2, r0_a3, // refcount 1 -> refcount 0
-            r1_a0, r1_a1, r1_a2, r1_a5, // refcount 2 -> refcount 1  (note r2_a3 -> r1_a5)
-            0xff, 0xff,                 // not used
-            r0_a4, r0_a5,               // refcount 1 -> refcount 0
-        };
+    //
+    // malloc_statistics
+    //
+    // compute the malloc statistics
+    // XXX known not to be accurate - missing blocks allocated
+    //
+    void Subzone::malloc_statistics(malloc_statistics_t *stats) {
+        SpinLock lock(_admin->lock());
+        for (usword_t q=0; q<_in_use; q++) {
+            if (is_start(q)) {
+                stats->blocks_in_use++;
+                stats->size_in_use += size(q);
+                q += length(q);
+            }
+        }
+        // admin costs
+        // XXX we should add in the size of the base + write-barriers
+        stats->max_size_in_use += quantum_size(_in_use);
+        stats->size_allocated += quantum_size(_in_use);
+    }
+
+    
 };
 

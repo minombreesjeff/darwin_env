@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -17,6 +17,11 @@
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
  */
+/*
+    AutoBlockIterator.h
+    Template Functions/Classes to visit all blocks in the GC heap.
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ */
 
 #pragma once
 #ifndef __AUTO_BLOCKITERATOR__
@@ -26,7 +31,6 @@
 #include "AutoAdmin.h"
 #include "AutoDefs.h"
 #include "AutoLarge.h"
-#include "AutoListTypes.h"
 #include "AutoRegion.h"
 #include "AutoZone.h"
 
@@ -58,37 +62,12 @@ namespace Auto {
 
         // iterate through the large blocks
         for (Large *large = zone->large_list(); large != NULL; large = large->next()) {
-            // don't consider lazily freed blocks.
-            if (large->is_freed()) continue;
             // let the visitor visit the write barrier
             if (!visitor.visit(zone, large)) return false;
         }
 
         return true;
     }
-    
-    template<class T>class BlockIterator {
-    
-      private:
-        
-        Zone *_zone;                                        // zone containing blocks
-        T    &_visitor;                                     // object visiting blocks
-        
-      public:
-      
-        //
-        // Constructor
-        //
-        BlockIterator(Zone *zone, T &visitor)
-        : _zone(zone)
-        , _visitor(visitor)
-        {}
-      
-        inline bool visit() {
-            return visitAllocatedBlocks(_zone, _visitor);
-        }
-    };
-
 
     //----- AllBlockIterator -----//
     
@@ -119,32 +98,6 @@ namespace Auto {
 
         return true;
     }
-    
-    template<class T>class AllBlockIterator {
-    
-      private:
-        
-        Zone *_zone;                                        // zone containing blocks
-        T    &_visitor;                                     // object visiting blocks
-        
-      public:
-      
-        //
-        // Constructor
-        //
-        AllBlockIterator(Zone *zone, T &visitor)
-        : _zone(zone)
-        , _visitor(visitor)
-        {}
-      
-        inline bool visit() {
-            return visitAllBlocks(_zone, _visitor);
-        }
-        
-        
-    };
-
-
 };
 
 #endif // __AUTO_BLOCKITERATOR__

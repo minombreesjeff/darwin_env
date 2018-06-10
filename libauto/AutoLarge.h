@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2009 Apple Inc. All rights reserved.
  *
  * @APPLE_APACHE_LICENSE_HEADER_START@
  * 
@@ -16,6 +16,11 @@
  * limitations under the License.
  * 
  * @APPLE_APACHE_LICENSE_HEADER_END@
+ */
+/*
+    AutoLarge.h
+    Large Block Support
+    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
  */
 
 #pragma once
@@ -54,13 +59,13 @@ namespace Auto {
         usword_t _size;                 // size of the requested allocation
         usword_t _layout;               // organization of block
         usword_t _refcount;             // large block reference count
-        usword_t _age;                  // block age - XXJML - currently just an new flag
+        usword_t _age;                  // block age
         bool _is_pending;               // needs scanning flag
         bool _is_marked;                // has been visited flag
-        bool _is_freed;                 // lazy free flag.
+        bool _is_garbage;
         WriteBarrier _write_barrier;    // write barrier accessor object.
       
-        Large(usword_t vm_size, usword_t size, usword_t layout, usword_t refcount, usword_t age, unsigned char* write_barrier_cards);
+        Large(usword_t vm_size, usword_t size, usword_t layout, usword_t refcount, usword_t age, const WriteBarrier &wb);
         
       public:
       
@@ -155,6 +160,8 @@ namespace Auto {
         inline void set_prev(Large *prev)       { _prev = prev; }
         inline void set_next(Large *next)       { _next = next; }
         inline Range range()                    { return Range(address(), size()); }
+        inline void mark_garbage()              { _is_garbage = true; }
+        inline bool is_garbage()          const { return _is_garbage; }
         
         
         //
@@ -182,9 +189,6 @@ namespace Auto {
         inline bool is_marked()                      const { return _is_marked; }
         static inline bool is_marked(void *address)        { return large(address)->is_marked(); }
         
-        inline bool is_freed()                       const { return _is_freed; }
-        static inline bool is_freed(void *address)        { return large(address)->is_freed(); }
-        
         inline usword_t layout()                     const { return _layout; }
         static inline usword_t layout(void *address)       { return large(address)->layout(); }
         
@@ -206,9 +210,6 @@ namespace Auto {
         inline void clear_mark()                           { _is_marked = false; }
         static inline void clear_mark(void *address)       { large(address)->clear_mark(); }
 
-        inline void set_freed()                            { _is_freed = true; }
-        static inline void set_freed(void *address)        { large(address)->set_freed(); }
-        
         inline bool test_set_mark() {
             bool old = _is_marked;
             if (!old) _is_marked = true;
@@ -224,6 +225,32 @@ namespace Auto {
         static inline void set_layout(void *address, usword_t layout)
                                                            { large(address)->set_layout(layout); }
 
+        // List Operations
+        
+        //
+        // add
+        //
+        // Puts this Large block on the front of the specified list.
+        //
+        inline void add(Large *&large_list) {
+            _prev = NULL;
+            _next = large_list;
+            if (large_list) large_list->set_prev(this);
+            large_list = this;
+        }
+        
+        //
+        // remove
+        //
+        // Removes this Large block from the specified list.
+        //
+        inline void remove(Large *&large_list) {
+            if (large_list == this) large_list = _next;
+            if (_prev) _prev->set_next(_next);
+            if (_next) _next->set_prev(_prev);
+            _prev = _next = NULL;
+        }
+        
 
         //
         // write_barrier
