@@ -20,7 +20,7 @@
 /*
     auto_impl_utilities.c
     Implementation Utilities
-    Copyright (c) 2002-2008 Apple Inc. All rights reserved.
+    Copyright (c) 2002-2009 Apple Inc. All rights reserved.
 */
 
 #include "auto_impl_utilities.h"

@@ -19,7 +19,7 @@
  */
 /*
     AutoZone.h
-    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+    Copyright (c) 2004-2009 Apple Inc. All rights reserved.
  */
 
 #pragma once
@@ -229,7 +229,7 @@ namespace Auto {
     };
 
     typedef std::vector<Range, AuxAllocator<Range> > RangeVector;
-    class ObjectAssocationHashMap : public __gnu_cxx::hash_map<void *, void *, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> >, public AuxAllocated {};
+    class ObjectAssocationHashMap : public PtrPtrMap, public AuxAllocated {}; // <rdar://problem/7217591> Reduce space usage for each association.
     typedef __gnu_cxx::hash_map<void *, ObjectAssocationHashMap*, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> > AssocationsHashMap;
 
     //----- Zone -----//

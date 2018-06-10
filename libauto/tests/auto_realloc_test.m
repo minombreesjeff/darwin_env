@@ -22,7 +22,7 @@
 //  gctests
 //
 //  Created by Blaine Garst on 2/23/09.
-//  Copyright 2009 Apple. All rights reserved.
+//  Copyright 2009 Apple Inc. All rights reserved.
 //
 
 

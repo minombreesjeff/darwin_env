@@ -20,7 +20,7 @@
 /*
     AutoDefs.h
     Global Definitions
-    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+    Copyright (c) 2004-2009 Apple Inc. All rights reserved.
  */
 
 #pragma once
@@ -880,6 +880,7 @@ namespace Auto {
 
     typedef std::vector<void *, AuxAllocator<void *> > PtrVector;
     typedef std::map<void *, int, AuxPointerLess, AuxAllocator<std::pair<void * const, int> > > PtrIntMap;
+    typedef std::map<void *, void *, AuxPointerLess, AuxAllocator<std::pair<void * const, void * const> > > PtrPtrMap;
     typedef __gnu_cxx::hash_map<void *, void *, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> > PtrPtrHashMap;
     typedef __gnu_cxx::hash_map<void *, PtrPtrHashMap, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> > PtrAssocHashMap;
     typedef __gnu_cxx::hash_map<void *, int, AuxPointerHash, AuxPointerEqual, AuxAllocator<void *> > PtrIntHashMap;

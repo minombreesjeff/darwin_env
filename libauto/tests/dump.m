@@ -22,7 +22,7 @@
 //  gctests
 //
 //  Created by Blaine Garst on 10/22/08.
-//  Copyright 2008 __MyCompanyName__. All rights reserved.
+//  Copyright 2008-2009 Apple Inc. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>

@@ -22,7 +22,7 @@
  *  auto
  *
  *  Created by Josh Behnke on 12/13/07.
- *  Copyright 2008 Apple Inc. All rights reserved.
+ *  Copyright 2007-2009 Apple Inc. All rights reserved.
  *
  */
 

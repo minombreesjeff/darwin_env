@@ -20,7 +20,7 @@
 /*
     auto_trace.h
     DTrace support.
-    Copyright (c) 2006-2008 Apple Inc. All rights reserved.
+    Copyright (c) 2006-2009 Apple Inc. All rights reserved.
  */
 
 #include <sys/cdefs.h>

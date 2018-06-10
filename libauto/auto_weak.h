@@ -20,7 +20,7 @@
 /* 
     auto_weak.h
     Weak reference accounting
-    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+    Copyright (c) 2004-2009 Apple Inc. All rights reserved.
  */
 
 #ifndef __AUTO_WEAK__

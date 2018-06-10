@@ -19,7 +19,7 @@
  */
 /*
     AutoWriteBarrier.cpp
-    Copyright (c) 2004-2008 Apple Inc. All rights reserved.
+    Copyright (c) 2004-2009 Apple Inc. All rights reserved.
  */
 
 #include "AutoConfiguration.h"

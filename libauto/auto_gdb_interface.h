@@ -20,7 +20,7 @@
 /*
     auto_gdb_interface.h
     Routines called by gdb to implement its info gc-references and gc-roots commands.
-    Copyright (c) 2007-2008 Apple Inc. All rights reserved.
+    Copyright (c) 2007-2009 Apple Inc. All rights reserved.
  */
 
 #ifndef __AUTO_GDB_INTERFACE__

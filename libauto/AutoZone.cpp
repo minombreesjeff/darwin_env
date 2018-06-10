@@ -1537,10 +1537,12 @@ namespace Auto {
         if (_scan_stack.is_overflow()) {
             _stats.increment_stack_overflow_count();
             
-            reset_all_marks_and_pending();
-
             // let go of the thread list mutex and per-thread _enlivening_locks, which were acquired by Collector::scan_barrier().
             clear_needs_enlivening();
+            
+            // <rdar://problem/7087102> Don't deadlock with concurrent allocation/reference counting of large blocks.
+            reset_all_marks_and_pending();
+
             set_needs_enlivening();
 
             // try again using pending bits

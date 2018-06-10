@@ -20,7 +20,7 @@
 /*
     AutoReferenceIterator.h
     Replaces MemoryScanner by generalizing heap scanning.
-    Copyright (c) 2008 Apple Inc. All rights reserved.
+    Copyright (c) 2008-2009 Apple Inc. All rights reserved.
  */
 
 #pragma once
