@@ -228,7 +228,10 @@ static CSSM_RETURN RSAPublicKeyDecodeX509(
 	SecNssCoder 	&coder,
 	RSA 			*openKey, 
 	void 			*p, 
-	size_t			length)
+	size_t			length,
+	/* mallocd/returned encoded alg params for OAEP key */
+	uint8			**algParams,
+	uint32			*algParamLen)
 {
 	CSSM_X509_SUBJECT_PUBLIC_KEY_INFO nssPubKeyInfo;
 	PRErrorCode perr;
@@ -244,8 +247,16 @@ static CSSM_RETURN RSAPublicKeyDecodeX509(
 	/* verify alg identifier */
 	const CSSM_OID *oid = &nssPubKeyInfo.algorithm.algorithm;
 	if(!cspCompareCssmData(oid, &CSSMOID_RSA)) {
-		sslAsn1Debug("RSAPublicKeyDecodeX509: bad OID");
-		return CSSMERR_CSP_INVALID_KEY;
+		if(!cspCompareCssmData(oid, &CSSMOID_RSAWithOAEP)) {
+			sslAsn1Debug("RSAPublicKeyDecodeX509: bad OID");
+			return CSSMERR_CSP_INVALID_KEY;
+		}
+		if(nssPubKeyInfo.algorithm.parameters.Data != NULL) {
+			uint32 len = nssPubKeyInfo.algorithm.parameters.Length;
+			*algParams = (uint8 *)malloc(len);
+			memmove(*algParams, nssPubKeyInfo.algorithm.parameters.Data, len);
+			*algParamLen = len;
+		}
 	}
 	
 	/* decode the raw bits */
@@ -259,7 +270,10 @@ static CSSM_RETURN RSAPublicKeyDecodeX509(
 static CSSM_RETURN RSAPublicKeyEncodeX509(
 	SecNssCoder 	&coder,
 	RSA 			*openKey, 
-	CssmOwnedData	&encodedKey)
+	CssmOwnedData	&encodedKey,
+	/* encoded alg params for OAEP key */
+	uint8			*algParams,
+	uint32			algParamsLen)
 {
 	CssmAutoData aData(Allocator::standard());
 	CSSM_RETURN crtn;
@@ -282,8 +296,14 @@ static CSSM_RETURN RSAPublicKeyEncodeX509(
 	CSSM_X509_ALGORITHM_IDENTIFIER &algId = nssPubKeyInfo.algorithm;
 	algId.algorithm = CSSMOID_RSA;
 
-	/* NULL algorithm paramneters, always in this case */
-	nullAlgParams(algId);
+	if(algParams) {
+		algId.parameters.Data = (uint8 *)algParams;
+		algId.parameters.Length = algParamsLen;
+	}
+	else {
+		/* NULL algorithm parameters */
+		nullAlgParams(algId);
+	}
 	
 	/* DER encode */
 	PRErrorCode perr;
@@ -376,7 +396,10 @@ static CSSM_RETURN RSAPrivateKeyDecodePKCS8(
 	SecNssCoder 	&coder,
 	RSA 			*openKey, 
 	void 			*p, 
-	size_t			length)
+	size_t			length,
+	/* mallocd/returned encoded alg params for OAEP key */
+	uint8			**algParams,
+	uint32			*algParamLen)
 {
 	NSS_PrivateKeyInfo nssPrivKeyInfo;
 	PRErrorCode perr;
@@ -391,8 +414,16 @@ static CSSM_RETURN RSAPrivateKeyDecodePKCS8(
 	/* verify alg identifier */
 	const CSSM_OID *oid = &nssPrivKeyInfo.algorithm.algorithm;
 	if(!cspCompareCssmData(oid, &CSSMOID_RSA)) {
-		sslAsn1Debug("RSAPrivateKeyDecodePKCS8: bad OID");
-		return CSSMERR_CSP_INVALID_KEY;
+		if(!cspCompareCssmData(oid, &CSSMOID_RSAWithOAEP)) {
+			sslAsn1Debug("RSAPrivateKeyDecodePKCS8: bad OID");
+			return CSSMERR_CSP_INVALID_KEY;
+		}
+		if(nssPrivKeyInfo.algorithm.parameters.Data != NULL) {
+			uint32 len = nssPrivKeyInfo.algorithm.parameters.Length;
+			*algParams = (uint8 *)malloc(len);
+			memmove(*algParams, nssPrivKeyInfo.algorithm.parameters.Data, len);
+			*algParamLen = len;
+		}
 	}
 	
 	/* 
@@ -407,7 +438,10 @@ static CSSM_RETURN RSAPrivateKeyDecodePKCS8(
 static CSSM_RETURN RSAPrivateKeyEncodePKCS8(
 	SecNssCoder 	&coder,
 	RSA 			*openKey, 
-	CssmOwnedData	&encodedKey)
+	CssmOwnedData	&encodedKey,
+	/* encoded alg params for OAEP key */
+	uint8			*algParams,
+	uint32			algParamsLen)
 {
 
 	/* First get PKCS1-style encoding */
@@ -426,8 +460,14 @@ static CSSM_RETURN RSAPrivateKeyEncodePKCS8(
 	CSSM_X509_ALGORITHM_IDENTIFIER &algId = nssPrivKeyInfo.algorithm;
 	algId.algorithm = CSSMOID_RSA;
 
-	/* NULL algorithm paramneters, always in this case */
-	nullAlgParams(algId);
+	if(algParams) {
+		algId.parameters.Data = (uint8 *)algParams;
+		algId.parameters.Length = algParamsLen;
+	}
+	else {
+		/* NULL algorithm parameters */
+		nullAlgParams(algId);
+	}
 
 	/* FIXME : attributes? */
 	
@@ -459,7 +499,7 @@ CSSM_RETURN RSAPublicKeyDecode(
 		case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:
 			return RSAPublicKeyDecodePKCS1(coder, openKey, p, length);
 		case CSSM_KEYBLOB_RAW_FORMAT_X509:
-			return RSAPublicKeyDecodeX509(coder, openKey, p, length);
+			return RSAPublicKeyDecodeX509(coder, openKey, p, length, NULL, NULL);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
@@ -477,7 +517,7 @@ CSSM_RETURN	RSAPublicKeyEncode(
 		case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:
 			return RSAPublicKeyEncodePKCS1(coder, openKey, encodedKey);
 		case CSSM_KEYBLOB_RAW_FORMAT_X509:
-			return RSAPublicKeyEncodeX509(coder, openKey, encodedKey);
+			return RSAPublicKeyEncodeX509(coder, openKey, encodedKey, NULL, 0);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
@@ -496,7 +536,7 @@ CSSM_RETURN RSAPrivateKeyDecode(
 		case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:
 			return RSAPrivateKeyDecodePKCS1(coder, openKey, p, length);
 		case CSSM_KEYBLOB_RAW_FORMAT_PKCS8:
-			return RSAPrivateKeyDecodePKCS8(coder, openKey, p, length);
+			return RSAPrivateKeyDecodePKCS8(coder, openKey, p, length, NULL, NULL);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
@@ -514,11 +554,81 @@ CSSM_RETURN	RSAPrivateKeyEncode(
 		case CSSM_KEYBLOB_RAW_FORMAT_PKCS1:
 			return RSAPrivateKeyEncodePKCS1(coder, openKey, encodedKey);
 		case CSSM_KEYBLOB_RAW_FORMAT_PKCS8:
-			return RSAPrivateKeyEncodePKCS8(coder, openKey, encodedKey);
+			return RSAPrivateKeyEncodePKCS8(coder, openKey, encodedKey, NULL, 0);
 		default:
 			assert(0);
 			return CSSMERR_CSP_INTERNAL_ERROR;
 	}
+}
+
+CSSM_RETURN	RSAOAEPPrivateKeyEncode(
+	RSA 				*openKey, 
+	const CSSM_DATA		*label,
+	CssmOwnedData		&encodedKey)
+{
+	SecNssCoder coder;
+	CSSM_DATA encodedParams = {0, NULL};
+	/* TBD encode the label into a RSAES-OAEP-params */
+
+	return RSAPrivateKeyEncodePKCS8(coder, openKey, encodedKey, encodedParams.Data, encodedParams.Length);
+}
+
+CSSM_RETURN	RSAOAEPPublicKeyEncode(
+	RSA 				*openKey, 
+	const CSSM_DATA		*label,
+	CssmOwnedData		&encodedKey)
+{
+	SecNssCoder coder;
+	CSSM_DATA encodedParams = {0, NULL};
+	/* TBD encode the label into a RSAES-OAEP-params */
+
+	return RSAPublicKeyEncodeX509(coder, openKey, encodedKey, encodedParams.Data, encodedParams.Length);
+}
+
+CSSM_RETURN RSAOAEPPublicKeyDecode(
+	RSA 				*openKey, 
+	void 				*p, 
+	size_t				length,
+	/* mallocd and returned label */
+	CSSM_DATA			*label)
+{
+	SecNssCoder coder;
+	CSSM_RETURN crtn;
+	CSSM_DATA encodedParams = {0, NULL};
+	
+	crtn = RSAPublicKeyDecodeX509(coder, openKey, p, length, &encodedParams.Data, 
+		&encodedParams.Length);
+	if(crtn) {
+		return crtn;
+	}
+	
+	/* TBD - decode label from encoded alg params */
+	label->Data = NULL;
+	label->Length = 0;
+	return CSSM_OK;
+}
+
+CSSM_RETURN RSAOAEPPrivateKeyDecode(
+	RSA 				*openKey, 
+	void 				*p, 
+	size_t				length,
+	/* mallocd and returned label */
+	CSSM_DATA			*label)
+{
+	SecNssCoder coder;
+	CSSM_RETURN crtn;
+	CSSM_DATA encodedParams = {0, NULL};
+	
+	crtn = RSAPrivateKeyDecodePKCS8(coder, openKey, p, length, &encodedParams.Data, 
+		&encodedParams.Length);
+	if(crtn) {
+		return crtn;
+	}
+	
+	/* TBD - decode label from encoded alg params */
+	label->Data = NULL;
+	label->Length = 0;
+	return CSSM_OK;
 }
 
 #pragma mark -

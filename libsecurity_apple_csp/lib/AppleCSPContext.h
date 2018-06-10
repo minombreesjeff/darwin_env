@@ -82,6 +82,8 @@ private:
 //
 class AppleKeyPairGenContext  {
 public:
+	virtual ~AppleKeyPairGenContext();
+	
 	//
 	// Subclass implements generate(const Context &, CssmKey &,
 	// CssmKey &). That method (called from CSPFullPluginSession)
