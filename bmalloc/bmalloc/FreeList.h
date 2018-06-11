@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2014, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,41 +23,50 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef BAssert_h
-#define BAssert_h
+#ifndef FreeList_h
+#define FreeList_h
 
-#define BCRASH() do { \
-    *(int*)0xbbadbeef = 0; \
-} while (0);
+#include "LargeObject.h"
+#include "Vector.h"
 
-#define BASSERT_IMPL(x) do { \
-    if (!(x)) \
-        BCRASH(); \
-} while (0);
+namespace bmalloc {
 
-#define RELEASE_BASSERT(x) BASSERT_IMPL(x)
+// Helper object for SegregatedFreeList.
 
-#define UNUSED(x) (void)x
+class FreeList {
+public:
+    FreeList();
 
-// ===== Release build =====
+    void push(Owner, const LargeObject&);
 
-#if defined(NDEBUG)
+    LargeObject take(Owner, size_t);
+    LargeObject take(Owner, size_t alignment, size_t, size_t unalignedSize);
+    
+    LargeObject takeGreedy(Owner);
 
-#define BASSERT(x)
+    void removeInvalidAndDuplicateEntries(Owner);
+    
+private:
+    Vector<Range> m_vector;
+    size_t m_limit;
+};
 
-#define IF_DEBUG(x)
+inline FreeList::FreeList()
+    : m_vector()
+    , m_limit(freeListSearchDepth)
+{
+}
 
-#endif // defined(NDEBUG)
+inline void FreeList::push(Owner owner, const LargeObject& largeObject)
+{
+    BASSERT(largeObject.isFree());
+    if (m_vector.size() == m_limit) {
+        removeInvalidAndDuplicateEntries(owner);
+        m_limit = std::max(m_vector.size() * freeListGrowFactor, freeListSearchDepth);
+    }
+    m_vector.push(largeObject.range());
+}
 
+} // namespace bmalloc
 
-// ===== Debug build =====
-
-#if !defined(NDEBUG)
-
-#define BASSERT(x) BASSERT_IMPL(x)
-
-#define IF_DEBUG(x) x
-
-#endif // !defined(NDEBUG)
-
-#endif // BAssert_h
+#endif // FreeList_h

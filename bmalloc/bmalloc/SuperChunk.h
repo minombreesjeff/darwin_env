@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,41 +23,58 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef BAssert_h
-#define BAssert_h
+#ifndef SuperChunk_h
+#define SuperChunk_h
 
-#define BCRASH() do { \
-    *(int*)0xbbadbeef = 0; \
-} while (0);
+#include "LargeChunk.h"
+#include "MediumChunk.h"
+#include "SmallChunk.h"
 
-#define BASSERT_IMPL(x) do { \
-    if (!(x)) \
-        BCRASH(); \
-} while (0);
+namespace bmalloc {
 
-#define RELEASE_BASSERT(x) BASSERT_IMPL(x)
+class SuperChunk {
+public:
+    static SuperChunk* create();
 
-#define UNUSED(x) (void)x
+    SmallChunk* smallChunk();
+    MediumChunk* mediumChunk();
+    LargeChunk* largeChunk();
 
-// ===== Release build =====
+private:
+    SuperChunk();
+};
 
-#if defined(NDEBUG)
+inline SuperChunk* SuperChunk::create()
+{
+    void* result = static_cast<char*>(vmAllocate(superChunkSize, superChunkSize));
+    return new (result) SuperChunk;
+}
 
-#define BASSERT(x)
+inline SuperChunk::SuperChunk()
+{
+    new (smallChunk()) SmallChunk;
+    new (mediumChunk()) MediumChunk;
+    new (largeChunk()) LargeChunk;
+}
 
-#define IF_DEBUG(x)
+inline SmallChunk* SuperChunk::smallChunk()
+{
+    return reinterpret_cast<SmallChunk*>(
+        reinterpret_cast<char*>(this) + smallChunkOffset);
+}
 
-#endif // defined(NDEBUG)
+inline MediumChunk* SuperChunk::mediumChunk()
+{
+    return reinterpret_cast<MediumChunk*>(
+        reinterpret_cast<char*>(this) + mediumChunkOffset);
+}
 
+inline LargeChunk* SuperChunk::largeChunk()
+{
+    return reinterpret_cast<LargeChunk*>(
+        reinterpret_cast<char*>(this) + largeChunkOffset);
+}
 
-// ===== Debug build =====
+} // namespace bmalloc
 
-#if !defined(NDEBUG)
-
-#define BASSERT(x) BASSERT_IMPL(x)
-
-#define IF_DEBUG(x) x
-
-#endif // !defined(NDEBUG)
-
-#endif // BAssert_h
+#endif // SuperChunk_h

@@ -23,84 +23,90 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef MediumAllocator_h
-#define MediumAllocator_h
+#ifndef BumpAllocator_h
+#define BumpAllocator_h
 
 #include "BAssert.h"
-#include "MediumChunk.h"
-#include "MediumLine.h"
+#include "BumpRange.h"
+#include "ObjectType.h"
 
 namespace bmalloc {
 
-// Helper object for allocating medium objects.
+// Helper object for allocating small and medium objects.
 
-class MediumAllocator {
+class BumpAllocator {
 public:
-    MediumAllocator();
+    BumpAllocator();
+    void init(size_t);
+    
+    size_t size() { return m_size; }
+    
+    bool isNull() { return !m_ptr; }
+    void clear();
 
-    bool isNull() { return !m_end; }
-    MediumLine* line();
+    bool canAllocate() { return !!m_remaining; }
+    void* allocate();
 
-    void* allocate(size_t);
-    bool allocate(size_t, void*&);
-
-    unsigned char derefCount();
-    void refill(MediumLine*);
+    void refill(const BumpRange&);
 
 private:
-    char* m_end;
-    size_t m_remaining;
-    size_t m_objectCount;
+    void validate(void*);
+
+    char* m_ptr;
+    unsigned short m_size;
+    unsigned short m_remaining;
 };
 
-inline MediumAllocator::MediumAllocator()
-    : m_end()
+inline BumpAllocator::BumpAllocator()
+    : m_ptr()
+    , m_size()
     , m_remaining()
-    , m_objectCount()
 {
 }
 
-inline MediumLine* MediumAllocator::line()
+inline void BumpAllocator::init(size_t size)
 {
-    return MediumLine::get(m_end - 1);
+    m_ptr = nullptr;
+    m_size = size;
+    m_remaining = 0;
 }
 
-inline void* MediumAllocator::allocate(size_t size)
+inline void BumpAllocator::validate(void* ptr)
 {
-    BASSERT(size <= m_remaining);
-    BASSERT(size == roundUpToMultipleOf<alignment>(size));
-    BASSERT(size >= MediumLine::minimumObjectSize);
-
-    m_remaining -= size;
-    void* object = m_end - m_remaining - size;
-    BASSERT(isSmallOrMedium(object) && !isSmall(object));
-
-    ++m_objectCount;
-    return object;
+    UNUSED(ptr);
+    if (m_size <= smallMax) {
+        BASSERT(isSmall(ptr));
+        return;
+    }
+    
+    BASSERT(m_size <= mediumMax);
+    BASSERT(isMedium(ptr));
 }
 
-inline bool MediumAllocator::allocate(size_t size, void*& object)
+inline void* BumpAllocator::allocate()
 {
-    if (size > m_remaining)
-        return false;
+    BASSERT(m_remaining);
 
-    object = allocate(size);
-    return true;
+    --m_remaining;
+    char* result = m_ptr;
+    m_ptr += m_size;
+    validate(result);
+    return result;
 }
 
-inline unsigned char MediumAllocator::derefCount()
+inline void BumpAllocator::refill(const BumpRange& bumpRange)
 {
-    return MediumLine::maxRefCount - m_objectCount;
+    BASSERT(!canAllocate());
+    m_ptr = bumpRange.begin;
+    m_remaining = bumpRange.objectCount;
 }
 
-inline void MediumAllocator::refill(MediumLine* line)
+inline void BumpAllocator::clear()
 {
-    line->concurrentRef(MediumLine::maxRefCount);
-    m_end = line->end();
-    m_remaining = mediumLineSize;
-    m_objectCount = 0;
+    m_ptr = nullptr;
+    m_remaining = 0;
 }
 
 } // namespace bmalloc
 
-#endif // MediumAllocator_h
+#endif // BumpAllocator_h

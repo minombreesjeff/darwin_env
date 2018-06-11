@@ -23,41 +23,23 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef BAssert_h
-#define BAssert_h
+#ifndef Environment_h
+#define Environment_h
 
-#define BCRASH() do { \
-    *(int*)0xbbadbeef = 0; \
-} while (0);
+namespace bmalloc {
 
-#define BASSERT_IMPL(x) do { \
-    if (!(x)) \
-        BCRASH(); \
-} while (0);
+class Environment {
+public:
+    Environment();
+    
+    bool isBmallocEnabled() { return m_isBmallocEnabled; }
 
-#define RELEASE_BASSERT(x) BASSERT_IMPL(x)
+private:
+    bool computeIsBmallocEnabled();
 
-#define UNUSED(x) (void)x
+    bool m_isBmallocEnabled;
+};
 
-// ===== Release build =====
+} // namespace bmalloc
 
-#if defined(NDEBUG)
-
-#define BASSERT(x)
-
-#define IF_DEBUG(x)
-
-#endif // defined(NDEBUG)
-
-
-// ===== Debug build =====
-
-#if !defined(NDEBUG)
-
-#define BASSERT(x) BASSERT_IMPL(x)
-
-#define IF_DEBUG(x) x
-
-#endif // !defined(NDEBUG)
-
-#endif // BAssert_h
+#endif // Environment_h

@@ -23,41 +23,22 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef BAssert_h
-#define BAssert_h
+#ifndef BumpRange_h
+#define BumpRange_h
 
-#define BCRASH() do { \
-    *(int*)0xbbadbeef = 0; \
-} while (0);
+#include "FixedVector.h"
+#include "Range.h"
+#include "Sizes.h"
 
-#define BASSERT_IMPL(x) do { \
-    if (!(x)) \
-        BCRASH(); \
-} while (0);
+namespace bmalloc {
 
-#define RELEASE_BASSERT(x) BASSERT_IMPL(x)
+struct BumpRange {
+    char* begin;
+    unsigned short objectCount;
+};
 
-#define UNUSED(x) (void)x
+typedef FixedVector<BumpRange, bumpRangeCacheCapacity> BumpRangeCache;
 
-// ===== Release build =====
+} // namespace bmalloc
 
-#if defined(NDEBUG)
-
-#define BASSERT(x)
-
-#define IF_DEBUG(x)
-
-#endif // defined(NDEBUG)
-
-
-// ===== Debug build =====
-
-#if !defined(NDEBUG)
-
-#define BASSERT(x) BASSERT_IMPL(x)
-
-#define IF_DEBUG(x) x
-
-#endif // !defined(NDEBUG)
-
-#endif // BAssert_h
+#endif // BumpRange_h

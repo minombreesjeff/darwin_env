@@ -23,41 +23,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef BAssert_h
-#define BAssert_h
+#ifndef LineMetadata_h
+#define LineMetadata_h
 
-#define BCRASH() do { \
-    *(int*)0xbbadbeef = 0; \
-} while (0);
+namespace bmalloc {
 
-#define BASSERT_IMPL(x) do { \
-    if (!(x)) \
-        BCRASH(); \
-} while (0);
+struct LineMetadata {
+    unsigned short startOffset;
+    unsigned short objectCount;
+};
 
-#define RELEASE_BASSERT(x) BASSERT_IMPL(x)
+} // namespace bmalloc
 
-#define UNUSED(x) (void)x
-
-// ===== Release build =====
-
-#if defined(NDEBUG)
-
-#define BASSERT(x)
-
-#define IF_DEBUG(x)
-
-#endif // defined(NDEBUG)
-
-
-// ===== Debug build =====
-
-#if !defined(NDEBUG)
-
-#define BASSERT(x) BASSERT_IMPL(x)
-
-#define IF_DEBUG(x) x
-
-#endif // !defined(NDEBUG)
-
-#endif // BAssert_h
+#endif // LineMetadata_h
