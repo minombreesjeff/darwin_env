@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 /*
- * secErrorStr.cpp - ASCII string version of NSS Sec layer error codes
+ * secErrorStr.c - ASCII string version of NSS Sec layer error codes
  */
 #include "secerr.h"
 #include <stdio.h>
@@ -34,7 +34,7 @@ typedef struct {
 
 static const SecErrorNameValuePair errValues[] = 
 {
-	/* FIXME: we really don't need all of these, but they're only 
+	/* FIXME: we really don't need all of these, but they're not 
 	 * compiled for NDEBUG builds. */
 	#ifndef	NDEBUG
 	SNVP(SEC_ERROR_IO),
@@ -185,8 +185,7 @@ static const SecErrorNameValuePair errValues[] =
  * Given a PRErrorCode, obtain a const C string. Not copied, not
  * to be freed by caller.
  */
-const char *SECErrorString(
-	PRErrorCode err)
+const char *SECErrorString(PRErrorCode err)
 {
  	static char badStr[100];
 	const SecErrorNameValuePair *nvp = errValues;
@@ -199,7 +198,7 @@ const char *SECErrorString(
 	}
 	
 	/* Not found, not thread safe */
-	sprintf(badStr, "UNKNOWN (%u(d)", (unsigned)err);
+	sprintf(badStr, "UNKNOWN (%d(d)", err);
 	return badStr;
 	
 }
