@@ -31,7 +31,7 @@
 /*
  * Compare two CSSM_DATAs (or two CSSM_OIDs), return true if identical.
  */
-bool nssCompareCssmData(
+int nssCompareCssmData(
 	const CSSM_DATA *data1,
 	const CSSM_DATA *data2)
 {	
@@ -43,21 +43,16 @@ bool nssCompareCssmData(
 	if(data1->Length != data2->Length) {
 		return false;
 	}
-	if(memcmp(data1->Data, data2->Data, data1->Length) == 0) {
-		return true;
-	}
-	else {
-		return false;
-	}
+	return memcmp(data1->Data, data2->Data, data1->Length) == 0;
 }
 
 /*
  * How many items in a NULL-terminated array of pointers?
  */
-unsigned nssArraySize(
+size_t nssArraySize(
 	const void **array)
 {
-    unsigned count = 0;
+    size_t count = 0;
     if (array) {
 		while (*array++) {
 			count++;

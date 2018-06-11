@@ -26,7 +26,7 @@
  */
  
 #include "certExtensionTemplates.h"
-#include "asn1Templates.h"
+#include "SecAsn1Templates.h"
 #include <stddef.h>
 
 /* Basic Constraints */
@@ -205,11 +205,44 @@ const SecAsn1Template kSecAsn1AccessDescriptionTemplate[] = {
 	{ 0 }
 };
 
-extern const SecAsn1Template kSecAsn1AuthorityInfoAccessTemplate[] = {
+const SecAsn1Template kSecAsn1AuthorityInfoAccessTemplate[] = {
     { SEC_ASN1_SEQUENCE_OF, 
 	  offsetof(NSS_AuthorityInfoAccess,accessDescriptions), 
 	  kSecAsn1AccessDescriptionTemplate, 
 	  sizeof(NSS_AuthorityInfoAccess) }
 };
 
+/*
+ * Qualified Certificate Statements templates.
+ *
+ * This is the NSS_QC_Statement.info when NSS_QC_Statement.statementId
+ * is CSSMOID_OID_QCS_SYNTAX_V2.
+ */
+const SecAsn1Template kSecAsn1SemanticsInformationTemplate[] = {
+    { SEC_ASN1_SEQUENCE,
+		0, NULL, sizeof(NSS_SemanticsInformation) },
+	{ SEC_ASN1_OPTIONAL | SEC_ASN1_POINTER,
+		offsetof(NSS_SemanticsInformation,semanticsIdentifier), 
+		kSecAsn1ObjectIDTemplate },
+	{ SEC_ASN1_OPTIONAL | SEC_ASN1_POINTER,
+		offsetof(NSS_SemanticsInformation, nameRegistrationAuthorities), 
+		kSecAsn1GeneralNamesTemplate },
+	{ 0 }
+};
+		
+const SecAsn1Template kSecAsn1QC_StatementTemplate[] = {
+    { SEC_ASN1_SEQUENCE,
+		0, NULL, sizeof(NSS_QC_Statement) },
+    { SEC_ASN1_OBJECT_ID,  
+		offsetof(NSS_QC_Statement,statementId) },
+    { SEC_ASN1_ANY | SEC_ASN1_OPTIONAL,
+		offsetof(NSS_QC_Statement, info) },
+	{ 0 }
+};
 
+const SecAsn1Template kSecAsn1QC_StatementsTemplate[] = {
+    { SEC_ASN1_SEQUENCE_OF, 
+		offsetof(NSS_QC_Statements,qcStatements), 
+		kSecAsn1QC_StatementTemplate, 
+		sizeof(NSS_QC_Statements) }
+};

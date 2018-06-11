@@ -23,7 +23,7 @@
  * csrTemplates.cpp - ASN1 templates Cert Signing Requests (per PKCS10).
  */
 
-#include "asn1Templates.h"
+#include "SecAsn1Templates.h"
 #include <stddef.h>
 #include "csrTemplates.h"
 #include "keyTemplates.h"

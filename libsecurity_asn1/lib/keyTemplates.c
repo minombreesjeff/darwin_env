@@ -24,7 +24,7 @@
  * structs.
  */
 
-#include "asn1Templates.h"
+#include "SecAsn1Templates.h"
 #include <stddef.h>
 #include "keyTemplates.h"
 

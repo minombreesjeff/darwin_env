@@ -23,7 +23,7 @@
  * nameTemplates.c - ASN1 templates for X509 Name, GeneralName, etc.
  */
 
-#include "asn1Templates.h"
+#include "SecAsn1Templates.h"
 #include "nameTemplates.h"
 #include "X509Templates.h"
 #include "keyTemplates.h"

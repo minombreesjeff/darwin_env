@@ -25,7 +25,7 @@
 
 #include "ocspTemplates.h"
 #include "keyTemplates.h"		/* for kSecAsn1AlgorithmIDTemplate */
-#include "asn1Templates.h"
+#include "SecAsn1Templates.h"
 #include <stddef.h>
 #include <assert.h>
 
@@ -174,7 +174,7 @@ const SecAsn1Template kSecAsn1OCSPResponderIDAsNameTemplate[] = {
 	kSecAsn1NameTemplate }
 };
 
-extern const SecAsn1Template kSecAsn1OCSPResponderIDAsKeyTemplate[] = {
+const SecAsn1Template kSecAsn1OCSPResponderIDAsKeyTemplate[] = {
     { SEC_ASN1_EXPLICIT | SEC_ASN1_CONSTRUCTED | SEC_ASN1_CONTEXT_SPECIFIC | 2,
 	offsetof(SecAsn1OCSPResponderID, byKey),
 	kSecAsn1OctetStringTemplate }

@@ -54,7 +54,7 @@ OSStatus SecAsn1CoderCreate(
 	if(coder == NULL) {
 		return paramErr;
 	}
-	SecAsn1Coder *_coder = (SecAsn1CoderRef)malloc(sizeof(SecAsn1Coder_t));
+	SecAsn1CoderRef _coder = (SecAsn1CoderRef)malloc(sizeof(SecAsn1Coder_t));
 	_coder->mPool = PORT_NewArena(CHUNKSIZE_DEF);
 	if(_coder->mPool == NULL) {
 		return memFullErr;

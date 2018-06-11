@@ -20,7 +20,7 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * asn1Templates.c - Common ASN1 templates for use with libNSSDer.
+ * SecAsn1Templates.c - Common ASN1 templates for use with libsecurity_asn1.
  */
 
 #include "secasn1t.h"
