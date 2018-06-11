@@ -225,8 +225,8 @@ ModifiedTable::deleteRecord(const RecordId &inRecordId)
 
 		// Remove the inserted (but uncommited) record.  It should already be in mDeletedSet
 		// if it existed previously in mTable.
-		mInsertedMap.erase(anIt);
         delete anIt->second;		
+		mInsertedMap.erase(anIt);
 	}
 }
 
