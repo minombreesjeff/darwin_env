@@ -343,7 +343,7 @@ AtomicBufferedFile::read(off_t inOffset, off_t inLength, off_t &outLength)
 		if (bytesRead == 0)
 			break;
 
-		secdebug("atomicfile", "%p read %s: %d bytes to %p", this, mPath.c_str(), bytesRead, ptr);
+		secdebug("atomicfile", "%p read %s: %ld bytes to %p", this, mPath.c_str(), bytesRead, ptr);
 
 		bytesLeft -= bytesRead;
 		ptr += bytesRead;
@@ -515,7 +515,7 @@ AtomicTempFile::write(AtomicFile::OffsetType inOffsetType, off_t inOffset, const
 			CssmError::throwMe(CSSMERR_DL_INTERNAL_ERROR);
 		}
 
-		secdebug("atomicfile", "%p wrote %s %d bytes from %p", this, mPath.c_str(), bytesWritten, ptr);
+		secdebug("atomicfile", "%p wrote %s %ld bytes from %p", this, mPath.c_str(), bytesWritten, ptr);
 
 		bytesLeft -= bytesWritten;
 		ptr += bytesWritten;

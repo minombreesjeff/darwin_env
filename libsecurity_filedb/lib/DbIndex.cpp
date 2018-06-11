@@ -34,6 +34,8 @@ DbQueryKey::DbQueryKey(const DbConstIndex &index)
 // kUseQueryKeyOffset means to use the key provided as part of the
 // query; otherwise, the key comes from the database.
 
+const uint32 DbKeyComparator::kUseQueryKeyOffset;
+
 bool
 DbKeyComparator::operator () (uint32 offset1, uint32 offset2) const
 {
@@ -274,13 +276,13 @@ DbConstIndex::performQuery(const DbQueryKey &queryKey,
 	case CSSM_DB_LESS_THAN:
 		begin = mKeyOffsetVector.begin();
 		end = lower_bound(begin, mKeyOffsetVector.end(),
-			DbKeyComparator::kUseQueryKeyOffset, cmp);
+				DbKeyComparator::kUseQueryKeyOffset, cmp);
 		break;
 		
 	case CSSM_DB_GREATER_THAN:
 		end = mKeyOffsetVector.end();
 		begin = lower_bound(mKeyOffsetVector.begin(), end,
-			DbKeyComparator::kUseQueryKeyOffset, cmp);
+				DbKeyComparator::kUseQueryKeyOffset, cmp);
 		break;
 		
 	default:
