@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2016 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,23 +23,29 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef Environment_h
-#define Environment_h
+#pragma once
+
+#include "StaticMutex.h"
+#include <mutex>
+#if BOS(DARWIN)
+#include <malloc/malloc.h>
+#endif
 
 namespace bmalloc {
-
-class Environment {
-public:
-    Environment();
     
-    bool isDebugHeapEnabled() { return m_isDebugHeapEnabled; }
+class DebugHeap {
+public:
+    DebugHeap(std::lock_guard<StaticMutex>&);
+    
+    void* malloc(size_t);
+    void* memalign(size_t alignment, size_t, bool crashOnFailure);
+    void* realloc(void*, size_t);
+    void free(void*);
 
 private:
-    bool computeIsDebugHeapEnabled();
-
-    bool m_isDebugHeapEnabled;
+#if BOS(DARWIN)
+    malloc_zone_t* m_zone;
+#endif
 };
 
 } // namespace bmalloc
-
-#endif // Environment_h
