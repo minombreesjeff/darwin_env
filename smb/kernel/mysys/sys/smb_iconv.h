@@ -29,10 +29,10 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: iconv.h,v 1.4 2001/07/19 06:54:22 conrad Exp $
+ * $Id: smb_iconv.h,v 1.2 2004/12/13 00:25:17 lindak Exp $
  */
-#ifndef _SYS_ICONV_H_
-#define _SYS_ICONV_H_
+#ifndef _SYS_SMB_ICONV_H_
+#define _SYS_SMB_ICONV_H_
 
 #define	ICONV_CSNMAXLEN		31	/* maximum length of charset name */
 #define	ICONV_CNVNMAXLEN	31	/* maximum length of converter name */
@@ -133,13 +133,9 @@ int iconv_open(const char *to, const char *from, void **handle);
 int iconv_close(void *handle);
 int iconv_conv(void *handle, const char **inbuf,
 	size_t *inbytesleft, char **outbuf, size_t *outbytesleft);
-#ifdef APPLE
 int iconv_add(const char *converter, const char *to, const char *from);
 
 char* iconv_convstr(void *handle, char *dst, const char *src, size_t len);
-#else
-char* iconv_convstr(void *handle, char *dst, const char *src);
-#endif
 void* iconv_convmem(void *handle, void *dst, const void *src, int size);
 
 /*
@@ -159,4 +155,4 @@ int iconv_converter_handler(module_t mod, int type, void *data);
 
 #endif /* !KERNEL */
 
-#endif /* !_SYS_ICONV_H_ */
+#endif /* !_SYS_SMB_ICONV_H_ */
