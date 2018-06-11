@@ -120,10 +120,10 @@ struct PLArenaPool {
         PLArena *_a = (pool)->current; \
         PRUint32 _incr = PL_ARENA_ALIGN(pool, incr); \
         PRUword _p = _a->avail; \
-        PRUword _q = _p + _incr; \
+        PRUword _q = (PRUword)p + size + incr; \
         if (_p == (PRUword)(p) + PL_ARENA_ALIGN(pool, size) && \
             _q <= _a->limit) { \
-            _a->avail = _q; \
+            _a->avail = PL_ARENA_ALIGN(pool, _q); \
             PL_ArenaCountInplaceGrowth(pool, size, incr); \
         } else { \
             p = PL_ArenaGrow(pool, p, size, incr); \
@@ -146,6 +146,8 @@ struct PLArenaPool {
 #define PL_CLEAR_ARENA(a)
 #endif
 
+#if ARENA_MARK_ENABLE
+
 #define PL_ARENA_RELEASE(pool, mark) \
     PR_BEGIN_MACRO \
         char *_m = (char *)(mark); \
@@ -159,6 +161,12 @@ struct PLArenaPool {
         } \
         PL_ArenaCountRelease(pool, _m); \
     PR_END_MACRO
+
+#else	/* !ARENA_MARK_ENABLE */
+
+#define PL_ARENA_RELEASE(pool, mark)
+
+#endif	/* ARENA_MARK_ENABLE */
 
 #ifdef PL_ARENAMETER
 #define PL_COUNT_ARENA(pool,op) ((pool)->stats.narenas op)

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -66,11 +64,7 @@
 #include "prmem.h"
 #include "prbit.h"
 #include "prlog.h"
-#include "prlock.h"
 #include "prinit.h"
-
-
-static PLArena *arena_freelist;
 
 #ifdef PL_ARENAMETER
 static PLArenaStats *arena_stats_list;
@@ -81,67 +75,6 @@ static PLArenaStats *arena_stats_list;
 #endif
 
 #define PL_ARENA_DEFAULT_ALIGN  sizeof(double)
-
-#ifdef	__APPLE__
-
-#include <pthread.h>
-
-static pthread_mutex_t arenaLock = PTHREAD_MUTEX_INITIALIZER;
-
-#else
-
-/* removed in favor of ModuleNexus */
-static PRLock    *arenaLock;
-static PRCallOnceType once;
-
-
-/*
-** InitializeArenas() -- Initialize arena operations.
-**
-** InitializeArenas() is called exactly once and only once from 
-** LockArena(). This function creates the arena protection 
-** lock: arenaLock.
-**
-** Note: If the arenaLock cannot be created, InitializeArenas()
-** fails quietly, returning only PR_FAILURE. This percolates up
-** to the application using the Arena API. He gets no arena
-** from PL_ArenaAllocate(). It's up to him to fail gracefully
-** or recover.
-**
-*/
-static PRStatus InitializeArenas( void )
-{
-    PR_ASSERT( arenaLock == NULL );
-    arenaLock = PR_NewLock();
-    if ( arenaLock == NULL )
-        return PR_FAILURE;
-    else
-        return PR_SUCCESS;
-} /* end ArenaInitialize() */
-#endif	/* __APPLE__ */
-
-static PRStatus LockArena( void )
-{
-#ifdef	__APPLE__
-    return pthread_mutex_lock(&arenaLock) ? PR_FAILURE : PR_SUCCESS;
-#else
-    PRStatus rc = PR_CallOnce( &once, InitializeArenas );
-
-    if ( PR_FAILURE != rc )
-        PR_Lock( arenaLock );
-    return(rc);
-#endif	/* __APPLE__ */
-} /* end LockArena() */
-
-static void UnlockArena( void )
-{
-#ifdef	__APPLE__
-    pthread_mutex_unlock(&arenaLock);
-#else
-    PR_Unlock( arenaLock );
-#endif	/* __APPLE__ */
-    return;
-} /* end UnlockArena() */
 
 PR_IMPLEMENT(void) PL_InitArenaPool(
     PLArenaPool *pool, const char *name, PRUint32 size, PRUint32 align)
@@ -174,14 +107,7 @@ PR_IMPLEMENT(void) PL_InitArenaPool(
 ** pool. 
 **
 ** First, try to satisfy the request from arenas starting at
-** pool->current.
-**
-** If there is not enough space in the arena pool->current, try
-** to claim an arena, on a first fit basis, from the global
-** freelist (arena_freelist).
-** 
-** If no arena in arena_freelist is suitable, then try to
-** allocate a new arena from the heap.
+** pool->current. Then try to allocate a new arena from the heap.
 **
 ** Returns: pointer to allocated space or NULL
 ** 
@@ -215,37 +141,6 @@ PR_IMPLEMENT(void *) PL_ArenaAllocate(PLArenaPool *pool, PRUint32 nb)
         } while( NULL != (a = a->next) );
     }
 
-    /* attempt to allocate from arena_freelist */
-    {
-        PLArena *p; /* previous pointer, for unlinking from freelist */
-
-        /* lock the arena_freelist. Make access to the freelist MT-Safe */
-        if ( PR_FAILURE == LockArena())
-            return(0);
-
-        for ( a = p = arena_freelist; a != NULL ; p = a, a = a->next ) {
-            if ( a->base +nb <= a->limit )  {
-                if ( p == arena_freelist )
-                    arena_freelist = a->next;
-                else
-                    p->next = a->next;
-                UnlockArena();
-                a->avail = a->base;
-                rp = (char *)a->avail;
-                a->avail += nb;
-                /* the newly allocated arena is linked after pool->current 
-                *  and becomes pool->current */
-                a->next = pool->current->next;
-                pool->current->next = a;
-                pool->current = a;
-                if ( NULL == pool->first.next )
-                    pool->first.next = a;
-                return(rp);
-            }
-        }
-        UnlockArena();
-    }
-
     /* attempt to allocate from the heap */ 
     {  
         PRUint32 sz = PR_MAX(pool->arenasize, nb);
@@ -273,14 +168,71 @@ PR_IMPLEMENT(void *) PL_ArenaAllocate(PLArenaPool *pool, PRUint32 nb)
     return(NULL);
 } /* --- end PL_ArenaAllocate() --- */
 
+/*
+ * Grow, a.k.a. realloc. The PL_ARENA_GROW macro has already handled
+ * the possible grow-in-place action in which the current PLArena is the 
+ * source of the incoming pointer, and there is room in that arena for 
+ * the requested size. 
+ */
 PR_IMPLEMENT(void *) PL_ArenaGrow(
-    PLArenaPool *pool, void *p, PRUint32 size, PRUint32 incr)
+    PLArenaPool *pool, void *p, PRUint32 origSize, PRUint32 incr)
 {
     void *newp;
+	PLArena *thisArena;
+	PLArena *lastArena;
+	PRUint32 origAlignSize;		// bytes currently reserved for caller
+	PRUint32 newSize;			// bytes actually mallocd here
+	
+	/* expand at least by 2x */
+	origAlignSize = PL_ARENA_ALIGN(pool, origSize);	
+	newSize = PR_MAX(origAlignSize+incr, 2*origAlignSize);
+	newSize = PL_ARENA_ALIGN(pool, newSize);	
+    PL_ARENA_ALLOCATE(newp, pool, newSize);
+    if (newp == NULL) {
+		return NULL;
+	}
+	
+	/* 
+	 * Trim back the memory we just allocated to the amount our caller really
+	 * needs, leaving the remainder for grow-in-place on subsequent calls
+	 * to PL_ARENA_GROW.
+	 */
+	PRUint32 newAlignSize = PL_ARENA_ALIGN(pool, origSize+incr);
+	PR_ASSERT(pool->current->avail == ((PRUint32)newp + newSize));
+	pool->current->avail = (PRUint32)newp + newAlignSize;
+	PR_ASSERT(pool->current->avail <= pool->current->limit);
+	
+	/* "realloc" */
+	memcpy(newp, p, origSize);
 
-    PL_ARENA_ALLOCATE(newp, pool, size + incr);
-    if (newp)
-        memcpy(newp, p, size);
+	/*
+	 * Free old memory only if it's the entire outstanding allocated 
+	 * memory associated with one of our known PLArenas. 
+	 */
+	lastArena = &pool->first;			/* pool->first always empty */
+	thisArena = lastArena->next;		/* so, start here */
+	
+	PRUword origPtr = (PRUword)p;
+	while(thisArena != NULL) {
+		if(origPtr == thisArena->base) {
+			if((origPtr + origAlignSize) == thisArena->avail) {
+				/* unlink */
+				lastArena->next = thisArena->next;
+				
+				/* and free */
+				PL_CLEAR_ARENA(thisArena);
+				PL_COUNT_ARENA(pool,--);
+				PR_DELETE(thisArena);
+				break;
+			}
+		}
+		lastArena = thisArena;
+		thisArena = thisArena->next;
+	}
+	/* 
+	 * Note: inability to free is not an error; it just causes a temporary leak
+	 * of the old buffer (until the arena pool is freed, of course).
+	 */
     return newp;
 }
 
@@ -297,39 +249,19 @@ static void FreeArenaList(PLArenaPool *pool, PLArena *head, PRBool reallyFree)
     if (!a)
         return;
 
-#ifdef DEBUG
-    do {
-        PR_ASSERT(a->base <= a->avail && a->avail <= a->limit);
-        a->avail = a->base;
-        PL_CLEAR_UNUSED(a);
-    } while ((a = a->next) != 0);
-    a = *ap;
-#endif
-
-    if (reallyFree) {
-        do {
-            *ap = a->next;
-            PL_CLEAR_ARENA(a);
-            PL_COUNT_ARENA(pool,--);
-            PR_DELETE(a);
-        } while ((a = *ap) != 0);
-    } else {
-        /* Insert the whole arena chain at the front of the freelist. */
-        do {
-            ap = &(*ap)->next;
-        } while (*ap);
-        LockArena();
-        *ap = arena_freelist;
-        arena_freelist = a;
-        head->next = 0;
-        UnlockArena();
-    }
+	do {
+		*ap = a->next;
+		PL_CLEAR_ARENA(a);
+		PL_COUNT_ARENA(pool,--);
+		PR_DELETE(a);
+	} while ((a = *ap) != 0);
 
     pool->current = head;
 }
 
 PR_IMPLEMENT(void) PL_ArenaRelease(PLArenaPool *pool, char *mark)
 {
+	#if ARENA_MARK_ENABLE
     PLArena *a;
 
     for (a = pool->first.next; a; a = a->next) {
@@ -339,6 +271,7 @@ PR_IMPLEMENT(void) PL_ArenaRelease(PLArenaPool *pool, char *mark)
             return;
         }
     }
+	#endif	/* ARENA_MARK_ENABLE */
 }
 
 PR_IMPLEMENT(void) PL_FreeArenaPool(PLArenaPool *pool)
@@ -369,36 +302,10 @@ PR_IMPLEMENT(void) PL_FinishArenaPool(PLArenaPool *pool)
 
 PR_IMPLEMENT(void) PL_CompactArenaPool(PLArenaPool *ap)
 {
-#if !defined(__APPLE__)
-/* FIXME - this is disabled in the Mozilla release for XP_MAC -
- * why? lack of a reallocSmaller()? */
-#if 0
-    PRArena *curr = &(ap->first);
-    while (curr) {
-        reallocSmaller(curr, curr->avail - (uprword_t)curr);
-        curr->limit = curr->avail;
-        curr = curr->next;
-    }
-#endif
-#endif
 }
 
 PR_IMPLEMENT(void) PL_ArenaFinish(void)
 {
-    PLArena *a, *next;
-
-    for (a = arena_freelist; a; a = next) {
-        next = a->next;
-        PR_DELETE(a);
-    }
-    arena_freelist = NULL;
-
-#ifndef __APPLE__
-    if (arenaLock) {
-        PR_DestroyLock(arenaLock);
-        arenaLock = NULL;
-    }
-#endif /* __APPLE__ */
 }
 
 #ifdef PL_ARENAMETER

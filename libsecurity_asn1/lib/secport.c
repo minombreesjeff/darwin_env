@@ -38,7 +38,7 @@
  * 
  * NOTE - These are not public interfaces
  *
- * $Id: secport.c,v 1.3 2004/05/13 15:29:13 dmitch Exp $
+ * $Id: secport.c,v 1.5 2004/10/27 20:36:36 dmitch Exp $
  */
 
 #include "seccomon.h"
@@ -79,10 +79,15 @@ typedef struct threadmark_mark_str {
 /* The value of this magic must change each time PORTArenaPool changes. */
 #define ARENAPOOL_MAGIC 0xB8AC9BDF 
 
+/* enable/disable mutex in PORTArenaPool */
+#define ARENA_POOL_LOCK		0
+
 typedef struct PORTArenaPool_str {
   PLArenaPool arena;
   PRUint32    magic;
+  #if ARENA_POOL_LOCK
   PRLock *    lock;
+  #endif
 #ifdef THREADMARK
   PRThread *marking_thread;
   threadmark_mark *first_mark;
@@ -199,12 +204,14 @@ PORT_NewArena(unsigned long chunksize)
 	return NULL;
     }
     pool->magic = ARENAPOOL_MAGIC;
+	#if ARENA_POOL_LOCK
     pool->lock = PZ_NewLock(nssILockArena);
     if (!pool->lock) {
-	++port_allocFailures;
-	PORT_Free(pool);
-	return NULL;
+		++port_allocFailures;
+		PORT_Free(pool);
+		return NULL;
     }
+	#endif
     PL_InitArenaPool(&pool->arena, "security", chunksize, sizeof(double));
     return(&pool->arena);
 }
@@ -218,22 +225,26 @@ PORT_ArenaAlloc(PLArenaPool *arena, size_t size)
 
     /* Is it one of ours?  Assume so and check the magic */
     if (ARENAPOOL_MAGIC == pool->magic ) {
-	PZ_Lock(pool->lock);
-#ifdef THREADMARK
-        /* Most likely one of ours.  Is there a thread id? */
-	if (pool->marking_thread  &&
-	    pool->marking_thread != PR_GetCurrentThread() ) {
-	    /* Another thread holds a mark in this arena */
-	    PZ_Unlock(pool->lock);
-	    PORT_SetError(SEC_ERROR_NO_MEMORY);
-	    PORT_Assert(0);
-	    return NULL;
-	} /* tid != null */
-#endif /* THREADMARK */
-	PL_ARENA_ALLOCATE(p, arena, size);
-	PZ_Unlock(pool->lock);
+		#if ARENA_POOL_LOCK
+		PZ_Lock(pool->lock);
+		#endif
+		#ifdef THREADMARK
+			/* Most likely one of ours.  Is there a thread id? */
+		if (pool->marking_thread  &&
+			pool->marking_thread != PR_GetCurrentThread() ) {
+			/* Another thread holds a mark in this arena */
+			PZ_Unlock(pool->lock);
+			PORT_SetError(SEC_ERROR_NO_MEMORY);
+			PORT_Assert(0);
+			return NULL;
+		} /* tid != null */
+		#endif /* THREADMARK */
+		PL_ARENA_ALLOCATE(p, arena, size);
+		#if ARENA_POOL_LOCK
+		PZ_Unlock(pool->lock);
+		#endif
     } else {
-	PL_ARENA_ALLOCATE(p, arena, size);
+		PL_ARENA_ALLOCATE(p, arena, size);
     }
 
     if (!p) {
@@ -261,7 +272,9 @@ void
 PORT_FreeArena(PLArenaPool *arena, PRBool zero)
 {
     PORTArenaPool *pool = (PORTArenaPool *)arena;
+	#if ARENA_POOL_LOCK
     PRLock *       lock = (PRLock *)0;
+	#endif
     size_t         len  = sizeof *arena;
     extern const PRVersionDescription * libVersionPoint(void);
 	#ifndef	__APPLE__
@@ -270,39 +283,43 @@ PORT_FreeArena(PLArenaPool *arena, PRBool zero)
     static PRBool  doFreeArenaPool = PR_FALSE;
 
     if (ARENAPOOL_MAGIC == pool->magic ) {
-	len  = sizeof *pool;
-	lock = pool->lock;
-	PZ_Lock(lock);
+		len  = sizeof *pool;
+		#if ARENA_POOL_LOCK
+		lock = pool->lock;
+		PZ_Lock(lock);
+		#endif
     }
 	#ifndef __APPLE__
 	/* dmitch - not needed */
     if (!pvd) {
-	/* Each of NSPR's DLLs has a function libVersionPoint().
-	** We could do a lot of extra work to be sure we're calling the
-	** one in the DLL that holds PR_FreeArenaPool, but instead we
-	** rely on the fact that ALL NSPR DLLs in the same directory
-	** must be from the same release, and we call which ever one we get. 
-	*/
-	/* no need for thread protection here */
-	pvd = libVersionPoint();
-	if ((pvd->vMajor > 4) || 
-	    (pvd->vMajor == 4 && pvd->vMinor > 1) ||
-	    (pvd->vMajor == 4 && pvd->vMinor == 1 && pvd->vPatch >= 1)) {
-	    const char *ev = PR_GetEnv("NSS_DISABLE_ARENA_FREE_LIST");
-	    if (!ev) doFreeArenaPool = PR_TRUE;
-	}
+		/* Each of NSPR's DLLs has a function libVersionPoint().
+		** We could do a lot of extra work to be sure we're calling the
+		** one in the DLL that holds PR_FreeArenaPool, but instead we
+		** rely on the fact that ALL NSPR DLLs in the same directory
+		** must be from the same release, and we call which ever one we get. 
+		*/
+		/* no need for thread protection here */
+		pvd = libVersionPoint();
+		if ((pvd->vMajor > 4) || 
+			(pvd->vMajor == 4 && pvd->vMinor > 1) ||
+			(pvd->vMajor == 4 && pvd->vMinor == 1 && pvd->vPatch >= 1)) {
+			const char *ev = PR_GetEnv("NSS_DISABLE_ARENA_FREE_LIST");
+			if (!ev) doFreeArenaPool = PR_TRUE;
+		}
     }
 	#endif
     if (doFreeArenaPool) {
-	PL_FreeArenaPool(arena);
+		PL_FreeArenaPool(arena);
     } else {
-	PL_FinishArenaPool(arena);
+		PL_FinishArenaPool(arena);
     }
-    PORT_ZFree(arena, len);
+	#if ARENA_POOL_LOCK
     if (lock) {
-	PZ_Unlock(lock);
-	PZ_DestroyLock(lock);
+		PZ_Unlock(lock);
+		PZ_DestroyLock(lock);
     }
+	#endif
+    PORT_ZFree(arena, len);
 }
 
 void *
@@ -312,12 +329,16 @@ PORT_ArenaGrow(PLArenaPool *arena, void *ptr, size_t oldsize, size_t newsize)
     PORT_Assert(newsize >= oldsize);
     
     if (ARENAPOOL_MAGIC == pool->magic ) {
-	PZ_Lock(pool->lock);
-	/* Do we do a THREADMARK check here? */
-	PL_ARENA_GROW(ptr, arena, oldsize, ( newsize - oldsize ) );
-	PZ_Unlock(pool->lock);
+		#if ARENA_POOL_LOCK
+		PZ_Lock(pool->lock);
+		#endif
+		/* Do we do a THREADMARK check here? */
+		PL_ARENA_GROW(ptr, arena, oldsize, ( newsize - oldsize ) );
+		#if ARENA_POOL_LOCK
+		PZ_Unlock(pool->lock);
+		#endif
     } else {
-	PL_ARENA_GROW(ptr, arena, oldsize, ( newsize - oldsize ) );
+		PL_ARENA_GROW(ptr, arena, oldsize, ( newsize - oldsize ) );
     }
     
     return(ptr);
@@ -326,6 +347,7 @@ PORT_ArenaGrow(PLArenaPool *arena, void *ptr, size_t oldsize, size_t newsize)
 void *
 PORT_ArenaMark(PLArenaPool *arena)
 {
+#if ARENA_MARK_ENABLE
     void * result;
 
     PORTArenaPool *pool = (PORTArenaPool *)arena;
@@ -373,12 +395,18 @@ PORT_ArenaMark(PLArenaPool *arena)
 	result = PL_ARENA_MARK(arena);
     }
     return result;
+#else
+	/* Some code in libsecurity_smime really checks for a nonzero 
+	 * return here, so... */
+	return (void *)-1;
+#endif
 }
 
 void
 PORT_ArenaRelease(PLArenaPool *arena, void *mark)
 {
-    PORTArenaPool *pool = (PORTArenaPool *)arena;
+#if ARENA_MARK_ENABLE
+   PORTArenaPool *pool = (PORTArenaPool *)arena;
     if (ARENAPOOL_MAGIC == pool->magic ) {
 	PZ_Lock(pool->lock);
 #ifdef THREADMARK
@@ -421,11 +449,13 @@ PORT_ArenaRelease(PLArenaPool *arena, void *mark)
     } else {
 	PL_ARENA_RELEASE(arena, mark);
     }
+#endif	/* ARENA_MARK_ENABLE */
 }
 
 void
 PORT_ArenaUnmark(PLArenaPool *arena, void *mark)
 {
+#if ARENA_MARK_ENABLE
 #ifdef THREADMARK
     PORTArenaPool *pool = (PORTArenaPool *)arena;
     if (ARENAPOOL_MAGIC == pool->magic ) {
@@ -462,7 +492,8 @@ PORT_ArenaUnmark(PLArenaPool *arena, void *mark)
 
 	PZ_Unlock(pool->lock);
     }
-#endif /* THREADMARK */
+#endif	/* THREADMARK */
+#endif	/* ARENA_MARK_ENABLE */
 }
 
 char *

@@ -38,6 +38,9 @@
 
 #include <security_asn1/prtypes.h>
 
+/* global enable/disable of mark/release mechanism */
+#define ARENA_MARK_ENABLE	0
+
 PR_BEGIN_EXTERN_C
 
 typedef struct PLArenaPool      PLArenaPool;

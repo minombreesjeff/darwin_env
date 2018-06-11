@@ -38,7 +38,7 @@
  * 
  * NOTE - These are not public interfaces
  *
- * $Id: secport.h,v 1.2 2004/05/13 15:29:13 dmitch Exp $
+ * $Id: secport.h,v 1.3 2004/10/22 19:11:36 dmitch Exp $
  */
 
 #ifndef _SECPORT_H_
@@ -144,6 +144,7 @@ extern void *PORT_ArenaGrow(PLArenaPool *arena, void *ptr,
 extern void *PORT_ArenaMark(PLArenaPool *arena);
 extern void PORT_ArenaRelease(PLArenaPool *arena, void *mark);
 extern void PORT_ArenaUnmark(PLArenaPool *arena, void *mark);
+
 extern char *PORT_ArenaStrdup(PLArenaPool *arena, const char *str);
 
 #ifdef __cplusplus
