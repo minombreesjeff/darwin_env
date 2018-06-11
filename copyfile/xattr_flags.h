@@ -21,8 +21,8 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef _XATTR_PROPERTIES_H
-#define _XATTR_PROPERTIES_H
+#ifndef _XATTR_FLAGS_H
+#define _XATTR_FLAGS_H
 
 #include <stdint.h>
 
@@ -32,29 +32,34 @@
 __BEGIN_DECLS
 
 /*
- * CopyOperationIntent_t is used to declare what the intent of the copy is.
+ * xattr_operation_intent_t is used to declare what the intent of the copy is.
  * Not a bit-field (for now, at least).
  *
- * CopyOperationIntentCopy indicates that the EA is attached to an object
+ * XATTR_OPERATION_INTENT_COPY indicates that the EA is attached to an object
  * that is simply being copied.  E.g., cp src dst
  *
- * CopyOperationIntentSave indicates that the EA is attached to an object
+ * XATTR_OPERATION_INTENT_SAVE indicates that the EA is attached to an object
  * being saved; as in a "safe save," the destination is being replaced by
  * the source, so the question is whether the EA should be applied to the
  * destination, or generated anew.
  *
- * CopyOperationIntentShare indicates that the EA is attached to an object that
+ * XATTR_OPERATION_INTENT_SHARE  indicates that the EA is attached to an object that
  * is being given out to other people.  For example, saving to a public folder,
  * or attaching to an email message.
+ *
+ * XATTR_OPERATION_INTENT_SYNC  indicates that the EA is attached to an object that
+ * is being synced to other storages for the same user.  For example synced to
+ * iCloud.
  */
 
-typedef enum {
-	CopyOperationIntentCopy = 1,
-	CopyOperationIntentSave,
-	CopyOperationIntentShare,
-} CopyOperationIntent_t;
+#define XATTR_OPERATION_INTENT_COPY	1
+#define XATTR_OPERATION_INTENT_SAVE	2
+#define XATTR_OPERATION_INTENT_SHARE	3
+#define XATTR_OPERATION_INTENT_SYNC	4
 
-typedef uint64_t CopyOperationProperties_t;
+typedef unsigned int xattr_operation_intent_t;
+
+typedef uint64_t xattr_flags_t;
 
 /*
  * Various properties used to determine how to handle the xattr during
@@ -62,15 +67,15 @@ typedef uint64_t CopyOperationProperties_t;
  */
 
 /*
- * kCopyOperationPropertyNoExport
+ * XATTR_FLAG_NO_EXPORT
  * Declare that the extended property should not be exported; this is
- * deliberately a bit vague, but this is used by CopyOperationIntentShare
+ * deliberately a bit vague, but this is used by XATTR_OPERATION_INTENT_SHARE
  * to indicate not to preserve the xattr.
  */
-#define kCopyOperationPropertyNoExport	((CopyOperationProperties_t)0x0001)
+#define XATTR_FLAG_NO_EXPORT	((xattr_flags_t)0x0001)
 
 /*
- * kCopyOperationPropertyContentDependent
+ * XATTR_FLAG_CONTENT_DEPENDENT
  * Declares the extended attribute to be tied to the contents of the file (or
  * vice versa), such that it should be re-created when the contents of the
  * file change.  Examples might include cryptographic keys, checksums, saved
@@ -80,19 +85,28 @@ typedef uint64_t CopyOperationProperties_t;
  * safe save.  (In a safe save, the EA exists on the original, and will not
  * be copied to the new version.)
  */
-#define	kCopyOperationPropertyContentDependent	((CopyOperationProperties_t)0x0002)
+#define	XATTR_FLAG_CONTENT_DEPENDENT	((xattr_flags_t)0x0002)
 
 /*
- * kCopyOperationPropertyNeverPreserve
+ * XATTR_FLAG_NEVER_PRESERVE
  * Declares that the extended attribute is never to be copied, for any
  * intention type.
  */
-#define kCopyOperationPropertyNeverPreserve	((CopyOperationProperties_t)0x0004)
+#define XATTR_FLAG_NEVER_PRESERVE	((xattr_flags_t)0x0004)
 
-#if 0
 /*
- * These are all going to be removed, and I don't believe anyone used them.
+ * XATTR_FLAG_SYNCABLE
+ * Declares that the extended attribute is to be synced, used by the
+ * XATTR_OPERATION_ITENT_SYNC intention.  Syncing tends to want to minimize the
+ * amount of metadata synced around, hence the default behavior is for the EA
+ * NOT to be synced, even if it would else be preserved for the
+ * XATTR_OPERATION_ITENT_COPY intention.
  */
+#define XATTR_FLAG_SYNCABLE	((xattr_flags_t)0x0008)
+
+/* Given a named extended attribute, and a copy intent, should the EA be preserved? */
+extern int xattr_preserve_for_intent(const char *, xattr_operation_intent_t) __OSX_AVAILABLE_STARTING( __MAC_10_10, __IPHONE_8_0);
+
 /*
  * Given an extended attribute name, and a set of properties, return an
  *  allocated C string with the name.  This will return NULL on error;
@@ -105,7 +119,7 @@ typedef uint64_t CopyOperationProperties_t;
  * If the EA name is in the internal list, and the properties are the same as
  * defined there, then it will also return an unmodified copy of the EA name.
  */
-extern char *_xattrNameWithProperties(const char *, CopyOperationProperties_t) DEPRECATED_IN_MAC_OS_X_VERSION_10_10_AND_LATER;
+extern char *xattr_name_with_flags(const char *, xattr_flags_t) __OSX_AVAILABLE_STARTING( __MAC_10_10, __IPHONE_8_0);
 
 /*
  * Given an extended attribute name, which may or may not have properties encoded
@@ -114,15 +128,22 @@ extern char *_xattrNameWithProperties(const char *, CopyOperationProperties_t) D
  * errno will be set to ENOMEM if it cannot be allocated.  The caller must deallocate
  * the return value.
  */
-extern char *_xattrNameWithoutProperties(const char *) DEPRECATED_IN_MAC_OS_X_VERSION_10_10_AND_LATER;
+extern char *xattr_name_without_flags(const char *) __OSX_AVAILABLE_STARTING( __MAC_10_10, __IPHONE_8_0);
 
 /*
  * Given an EA name, return the properties.  If the name is in the internal list,
  * those properties will be returned.  Unknown property encodings are ignored.
  */
-extern CopyOperationProperties_t _xattrPropertiesFromName(const char *) DEPRECATED_IN_MAC_OS_X_VERSION_10_10_AND_LATER;
-#endif /* 0 */
+extern xattr_flags_t xattr_flags_from_name(const char *) __OSX_AVAILABLE_STARTING( __MAC_10_10, __IPHONE_8_0);
+
+/*
+ * Given an xattr_operation_intent_t and an xattr_flags_t, return whether it should
+ * be preserved.  The default (in case either flags or intent is 0, or unknown
+ * values) is to return 1; it only returns 0 if the flags and intent indicate it
+ * should not be preserved.
+ */
+extern int xattr_intent_with_flags(xattr_operation_intent_t, xattr_flags_t) __OSX_AVAILABLE_STARTING( __MAC_10_10, __IPHONE_8_0);
 
 __END_DECLS
 
-#endif /* _XATTR_PROPERTIES_H */
+#endif /* _XATTR_FLAGS_H */

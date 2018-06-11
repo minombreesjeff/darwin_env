@@ -29,8 +29,13 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
+#include <dispatch/dispatch.h>
+#include <xpc/private.h>
 
-#include <xattr_properties.h>
+#include <xattr_flags.h>
+
+#define FLAG_DELIM_CHAR	'#'
+#define FLAG_DELIM_STR "#"
 
 /*
  * Some default propeteries for EAs we know about internally.
@@ -43,15 +48,28 @@ struct defaultList {
 
 #define propFlagsPrefix	0x0001	// The name is a prefix, so only look at that part
 
+static const struct defaultList *defaultPropertyTable = NULL;
+
 static const struct defaultList
-defaultPropertyTable[] = {
-	{ "com.apple.quarantine", "PC", 0 },	// not public
-	{ "com.apple.TextEncoding", "PC", 0 },	// Content-dependent, public
-	{ "com.apple.metadata:", "P", propFlagsPrefix },	// Don't export, keep for copy & safe save
-	{ "com.apple.security.", "N", propFlagsPrefix },
-	{ XATTR_RESOURCEFORK_NAME, "PC", 0 },	// Don't keep for safe save
-	{ XATTR_FINDERINFO_NAME, "PC", 0 },	// Same as ResourceFork
+defaultUnboxedPropertyTable[] = {
+	{ "com.apple.quarantine", "PCS", 0 },	// not public
+	{ "com.apple.TextEncoding", "CS", 0 },	// Content-dependent, public
+	{ "com.apple.metadata:", "PS", propFlagsPrefix },	// Don't export, keep for copy & safe save
+	{ "com.apple.security.", "S", propFlagsPrefix },
+	{ XATTR_RESOURCEFORK_NAME, "PCS", 0 },	// Don't keep for safe save
+	{ XATTR_FINDERINFO_NAME, "PCS", 0 },	// Same as ResourceFork
 	{ 0, 0, 0 },
+};
+
+static const struct defaultList
+defaultSandboxedPropertyTable[] = {
+    { "com.apple.quarantine", "PCS", 0 },	// not public
+    { "com.apple.TextEncoding", "CS", 0 },	// Content-dependent, public
+    { "com.apple.metadata:", "PS", propFlagsPrefix },	// Don't export, keep for copy & safe save
+    { "com.apple.security.", "N", propFlagsPrefix },
+    { XATTR_RESOURCEFORK_NAME, "PCS", 0 },	// Don't keep for safe save
+    { XATTR_FINDERINFO_NAME, "PCS", 0 },	// Same as ResourceFork
+    { 0, 0, 0 },
 };
 
 /*
@@ -63,19 +81,20 @@ defaultPropertyTable[] = {
 struct propertyListMapping {
 	char enable;	// Character to enable
 	char disable;	// Character to disable -- usually lower-case of enable
-	CopyOperationProperties_t	value;
+	xattr_operation_intent_t	value;
 };
 static const struct propertyListMapping
 PropertyListMapTable[] = {
-	{ 'C', 'c', kCopyOperationPropertyContentDependent },
-	{ 'P', 'p', kCopyOperationPropertyNoExport },
-	{ 'N', 'n', kCopyOperationPropertyNeverPreserve },
+	{ 'C', 'c', XATTR_FLAG_CONTENT_DEPENDENT },
+	{ 'P', 'p', XATTR_FLAG_NO_EXPORT },
+	{ 'N', 'n', XATTR_FLAG_NEVER_PRESERVE },
+	{ 'S', 's', XATTR_FLAG_SYNCABLE },
 	{ 0, 0, 0 },
 };
 	
 /*
  * Given a converted property list (that is, converted to the
- * CopyOperationProperties_t type), and an intent, determine if
+ * xattr_operation_intent_t type), and an intent, determine if
  * it should be preserved or not.
  *
  * I've chosen to use a block instead of a simple mask on the belief
@@ -84,23 +103,26 @@ PropertyListMapTable[] = {
  * as being exclusionary.
  */
 static const struct divineIntent {
-	CopyOperationIntent_t intent;
-	int (^checker)(CopyOperationProperties_t);
+	xattr_operation_intent_t intent;
+	int (^checker)(xattr_flags_t);
 } intentTable[] = {
-	{ CopyOperationIntentCopy, ^(CopyOperationProperties_t props) {
-			if (props & kCopyOperationPropertyNeverPreserve)
+	{ XATTR_OPERATION_INTENT_COPY, ^(xattr_flags_t flags) {
+			if (flags & XATTR_FLAG_NEVER_PRESERVE)
 				return 0;
 			return 1;
 		} },
-	{ CopyOperationIntentSave, ^(CopyOperationProperties_t props) {
-			if (props & (kCopyOperationPropertyContentDependent | kCopyOperationPropertyNeverPreserve))
+	{ XATTR_OPERATION_INTENT_SAVE, ^(xattr_flags_t flags) {
+			if (flags & (XATTR_FLAG_CONTENT_DEPENDENT | XATTR_FLAG_NEVER_PRESERVE))
 				return 0;
 			return 1;
 		} },
-	{ CopyOperationIntentShare, ^(CopyOperationProperties_t props) {
-			if ((props & (kCopyOperationPropertyNoExport | kCopyOperationPropertyNeverPreserve)) != 0)
+	{ XATTR_OPERATION_INTENT_SHARE, ^(xattr_flags_t flags) {
+			if ((flags & (XATTR_FLAG_NO_EXPORT | XATTR_FLAG_NEVER_PRESERVE)) != 0)
 				return 0;
 			return 1;
+		} },
+	{ XATTR_OPERATION_INTENT_SYNC, ^(xattr_flags_t flags) {
+			return (flags & (XATTR_FLAG_SYNCABLE | XATTR_FLAG_NEVER_PRESERVE)) == XATTR_FLAG_SYNCABLE;
 		} },
 	{ 0, 0 },
 };
@@ -114,6 +136,15 @@ static const char *
 nameInDefaultList(const char *eaname)
 {
 	const struct defaultList *retval;
+	static dispatch_once_t onceToken;
+    
+	dispatch_once(&onceToken, ^{
+		if (_xpc_runtime_is_app_sandboxed()) {
+			defaultPropertyTable = defaultSandboxedPropertyTable;
+		} else {
+			defaultPropertyTable = defaultUnboxedPropertyTable;
+		}
+	});
 
 	for (retval = defaultPropertyTable; retval->eaName; retval++) {
 		if ((retval->flags & propFlagsPrefix) != 0 &&
@@ -143,12 +174,12 @@ findPropertyList(const char *eaname)
 
 /*
  * Convert a property list string (e.g., "pCd") into a
- * CopyOperationProperties_t type.
+ * xattr_operation_intent_t type.
  */
-static CopyOperationProperties_t
+static xattr_operation_intent_t
 stringToProperties(const char *proplist)
 {
-	CopyOperationProperties_t retval = 0;
+	xattr_operation_intent_t retval = 0;
 	const char *ptr;
 
 	// A switch would be more efficient, but less generic.
@@ -167,7 +198,7 @@ stringToProperties(const char *proplist)
 
 /*
  * Given an EA name (e.g., "com.apple.lfs.hfs.test"), and a
- * CopyOperationProperties_t value (it's currently an integral value, so
+ * xattr_operation_intent_t value (it's currently an integral value, so
  * just a bitmask), cycle through the list of known properties, and return
  * a string with the EA name, and the property list appended.  E.g., we
  * might return "com.apple.lfs.hfs.test#pD".
@@ -186,7 +217,7 @@ stringToProperties(const char *proplist)
  * for sanity checking.  That would require having more than 64 bits to use.)
  */
 char *
-_xattrNameWithProperties(const char *orig, CopyOperationProperties_t propList)
+xattr_name_with_flags(const char *orig, xattr_flags_t propList)
 {
 	char *retval = NULL;
 	char suffix[66] = { 0 }; // 66:  uint64_t for property types, plus '#', plus NUL
@@ -233,15 +264,51 @@ _xattrNameWithProperties(const char *orig, CopyOperationProperties_t propList)
 	return retval;
 }
 
-CopyOperationProperties_t
-_xattrPropertiesFromName(const char *eaname)
+char *
+xattr_name_without_flags(const char *eaname)
 {
-	CopyOperationProperties_t retval = 0;
+	char *retval = NULL;
+	char *tmp;
+
+	if ((tmp = strrchr(eaname, FLAG_DELIM_CHAR)) == NULL) {
+		retval = strdup(eaname);
+	} else {
+		retval = calloc(tmp - eaname + 1, 1);
+		if (retval) {
+			strlcpy(retval, eaname, tmp - eaname + 1);
+		}
+	}
+	if (retval == NULL) {
+		errno = ENOMEM;
+	}
+	return retval;
+}
+
+int
+xattr_intent_with_flags(xattr_operation_intent_t intent, xattr_flags_t flags)
+{
+	const struct divineIntent *ip;
+
+	for (ip = intentTable; ip->intent; ip++) {
+		if (ip->intent == intent) {
+			return ip->checker(flags);
+		}
+	}
+	if ((flags & XATTR_FLAG_NEVER_PRESERVE) != 0)
+		return 0;	// Special case, don't try to copy this one
+
+	return 1;	// Default
+}
+
+xattr_flags_t
+xattr_flags_from_name(const char *eaname)
+{
+	xattr_flags_t retval = 0;
 	const char *propList;
 
 	propList = findPropertyList(eaname);
 	if (propList == NULL) {
-		propList = findPropertyList(eaname);
+		propList = nameInDefaultList(eaname);
 	}
 	if (propList != NULL) {
 		retval = stringToProperties(propList);
@@ -257,32 +324,17 @@ _xattrPropertiesFromName(const char *eaname)
  * This returns 0 if it should not be preserved, and 1 if it should.
  * 
  * It simply looks through the tables we have above, and compares the
- * CopyOperationProperties_t for the EA with the intent.  If the
+ * xattr_operation_intent_t for the EA with the intent.  If the
  * EA doesn't have any properties, and it's not on the default list, the
  * default is to preserve it.
  */
 
 int
-_PreserveEA(const char *eaname, CopyOperationIntent_t intent)
+xattr_preserve_for_intent(const char *eaname, xattr_operation_intent_t intent)
 {
-	const struct divineIntent *ip;
-	CopyOperationProperties_t props;
-	const char *propList;
+	xattr_flags_t flags = xattr_flags_from_name(eaname);
 
-	if ((propList = findPropertyList(eaname)) == NULL &&
-	    (propList = nameInDefaultList(eaname)) == NULL)
-		props = 0;
-	else
-		props = stringToProperties(propList);
-
-	for (ip = intentTable; ip->intent; ip++) {
-		if (ip->intent == intent) {
-			return ip->checker(props);
-		}
-	}
-	
-	if ((props & kCopyOperationPropertyNeverPreserve) != 0)
-		return 0;	// Special case, don't try to preserve this one
-
-	return 1;	// Default to preserving everything
+	return xattr_intent_with_flags(intent, flags);
 }
+
+#include "xattr_properties.h"
