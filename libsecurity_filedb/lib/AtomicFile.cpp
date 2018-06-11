@@ -129,6 +129,18 @@ AtomicFile::create(mode_t mode)
 RefPointer<AtomicTempFile>
 AtomicFile::write()
 {
+	// check and see if we can write before doing so.  We have to open it (access is not sufficient
+	// due to acl support
+	int fileNo = open (path().c_str(), O_WRONLY, 0);
+	if (fileNo == -1)
+	{
+		CssmError::throwMe(CSSM_ERRCODE_OS_ACCESS_DENIED);
+	}
+	else
+	{
+		close (fileNo);
+	}
+	
 	RefPointer<AtomicLockedFile> lock(new AtomicLockedFile(*this));
 	return new AtomicTempFile(*this, lock);
 }
@@ -839,7 +851,7 @@ AtomicLockedFile::lock(mode_t mode)
 
 			/* Reset retry counter. */
 			retries = 0;
-			sleep(8 /* DEFlocksleep */);
+			usleep(250000);
 			break;
 
 		case ENOSPC:               /* no space left, treat it as a transient */
@@ -850,8 +862,8 @@ AtomicLockedFile::lock(mode_t mode)
 		case ENOTDIR:
 		case EIO:
 		/*case EACCES:*/
-			if(++retries < (7 + 1))  /* nfsTRY number of times+1 to ignore spurious NFS errors */
-				sleep(8 /* DEFlocksleep */);
+			if(++retries < (256 + 1))  /* nfsTRY number of times+1 to ignore spurious NFS errors */
+				usleep(250000);
 			else
 				failed = true;
 			break;
