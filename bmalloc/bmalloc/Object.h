@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2016 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,58 +23,59 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef SuperChunk_h
-#define SuperChunk_h
+#ifndef Object_h
+#define Object_h
 
-#include "LargeChunk.h"
-#include "MediumChunk.h"
-#include "SmallChunk.h"
+#include <cstddef>
 
 namespace bmalloc {
 
-class SuperChunk {
-public:
-    static SuperChunk* create();
+class Chunk;
+class SmallLine;
+class SmallPage;
 
-    SmallChunk* smallChunk();
-    MediumChunk* mediumChunk();
-    LargeChunk* largeChunk();
+class Object {
+public:
+    Object(void*);
+    Object(Chunk*, void*);
+    Object(Chunk* chunk, size_t offset)
+        : m_chunk(chunk)
+        , m_offset(offset)
+    {
+    }
+    
+    Chunk* chunk() { return m_chunk; }
+    size_t offset() { return m_offset; }
+    char* address();
+
+    SmallLine* line();
+    SmallPage* page();
+    
+    Object operator+(size_t);
+    Object operator-(size_t);
+    bool operator<=(const Object&);
 
 private:
-    SuperChunk();
+    Chunk* m_chunk;
+    size_t m_offset;
 };
 
-inline SuperChunk* SuperChunk::create()
+inline Object Object::operator+(size_t offset)
 {
-    void* result = static_cast<char*>(vmAllocate(superChunkSize, superChunkSize));
-    return new (result) SuperChunk;
+    return Object(m_chunk, m_offset + offset);
 }
 
-inline SuperChunk::SuperChunk()
+inline Object Object::operator-(size_t offset)
 {
-    new (smallChunk()) SmallChunk;
-    new (mediumChunk()) MediumChunk;
-    new (largeChunk()) LargeChunk;
+    return Object(m_chunk, m_offset - offset);
 }
 
-inline SmallChunk* SuperChunk::smallChunk()
+inline bool Object::operator<=(const Object& other)
 {
-    return reinterpret_cast<SmallChunk*>(
-        reinterpret_cast<char*>(this) + smallChunkOffset);
+    BASSERT(m_chunk == other.m_chunk);
+    return m_offset <= other.m_offset;
 }
 
-inline MediumChunk* SuperChunk::mediumChunk()
-{
-    return reinterpret_cast<MediumChunk*>(
-        reinterpret_cast<char*>(this) + mediumChunkOffset);
-}
+}; // namespace bmalloc
 
-inline LargeChunk* SuperChunk::largeChunk()
-{
-    return reinterpret_cast<LargeChunk*>(
-        reinterpret_cast<char*>(this) + largeChunkOffset);
-}
-
-} // namespace bmalloc
-
-#endif // SuperChunk_h
+#endif // Object_h

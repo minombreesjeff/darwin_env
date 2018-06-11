@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2016 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,30 +23,25 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef MediumTraits_h
-#define MediumTraits_h
+#ifndef XLargeMap_h
+#define XLargeMap_h
 
-#include "Sizes.h"
-#include "VMAllocate.h"
+#include "Vector.h"
+#include "XLargeRange.h"
+#include <algorithm>
 
 namespace bmalloc {
 
-template<class Traits> class Chunk;
-template<class Traits> class Line;
-template<class Traits> class Page;
+class XLargeMap {
+public:
+    void add(const XLargeRange&);
+    XLargeRange remove(size_t alignment, size_t);
+    XLargeRange removePhysical();
 
-struct MediumTraits {
-    typedef Chunk<MediumTraits> ChunkType;
-    typedef Line<MediumTraits> LineType;
-    typedef Page<MediumTraits> PageType;
-
-    static const size_t lineSize = mediumLineSize;
-    static const size_t minimumObjectSize = smallMax + alignment;
-    static const size_t chunkSize = mediumChunkSize;
-    static const size_t chunkOffset = mediumChunkOffset;
-    static const uintptr_t chunkMask = mediumChunkMask;
+private:
+    Vector<XLargeRange> m_free;
 };
 
 } // namespace bmalloc
 
-#endif // MediumTraits_h
+#endif // XLargeMap_h
