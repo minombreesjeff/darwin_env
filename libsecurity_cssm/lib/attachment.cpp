@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -77,18 +75,22 @@ Attachment::Attachment(Module *parent,
             mAttachFlags,
             handle(),
             mKeyHierarchy,
-            &module.cssm.myGuid(),	// CSSM's Guid
-            &module.cssm.myGuid(),	// module manager Guid
+            &gGuidCssm,			// CSSM's Guid
+            &gGuidCssm,			// module manager Guid
             &module.cssm.callerGuid(), // caller Guid
             &upcalls,
             &spiFunctionTable)) {
         // attach rejected by module
+		secdebug("cssm", "attach of module %p(%s) failed",
+			&module, module.name().c_str());
         CssmError::throwMe(err);
     }
     try {
         if (spiFunctionTable == NULL || spiFunctionTable->ServiceType != subserviceType())
             CssmError::throwMe(CSSMERR_CSSM_INVALID_ADDIN_FUNCTION_TABLE);
         mIsActive = true;	// now officially attached to plugin
+		secdebug("cssm", "%p attached module %p(%s) (ssid %ld type %ld)",
+			this, parent, parent->name().c_str(), ssId, ssType);
         // subclass is responsible for taking spiFunctionTable and build
         // whatever dispatch is needed
     } catch (...) {
@@ -114,6 +116,8 @@ void Attachment::detach(bool isLocked)
             CssmError::throwMe(CSSM_ERRCODE_FUNCTION_FAILED);	//@#attachment busy
         if (CSSM_RETURN error = module.plugin->detach(handle()))
 			CssmError::throwMe(error);	// I'm sorry Dave, ...
+		secdebug("cssm", "%p detach module %p(%s)", this,
+			&module, module.name().c_str());
         mIsActive = false;
         module.detach(this);
     }

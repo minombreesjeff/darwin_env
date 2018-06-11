@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -50,6 +48,19 @@ const CSSM_GUID gGuidAppleX509CL =
 const CSSM_GUID gGuidAppleX509TP =
 { 0x87191ca5, 0x0fc9, 0x11d4, { 0x84, 0x9a, 0x00, 0x05, 0x02, 0xb5, 0x21, 0x22 } };
 
+// {87191ca6-0fc9-11d4-849a-000502b52122}
+const CSSM_GUID gGuidAppleLDAPDL =
+{ 0x87191ca6, 0x0fc9, 0x11d4, { 0x84, 0x9a, 0x00, 0x05, 0x02, 0xb5, 0x21, 0x22 } };
+
 // {87191ca7-0fc9-11d4-849a-000502b52122}
 const CSSM_GUID gGuidAppleDotMacTP =
 { 0x87191ca7, 0x0fc9, 0x11d4, { 0x84, 0x9a, 0x00, 0x05, 0x02, 0xb5, 0x21, 0x22 } };
+
+// 87191ca8-0fc9-11d4-849a000502b52122
+const CSSM_GUID gGuidAppleSdCSPDL =
+{ 0x87191ca8, 0x0fc9, 0x11d4, { 0x84, 0x9a, 0x00, 0x05, 0x02, 0xb5, 0x21, 0x22 } };
+
+// {87191ca9-0fc9-11d4-849a-000502b52122}
+const CSSM_GUID gGuidAppleDotMacDL =
+{ 0x87191ca9, 0x0fc9, 0x11d4, { 0x84, 0x9a, 0x00, 0x05, 0x02, 0xb5, 0x21, 0x22 } };
+

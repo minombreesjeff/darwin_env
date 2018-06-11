@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -124,6 +122,8 @@ representation is implied */
 #define OID_KP_LENGTH						OID_PKIX_LENGTH + 1
 #define OID_AD								OID_PKIX, 48
 #define OID_AD_LENGTH						OID_PKIX_LENGTH + 1
+#define OID_AD_OCSP							OID_AD, 1
+#define OID_AD_OCSP_LENGTH					OID_AD_LENGTH + 1
 
 #define OID_OIW_SECSIG        				OID_OIW, 3
 #define OID_OIW_LENGTH       				2
@@ -131,6 +131,10 @@ representation is implied */
 
 #define OID_OIW_ALGORITHM    				OID_OIW_SECSIG, 2
 #define OID_OIW_ALGORITHM_LENGTH   			OID_OIW_SECSIG_LENGTH +1
+
+/* NIST defined digest algorithm arc (2, 16, 840, 1, 101, 3, 4, 2) */
+#define OID_NIST_HASHALG					0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02
+#define OID_NIST_HASHALG_LENGTH				8
 
 /*
  * Apple-specific OID bases
@@ -201,6 +205,44 @@ representation is implied */
  */
 #define APPLE_DOTMAC_CERT_EXTEN_OID			APPLE_DOTMAC_CERT_OID, 2
 #define APPLE_DOTMAC_CERT_EXTEN_OID_LENGTH  APPLE_DOTMAC_CERT_OID_LENGTH + 1
+
+/*
+ * Basis of .mac Certificate request OID/value identitifiers
+ *
+ * dotMacCertificateRequestValues OBJECT IDENTIFIER ::= 
+ *		{ appleDotMacCertificate 3 }
+ *      { 1 2 840 113635 100 3 3 }
+ */
+#define APPLE_DOTMAC_CERT_REQ_VALUE_OID			APPLE_DOTMAC_CERT_OID, 3
+#define APPLE_DOTMAC_CERT_REQ_VALUE_OID_LENGTH  APPLE_DOTMAC_CERT_OID_LENGTH + 1
+
+/*
+ * Basis of Apple-specific extended key usages
+ *
+ * appleExtendedKeyUsage OBJECT IDENTIFIER ::= 
+ *		{ appleDataSecurity 4 }
+ *      { 1 2 840 113635 100 4 }
+ */
+#define APPLE_EKU_OID					APPLE_ADS_OID, 4
+#define APPLE_EKU_OID_LENGTH			APPLE_ADS_OID_LENGTH + 1
+
+/* 
+ * Basis of Apple Code Signing extended key usages
+ * appleCodeSigning  OBJECT IDENTIFIER ::= 
+ *		{ appleExtendedKeyUsage 1 }
+ *      { 1 2 840 113635 100 4 1}
+ */
+#define APPLE_EKU_CODE_SIGNING			APPLE_EKU_OID, 1
+#define APPLE_EKU_CODE_SIGNING_LENGTH	APPLE_EKU_OID_LENGTH + 1
+
+/*
+ * Basis of Apple-specific Certific Policy IDs.
+ * appleCertificatePolicies OBJECT IDENTIFIER ::= 
+ *		{appleDataSecurity 5}
+ *		{ 1 2 840 113635 100 5 }
+ */
+#define APPLE_CERT_POLICIES				APPLE_ADS_OID, 5
+#define APPLE_CERT_POLICIES_LENGTH		APPLE_ADS_OID_LENGTH + 1
 
 /*
  * Netscape OIDs.

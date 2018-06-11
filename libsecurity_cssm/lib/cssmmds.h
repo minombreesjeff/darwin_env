@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -33,12 +31,7 @@
 #include "cssmint.h"
 #include <security_utilities/globalizer.h>
 #include <security_cdsa_utilities/cssmpods.h>
-#include <string>
-#include <stdio.h>	// @@@ for temporary MDS interface only
-
-#ifdef _CPP_CSSMMDS
-# pragma export on
-#endif
+#include <security_cdsa_client/mds_standard.h>
 
 
 class MdsComponent {
@@ -48,35 +41,17 @@ public:
 
     const Guid &myGuid() const { return mMyGuid; }
     
-    CSSM_SERVICE_MASK services() const { update(); return mServices; }
-    bool supportsService(CSSM_SERVICE_TYPE t) const { update(); return t & mServices; }
-    bool isThreadSafe() const { update(); return mIsThreadSafe; }
-    const char *path() const { update(); return mPath.c_str(); }
+    CSSM_SERVICE_MASK services() const { return mCommon->serviceMask(); }
+    bool supportsService(CSSM_SERVICE_TYPE t) const { return t & services(); }
+    bool isThreadSafe() const { return !mCommon->singleThreaded(); }
+    string path() const { return mCommon->path(); }
+	string name() const { return mCommon->moduleName(); }
+	string description() const { return mCommon->description(); }
 
 private:
     const Guid mMyGuid;					// GUID of the component
-
-    // information obtained about the component
-    mutable bool mIsValid;				// information is valid
-    mutable string mPath;			// module location
-    mutable CSSM_SERVICE_TYPE mServices; // service types provided
-    mutable bool mIsThreadSafe;			// is the module thread safe?
-
-    void getInfo() const;  				// retrieve MDS information
-    void update() const { if (!mIsValid) getInfo(); }
-
-private:
-    struct MDS {
-        MDS();
-        ~MDS();
-        FILE *config;
-    };
-    static ModuleNexus<MDS> mds;
+	RefPointer<MDSClient::Common> mCommon; // MDS common record for this module
 };
-
-#ifdef _CPP_CSSMMDS
-# pragma export off
-#endif
 
 
 #endif //_H_CSSMMDS

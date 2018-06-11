@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -35,7 +33,7 @@
 #define _H_MODLOADER
 
 #include <exception>
-#include <security_cdsa_client/osxsigning.h>
+#include <security_utilities/osxcode.h>
 #include "cssmint.h"
 #include <map>
 #include <string>
@@ -85,7 +83,7 @@ class ModuleLoader {
 public:
     ModuleLoader();
     
-    Plugin *operator () (const char *path);
+    Plugin *operator () (const string &path);
         
 private:
     // the table of all loaded modules

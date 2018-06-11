@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -57,6 +55,7 @@ BUILTIN(__apple_file_dl)
 BUILTIN(__apple_cspdl)
 BUILTIN(__apple_x509_cl)
 BUILTIN(__apple_x509_tp)
+BUILTIN(__sd_cspdl)
 
 
 //
@@ -70,6 +69,7 @@ ModuleLoader::ModuleLoader()
     mPlugins["*AppleCSPDL"] = new StaticPlugin(builtin__apple_cspdl);
     mPlugins["*AppleX509CL"] = new StaticPlugin(builtin__apple_x509_cl);
     mPlugins["*AppleX509TP"] = new StaticPlugin(builtin__apple_x509_tp);
+    mPlugins["*SDCSPDL"] = new StaticPlugin(builtin__sd_cspdl);
 #endif //NO_BUILTIN_PLUGINS
 }
 
@@ -81,13 +81,23 @@ ModuleLoader::ModuleLoader()
 // with certain paths. Since we consult this table before going to disk, this
 // means that we'll pick these up first *as long as the paths match exactly*.
 // There is nothing magical in the path strings themselves, other than by
-// convention.
+// convention. (The convention is "*NAME", which conveniently does not match
+// any actual file path.)
 //
-Plugin *ModuleLoader::operator () (const char *path)
+Plugin *ModuleLoader::operator () (const string &path)
 {
     Plugin * &plugin = mPlugins[path];
-    if (!plugin)
-        plugin = new LoadablePlugin(path);
+    if (!plugin) {
+		secdebug("cssm", "ModuleLoader(): creating plugin %s", path.c_str());
+        plugin = new LoadablePlugin(path.c_str());
+	}
+	else {
+		secdebug("cssm", "ModuleLoader(): FOUND plugin %s, isLoaded %s", 
+			path.c_str(), plugin->isLoaded() ? "TRUE" : "FALSE");
+		if(!plugin->isLoaded()) {
+			plugin->load();
+		}
+	}
     return plugin;
 }
 

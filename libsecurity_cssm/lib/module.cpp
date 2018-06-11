@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -40,7 +38,7 @@ Module::Module(CssmManager *mgr, const MdsComponent &info, Plugin *plug)
 : MdsComponent(info), cssm(*mgr), plugin(plug)
 {
     // invoke module's load entry (tell it it's being loaded)
-    if (CSSM_RETURN err = plugin->load(&cssm.myGuid(), // CSSM's Guid
+    if (CSSM_RETURN err = plugin->load(&gGuidCssm, // CSSM's Guid
             &myGuid(),			// module's Guid
             spiEventRelay, this)) {
         plugin->unload();
@@ -69,7 +67,7 @@ bool Module::unload(const ModuleCallback &callback)
         if (attachmentCount() > 0)
             CssmError::throwMe(CSSM_ERRCODE_FUNCTION_FAILED);	// @# module is busy
         // no attachments active - we are idle and ready to unload
-        if (CSSM_RETURN err = plugin->unload(&cssm.myGuid(), // CSSM's Guid
+        if (CSSM_RETURN err = plugin->unload(&gGuidCssm, // CSSM's Guid
                 &myGuid(),		// module's Guid
                 spiEventRelay, this)) // our callback
             CssmError::throwMe(err);	// tough...

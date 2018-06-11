@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -144,8 +142,14 @@ extern const CSSM_OID
 	CSSMOID_OCSPSigning,
 	CSSMOID_DOTMAC_CERT_EXTENSION,
 	CSSMOID_DOTMAC_CERT_IDENTITY,
-	CSSMOID_DOTMAC_EMAIL_SIGN,
-	CSSMOID_DOTMAC_CERT_EMAIL_ENCRYPT
+	CSSMOID_DOTMAC_CERT_EMAIL_SIGN,
+	CSSMOID_DOTMAC_CERT_EMAIL_ENCRYPT,
+	CSSMOID_APPLE_CERT_POLICY,
+	CSSMOID_DOTMAC_CERT_POLICY,
+	CSSMOID_APPLE_EKU_CODE_SIGNING, 
+	CSSMOID_APPLE_EKU_CODE_SIGNING_DEV,
+	CSSMOID_APPLE_EKU_ICHAT_SIGNING,
+	CSSMOID_APPLE_EKU_ICHAT_ENCRYPTION
 ;
 	
 /*

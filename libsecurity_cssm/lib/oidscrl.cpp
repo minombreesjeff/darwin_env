@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -26,9 +24,9 @@
 
 /*
 
- File:      oidscert.cpp
+ File:      oidscrl.cpp
 
- Contains:  Object Identifiers for X509 Certificate Library
+ Contains:  Object Identifiers for X509 CRLs and OCSP
 
  Copyright (c) 1999,2001-2002,2004 Apple Computer, Inc. All Rights Reserved.
 
@@ -79,8 +77,18 @@ static const uint8
 	X509V2CRLSingleExtensionCStruct[]			= {INTEL_X509V2_CRL_R08, 9, INTEL_X509_C_DATATYPE},
 	X509V2CRLExtensionId[]						= {INTEL_X509V2_CRL_R08, 11},
 	X509V2CRLExtensionCritical[]				= {INTEL_X509V2_CRL_R08, 12},
-	X509V2CRLExtensionType[]					= {INTEL_X509V2_CRL_R08, 13};
+	X509V2CRLExtensionType[]					= {INTEL_X509V2_CRL_R08, 13},
 
+	/* OCSP */
+	OID_PKIX_OCSP[]							= { OID_AD_OCSP },
+	OID_PKIX_OCSP_BASIC[]					= { OID_AD_OCSP, 1 },
+	OID_PKIX_OCSP_NONCE[]					= { OID_AD_OCSP, 2 },
+	OID_PKIX_OCSP_CRL[]						= { OID_AD_OCSP, 3 },
+	OID_PKIX_OCSP_RESPONSE[]				= { OID_AD_OCSP, 4 },
+	OID_PKIX_OCSP_NOCHECK[]					= { OID_AD_OCSP, 5 },
+	OID_PKIX_OCSP_ARCHIVE_CUTOFF[]			= { OID_AD_OCSP, 6 },
+	OID_PKIX_OCSP_SERVICE_LOCATOR[]			= { OID_AD_OCSP, 7 };
+	
 const CSSM_OID
 
 	/* CRL OIDs */
@@ -158,3 +166,14 @@ const CSSM_OID
 													(uint8 *)X509V2CRLExtensionCritical},
 	CSSMOID_X509V2CRLExtensionType 				= {INTEL_X509V2_CRL_R08_LENGTH+1, 
 													(uint8 *)X509V2CRLExtensionType};
+
+const CSSM_OID
+	/* OCSP OIDs */
+	CSSMOID_PKIX_OCSP						= { OID_AD_OCSP_LENGTH, (uint8 *)OID_PKIX_OCSP },
+	CSSMOID_PKIX_OCSP_BASIC					= { OID_AD_OCSP_LENGTH+1, (uint8 *)OID_PKIX_OCSP_BASIC},
+	CSSMOID_PKIX_OCSP_NONCE					= { OID_AD_OCSP_LENGTH+1, (uint8 *)OID_PKIX_OCSP_NONCE},
+	CSSMOID_PKIX_OCSP_CRL					= { OID_AD_OCSP_LENGTH+1, (uint8 *)OID_PKIX_OCSP_CRL},
+	CSSMOID_PKIX_OCSP_RESPONSE				= { OID_AD_OCSP_LENGTH+1, (uint8 *)OID_PKIX_OCSP_RESPONSE},
+	CSSMOID_PKIX_OCSP_NOCHECK				= { OID_AD_OCSP_LENGTH+1, (uint8 *)OID_PKIX_OCSP_NOCHECK},
+	CSSMOID_PKIX_OCSP_ARCHIVE_CUTOFF		= { OID_AD_OCSP_LENGTH+1, (uint8 *)OID_PKIX_OCSP_ARCHIVE_CUTOFF},
+	CSSMOID_PKIX_OCSP_SERVICE_LOCATOR		= { OID_AD_OCSP_LENGTH+1, (uint8 *)OID_PKIX_OCSP_SERVICE_LOCATOR};

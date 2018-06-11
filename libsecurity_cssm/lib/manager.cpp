@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -27,20 +25,16 @@
 //
 // manager - CSSM manager/supervisor objects.
 //
-#ifdef __MWERKS__
-#define _CPP_MANAGER
-#endif
 #include "manager.h"
 #include "module.h"
 #include <security_utilities/debugging.h>
-//#include <memory>
 
 
 //
 // Constructing a CssmManager instance.
 // This does almost nothing - the actual intialization happens in the initialize() method.
 //
-CssmManager::CssmManager() : MdsComponent(gGuidCssm)
+CssmManager::CssmManager()
 {
     initCount = 0;	// not yet initialized
 }
@@ -119,7 +113,7 @@ bool CssmManager::terminate()
 
 
 #if defined(RESTRICTED_CSP_LOADING)
-static char *allowedCSPs[] = {
+static const char * const allowedCSPs[] = {
 	"/System/Library/Security/AppleCSP.bundle",
 	"/System/Library/Security/AppleCSPDL.bundle",
 	NULL
@@ -143,20 +137,28 @@ void CssmManager::loadModule(const Guid &guid,
 		// An abominable temporary hack for legal reasons. They made me do it!
 		if (info.supportsService(CSSM_SERVICE_CSP)) {
 			string loadPath = info.path();
-			for (char **pp = allowedCSPs; *pp; pp++)
+			for (const char * const *pp = allowedCSPs; *pp; pp++)
 				if (loadPath == *pp)
 					goto allowed;
 			CssmError::throwMe(CSSM_ERRCODE_MODULE_MANIFEST_VERIFY_FAILED);
 		  allowed: ;
 		}
 #endif
+		secdebug("cssm", "loading module %s(%s) from %s",
+			info.name().c_str(), info.description().c_str(), info.path().c_str());
         module = new Module(this, info, loader(info.path()));
         moduleMap[guid] = module;
     } else {
         module = it->second;
+		secdebug("cssm", "%p reloaded module %s(%s) at %s",
+			module, module->name().c_str(), module->description().c_str(),
+			module->path().c_str());
 	}
+	
+	// We are not playing the "key hierarchy" game around here.
+	// if we did, this is where we'd check the manifest.
+
     module->add(callback);
-    //@@@ verify against keyHierarchy
 }
 
 
@@ -170,9 +172,13 @@ void CssmManager::unloadModule(const Guid &guid,
     StLock<Mutex> _(mLock);
     Module *module = getModule(guid);
     if (module->unload(callback)) {
+		secdebug("cssm", "%p module %s(%s) final unload",
+			module, module->name().c_str(), module->description().c_str());
         moduleMap.erase(guid);
         delete module;
-    }
+    } else
+		secdebug("cssm", "%p module %s(%s) load count now %u", module,
+			module->name().c_str(), module->description().c_str(), module->callbackCount());
 }
 
 

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -31,6 +29,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+
+/*
+ * NOTE: To translate CSSM error codes into something vaguely
+ * human-readable, use the cssmPerror and cssmErrorString functions
+ * in cssmapple.h. These functions will also decode other Security
+ * layer errors (i.e. those with names like kSec...).
+ */
 
 
 /* Common error codes. */
@@ -698,7 +704,7 @@ enum {
 	CSSMERR_DL_INVALID_DL_HANDLE =
 		CSSM_DL_BASE_ERROR + CSSM_ERRCODE_INVALID_DL_HANDLE,
 	CSSMERR_DL_INVALID_CL_HANDLE =
-		CSSM_TP_BASE_ERROR + CSSM_ERRCODE_INVALID_CL_HANDLE,
+		CSSM_DL_BASE_ERROR + CSSM_ERRCODE_INVALID_CL_HANDLE,
 	CSSMERR_DL_INVALID_DB_LIST_POINTER =
 		CSSM_DL_BASE_ERROR + CSSM_ERRCODE_INVALID_DB_LIST_POINTER
 };

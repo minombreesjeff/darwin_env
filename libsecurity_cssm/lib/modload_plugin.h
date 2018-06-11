@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -39,7 +37,7 @@ namespace Security {
 //
 // A LoadablePlugin implements itself as a LoadableBundle
 //
-class LoadablePlugin : public Plugin, public CodeSigning::LoadableBundle {
+class LoadablePlugin : public Plugin, public LoadableBundle {
 public:
     LoadablePlugin(const char *path);
     

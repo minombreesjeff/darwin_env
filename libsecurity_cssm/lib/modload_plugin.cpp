@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -39,11 +37,8 @@ namespace Security {
 //    
 LoadablePlugin::LoadablePlugin(const char *path) : LoadableBundle(path)
 {
+	secdebug("cssm", "LoadablePlugin(%s)", path);
     load();
-    findFunction(mFunctions.load, "CSSM_SPI_ModuleLoad");
-    findFunction(mFunctions.attach, "CSSM_SPI_ModuleAttach");
-    findFunction(mFunctions.detach, "CSSM_SPI_ModuleDetach");
-    findFunction(mFunctions.unload, "CSSM_SPI_ModuleUnload");
 }
 
 
@@ -52,17 +47,24 @@ LoadablePlugin::LoadablePlugin(const char *path) : LoadableBundle(path)
 //
 void LoadablePlugin::load()
 {
-    CodeSigning::LoadableBundle::load();
+	secdebug("cssm", "LoadablePlugin::load() path %s", path().c_str());
+    LoadableBundle::load();
+    findFunction(mFunctions.load, "CSSM_SPI_ModuleLoad");
+    findFunction(mFunctions.attach, "CSSM_SPI_ModuleAttach");
+    findFunction(mFunctions.detach, "CSSM_SPI_ModuleDetach");
+    findFunction(mFunctions.unload, "CSSM_SPI_ModuleUnload");
 }
 
 void LoadablePlugin::unload()
 {
-    CodeSigning::LoadableBundle::unload();
+	secdebug("cssm", "LoadablePlugin::unload() path %s", path().c_str());
+	/* skipping for workaround for radar 3774226 
+    LoadableBundle::unload(); */ 
 }
 
 bool LoadablePlugin::isLoaded() const
 {
-    return CodeSigning::LoadableBundle::isLoaded();
+    return LoadableBundle::isLoaded();
 }
 
 
@@ -74,6 +76,7 @@ CSSM_RETURN LoadablePlugin::load(const CSSM_GUID *CssmGuid,
                              CSSM_SPI_ModuleEventHandler CssmNotifyCallback,
                              void *CssmNotifyCallbackCtx)
 {
+	secdebug("cssm", "LoadablePlugin::load(guid,...) path %s", path().c_str());
 	return mFunctions.load(CssmGuid, ModuleGuid,
 		CssmNotifyCallback, CssmNotifyCallbackCtx);
 }
@@ -83,6 +86,7 @@ CSSM_RETURN LoadablePlugin::unload(const CSSM_GUID *CssmGuid,
                              CSSM_SPI_ModuleEventHandler CssmNotifyCallback,
                              void *CssmNotifyCallbackCtx)
 {
+	secdebug("cssm", "LoadablePlugin::unload(guid,...) path %s", path().c_str());
 	return mFunctions.unload(CssmGuid, ModuleGuid,
 		CssmNotifyCallback, CssmNotifyCallbackCtx);
 }

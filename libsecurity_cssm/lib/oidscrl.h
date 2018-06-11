@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -22,7 +20,7 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
- * oidscrl.h -- Object Identifiers for X509 CRLs
+ * oidscrl.h -- Object Identifiers for X509 CRLs and OCSP
  */
 
 #ifndef _OIDSCRL_H_
@@ -81,8 +79,17 @@ extern const CSSM_OID
 	CSSMOID_X509V2CRLSingleExtensionCStruct,
 	CSSMOID_X509V2CRLExtensionId,
 	CSSMOID_X509V2CRLExtensionCritical,
-	CSSMOID_X509V2CRLExtensionType;
+	CSSMOID_X509V2CRLExtensionType,
 	
+	/* OCSP */
+	CSSMOID_PKIX_OCSP,
+	CSSMOID_PKIX_OCSP_BASIC,
+	CSSMOID_PKIX_OCSP_NONCE,
+	CSSMOID_PKIX_OCSP_CRL,
+	CSSMOID_PKIX_OCSP_RESPONSE,
+	CSSMOID_PKIX_OCSP_NOCHECK,
+	CSSMOID_PKIX_OCSP_ARCHIVE_CUTOFF,
+	CSSMOID_PKIX_OCSP_SERVICE_LOCATOR;
 
 	
 #ifdef __cplusplus

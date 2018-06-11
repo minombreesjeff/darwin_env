@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -215,7 +213,7 @@ CSSMOID_ExtendedCertificateAttributes = {OID_PKCS_9_LENGTH+1, (uint8 *)OID_Exten
 static const uint8
 	OID_QT_CPS[]			= { OID_QT, 1 },
 	OID_QT_UNOTICE[]		= { OID_QT, 2 },
-	OID_AD_OCSP[]			= { OID_AD, 1 },
+	_OID_AD_OCSP[]			= { OID_AD_OCSP },
 	OID_AD_CA_ISSUERS[]		= { OID_AD, 2 },
 	OID_AD_TIME_STAMPING[]  = { OID_AD, 3 },
 	OID_AD_CA_REPOSITORY[]	= { OID_AD, 5 }
@@ -224,7 +222,7 @@ static const uint8
 const CSSM_OID
 CSSMOID_QT_CPS				= {OID_QT_LENGTH+1, (uint8 *)OID_QT_CPS},
 CSSMOID_QT_UNOTICE			= {OID_QT_LENGTH+1, (uint8 *)OID_QT_UNOTICE},
-CSSMOID_AD_OCSP				= {OID_AD_LENGTH+1, (uint8 *)OID_AD_OCSP},
+CSSMOID_AD_OCSP				= {OID_AD_LENGTH+1, (uint8 *)_OID_AD_OCSP},
 CSSMOID_AD_CA_ISSUERS		= {OID_AD_LENGTH+1, (uint8 *)OID_AD_CA_ISSUERS},
 CSSMOID_AD_TIME_STAMPING	= {OID_AD_LENGTH+1, (uint8 *)OID_AD_TIME_STAMPING},
 CSSMOID_AD_CA_REPOSITORY	= {OID_AD_LENGTH+1, (uint8 *)OID_AD_CA_REPOSITORY}
