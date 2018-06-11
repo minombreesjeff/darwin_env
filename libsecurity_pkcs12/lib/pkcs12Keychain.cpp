@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -36,7 +34,8 @@
 #include <security_cdsa_utils/cuDbUtils.h>			// cuAddCrlToDb()
 #include <security_asn1/nssUtils.h>
 #include <CoreServices/../Frameworks/CarbonCore.framework/Headers/MacErrors.h>
-#include <security_cdsa_utilities/KeySchema.h>		/* private API! */
+#include <security_cdsa_utilities/KeySchema.h>			/* private API */
+#include <security_keychain/SecImportExportCrypto.h>	/* private API */
 
 /*
  * Store the results of a successful decode in app-specified 
@@ -90,6 +89,11 @@ void P12Coder::storeDecodeResults()
 			}
 		}
 	}
+	
+	/* If all of that succeeded, post notification for imported keys */
+	if(mImportFlags & kSecImportKeys) {
+		notifyKeyImport();
+	}
 }
 
 /*
@@ -98,43 +102,69 @@ void P12Coder::storeDecodeResults()
  */
 void P12Coder::setPrivateKeyHashes()
 {
+	CSSM_KEY_PTR newKey;
+	
 	for(unsigned dex=0; dex<numKeys(); dex++) {
 		P12KeyBag *keyBag = mKeys[dex];
 		
-		/* do we have a matching cert? */
-		P12CertBag *certBag = findCertForKey(keyBag);
-		if(certBag == NULL) {
-			/* not an error... */
-			continue;
-		}
 		CSSM_DATA newLabel = {0, NULL};
 		CFStringRef friendlyName = keyBag->friendlyName();
+		newKey = NULL;
 		CSSM_RETURN crtn = p12SetPubKeyHash(mCspHand,
 			mDlDbHand,
-			rawCspHand(),
-			clHand(),
-			certBag->certData(),
 			keyBag->label(),
 			p12StringToUtf8(friendlyName, mCoder),
 			mCoder,
-			newLabel);
+			newLabel,
+			newKey);
 		if(friendlyName) {
 			CFRelease(friendlyName);
 		}
-		if(crtn) {
-			p12ErrorLog("p12SetPubKeyHash failure\n");
-			if(crtn == CSSMERR_DL_INVALID_UNIQUE_INDEX_DATA) {
-				/* report in a keychain-friendly way */
-				MacOSError::throwMe(errSecDuplicateItem);
-			}
-			else {
+		switch(crtn) {
+			case CSSM_OK:
+				/* update key's label in case we have to delete on error */
+				keyBag->setLabel(newLabel);
+				p12DecodeLog("set pub key hash for private key");
+				break;
+			case CSSMERR_DL_INVALID_UNIQUE_INDEX_DATA:
+				/*
+				 * Special case: update keyBag's CSSM_KEY and proceed without error
+				 */
+				p12DecodeLog("ignoring dup private key");
+				assert(newKey != NULL);
+				keyBag->setKey(newKey);
+				keyBag->dupKey(true);
+				/* update key's label in case we have to delete on error */
+				keyBag->setLabel(newLabel);
+				break;
+			default:
+				p12ErrorLog("p12SetPubKeyHash failure\n");
 				CssmError::throwMe(crtn);
-			}
 		}
-		
-		/* update key's label in case we have to delete on error */
-		keyBag->setLabel(newLabel);
-		p12DecodeLog("set pub key hash for private key");
+	}
+}
+
+/*
+ * Post keychain notification for imported keys. 
+ */
+void P12Coder::notifyKeyImport()
+{
+	if(mKeychain == NULL) {
+		/* Can't notify if user only gave us DLDB */
+		return;
+	}
+	for(unsigned dex=0; dex<numKeys(); dex++) {
+		P12KeyBag *keyBag = mKeys[dex];
+		if(keyBag->dupKey()) {
+			/* no notification for keys we merely looked up */
+			continue;
+		}
+		CssmData &labelData = CssmData::overlay(keyBag->label());
+		OSStatus ortn = impExpKeyNotify(mKeychain, labelData, *keyBag->key());
+		if(ortn) {
+			p12ErrorLog("notifyKeyImport: impExpKeyNotify returned %ld\n", ortn);
+			MacOSError::throwMe(ortn);
+		}
 	}
 }
 

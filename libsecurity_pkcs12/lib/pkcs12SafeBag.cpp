@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -397,7 +395,8 @@ P12KeyBag::P12KeyBag(
 		  mCspHand(cspHand),
 		  mKeyRef(NULL),
 		  mWeOwnKey(true),
-		  mPrivKeyCreds(NULL)
+		  mPrivKeyCreds(NULL),
+		  mDupKey(false)
 {
 	setLabel(labelData);
 }
@@ -417,7 +416,8 @@ P12KeyBag::P12KeyBag(
 		  mCspHand(cspHand),
 		  mKeyRef(keyRef),
 		  mWeOwnKey(false),		// app giveth, app taketh away
-		  mPrivKeyCreds(NULL)
+		  mPrivKeyCreds(NULL),
+		  mDupKey(false)
 {
 	if(mKeyRef) {
 		CFRetain(mKeyRef);
@@ -440,20 +440,35 @@ P12KeyBag::P12KeyBag(
 
 P12KeyBag::~P12KeyBag()
 {
-	if(mWeOwnKey) {
-		assert(mKey != NULL);
-		assert(mCspHand != 0);
-		CSSM_FreeKey(mCspHand, NULL, mKey, CSSM_FALSE);
-	}
-	if(mKeyRef) {
-		CFRelease(mKeyRef);
-	}
+	freeKey();
 }
 
 void P12KeyBag::setLabel(
 	const CSSM_DATA &newLabel)
 {
 	mCoder.allocCopyItem(newLabel, mLabel);
+}
+
+/* reusable key setter */
+void P12KeyBag::setKey(
+	CSSM_KEY_PTR cssmKey)
+{
+	freeKey();
+	mKey = cssmKey;
+}
+
+void P12KeyBag::freeKey()
+{
+	if(mWeOwnKey) {
+		assert(mKey != NULL);
+		assert(mCspHand != 0);
+		CSSM_FreeKey(mCspHand, NULL, mKey, CSSM_FALSE);
+	}
+	mKey = NULL;
+	if(mKeyRef) {
+		CFRelease(mKeyRef);
+		mKeyRef = NULL;
+	}
 }
 
 /*

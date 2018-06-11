@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -142,18 +140,16 @@ void freeCssmMemory(
 
 /*
  * Find private key by label, modify its Label attr to be the
- * hash of the associated cert's public key. 
+ * hash of the associated public key. 
  */
 CSSM_RETURN p12SetPubKeyHash(
 	CSSM_CSP_HANDLE 	cspHand,		// where the key lives
 	CSSM_DL_DB_HANDLE 	dlDbHand,		// ditto
-	CSSM_CSP_HANDLE		rawCspHand,		// for hash calculation
-	CSSM_CL_HANDLE		clHand,			// for key/cert extraction
-	const CSSM_DATA		&cert,		
-	CSSM_DATA			&keyLabel,
+	CSSM_DATA			&keyLabel,		// for DB lookup
 	CSSM_DATA_PTR		newPrintName,	// optional
 	SecNssCoder			&coder,			// for mallocing newLabel
-	CSSM_DATA			&newLabel);		// RETURNED with label as hash
+	CSSM_DATA			&newLabel,		// RETURNED with label as hash
+	CSSM_KEY_PTR		&foundKey);		// RETURNED on dup key detect
 
 CSSM_RETURN p12AddContextAttribute(CSSM_CC_HANDLE CCHandle,
 	uint32 				AttributeType,

@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -213,6 +211,10 @@ public:
 	void setLabel(
 		const CSSM_DATA		&newLabel);
 		
+	/* reusable key setter */
+	void setKey(
+		CSSM_KEY_PTR		cssmKey);
+
 	/*
 	 * Keys are kind of special in that they can't easily be copied.
 	 * On encode, the app owns the key. On decode, we own the 
@@ -223,6 +225,9 @@ public:
 	CSSM_DATA				&label()			{ return mLabel; }
 	const CSSM_ACCESS_CREDENTIALS 
 							*privKeyCreds()		{ return mPrivKeyCreds; }
+	bool					dupKey()			{ return mDupKey; }
+	void					dupKey(bool b)		{ mDupKey = b; }
+	
 private:
 	CSSM_KEY_PTR			mKey;
 	CSSM_CSP_HANDLE			mCspHand;
@@ -242,11 +247,16 @@ private:
 	 */
 	 bool					mWeOwnKey;
 	 
-	 /* somewhat unique label when stored in DLDB */
-	 CSSM_DATA				mLabel;
+	/* somewhat unique label when stored in DLDB */
+	CSSM_DATA				mLabel;
 
 	/* for encode only, owned by app */
 	const CSSM_ACCESS_CREDENTIALS *mPrivKeyCreds;
+
+	/* indicates a key we looked up, not imported */
+	bool					mDupKey;
+	
+	void freeKey();
 
 };
 

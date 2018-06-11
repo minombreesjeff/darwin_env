@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -511,8 +509,8 @@ CSSM_RETURN p12UnwrapKey(
 		
 			CssmClient::KeyAclBearer 
 				bearer(cspHand, *privKey, Allocator::standard());
-			KeychainCore::Access initialAccess("privateKey");
-			initialAccess.setAccess(bearer, maker);
+			SecPointer<KeychainCore::Access> initialAccess(new KeychainCore::Access("privateKey"));
+			initialAccess->setAccess(bearer, maker);
 		}
 		catch (const CssmError &e) {
 			/* not implemented means we're talking to the CSP which does

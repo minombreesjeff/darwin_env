@@ -3,8 +3,6 @@
  * 
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -540,31 +538,34 @@ void freeCssmMemory(
 
 /*
  * Find private key by label, modify its Label attr to be the
- * hash of the associated cert's public key. 
- * Also optionally re-sets the key's PrintName attribute; used toi reset
+ * hash of the associated public key. 
+ * Also optionally re-sets the key's PrintName attribute; used to reset
  * this attr from the random label we create when first unwrap it 
  * to the friendly name we find later after parsing attributes.
+ * Detection of a duplicate key when updating the key's attributes
+ * results in a lookup of the original key and returning it in
+ * foundKey.
  */
 CSSM_RETURN p12SetPubKeyHash(
 	CSSM_CSP_HANDLE 	cspHand,		// where the key lives
 	CSSM_DL_DB_HANDLE 	dlDbHand,		// ditto
-	CSSM_CSP_HANDLE		rawCspHand,		// for hash calculation
-	CSSM_CL_HANDLE		clHand,			// for key/cert extraction
-	const CSSM_DATA		&cert,		
-	CSSM_DATA			&keyLabel,
+	CSSM_DATA			&keyLabel,		// for DB lookup
 	CSSM_DATA_PTR		newPrintName,	// optional
 	SecNssCoder			&coder,			// for mallocing newLabel
-	CSSM_DATA			&newLabel)		// RETURNED with label as hash
+	CSSM_DATA			&newLabel,		// RETURNED with label as hash
+	CSSM_KEY_PTR		&foundKey)		// RETURNED
 {
 	CSSM_QUERY						query;
 	CSSM_SELECTION_PREDICATE		predicate;
 	CSSM_DB_UNIQUE_RECORD_PTR		record = NULL;
 	CSSM_RETURN						crtn;
 	CSSM_HANDLE						resultHand = 0;
+	CSSM_DATA						keyData = {0, NULL};
 	CSSM_CC_HANDLE					ccHand = 0;
-	CSSM_KEY_PTR 					pubKey = NULL;
-	CSSM_DATA_PTR 					keyDigest = NULL;
+	CSSM_KEY_PTR					privKey = NULL;
+	CSSM_DATA_PTR					keyDigest = NULL;
 	
+	assert(cspHand != 0);
 	query.RecordType = CSSM_DL_DB_RECORD_PRIVATE_KEY;
 	query.Conjunctive = CSSM_DB_NONE;
 	query.NumSelectionPredicates = 1;
@@ -582,7 +583,7 @@ CSSM_RETURN p12SetPubKeyHash(
 	
 	query.QueryLimits.TimeLimit = 0;	// FIXME - meaningful?
 	query.QueryLimits.SizeLimit = 1;	// FIXME - meaningful?
-	query.QueryFlags = 0; // CSSM_QUERY_RETURN_DATA;	// FIXME - used?
+	query.QueryFlags = CSSM_QUERY_RETURN_DATA;	
 
 	/* build Record attribute with one or two attrs */
 	CSSM_DB_RECORD_ATTRIBUTE_DATA recordAttrs;
@@ -603,7 +604,7 @@ CSSM_RETURN p12SetPubKeyHash(
 		&query,
 		&resultHand,
 		&recordAttrs,
-		NULL,			// theData
+		&keyData,			// theData
 		&record);
 	/* abort only on success */
 	if(crtn != CSSM_OK) {
@@ -612,22 +613,19 @@ CSSM_RETURN p12SetPubKeyHash(
 		return crtn;
 	}
 	/* subsequent errors to errOut: */
-	
-	/*
-	 * Get cert's public key from CL.
-	 */
-	crtn = CSSM_CL_CertGetKeyInfo(clHand, &cert, &pubKey);
-	if(crtn) {
-		p12LogCssmError("CSSM_CL_CertGetKeyInfo", crtn);
+	if(keyData.Data == NULL) {
+		p12ErrorLog("***p12SetPubKeyHash: private key lookup failure\n");
+		crtn = CSSMERR_CSSM_INTERNAL_ERROR;
 		goto errOut;
 	}
+	privKey = (CSSM_KEY_PTR)keyData.Data;
 	
+	/* public key hash via passthrough - works on any key, any CSP/CSPDL.... */
 	/*
-	 * Get hash of the public key from raw CSP. 
+	 * Warning! This relies on the current default ACL meaning "allow this
+	 * current app to access this private key" since we created the key. 
 	 */
-	crtn = CSSM_CSP_CreatePassThroughContext(rawCspHand,
-	 	pubKey,
-		&ccHand);
+	crtn = CSSM_CSP_CreatePassThroughContext(cspHand, privKey, &ccHand);
 	if(crtn) {
 		p12LogCssmError("CSSM_CSP_CreatePassThroughContext", crtn);
 		goto errOut;
@@ -637,7 +635,7 @@ CSSM_RETURN p12SetPubKeyHash(
 		NULL,
 		(void **)&keyDigest);
 	if(crtn) {
-		p12LogCssmError("CSSM_CSP_PassThrough(KEY_DIGEST)", crtn);
+		p12LogCssmError("CSSM_CSP_PassThrough", crtn);
 		goto errOut;
 	}
 
@@ -666,14 +664,54 @@ CSSM_RETURN p12SetPubKeyHash(
 			&recordAttrs,
             NULL,				// DataToBeModified
 			CSSM_DB_MODIFY_ATTRIBUTE_REPLACE);
-	if(crtn) {
-		p12LogCssmError("CSSM_DL_DataModify", crtn);
-		goto errOut;
+	switch(crtn) {
+		case CSSM_OK:
+			/* give caller the key's new label */
+			coder.allocCopyItem(*keyDigest, newLabel);
+			break;
+		default:
+			p12LogCssmError("CSSM_DL_DataModify", crtn);
+			break;
+		case CSSMERR_DL_INVALID_UNIQUE_INDEX_DATA:
+		{
+			/* 
+			 * Special case: dup private key. The label we just tried to modify is 
+			 * the public key hash so we can be confident that this really is a dup. 
+			 * Delete it, look up the original, and return the original to caller. 
+			 */ 
+			CSSM_RETURN drtn = CSSM_DL_DataDelete(dlDbHand, record);
+			if(drtn) {
+				p12LogCssmError("CSSM_DL_DataDelete on dup key", drtn);
+				crtn = drtn;
+				break;
+			}
+
+			/* Free items created in last search */
+			CSSM_DL_DataAbortQuery(dlDbHand, resultHand);
+			resultHand = 0;
+			CSSM_DL_FreeUniqueRecord(dlDbHand, record);
+			record = NULL;
+			
+			/* lookup by label as public key hash this time */
+			predicate.Attribute.Value = keyDigest;
+			drtn = CSSM_DL_DataGetFirst(dlDbHand,
+				&query,
+				&resultHand,
+				NULL,				// no attrs this time
+				&keyData,		
+				&record);
+			if(drtn) {
+				p12LogCssmError("CSSM_DL_DataGetFirst on original key", crtn);
+				crtn = drtn;
+				break;
+			}
+			foundKey = (CSSM_KEY_PTR)keyData.Data;
+			/* give caller the key's actual label */
+			coder.allocCopyItem(*keyDigest, newLabel);
+			break;
+		}
 	}
 	
-	/* give caller the key's new label */
-	coder.allocCopyItem(*keyDigest, newLabel);
-
 errOut:
 	/* free resources */
 	if(resultHand) {
@@ -685,15 +723,15 @@ errOut:
 	if(ccHand) {
 		CSSM_DeleteContext(ccHand);
 	}
-	if(keyDigest)  {
-		/* mallocd by our connection to raw CSP */
-		cuAppFree(keyDigest->Data, NULL);
-		cuAppFree(keyDigest, NULL);
+	if(privKey) {
+		/* key created by the CSPDL */
+		CSSM_FreeKey(cspHand, NULL, privKey, CSSM_FALSE);
+		freeCssmMemory(dlDbHand.DLHandle, privKey);
 	}
-	if(pubKey) {
-		/* mallocd by our connection to CL */
-		cuAppFree(pubKey->KeyData.Data, NULL);
-		cuAppFree(pubKey, NULL);
+	if(keyDigest)  {
+		/* mallocd by someone else's CSP */
+		freeCssmMemory(cspHand, keyDigest->Data);
+		freeCssmMemory(cspHand, keyDigest);
 	}
 	return crtn;
 }
