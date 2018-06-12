@@ -25,6 +25,8 @@ cpow(x,y) is equivalent to cexp(y * clog(x)).  As such,
 .Fn cpow "x, y"
 has a branch cut along the negative real axis for the first argument, and the equality
 cpow(conj(x),conj(y)) = conj(cpow(x,y)) holds for all x and y.
+.Sh SPECIAL VALUES
+For special values, see clog and cexp.
 .Sh SEE ALSO
 .Xr cexp 3
 .Xr clog 3
