@@ -385,10 +385,10 @@ float nextafterf ( float x, float y )
 *     Set the flags according to the menu du jour.                             *
 *******************************************************************************/
 
-      switch ( ___fpclassifyf ( arg ) )
+      switch ( ___fpclassifyf ( (float) arg ) )
             {
             case FP_ZERO:
-                  xsign.fval = arg;      // copy sign from x to arg
+                  xsign.fval = (float) arg;      // copy sign from x to arg
                   ysign.fval = x;
 				  __NOOP;
 				  __NOOP;
@@ -420,7 +420,7 @@ float nextafterf ( float x, float y )
       temp.i.lo |=  newexc & ( FE_INEXACT | FE_DIVBYZERO | FE_UNDERFLOW | FE_OVERFLOW );
       FESETENVD_GRP(temp.d);
       
-      return arg;
+      return (float) arg;
       }
 
 #endif /* BUILDING_FOR_CARBONCORE_LEGACY */

@@ -7,7 +7,6 @@
  *
  */
 
-#if defined( __i386__ )
 
 #include "xmmLibm_prefix.h"
 
@@ -202,4 +201,3 @@ long double fmal( long double a, long double b, long double c )
 }
 #endif
 
-#endif /* defined( __i386__ ) */

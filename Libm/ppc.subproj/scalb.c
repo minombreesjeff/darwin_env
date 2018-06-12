@@ -156,7 +156,7 @@ double scalbln ( double x, long int n  )
     else if (unlikely(n < -2098))
         m = -2099;
     else
-        m = n;
+        m = (int) n;
     
     return scalbn(x, m);
 }
@@ -170,14 +170,14 @@ float scalbnf ( float x, int n  )
             if ( n > 276 )                      // huge scaling
 	    {
 	    	register volatile float s, t, u;
-		s = x * twoTo127;
-		t = s * twoTo127;
-		u = t * twoTo127;
+		s = x * (float) twoTo127;
+		t = s * (float) twoTo127;
+		u = t * (float) twoTo127;
 		return u;
 	    }
             while ( n > 127 ) 
               {                                 // scale reduction loop
-                  x *= twoTo127;                // scale x by 2^127
+                  x *= (float) twoTo127;                // scale x by 2^127
                   n -= 127;                     // reduce n by 127
               }
        }
@@ -187,14 +187,14 @@ float scalbnf ( float x, int n  )
             if ( n < -277 )                     // huge negative scaling
 	    {
 	    	register volatile float s, t, u;
-		s = x * twoToM126;
-		t = s * twoToM126;
-		u = t * twoToM126;
+		s = x * (float) twoToM126;
+		t = s * (float) twoToM126;
+		u = t * (float) twoToM126;
 		return u;
 	    }
             while ( n < -126 ) 
               {                                 // scale reduction loop
-                  x *= twoToM126;               // scale x by 2^( -126 )
+                  x *= (float) twoToM126;               // scale x by 2^( -126 )
                   n += 126;                     // incr n by 126
               }
        }
@@ -223,7 +223,7 @@ float scalblnf ( float x, long int n  )
     else if (unlikely(n < -277))
         m = -278;
     else
-        m = n;
+        m = (int) n;
     
     return scalbnf(x, m);
 }
@@ -235,9 +235,9 @@ double scalb ( double x, double n )
 	int m;
 	
 	if ( n > 2098.0 )
-		m = 2098.0;
+		m = 2098;
 	else if ( n < -2099.0 )
-		m = -2099.0;
+		m = -2099;
 	else m = (int) n;
 	
 	return scalbn( x, m ); 

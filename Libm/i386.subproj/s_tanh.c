@@ -9,7 +9,7 @@
 
 float tanhf( float x )
 {
-    static const float overflow = 183.2222702f/2.0;      //log(0x1.0p127)
+    static const float overflow = 183.2222702f/2.0f;      //log(0x1.0p127)
     float fabsx = __builtin_fabsf( x );
     
 	if( x != x )	return x + x;
@@ -29,9 +29,9 @@ float tanhf( float x )
 		if( x == 0.0 )
 			return x;
 	
-		fabsx *= 0x1.0p25;
+		fabsx *= 0x1.0p25f;
 		fabsx -= 0x1.0p-126f;
-		fabsx *= 0x1.0p-25;
+		fabsx *= 0x1.0p-25f;
 	}
 
 	if( x < 0 )

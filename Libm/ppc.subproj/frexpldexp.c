@@ -152,7 +152,7 @@ float frexpf ( float value, int *eptr )
       
       if (unlikely( valueHead < 0x00800000 ))
       {      // denorm
-            argument.fval = two25 * value;
+            argument.fval = (float) two25 * value;
 		    __NOOP;
 		    __NOOP;
 		    __NOOP;

@@ -10,7 +10,6 @@
  * ====================================================
  */
 
-#warning obsolete and unnecessary?
 
 #include <sys/cdefs.h>
 #if defined(LIBM_SCCS) && !defined(lint)

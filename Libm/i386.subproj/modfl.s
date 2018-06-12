@@ -8,36 +8,41 @@
  */
 
 #include <machine/asm.h>
+#define LOCAL_STACK_SIZE	12
 #include "abi.h"
-
-#if defined( __LP64__ )
-	#error not 64-bit ready
-#endif
 
 #if ! defined( __SSE3__ )
 	#error	modfl function requires SSE3
+#endif
+
+#if defined( __LP64__ )
+	#define DEST_P			%rdi
+	#define LOAD_DEST_P
+#else
+	#define DEST_P			%eax
+	#define LOAD_DEST_P		mov			SECOND_ARG_OFFSET(STACKP), DEST_P
 #endif
 
 // I tried branch free code here. Alas there were so many special cases, that 2/3 of the code was patchup after the fidll instruction.
 // I've moved some special cases { 0, +-inf, NaN} out, which simplifies things quite a bit on any path you care to follow.
 
 ENTRY( modfl )
-	pushl		$0x7f800000				//inf
-	pushl		$0x5f000000				//1.0p63f
-	subl		$4, %esp
+	SUBP		$LOCAL_STACK_SIZE, STACKP
+	movl		$0x7f800000, 8(STACKP)				//inf
+	movl		$0x5f000000, 4(STACKP)				//1.0p63f
 	
-	fldt		16(%esp)				// {x}
+	fldt		FIRST_ARG_OFFSET(STACKP)				// {x}
 	fld			%st(0)					// {x}
 	fabs								// {|x|, x}
-	movl		32(%esp), %eax			//				load *iptr
-	flds		4(%esp)					// {1.0p63, |x|, x}
+	LOAD_DEST_P								//				load *iptr
+	flds		4(STACKP)					// {1.0p63, |x|, x}
 	fucomip		%st(1), %st(0)			// {|x|, x}			1.0p63 > |x| 
 	fldz								// { 0, |x|, x }
 	fcmovnbe	%st(2), %st(0)			// { 0 or x, |x|, x }
-	fisttpll	(%esp)					// { |x|, x }					***uses sse3***
+	fisttpll	(STACKP)					// { |x|, x }					***uses sse3***
 
 	//patch up x is finite integer case
-	fildll		(%esp)					// { i or 0, |x|, x}
+	fildll		(STACKP)					// { i or 0, |x|, x}
 	fcmovbe		%st(2), %st(0)			// { i, |x|, x }					//copy back x for all large integers, Inf and NaN
 
 	//get zero and NaN out of the main path
@@ -46,7 +51,7 @@ ENTRY( modfl )
 	je			modfl_zero
 		
 	//deal with infinity
-	flds		8(%esp)					// { inf, i, |x|, x }
+	flds		8(STACKP)					// { inf, i, |x|, x }
 	fucomip		%st(2), %st(0)			// { i, |x|, x }
 	fstp		%st(1)					// { i, x }
 	je			modfl_inf
@@ -64,9 +69,9 @@ ENTRY( modfl )
 	fstp		%st(2)
 
 	//return result
-	fstpt		(%eax)					// { i, f }
+	fstpt		(DEST_P)				// { i, f }
 	
-	addl		$12, %esp
+	ADDP		$LOCAL_STACK_SIZE, STACKP
 	ret
 	
 modfl_inf:
@@ -77,9 +82,9 @@ modfl_inf:
 	fucomi		%st(2), %st(0)			// { 0, -0, x }
 	fcmovnb		%st(1), %st(0)			// {+-0, -0, x }
 	fxch		%st(2)					// { x, -0, +-0 }
-	fstpt		(%eax)					// { -0, +-0 }
+	fstpt		(DEST_P)				// { -0, +-0 }
 	fstp		%st(0)
-	addl		$12, %esp
+	ADDP		$LOCAL_STACK_SIZE, STACKP
 	ret
 	
 modfl_zero:								// { i, |x|, x }		handles 0 and NaN
@@ -94,8 +99,8 @@ modfl_zero:								// { i, |x|, x }		handles 0 and NaN
 	fcmovb		%st(1), %st(0)			// { +-|i|, |i|, x }		//Handle x > 0
 	fcmove		%st(2), %st(0)			// { i, |i|,  x }			//Handle x == 0 and i is NaN
 	fstp		%st(1)					// { i, x }
-	fstpt		(%eax)					// { x }
-	addl		$12, %esp
+	fstpt		(DEST_P)				// { x }
+	ADDP		$LOCAL_STACK_SIZE, STACKP
 	ret
 	
 	

@@ -7,7 +7,6 @@
  *
  */
 
-#if defined( __i386__ )
 
 #include "xmmLibm_prefix.h"
 
@@ -128,4 +127,3 @@ float fminf( float x, float y )
 #endif /* CARBONCORE_LEGACY */
 
 
-#endif /* defined( __i386__ ) */

@@ -106,29 +106,32 @@ long double powl( long double base, long double exponent )
 					return u.f;
 				}
 			}
-		}
-		else if (basehi != basehi)
-			return base;
-		else									// base is +-Inf
+		}																				// Exponent is finite, Base is not.
+		else if (basehi != basehi)							// Base is NaN, return NaN
+			return base;		
+		else																		// base is +-Inf
 		{
-			if (basehi > 0.0)
+			if (basehi > 0.0)											// base is +inf
 			{
-				if (exphi > 0.0)
+				if (exphi > 0.0)										// pow(+inf, >0)
 					return (long double) INFINITY;
-				else
+				else																// pow(+inf, <0)
 					return 0.0L;
 			}
-			else
+			else																	// base is -inf
 			{
-				isExpOddInt = ((rintl(exponent) == exponent) ?
-								(rintl(0.5*exponent) != 0.5*exponent) : 0);
+				// If exponent is an integer, and exponent/2 is not, then exponent is an odd integer.
+				isExpOddInt = ((rintl(exponent) == exponent) && (rintl(0.5*exponent) != 0.5*exponent));
 				if (exphi > 0.0) {
-					ldTemp = (isExpOddInt) ? (long double) INFINITY : (long double) -INFINITY;
+					// previously signs were incorrect in this expression; we should be returning
+					// -Inf when the exponent is an odd integer, +Inf otherwise.
+					ldTemp = (isExpOddInt) ? (long double) -INFINITY : (long double) INFINITY;
                                         FESETENVD(fpenv);
 					return ldTemp;
 				}
 				else { //   exponent < 0.0
-					u.d[0] = (isExpOddInt) ? 0.0 : -0.0;
+					// Return -0 if exponent is an odd integer, +0 otherwise.
+					u.d[0] = (isExpOddInt) ? -0.0 : 0.0;
 					u.d[1] = 0.0;
                                         FESETENVD(fpenv);
 					return u.f;
@@ -136,7 +139,7 @@ long double powl( long double base, long double exponent )
 			}
 		}		
 	}
-	else if (exphi != exphi)
+	else if (exphi != exphi)	// Exponent is a NaN
 	{
 		if (base == 1.0L)
 			return base;

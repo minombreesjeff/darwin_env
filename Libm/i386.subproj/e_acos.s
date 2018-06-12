@@ -5,31 +5,29 @@
  */
 
 #include <machine/asm.h>
+
+#define LOCAL_STACK_SIZE	4
 #include "abi.h"
 
-#if defined( __LP64__ )
-	#error not 64-bit ready
-#endif
-
-
 ENTRY(acosl)
-	pushl		$0x00800000			//  0x1.0p-126f
-	fldt		8(%esp)				//	{x}
-	fabs							//	{|x| }
+	SUBP		$LOCAL_STACK_SIZE, STACKP
+	movl		$0x00800000, (STACKP)		//  0x1.0p-126f
+	fldt		FIRST_ARG_OFFSET(STACKP)	//	{x}
+	fabs									//	{|x| }
 
 	//clip tiny values to 2**-126 to prevent underflow
-	flds		(%esp)				//	{2**-126, |x| }
-	fucomi		%st(1), %st(0)		//
-	fcmovb		%st(1), %st(0)		//	{ 2**-126 or |x|, |x| }
-	fstp		%st(1)				//	{ 2**-126 or |x| }
+	flds		(STACKP)					//	{2**-126, |x| }
+	fucomi		%st(1), %st(0)				//
+	fcmovb		%st(1), %st(0)				//	{ 2**-126 or |x|, |x| }
+	fstp		%st(1)						//	{ 2**-126 or |x| }
 
 	//handle overflow / NaN input
-	fld1							//	{1, 2**-126 or |x| }
+	fld1									//	{1, 2**-126 or |x| }
 	fucomi		%st(1), %st(0)
 	jb			acosl_nan
 
-	fstp		%st(1)				//	{ 1 }
-	fldt		8(%esp)				//	{ x, 1 }
+	fstp		%st(1)						//	{ 1 }
+	fldt		FIRST_ARG_OFFSET(STACKP)	//	{ x, 1 }
 	je			acosl_one
 
 	// asin(x) = atan( x / sqrt( 1 - x*x ) )
@@ -41,7 +39,7 @@ ENTRY(acosl)
 	fsqrt							//	{ sqrt(1 + x), sqrt( 1 - x ) }
 	fpatan							//	{ result / 2 }
 	fadd		%st(0), %st(0)		//	{ result }
-	addl		$4, %esp
+	ADDP		$LOCAL_STACK_SIZE, STACKP
 	ret
 
 acosl_one:							//	{ x, 1 }
@@ -50,13 +48,13 @@ acosl_one:							//	{ x, 1 }
 	fldpi							//	{ pi, 0 }
 	fcmove		%st(1), %st(0)		//	{ pi or 0, 0 }
 	fstp		%st(1)				//	{ pi or 0 }
-	addl		$4, %esp
+	ADDP		$LOCAL_STACK_SIZE, STACKP
 	ret
 
 acosl_nan:							//{ 1, |x| }
 	fstp		%st(0)				//{ |x| }
 	fchs							//{-|x| }
 	fsqrt							//{nan}	set invalid flag
-	addl		$4, %esp
+	ADDP		$LOCAL_STACK_SIZE, STACKP
 	ret
 

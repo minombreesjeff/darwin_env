@@ -158,25 +158,25 @@ long double expm1l( long double x )
 	
 	u.f = x;
 	
-	if (((u.i[0] & 0x7fffffffu) | u.i[1]) == 0)			// x = 0.0
-		return 0.0L;
+	if (((u.i[0] & 0x7fffffffu) | u.i[1]) == 0)			// x = +/-0.0
+		return x;																			// changed 5-23-2006 to return x instead of 0.0L.
 	
-	if ((u.i[0] & 0x7ff00000u) != 0x7ff00000u) {			// x is not NaN, Infinity
+	if ((u.i[0] & 0x7ff00000u) != 0x7ff00000u) {		// x is not NaN, Infinity
                 FEGETENVD(fpenv);
                 FESETENVD(0.0);
-		if ((u.i[0] & 0x7ff00000u) >= 0x2ef00000u) // |x| > 2^(-110)
+		if ((u.i[0] & 0x7ff00000u) >= 0x2ef00000u)		// |x| > 2^(-110)
 			u.f = _ExpInnerLD(u.d[0], u.d[1], 0.0, &extra, 2);
-		if ((u.i[0] & 0x7ff00000) == 0x7ff00000)
+		if ((u.i[0] & 0x7ff00000) == 0x7ff00000)			// If the result is NaN or Infinity, clear out the tail.
 			u.d[1] = 0.0;
                 FESETENVD(fpenv);
 		return u.f;
 	}
 	
-	if (u.d[0] != u.d[0])									// NaN case
+	if (u.d[0] != u.d[0])														// NaN case
 		return x;
-	if ((u.i[0] & 0xfff00000u) == 0x7ff00000u)			// +Inifnity
+	if ((u.i[0] & 0xfff00000u) == 0x7ff00000u)			// +Infinity
 		return x;
-	else													// -Infinity
+	else																						// -Infinity
 		return -1.0L;
 }
 

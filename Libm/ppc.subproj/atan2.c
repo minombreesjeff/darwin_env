@@ -154,7 +154,7 @@ double atan2 ( double y, double x )
                         result = __FMUL( -FPR_half, FPR_pi );
                   else
                   {
-                        if ( __signbitd ( x ) ) // x is +-0
+                        if ( signbit ( x ) ) // x is +-0
                               result = copysign ( FPR_pi, y ); // y is +-0
                         else
                         {

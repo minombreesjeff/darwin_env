@@ -7,7 +7,7 @@
  *
  */
 
-#if defined( __i386__ )
+#include <math.h>
 
 #include "xmmLibm_prefix.h"
 
@@ -69,6 +69,7 @@ float modff( float f, float *i )
 
 #else
 
+/*
 double floor( double f )
 {
     xDouble x = DOUBLE_2_XDOUBLE( f );
@@ -108,6 +109,7 @@ double floor( double f )
     return f;
 }
 
+
 float floorf( float f )
 {
     xFloat x = FLOAT_2_XFLOAT( f );
@@ -146,6 +148,7 @@ float floorf( float f )
 
     return f;
 }
+
 
 double ceil( double f )
 {
@@ -215,6 +218,7 @@ float ceilf( float f )
 
     return f;
 }
+*/
 
 static inline double _xrint( double f ) ALWAYS_INLINE;
 static inline float _xrintf( float f ) ALWAYS_INLINE;
@@ -282,8 +286,11 @@ static inline float _xrintf( float f )
     return f;
 }
 
+#if defined( __x86_64__ )
+// the i386 versios are in s_rint.s
 double rint( double f ){ return _xrint( f );  }
 float rintf( float f  ){ return _xrintf( f );  }
+#endif 
 
 double nearbyint( double f )
 {
@@ -326,14 +333,18 @@ static inline long long int _llrint( long double x )
 	return result ^ -mask;
 }
 
-long long int  llrint( double x ){ return _llrint(x); }
-long long int  llrintf( float x ){ return _llrint(x); }
-
+// These all have been moved off to s_rint.s
+/*
 #if defined( __LP64__ )
     long int  lrint( double x ){ return _llrint(x); }
     long int lrintf( float x ){ return _llrint(x); }
-    long int  lrintl( double x ){ return llrintl(x); }
+    long int  lrintl( long double x ){ return _llrint(x); }
+    long long int  llrintl( long double x ){ return _llrint(x); }
 #else
+
+    long long int  llrint( double x ){ return _llrint(x); }
+    long long int  llrintf( float x ){ return _llrint(x); }
+
     long int  lrint( double x )
 	{ 
 		int result = _mm_cvtsd_si32( DOUBLE_2_XDOUBLE(x) ); 
@@ -349,7 +360,7 @@ long long int  llrintf( float x ){ return _llrint(x); }
 		return result ^ (-test);
 	}
 #endif
-
+*/
 
 static inline long long int _xllround( double x ) ALWAYS_INLINE;
 static inline long long int _xllround( double x )
@@ -378,6 +389,7 @@ static inline long long int _xllround( double x )
 
 
 #if defined( __LP64__ )
+	#warning llround and llroundf can be done faster in SSE on x86_64
     long int  lround( double x ){ return _xllround( x ); }
     long int  lroundf( float x ){ return _xllround( x ); }
 #else
@@ -443,9 +455,14 @@ static inline long long int _xllround( double x )
     }
 #endif
 
+#if defined (__LP64__ )
+	#warning llround and llroundf can be done faster in SSE on x86_64
+#endif
+
 long long int  llround( double x ){ return _xllround( x ); }
 long long int  llroundf( float x ){ return _xllround( x ); }
 
+/*
 double trunc( double f )
 {
     xDouble x = DOUBLE_2_XDOUBLE( f );
@@ -484,6 +501,7 @@ double trunc( double f )
     return f;
 }
 
+
 float truncf( float f )
 {
     xFloat x = FLOAT_2_XFLOAT( f );
@@ -521,6 +539,7 @@ float truncf( float f )
 
     return f;
 }
+*/
 
 double modf( double f, double *i )
 {
@@ -568,4 +587,3 @@ double modf( double f, double *i )
 }
 
 #endif /* CARBON_CORE */
-#endif /* defined( __i386__ ) */

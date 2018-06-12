@@ -8,24 +8,22 @@
  */
 
 #include "machine/asm.h"
-#include "abi.h"
 
-#if defined( __LP64__ )
-	#error not 64-bit ready
-#endif
+#define LOCAL_STACK_SIZE	12
+#include "abi.h"
 
 
 ENTRY(roundl)
-    pushl       $0x3f000000             //0.5f
-    pushl       $0x5f000000             //0x1.0p63 
-    subl        $4,     %esp
+    SUBP        $LOCAL_STACK_SIZE,     STACKP
+    movl		$0x3f000000, 8(STACKP)             //0.5f
+    movl		$0x5f000000, 4(STACKP)             //0x1.0p63 
 
 //convert |f| to an int
     //check to see if f is already an int or zero:      |f| >= 2**63 is an int
-    flds        8(%esp)             //  {0.5}
-    fldt        16(%esp)            //  {f, 0.5}
+    flds        8(STACKP)             //  {0.5}
+    fldt        FIRST_ARG_OFFSET(STACKP)            //  {f, 0.5}
     fabs                            //  {|f|, 0.5}
-    flds        4(%esp)             //  {limit,     |f|, 0.5}
+    flds        4(STACKP)             //  {limit,     |f|, 0.5}
     fucomip     %ST(1), %ST         //  {|f|, 0.5}       0x1.0p63 <= |f| or NaN
 
     //if it is a large int, NaN, replace it with 0.5. This avoids spurious overflows, illegal, and inexact
@@ -38,21 +36,21 @@ ENTRY(roundl)
     fxch                            //  {.5or|f|+.5,    |f|} 
 
     //then convert to int with truncation to zero
-    fisttpll    (%esp)              //  {|f|}   ***USES SSE3***
+    fisttpll    (STACKP)              //  {|f|}   ***USES SSE3***
 
     //generate NaN result
     fldz                            //  {0, |f|}
     faddp                           //  {|f|}   NaN silenced
     
     //load the integer result back in
-    fildll      (%esp)              //  {|intf|,  |f|}
+    fildll      (STACKP)              //  {|intf|,  |f|}
 
     //if 2**63 <= |f| or NaN, use |f| instead
     fcmovbe      %ST(1), %ST(0)     //  {|intf| or |f|,   |f|}
     fstp         %ST(1)             //  {|intf| or |f|}
     
     //deal with the sign
-    fldt        16(%esp)            //  { f, |intf| or |f|} 
+    fldt        FIRST_ARG_OFFSET(STACKP)            //  { f, |intf| or |f|} 
     fldz                            //  { 0, f, |intf| or |f| }
     fucomip     %ST(1), %ST         //  { f, |intf| or |f| }           0 < f or f is NaN 
     fld         %ST(1)              //  { |intf| or |f|,  f, |intf| or |f| }  
@@ -66,16 +64,16 @@ ENTRY(roundl)
     fstp        %ST(2)              //  { intf or f+0 or f, result }
     fstp        %ST(0)              //  { result }
 
-    addl        $12,    %esp
+    ADDP        $LOCAL_STACK_SIZE,    STACKP
     ret
 
 
 ENTRY(llroundl)
-    pushl       $0x3f000000             //0.5f
-	subl		$8, %esp
+	SUBP		$LOCAL_STACK_SIZE, STACKP
+    movl		$0x3f000000, 8(STACKP)             //0.5f
 
 	//calculate floor(|x|)
-	fldt		16(%esp)			//	{f}
+	fldt		FIRST_ARG_OFFSET(STACKP)			//	{f}
 	fld			%st(0)				//	{ f, f }
 	fabs							//	{|f|, f}
 	fld			%st(0)				//	{|f|, |f|, f}
@@ -94,7 +92,7 @@ ENTRY(llroundl)
 	fsubr		%st(1), %st(0)		//	{ |f| - floor(|f|), |f|, f }
 
     //if( |f| - floor(|f|) >= 0.5 )	add 0.5, otherwise add |f| - floor(|f|) (which gives similar results to adding zero)
-    flds        8(%esp)				//  { 0.5, |f| - floor(|f|), |f|, f }
+    flds        8(STACKP)				//  { 0.5, |f| - floor(|f|), |f|, f }
 	fucomi		%st(1), %st(0)		//	{ 0.5, |f| - floor(|f|), |f|, f }
 	fcmovnb		%st(1), %st(0)		//	{0.5 or |f| - floor(|f|), |f| - floor(|f|), |f|, f }
 	fstp		%st(1)				//	{0.5 or |f| - floor(|f|), |f|, f }
@@ -110,26 +108,26 @@ ENTRY(llroundl)
 	fstp		%st(0)				//	{ +-a }
 
     //convert to long long
-    fisttpll    (%esp)              //  {}
+    fisttpll    (STACKP)              //  {}
 
     //load into return registers
 #if defined( __LP64__ ) 
-    movll       (%esp),     %eax
+    movq       (STACKP),     %rax
 #else
-    movl        (%esp),     %eax    
-    movl        4(%esp),    %edx
+    movl        (STACKP),     %eax    
+    movl        4(STACKP),    %edx
 #endif
     
-    addl        $12,    %esp
+    ADDP        $LOCAL_STACK_SIZE,    STACKP
     ret
     
 ENTRY(lroundl)
-    pushl       $0x3f000000             //0.5f
-    pushl       $0x4f000000             //0x1.0p31f
-	subl		$4, %esp
+	SUBP		$LOCAL_STACK_SIZE, STACKP
+    movl		$0x3f000000, 8(STACKP)             //0.5f
+    movl		$0x4f000000, 4(STACKP)             //0x1.0p31f
 
 	//calculate floor(|x|)
-	fldt		16(%esp)			//	{f}
+	fldt		FIRST_ARG_OFFSET(STACKP)			//	{f}
 	fld			%st(0)				//	{ f, f }
 	fabs							//	{|f|, f}
 	fld			%st(0)				//	{|f|, |f|, f}
@@ -148,7 +146,7 @@ ENTRY(lroundl)
 	fsubr		%st(1), %st(0)		//	{ |f| - floor(|f|), |f|, f }
 
     //if( |f| - floor(|f|) >= 0.5 )	add 0.5, otherwise add |f| - floor(|f|) (which gives similar results to adding zero)
-    flds        8(%esp)				//  { 0.5, |f| - floor(|f|), |f|, f }
+    flds        8(STACKP)				//  { 0.5, |f| - floor(|f|), |f|, f }
 	fucomi		%st(1), %st(0)		//	{ 0.5, |f| - floor(|f|), |f|, f }
 	fcmovnb		%st(1), %st(0)		//	{0.5 or |f| - floor(|f|), |f| - floor(|f|), |f|, f }
 	fstp		%st(1)				//	{0.5 or |f| - floor(|f|), |f|, f }
@@ -165,44 +163,56 @@ ENTRY(lroundl)
 	
 	//check for overflow
 	xorl		%edx,	%edx		// zero edz
-	flds		4(%esp)				//	{ 0x1.0p31, +-a }
+	flds		4(STACKP)				//	{ 0x1.0p31, +-a }
 	fxch							//  { +-a, 0x1.0p31 }
 	fucomi		%st(1), %st(0)		//	{ +-a, 0x1.0p31 }
 	setnb		%dl
-	negl		%edx
 
 #if defined( __LP64__ ) 
+	negq		%rdx
     //convert to long long
-    fisttpll    (%esp)              //  {0x1.0p31}
+    fisttpll    (STACKP)              //  {0x1.0p31}
 	fstp		%st(0)
 
     //load into return registers
-    movll       (%esp),     %eax
-	xorll		%edx,		%eax
+    movq       (STACKP),     %rax
+	xorq		DX_P,		%rax
 #else   
+	negl		%edx
     //convert to long
-    fisttpl     (%esp)              //  {0x1.0p31}
+    fisttpl     (STACKP)              //  {0x1.0p31}
 	fstp		%st(0)
 
     //load into return registers
-    movl        (%esp),     %eax
-	xorl		%edx,		%eax
+    movl        (STACKP),     %eax
+	xorl		DX_P,		%eax
 #endif
 
-    addl        $12,		%esp
+    ADDP        $LOCAL_STACK_SIZE,		STACKP
     ret
 	
 ENTRY(round)
-    pushl       $0x3f000000             //0.5f
-    pushl       $0x5f000000             //0x1.0p63 
-    subl        $4,     %esp
-
 //convert |f| to an int
     //check to see if f is already an int or zero:      |f| >= 2**63 is an int
-    flds        8(%esp)             //  {0.5}
-    fldl        16(%esp)            //  {f, 0.5}
+#if defined( __LP64__ )
+    SUBP        $24,     STACKP
+	movl		$0x3f000000, 20(STACKP)
+	movl		$0x5f000000, 16(STACKP)
+    flds        20(STACKP)             //  {0.5}
+	movsd		%xmm0, 8(STACKP)
+    fldl        8(STACKP)				//  {f, 0.5}
     fabs                            //  {|f|, 0.5}
-    flds        4(%esp)             //  {limit,     |f|, 0.5}
+    flds        16(STACKP)             //  {limit,     |f|, 0.5}
+#else
+    pushl       $0x3f000000             //0.5f
+    pushl       $0x5f000000             //0x1.0p63 
+    SUBP        $4,     STACKP
+    flds        8(STACKP)             //  {0.5}
+    fldl        (FIRST_ARG_OFFSET)(STACKP)            //  {f, 0.5}
+    fabs                            //  {|f|, 0.5}
+    flds        4(STACKP)             //  {limit,     |f|, 0.5}
+#endif
+
     fucomip     %ST(1), %ST         //  {|f|, 0.5}       0x1.0p63 <= |f| or NaN
 
     //if it is a large int, NaN, replace it with 0.5. This avoids spurious overflows, illegal, and inexact
@@ -215,21 +225,25 @@ ENTRY(round)
     fxch                            //  {.5or|f|+.5,    |f|} 
 
     //then convert to int with truncation to zero
-    fisttpll    (%esp)              //  {|f|}   ***USES SSE3***
+    fisttpll    (STACKP)              //  {|f|}   ***USES SSE3***
 
     //generate NaN result
     fldz                            //  {0, |f|}
     faddp                           //  {|f|}   NaN silenced
     
     //load the integer result back in
-    fildll      (%esp)              //  {|intf|,  |f|}
+    fildll      (STACKP)              //  {|intf|,  |f|}
 
     //if 2**63 <= |f| or NaN, use |f| instead
     fcmovbe      %ST(1), %ST(0)     //  {|intf| or |f|,   |f|}
     fstp         %ST(1)             //  {|intf| or |f|}
     
     //deal with the sign
-    fldl        16(%esp)            //  { f, |intf| or |f|} 
+#if defined( __LP64__ )
+    fldl        8(STACKP)            //  { f, |intf| or |f|} 
+#else
+    fldl        FIRST_ARG_OFFSET(STACKP)            //  { f, |intf| or |f|} 
+#endif
     fldz                            //  { 0, f, |intf| or |f| }
     fucomip     %ST(1), %ST         //  { f, |intf| or |f| }           0 < f or f is NaN 
     fld         %ST(1)              //  { |intf| or |f|,  f, |intf| or |f| }  
@@ -243,26 +257,34 @@ ENTRY(round)
     fstp        %ST(2)              //  { intf or f+0 or f, result }
     fstp        %ST(0)              //  { result }
 
-#if 0
-	fstpl		(%esp)
-	movsd		(%esp), %xmm0
+#if defined( __LP64__ )
+	fstpl		(STACKP)
+	movsd		(STACKP), %xmm0
+    ADDP        $24,    STACKP
+#else
+    ADDP        $12,    STACKP
 #endif
 
-    addl        $12,    %esp
     ret
 
 	
 ENTRY(roundf)
-    pushl       $0x3f000000             //0.5f
-    pushl       $0x5f000000             //0x1.0p63 
-    subl        $4,     %esp
+    SUBP        $LOCAL_STACK_SIZE,     STACKP
+    movl		$0x3f000000, 8(STACKP)             //0.5f
+    movl		$0x5f000000, 4(STACKP)             //0x1.0p63 
 
 //convert |f| to an int
     //check to see if f is already an int or zero:      |f| >= 2**63 is an int
-    flds        8(%esp)             //  {0.5}
-    flds        16(%esp)            //  {f, 0.5}
+    flds        8(STACKP)             //  {0.5}
+
+#if defined( __LP64__ )
+	movss		%xmm0,  8(STACKP)
+	flds		8(STACKP)
+#else
+    flds        FIRST_ARG_OFFSET(STACKP)            //  {f, 0.5}
+#endif
     fabs                            //  {|f|, 0.5}
-    flds        4(%esp)             //  {limit,     |f|, 0.5}
+    flds        4(STACKP)             //  {limit,     |f|, 0.5}
     fucomip     %ST(1), %ST         //  {|f|, 0.5}       0x1.0p63 <= |f| or NaN
 
     //if it is a large int, NaN, replace it with 0.5. This avoids spurious overflows, illegal, and inexact
@@ -275,21 +297,25 @@ ENTRY(roundf)
     fxch                            //  {.5or|f|+.5,    |f|} 
 
     //then convert to int with truncation to zero
-    fisttpll    (%esp)              //  {|f|}   ***USES SSE3***
+    fisttpll    (STACKP)              //  {|f|}   ***USES SSE3***
 
     //generate NaN result
     fldz                            //  {0, |f|}
     faddp                           //  {|f|}   NaN silenced
     
     //load the integer result back in
-    fildll      (%esp)              //  {|intf|,  |f|}
+    fildll      (STACKP)              //  {|intf|,  |f|}
 
     //if 2**63 <= |f| or NaN, use |f| instead
     fcmovbe      %ST(1), %ST(0)     //  {|intf| or |f|,   |f|}
     fstp         %ST(1)             //  {|intf| or |f|}
     
     //deal with the sign
-    flds        16(%esp)            //  { f, |intf| or |f|} 
+#if defined( __LP64__ )
+	flds		8(STACKP)
+#else
+    flds        16(STACKP)            //  { f, |intf| or |f|} 
+#endif
     fldz                            //  { 0, f, |intf| or |f| }
     fucomip     %ST(1), %ST         //  { f, |intf| or |f| }           0 < f or f is NaN 
     fld         %ST(1)              //  { |intf| or |f|,  f, |intf| or |f| }  
@@ -303,11 +329,11 @@ ENTRY(roundf)
     fstp        %ST(2)              //  { intf or f+0 or f, result }
     fstp        %ST(0)              //  { result }
 
-#if 0
-	fstps		(%esp)
-	movss		(%esp), %xmm0
+#if defined( __LP64__ )
+	fstps		(STACKP)
+	movss		(STACKP), %xmm0
 #endif
 
-    addl        $12,    %esp
+    ADDP        $LOCAL_STACK_SIZE,    STACKP
     ret
 

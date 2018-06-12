@@ -11,7 +11,6 @@
  *          by Ali Sazegari and pascal by K Hanson and C McMaster
  */
 
-#if defined( __i386__ )
 
 #include "xmmLibm_prefix.h"
 #include <math.h>
@@ -282,4 +281,3 @@ float atan2f( float x, float y )
 	return atan2l( (long double) x, (long double) y );
 }
 
-#endif /* defined( __i386__ ) */

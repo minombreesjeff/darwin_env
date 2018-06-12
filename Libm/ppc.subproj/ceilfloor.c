@@ -68,7 +68,7 @@
 #include      "fenv_private.h"
 
 static const double        twoTo52  = 0x1.0p+52; // 4503599627370496.0;
-static const float         twoTo23  = 0x1.0p+23; // 8388608.0;
+static const float         twoTo23  = 0x1.0p+23F; // 8388608.0;
 
 /*******************************************************************************
 *      Ceil(x) returns the smallest integer not less than x.                   *
@@ -143,8 +143,8 @@ float ceilf ( float x )
       register float FPR_absx, FPR_Two23, FPR_one, FPR_zero, FPR_Mzero;
       register double FPR_pi4;
       
-      FPR_absx = __FABS( x );				FPR_zero = 0.0f;
-      FPR_Two23 = twoTo23;				FPR_one = 1.0;
+      FPR_absx = __FABSF( x );				FPR_zero = 0.0f;
+      FPR_Two23 = twoTo23;				FPR_one = 1.0f;
       __ENSURE( FPR_zero, FPR_Two23, FPR_one );
       FPR_pi4 = M_PI_4;				FPR_Mzero = -0.0f;
       target = ( x > FPR_zero ); 			__ENSURE( FPR_Mzero, FPR_Two23, FPR_pi4 );
@@ -270,7 +270,7 @@ float floorf ( float x )
       register float FPR_absx, FPR_Two23, FPR_one, FPR_zero, FPR_Mone;
       register double FPR_pi4;
       
-      FPR_absx = __FABS( x );				FPR_zero = 0.0f;
+      FPR_absx = __FABSF( x );				FPR_zero = 0.0f;
       FPR_Two23 = twoTo23;				FPR_one = 1.0f;
       __ENSURE( FPR_zero, FPR_Two23, FPR_one );
       FPR_pi4 = M_PI_4;				FPR_Mone = -1.0f;

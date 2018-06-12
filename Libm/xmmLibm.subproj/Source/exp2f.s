@@ -11,9 +11,6 @@
 #include <../../i386.subproj/machine/asm.h>
 #include "abi.h"
 
-#if defined( __LP64__ )
-	#error not 64-bit ready
-#endif
 
 #if 0		//this is too error prone currently. Its probably a bug, because it worked in standalone tests.
 

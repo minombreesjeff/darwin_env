@@ -6,9 +6,11 @@
  *  Copyright 2005 Apple Computer. All rights reserved.
  *
  */
- 
-#if defined( __i386__ )
+
 #include "xmmLibm_prefix.h"
+
+/* 
+These have been moved to copysign.s
 
 long double fabsl( long double x )
 {
@@ -29,14 +31,6 @@ float fabsf( float x )
     return XFLOAT_2_FLOAT( xx ); 
 }
 
-double copysign( double x, double y )
-{   
-    xDouble xx = DOUBLE_2_XDOUBLE( x );
-    xDouble yy = DOUBLE_2_XDOUBLE( y );
-    xx = _mm_sel_pd( xx, yy, minusZeroD );
-    return XDOUBLE_2_DOUBLE( xx );
-}
-
 float copysignf( float x, float y )
 {   
     xFloat xx = FLOAT_2_XFLOAT( x );
@@ -44,6 +38,17 @@ float copysignf( float x, float y )
     xx = _mm_sel_ps( xx, yy, minusZeroF );
     return XFLOAT_2_FLOAT( xx );
 }
+*/
+
+#if defined( __i386__ )
+double copysign( double x, double y )
+{   
+    xDouble xx = DOUBLE_2_XDOUBLE( x );
+    xDouble yy = DOUBLE_2_XDOUBLE( y );
+    xx = _mm_sel_pd( xx, yy, minusZeroD );
+    return XDOUBLE_2_DOUBLE( xx );
+}
+#endif
 
 long double copysignl( long double x, long double y )
 {
@@ -66,4 +71,4 @@ long double copysignl( long double x, long double y )
     return u.ld;
 }
 
-#endif /* defined( __i386__ ) */
+

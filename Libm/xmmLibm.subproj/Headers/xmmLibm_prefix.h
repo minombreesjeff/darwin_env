@@ -30,7 +30,7 @@ typedef union
   float     f;
 }hexfloat;
 
-#if defined( __i386__ )
+#if defined( __i386__ ) || defined( __x86_64__ )
     #include <xmmintrin.h>
 
     #define DEFAULT_MXCSR   0x1F80

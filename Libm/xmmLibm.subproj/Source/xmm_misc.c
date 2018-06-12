@@ -30,20 +30,17 @@ unsigned int __math_errhandling ( void )
 
 int __isfinited( double x )
 {
-    x = __builtin_fabs(x);
-    return x < __builtin_inf();
+    return __inline_isfinited(x);
 }
 
 int __isfinitef( float x )
 {
-    x = __builtin_fabsf(x);
-    return x < __builtin_inff();
+    return __inline_isfinitef(x);
 }
 
 int __isfinite( long double x )
 {
-    x = __builtin_fabsl(x);
-    return x < __builtin_infl();
+    return __inline_isfinite(x);
 }
 
 //legacy
@@ -54,80 +51,62 @@ int finite( double x )
 
 int __isinfd( double x )
 {
-    x = __builtin_fabs(x);
-    return x == __builtin_inf();
+    return __inline_isinfd(x);
 }
 
 int __isinff( float x )
 {
-    x = __builtin_fabsf(x);
-    return x == __builtin_inff();
+    return __inline_isinff(x);
 }
 
 int __isinf( long double x )
 {
-    x = __builtin_fabsl(x);
-    return x == __builtin_infl();
+    return __inline_isinf(x);
 }
 
 int __isnand( double x )
 {
-    return x != x;
+    return __inline_isnand(x);
 }
 
 int __isnanf( float x )
 {
-    return x != x;
+    return __inline_isnanf(x);
 }
 
 int __isnan( long double x )
 {
-    return x != x;
+    return __inline_isnan(x);
 }
 
 int __isnormald( double x )
 {
-    x = __builtin_fabs(x);
-    return 0x1.0p-1022 <= x && x < __builtin_inf();
+    return __inline_isnormald( x );
 }
 
 int __isnormalf( float x )
 {
-    x = __builtin_fabsf(x);
-    return 0x1.0p-126f <= x && x < __builtin_inff();
+    return __inline_isnormalf( x );
 }
 
 int __isnormal( long double x )
 {
-    x = __builtin_fabsl(x);
-    return 0x1.0p-16382L <= x && x < __builtin_infl();
+    return __inline_isnormal( x );
 }
 
 int __signbitd( double x )
 {
-    xDouble xx = DOUBLE_2_XDOUBLE(x);
-    return 1 & _mm_movemask_pd( xx );
+	return __inline_signbitd(x);
 }
 
 int __signbitf( float x )
 {
-    xFloat xx = FLOAT_2_XFLOAT(x);
-    return 1 & _mm_movemask_ps( xx );
+	return __inline_signbitf(x);
 }
 
 int __signbitl( long double x )
 {
-    union
-    {
-        long double ld;
-        struct
-        {
-            uint64_t    mantissa;
-            uint16_t     sexp __attribute__ ((packed));
-        }parts;
-    }u={x};
-
-    return u.parts.sexp >> 15;
+	return __inline_signbit(x);
 }
 
 int __fpclassifyd( double x )
@@ -150,7 +129,7 @@ int __fpclassifyd( double x )
 
 int __fpclassifyf( float x )
 {
-    x = __builtin_fabs(x);
+    x = __builtin_fabsf(x);
     if( EXPECT_FALSE( x == 0.0f ) )
         return FP_ZERO;
         
@@ -196,7 +175,7 @@ long double __infl( void )
 
 float __nan( void )
 {
-    return __builtin_nan("");
+    return __builtin_nanf("");
 }
 
 

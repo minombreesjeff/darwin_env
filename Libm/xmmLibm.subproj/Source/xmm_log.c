@@ -15,7 +15,6 @@
  *  
  */
 
-#if defined( __i386__ )
 #include "xmmLibm_prefix.h"
 
 #include "math.h"
@@ -677,7 +676,6 @@ static xUInt64 LOGORITHMIC_NAN = { 0x7FF8000000000000ULL, 0 };
 
 static inline double _xlog10( double x )
 {
-    static const double plusInf = 1e500;
     static const double half = 0.5;
     static const double log10e = 0.434294481903251827651128918916605082;  // log_10(e) 
     xDouble xx = DOUBLE_2_XDOUBLE( x );
@@ -773,4 +771,3 @@ float    log10f( float x )
 
 
 #endif /* defined( BUILDING_FOR_CARBONCORE_LEGACY ) */
-#endif /* defined( __i386__ ) */

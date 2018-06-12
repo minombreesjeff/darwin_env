@@ -30,9 +30,9 @@ float atanhf( float x )
 		if( x == 0.0f )
 			return x;
 	
-		fabsx *= 0x1.0p25;
+		fabsx *= 0x1.0p25f;
 		fabsx += 0x1.0p-126f;
-		fabsx *= 0x1.0p-25;
+		fabsx *= 0x1.0p-25f;
 	}
 
 	if( x < 0 )

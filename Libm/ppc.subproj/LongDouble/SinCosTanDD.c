@@ -38,14 +38,14 @@
 #if (__WANT_LONG_DOUBLE_FORMAT__ - 0L == 128L)
 #include "DD.h"
 
-static const float	k1_8To52	=  6755399441055744.0;			// 0x1.8p52 
+static const float	k1_8To52	=  6755399441055744.0f;			// 0x1.8p52 
 static const double	kPiBy2		=  1.570796326794896619231322;	// 0x1.921FB54442D18p0
 static const double	kPiBy2Tail1	=  6.1232339957367660e-17;		// 0x1.1A62633145C07p-54
 static const double	kPiBy2Tail2	= -1.4973849048591698e-33;		// 0x1.F1976B7ED8FBCp-110
 static const double	kPiBy2Tail3	=  5.5622711043168264e-50;		// 0x1.4CF98E804177Dp-164
 static const double	k2ByPi		=  0.636619772367581382;		// 0x1.45f306dc9c883p-1
-static const float	k2To52		=  4503599627370496.0;			// 0x1.0p+52
-static const float	k2To54		=  18014398509481984.0;			// 0x1.0p+54
+static const float	k2To52		=  4503599627370496.0f;			// 0x1.0p+52
+static const float	k2To54		=  18014398509481984.0f;			// 0x1.0p+54
 static const double	k2To45m1	=  35184372088831.0;			// 0x1.fffffffffffffp44
 
 static const uint32_t CosCoeff[] = {

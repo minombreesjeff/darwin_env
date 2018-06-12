@@ -1,0 +1,221 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+	<title>Building Applications: Target and SDK Support Matrix</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+</head>
+<body>
+
+<h1>Building Applications: Target and SDK Support Matrix</h1>
+
+This matrix shows support for combinations of SDK and targets.
+
+<p>
+"+" means full support.<br>
+"-" means no support.<br>
+"p" means partial support&#8212;the combination is supported but not all
+features of the targeted operating system or the SDK are available.
+
+<p>
+The target is that set by the <tt>MACOSX_DEPLOYMENT_TARGET</tt> environment
+variable or the <tt>-mmacosx-version-min</tt> command-line switch.
+
+<p>
+<table border=1>
+
+<tr align=center>
+	<td colspan=2 align=right>Compiler</td>
+	<td colspan=10>GCC 3.3</td>
+	<td colspan=10>GCC 4.0</td>
+</tr>
+
+<tr align=center>
+	<td colspan=2 align=right>Target</font></td>
+	<td colspan=2>10.1</td>
+	<td colspan=2>10.2</td>
+	<td colspan=2>10.3.*</td>
+	<td colspan=2>10.3.9</td>
+	<td colspan=2>10.4 PowerPC</td>
+	<td colspan=2>10.2</td>
+	<td colspan=2>10.3.*</td>
+	<td colspan=2>10.3.9</td>
+	<td colspan=2>10.4 PowerPC</td>
+	<td colspan=2>10.4 IA-32</td>
+</tr>
+
+<tr align=center>
+	<td colspan=2 align=right>Language</td>
+	<td width="5%">C, Objective C</td>
+	<td width="5%">C++</td>
+	<td width="5%">C</td>
+	<td width="5%">C++</td>
+	<td width="5%">C</td>
+	<td width="5%">C++</td>
+	<td width="5%">C</td>
+	<td width="5%">C++</td>
+	<td width="5%">C</td>
+	<td width="5%">C++</td>
+	<td width="5%">C</td>
+	<td width="5%">C++</td>
+	<td width="5%">C</td>
+	<td width="5%">C++</td>
+	<td width="5%">C</td>
+	<td width="5%">C++</td>
+	<td width="5%">C</td>
+	<td width="5%">C++</td>
+	<td width="5%">C</td>
+	<td width="5%">C++</td>
+</tr>
+
+<tr align=center>
+	<td rowspan=6 align=right>SDK</td>
+	<td>10.1</td>
+	<td>+</td>
+	<td>-</td>
+	<td>p</td>
+	<td>-</td>
+	<td>p</td>
+	<td>-</td>
+	<td>p</td>
+	<td>-</td>
+	<td>p</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+
+<tr align=center>
+	<td>10.2</td>
+	<td>+</td>
+	<td>-</td>
+	<td>+</td>
+	<td>+</td>
+	<td>p</td>
+	<td>p</td>
+	<td>p</td>
+	<td>p</td>
+	<td>p</td>
+	<td>p</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+
+<tr align=center>
+	<td>10.3</td>
+	<td>+</td>
+	<td>-</td>
+	<td>+</td>
+	<td>-</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>p</td>
+	<td bgcolor=lightblue>p</td>
+	<td>p</td>
+	<td>p</td>
+	<td>-</td>
+	<td>-</td>
+	<td bgcolor=lightblue>-</td>
+	<td bgcolor=lightblue>-</td>
+	<td bgcolor=lightblue>-</td>
+	<td bgcolor=lightblue>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+
+<tr align=center>
+	<td>10.3.9</td>
+	<td>+</td>
+	<td>-</td>
+	<td>+</td>
+	<td>-</td>
+	<td bgcolor=lightblue>p</td>
+	<td bgcolor=lightblue>p</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>+</td>
+	<td>p</td>
+	<td>p</td>
+	<td>+</td>
+	<td>-</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>-</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>+</td>
+	<td>p</td>
+	<td>p</td>
+	<td>-</td>
+	<td>-</td>
+
+<tr align=center>
+	<td>10.4u</td>
+	<td>+</td>
+	<td>-</td>
+	<td>+</td>
+	<td>-</td>
+	<td bgcolor=lightblue>p</td>
+	<td bgcolor=lightblue>p</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>+</td>
+	<td>+</td>
+	<td>+</td>
+	<td>+</td>
+	<td>-</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>-</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>+</td>
+	<td>+</td>
+	<td>+</td>
+	<td>+</td>
+	<td>+</td>
+</tr>
+
+<tr align=center>
+	<td>10.5</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td bgcolor=lightblue>-</td>
+	<td bgcolor=lightblue>-</td>
+	<td bgcolor=lightblue>-</td>
+	<td bgcolor=lightblue>-</td>
+	<td>-</td>
+	<td>-</td>
+	<td>+</td>
+	<td>-</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>-</td>
+	<td bgcolor=lightblue>+</td>
+	<td bgcolor=lightblue>+</td>
+	<td>+</td>
+	<td>+</td>
+	<td>+</td>
+	<td>+</td>
+</tr>
+
+</table>
+
+<p>
+<table bgcolor=lightblue><tr><td>The light blue shows combinations where libmx
+could affect the result.</td></tr></table>
+
+<p>Since the 10.5 SDK is not final yet, we don't know exactly what
+will be supported.</p>
+
+</body>
+</html>

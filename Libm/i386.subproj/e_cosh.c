@@ -34,13 +34,13 @@ float coshf(  float x )
         
         if( fabsx < 22.0f )
         {
-            t =  exp( fabsx );
+            t =  expf( fabsx );
             return 0.5f * t + 0.5f/t;
         }
         
         if( fabsx < overflow )
         {
-            w = exp( 0.5f * fabsx );
+            w = expf( 0.5f * fabsx );
             t = 0.5f * w;
             return t * w;
         }

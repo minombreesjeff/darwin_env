@@ -69,7 +69,7 @@ float hypotf ( float x, float y )
         register float FPR_z, FPR_one, FPR_inf, FPR_Minf, FPR_absx, FPR_absy, FPR_big, FPR_small;
         register double FPR_env;
         
-        FPR_z = 0.0;					FPR_one = 1.0;
+        FPR_z = 0.0f;					FPR_one = 1.0f;
         FPR_inf = HugeF.fval;				FPR_Minf = NegHugeF.fval;
         FPR_absx = __FABSF( x );			FPR_absy = __FABSF( y );
       

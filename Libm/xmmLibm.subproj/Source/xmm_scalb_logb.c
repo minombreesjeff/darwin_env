@@ -7,7 +7,6 @@
  *
  */
 
-#if defined( __i386__ )
 
 #include "xmmLibm_prefix.h"
 #include <math.h>
@@ -127,7 +126,7 @@ float scalbnf( float x, int n )
 {
     const float  estep[2] = { 0x1.0p-126f, 0x1.0p126f };
     const int    istep[2] = { -126, 126 };
-    const xFloat negZeroF = { -0.0f, 0.0, 0.0, 0.0 };
+    const xFloat negZeroF = { -0.0f, 0.0f, 0.0f, 0.0f };
     
     int index = n >> (sizeof(n) * 8 - 1);
     int step = istep[index+1];
@@ -171,7 +170,7 @@ long double scalblnl( long double x, long int n )
 	if( n > 300000 )	n = 300000;
 	if( n < -300000 ) n = -300000;
 	
-	return scalbnl( x, n );
+	return scalbnl( x, (int) n );
 }
 
 double scalbln( double x, long int n )
@@ -179,7 +178,7 @@ double scalbln( double x, long int n )
     if( n > 3000 ) n = 3000;
     if( n < -3000 ) n = -3000;
 
-    return scalbn( x, n );
+    return scalbn( x, (int) n );
 }
 
 float scalblnf( float x, long int n )
@@ -187,34 +186,15 @@ float scalblnf( float x, long int n )
     if( n > 300 ) n = 300;
     if( n < -300 ) n = -300;
 
-    return scalbnf( x, n );
+    return scalbnf( x, (int) n );
 }
-
-#warning scalb$UNIX2003 removed because of compiler bug <rdar://problem/4306561>
-/*
-double scalb$UNIX2003( double x, double n )
-{
-    if( n > 3000 ) n = 3000;
-    if( n < -3000 ) n = -3000;
-
-    return scalbn( x, n );
-}
-
-float scalbf$UNIX2003( float x, double n )
-{
-    if( n > 300 ) n = 300;
-    if( n < -300 ) n = -300;
-
-    return scalbnf( x, n );
-}
-*/
 
 double scalb( double x, double n )
 {
     if( n > 3000 ) n = 3000;
     if( n < -3000 ) n = -3000;
 
-    return scalbn( x, n );
+    return scalbn( x, (int) n );
 }
 
 
@@ -505,4 +485,3 @@ long double frexpl( long double value, int *exp )
 
 #endif /* CARBONCORE */
 
-#endif /* defined( __i386__ ) */

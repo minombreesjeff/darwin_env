@@ -88,7 +88,7 @@ static const double twoTo52 = 0x1.0p+52; // 4.50359962737049600e15;
 static const double klTod = 4503601774854144.0;                    // 0x1.000008p52
 static const hexdouble minusInf  = HEXDOUBLE(0xfff00000, 0x00000000);
 
-static const float twoTo23 = 0x1.0p+23; // 8388608.0e0;
+static const float twoTo23 = 0x1.0p+23f; // 8388608.0e0;
 static const hexsingle minusInff  = { 0xff800000 };
 
 /*******************************************************************************

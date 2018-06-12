@@ -9,13 +9,9 @@
 #include <machine/asm.h>
 #include "abi.h"
 
-#if defined( __LP64__ )
-	#error not 64-bit ready
-#endif
-
 ENTRY( scalbnl )
-	fildl	20(%esp )		//{ scale }
-	fldt	4(%esp )		//{ f, scale }
+	fildl	SECOND_ARG_OFFSET(STACKP )		//{ scale }
+	fldt	FIRST_ARG_OFFSET(STACKP )		//{ f, scale }
 	fscale
 	fstp	%st(1)
 	ret

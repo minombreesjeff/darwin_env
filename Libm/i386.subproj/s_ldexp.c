@@ -21,7 +21,7 @@ __RCSID("$NetBSD: s_ldexp.c,v 1.8 1999/07/02 15:37:43 simonb Exp $");
 
 long double ldexpl(long double value, int exp)
 {
-	if(!__isfinite(value)||value==0.0) return value;
+	if(!isfinite(value)||value==0.0) return value;
 	value = scalbnl(value,exp);
 //	if(!finitel(value)||value==0.0) errno = ERANGE;
 	return value;

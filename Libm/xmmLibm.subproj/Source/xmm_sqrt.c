@@ -12,7 +12,6 @@
  *  
  */
  
-#if defined( __i386__ )
 #include "xmmLibm_prefix.h"
 
 double sqrt( double x )
@@ -29,4 +28,4 @@ float sqrtf( float x )
     return XFLOAT_2_FLOAT( f );
 }
 
-#endif /* defined( __i386__ ) */
+

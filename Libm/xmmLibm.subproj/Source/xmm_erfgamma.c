@@ -184,7 +184,7 @@ static inline double _tgamma ( double x )   ALWAYS_INLINE;
 static inline double _tgamma ( double x )
 {
       register int n, parity, i;
-      register double y, y1, result, fact, IsItAnInt, z, numerator, denominator, ysquared, sum; 
+      register double y, y1, result, fact, fraction, z, numerator, denominator, ysquared, sum; 
     
 	
 /*******************************************************************************
@@ -210,7 +210,7 @@ static inline double _tgamma ( double x )
 	}
 
       
-	parity = 0.0;
+	parity = 0;
 	fact = 1.0;
 	n = 0;
 	y = x;
@@ -226,12 +226,12 @@ static inline double _tgamma ( double x )
 			return 1.0 / x;
 
 		y1 = trunc ( y );
-		IsItAnInt = y - y1;
-		if ( IsItAnInt != 0.0 )                   /* is it an integer?   */
+		fraction = y - y1;
+		if ( fraction != 0.0 )                   /* is it an integer?   */
 	    {                                   /* is it odd or even?  */
 			if ( y1 != trunc ( y1 * 0.5 ) * 2.0 ) 
 				parity = 1;
-			fact = - pi / sin ( pi * IsItAnInt );
+			fact = - pi / sin ( pi * fraction );
 			y += 1.0;
 		}
         else
@@ -323,7 +323,7 @@ double gamma ( double x )   //legacy -- required for various calculators in the 
 
 float tgammaf( float x )
 {
-	return _tgamma( x );
+	return (float) _tgamma( x );
 }
 
 #pragma mark -
@@ -445,15 +445,18 @@ static const double twoTo52      = 0x1.0p+52; // 4503599627370496.0;
 
 #pragma fenv_access on
 
-int signgam = 0xDEADBEEF;
+/* Note: The use of signgam is not thread safe */
+/* The value of signgam is not meaningful if the result is NaN, but will be 1 */
+int signgam = 1; /* global return value by lgamma of the sign of gamma(x). */
 
-static inline double lgammaApprox ( double x );
-static inline double lgammaApprox ( double x )
+static inline double lgammaApprox ( double x, int *psigngam );
+static inline double lgammaApprox ( double x, int *psigngam )
 {
       register int i;
       register double y, result, numerator, denominator, ysquared, 
                       corrector, xMinus1, xMinus2, xMinus4; 
       
+	  *psigngam = 1; 
       
 /*******************************************************************************
 *     The next switch will decipher what sort of argument we have. If argument *
@@ -482,21 +485,27 @@ static inline double lgammaApprox ( double x )
 
 	if ( x < 0.0 )
 	{
-		register double a, y1, IsItAnInt;
+		int dummy = 1; 	
+		register double a, y1, fraction;
             
 		if ( x <= -twoTo52 ) // big negative integer?
 			return x / -0.0;
                 
 		y = - x;
 		y1 = trunc ( y );
-		IsItAnInt = y - y1; // excess over the boundary
+		fraction = y - y1; // excess over the boundary
             
-		if ( IsItAnInt == 0.0 ) // negative integer?
+		if ( fraction == 0.0 ) // negative integer?
 			return x / -0.0;
-		else
-			a = sin ( pi * IsItAnInt );
-
-		return log ( pi / fabs ( a * x ) ) - lgammaApprox ( -x );
+		else {
+			a = sin ( pi * fraction );
+			if ( y1 == trunc ( y1 * 0.5 ) * 2.0 ) // 0, 2, 4, ...
+				{
+				*psigngam = -1; /* Gamma(x) < 0 */ 
+				} // otherwise leave psigngam = 1
+            }
+			
+		return log ( pi / fabs ( a * x ) ) - lgammaApprox ( -x, &dummy );
 	}
       
 /*******************************************************************************
@@ -611,14 +620,14 @@ static inline double lgammaApprox ( double x )
 	return result;
 }
       
-double lgamma ( double x )
+double lgamma ( double x ) //sets signgam as side effect
 {
-    return lgammaApprox ( x );
+    return lgammaApprox ( x, &signgam );
 }
 
-float lgammaf( float x )
+float lgammaf( float x ) //sets signgam as side effect
 {
-    return lgammaApprox ( x );
+    return (float) lgammaApprox ( x, &signgam );
 }
 
 #pragma mark -
@@ -724,7 +733,7 @@ double erf ( double x )
 float erff( float x )
 {
 	register int which = 0;
-	register float result = 0.0;
+	register float result = 0.0f;
       
 /*******************************************************************************
 *     The next switch will decipher what sort of argument we have. If argument *
@@ -741,7 +750,7 @@ float erff( float x )
 		return x > 0.0f ? 1.0f : -1.0f;
 
       result = 1.0f;
-      result = ErrFunApprox ( x, result, which );
+      result = (float) ErrFunApprox ( x, result, which );
 
 /*******************************************************************************
 *      Take care of the negative argument.                                     *
@@ -811,7 +820,7 @@ float erfcf ( float x )
 
 	
 	result = 0.0f;
-	result = ErrFunApprox ( x, result, which );
+	result = (float) ErrFunApprox ( x, result, which );
 
 /*******************************************************************************
 *      Take care of the negative argument.                                     *

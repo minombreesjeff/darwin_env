@@ -100,7 +100,7 @@
 
 static const hexdouble TOWARDZERO = HEXDOUBLE(0x00000000, 0x00000001);
 
-static const float twoTo23  = 0x1.0p+23; // 8388608.0;
+static const float twoTo23  = 0x1.0p+23f; // 8388608.0;
 
 #if !defined(BUILDING_FOR_CARBONCORE_LEGACY)
 
@@ -224,7 +224,7 @@ float rintf ( float x )
                   if ( y == 0.0 ) 
                      {                                 // fix sign of zero result
                         if ( target )
-                              return ( 0.0 );
+                              return ( 0.0f );
                         else
                              {
 #if defined(__GNUC__) && (__GNUC__<3)   /* workaround gcc2.x botch of -0 return. */
@@ -233,7 +233,7 @@ float rintf ( float x )
                               return zInHex.fval;
 
 #else                       
-                              return ( -0.0 );
+                              return ( -0.0f );
 #endif
                               }
                      }
@@ -593,7 +593,7 @@ float roundf ( float x )
                               OldEnvironment.i.lo |= FE_INEXACT;
                               FESETENVD_GRP( OldEnvironment.d );
                         if ( target ) 
-                              return ( 0.0 );
+                              return ( 0.0f );
                         else
                              {
 #if defined(__GNUC__) && (__GNUC__<3)   /* workaround gcc2.x botch of -0 return. */
@@ -602,7 +602,7 @@ float roundf ( float x )
                               return zInHex.fval;
 
 #else                       
-                              return ( -0.0 );
+                              return ( -0.0f );
 #endif
                               }
                      }
@@ -612,9 +612,9 @@ float roundf ( float x )
                   OldEnvironment.i.lo |= FE_INEXACT;
                   FESETENVD_GRP ( OldEnvironment.d );
                   if ( target )
-                        return ( 1.0 );
+                        return ( 1.0f );
                   else
-                        return ( -1.0 );
+                        return ( -1.0f );
               }
 /*******************************************************************************
 *     Is 1.0 < |x| < 2.0^23?                                                   *
@@ -624,10 +624,10 @@ float roundf ( float x )
                   y = ( x + twoTo23 ) - twoTo23;        // round at binary point
                   if ( y == x )                         // exact case
                         return ( x );
-                  z = x + 0.5;                          // inexact case
+                  z = x + 0.5f;                          // inexact case
                   y = ( z + twoTo23 ) - twoTo23;        // round at binary point
                   if ( y > z )
-                        return ( y - 1.0 );
+                        return ( y - 1.0f );
                   else
                         return ( y );
               }
@@ -640,10 +640,10 @@ float roundf ( float x )
                   y = ( x - twoTo23 ) + twoTo23;        // round at binary point
                   if ( y == x )
                         return ( x );
-                  z = x - 0.5;
+                  z = x - 0.5f;
                   y = ( z - twoTo23 ) + twoTo23;        // round at binary point
                   if ( y < z )
-                        return ( y + 1.0 );
+                        return ( y + 1.0f );
                   else
                             return ( y );
               }
@@ -926,7 +926,7 @@ float truncf ( float x )
                             FESETENVD_GRP( OldEnvironment.d );
                      }
                      if ( target )                              // return properly signed zero
-                            return ( 0.0 );
+                            return ( 0.0f );
                      else
                              {
 #if defined(__GNUC__) && (__GNUC__<3)   /* workaround gcc2.x botch of -0 return. */
@@ -935,7 +935,7 @@ float truncf ( float x )
                               return zInHex.fval;
 
 #else                       
-                              return ( -0.0 );
+                              return ( -0.0f );
 #endif
                               }
               }
@@ -946,7 +946,7 @@ float truncf ( float x )
               {
                      y = ( x + twoTo23 ) - twoTo23;             // round at binary point
                      if ( y > x )
-                            return ( y - 1.0 );
+                            return ( y - 1.0f );
                      else
                             return ( y );
               }
@@ -954,7 +954,7 @@ float truncf ( float x )
               {
                      y = ( x - twoTo23 ) + twoTo23;             // round at binary point.
                      if ( y < x )
-                            return ( y + 1.0 );
+                            return ( y + 1.0f );
                      else
                             return ( y );
               }

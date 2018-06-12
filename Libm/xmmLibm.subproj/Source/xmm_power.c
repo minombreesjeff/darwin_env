@@ -15,7 +15,6 @@
  *      
  */
  
-#if defined( __i386__ )
  #include "xmmLibm_prefix.h"
 
 //#include "math.h"
@@ -1190,8 +1189,7 @@ double cbrt( double x )
 
 float cbrtf( float x )
 {
-    return _cbrt(x);
+    return (float) _cbrt(x);
 }
 
 
-#endif /* defined( __i386__ ) */

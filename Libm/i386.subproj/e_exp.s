@@ -8,25 +8,25 @@
  */
 
 #include <machine/asm.h>
+
+#define LOCAL_STACK_SIZE	8
 #include "abi.h"
 
-#if defined( __LP64__ )
-	#error not 64-bit ready
-#endif
 
 /* e^x = 2^(x * log2(e)) */
-ENTRY(expl)    
-	push	$0x7f800000					// inf
-	push	$0x50000000					// limit
+ENTRY(expl) 
+	SUBP	$LOCAL_STACK_SIZE, STACKP
+	movl	$0x7f800000, 4(STACKP)		// inf
+	movl	$0x50000000, (STACKP)		// limit
 
 	//test for inf or NaN
-	fldt	12(%esp)					// { f }
+	fldt	FIRST_ARG_OFFSET(STACKP)	// { f }
 	fabs								// { |f| }
-	flds	4(%esp)						// { inf, |f| }
+	flds	4(STACKP)					// { inf, |f| }
 	fucomip	%ST(1), %ST(0)				// { |f| }		if |f| == inf or f is NaN 
 	fstp	%ST(0)						// {}
-	fldt	12(%esp)					// { f }
-	flds	(%esp)						// { limit, f }
+	fldt	FIRST_ARG_OFFSET(STACKP)	// { f }
+	flds	(STACKP)					// { limit, f }
 	je		expl_special
 
 	//clip f to be between limit and -limit.
@@ -52,7 +52,7 @@ ENTRY(expl)
 	faddp								// { 2**fract( f*log2e ), [f*log2e] }
 	fscale								// { result, [f*log2e] }
 	fstp	%st(1)						// { result }
-	addl	$8,	%esp
+	ADDP	$LOCAL_STACK_SIZE,	STACKP
     ret
 
 expl_special:  //handles +-Inf, QNaN, SNaN
@@ -62,7 +62,7 @@ expl_special:  //handles +-Inf, QNaN, SNaN
 	fcmovnbe %ST(1), %ST(0)				// set the -Inf case to 0
 	fadd	 %ST(0), %ST(0)				// silence NaNs
 	fstp	 %ST(1)
-	addl	$8,	%esp
+	ADDP	$LOCAL_STACK_SIZE,	STACKP
 	ret
 
 
@@ -71,13 +71,13 @@ ENTRY(exp2l)
 	push	$0x1e000000					// small (0x1.0p-67f)
 	
 	//test for +inf, NaN
-	fldt	12(%esp)					// { f }
-	flds	4(%esp)						// { inf, f }
+	fldt	FIRST_ARG_OFFSET(STACKP)	// { f }
+	flds	4(STACKP)					// { inf, f }
 	fucomip %ST(1), %ST(0)				// { f }
 	je		exp2l_exit					//	return f if Inf or NaN
 
 	//test for -inf
-	flds	4(%esp)						// { inf, f }
+	flds	4(STACKP)					// { inf, f }
 	fchs								// {-inf, f }
 	fucomip	%ST(1), %ST(0)				// { f }
 	jne		exp2l_main
@@ -86,7 +86,7 @@ ENTRY(exp2l)
 	jmp		exp2l_exit
 	
 exp2l_main:
-	flds	(%esp)						// { small, f }
+	flds	(STACKP)					// { small, f }
 	fld		%st(1)						// { f, small, f }
 	fabs								// { |f|, small, f }
 	fucomip	%st(1), %st(0)				// { small, f }
@@ -104,13 +104,13 @@ exp2l_main:
 	//fall through to exit
 
 exp2l_exit:
-	addl	$8,	%esp
+	ADDP	$LOCAL_STACK_SIZE,	STACKP
     ret
 
 exp2l_small:		//avoid setting the underflow flag for denormal inputs
 	fld1								//  {1, f }
 	faddp								//	{result}
-	addl	$8,	%esp
+	ADDP	$LOCAL_STACK_SIZE,	STACKP
     ret
 	
 
@@ -133,15 +133,18 @@ exp2l_small:		//avoid setting the underflow flag for denormal inputs
 	//	There are a lot of special cases here, which is why this is a bit branchy. I tried it without
 	//	branches and wasn't able to satisfy all the constraints called for by various standards
 
-#define EXPM1L_STACK_SIZE		$12
+#define EXPM1L_STACK_SIZE		12
+#undef FIRST_ARG_OFFSET
+#define FIRST_ARG_OFFSET		(FRAME_SIZE + EXPM1L_STACK_SIZE)
 
-ENTRY(expm1l)    
-	pushl	$0xc6000000					// -8192.0f
-	pushl	$0x7f800000					// inf
-	pushl	$0x47000000					// 32768
+ENTRY(expm1l)  
+	SUBP	$EXPM1L_STACK_SIZE, STACKP
+	movl	$0xc6000000, 8(STACKP)					// -8192.0f
+	movl	$0x7f800000, 4(STACKP)					// inf
+	movl	$0x47000000, 0(STACKP)					// 32768
 
 	//test for inf or NaN
-	fldt		16(%esp)				// { x }
+	fldt		FIRST_ARG_OFFSET(STACKP)				// { x }
 	fldz								// { 0, x }
 	fucomip		%st(1), %st(0)			// { x }
 	jnbe			expm1l_neg			//	if 0 > x goto expm1_neg
@@ -150,19 +153,19 @@ ENTRY(expm1l)
 	// get x*log2e
 	fldl2e								// { log2e, x } 
 	fmulp								// { x*log2e }
-	flds		4(%esp)					// { inf, x*log2e }
+	flds		4(STACKP)					// { inf, x*log2e }
 	fucomip		%ST(1), %ST(0)			// { x*log2e }		if x*log2e == inf  or NaN
 	je			expm1l_special
 
 	//next convert to integer and fractional parts using round to zero rounding mode
 	//calculate trunc(x*log2e)
-	flds		(%esp)					// { 32768.0, x*log2e }
+	flds		(STACKP)				// { 32768.0, x*log2e }
 	fucomi		%st(1), %st(0)			// { x*log2e }
 	fcmovnbe	%st(1), %st(0)			// { clipped, x*log2e }
 	fstp		%st(1)					// { clipped }
 	fld			%st(0)					// { clipped, clipped }
-	fisttpll	(%esp)					// { clipped }
-	fildll		(%esp)					// { i, clipped }
+	fisttpll	(STACKP)				// { clipped }
+	fildll		(STACKP)				// { i, clipped }
 
 	//test 0 against i
 	fldz								// {0, i, x*log2e}
@@ -189,7 +192,7 @@ ENTRY(expm1l)
 	//  much matter
 	fld		%st(1)						// { i, 2**f-1, i}
 	fchs								// {-i, 2**f-1, i}
-	flds	8(%esp)						// {-8192.0f, -i, 2**f-1, i}
+	flds	8(STACKP)					// {-8192.0f, -i, 2**f-1, i}
 	fucomi  %st(1), %st(0)				// {-8192.0f, -i, 2**f-1, i}
 	fcmovb  %st(1), %st(0)				// { clipped(-i), -i, 2**f-1, i}
 	fstp	%st(1)						// { clipped(-i), 2**f-1, i}
@@ -202,19 +205,19 @@ ENTRY(expm1l)
 	fscale
 	fstp	%st(1)
 
-	addl	EXPM1L_STACK_SIZE,	%esp
+	ADDP	$EXPM1L_STACK_SIZE,	STACKP
     ret
 
 
 // x < 0 or x is NaN
 expm1l_neg:								// {x}
-	flds	4(%esp)						// { inf, x }
+	flds	4(STACKP)					// { inf, x }
 	fchs								// { -inf, x }
 	fucomip	%ST(1), %ST(0)				// { x }		if x == -inf  
 	je		expm1l_special				// NaNs and -Inf go to special case handling code
 
 	// clip large negative values to avoid overflow
-	flds	8(%esp)						// { -8192, x }
+	flds	8(STACKP)					// { -8192, x }
 	fucomi	%st(1), %st(0)				// { -8192, x }
 	fcmovb  %st(1), %st(0)				// { clipped, x }
 	fstp	%st(1)						// { clipped }
@@ -226,8 +229,8 @@ expm1l_neg:								// {x}
 	//next convert to integer and fractional parts using round to zero rounding mode
 	//calculate trunc(x*log2e)
 	fld			%st(0)					// { x*log2e, x*log2e }
-	fisttpll	(%esp)					// { x*log2e }
-	fildll		(%esp)					// { i, x*log2e }
+	fisttpll	(STACKP)				// { x*log2e }
+	fildll		(STACKP)				// { i, x*log2e }
 
 	//test 0 against i
 	fldz								// {0, i, x*log2e}
@@ -257,12 +260,12 @@ expm1l_neg:								// {x}
 	fstp	%st(1)						// { (2**f-1+1)*(2**i) }
 	fld1								// { 1, (2**f-1+1)*(2**i) } 
 	fsubrp								// { result }
-	addl	EXPM1L_STACK_SIZE,	%esp
+	ADDP	$EXPM1L_STACK_SIZE,	STACKP
     ret
 
 exmpm1l_zero:	//the i == 0 case
 	fstp	%st(1)						// { result }
-	addl	EXPM1L_STACK_SIZE,	%esp
+	ADDP	$EXPM1L_STACK_SIZE,	STACKP
     ret
 
 
@@ -275,5 +278,5 @@ expm1l_special:  //handles +-Inf, QNaN, SNaN
 	fxch								// { f, -1 }
 	fcmovnbe %ST(1), %ST(0)				// set the -Inf case to -1
 	fstp	 %ST(1)
-	addl	EXPM1L_STACK_SIZE,	%esp
+	ADDP	$EXPM1L_STACK_SIZE,	STACKP
 	ret

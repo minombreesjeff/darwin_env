@@ -15,7 +15,6 @@
  *      
  */
 
-#if defined( __i386__ )
 
 #include "xmmLibm_prefix.h"
 
@@ -233,7 +232,7 @@ double exp ( double x )
 
 float    expf( float x )
 {//cheesy fallback on double, that probably fails to get the edge cases right.
-    return  _xexp( x );
+    return  (float) _xexp( x );
 }
 
 #pragma mark -
@@ -318,8 +317,8 @@ static inline double _xexpm1( double _x )
 		
 		if( M >= 1024 )	//overflow
 		{
-			_x = 0x1.0p1023;
-			return _x + _x;
+			x = _mm_set_sd (0x1.0p1023);
+			return XDOUBLE_2_DOUBLE( _mm_add_sd( x, x ) );  //Note that simpler C syntax here is optimized away resulting in missing overflow flag.
 		}
 		else if( M >= 53 )
 		{
@@ -433,7 +432,7 @@ double expm1( double x )
 
 float    expm1f( float x )
 {//cheesy fallback on double, that probably fails to get the edge cases right.
-    return _xexpm1( x );
+    return (float) _xexpm1( x );
 }
 
 #pragma mark -
@@ -454,4 +453,3 @@ double exp2( double x )
 
 #endif  /*CARBONCORE LEGACY */
 
-#endif /* defined( __i386__ ) */

@@ -1,6 +1,6 @@
 /*	This module implements the C standard math function nanl.
 
-	$Revision: 1.3 $, $Date: 2005/06/23 18:26:55 $
+	$Revision: 1.4 $, $Date: 2006/02/01 18:36:35 $
 */
 
 
@@ -91,7 +91,7 @@ long double nanl(const char *tagp)
 			.ld				=  0,
 			.s.sign			=  0,
 			.s.exponent		= ~0,
-			#if defined __i386__
+			#if defined( __i386__ ) || defined( __x86_64__ )
 				.s.integer	=  1,	// Set integer bit on IA-32.
 			#endif
 			.s.quiet		=  1,

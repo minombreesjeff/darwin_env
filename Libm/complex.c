@@ -351,11 +351,11 @@ float cargf ( float complex z )
    }
          
    if (fabsf(b) > fabsf(a))               /* |imag| > |real| */
-      argr = copysignf(M_PI_2, b) - atanf(a/b);
+      argr = copysignf((float) M_PI_2, b) - atanf(a/b);
 
    else {
       if (a < 0.0f)                      /* |real| >= |imag| */
-         argr = copysignf(M_PI, b) + atanf(b/a);
+         argr = copysignf((float) M_PI, b) + atanf(b/a);
       else
          argr = atanf(b/a);
    }
@@ -431,7 +431,7 @@ static double cssqs ( double complex z, int *k)
    }
    
    else if (fetestexcept(FE_OVERFLOW) || (fetestexcept(FE_UNDERFLOW) && (rho < FPKLOVERE.d))) {
-      iscale = logb(fmax(a,b));       /* scaling necessary */
+      iscale = ilogb(fmax(a,b));       /* scaling necessary */
       a = scalbn(a,-iscale);
       b = scalbn(b,-iscale);
       rho = a*a + b*b;                 /* re-calculate scaled square magnitude */
@@ -687,7 +687,7 @@ float complex clogf ( float complex z )
    if ((k == 0) && (dmax > M_SQRT1_2) && ((dmax <= 1.25f) || (rho < 3.0f)))
       Real(w) = log1pf((dmax - 1.0f)*(dmax + 1.0f) + dmin*dmin)*0.5f; /* |z| near 1.0 */
    else
-      Real(w) = logf(rho)*0.5f + k*M_LN2;   /* more naive approximation */
+      Real(w) = logf(rho)*0.5f + (float)((double)k*M_LN2);   /* more naive approximation */
    
    Imag(w) = cargf(z);                        /* imaginary part of logarithm */
 
@@ -2045,7 +2045,7 @@ float complex catanf ( float complex z )
    Real(z) = beta*xi;
    
    if ((Real(z) > FPKTHETAf.fval) || (fabsf(Imag(z)) > FPKTHETAf.fval)) {
-      xi = copysignf(M_PI_2,Imag(z));    /* avoid spurious overflow */
+      xi = copysignf((float) M_PI_2,Imag(z));    /* avoid spurious overflow */
       ctemp = xdivcf(1.0f,z);
       eta = Real(ctemp);
    }
@@ -2053,7 +2053,7 @@ float complex catanf ( float complex z )
    else if (Real(z) == 1.0f) {
       t1 = fabsf(Imag(z)) + FPKRHOf.fval;
       xi = logf(sqrtf(sqrtf(4.0f + t1*t1))/sqrtf(fabsf(Imag(z))));
-      eta = 0.5f*copysignf(M_PI-atan(2.0f/(fabsf(Imag(z))+FPKRHOf.fval)),Imag(z));
+      eta = 0.5f*copysignf((float)( M_PI-atan(2.0/(fabsf(Imag(z))+FPKRHOf.fval))),Imag(z));
    }
    
    else {                                 /* usual case */
@@ -2177,7 +2177,7 @@ float complex catanhf( float complex z )
    Real(z) = beta*Real(z);
    
    if ((Real(z) > FPKTHETAf.fval) || (fabsf(Imag(z)) > FPKTHETAf.fval)) {
-      eta = copysignf(M_PI_2,Imag(z));   /* avoid overflow */
+      eta = copysignf((float) M_PI_2,Imag(z));   /* avoid overflow */
       ctemp = xdivcf(1.0f,z);
       xi = Real(ctemp);
    }
@@ -2185,7 +2185,7 @@ float complex catanhf( float complex z )
    else if (Real(z) == 1.0f) {
       t1 = fabsf(Imag(z)) + FPKRHOf.fval;
       xi = logf(sqrtf(sqrtf(4.0f + t1*t1))/sqrtf(fabsf(Imag(z))));
-      eta = 0.5f*copysignf(M_PI-atan(2.0f/(fabsf(Imag(z))+FPKRHOf.fval)),Imag(z));
+      eta = 0.5f*copysignf((float)( M_PI-atan(2.0f/(fabsf(Imag(z))+FPKRHOf.fval))),Imag(z));
    }
    
    else {                                 /* usual case */

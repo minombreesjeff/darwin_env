@@ -333,7 +333,7 @@ static double PowerInner ( double base, double exponent, hexdouble u )
                     n = -2099;
                 else
                 {
-                    n = z;									// The common case. Emits fctiwz, stfd
+                    n = (int) z;									// The common case. Emits fctiwz, stfd
                 }
 
                 FESETENVD( FPR_env );

@@ -11,7 +11,7 @@
  *      
  */
 
-#if defined( __i386__ )
+
 #include "xmmLibm_prefix.h"
 #include <math.h>
 
@@ -151,7 +151,7 @@ static const xDouble halfPiBits[] = {                            //     value,  
                                             { 0x1.faf97c0000000p-990, 0x1.faf97c0000000p-990}, //1.89256360589071054229e-298  (0.636619772367581382433, 0.636619772367581382433,                 0) 1.490116119384765625e-08
                                             { 0x1.7b3d070000000p-1016, 0x1.7b3d070000000p-1016} //2.10958355854526332845e-306  (0.636619772367581382433, 0.636619772367581382433,                 0) 1.490116119384765625e-08
                                     };
-static const int halfPiBinsCount = sizeof( halfPiBits ) / sizeof( halfPiBits[0] );
+static const long halfPiBinsCount = sizeof( halfPiBits ) / sizeof( halfPiBits[0] );
 //to divide any unsigned 16-bit integer by 24, do ( x * 0x0000aaab ) >> 20
 //to divide any unsigned 16-bit integer by 26, do ( x * 0x00009d8a ) >> 20;
 
@@ -212,7 +212,7 @@ static inline xDouble _halfPiReduce( xDouble x, int32_t *quo )
 //Assumes that x1 is positive or zero
 static inline xDouble _halfPiReduce( xDouble x1, int32_t *quo )
 {   
-    #warning This is Super CHEESY and WRONG!!!!!
+    #warning This is Super CHEESY and WRONG!!!!! (but currently not used -- we went with the other cheesy hack)
     //multiply by reciprocal
     xDouble q = _mm_mul_sdm( x1, &rPiOver2 );
 
@@ -313,7 +313,6 @@ static inline double _xcos( double xx )
 
 	xDouble x = DOUBLE_2_XDOUBLE( xx );
     xDouble y = _mm_andnot_pd( minusZeroD, x );
-    xDouble xEQZero = _mm_cmpeq_sdm( x, (double*) &minusZeroD );
     
     //if y > pi/4
     if( _mm_istrue_sd( _mm_cmpgt_sdm( y, &piOver4 ) ) )
@@ -489,4 +488,3 @@ float tanf(float x)
 
 
 
-#endif /* defined( __i386__ ) */

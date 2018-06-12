@@ -6,23 +6,13 @@
 
 #include <machine/asm.h>
 
-
 #define LOCAL_STACK_SIZE		4
+#include "abi.h"
 
-#if defined( __LP64__ )
-	#define FRAME_SIZE			8		/* sizeof( void*) */
-	#define STACKP				%rsp
-	#define SIGN_EXTEND_EAX		cdqe
-#else	
-	#define FRAME_SIZE			4		/* sizeof( void*) */
-	#define STACKP				%esp
-	#define SIGN_EXTEND_EAX		
-#endif
-
-#define FIRST_ARG_OFFSET		(FRAME_SIZE + LOCAL_STACK_SIZE)
 
 ENTRY(ilogbl)
-	pushl		$0x4f000000						//  0x1.0p31
+	SUBP		$LOCAL_STACK_SIZE, STACKP
+	movl		$0x4f000000, (STACKP)			//  0x1.0p31
 	flds		(STACKP)						//  { 1.0p31 }
 	fldt		FIRST_ARG_OFFSET(STACKP)		//	{ x, 0x1.0p31 }
 	fldz										//	{ 0, x, 0x1.0p31 }
@@ -33,7 +23,7 @@ ENTRY(ilogbl)
 	fld			%st(0)							//	{ exp, exp, 0x1.0p31 }
 	fcmove		%st(2), %st(0)					//	{ exp or 0x1.0p31, exp, 0x1.0p31 }		if( x == 0 or NaN )	then exp = 0x1.0p31		//set to overflow
 	fld1										//	{ 1, exp or 0x1.0p31, exp, 0x1.0p31 }
-	fsubrp		%st(3), %st(0)					//	{ exp or 0x1.0p31, exp, 0x1.0p31 - 1}
+	fsubrp		%st(0), %st(3)					//	{ exp or 0x1.0p31, exp, 0x1.0p31 - 1}
 	fxch										//	{ exp, exp or 0x1.0p31, 0x1.0p31 - 1} 
 	fucomip		%st(2), %st(0)					//	{ exp or 0x1.0p31, 0x1.0p31 - 1}
 	fcmovnbe	%st(1), %st(0)					//	{ exp or 0x1.0p31 or 0x1.0p31 - 1, 0x1.0p31 - 1 }
@@ -41,5 +31,5 @@ ENTRY(ilogbl)
 	fistpl		(STACKP)						//	{}
 	movl		(STACKP), %eax
 	SIGN_EXTEND_EAX
-	addl		$LOCAL_STACK_SIZE, %esp
+	ADDP		$LOCAL_STACK_SIZE, STACKP
 	ret

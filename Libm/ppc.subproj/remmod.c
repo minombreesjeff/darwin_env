@@ -390,7 +390,7 @@ float remquof ( float x, float y, int *quo)
          if (x < 0.0)
               x1 = -x1;                               /* remainder if x is negative */
          iquo &= 0x0000007f;                          /* retain low 7 bits of integer quotient */
-         if ((__signbitf(x) ^ __signbitf(y)) != 0)    /* take care of sign of quotient */
+         if ((signbit(x) ^ signbit(y)) != 0)    /* take care of sign of quotient */
               iquo = -iquo;
          *quo = iquo;                                 /* deliver quotient result */
          rslt = x1;

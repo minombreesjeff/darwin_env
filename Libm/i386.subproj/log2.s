@@ -23,17 +23,14 @@
  * Written by J.T. Conklin <jtc@netbsd.org>.
  * Public domain.
  * Adapted for log2 by Stephen C. Peters
+ * Updated for LP64 by Ian Ollmann
  */
 
 #include <machine/asm.h>
-
 #include "abi.h"
 
-#warning scp: accuracy near 1?
 ENTRY(log2l)
-	XMM_ONE_ARG_LONG_DOUBLE_PROLOGUE
 	fld1
-	fldt	ARG_LONG_DOUBLE_ONE
+	fldt	FIRST_ARG_OFFSET(STACKP)
 	fyl2x
-	XMM_LONG_DOUBLE_EPILOGUE
 	ret

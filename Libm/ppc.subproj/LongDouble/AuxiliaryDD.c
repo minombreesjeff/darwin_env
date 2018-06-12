@@ -41,7 +41,7 @@ extern long double sqrtl(long double);
 static const Double kTZ = {{0x0,0x1}};
 static const Double kUP = {{0x0,0x2}};
 static const Double kDN = {{0x0,0x3}};
-static const float kTwoTo52 = 4503599627370496.0;	// 0x1.0p+52
+static const float kTwoTo52 = 4503599627370496.0f;	// 0x1.0p+52
 
 long double logbl( long double x )
 {
@@ -118,7 +118,7 @@ long double scalblnl( long double x, long int n )
     else if (unlikely(n < -2098))
         m = -2099;
     else
-        m = n;
+        m = (int) n;
 
     return scalbnl(x, m);
 }

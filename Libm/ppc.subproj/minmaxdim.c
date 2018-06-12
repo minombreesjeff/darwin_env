@@ -151,7 +151,7 @@ float fdimf ( float x, float y )
     else if (x > y)
         return ( x - y );
     else
-        return 0.0;
+        return 0.0f;
 }
 
 

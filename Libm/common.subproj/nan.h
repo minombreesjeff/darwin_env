@@ -2,7 +2,7 @@
 	implementations	of C standard math functions nanf, nan, and nanl in nan.c
 	and nanl.c.
 
-	$Revision: 1.3 $, $Date: 2005/06/23 18:26:55 $
+	$Revision: 1.4 $, $Date: 2006/02/01 18:36:35 $
 */
 
 
@@ -159,7 +159,7 @@ typedef union
 				unsigned int sign			:  1;
 			#endif
 		} s;
-	#elif defined __i386__		// Architecture.
+	#elif ( defined( __i386__ ) || defined( __x86_64__ ) )		// Architecture.
 		struct
 		{
 			#if defined __BIG_ENDIAN__

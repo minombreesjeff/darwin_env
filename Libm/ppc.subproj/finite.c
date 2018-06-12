@@ -57,6 +57,6 @@
  
 int finite(double x)
 {
-        return __isfinited( x );
+        return isfinite( x );
 }
 

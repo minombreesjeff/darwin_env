@@ -10,17 +10,23 @@
 #include <machine/asm.h>
 #include "abi.h"
 
+
 #if defined( __LP64__ )
-	#error not 64-bit ready
+	#define DEST_P			%rdi
+	#define LOAD_DEST_P
+#else
+	#define DEST_P			%ecx
+	#define LOAD_DEST_P		mov			THIRD_ARG_OFFSET(STACKP), DEST_P
 #endif
+
 
 PRIVATE_ENTRY(__remquol)			//private interface used by single and double precision remquo
 #if ! defined( BUILDING_FOR_CARBONCORE_LEGACY )
 ENTRY(remquol)
 #endif
 	//load data
-	fldt	20(%esp)			//	{ d }
-	fldt	4(%esp)				//	{ n, d }
+	fldt	SECOND_ARG_OFFSET(STACKP)		//	{ d }
+	fldt	FIRST_ARG_OFFSET(STACKP)		//	{ n, d }
 
 1:	fprem1						//	{ r, d }
 	fstsw	%ax
@@ -44,16 +50,16 @@ ENTRY(remquol)
 	or		%eax,	%edx
 
 	//set the sign appropriately according to the sign of n/d
-	movw	12(%esp),	%cx
-	movw	28(%esp),	%ax
+	movw	(FIRST_ARG_OFFSET+8)(STACKP),	%cx
+	movw	(SECOND_ARG_OFFSET+8)(STACKP),	%ax
 	xor		%ecx,		%eax
-	movl	36(%esp),	%ecx
+	LOAD_DEST_P					//Get the destination pointer
 	cwde	
 	sar		$15,		%eax
 	xor		%eax,		%edx
 	sub		%eax,		%edx
 
 	//store out quo and return
-	movl	%edx,	(%ecx)
+	movl	%edx,	(DEST_P)
 	ret
 	
