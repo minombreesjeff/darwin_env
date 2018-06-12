@@ -71,8 +71,6 @@ $(ConfigStamp2): $(ConfigStamp)
 	touch $(ConfigStamp2)
 
 strip:
-	-lipo -remove ppc64 -output $(DSTROOT)/usr/bin/iconv $(DSTROOT)/usr/bin/iconv
-	-lipo -remove x86_64 -output $(DSTROOT)/usr/bin/iconv $(DSTROOT)/usr/bin/iconv
 	strip -x $(DSTROOT)/usr/lib/libiconv.2.4.0.dylib
 	strip -x $(DSTROOT)/usr/lib/libcharset.1.0.0.dylib
 	strip -x $(DSTROOT)/usr/bin/iconv
