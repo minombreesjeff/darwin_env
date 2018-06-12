@@ -109,7 +109,7 @@ main_part:                                              //{|x|, x}
         shld            $16, %eax, %eax                 //                                              exponent <<= 16
         andl            $0xFFFF0000, %eax               //                                              mask off the other mantissa bits
         addl            $0x3FFF8000, %eax               //                                              bias the exponent, set the top mantissa bit
-        movl            %ax,   6(%esp)                  //                                              write out exponent/3
+        movl            %eax,   6(%esp)                 //                                              write out exponent/3
 
 
         //correct for exponent remainder to get our estimate

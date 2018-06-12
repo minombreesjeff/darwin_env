@@ -24,21 +24,21 @@ ENTRY( nearbyintl )
 	
 	//read fpcw + fpsw
 	fnstenv	(%esp)
-	movw	(%esp),	%eax
+	movw	(%esp),	%ax
 
 	//or it with 0x20 
 	movl	%eax, %edx
 	orl		$0x20,  %eax
 
 	//stick it back int the fpcw
-	movw	%eax, (%esp)
+	movw	%ax, (%esp)
 	fldenv	(%esp)
 	
 	//round
 	frndint							//{ result }
 		
 	//reset fpsw and fpcw
-	movw	%edx, (%esp)
+	movw	%dx, (%esp)
 	fldenv	(%esp)
 	
 	addl	$28, %esp

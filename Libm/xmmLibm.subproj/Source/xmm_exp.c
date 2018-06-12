@@ -124,6 +124,7 @@ static inline double _xexp( double _x )
     static const double X1 = 0x1.62e42fefa39f0p+9;    // 7.09782712893384087e+02
     static const double X2 = -745.5;    
     static const double c0 = 1.5e-154;
+	static const double half = 0.5;
     static const double infD = INFINITY;
 	xDouble x = DOUBLE_2_XDOUBLE( _x );
     xDouble fabsx = _mm_andnot_pd( minusZeroD, x );
@@ -163,8 +164,10 @@ static inline double _xexp( double _x )
 	}
 
     xDouble mask = _mm_cmpgt_sdm( x, (const double*) &minusZeroD );                //if (x > 0 )... was //if( (x > 1.5e-154) && (x < X1)) 
+	xDouble sign = _mm_and_pd( x, minusZeroD );
     xDouble dN =_mm_mul_sdm( x, &Inv_L );
-    int N = _mm_cvtsd_si32( dN );
+	dN = _mm_add_sd( dN, _mm_or_pd( sign, _mm_load_sd( &half ) ) );
+    int N = _mm_cvttsd_si32( dN );
     int N2 = N & 0x1F;																// N2 = N & 0x1f;         //  N2 = N mod 32 with N2 in [0..31] even for N < 0
     dN = _mm_cvtsi32_sd( minusZeroD, N ); //double(N)
     xDouble R1 = _mm_sub_sd( x, _mm_mul_sdm( dN, &L1 ) );                           // R1 = x - N * L1.d;     /*  Leading part of the reduced arg   */
@@ -313,10 +316,13 @@ static inline double _xexpm1( double _x )
 		xDouble S = _mm_add_sdm( _mm_load_sd( &S_Lead[N2].d), &S_Trail[N2].d );  //S  = S_Lead[N2].d + S_Trail[N2].d;
 		xDouble twoM; 
 		
-		if( M >= 53 )
+		if( M >= 1024 )	//overflow
 		{
-			if( M > 1024 )	
-				M = 1024;
+			_x = 0x1.0p1023;
+			return _x + _x;
+		}
+		else if( M >= 53 )
+		{
 			twoM = twoToTheM( M );
 			//  x = SCALB ( 1.0, M ) * ( S_Lead[N2].d + ( S * P + ( S_Trail[N2].d - SCALB ( 1.0, -M ) ) ) );
 			R = _mm_sub_sdm( twoToTheM( -M ), &S_Trail[N2].d );       //SCALB ( 1.0, -M ) - S_Trail[N2].d

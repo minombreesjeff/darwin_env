@@ -118,8 +118,8 @@ typedef union
 
     #define _mm_cvtsi64_si128( x )      ({ int64_t _x = x; xSInt64 _r; asm volatile( "movq %1, %0" : "=x" (_r) : "m" (*&_x)); _r })
 
-    #define CVTTLD_SI64( _ld )          ({ long double _x = _ld; int64_t _r; asm( "fldtl %1 \n\t fisttpll %0" : "=m" (*&_r): "m" (*&_x) ); /*return*/ _r; })
-    #define CVTLD_SI64( _ld )          ({ long double _x = _ld; int64_t _r; asm( "fldtl %1 \n\t fistpll %0" : "=m" (*&_r): "m" (*&_x) ); /*return*/ _r; })
+    #define CVTTLD_SI64( _ld )          ({ long double _x = _ld; int64_t _r; asm( "fldt %1 \n\t fisttpll %0" : "=m" (*&_r): "m" (*&_x) ); /*return*/ _r; })
+    #define CVTLD_SI64( _ld )          ({ long double _x = _ld; int64_t _r; asm( "fldt %1 \n\t fistpll %0" : "=m" (*&_r): "m" (*&_x) ); /*return*/ _r; })
 
     #define EXPECT_TRUE( _a )           __builtin_expect( (_a), 1 ) 
     #define EXPECT_FALSE( _a )          __builtin_expect( (_a), 0 ) 

@@ -23,8 +23,8 @@ ENTRY(remquol)
 	fldt	4(%esp)				//	{ n, d }
 
 1:	fprem1						//	{ r, d }
-	fstsw	%eax
-	bt		$10,%eax
+	fstsw	%ax
+	btw		$10,%ax
 	jc		1b
 	fstp	%st(1)
 
@@ -44,8 +44,8 @@ ENTRY(remquol)
 	or		%eax,	%edx
 
 	//set the sign appropriately according to the sign of n/d
-	movw	12(%esp),	%ecx
-	movw	28(%esp),	%eax
+	movw	12(%esp),	%cx
+	movw	28(%esp),	%ax
 	xor		%ecx,		%eax
 	movl	36(%esp),	%ecx
 	cwde	

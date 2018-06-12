@@ -13,7 +13,7 @@
 
 float coshf(  float x )
 {
-    static const float overflow = 183.2222702f;      //log(0x1.0p127)
+    static const float overflow = 0x1.65a9f8p+6f;					//ln(FLT_MAX) + ln(2)
     static const float ln2 = 0.693147180559945309417232121458176568L;                             //ln(2)
     float fabsx = __builtin_fabsf( x );
     float t, w;
@@ -24,10 +24,10 @@ float coshf(  float x )
     {
         if( fabsx < 0.5f * ln2 )
         {
-			if( fabsx > 0x1.0p-50 )	//avoid underflow, save time
+			if( fabsx > 0x1.0p-50f )	//avoid underflow, save time
 				fabsx = expm1l( fabsx );
             w = 1.0f + fabsx;
-            if( fabsx < 0x1.0p-26 )
+            if( fabsx < 0x1.0p-26f )
                 return w;
             return 1.0f + (fabsx*fabsx)/(w+w);
         }
@@ -54,7 +54,7 @@ float coshf(  float x )
 
 double cosh(  double x )
 {
-    static const double overflow = 1.477319723e+03L;      //log(0x1.0p1024)
+    static const double overflow = 0x1.633ce8fb9f87dp+9;									//ln( DBL_MAX ) + ln(2)
     static const double ln2 = 0.693147180559945309417232121458176568L;                             //ln(2)
     double fabsx = __builtin_fabs( x );
     double t, w;
@@ -96,7 +96,7 @@ double cosh(  double x )
 
 long double coshl( long double x )
 {
-    static const long double overflow = 1.13565234062941445534588410310297337926799095235775e+04L;      //log(0x1.0p16384)
+    static const long double overflow = 0x1.62e9bb80635d81d4p+13L;		 //ln(LDBL_MAX) + ln(2.0)
     static const long double ln2 = 0.693147180559945309417232121458176568L;                             //ln(2)
     long double fabsx = __builtin_fabsl( x );
     long double t, w;
@@ -105,17 +105,17 @@ long double coshl( long double x )
 
     if( fabsx < __builtin_infl() )
     {
-        if( fabsx < 0.5 * ln2 )
+        if( fabsx < 0.5L * ln2 )
         {
-			if( fabsx > 0x1.0p-1000 )	//avoid underflow, save time
+			if( fabsx > 0x1.0p-1000L )	//avoid underflow, save time
 				fabsx = expm1l( fabsx );
             w = 1.0L + fabsx;
-            if( fabsx < 0x1.0p-67 )
+            if( fabsx < 0x1.0p-67L )
                 return w;
             return 1.0L + (fabsx*fabsx)/(w+w);
         }
         
-        if( fabsx < 22 )
+        if( fabsx < 22.L )
         {
             t =  expl( fabsx );
             return 0.5L * t + 0.5L/t;

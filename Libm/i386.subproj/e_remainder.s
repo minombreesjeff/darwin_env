@@ -14,8 +14,8 @@ ENTRY(remainderl)
 	fldt	ARG_LONG_DOUBLE_TWO
 	fldt	ARG_LONG_DOUBLE_ONE
 1:	fprem1
-	fstsw	%eax
-	btw	$10,%eax
+	fstsw	%ax
+	btw	$10,%ax
 	jc	1b
 	fstp	%st(1)
 	XMM_LONG_DOUBLE_EPILOGUE

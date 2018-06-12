@@ -64,6 +64,7 @@ int ilogb( double x )
     // NaN:         X
 
     //Set the Zero case first
+	isZero = _mm_or_pd( isZero, ( xDouble) _mm_cvtpd_epi32( isZero ) );	//set invalid flag if zero
     correction = _mm_and_si128( (xUInt64) isZero, _mm_cvtsi32_si128( FP_ILOGB0 ) );                                      // -INF if X is zero, 0 otherwise
     
     //Set the +- inf case 
@@ -262,6 +263,7 @@ int ilogbf( float x )
     // NaN:         X
 
     //Set the Zero case first
+	isZero = (xUInt32) _mm_or_ps( (xFloat) isZero, ( xFloat) _mm_cvtps_epi32( (xFloat) isZero ) );				//set invalid flag if zero
     correction = _mm_and_si128( isZero, _mm_cvtsi32_si128( FP_ILOGB0 ) );                                      // -INF if X is zero, 0 otherwise
     
     //Set the +- inf case 

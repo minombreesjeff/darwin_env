@@ -681,9 +681,13 @@ static inline double _xlog10( double x )
     static const double half = 0.5;
     static const double log10e = 0.434294481903251827651128918916605082;  // log_10(e) 
     xDouble xx = DOUBLE_2_XDOUBLE( x );
+	xDouble xIsNaN = _mm_cmpunord_sd( xx, xx );
+	xDouble safeX = _mm_andnot_pd( xIsNaN, xx );
+    xDouble xGTzero = _mm_cmpgt_sdm( safeX, (double*) &minusZeroD );
+    xDouble xLTinf =  _mm_cmplt_sdm( safeX, (double*) &plusinf );
     xDouble R;
 
-    if( x > 0.0 && x < plusInf )
+    if( _mm_istrue_sd( _mm_and_pd( xGTzero, xLTinf ) ) ) // x > 0 && x < inf
     {
         if( (x <= T1) || x >= T2 )
         {
@@ -739,12 +743,18 @@ static inline double _xlog10( double x )
             R = _mm_div_sd( _mm_load_sd( &two ), minusZeroD );
         else
         {
-            xUInt64 xLTzero = _mm_srli_epi64( (xUInt64 ) xx, 63 );
-			xLTzero = _mm_sub_epi64( _mm_xor_si128( xLTzero, xLTzero ), xLTzero );
-            R = _mm_add_sd( xx, plusinf );   //silence NaN, set finite values to Inf
-            xLTzero = _mm_and_si128( xLTzero, (xUInt64) LOGORITHMIC_NAN );
-            R = _mm_add_sd( R, (xDouble) xLTzero );   //set to NaN if x < 0
-        }
+			xDouble inf = plusinf;
+			xDouble isInf = _mm_cmpeq_sd( xx, inf );
+			inf = _mm_andnot_pd( xIsNaN, inf );
+			inf = _mm_andnot_pd( isInf, inf );
+			
+            xDouble xLTzero = _mm_cmplt_sdm( safeX, (double*) &minusZeroD );
+
+            R = _mm_sub_sd( xx, inf );   //silence NaN, set finite values to -Inf
+			R = _mm_add_sd( R, inf );
+            xLTzero = _mm_and_pd( xLTzero, (xDouble) logNaN );
+            R = _mm_add_sd( xLTzero, R );   //set to NaN if x < 0
+		}
     
     }
     
