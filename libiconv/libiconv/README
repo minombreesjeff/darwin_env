@@ -110,9 +110,13 @@ This library can be built and installed in two variants:
     To use it, simply #include <iconv.h> and use the functions.
 
     To use it in an autoconfiguring package:
-    - If you don't use automake, append extras/iconv.m4 to your aclocal.m4
+    - If you don't use automake, append m4/iconv.m4 to your aclocal.m4
       file.
-    - If you do use automake, add extras/iconv.m4 to your m4 macro repository.
+    - If you do use automake, add m4/iconv.m4 to your m4 macro repository.
+    - Add to the link command line of libraries and executables that use
+      the functions the placeholder @LIBICONV@ (or, if using libtool for
+      the link, @LTLIBICONV@). If you use automake, the right place for
+      these additions are the *_LDADD variables.
     Note that 'iconv.m4' is also part of the GNU gettext package, which
     installs it in /usr/local/share/aclocal/iconv.m4.
 
@@ -134,7 +138,6 @@ This library can be built and installed in two variants:
 
 Distribution:
     ftp://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.8.tar.gz
-    ftp://ftp.ilog.fr/pub/Users/haible/gnu/libiconv-1.8.tar.gz
 
 Homepage:
     http://www.gnu.org/software/libiconv/
@@ -143,4 +146,4 @@ Bug reports to:
     <bug-gnu-libiconv@gnu.org>
 
 
-Bruno Haible <brunoe@clisp.org>
+Bruno Haible <bruno@clisp.org>

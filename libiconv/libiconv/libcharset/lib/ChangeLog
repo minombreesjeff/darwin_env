@@ -1,3 +1,78 @@
+2003-05-18  Bruno Haible  <bruno@clisp.org>
+
+	* Makefile.msvc (DEBUGFLAGS): New variable.
+	(charset.lib): Use it.
+
+2003-05-07  Bruno Haible  <bruno@clisp.org>
+
+	* Makefile.vms: New file.
+
+2003-04-12  Bruno Haible  <bruno@clisp.org>
+
+	* lib/localcharset.c (get_charset_aliases): Add special case for VMS.
+
+2003-04-05  Bruno Haible  <bruno@clisp.org>
+
+	Support for relocatable installation.
+	* relocatable.h: New file, from GNU gettext.
+	* relocatable.c: New file, from GNU gettext.
+	* localcharset.c: Update from GNU gettext.
+	2003-02-28  Bruno Haible  <bruno@clisp.org>
+		* localcharset.c: Include relocatable.h.
+		(get_charset_aliases): Relocate LIBDIR value.
+		* localcharset.c: Drop C linkage declaration.
+	* Makefile.in (DEFS): New variable.
+	(SOURCES): Add relocatable.c.
+	(OBJECTS): Add relocatable.lo.
+	(localcharset.lo): Use $(DEFS).
+	(relocatable.lo): New rule.
+	* Makefile.msvc (CFLAGS): Remove $(PICFLAGS).
+	(INCLUDES): Simplify.
+	(SOURCES): Remove variable.
+	(OBJECTS): Add relocatable.obj.
+	(localcharset.obj): Add $(PICFLAGS).
+	(relocatable.obj): New rule.
+
+2003-04-05  Bruno Haible  <bruno@clisp.org>
+
+	* Makefile.msvc (PREFIX): New variable.
+	(prefix): Use it.
+	(clean): Drop Unix specific removal.
+
+2003-03-17  Bruno Haible  <bruno@clisp.org>
+
+	Improved MSVC support.
+	* Makefile.msvc (prefix): Use less Unixy value.
+	(local_prefix): Remove variable.
+	(libdir): Use backslashes.
+	(bindir): New variable.
+	(INSTALL, INSTALL_PROGRAM, INSTALL_DATA): Set to real values.
+	(RESOURCES): Enable charset.res.
+	(charset.lib): Set the target library name explicitly.
+	(charset.res): New rule.
+	(install, installdirs, uninstall): New rules.
+
+	Rename libcharset.h to localcharset.h.
+	* localcharset.c: Include localcharset.h.
+	* localcharset.h: Remove file.
+	* Makefile.in (INCLUDES): Add -I../include.
+	* Makefile.msvc (INCLUDES): Add -I../include.
+
+2003-01-29  Bruno Haible  <bruno@clisp.org>
+
+	* config.charset: Add an alias for CP1251 on Solaris.
+	Reported by Hidetoshi Tajima <hidetoshi.tajima@sun.com>.
+
+2003-01-12  Bruno Haible  <bruno@clisp.org>
+
+	* localcharset.h: New file.
+	* localcharset.c: Include it.
+
+2003-01-01  Bruno Haible  <bruno@clisp.org>
+
+	* Makefile.in (mkinstalldirs): Renamed from MKINSTALLDIRS.
+	(install-lib, install, installdirs): Use it.
+
 2002-05-09  Bruno Haible  <bruno@clisp.org>
 
 	* config.charset: Update for newest glibc. Add canonical names

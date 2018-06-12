@@ -1,4 +1,4 @@
-/* Copyright (C) 2000-2001 Free Software Foundation, Inc.
+/* Copyright (C) 2003 Free Software Foundation, Inc.
    This file is part of the GNU CHARSET Library.
 
    The GNU CHARSET Library is free software; you can redistribute it and/or
@@ -19,18 +19,23 @@
 #ifndef _LIBCHARSET_H
 #define _LIBCHARSET_H
 
+#include <localcharset.h>
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 
-/* Determine the current locale's character encoding, and canonicalize it
-   into one of the canonical names listed in config.charset.
-   The result must not be freed; it is statically allocated.
-   If the canonical name cannot be determined, the result is a non-canonical
-   name.  */
-extern const char * locale_charset (void);
+/* Support for relocatable packages.  */
+
+/* Sets the original and the current installation prefix of the package.
+   Relocation simply replaces a pathname starting with the original prefix
+   by the corresponding pathname with the current prefix instead.  Both
+   prefixes should be directory names without trailing slash (i.e. use ""
+   instead of "/").  */
+extern void libcharset_set_relocation_prefix (const char *orig_prefix,
+					      const char *curr_prefix);
 
 
 #ifdef __cplusplus

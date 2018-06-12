@@ -1,3 +1,535 @@
+2003-05-22  Bruno Haible  <bruno@clisp.org>
+
+	* Version 1.9.1 released.
+
+2003-05-22  Bruno Haible  <bruno@clisp.org>
+
+	* lib/genaliases.c (main): Emit %pic instead of %null-strings.
+	Change type of 'name' field to 'int'.
+	* lib/genaliases2.c (emit_encoding): Add a 'tag' argument. Emit an
+	invocation of macro S(), including the tag and a counter.
+	(main): Use the command-line argument as tag.
+	* Makefile.devel (lib/aliases_aix.h, lib/aliases_osf1.h,
+	lib/aliases_dos.h, lib/aliases_extra.h): Pass a tag to the program.
+	* lib/iconv.c (stringpool2_t): New type.
+	(stringpool2_contents): New data table.
+	(stringpool2): New macro.
+	(sysdep_aliases): Make position-independent. Move #includes out to
+	aliases2.h.
+	(aliases2_lookup): Update.
+	(nalias): New type.
+	(compare_by_index): Use 'struct nalias' instead of 'struct alias'.
+	(iconvlist): Convert 'struct alias' to 'struct nalias' while copying.
+	* lib/aliases2.h: New file, extracted from lib/iconv.c.
+
+2003-05-20  Bruno Haible  <bruno@clisp.org>
+
+	* lib/iconv.c (iconvlist): Test p->name against NULL, not against "".
+	Reported by Muraoka Taro <koron@tka.att.ne.jp>.
+
+2003-05-19  Bruno Haible  <bruno@clisp.org>
+
+	* windows/iconv.rc: Include <winver.h>.
+	Reported by Perry Rapp.
+
+2003-05-18  Bruno Haible  <bruno@clisp.org>
+
+	* Version 1.9 released.
+
+2003-05-18  Bruno Haible  <bruno@clisp.org>
+
+	* lib/Makefile.in (libiconv_plug_osf.so): Avoid using LIBTOOL_LINK.
+
+2003-05-18  Bruno Haible  <bruno@clisp.org>
+
+	* lib/Makefile.msvc (DEBUGFLAGS): New variable.
+	(iconv.lib): Use it.
+	* src/Makefile.msvc (DEBUGFLAGS): New variable.
+	* tests/Makefile.msvc (DEBUGFLAGS): New variable.
+
+2003-05-17  Bruno Haible  <bruno@clisp.org>
+
+	* src/Makefile.msvc (libdir, datadir, localedir): New variables.
+	(IIlibdir, IIdatadir, IIlocaledir): New variables.
+	(CFLAGS): Define LOCALEDIR.
+	(iconv_no_i18n.exe): New rule.
+	(all): Depend on it.
+	* tests/check-stateful.bat: Invoke iconv_no_i18n instead of iconv.
+	* tests/check-translit.bat: Likewise.
+
+2003-05-16  Bruno Haible  <bruno@clisp.org>
+
+	* lib/genaliases.c (main): Emit declarations for gperf-3.0.
+	* Makefile.devel (lib/aliases.h): Remove gperf command line options;
+	add new option "-m 10" for gperf-3.0.
+
+2003-05-12  Bruno Haible  <bruno@clisp.org>
+
+	* m4/error.m4: Update from gettext.
+
+2003-05-12  Bruno Haible  <bruno@clisp.org>
+
+	* configure.in: Invoke AC_GNU_SOURCE and jm_FUNC_GLIBC_UNLOCKED_IO.
+
+2003-05-12  Bruno Haible  <bruno@clisp.org>
+
+	* lib/Makefile.msvc (PICFLAGS, CFLAGS): Move BUILDING_* macros from
+	CFLAGS to PICFLAGS.
+
+2003-05-09  Bruno Haible  <bruno@clisp.org>
+
+	* srclib/error.c: Update from gnulib with modifications.
+	* srclib/unlocked-io.h: New file, from gnulib.
+	* m4/strerror_r.m4: New file, from gnulib.
+	* m4/unlocked-io.m4: New file, from gnulib.
+	* Makefile.devel (aclocal.m4): Depend on them.
+
+2003-05-08  Bruno Haible  <bruno@clisp.org>
+
+	* Makefile.msvc (IIPREFIX): New variable.
+	* srclib/Makefile.msvc (INCLUDES): Add -I..\windows.
+	* src/Makefile.msvc (IIPREFIX, IIprefix, IIexec_prefix, IIbindir,
+	IIincludedir): New variables.
+	(INCLUDES): Add -I..\windows.
+	(iconv.exe): Define INSTALLPREFIX and INSTALLDIR. Link with
+	../srclib/icrt.lib.
+	Patches by Perry Rapp.
+
+2003-05-07  Bruno Haible  <bruno@clisp.org>
+
+	* README.woe32: Fix instructions for step 1.
+	* srclib/Makefile.msvc (OBJECTS): Remove strtoul.obj.
+	(strtoul.obj): Remove rule.
+	Reported by Perry Rapp.
+
+2003-05-07  Bruno Haible  <bruno@clisp.org>
+
+	* Makefile.vms: New file.
+	* lib/Makefile.vms: New file.
+	* srclib/Makefile.vms: New file.
+	* src/Makefile.vms: New file.
+	* man/Makefile.vms: New file.
+	* tests/Makefile.vms: New file.
+	* Makefile.devel (config.h_vms, lib/config.h_vms, include/iconv.h_vms):
+	New rules.
+	(all): Depend on them.
+
+2003-05-07  Bruno Haible  <bruno@clisp.org>
+
+	* srclib/Makefile.msvc (OBJECTS): Remove findprog.obj.
+	(findprog.obj): Remove rule.
+	* src/Makefile.msvc (includedir): New variable.
+
+2003-05-06  Bruno Haible  <bruno@clisp.org>
+
+	* lib/translit.def: Upgrade to Unicode 4.0.
+
+2003-05-06  Bruno Haible  <bruno@clisp.org>
+
+	* srclib/Makefile.am (DEFS): Fix spelling of DEPENDS_ON_LIBICONV.
+	* srclib/Makefile.msvc (CFLAGS): Likewise.
+
+	* srclib/Makefile.msvc (INCLUDES): Add -I.. .
+	Reported by Perry Rapp.
+
+	* Makefile.msvc (config.h): New rule.
+	(all): Depend on it.
+	(mostlyclean, clean, distclean, maintainer-clean): Erase config.h.
+	Reported by Perry Rapp.
+
+2003-05-06  Bruno Haible  <bruno@clisp.org>
+
+	* autoconf/config.guess: Update to GNU version 2003-02-22.
+	* autoconf/config.sub: Likewise.
+
+2003-05-06  Bruno Haible  <bruno@clisp.org>
+
+	* m4/lib-link.m4: Update from GNU gettext.
+	* autoconf/config.rpath: Update from GNU gettext.
+
+	* m4/libtool.m4: Update from GNU gettext, based on libtool-1.5.
+	* autoconf/ltmain.sh: Update from GNU gettext, based on libtool-1.5.
+
+	* m4/gettext.m4: Update from GNU gettext.
+	* m4/nls.m4: Update from GNU gettext.
+	* m4/po.m4: Update from GNU gettext.
+	* Makefile.devel (aclocal.m4): Depend on m4/nls.m4 and m4/po.m4.
+
+2003-04-12  Bruno Haible  <bruno@clisp.org>
+
+	Support for OpenVMS 7.3.
+	* lib/iconv.c (USE_OSF1): Define also on VMS.
+
+2003-04-12  Bruno Haible  <bruno@clisp.org>
+
+	Better support for FreeBSD.
+	* lib/encodings.def (ISO8859-{1,2,3,4,5,6,7,8,9,10,13,14,15,16): New
+	aliases, for compatibility with earlier FreeBSD iconv implementation
+	by Konstantin Chuguev.
+	* lib/iconv.c (iconv_open, iconv, iconv_close) [FreeBSD]: Define as
+	aliases.
+	* src/Makefile.in (install) [FreeBSD]: Avoid installation problem.
+
+2003-04-12  Bruno Haible  <bruno@clisp.org>
+
+	* configure.in (mandir): Change default value.
+	* Makefile.in (datadir): New variable.
+	(install, installdirs, uninstall): Pass datadir to po and man
+	directories.
+	* Makefile.os2 (datadir): New variable.
+	(mandir): Use it instead of prefix.
+	(install, uninstall): Pass datadir to man directory.
+	* Makefile.msvc (mandir, docdir): Use datadir instead of prefix.
+	* man/Makefile.in (datadir): New variable.
+	(docdir): Use it instead of prefix.
+	(install, installdirs): Update.
+	* man/Makefile.os2 (datadir): New variable.
+	(mandir): Use it instead of prefix.
+	* man/Makefile.msvc (datadir): New variable.
+	(mandir, docdir): Use it instead of prefix.
+	(install, installdirs): Update.
+
+2003-04-06  Bruno Haible  <bruno@clisp.org>
+
+	Make it possible to build with or without libintl support on Woe32.
+	* Makefile.devel (config.h.msvc): Remove ENABLE_NLS.
+	* Makefile.msvc (NO_NLS): New variable.
+	* srclib/Makefile.msvc (NO_NLS): New variable.
+	(CFLAGS, INCLUDES): Use them.
+	* src/Makefile.msvc (NO_NLS): New variable.
+	(NLSFLAGS, INCINTL, LIBINTL): New variables.
+	(CFLAGS, INCLUDES, iconv.exe): Use them.
+
+2003-04-12  Bruno Haible  <bruno@clisp.org>
+
+	* lib/loop_unicode.h (unicode_transliterate): When the Hangul or
+	variants transliteration failed with RET_ILUNI, don't return
+	RET_TOOSMALL.
+	Reported by the FreeBSD porters.
+
+2003-04-06  Bruno Haible  <bruno@clisp.org>
+
+	* srclib/binary-io.h: New file, from GNU gettext.
+	* src/iconv.c: Include it.
+	(O_BINARY, O_TEXT, SET_BINARY): Remove definitions.
+
+2003-04-05  Bruno Haible  <bruno@clisp.org>
+
+	Support for relocatable installation.
+	* m4/alloca.m4: New file, from GNU gettext.
+	* m4/canonicalize.m4: New file, from GNU gettext.
+	* m4/error.m4: New file, from GNU gettext.
+	* m4/onceonly.m4: New file, from GNU gettext.
+	* m4/pathmax.m4: New file, from GNU gettext.
+	* m4/relocatable.m4: New file, from GNU gettext.
+	* m4/setenv.m4: New file, from GNU gettext.
+	* m4/stdbool.m4: New file, from GNU gettext.
+	* m4/strerror.m4: New file, from GNU gettext.
+	* m4/xreadlink.m4: New file, from GNU gettext.
+	* autoconf/config.libpath: New file, from GNU gettext.
+	* autoconf/install-reloc: New file, from GNU gettext.
+	* autoconf/reloc-ldflags: New file, from GNU gettext.
+	* autoconf/missing: New file, from GNU automake 1.7.3.
+	* lib/relocatable.h: New file, from GNU gettext.
+	* lib/relocatable.c: New file, from GNU gettext.
+	* srclib/alloca.c: New file, from GNU gettext.
+	* srclib/alloca_.h: New file, from GNU gettext.
+	* srclib/canonicalize.c: New file, from GNU gettext.
+	* srclib/canonicalize.h: New file, from GNU gettext.
+	* srclib/error.c: New file, from GNU gettext.
+	* srclib/error.h: New file, from GNU gettext.
+	* srclib/exit.h: New file, from GNU gettext.
+	* srclib/gettext.h: New file, from GNU gettext.
+	* srclib/memmove.c: New file, from GNU gettext.
+	* srclib/pathmax.h: New file, from GNU gettext.
+	* srclib/progname.c: New file, from GNU gettext.
+	* srclib/progname.h: New file, from GNU gettext.
+	* srclib/progreloc.c: New file, from GNU gettext.
+	* srclib/relocatable.c: New file, from GNU gettext.
+	* srclib/relocatable.h: New file, from GNU gettext.
+	* srclib/relocwrapper.c: New file, from GNU gettext.
+	* srclib/setenv.c: New file, from GNU gettext.
+	* srclib/setenv.h: New file, from GNU gettext.
+	* srclib/stdbool.h.in: New file, from GNU gettext.
+	* srclib/strerror.c: New file, from GNU gettext.
+	* srclib/unsetenv.c: New file, from GNU gettext.
+	* srclib/xmalloc.c: New file, from GNU gettext.
+	* srclib/xmalloc.h: New file, from GNU gettext.
+	* srclib/xreadlink.c: New file, from GNU gettext.
+	* srclib/xreadlink.h: New file, from GNU gettext.
+	* srclib/xstrdup.c: New file, from GNU gettext.
+	* srclib/Makefile.am: New file.
+	* srclib/Makefile.msvc: New file.
+	* windows/alloca.h: New file, from GNU gettext.
+	* windows/stdbool.h: New file, from GNU gettext.
+	* configure.in (AC_CONFIG_HEADERS): Replace src/config.h with config.h.
+	Add AC_RELOCATABLE, AC_HEADER_STDC, AC_CHECK_HEADERS(stddef.h stdlib.h
+	string.h), AC_CHECK_FUNCS(getc_unlocked), AC_REPLACE_FUNCS(memmove),
+	AM_LANGINFO_CODESET, gl_FUNC_ALLOCA, gl_CANONICALIZE,
+	gt_FUNC_ERROR_AT_LINE, gl_PATHMAX, gt_FUNC_SETENV, gt_STDBOOL_H,
+	gl_FUNC_STRERROR, gl_XREADLINK, AC_OUTPUT(srclib/Makefile).
+	* lib/config.h.in: Add HAVE_GETC_UNLOCKED, HAVE_LANGINFO_CODESET,
+	HAVE_SETLOCALE, HAVE_STDDEF_H, HAVE_STDLIB_H, HAVE_STRING_H, for
+	localcharset.c. Add ENABLE_RELOCATABLE, INSTALLPREFIX, for
+	relocatable.c.
+	* lib/Makefile.in (DEFS): New variable.
+	(SOURCES): Add localcharset.c and relocatable.c.
+	(OBJECTS): Add localcharset.lo and relocatable.lo.
+	(LIBCHARSET_OBJECTS): Remove variable.
+	(libiconv_plug_linux.so, libiconv_plug_solaris.so,
+	libiconv_plug_osf.so): Use $(DEFS). Don't use $(LIBCHARSET_OBJECTS).
+	(iconv.lo): Use $(DEFS).
+	(localcharset.lo, relocatable.lo): New rules.
+	* lib/Makefile.msvc (CFLAGS): Define HAVE_CONFIG_H, BUILDING_DLL,
+	ENABLE_RELOCATABLE, IN_LIBRARY, INSTALLDIR, NO_XMALLOC,
+	set_relocation_prefix, relocate. Remove $(PICFLAGS).
+	(INCLUDES): Simplify.
+	(SOURCES): Remove variable.
+	(OBJECTS): Add localcharset.obj and relocatable.obj.
+	(LIBCHARSET_OBJECTS): Remove variable.
+	(iconv.obj): Add $(PICFLAGS).
+	(localcharset.obj, relocatable.obj): New rules.
+	(iconv.lib): Drop $(LIBCHARSET_OBJECTS).
+	* include/iconv.h.in (libiconv_set_relocation_prefix): New declaration.
+	* src/gettext.h: Remove file.
+	* src/iconv.c: Include progname.h and relocatable.h.
+	(ICONV_CONST): Define to const if the system has no iconv.
+	(main): Invoke set_program_name. Relocate LOCALEDIR.
+	* src/Makefile.in (top_srcdir): New variable.
+	(INCLUDES): Add .. and ../srclib.
+	(iconv_no_i18n, iconv): Link with ../srclib/libicrt.a.
+	(iconv_no_i18n.@OBJEXT@, iconv.@OBJEXT@): Define INSTALLDIR.
+	(RELOCATABLE_LIBRARY_PATH, RELOCATABLE_SRC_DIR, RELOCATABLE_BUILD_DIR,
+	RELOCATABLE_CONFIG_H_DIR, @SET_RELOCATABLE@, iconv_LDFLAGS): New
+	variables.
+	(iconv): Use $(iconv_LDFLAGS).
+	(install): Use $(INSTALL_PROGRAM_ENV).
+	(distclean): Drop removing config.h.
+	* src/Makefile.msvc (INCLUDES): Add .., simplify.
+	* tests/Makefile.msvc (INCLUDES): Simplify.
+	* Makefile.devel (AUTOHEADER, AUTOMAKE): New variables.
+	(config.h.in, srclib/Makefile.in, config.h.msvc): New rules.
+	(all): Depend on them.
+	(aclocal.m4) Depend also on m4/alloca.m4, m4/canonicalize.m4,
+	m4/error.m4, m4/onceonly.m4, m4/pathmax.m4, m4/relocatable.m4,
+	m4/setenv.m4, m4/stdbool.m4, m4/strerror.m4, m4/xreadlink.m4.
+	(lib/config.h.msvc): Additional processing.
+	* Makefile.in (all, install, installdirs, uninstall, check): Recurse
+	into srclib.
+	(mostlyclean, clean, distclean, maintainerclean): Likewise. Remove
+	lib/localcharset.h.
+	(distclean, maintainerclean): Remove also config.h and some stamps.
+	* Makefile.msvc (all, install, installdirs, uninstall, check,
+	mostlyclean, clean, distclean, maintainerclean): Recurse into srclib.
+	* INSTALL.generic: Document --enable-relocatable and
+	--with-libintl-prefix. Remove the recommendation to set CPPFLAGS and
+	LDFLAGS. The lib-link.m4 macros make this unnecessary.
+
+2003-04-05  Bruno Haible  <bruno@clisp.org>
+
+	* configure.in: Bump version number to 1.9.
+	* include/iconv.h.in (_LIBICONV_VERSION): Bump.
+	* windows/iconv.rc: Bump version number.
+	* lib/Makefile.in (LIBICONV_VERSION_INFO): Bump to 4:0:2.
+
+2003-04-05  Bruno Haible  <bruno@clisp.org>
+
+	* Makefile.msvc (PREFIX): New variable.
+	(prefix): Use it.
+	(distclean, maintainer-clean): Drop Unix specific removals.
+	* lib/Makefile.msvc (PREFIX, IIPREFIX): New variables.
+	(prefix): Use it.
+	(IIprefix, IIexec_prefix, IIbindir, IIlibdir): New variables.
+	(clean): Drop Unix specific removal.
+	* src/Makefile.msvc (PREFIX): New variable.
+	(prefix): Use it.
+	(clean): Drop Unix specific removal.
+	(distclean): Likewise.
+	* tests/Makefile.msvc (clean): Drop Unix specific removal.
+	(distclean): Likewise.
+
+2003-04-05  Bruno Haible  <bruno@clisp.org>
+
+	* m4/endian.m4 (CL_WORDS_LITTLEENDIAN): Use 3-argument AC_DEFINE.
+
+2003-04-05  Bruno Haible  <bruno@clisp.org>
+
+	* m4/general.m4 (CL_CONFIG_SUBDIRS, CL_CANONICAL_HOST,
+	CL_CANONICAL_HOST_CPU, CL_CANONICAL_HOST_CPU_FOR_FFCALL): Remove
+	macros.
+	* m4/gettext.m4: Update from GNU gettext.
+	* m4/iconv.m4: Update from GNU gettext.
+	* m4/lcmessage.m4: Update from GNU gettext.
+	* m4/progtest.m4: Update from GNU gettext.
+	* m4/libtool.m4: Update from GNU gettext.
+	2003-02-16  Bruno Haible  <bruno@clisp.org>
+		Workaround autoconf >= 2.52 breakage.
+		* libtool.m4 (AC_LIBTOOL_ARG_WITH): New macro.
+		(_LT_AC_LTCONFIG_HACK, AC_PROG_LD): Use it.
+	* autoconf/ltmain.sh: Update from GNU gettext.
+	2003-02-18  Bruno Haible  <bruno@clisp.org>
+		Fix the 2002-09-16 fix.
+		* ltmain.sh (install): If "ln -s -f" fails (this is the case
+		with /usr/bin/ln on Solaris 2.7), fall back to "rm && ln -s".
+
+2003-04-05  Bruno Haible  <bruno@clisp.org>
+
+	Start using automake.
+	* configure.in: Add AM_INIT_AUTOMAKE invocation.
+	(PACKAGE, VERSION): Remove.
+	Use AC_CANONICAL_HOST instead of CL_CANONICAL_HOST.
+	Use AC_PROG_LN_S instead of CL_PROG_LN_S.
+	Use AC_PROG_RANLIB instead of CL_PROG_RANLIB.
+	Reorder so that AC_CANONICAL_HOST comes early but still after
+	AC_PROG_CC.
+	* m4/ranlib.m4: Remove file.
+	* m4/libtool.m4: Undo AC_ -> CL_ substitutions.
+	* Makefile.devel (CLISP_DIR): Comment out.
+	(AUTOCONF_FILES): Change to aclocal.m4.
+	(aclocal.m4): Renamed from autoconf/aclocal.m4. Update dependencies.
+	(configure.in): Drop --include option.
+
+2003-03-17  Bruno Haible  <bruno@clisp.org>
+
+	Improved MSVC support.
+	* Makefile.msvc (prefix): Use less Unixy value.
+	(local_prefix): Remove variable.
+	(libdir, includedir, mandir): Use backslashes.
+	(bindir, datadir, localedir, docdir): New variables.
+	(INSTALL, INSTALL_PROGRAM, INSTALL_DATA): New variables.
+	(all): Recurse into po/ and man/.
+	(install, installdirs, uninstall): Rewritten.
+	(check, mostlyclean, clean, distclean, maintainer-clean): Recurse
+	into po/ and man/.
+	* lib/Makefile.msvc (prefix): Use less Unixy value.
+	(local_prefix): Remove variable.
+	(libdir): Use backslashes.
+	(bindir): New variable.
+	(INSTALL, INSTALL_PROGRAM, INSTALL_DATA): Set to real values.
+	(RESOURCES): Enable iconv.res.
+	(install, installdirs, uninstall): New rules.
+	(clean): Remove config.h.
+	(distclean): Don't remove config.h here.
+	* src/Makefile.msvc (prefix, exec_prefix, bindir): New variables.
+	(INSTALL, INSTALL_PROGRAM, INSTALL_DATA): New variables.
+	(install, installdirs, uninstall): New rules.
+	* man/Makefile.msvc: New file.
+	* tests/Makefile.msvc (install, installdirs, uninstall): New rules.
+	* Makefile.devel (all): Depend on po/Makefile.msvc.
+	(po/Makefile.msvc): New rule.
+	* windows/iconv.rc: Update.
+	* README.woe32: Mention automatic installation command.
+
+	Rename libcharset.h to localcharset.h.
+	* lib/iconv.c: Include localcharset.h, not libcharset.h.
+	* Makefile.in (lib/localcharset.h): Renamed from lib/libcharset.h.
+	(all, install): Update dependencies.
+	(all): Create lib/localcharset.h, not lib/libcharset.h.
+	(mostlyclean, clean, distclean, maintainer-clean): Remove
+	lib/localcharset.h, not lib/libcharset.h.
+	* djgpp/README.in, djgpp/README: Update.
+	* djgpp/config.bat: Update.
+	* djgpp/config.sed: Update.
+	* djgpp/fnchange.in, djgpp/fnchange.lst: Update.
+
+2003-01-31  Bruno Haible  <bruno@clisp.org>
+
+	* src/Makefile.in (all): Don't do the chmod if it has already been
+	done.
+
+2003-01-31  Bruno Haible  <bruno@clisp.org>
+
+	* lib/loop_unicode.h (unicode_transliterate): Enable recursive
+	transliteration. Idea from Perry Rapp.
+	* lib/gentranslit.c (main): Change bound from 0x10000 to 0x110000.
+	Change element type of translit_data to 'unsigned int'.
+	* lib/translit.def: Many new transliterations, mostly taken from glibc.
+	* lib/translit.h: Regenerated.
+	* tests/Translit1.ISO-8859-1, tests/Translit1.ASCII: New files.
+	* tests/Makefile.in (check): Add Translit1 check.
+	* tests/Makefile.msvc (check): Likewise.
+	* tests/Makefile.os2 (check): Likewise.
+	* tests/TranslitFail1.ISO-8859-1: Choose a sentence which the new
+	improved transliteration cannot do.
+
+2003-02-14  Bruno Haible  <bruno@clisp.org>
+
+	* Makefile.devel (AUTOCONF): Switch to autoconf-2.57.
+	(configure): Update rule.
+
+2003-01-03  Albert Chin  <libtool@thewrittenword.com>
+
+	* autoconf/ltmain.sh: Don't pass -R flags found in a .la's
+	dependency_libs variable directly down to the linker.
+	Reported by Tim Mooney <mooney@dogbert.cc.ndsu.nodak.edu>.
+
+2003-01-01  Bruno Haible  <bruno@clisp.org>
+
+	* src/Makefile.in (install): Use libiconv.la in ../lib, not in
+	$(libdir), so that installing with DESTDIR works.
+	Reported by Michael Adams <michael@michaeladams.org>.
+
+2003-01-01  Bruno Haible  <bruno@clisp.org>
+
+	* Makefile.in (mkinstalldirs): New variable.
+	(install-lib, install, installdirs): Use it instead of mkdir.
+	* lib/Makefile.in (mkinstalldirs): New variable.
+	(install-lib, install, installdirs): Use it instead of mkdir.
+	* man/Makefile.in (mkinstalldirs): New variable.
+	(install, installdirs): Use it instead of mkdir.
+	* src/Makefile.in (mkinstalldirs): New variable.
+	(install, installdirs): Use it instead of mkdir.
+
+2002-09-27  Bruno Haible  <bruno@clisp.org>
+
+	* autoconf/mkinstalldirs: Upgrade to automake-1.7.2 version.
+
+2002-11-07  Bruno Haible  <bruno@clisp.org>
+
+	* m4/libtool.m4: Upgrade to libtool-1.4.3.
+	* autoconf/ltmain.sh: Upgrade to libtool-1.4.3.
+
+2002-07-14  Bruno Haible  <bruno@clisp.org>
+
+	* m4/libtool.m4 (_LT_AC_LTCONFIG_HACK): Add support for GNU/FreeBSD.
+
+2002-06-12  Bruno Haible  <bruno@clisp.org>
+
+	* configure.in: Use new AC_* names of libtool macros. Invoke
+	AC_LIBTOOL_WIN32_DLL.
+
+2002-12-19  Bruno Haible  <bruno@clisp.org>
+
+	* lib/Makefile.in (libiconv_plug_solaris.so): Change rule if using gcc.
+	Reported by Henry Nelson <henry@irm.nara.kindai.ac.jp>.
+
+2002-11-07  Bruno Haible  <bruno@clisp.org>
+
+	Make "make install" without prior "make" work.
+	* Makefile.in (lib/libcharset.h): New rule.
+	(all, install): Depend on it.
+	Reported by Martin Mokrejš <mmokrejs@natur.cuni.cz>.
+
+2002-10-28  Bruno Haible  <bruno@clisp.org>
+
+	* man/Makefile.in (install): Change directory back to the working
+	directory, so that install-sh (which may be a relative pathname) is
+	found in the right place.
+
+2002-09-16  Bruno Haible  <bruno@clisp.org>
+
+	* autoconf/ltmain.sh (install): Use "ln -s -f" instead of
+	"rm -f && ln -s" to make a symlink for a shared library.
+	Reported by Nelson H. F. Beebe <beebe@math.utah.edu>.
+
+2002-09-02  Bruno Haible  <bruno@clisp.org>
+
+	* src/iconv.c (main): Don't call bindtextdomain if !ENABLE_NLS.
+
+2002-08-16  Bruno Haible  <bruno@clisp.org>
+
+	* src/iconv.c (main): Perform fflush before testing ferror(stdout).
+
 2002-05-29  Bruno Haible  <bruno@clisp.org>
 
 	* Version 1.8 released.

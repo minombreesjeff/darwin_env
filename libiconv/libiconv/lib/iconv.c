@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2002 Free Software Foundation, Inc.
+ * Copyright (C) 1999-2003 Free Software Foundation, Inc.
  * This file is part of the GNU LIBICONV Library.
  *
  * The GNU LIBICONV Library is free software; you can redistribute it
@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "config.h"
-#include "libcharset.h"
+#include "localcharset.h"
 
 #if ENABLE_EXTRA
 /*
@@ -42,7 +42,7 @@
 #ifdef _AIX
 #define USE_AIX
 #endif
-#ifdef __osf__
+#if defined(__osf__) || defined(VMS)
 #define USE_OSF1
 #endif
 #if defined(__DJGPP__) || (defined(_WIN32) && (defined(_MSC_VER) || defined(__MINGW32__)))
@@ -132,7 +132,7 @@ static struct encoding const all_encodings[] = {
 /*
  * Alias lookup function.
  * Defines
- *   struct alias { const char* name; unsigned int encoding_index; };
+ *   struct alias { int name; unsigned int encoding_index; };
  *   const struct alias * aliases_lookup (const char *str, unsigned int len);
  *   #define MAX_WORD_LENGTH ...
  */
@@ -144,19 +144,21 @@ static struct encoding const all_encodings[] = {
  *   const struct alias * aliases2_lookup (const char *str);
  */
 #if defined(USE_AIX) || defined(USE_OSF1) || defined(USE_DOS) || defined(USE_EXTRA) /* || ... */
-static struct alias sysdep_aliases[] = {
-#ifdef USE_AIX
-#include "aliases_aix.h"
-#endif
-#ifdef USE_OSF1
-#include "aliases_osf1.h"
-#endif
-#ifdef USE_DOS
-#include "aliases_dos.h"
-#endif
-#ifdef USE_EXTRA
-#include "aliases_extra.h"
-#endif
+struct stringpool2_t {
+#define S(tag,name,encoding_index) char stringpool_##tag[sizeof(name)];
+#include "aliases2.h"
+#undef S
+};
+static const struct stringpool2_t stringpool2_contents = {
+#define S(tag,name,encoding_index) name,
+#include "aliases2.h"
+#undef S
+};
+#define stringpool2 ((const char *) &stringpool2_contents)
+static const struct alias sysdep_aliases[] = {
+#define S(tag,name,encoding_index) { (int)(long)&((struct stringpool2_t *)0)->stringpool_##tag, encoding_index },
+#include "aliases2.h"
+#undef S
 };
 #ifdef __GNUC__
 __inline
@@ -164,10 +166,10 @@ __inline
 const struct alias *
 aliases2_lookup (register const char *str)
 {
-  struct alias * ptr;
+  const struct alias * ptr;
   unsigned int count;
   for (ptr = sysdep_aliases, count = sizeof(sysdep_aliases)/sizeof(sysdep_aliases[0]); count > 0; ptr++, count--)
-    if (!strcmp(str,ptr->name))
+    if (!strcmp(str, stringpool2 + ptr->name))
       return ptr;
   return NULL;
 }
@@ -464,10 +466,13 @@ int iconvctl (iconv_t icd, int request, void* argument)
   }
 }
 
+/* An alias after its name has been converted from 'int' to 'const char*'. */
+struct nalias { const char* name; unsigned int encoding_index; };
+
 static int compare_by_index (const void * arg1, const void * arg2)
 {
-  const struct alias * alias1 = (const struct alias *) arg1;
-  const struct alias * alias2 = (const struct alias *) arg2;
+  const struct nalias * alias1 = (const struct nalias *) arg1;
+  const struct nalias * alias2 = (const struct nalias *) arg2;
   return (int)alias1->encoding_index - (int)alias2->encoding_index;
 }
 
@@ -496,7 +501,7 @@ void iconvlist (int (*do_one) (unsigned int namescount,
 #define aliascount2  0
 #endif
 #define aliascount  (aliascount1+aliascount2)
-  struct alias aliasbuf[aliascount];
+  struct nalias aliasbuf[aliascount];
   const char * namesbuf[aliascount];
   size_t num_aliases;
   {
@@ -506,20 +511,26 @@ void iconvlist (int (*do_one) (unsigned int namescount,
     j = 0;
     for (i = 0; i < aliascount1; i++) {
       const struct alias * p = &aliases[i];
-      if (p->name[0] != '\0'
+      if (p->name >= 0
           && p->encoding_index != ei_local_char
-          && p->encoding_index != ei_local_wchar_t)
-        aliasbuf[j++] = *p;
+          && p->encoding_index != ei_local_wchar_t) {
+        aliasbuf[j].name = stringpool + p->name;
+        aliasbuf[j].encoding_index = p->encoding_index;
+        j++;
+      }
     }
 #ifndef aliases2_lookup
-    for (i = 0; i < aliascount2; i++)
-      aliasbuf[j++] = sysdep_aliases[i];
+    for (i = 0; i < aliascount2; i++) {
+      aliasbuf[j].name = stringpool2 + sysdep_aliases[i].name;
+      aliasbuf[j].encoding_index = sysdep_aliases[i].encoding_index;
+      j++;
+    }
 #endif
     num_aliases = j;
   }
   /* Sort by encoding_index. */
   if (num_aliases > 1)
-    qsort(aliasbuf, num_aliases, sizeof(struct alias), compare_by_index);
+    qsort(aliasbuf, num_aliases, sizeof(struct nalias), compare_by_index);
   {
     /* Process all aliases with the same encoding_index together. */
     size_t j;
@@ -543,5 +554,19 @@ void iconvlist (int (*do_one) (unsigned int namescount,
 }
 
 int _libiconv_version = _LIBICONV_VERSION;
+
+#if defined __FreeBSD__ && !defined __gnu_freebsd__
+/* GNU libiconv is the native FreeBSD iconv implementation since 2002.
+   It wants to define the symbols 'iconv_open', 'iconv', 'iconv_close'.  */
+#define strong_alias(name, aliasname) _strong_alias(name, aliasname)
+#define _strong_alias(name, aliasname) \
+  extern __typeof (name) aliasname __attribute__ ((alias (#name)));
+#undef iconv_open
+#undef iconv
+#undef iconv_close
+strong_alias (libiconv_open, iconv_open)
+strong_alias (libiconv, iconv)
+strong_alias (libiconv_close, iconv_close)
+#endif
 
 #endif

@@ -26,9 +26,11 @@ MFLAGS=-MD
 
 !if $(DEBUG)
 OPTIMFLAGS = -Od -Z7
+DEBUGFLAGS = -Z7
 !else
 # Some people prefer -O2 -G6 instead of -O1, but -O2 is not reliable in MSVC5.
 OPTIMFLAGS = -D_NDEBUG -O1
+DEBUGFLAGS =
 !endif
 
 # Directories used by "make":
@@ -37,7 +39,7 @@ srcdir = .
 # Programs used by "make":
 CC = cl
 CFLAGS = $(MFLAGS) -W1 $(OPTIMFLAGS)
-INCLUDES = -I. -I$(srcdir) -I..\include -I$(srcdir)\..\include -I..\lib
+INCLUDES = -I. -I..\include -I..\lib
 RM = -del
 
 #### End of system configuration section. ####
@@ -45,6 +47,12 @@ RM = -del
 SHELL = /bin/sh
 
 all :
+
+install : all
+
+installdirs :
+
+uninstall :
 
 check : all table-from.exe table-to.exe ../src/iconv.exe uniq-u.exe
 	$(srcdir)\check-stateless.bat $(srcdir) ASCII
@@ -172,6 +180,7 @@ check : all table-from.exe table-to.exe ../src/iconv.exe uniq-u.exe
 #	/* transliteration */
 	$(srcdir)\check-translit.bat $(srcdir) Quotes UTF-8 ISO-8859-1
 	$(srcdir)\check-translit.bat $(srcdir) Quotes UTF-8 ASCII
+	$(srcdir)\check-translit.bat $(srcdir) Translit1 ISO-8859-1 ASCII
 
 table-from.exe : $(srcdir)/table-from.c ../lib/iconv.lib
 	$(CC) $(INCLUDES) $(CFLAGS) $(srcdir)/table-from.c ../lib/iconv.lib -Fetable-from.exe
@@ -199,10 +208,8 @@ clean : force
 	$(RM) *.exe
 	$(RM) tmp*
 	$(RM) UTF-8.TXT
-	$(RM) core
 
 distclean : clean
-	$(RM) Makefile
 
 maintainer-clean : distclean
 

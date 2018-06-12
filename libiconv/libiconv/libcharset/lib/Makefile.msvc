@@ -10,6 +10,7 @@
 #     MFLAGS=-MT                Multi-threaded, statically linked  - libcmt.lib
 #     MFLAGS=-MD                Multi-threaded, dynamically linked - msvcrt.lib
 #   DEBUG=1   for compiling with debugging information
+#   PREFIX=Some\Directory   Base directory for installation
 # Note that nmake command line flags are automatically passed to subdirectory
 # Makefiles. Therefore we don't need to pass them explicitly to subdirectory
 # Makefiles, but the subdirectory Makefiles need to have the same defaults.
@@ -26,15 +27,18 @@ MFLAGS=
 MFLAGS=-MD
 !endif
 !endif
+!if !defined(PREFIX)
+PREFIX = c:\usr
+!endif
 
 # Directories used by "make":
 srcdir = .
 
 # Directories used by "make install":
-prefix = /usr/local
-local_prefix = /usr/local
+prefix = $(PREFIX)
 exec_prefix = $(prefix)
-libdir = $(exec_prefix)/lib
+bindir = $(exec_prefix)\bin
+libdir = $(exec_prefix)\lib
 
 # Programs used by "make":
 
@@ -54,15 +58,17 @@ PICFLAGS = -GD
 
 !if $(DEBUG)
 OPTIMFLAGS = -Od -Z7
+DEBUGFLAGS = -Z7
 !else
 # Some people prefer -O2 -G6 instead of -O1, but -O2 is not reliable in MSVC5.
 OPTIMFLAGS = -D_NDEBUG -O1
+DEBUGFLAGS =
 !endif
 
 # -DBUILDING_LIBCHARSET: Change expansion of LIBCHARSET_DLL_EXPORTED macro.
-CFLAGS = $(MFLAGS) $(WARN_CFLAGS) $(PICFLAGS) $(OPTIMFLAGS) -DHAVE_CONFIG_H -DBUILDING_LIBCHARSET
+CFLAGS = $(MFLAGS) $(WARN_CFLAGS) $(OPTIMFLAGS) -DHAVE_CONFIG_H -DBUILDING_LIBCHARSET
 
-INCLUDES = -I. -I$(srcdir) -I.. -I$(srcdir)/..
+INCLUDES = -I. -I.. -I..\include
 
 AR = lib
 AR_FLAGS = /out:
@@ -71,26 +77,25 @@ LN = copy
 RM = -del
 
 # Programs used by "make install":
-INSTALL = @INSTALL@
-INSTALL_PROGRAM = @INSTALL_PROGRAM@
-INSTALL_DATA = @INSTALL_DATA@
+INSTALL = copy
+INSTALL_PROGRAM = copy
+INSTALL_DATA = copy
 
 #### End of system configuration section. ####
 
 SHELL = /bin/sh
 
-SOURCES = $(srcdir)/localcharset.c
+OBJECTS = localcharset.obj relocatable.obj
 
-OBJECTS = localcharset.obj
-
-# Set to charset.res in order to include the resources information.
-RESOURCES =
-# RESOURCES = charset.res
+RESOURCES = charset.res
 
 all : charset.lib
 
 localcharset.obj : $(srcdir)/localcharset.c
-	$(CC) $(INCLUDES) $(CFLAGS) -c $(srcdir)/localcharset.c
+	$(CC) $(INCLUDES) $(CFLAGS) $(PICFLAGS) -c $(srcdir)/localcharset.c
+
+relocatable.obj : $(srcdir)/relocatable.c
+	$(CC) $(INCLUDES) $(CFLAGS) $(PICFLAGS) -c $(srcdir)/relocatable.c
 
 !if !$(DLL)
 
@@ -100,14 +105,38 @@ charset.lib : $(OBJECTS)
 
 !else
 
-# charset.dll and iconv.lib are created together.
+# charset.dll and charset.lib are created together.
 charset.lib : $(OBJECTS) $(RESOURCES)
-	$(CC) $(MFLAGS) -LD $(OBJECTS) $(RESOURCES)
+	$(CC) $(MFLAGS) $(DEBUGFLAGS) -LD $(OBJECTS) $(RESOURCES) -Fecharset.dll
 
-#charset.res : $(srcdir)/../windows/charset.rc
-#	rc -Fo charset.res $(srcdir)/../windows/charset.rc
+charset.res : $(srcdir)/../windows/charset.rc
+	rc -Fo charset.res $(srcdir)/../windows/charset.rc
 
 !endif
+
+install : all force
+	-mkdir $(prefix)
+	-mkdir $(exec_prefix)
+!if $(DLL)
+	-mkdir $(bindir)
+	$(INSTALL_DATA) charset.dll $(bindir)\charset.dll
+!endif
+	-mkdir $(libdir)
+	$(INSTALL_DATA) charset.lib $(libdir)\charset.lib
+
+installdirs : force
+	-mkdir $(prefix)
+	-mkdir $(exec_prefix)
+!if $(DLL)
+	-mkdir $(bindir)
+!endif
+	-mkdir $(libdir)
+
+uninstall : force
+!if $(DLL)
+	$(RM) $(bindir)\charset.dll
+!endif
+	$(RM) $(libdir)\charset.lib
 
 check : all
 
@@ -120,7 +149,6 @@ clean : force
 	$(RM) *.dll
 	$(RM) charset.res
 	$(RM) charset.alias
-	$(RM) core
 
 distclean : clean
 
