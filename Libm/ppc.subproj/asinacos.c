@@ -545,13 +545,6 @@ double asin (double x)
 }   // ArcSin(x)
 #endif
 
-#ifdef notdef
-float asinf( float x )
-{
-    return (float) asin ( x );
-}
-#endif
-
 /****************************************************************************
 
 FUNCTION:  double ArcCos(double x)
@@ -885,13 +878,6 @@ double acos(double x)
     FESETENVD ( fpenv.d );
     return ( nan ( INVERSE_TRIGONOMETRIC_NAN ) );
 }   // ArcCos(x)
-#endif
-
-#ifdef notdef
-float acosf( float x )
-{
-    return (float) acos ( x );
-}
 #endif
 
 #else       /* __APPLE_CC__ version */

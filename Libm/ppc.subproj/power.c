@@ -946,13 +946,6 @@ static double PowerInner ( double base, double exponent, hexdouble u )
 }
 #endif
 
-#ifdef notdef
-float powf ( float x, float y )
-{
-    return (float)pow ( x, y );
-}
-#endif
-
 #else       /* __APPLE_CC__ version */
 #error Version gcc-932 or higher required.  Compilation terminated.
 #endif      /* __APPLE_CC__ version */

@@ -720,13 +720,6 @@ double atanCoreInv ( double fabsOfx ) // absolute value is passed by caller!
 }
 #endif
 
-#ifdef notdef
-float atanf( float x )
-{
-    return (float)atan( x );
-}
-#endif
-
 #else       /* __APPLE_CC__ version */
 #warning A higher version than gcc-932 is required.
 #endif      /* __APPLE_CC__ version */

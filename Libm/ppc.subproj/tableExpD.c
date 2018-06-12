@@ -380,13 +380,6 @@ double exp ( double x )
 }
 #endif
 
-#ifdef notdef
-float expf( float x)
-{
-    return (float)exp( x );
-}
-#endif
-
 /*******************************************************************************
 *                                                                              *
 *    The expm1 function.  						       *
@@ -716,13 +709,6 @@ double expm1 ( double x )
 }
 #endif
 
-#ifdef notdef
-float expm1f( float x )
-{
-    return (float)expm1( x );
-}
-#endif
-
 #else /* BUILDING_FOR_CARBONCORE_LEGACY */
 
 /*******************************************************************************
@@ -999,13 +985,6 @@ double exp2 ( double x )
             __PROG_UF_INEXACT( kMinNormal );
             return FPR_z;
       }
-}
-#endif
-
-#ifdef notdef
-float exp2f( float x)
-{
-    return (float)exp2( x );
 }
 #endif
 

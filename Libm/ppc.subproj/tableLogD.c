@@ -497,13 +497,6 @@ double log ( double x )
 }
 #endif
 
-#ifdef notdef
-float logf ( float x )
-{
-    return (float)log( x );
-}
-#endif
-
 /*******************************************************************************
 *                                                                              *
 *    The base 10 logorithm function.  Caller’s rounding direction is honored.  *
@@ -893,13 +886,6 @@ double log10 ( double x )
 }
 #endif
 
-#ifdef notdef
-float log10f ( float x )
-{
-    return (float)log10( x );
-}
-#endif
-
 /*******************************************************************************
 *                                                                              *
 *    The base e log(1+x) function.  Caller’s rounding direction is honored.    *
@@ -1207,13 +1193,6 @@ double log1p ( double x )
 }
 #endif
 
-#ifdef notdef
-float log1pf ( float x )
-{
-    return (float)log1p( x );
-}
-#endif
-
 #else /* BUILDING_FOR_CARBONCORE_LEGACY */
 
 /*******************************************************************************
@@ -1494,13 +1473,6 @@ double log2 ( double x )
        FESETENVD( OldEnvironment.d );
        return x;
        
-}
-#endif
-
-#ifdef notdef
-float log2f ( float x )
-{
-    return (float)log2( x );
 }
 #endif
 

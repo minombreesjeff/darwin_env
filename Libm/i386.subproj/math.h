@@ -517,8 +517,12 @@ extern double significand ( double );
 /*
  * BSD math library entry points
  */
-extern double cabs ( __complex_t );
-extern float cabsf ( __complexf_t );
+#ifndef __COMPLEX__
+#define complex _Complex
+extern double cabs ( double complex );
+extern float cabsf ( float complex );
+#undef complex
+#endif
 
 extern double drem ( double, double );
 extern float dremf ( float, float );

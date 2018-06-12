@@ -87,8 +87,8 @@
 *     __fpclassifyd, copysign, exp, expm1 and __FABS.                          *
 *******************************************************************************/
 
-static hexdouble SqrtNegEps = HEXDOUBLE(0x3e400000, 0x00000000); 
-static hexdouble Huge       = HEXDOUBLE(0x7ff00000, 0x00000000);
+static const hexdouble SqrtNegEps = HEXDOUBLE(0x3e400000, 0x00000000); 
+static const hexdouble Huge       = HEXDOUBLE(0x7ff00000, 0x00000000);
 static const double kMinNormal = 2.2250738585072014e-308;  // 0x1.0p-1022
 
 
@@ -137,7 +137,7 @@ double sinh ( double x )
       }
 #else
 
-static hexdouble Log2        = HEXDOUBLE(0x3FE62E42, 0xFEFA39EF); /* = 6.9314718055994530942E-1 */
+static const hexdouble Log2        = HEXDOUBLE(0x3FE62E42, 0xFEFA39EF); /* = 6.9314718055994530942E-1 */
 static const double kMaxNormal = 1.7976931348623157e308;
 
 double sinh ( double x )
@@ -184,13 +184,6 @@ double sinh ( double x )
             result = -result;
       
       return result;
-}
-#endif
-      
-#ifdef notdef
-float sinhf( float x)
-{
-    return (float)sinh( x );
 }
 #endif
       
@@ -242,13 +235,6 @@ double cosh ( double x )
 }
 #endif
 
-#ifdef notdef
-float coshf( float x)
-{
-    return (float)cosh( x );
-}
-#endif
-      
 /*******************************************************************************
 *     This function is odd.  The positive interval is computed and for         *
 *     negative values, the sign is reflected in the computation.               *
@@ -372,13 +358,6 @@ double tanh ( double x )
 }
 #endif
 
-#ifdef notdef
-float tanhf( float x)
-{
-    return (float)tanh( x );
-}
-#endif
-      
 #else       /* __APPLE_CC__ version */
 #warning A higher version than gcc-932 is required.
 #endif      /* __APPLE_CC__ version */

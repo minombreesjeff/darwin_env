@@ -456,12 +456,6 @@ double sin ( double x )
 }
 #endif
 
-#ifdef notdef
-float sinf( float x)
-{
-    return (float)sin( x );
-}
-#endif
 /*******************************************************************************
 *     Cosine section.                                                          *
 *******************************************************************************/
@@ -801,14 +795,8 @@ double cos ( double x )
 }
 #endif
 
-#ifdef notdef
-float cosf( float x)
-{
-    return (float)cos( x );
-}
-#endif
-
 #else       /* __APPLE_CC__ version */
 #warning A higher version than gcc-932 is required.
 #endif      /* __APPLE_CC__ version */
 #endif      /* __APPLE_CC__ */
+

@@ -162,11 +162,11 @@ static long int ___fpclassifyd ( double arg )
 
 static double __nextafter ( double x, double y )
       {
-      static hexdouble EPSILON = HEXDOUBLE(0x00000000, 0x00000001);
-      static hexdouble PosINF  = HEXDOUBLE(0x7ff00000, 0x00000000);
-      static hexdouble NegINF  = HEXDOUBLE(0xfff00000, 0x00000000);
-      static hexdouble PosBig  = HEXDOUBLE(0x7fefffff, 0xffffffff);
-      static hexdouble NegBig  = HEXDOUBLE(0xffefffff, 0xffffffff);
+      static const hexdouble EPSILON = HEXDOUBLE(0x00000000, 0x00000001);
+      static const hexdouble PosINF  = HEXDOUBLE(0x7ff00000, 0x00000000);
+      static const hexdouble NegINF  = HEXDOUBLE(0xfff00000, 0x00000000);
+      static const hexdouble PosBig  = HEXDOUBLE(0x7fefffff, 0xffffffff);
+      static const hexdouble NegBig  = HEXDOUBLE(0xffefffff, 0xffffffff);
       double arg;
       hexdouble      temp, xsign, ysign;
       register int newexc;
@@ -288,11 +288,11 @@ double nextafterd(double x, double y)
 
 float nextafterf ( float x, float y )
       {
-      static hexsingle EPSILON = { 0x00000001 };
-      static hexsingle PosINF  = { 0x7f800000 };
-      static hexsingle NegINF  = { 0xff800000 };
-      static hexsingle PosBig  = { 0x7f7fffff };
-      static hexsingle NegBig  = { 0xff7fffff };
+      static const hexsingle EPSILON = { 0x00000001 };
+      static const hexsingle PosINF  = { 0x7f800000 };
+      static const hexsingle NegINF  = { 0xff800000 };
+      static const hexsingle PosBig  = { 0x7f7fffff };
+      static const hexsingle NegBig  = { 0xff7fffff };
       double arg;
       hexdouble      temp;
       hexsingle      xsign, ysign;

@@ -91,9 +91,9 @@
 
 #define      INVERSE_HYPERBOLIC_NAN            "40"
 
-static hexdouble SqrtNegEps  = HEXDOUBLE(0x3e400000, 0x00000000); /* = 7.4505805969238281e-09   */
-static hexdouble Log2        = HEXDOUBLE(0x3FE62E42, 0xFEFA39EF); /* = 6.9314718055994530942E-1 */
-static hexdouble FiveFourth  = HEXDOUBLE(0x3FF40000, 0x00000000); /* = 1.250000000000000E+00    */
+static const hexdouble SqrtNegEps  = HEXDOUBLE(0x3e400000, 0x00000000); /* = 7.4505805969238281e-09   */
+static const hexdouble Log2        = HEXDOUBLE(0x3FE62E42, 0xFEFA39EF); /* = 6.9314718055994530942E-1 */
+static const hexdouble FiveFourth  = HEXDOUBLE(0x3FF40000, 0x00000000); /* = 1.250000000000000E+00    */
 
 /*******************************************************************************
 *                  A      R      C      T      A      N      H                 *
@@ -180,8 +180,8 @@ double atanh ( double x )
 #else
 
 static const double kMinNormal = 2.2250738585072014e-308;  // 0x1.0p-1022
-static hexdouble InvSqrtNegEps  = HEXDOUBLE(0x41c00000, 0x00000000); 
-static hexdouble Huge       = HEXDOUBLE(0x7ff00000, 0x00000000);
+static const hexdouble InvSqrtNegEps  = HEXDOUBLE(0x41c00000, 0x00000000); 
+static const hexdouble Huge       = HEXDOUBLE(0x7ff00000, 0x00000000);
 
 double atanh ( double x )
 {
@@ -279,13 +279,6 @@ double atanh ( double x )
       return result;
 }
 #endif
-#ifdef notdef
-float atanhf( float x )
-{
-    return (float)atanh( x );
-}
-#endif
-
 /*******************************************************************************
 *                  A      R      C      S      I      N      H                 *
 *******************************************************************************/
@@ -458,13 +451,6 @@ double asinh ( double x )
       }
       
       return result;
-}
-#endif
-
-#ifdef notdef
-float asinhf( float x )
-{
-    return (float)asinh( x );
 }
 #endif
 
@@ -655,12 +641,6 @@ double acosh ( double x )
       }
 
       return result;
-}
-#endif
-#ifdef notdef
-float acoshf( float x )
-{
-    return (float)acosh( x );
 }
 #endif
 

@@ -237,9 +237,9 @@ double atan2 ( double y, double x )
       }
 #else
 
-static volatile double kMinNormal = 2.2250738585072014e-308;  // 0x1.0p-1022
-static volatile double kMaxNormal = 1.7976931348623157e308;
-static volatile double kHalf = 0.5;
+static const double kMinNormal = 2.2250738585072014e-308;  // 0x1.0p-1022
+static const double kMaxNormal = 1.7976931348623157e308;
+static const double kHalf = 0.5;
 
 extern double atanCore ( double );
 extern double atanCoreInv ( double );
@@ -408,13 +408,6 @@ double atan2 ( double y, double x )
             return result;
       else
             return -result;
-}
-#endif
-
-#ifdef notdef
-float atan2f( float y, float x)
-{
-    return (float)atan2( y, x );
 }
 #endif
 

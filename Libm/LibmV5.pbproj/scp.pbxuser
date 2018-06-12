@@ -2,12 +2,10 @@
 {
 	08FB7793FE84155DC02AAC07 = {
 		activeBuildStyle = 014CEA530018CE5811CA2923;
-		activeExecutable = 705704B601CE9F6705CA29A8;
-		activeTarget = F568AEB201B0B89F01CA2DA8;
+		activeExecutable = 705B205F0200F56F05CA29A8;
+		activeTarget = 705B205B0200F56F05CA29A8;
 		addToTargets = (
-			70CAC4A2022DC9EA05CA29A8,
-			70CAC52F022DCA3605CA29A8,
-			70CAC3AA022DC90305CA29A8,
+			705B205B0200F56F05CA29A8,
 		);
 		breakpoints = (
 		);
@@ -15,10 +13,12 @@
 			705704B601CE9F6705CA29A8,
 			705B205F0200F56F05CA29A8,
 			705704BB01CEC65205CA29A8,
-			7019EDDD0336551305CA29A8,
+			70545CA70332C06D05CA29A8,
+			70460B3C03AA6D9C05CA29A8,
+			6E6F594A04FAD65D003E3587,
 		);
 		perUserDictionary = {
-			PBXPerProjectTemplateStateSaveDate = 74467972;
+			PBXPerProjectTemplateStateSaveDate = 83548227;
 			"PBXTemplateGeometry-F5CA7ECB015C094F0DCA290F" = {
 				ContentSize = "{668, 621}";
 				LeftSlideOut = {
@@ -143,7 +143,7 @@
 				StatusViewVisible = NO;
 				Template = F5CA7ECB015C094F0DCA290F;
 				ToolbarVisible = NO;
-				WindowLocation = "{1258, 65}";
+				WindowLocation = "{48, 103}";
 			};
 			PBXWorkspaceContents = (
 				{
@@ -151,14 +151,14 @@
 						Split0 = {
 							Split0 = {
 								NavContent0 = {
-									bookmark = 6EA9D7C304704956001EA4F4;
+									bookmark = 6E8A445704FAD8CC0003A62D;
 									history = (
-										6EA9D7C204704956001EA4F4,
+										6E6F594C04FAD6CE003E3587,
 									);
 								};
 								NavCount = 1;
 								NavGeometry0 = {
-									Frame = "{{0, 0}, {710, 628}}";
+									Frame = "{{0, 0}, {701, 624}}";
 									NavBarVisible = YES;
 								};
 								NavSplitVertical = NO;
@@ -191,17 +191,17 @@
 			);
 			PBXWorkspaceGeometries = (
 				{
-					ContentSize = "{974, 675}";
+					ContentSize = "{974, 671}";
 					LeftSlideOut = {
-						ActiveTab = 0;
-						ActiveTabName = PBXGroupTreeModule;
+						ActiveTab = 3;
+						ActiveTabName = PBXTargetTreeModule;
 						Collapsed = NO;
-						Frame = "{{0, 23}, {974, 652}}";
+						Frame = "{{0, 23}, {974, 648}}";
 						Split0 = {
 							Collapsed = NO;
-							Frame = "{{264, 0}, {710, 652}}";
+							Frame = "{{273, 0}, {701, 648}}";
 							Split0 = {
-								Frame = "{{0, 24}, {710, 628}}";
+								Frame = "{{0, 24}, {701, 624}}";
 							};
 							SplitCount = 1;
 							Tab0 = {
@@ -243,34 +243,32 @@
 								LauncherConfigVersion = 7;
 							};
 							Tab2 = {
-								Frame = "{{0, 0}, {807, 165}}";
+								Frame = "{{0, 0}, {710, 165}}";
 								LauncherConfigVersion = 3;
 								Runner = {
-									Frame = "{{0, 0}, {807, 165}}";
+									Frame = "{{0, 0}, {710, 165}}";
 								};
 							};
 							Tab3 = {
-								BuildMessageFrame = "{{0, 0}, {712, 260}}";
-								BuildTranscriptFrame = "{{0, 269}, {712, 2}}";
+								BuildMessageFrame = "{{0, 0}, {712, 351}}";
+								BuildTranscriptFrame = "{{0, 360}, {712, 2}}";
 								BuildTranscriptFrameExpanded = YES;
-								Frame = "{{0, 0}, {710, 293}}";
+								Frame = "{{0, 0}, {710, 384}}";
 							};
 							Tab4 = {
-								Frame = "{{0, 0}, {612, 295}}";
+								Frame = "{{0, 0}, {710, 295}}";
 							};
 							TabCount = 5;
 							TabsVisible = YES;
 						};
 						SplitCount = 1;
 						Tab0 = {
-							Frame = "{{0, 0}, {240, 652}}";
+							Frame = "{{0, 0}, {240, 648}}";
 							GroupTreeTableConfiguration = (
-								SCMStatusColumn,
-								22,
 								TargetStatusColumn,
 								18,
 								MainColumn,
-								185,
+								207,
 							);
 						};
 						Tab1 = {
@@ -318,14 +316,14 @@
 					StatusViewVisible = YES;
 					Template = F5F68CF101725D4C0D7A8F4C;
 					ToolbarVisible = YES;
-					WindowLocation = "{13, 4}";
+					WindowLocation = "{32, 10}";
 				},
 			);
-			PBXWorkspaceStateSaveDate = 74467972;
+			PBXWorkspaceStateSaveDate = 83548227;
 		};
 		perUserProjectItems = {
-			6EA9D7C204704956001EA4F4 = 6EA9D7C204704956001EA4F4;
-			6EA9D7C304704956001EA4F4 = 6EA9D7C304704956001EA4F4;
+			6E6F594C04FAD6CE003E3587 = 6E6F594C04FAD6CE003E3587;
+			6E8A445704FAD8CC0003A62D = 6E8A445704FAD8CC0003A62D;
 		};
 		projectwideBuildSettings = {
 		};
@@ -338,19 +336,50 @@
 			705704BB01CEC65205CA29A8,
 		);
 	};
-	6EA9D7C204704956001EA4F4 = {
-		fRef = F520045C01B43A3701CA2DA8;
-		isa = PBXBookmark;
+	6E6F588704FAD65D003E3587 = {
+		activeExec = 0;
+		executables = (
+			6E6F594A04FAD65D003E3587,
+		);
 	};
-	6EA9D7C304704956001EA4F4 = {
-		fRef = F520045C01B43A3701CA2DA8;
-		isa = PBXTextBookmark;
-		name = "power.c: 792";
-		rLen = 7;
-		rLoc = 33280;
-		rType = 0;
-		vrLen = 1508;
-		vrLoc = 32305;
+	6E6F594A04FAD65D003E3587 = {
+		activeArgIndex = 2147483647;
+		activeArgIndices = (
+		);
+		argumentStrings = (
+		);
+		configStateDict = {
+		};
+		debuggerPlugin = GDBDebugging;
+		enableDebugStr = 1;
+		environmentEntries = (
+		);
+		isa = PBXExecutable;
+		name = libmx;
+		shlibInfoDictList = (
+		);
+		sourceDirectories = (
+		);
+	};
+	6E6F594C04FAD6CE003E3587 = {
+		isa = PBXTargetBookmark;
+		trg = 6E6F588704FAD65D003E3587;
+	};
+	6E8A445704FAD8CC0003A62D = {
+		isa = PBXTargetBookmark;
+		trg = 6E6F588704FAD65D003E3587;
+		uiCtxt = {
+			TOCViewDetailVisibleRect = "{{0, 0}, {475, 300}}";
+			TOCViewExpandedItems = (
+				"com.apple.target-editor-pane.settings",
+				"com.apple.target-editor-pane.settings.simple",
+				"com.apple.target-editor-pane.buildphases",
+			);
+			TOCViewMasterVisibleRect = "{{0, 0}, {187, 570}}";
+			TOCViewSelectedItems = (
+				PBXBSExpertAspectModule,
+			);
+		};
 	};
 	7017604B01D16A5B05CA29A8 = {
 		uiCtxt = {
@@ -375,26 +404,7 @@
 	7019EDCD0336551305CA29A8 = {
 		activeExec = 0;
 		executables = (
-			7019EDDD0336551305CA29A8,
-		);
-	};
-	7019EDDD0336551305CA29A8 = {
-		activeArgIndex = 2147483647;
-		activeArgIndices = (
-		);
-		argumentStrings = (
-		);
-		configStateDict = {
-		};
-		debuggerPlugin = GDBDebugging;
-		enableDebugStr = 1;
-		environmentEntries = (
-		);
-		isa = PBXExecutable;
-		name = "VectorTest x86";
-		shlibInfoDictList = (
-		);
-		sourceDirectories = (
+			70460B3C03AA6D9C05CA29A8,
 		);
 	};
 	702F82E20206078005CA29A8 = {
@@ -414,6 +424,44 @@
 	};
 	7031F35802427B9205CA29A8 = {
 		activeExec = 0;
+	};
+	70460B3C03AA6D9C05CA29A8 = {
+		activeArgIndex = 2147483647;
+		activeArgIndices = (
+		);
+		argumentStrings = (
+		);
+		configStateDict = {
+		};
+		debuggerPlugin = GDBDebugging;
+		enableDebugStr = 1;
+		environmentEntries = (
+		);
+		isa = PBXExecutable;
+		name = "VectorTest x86";
+		shlibInfoDictList = (
+		);
+		sourceDirectories = (
+		);
+	};
+	70545CA70332C06D05CA29A8 = {
+		activeArgIndex = 2147483647;
+		activeArgIndices = (
+		);
+		argumentStrings = (
+		);
+		configStateDict = {
+		};
+		debuggerPlugin = GDBDebugging;
+		enableDebugStr = 1;
+		environmentEntries = (
+		);
+		isa = PBXExecutable;
+		name = "VectorTest x86";
+		shlibInfoDictList = (
+		);
+		sourceDirectories = (
+		);
 	};
 	705704B601CE9F6705CA29A8 = {
 		activeArgIndex = 2147483647;
@@ -519,6 +567,24 @@
 		activeExec = 0;
 	};
 	70CAC52F022DCA3605CA29A8 = {
+		activeExec = 0;
+	};
+	D20C4BC804E867B400E7607B = {
+		activeExec = 0;
+	};
+	D20C4BDF04E867BC00E7607B = {
+		activeExec = 0;
+	};
+	D20C4BF604E867CD00E7607B = {
+		activeExec = 0;
+	};
+	D20C4C0D04E8680E00E7607B = {
+		activeExec = 0;
+	};
+	D20C4C2504E8681300E7607B = {
+		activeExec = 0;
+	};
+	D20C4C3D04E8681500E7607B = {
 		activeExec = 0;
 	};
 	F50BFF7001A344D401CA2DA8 = {

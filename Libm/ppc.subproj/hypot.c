@@ -65,7 +65,7 @@
 
 #pragma fenv_access on
 
-static hexdouble Huge = HEXDOUBLE(0x7FF00000, 0x00000000);
+static const hexdouble Huge = HEXDOUBLE(0x7FF00000, 0x00000000);
 
 #ifdef notdef
       {
@@ -116,7 +116,7 @@ static hexdouble Huge = HEXDOUBLE(0x7FF00000, 0x00000000);
       }
 #else
 
-static hexdouble NegHuge = HEXDOUBLE(0xFFF00000, 0x00000000);
+static const hexdouble NegHuge = HEXDOUBLE(0xFFF00000, 0x00000000);
 
 double hypot ( double x, double y )
 {
@@ -180,63 +180,6 @@ double hypot ( double x, double y )
 }
 #endif
 
-#ifdef notdef
-static hexsingle HugeF = { 0x7F800000 };
-      
-float hypotf ( float x, float y)
-      {
-        register float temp;
-	hexdouble OldEnvironment, CurrentEnvironment;
-      
-/*******************************************************************************
-*     If argument is SNaN then a QNaN has to be returned and the invalid       *
-*     flag signaled.                                                           * 
-*******************************************************************************/
-	
-        FEGETENVD( OldEnvironment.d );               // save environment, set default
-        FESETENVD( 0.0 );
-
-	if ( ( x == HugeF.fval ) || ( y == HugeF.fval ) || ( x == - HugeF.fval ) || ( y == - HugeF.fval ) )
-            {
-            FEGETENVD( CurrentEnvironment.d );
-            OldEnvironment.i.lo |= CurrentEnvironment.i.lo;
-            FESETENVD( OldEnvironment.d );         //   restore caller's environment
-            return HugeF.fval;
-            }
-                
-        if ( ( x != x ) || ( y != y ) )
-            {
-            x = __FABSF ( x + y );
-            FEGETENVD( CurrentEnvironment.d );
-            OldEnvironment.i.lo |= CurrentEnvironment.i.lo;
-            FESETENVD( OldEnvironment.d );         //   restore caller's environment
-            return x;
-            }
-            
-        if ( ( x = __FABSF ( x ) ) > ( y = __FABSF ( y ) ) )  /* make sure |x| <= |y| */
-            {
-            temp = x;
-            x = y;
-            y = temp;
-            }
-            
-      if ( ( y != 0.0 ) && ( y != INFINITY ) )
-            {
-            temp = x / y;
-            temp = sqrt ( 1.0 + temp * temp );
-            FEGETENVD( CurrentEnvironment.d );
-            CurrentEnvironment.i.lo &= ~FE_UNDERFLOW;
-            FESETENVD( CurrentEnvironment.d );
-            y = y * temp;
-            }
-            
-        FEGETENVD( CurrentEnvironment.d );
-        OldEnvironment.i.lo |= CurrentEnvironment.i.lo;
-        FESETENVD( OldEnvironment.d );         //   restore caller's environment
-
-        return y;
-      }
-#endif
 
 #else       /* __APPLE_CC__ version */
 #error Version gcc-932 or higher required.  Compilation terminated.
