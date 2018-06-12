@@ -22,15 +22,19 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-#ifndef __FENV_H__
-#define __FENV_H__
+/*
+ * Written by J.T. Conklin <jtc@netbsd.org>.
+ * Public domain.
+ */
 
-#if defined (__ppc__)
-#include "architecture/ppc/fenv.h"
-#elif defined (__i386__)
-#include "architecture/i386/fenv.h"
-#else
-#error Unknown architecture
-#endif
+#include <machine/asm.h>
 
-#endif /* __FENV_H__ */
+#include "abi.h"
+
+ENTRY(__logb)
+	XMM_ONE_ARG_DOUBLE_PROLOGUE
+	fldl	ARG_DOUBLE_ONE
+	fxtract
+	fstp	%st
+	XMM_DOUBLE_EPILOGUE
+	ret
