@@ -33,7 +33,7 @@
 
 #ifndef lint
 static const char rcsid[] _U_ =
-    "@(#) $Header: /tcpdump/master/libpcap/pcap.c,v 1.88.2.8 2005/08/13 22:29:46 hannes Exp $ (LBL)";
+    "@(#) $Header: /tcpdump/master/libpcap/pcap.c,v 1.88.2.13 2006/07/27 21:06:17 gianluca Exp $ (LBL)";
 #endif
 
 #ifdef HAVE_CONFIG_H
@@ -354,6 +354,7 @@ static struct dlt_choice dlt_choices[] = {
 	DLT_CHOICE(DLT_ARCNET_LINUX, "Linux ARCNET"),
 	DLT_CHOICE(DLT_DOCSIS, "DOCSIS"),
 	DLT_CHOICE(DLT_LINUX_IRDA, "Linux IrDA"),
+	DLT_CHOICE(DLT_LINUX_LAPD, "Linux vISDN LAPD"),
 	DLT_CHOICE(DLT_IEEE802_11_RADIO_AVS, "802.11 plus AVS radio information header"),
         DLT_CHOICE(DLT_SYMANTEC_FIREWALL, "Symantec Firewall"),
         DLT_CHOICE(DLT_JUNIPER_ATM1, "Juniper ATM1 PIC"),
@@ -378,6 +379,11 @@ static struct dlt_choice dlt_choices[] = {
  	DLT_CHOICE(DLT_JUNIPER_PPP, "Juniper PPP"),
  	DLT_CHOICE(DLT_JUNIPER_FRELAY, "Juniper Frame Relay"),
  	DLT_CHOICE(DLT_JUNIPER_CHDLC, "Juniper C-HDLC"),
+	DLT_CHOICE(DLT_MFR, "FRF.16 Frame Relay"),
+ 	DLT_CHOICE(DLT_JUNIPER_VP, "Juniper Voice PIC"),
+ 	DLT_CHOICE(DLT_A429, "Arinc 429"),
+ 	DLT_CHOICE(DLT_CAN20B, "Controller Area Network (CAN) v. 2.0B"),
+    DLT_CHOICE(DLT_A653_ICM, "Arinc 653 Interpartition Communication"),
 	DLT_CHOICE_SENTINEL
 };
 
@@ -807,7 +813,7 @@ pcap_close(pcap_t *p)
 #ifdef HAVE_VERSION_H
 #include "version.h"
 #else
-static const char pcap_version_string[] = "libpcap version 0.9[.x]";
+static const char pcap_version_string[] = "libpcap version 0.9.4";
 #endif
 
 #ifdef WIN32
@@ -816,7 +822,7 @@ static const char pcap_version_string[] = "libpcap version 0.9[.x]";
  * version numbers when building WinPcap.  (It'd be nice to do so for
  * the packet.dll version number as well.)
  */
-static const char wpcap_version_string[] = "3.1";
+static const char wpcap_version_string[] = "3.2 alpha1";
 static const char pcap_version_string_fmt[] =
     "WinPcap version %s, based on %s";
 static const char pcap_version_string_packet_dll_fmt[] =

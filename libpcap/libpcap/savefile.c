@@ -30,7 +30,7 @@
 
 #ifndef lint
 static const char rcsid[] _U_ =
-    "@(#) $Header: /tcpdump/master/libpcap/savefile.c,v 1.126.2.13 2005/08/29 21:05:45 guy Exp $ (LBL)";
+    "@(#) $Header: /tcpdump/master/libpcap/savefile.c,v 1.126.2.17 2006/07/27 21:06:18 gianluca Exp $ (LBL)";
 #endif
 
 #ifdef HAVE_CONFIG_H
@@ -430,6 +430,44 @@ static const char rcsid[] _U_ =
 #define LINKTYPE_JUNIPER_FRELAY 180
 #define LINKTYPE_JUNIPER_CHDLC  181
 
+/*
+ * Multi Link Frame Relay (FRF.16)
+ */
+#define LINKTYPE_MFR            182
+
+/*
+ * Juniper-private data link type, as per request from
+ * Hannes Gredler <hannes@juniper.net>. 
+ * The DLT_ is used for internal communication with a
+ * voice Adapter Card (PIC)
+ */
+#define LINKTYPE_JUNIPER_VP     183
+
+/*
+ * Arinc 429 frames.
+ * DLT_ requested by Gianluca Varenni <gianluca.varenni@cacetech.com>.
+ * Every frame contains a 32bit A429 label.
+ * More documentation on Arinc 429 can be found at
+ * http://www.condoreng.com/support/downloads/tutorials/ARINCTutorial.pdf
+ */
+#define LINKTYPE_A429           184
+
+/*
+ * Arinc 653 Interpartition Communication messages.
+ * DLT_ requested by Gianluca Varenni <gianluca.varenni@cacetech.com>.
+ * Please refer to the A653-1 standard for more information.
+ */
+#define LINKTYPE_A653_ICM       185
+
+/*
+ * Controller Area Network (CAN) v. 2.0B packets.
+ * DLT_ requested by Gianluca Varenni <gianluca.varenni@cacetech.com>.
+ * Used to dump CAN packets coming from a CAN Vector board.
+ * More documentation on the CAN v2.0B frames can be found at
+ * http://www.can-cia.org/downloads/?269
+ */
+#define LINKTYPE_CAN20B         190
+
 static struct linktype_map {
 	int	dlt;
 	int	linktype;
@@ -635,6 +673,20 @@ static struct linktype_map {
         { DLT_JUNIPER_FRELAY, LINKTYPE_JUNIPER_FRELAY },
         { DLT_JUNIPER_CHDLC, LINKTYPE_JUNIPER_CHDLC },
 
+        /* Multi Link Frame Relay (FRF.16) */
+        { DLT_MFR,              LINKTYPE_MFR },
+
+        /* Juniper Voice PIC */
+        { DLT_JUNIPER_VP,       LINKTYPE_JUNIPER_VP },
+
+		/* Controller Area Network (CAN) v2.0B */
+		{ DLT_A429,				LINKTYPE_A429 },
+
+		/* Controller Area Network (CAN) v2.0B */
+		{ DLT_CAN20B,				LINKTYPE_CAN20B },
+
+		/* Arinc 653 Interpartition Communication messages */
+		{ DLT_A653_ICM,         LINKTYPE_A653_ICM },
 
 	{ -1,			-1 }
 };
