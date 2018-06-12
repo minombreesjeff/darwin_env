@@ -29,8 +29,6 @@ int ilogb( double x )
     static const double infinity = __builtin_inf();                  //0x7F800000
     static const double denormBias = 2.0;    
     static const xSInt64 doublebias = {1023, 0}; 
-    
-    xUInt64 correction;                                                                          
 
     //Do some introspection about X
 	xDouble X = DOUBLE_2_XDOUBLE( x );
@@ -62,21 +60,11 @@ int ilogb( double x )
     // +-inf:       INF
     // NaN:         X
 
-    //Set the Zero case first
-	isZero = _mm_or_pd( isZero, ( xDouble) _mm_cvtpd_epi32( isZero ) );	//set invalid flag if zero
-    correction = _mm_and_si128( (xUInt64) isZero, _mm_cvtsi32_si128( FP_ILOGB0 ) );                                      // -INF if X is zero, 0 otherwise
-    
-    //Set the +- inf case 
-    correction = _mm_or_si128( correction, _mm_srli_epi64( (xUInt64) isInf, 33 ));							// OR in INT_MAX if X is infinite
-    
-    //Do NaNs 
-    correction = _mm_or_si128( correction, _mm_and_si128( (xUInt64) isNaN, _mm_cvtsi32_si128( FP_ILOGBNAN ) ) );                 // OR in X if X is NaN
-    
-    //deal with zero, inf and NaN
-    shiftedBiasedExponent = _mm_andnot_si128( (xUInt64) isSpecial, shiftedBiasedExponent ); 
-	shiftedBiasedExponent = _mm_or_si128( shiftedBiasedExponent, correction );
-
-    return _mm_cvtsi128_si32( shiftedBiasedExponent );
+    //Determine result for the Zero, inf and NaN cases first
+	int specialResult = _mm_cvtsd_si32( isSpecial ) ^ _mm_cvtsi128_si32( (xUInt64) isInf );     //set invalid flag if inf, zero or NaN
+            
+    //merge with normal / denorm result
+    return _mm_cvtsi128_si32( _mm_andnot_si128( (xUInt64) isSpecial, shiftedBiasedExponent ) ) | specialResult;
 }
 
 
@@ -210,7 +198,6 @@ int ilogbf( float x )
     static const xSInt32 oneTwentySeven = {127, 0, 0, 0}; 
     
     xUInt32 zero = (xUInt32) _mm_setzero_ps();                                                          // 0
-    xUInt32 correction;                                                                          
 
     //Do some introspection about X
 	xFloat X = FLOAT_2_XFLOAT( x );
@@ -218,7 +205,7 @@ int ilogbf( float x )
 	xFloat inf = _mm_load_ss( &infinity);
     xFloat  exponent = _mm_and_ps( X, inf );                                                       // exponent of X, in place
     xUInt32 isExpZero = _mm_cmpeq_epi32( (xUInt32) exponent, zero );                                    // -1 if exponent of X is 0, 0 otherwise
-    xUInt32 isZero = _mm_cmpeq_epi32( (xUInt32) absX, zero );                                           // -1 if X is 0, 0 otherwise
+    xUInt32 isZero = (xUInt32) _mm_cmpeq_ss( X, (xFloat) zero );                                           // -1 if X is 0, 0 otherwise
     xUInt32 isDenormal = _mm_andnot_si128( isZero, isExpZero );                                         // -1 if X is a (non-zero) denormal, 0 otherwise 
     xUInt32 isInf = _mm_cmpeq_epi32( (xUInt32) absX, (xUInt32) inf );                              // -1 if X is +- Inf, 0 otherwise
     xFloat isNaN = _mm_cmpunord_ss( X, X );                                                  // -1 if X is a NaN, 0 otherwise
@@ -242,21 +229,11 @@ int ilogbf( float x )
     // +-inf:       INF
     // NaN:         X
 
-    //Set the Zero case first
-	isZero = (xUInt32) _mm_or_ps( (xFloat) isZero, ( xFloat) _mm_cvtps_epi32( (xFloat) isZero ) );				//set invalid flag if zero
-    correction = _mm_and_si128( isZero, _mm_cvtsi32_si128( FP_ILOGB0 ) );                                      // -INF if X is zero, 0 otherwise
+    //Find the result if the input was zero, inf or NaN. Also set invalid flag.
+    int specialResult = _mm_cvtss_si32( (xFloat) isSpecial ) ^ _mm_cvtsi128_si32( isInf );
     
-    //Set the +- inf case 
-    correction = _mm_or_si128( correction, _mm_srli_epi32( isInf, 1 ));							// OR in INT_MAX if X is infinite
-    
-    //Do NaNs 
-    correction = _mm_or_si128( correction, _mm_and_si128( (xUInt32) isNaN, _mm_cvtsi32_si128( FP_ILOGBNAN ) ) );                 // OR in X if X is NaN
-    
-    //deal with zero, inf and NaN
-    shiftedBiasedExponent = _mm_andnot_si128( isSpecial, shiftedBiasedExponent ); 
-	shiftedBiasedExponent = _mm_or_si128( shiftedBiasedExponent, correction );
-
-    return _mm_cvtsi128_si32( shiftedBiasedExponent );
+    //merge with normal / denorm result
+    return _mm_cvtsi128_si32( _mm_andnot_si128( isSpecial, shiftedBiasedExponent ) ) | specialResult ;
 }
 
 double logb( double x )

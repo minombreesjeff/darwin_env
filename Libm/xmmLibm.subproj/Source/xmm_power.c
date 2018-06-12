@@ -984,7 +984,10 @@ long double powl( long double x, long double y )
 
 	// x < 0 and y non integer case
 	if( x < 0 && iy != fabsy )
-		return nanl("37") + sqrtl( -1 );
+	{
+		SET_INVALID_FLAG();
+		return nanl("37");
+	}
 	
 	//speedy resolution of sqrt and reciprocal sqrt
 	if( fabsy == 0.5 )

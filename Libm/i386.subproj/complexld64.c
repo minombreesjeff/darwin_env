@@ -58,10 +58,13 @@ long double complex ctanhl(long double complex z)	{ return ctanh(z); }
 long double complex cexpl(long double complex z)	{ return cexp(z); }
 long double complex clogl(long double complex z)	{ return clog(z); }
 
-long double cabsl(long double complex z)			{ return cabs(z); }
-long double complex cpowl(long double complex x, long double complex y)
-													{ return cpow(x, y); }
-long double complex csqrtl(long double complex z)	{ return csqrt(z); }
+
+long double complex cpowl(long double complex x, long double complex y) { return cpow(x, y); }
+
+#if (defined(__ppc__) || defined(__ppc64__))
+	long double complex csqrtl(long double complex z)	{ return csqrt(z); }
+	long double cabsl(long double complex z)			{ return cabs(z); }
+#endif
 
 long double cargl(long double complex z)			{ return carg(z); }
 long double cimagl(long double complex z)			{ return cimag(z); }

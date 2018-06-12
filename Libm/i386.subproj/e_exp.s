@@ -67,8 +67,9 @@ expl_special:  //handles +-Inf, QNaN, SNaN
 
 
 ENTRY(exp2l)    
-	push	$0x7f800000					// inf
-	push	$0x1e000000					// small (0x1.0p-67f)
+	SUBP	$LOCAL_STACK_SIZE, STACKP
+	movl	$0x7f800000, 4(STACKP)		// inf
+	movl	$0x1e000000, (STACKP)		// small (0x1.0p-67f)
 	
 	//test for +inf, NaN
 	fldt	FIRST_ARG_OFFSET(STACKP)	// { f }

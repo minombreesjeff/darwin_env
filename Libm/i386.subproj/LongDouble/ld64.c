@@ -43,7 +43,7 @@
 
 long double fmal(long double x, long double y, long double z){ return fma(x, y, z); }
 
-long double erfl(long double x)						{ return erf(x); }
-long double erfcl(long double x)					{ return erfc(x); }
-long double lgammal(long double x)					{ return lgamma(x); }
-long double tgammal(long double x)					{ return tgamma(x); }
+//long double erfl(long double x)						{ return erf(x); }
+//long double erfcl(long double x)					{ return erfc(x); }
+//long double lgammal(long double x)					{ return lgamma(x); }
+//long double tgammal(long double x)					{ return tgamma(x); }

@@ -48,7 +48,7 @@ static const float	k2To52		=  4503599627370496.0f;			// 0x1.0p+52
 static const float	k2To54		=  18014398509481984.0f;			// 0x1.0p+54
 static const double	k2To45m1	=  35184372088831.0;			// 0x1.fffffffffffffp44
 
-static const uint32_t CosCoeff[] = {
+static const uint32_t CosCoeff[] __attribute__ ((aligned(8))) = {
 	0xbFE00000,		0x00000000,		0x39685556,		0x00000000,
 	0x3FA55555,		0x55555555,		0x3C455555,		0x51E8C72E,
 	0xbF56C16C,		0x16C16C17,		0x3BF02698,		0xA05BBBBD,
@@ -56,7 +56,7 @@ static const uint32_t CosCoeff[] = {
 	0xbE927E4D,		0x648A174F,		0xbB361705,		0xD6F2C25B
 };
 	 
-static const uint32_t SinCoeff[] = {
+static const uint32_t SinCoeff[] __attribute__ ((aligned(8))) = {
      0xbFC55555,	0x55555555, 	0xbC655555,		0x55555552,
      0x3F811111,	0x11111111, 	0x3C011111,		0x0DBB7C30,
      0xbF2A01A0,	0x1A01A01A, 	0xbB510055,		0x358E4100,
@@ -64,7 +64,7 @@ static const uint32_t SinCoeff[] = {
      0xbE5AE642,	0x52F2B067, 	0xbAD356A3,		0xF6278F6C
 };
 
-static const uint32_t CosCoeff16[] = {
+static const uint32_t CosCoeff16[] __attribute__ ((aligned(8))) = {
      0xBFE00000,	0x00000000, 	0x395DA200,		0x00000000,
      0x3FA55555,	0x55555555, 	0x3C455555,		0x554FC86B,
      0xBF56C16C,	0x16C16C17, 	0x3BEF49FE,		0x788C8E18,
@@ -74,7 +74,7 @@ static const uint32_t CosCoeff16[] = {
      0xBDA938BA,	0xA889516E, 	0x3A46CBC1,		0x4AF6E840
 };
 
-static const uint32_t SinCoeff16[] = {
+static const uint32_t SinCoeff16[] __attribute__ ((aligned(8))) = {
      0xBFC55555,	0x55555555, 	0xBC655555,		0x55555554,
      0x3F811111,	0x11111111, 	0x3C011111,		0x10F8EB9C,
      0xBF2A01A0,	0x1A01A01A, 	0xBB69FF8C,		0xFBC69E00,
@@ -84,7 +84,7 @@ static const uint32_t SinCoeff16[] = {
      0xBD6AE6FF,	0xCFCF788E, 	0x39DA11EB,		0x64C11650
 };
 
-static const uint32_t TrigTable[] = {
+static const uint32_t TrigTable[] __attribute__ ((aligned(8))) = {
 	0x3FB80000,	0x00054E6C, 								// angle 	
 	0x3FB7F701,	0x032A9959, 	0xBBAD11F0,	0x5495F5BE,		// Sin Head, Sin Tail
 	0x3FEFDC06,	0xBF7E5BB6, 	0xBBDCB529,	0x1917F935,		// Cos Head, Cos Tail
@@ -225,7 +225,7 @@ static const uint32_t TrigTable[] = {
 	0x3FE65DC1,	0xFD8A1C59, 	0xBBDBAD2A,	0x038DFB75
 };
 
-static const uint32_t TanCoeff16[] = {
+static const uint32_t TanCoeff16[] __attribute__ ((aligned(8))) = {
      0x3FD55555,	0x55555555,   0x3C755555,	0x5555554C,
      0x3FC11111,	0x11111111,   0x3C411111,	0x11327FD4,
      0x3FABA1BA,	0x1BA1BA1C,   0xBC47917B,	0x8730ECE8,
@@ -238,7 +238,7 @@ static const uint32_t TanCoeff16[] = {
      0x3F19C9D2,	0x46D3C681,   0x3BA2B1F2,	0xBC709028
 };
 
-static const uint32_t CotCoeff16[] = {
+static const uint32_t CotCoeff16[] __attribute__ ((aligned(8))) = {
      0x3FD55555,	0x55555555,   0x3C755555,	0x55555550,
      0x3F96C16C,	0x16C16C17,   0xBC2F49F4,	0x9F46AA0E,
      0x3F61566A,	0xBC011567,   0xBC050FFB,	0x0703E386,
@@ -250,7 +250,7 @@ static const uint32_t CotCoeff16[] = {
      0x3E2396A6,	0x6CC1B8E2,   0x3AC04FB7,	0x0AEC86D2
 };
 
-static const uint32_t TanCoeff[] = {
+static const uint32_t TanCoeff[] __attribute__ ((aligned(8))) = {
      0x3ff00000,	0x00000000,   0x00000000,	0x00000000,
      0x3FD55555,	0x55555555,   0x3C755555,	0x55555549,
      0x3FC11111,	0x11111111,   0x3C411111,	0x17771B40,
@@ -260,7 +260,7 @@ static const uint32_t TanCoeff[] = {
      0x3F6D6DCB,	0xC6BCC1FD,   0x3C0EB3DD,	0x1EBC7C6C
 };
 
-static const uint32_t TanTable[] = {
+static const uint32_t TanTable[] __attribute__ ((aligned(8))) = {
 	0x3FB80000,	0x00095B76, 
 	0x3FB81210,	0x420B0DDD,   0xBBADBC24,	0xD03EE61B,
 	0x40254552,	0xEE62D182,   0xBC23A778,	0xD4D4C82D,

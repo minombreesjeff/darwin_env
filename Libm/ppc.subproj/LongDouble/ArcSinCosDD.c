@@ -59,7 +59,7 @@ static const int	kNterms = 23;
 
 static const Float  kNaNu = {0x7fc00000};
 
-static const uint32_t asinCoeff[] = {
+static const uint32_t asinCoeff[] __attribute__ ((aligned(8))) =  {
 	0x3FF00000,		0x00000000,        0x00000000,		0x00000000,
 	0x3FC55555,		0x55555555,        0x3C655555,		0x55555555,
 	0x3FB33333,		0x33333333,        0x3C499999,		0x9999999A,

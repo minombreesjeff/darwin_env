@@ -9,14 +9,19 @@
 
 
 #include <math.h>
-
+#include <xmmLibm_prefix.h>
 
 float acoshf( float x )
 {
 	static const float ln2 = 0x1.62e42fefa39fa39ep-1f;			//ln(2)
 
 	if( x != x )	return x + x;
-	if( x < 1.0 )	return sqrtf( -1.0L );
+
+	if( x < 1.0f )	
+	{
+		SET_INVALID_FLAG();
+		return __builtin_nanf( "" );
+	}
 	
 	float xm1 = x - 1.0f;
 
@@ -35,7 +40,11 @@ double acosh( double x )
 	static const double ln2 = 0x1.62e42fefa39fa39ep-1;			//ln(2)
 
 	if( x != x )	return x + x;
-	if( x < 1.0 )	return sqrt( -1.0 );
+	if( x < 1.0 )	
+	{
+		SET_INVALID_FLAG();
+		return __builtin_nan( "" );
+	}
 	
 	double xm1 = x - 1.0;
 
@@ -53,7 +62,11 @@ long double acoshl( long double x )
 	static const long double ln2 = 0x1.62e42fefa39fa39ep-1L;			//ln(2)
 
 	if( x != x )	return x + x;
-	if( x < 1.0 )	return sqrtl( -1.0L );
+	if( x < 1.0L )	
+	{
+		SET_INVALID_FLAG();
+		return __builtin_nanl( "" );
+	}
 	
 	long double xm1 = x - 1.0L;
 

@@ -395,7 +395,7 @@ int __isnanf ( float x )
 {   
    hexsingle      z;
    
-   z.fval = (double)x;
+   z.fval = x;
    __NOOP;
    __NOOP;
    __NOOP;

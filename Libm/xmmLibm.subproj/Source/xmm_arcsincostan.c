@@ -159,10 +159,25 @@ static inline xDouble _xasin( xDouble x )
     xDouble y = _mm_andnot_pd( minusZeroD, x );
     xDouble oneD = _mm_load_sd( &one );
 	
-	if( _mm_istrue_sd( _mm_cmpgt_sd( y, oneD ) ) )
-	{	//deal with overflow gracefully
-		y = _mm_or_pd( y, minusZeroD );
-		y = _MM_SQRT_SD( y );
+	if( _mm_istrue_sd( _mm_cmpge_sd( y, oneD ) ) )
+	{
+        if( _mm_istrue_sd( _mm_cmpgt_sd( y, oneD ) ) )
+        {
+            //deal with overflow gracefully
+            y = _mm_or_pd( y, minusZeroD );
+            y = _MM_SQRT_SD( y );
+        }
+        else
+        {
+            static double pi_over_2_hi = 0x1.921fb54442d18p+0;  //pi/2 to 53 bits precision
+            static double pi_over_2_lo = 0x8.d4p-57;            //some more bits of pi/2
+            
+            //Get the correctly rounded pi/2 result for the current rounding mode and set inexact
+            y = REQUIRED_ADD_sd( _mm_load_sd(&pi_over_2_hi), _mm_load_sd(&pi_over_2_lo) );
+
+            //Copy in the sign of x
+            y = _mm_or_pd( _mm_and_pd( minusZeroD, x ), y );
+        }
 	}
 	else
 	{

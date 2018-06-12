@@ -48,7 +48,7 @@
 #include "stdint.h"
 
 __private_extern__
-const uint32_t tanatantable[] = 
+const uint32_t tanatantable[] __attribute__ ((aligned(8))) = 
       {
       0x3FB0000B,   0x6EA05B24,      /* index runs 16-256  */
       0x3FC814DB,   0x31B98EDB,

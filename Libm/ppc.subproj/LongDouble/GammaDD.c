@@ -55,7 +55,7 @@ typedef double DD[2];
 //  FORTRAN: bern(i,j)    C: bern[j][i-1]
 //      DD *bern = (DD *)(bernData - 4);
 
-static const uint32_t bernData[] = {
+static const uint32_t bernData[] __attribute__ ((aligned(8))) = {
 	0x3FB55555, 0x55555555,   0x3C555555, 0x55555555,
 	0xBF66C16C, 0x16C16C17,   0x3BFF49F4, 0x9F49F49F,
 	0x3F4A01A0, 0x1A01A01A,   0x3B8A01A0, 0x1A01A01A,
@@ -74,7 +74,7 @@ static const uint32_t bernData[] = {
 //  FORTRAN: zeta(i,j)    C: zeta[j][i-1]
 //      DD *zeta = (DD *)(zetaData - 8);
 
-static const uint32_t zetaData[] = {
+static const uint32_t zetaData[] __attribute__ ((aligned(8))) = {
 	0x3FD4A34C, 0xC4A60FA6,   0x3C71873D, 0x8912200C,
 	0xBFB13E00, 0x1A557607,   0x3C5FB68B, 0xE2F8821F,
 	0x3F951322, 0xAC7D8483,   0x3C3AFC89, 0x088CB729,

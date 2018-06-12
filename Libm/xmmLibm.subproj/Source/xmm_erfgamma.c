@@ -118,6 +118,7 @@
 *******************************************************************************/
 
 #include      "math.h"
+#include	  "float.h"
 #include      "fenv.h"
 #include      "fenv_private.h"
 
@@ -202,8 +203,8 @@ static inline double _tgamma ( double x )
 	{
 		if( x < 0 )
 		{
-			x -= x;		//generate invalid flag
-			return nan( GAMMA_NAN );
+			SET_INVALID_FLAG();
+			return __builtin_nan( GAMMA_NAN );
 		}
 	
 		return x;
@@ -236,13 +237,8 @@ static inline double _tgamma ( double x )
 		}
         else
         {
-			double NaN = nan( GAMMA_NAN );
-			xDouble xx = DOUBLE_2_XDOUBLE( x );
-			xDouble xNaN = DOUBLE_2_XDOUBLE( NaN );
-			if( _mm_comilt_sd( xx, xNaN) )	//set invalid
-				return NaN;
-			else
-				return NaN + NaN;
+			SET_INVALID_FLAG();
+			return __builtin_nan( GAMMA_NAN );
 		}
 	}
 
@@ -324,6 +320,176 @@ double gamma ( double x )   //legacy -- required for various calculators in the 
 float tgammaf( float x )
 {
 	return (float) _tgamma( x );
+}
+
+/*******************************************************************************
+*     Coefficients for P in gamma approximation over [1,2] in decreasing order.*
+*******************************************************************************/
+
+static const long double pL[8] = { -1.71618513886549492533811e+0L,
+									2.47656508055759199108314e+1L,
+								   -3.79804256470945635097577e+2L,
+									6.29331155312818442661052e+2L,
+									8.66966202790413211295064e+2L,
+								   -3.14512729688483675254357e+4L,
+								   -3.61444134186911729807069e+4L,
+									6.64561438202405440627855e+4L };
+
+/*******************************************************************************
+*     Coefficients for Q in gamma approximation over [1,2] in decreasing order.*
+*******************************************************************************/
+
+static const long double qL[8] = { -3.08402300119738975254353e+1L,
+									3.15350626979604161529144e+2L,
+								   -1.01515636749021914166146e+3L,
+								   -3.10777167157231109440444e+3L,
+									2.25381184209801510330112e+4L,
+									4.75584627752788110767815e+3L,
+								   -1.34659959864969306392456e+5L,
+								   -1.15132259675553483497211e+5L };
+                         
+/*******************************************************************************
+*     Coefficients for minimax approximation over [12, INF].                   *
+*******************************************************************************/
+
+static const long double cL[7] = { -1.910444077728e-03L,
+									8.4171387781295e-04L,
+								   -5.952379913043012e-04L,
+									7.93650793500350248e-04L,
+								   -2.777777777777681622553e-03L,
+									8.333333333333333331554247e-02L,
+									5.7083835261e-03L };
+
+static const long double LogSqrt2piL = 0.9189385332046727417803297e+0L;		//Ln( sqrt( 2*pi))
+static const long double piL         = 3.1415926535897932384626434e+0L;		//pi
+static const long double xbigL       = 1755.36;								//cutoff for overflow condition    
+static const long double MinimumXL   = 1.0022L * LDBL_MIN;					//
+static const long double epsL        = 0.9998L * LDBL_EPSILON;
+
+
+long double tgammal( long double x )
+{
+      register int n, parity, i;
+      register long double y, y1, result, fact, fraction, z, numerator, denominator, ysquared, sum; 
+    
+	
+/*******************************************************************************
+*     The next switch will decipher what sort of argument we have. If argument *
+*     is SNaN then a QNaN has to be returned and the invalid flag signaled.    * 
+*******************************************************************************/
+
+	if( x != x )
+		return x + x;		//silence NaN
+	
+	if( x == 0.0 )
+		return LogSqrt2piL / x;
+	
+	if( __builtin_fabsl(x) == __builtin_infl() )
+	{
+		if( x < 0.0L )
+		{
+			SET_INVALID_FLAG();
+			return __builtin_nanl( GAMMA_NAN ); 
+		}
+	
+		return x;
+	}
+
+      
+	parity = 0;
+	fact = 1.0L;
+	n = 0;
+	y = x;
+
+/*******************************************************************************
+*     The argument is negative.                                                *
+*******************************************************************************/
+
+	if ( y <= 0.0L )
+	{
+		y = - x;
+		if ( y < MinimumXL )
+			return 1.0L / x;
+
+		y1 = truncl( y );
+		fraction = y - y1;
+		if ( fraction != 0.0L )             /* is it an integer?   */
+	    {                                   /* is it odd or even?  */
+			if ( y1 != truncl ( y1 * 0.5L ) * 2.0L ) 
+				parity = 1;
+			fact = - piL / sinl ( piL * fraction );
+			y += 1.0L;
+		}
+        else
+        {
+			volatile long double err = __builtin_nanl( GAMMA_NAN );
+			return err + (int) err;
+		}
+	}
+
+/*******************************************************************************
+*     The argument is positive.                                                *
+*******************************************************************************/
+
+	if ( y < epsL )                         /* argument is less than epsilon. */
+	{
+		result = 1.0L / y;
+	}
+	else if ( y < 12.0L )                 /* argument x is eps < x < 12.0.  */
+	{
+		y1 = y;
+		if ( y < 1.0L )                 /* x is in (eps, 1.0).            */
+		{
+			z = y;
+			y += 1.0L;
+		}
+		else                           /* x is in [1.0,12.0].            */
+		{
+			n = ( int ) y - 1;
+			y -= ( long double ) n;
+			z = y - 1.0L;
+		}
+		numerator = 0.0L;
+		denominator = 1.0L;
+		for ( i = 0; i < 8; i++ )
+		{
+			numerator = ( numerator + pL[i] ) * z;
+			denominator = denominator * z + qL[i];
+		}
+		result = numerator / denominator + 1.0L;
+		if ( y1 < y )
+			result /= y1;
+		else if ( y1 > y )
+		{
+			for ( i = 0; i < n; i++ )
+			{
+				result *= y;
+				y += 1.0L;
+			}
+		}
+	}
+	else
+	{
+		if ( x <= xbigL )
+		{
+			ysquared = y * y;
+			sum = cL[6];
+			for ( i = 0; i < 6; i++ )
+				sum = sum / ysquared + cL[i];
+			sum = sum / y - y + LogSqrt2piL;
+			sum += ( y - 0.5L ) * logl( y );
+			result = expl ( sum );
+		}
+		else
+			return x * 0x1.0p16383L;			//set overflow, return inf
+	}
+	
+	if ( parity ) 
+		result = - result;
+	if ( fact != 1.0L ) 
+		result = fact / result;
+
+	return result;
 }
 
 #pragma mark -
@@ -630,6 +796,292 @@ float lgammaf( float x ) //sets signgam as side effect
     return (float) lgammaApprox ( x, &signgam );
 }
 
+/*******************************************************************************
+*     Coefficients for P1 in lgamma approximation over [0.5,1.5) in decreasing *
+*     order.                                                                   *
+*******************************************************************************/
+
+static const long double d1L = -5.772156649015328605195174e-1L;
+
+static const long double p1L[8] = { 4.945235359296727046734888e+0L,
+									2.018112620856775083915565e+2L,
+									2.290838373831346393026739e+3L,
+									1.131967205903380828685045e+4L,
+									2.855724635671635335736389e+4L,
+									3.848496228443793359990269e+4L,
+									2.637748787624195437963534e+4L,
+									7.225813979700288197698961e+3L };
+                       
+/*******************************************************************************
+*     Coefficients for Q1 in gamma approximation over [0.5,1.5) in decreasing  *
+*     order.                                                                   *
+*******************************************************************************/
+
+static const long double q1L[8] = { 6.748212550303777196073036e+1L,
+									1.113332393857199323513008e+3L,
+									7.738757056935398733233834e+3L,
+									2.763987074403340708898585e+4L,
+									5.499310206226157329794414e+4L,
+									6.161122180066002127833352e+4L,
+									3.635127591501940507276287e+4L,
+									8.785536302431013170870835e+3L };
+                        
+/*******************************************************************************
+*     Coefficients for P2 in lgamma approximation over [1.5,4) in decreasing   *
+*     order.                                                                   *
+*******************************************************************************/
+
+static const long double d2L = 4.227843350984671393993777e-1L;
+
+static const long double p2L[8] = { 4.974607845568932035012064e+0L,
+									5.424138599891070494101986e+2L,
+									1.550693864978364947665077e+4L,
+									1.847932904445632425417223e+5L,
+									1.088204769468828767498470e+6L,
+									3.338152967987029735917223e+6L,
+									5.106661678927352456275255e+6L,
+									3.074109054850539556250927e+6L };
+
+/*******************************************************************************
+*     Coefficients for Q2 in gamma approximation over [1.5,4) in decreasing    *
+*     order.                                                                   *
+*******************************************************************************/
+
+static const long double q2L[8] = {	1.830328399370592604055942e+2L,
+									7.765049321445005871323047e+3L,
+									1.331903827966074194402448e+5L,
+									1.136705821321969608938755e+6L,
+									5.267964117437946917577538e+6L,
+									1.346701454311101692290052e+7L,
+									1.782736530353274213975932e+7L,
+									9.533095591844353613395747e+6L };
+
+/*******************************************************************************
+*     Coefficients for P4 in lgamma approximation over [4,12) in decreasing    *
+*     order.                                                                   *
+*******************************************************************************/
+
+static const long double d4L = 1.791759469228055000094023e+0L;
+
+static const long double p4L[8] = { 1.474502166059939948905062e+04L,
+									2.426813369486704502836312e+06L,
+									1.214755574045093227939592e+08L,
+									2.663432449630976949898078e+09L,
+									2.940378956634553899906876e+10L,
+									1.702665737765398868392998e+11L,
+									4.926125793377430887588120e+11L,
+									5.606251856223951465078242e+11L };
+
+/*******************************************************************************
+*     Coefficients for Q4 in gamma approximation over [4,12) in decreasing     *
+*     order.                                                                   *
+*******************************************************************************/
+
+static const long double q4L[8] = { 2.690530175870899333379843e+03L,
+									6.393885654300092398984238e+05L,
+									4.135599930241388052042842e+07L,
+									1.120872109616147941376570e+09L,
+									1.488613728678813811542398e+10L,
+									1.016803586272438228077304e+11L,
+									3.417476345507377132798597e+11L,
+									4.463158187419713286462081e+11L };
+                        
+/*******************************************************************************
+*     Coefficients for minimax approximation over [12, xbig].                  *
+*******************************************************************************/
+
+static const long double ccL[7] = { -1.910444077728e-03L,
+									8.4171387781295e-04L,
+								   -5.952379913043012e-04L,
+									7.93650793500350248e-04L,
+								   -2.777777777777681622553e-03L,
+									8.333333333333333331554247e-02L,
+									5.7083835261e-03L };
+
+static const long double xbiggerL		= 2.55e+305L;		// ????
+static const long double Root4xbigL		= 2.25e+76L;		// ????  //pow( xbiggerL, 0.25 )
+static const long double pnt68L			= 0.6796875e+0L;	
+
+static const long double twoTo63		= 0x1.0p+63L; // 4503599627370496.0;
+
+
+static inline long double lgammaApproxL ( long double x, int *psigngam );
+static inline long double lgammaApproxL ( long double x, int *psigngam )
+{
+      register int i;
+      register long double y, result, numerator, denominator, ysquared, 
+                      corrector, xMinus1, xMinus2, xMinus4; 
+      
+	  *psigngam = 1; 
+      
+/*******************************************************************************
+*     The next switch will decipher what sort of argument we have. If argument *
+*     is SNaN then a QNaN has to be returned and the invalid flag signaled.    * 
+*******************************************************************************/
+	
+	if( x != x )
+		return x + x;
+		
+	if( x == 0.0L )
+		return 1.0L / __builtin_fabsl( x );			//set div/0 return inf
+
+	if( __builtin_fabsl( x ) == __builtin_infl() )
+		return __builtin_fabsl( x );
+      
+/*******************************************************************************
+ *      For negative x, since (G is gamma function)
+ *		-x*G(-x)*G(x) = pi/sin(pi*x),
+ * 	we have
+ * 		G(x) = pi/(sin(pi*x)*(-x)*G(-x))
+ *	since G(-x) is positive, sign(G(x)) = sign(sin(pi*x)) for x<0
+ *	Hence, for x<0, signgam = sign(sin(pi*x)) and
+ *		lgamma(x) = log(|Gamma(x)|)
+ *			  = log(pi/(|x*sin(pi*x)|)) - lgamma(-x);
+ *******************************************************************************/
+
+	if ( x < 0.0L )
+	{
+		int dummy = 1; 	
+		register long double a, y1, fraction;
+            
+		if ( x <= -twoTo63 ) // big negative integer?
+			return x / -0.0L;
+                
+		y = - x;
+		y1 = truncl( y );
+		fraction = y - y1; // excess over the boundary
+            
+		if ( fraction == 0.0L ) // negative integer?
+			return x / -0.0L;
+		else {
+			a = sinl ( pi * fraction );
+			if ( y1 == truncl ( y1 * 0.5 ) * 2.0 ) // 0, 2, 4, ...
+				{
+				*psigngam = -1; /* Gamma(x) < 0 */ 
+				} // otherwise leave psigngam = 1
+            }
+			
+		return logl ( pi / __builtin_fabsl ( a * x ) ) - lgammaApproxL ( -x, &dummy );
+	}
+      
+/*******************************************************************************
+*     The argument is positive, if it is bigger than xbigger = 2.55e+305 then     *
+*     overflow.                                                                *
+*******************************************************************************/
+
+	if ( x > xbiggerL )
+		return x * 0x1.0p16383L;	//return inf, set overflow
+
+	y = x;
+
+/*******************************************************************************
+*     x <= eps then return the approximation log(x).                           *
+*******************************************************************************/
+
+	if ( y <= epsL )
+		return ( - logl ( y ) );
+
+/*******************************************************************************
+*     x is in (eps,1.5] then use d1, p1 and q1 coefficients.                   *
+*******************************************************************************/
+
+	else if ( y <= 1.5L )
+	{
+		if ( y < pnt68L )
+		{
+			corrector = - logl ( y );
+			xMinus1 = y;
+		}
+		else
+	    {
+			corrector = 0.0L;
+			xMinus1 = ( y - 0.5L ) - 0.5L;
+		}
+		
+		if ( ( y <= 0.5 ) || ( y >= pnt68L ) )
+		{
+			denominator = 1.0L;
+			numerator = 0.0L;
+			for ( i = 0; i < 8; i++ )
+			{
+				numerator = numerator * xMinus1 + p1L[i];
+				denominator = denominator * xMinus1 + q1L[i];
+			}
+			result = corrector + ( xMinus1 * ( d1L + xMinus1 * ( numerator / denominator ) ) );
+		}
+		else
+		{
+			xMinus2 = ( y - 0.5L ) - 0.5L;
+			denominator = 1.0L;
+			numerator = 0.0L;
+			for ( i = 0; i < 8; i++ )
+			{
+				numerator = numerator * xMinus2 + p2L[i];
+				denominator = denominator * xMinus2 + q2L[i];
+			}
+			result = corrector + ( xMinus2 * ( d2L + xMinus2 * ( numerator / denominator ) ) );
+		}
+	}
+
+/*******************************************************************************
+*     x is in (1.5,4.0] then use d2, p2 and q2 coefficients.                   *
+*******************************************************************************/
+
+	else if ( y <= 4.0L )
+	{
+		xMinus2 = y - 2.0L;
+		denominator = 1.0L;
+		numerator = 0.0L;
+		for ( i = 0; i < 8; i++ )
+		{
+			numerator = numerator * xMinus2 + p2L[i];
+			denominator = denominator * xMinus2 + q2L[i];
+		}
+		result = xMinus2 * ( d2L + xMinus2 * ( numerator / denominator ) );
+	}
+            
+/*******************************************************************************
+*     x is in (4.0,12.0] then use d4, p4 and q4 coefficients.                  *
+*******************************************************************************/
+
+	else if ( y <= 12.0L )
+	{
+		xMinus4 = y - 4.0L;
+		denominator = - 1.0L;
+		numerator = 0.0L;
+		for ( i = 0; i < 8; i++ )
+		{
+			numerator = numerator * xMinus4 + p4L[i];
+			denominator = denominator * xMinus4 + q4L[i];
+		}
+		result = d4L + xMinus4 * ( numerator / denominator );
+	}
+	else  /* ( y >= 12.0 ) */
+	{
+		result = 0.0L;
+		if ( y <= Root4xbigL )
+		{
+			result = ccL[6];
+			ysquared = y * y;
+			for ( i = 0; i < 6; i++ )
+				result = result / ysquared + ccL[i];
+		}
+		result /= y;
+		corrector = logl( y );
+		result += LogSqrt2piL - 0.5L * corrector;
+		result += y * ( corrector - 1.0L );
+	}
+      
+	x = rintl ( x ); // INEXACT set as a side effect for non integer x  
+	return result;
+}
+
+long double lgammal ( long double x ) //sets signgam as side effect
+{
+    return lgammaApproxL ( x, &signgam );
+}
+
+
 #pragma mark -
 
 /*******************************************************************************
@@ -691,7 +1143,7 @@ static const double qq[5] = { 2.56852019228982242e+0,
                        2.33520497626869185e-3 };
 
 static const double InvSqrtPI = 5.6418958354775628695e-1;
-static const double xxbig      = 27.2e+0;
+static const double xxbig      = 27.2e+0;		
 static const double Maximum   = 2.53e+307;
 static const double _HUGE      = 6.71e+7;
 
@@ -937,3 +1389,235 @@ static inline double ErrFunApprox ( double arg, double result, int which )
 		
 	return ( which ) ? result : ( 0.5 - result ) + 0.5;
 }
+
+
+/*******************************************************************************
+*     Coefficients for approximation to erf in [ -0.46875, 0.46875] in         *
+*     decreasing order.                                                        *
+*******************************************************************************/
+
+static const long double aL[5] = { 3.16112374387056560e+0L,
+								   1.13864154151050156e+2L,
+								   3.77485237685302021e+2L,
+								   3.20937758913846947e+3L,
+								   1.85777706184603153e-1L };
+                       
+static const long double bL[4] = {  2.36012909523441209e+1L,
+								   2.44024637934444173e+2L,
+								   1.28261652607737228e+3L,
+								   2.84423683343917062e+3L };
+				 
+/*******************************************************************************
+*     Coefficients for approximation to erfc in [-4.0,-0.46875)U(0.46875,4.0]  *
+*     in decreasing order.                                                     *
+*******************************************************************************/
+
+static const long double cccL[9] = {   5.64188496988670089e-1L,
+									   8.88314979438837594e+0L,
+									   6.61191906371416295e+1L,
+									   2.98635138197400131e+2L,
+									   8.81952221241769090e+2L,
+									   1.71204761263407058e+3L,
+									   2.05107837782607147e+3L,
+									   1.23033935479799725e+3L,
+									   2.15311535474403846e-8L };
+
+static const long double dL[8] = { 1.57449261107098347e+1L,
+								   1.17693950891312499e+2L,
+								   5.37181101862009858e+2L,
+								   1.62138957456669019e+3L,
+								   3.29079923573345963e+3L,
+								   4.36261909014324716e+3L,
+								   3.43936767414372164e+3L,
+								   1.23033935480374942e+3L };
+                       
+/*******************************************************************************
+*    Coefficients for approximation to  erfc in [-inf,-4.0)U(4.0,inf] in       *
+*    decreasing order.                                                         *
+*******************************************************************************/
+
+static const long double ppL[6] = { 3.05326634961232344e-1L,
+								   3.60344899949804439e-1L,
+								   1.25781726111229246e-1L,
+								   1.60837851487422766e-2L,
+								   6.58749161529837803e-4L,
+								   1.63153871373020978e-2L };
+
+static const long double qqL[5] = { 2.56852019228982242e+0L,
+								   1.87295284992346047e+0L,
+								   5.27905102951428412e-1L,
+								   6.05183413124413191e-2L,
+								   2.33520497626869185e-3L };
+
+static const long double InvSqrtPIL = 5.6418958354775628695e-1L;
+static const long double xxbigL      = 108.7;						// a bit larger than sqrt( ln( LDBL_MAX) )
+static const long double MaximumL   = ( 2.53e+307L / DBL_MAX ) * LDBL_MAX;
+static const long double _HUGEL      = 6.71e+7L;			// This appears to not be used because which is always 0 or 1
+
+static inline long double ErrFunApproxL ( long double arg, long double result, int which ) ALWAYS_INLINE;
+
+static inline long double ErrFunApproxL ( long double arg, long double result, int which ) 
+{
+	register int i;
+	register long double x, y, ysquared, numerator, denominator, del; 
+
+	x = arg;
+	y = __builtin_fabsl ( x );
+
+/*******************************************************************************
+*      Evaluate  erfc  for |x| <= 0.46875.                                     *
+*******************************************************************************/
+
+	if ( y <= 0.46875e+0L )
+	{
+		ysquared = 0.0L;
+		if ( y > LDBL_EPSILON / 2.0L )
+			ysquared = y * y;
+		numerator = aL[4] * ysquared;
+		denominator = ysquared;
+		for ( i = 0; i < 3; i++ )
+		{
+			numerator = ( numerator + aL[i] ) * ysquared;
+			denominator = ( denominator + bL[i] ) * ysquared;
+		}
+		result = y * ( numerator + aL[3] ) / ( denominator + bL[3] );
+		if ( which )
+			result = 1.0L - result;
+		return result;
+	}
+
+/*******************************************************************************
+*      Evaluate  erfc  for 0.46875 < |x| <= 4.0                                *
+*******************************************************************************/
+      
+	else if ( y <= 4.0 )
+	{
+		numerator = cccL[8] * y;
+		denominator = y;
+		for ( i = 0; i < 7; i++ )
+		{
+			numerator = ( numerator + cccL[i] ) * y;
+			denominator = ( denominator + dL[i] ) * y;
+		}
+		result = ( numerator + cccL[7] ) / ( denominator + dL[7] );
+		ysquared = trunc ( y * 16.0L ) / 16.0L;
+		del = ( y - ysquared ) * ( y + ysquared );
+		result = expl ( - ysquared * ysquared ) * expl ( - del ) * result;
+	}
+
+/*******************************************************************************
+*      Evaluate  erfc  for |x| > 4.0                                           *
+*******************************************************************************/
+      
+	else
+	{
+		if ( y >= xxbigL )
+		{
+			if ( ( which != 2 ) || ( y >= MaximumL ) )
+			{
+				if ( which == 1 )
+				{
+					long double oldresult = result;
+					result *= 0x1.0000000000001p-16382L;
+					result *= 0x1.0000000000001p-16382L;
+					result *= 0x1.0000000000001p-16382L;			//set underflow
+					result += oldresult;
+				}
+
+				return result;
+			}
+			if ( y >= _HUGEL )
+			{
+				result = InvSqrtPIL / y;
+				return result;
+			}
+		}
+		ysquared = 1.0L / ( y * y );
+		numerator = ppL[5] * ysquared;
+		denominator = ysquared;
+		for ( i = 0; i < 4; i++ )
+		{
+			numerator = ( numerator + ppL[i] ) * ysquared;
+			denominator = ( denominator + qqL[i] ) * ysquared;
+		}
+		result = ysquared * ( numerator + ppL[4] ) / ( denominator + qqL[4] );
+		result = ( InvSqrtPIL - result ) / y;
+		ysquared = trunc ( y * 16.0L ) / 16.0L;
+		del = ( y - ysquared ) * ( y + ysquared );
+		result = expl ( - ysquared * ysquared ) * expl ( - del ) * result;
+	}
+      
+/*******************************************************************************
+*     if the calling function is erf instead of erfc, take care of the		 *
+*     underserved underflow.  otherwise, the computation will produce the	 *
+*	exception for erfc.                                                      *
+*******************************************************************************/
+
+		
+	return ( which ) ? result : ( 0.5L - result ) + 0.5L;
+}
+
+long double erfl ( long double x )
+{
+	register int which = 0;
+	register long double result = 0.0L;
+      
+/*******************************************************************************
+*     The next switch will decipher what sort of argument we have. If argument *
+*     is SNaN then a QNaN has to be returned and the invalid flag signaled.    * 
+*******************************************************************************/
+
+	if( x != x )
+		return x + x;
+
+	if( x == 0.0L )
+		return x;
+
+	if( __builtin_fabsl(x) == __builtin_infl() )
+		return x > 0.0L ? 1.0L : -1.0L;
+
+      result = 1.0L;
+      result = ErrFunApproxL ( x, result, which );
+
+/*******************************************************************************
+*      Take care of the negative argument.                                     *
+*******************************************************************************/
+
+	return x < 0 ? -result : result;
+}
+
+
+long double erfcl ( long double x )
+{
+	register int which = 1;
+	register long double result = 0.0L;
+      
+      
+/*******************************************************************************
+*     The next switch will decipher what sort of argument we have. If argument *
+*     is SNaN then a QNaN has to be returned and the invalid flag signaled.    * 
+*******************************************************************************/
+
+	if( x != x )
+		return x + x;			//silence NaNs
+		
+	if( x == 0.0L )
+		return 1.0L;
+	
+	if( __builtin_fabsl(x) == __builtin_infl() )
+		return x > 0.0L ? 0.0L : 2.0L;
+
+	
+	result = 0.0L;
+	result = ErrFunApproxL ( x, result, which );
+
+/*******************************************************************************
+*      Take care of the negative argument.                                     *
+*******************************************************************************/
+
+	if ( x < 0.0L )
+		result = 2.0L - result;
+      
+	return ( result );
+}
+

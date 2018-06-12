@@ -62,7 +62,7 @@
 #include "stdint.h"
 
 __private_extern__
-const uint32_t ExpTableLD[] = {
+const uint32_t ExpTableLD[] __attribute__ ((aligned(8))) = {
 
    0xBFD7FFFF, 0xFFF78346,    0x3FE5FE46, 0x15EC7934,    0xBBA5D094, 0x3F817397,
    0xBFD6FFFF, 0xFFFFAA8D,    0x3FE656F0, 0x0BF5973E,    0x3B9DDE0B, 0xAFD470C5,

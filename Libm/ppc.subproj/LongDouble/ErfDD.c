@@ -46,7 +46,7 @@ long double _ExpInnerLD(double alpha, double beta, double gamma,
 
 //  real*8 erfxtr(0:2)
 //  FORTRAN: erfxtr(i)    C: erfxtr[i]
-static const uint32_t erfxtrData[] = {
+static const uint32_t erfxtrData[] __attribute__ ((aligned(8))) = {
 	0x00000000, 0x00000000,
 	0xB9155555, 0x55555555,
 	0x38F99999, 0x9999999A
@@ -54,7 +54,7 @@ static const uint32_t erfxtrData[] = {
 
 //  real*8 erfpow(1:2, 0:21)
 //  FORTRAN: erfpow(i,j)   C: erfpow[j][i-1]
-static const uint32_t erfpowData[] = {
+static const uint32_t erfpowData[] __attribute__ ((aligned(8))) = {
 	0x3FF00000, 0x00000000,   0x00000000, 0x00000000,
 	0xBFD55555, 0x55555555,   0xBC755555, 0x55555555,
 	0x3FB99999, 0x9999999A,   0xBC599999, 0x9999999A,
@@ -81,7 +81,7 @@ static const uint32_t erfpowData[] = {
 
 //  real*8 coeff(2,0:28,8)
 //  FORTRAN: coeff(i,j,k)   C: coeff[k][j][i-1]
-static const uint32_t coeffData[] = {
+static const uint32_t coeffData[] __attribute__ ((aligned(8))) = {
 	0x3FEFFFFF, 0xF87B4F81,   0xBC74B6DC, 0x82E2B33B,
 	0xBFDFFFF9, 0x651B9CCD,   0xBC77993A, 0x7E74C502,
 	0x3FE7FF4C, 0x63E2B209,   0x3C607D84, 0x888EE934,

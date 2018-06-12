@@ -4,6 +4,8 @@
 //  Basic types used internally in xmmLibm
 //
 
+#ifndef __XMMLIBM_PREFIX_H__
+#define	__XMMLIBM_PREFIX_H__
 
 #include <stdint.h>
 
@@ -32,6 +34,7 @@ typedef union
 
 #if defined( __i386__ ) || defined( __x86_64__ )
     #include <xmmintrin.h>
+    #include <emmintrin.h>
 
     #define DEFAULT_MXCSR   0x1F80
     #define INVALID_FLAG    0x0001
@@ -118,7 +121,16 @@ typedef union
 
     #define _mm_cvtsi64_si128( x )      ({ int64_t _x = x; xSInt64 _r; asm volatile( "movq %1, %0" : "=x" (_r) : "m" (*&_x)); _r })
 
+	#define REQUIRED_ADD_sd( _x, _y )	({ xDouble __x = _x; xDouble __y = _y; asm volatile( "addsd %1, %0" : "+x" (__x ) : "x" (__y)); /*return*/ __x; }) 
+	#define REQUIRED_MULTIPLY_sd( _x, _y )	({ xDouble __x = _x; xDouble __y = _y; asm volatile( "mulsd %1, %0" : "+x" (__x ) : "x" (__y)); /*return*/ __x; }) 
+	#define SET_INVALID_FLAG()          { __m128d __x = _mm_setzero_pd(); __asm__ __volatile__( "pcmpeqd %0, %0 \n\t cmpltsd %0, %0" : "+x" (__x) ); }
+
+#if defined( __SSE3__ )
     #define CVTTLD_SI64( _ld )          ({ long double _x = _ld; int64_t _r; asm( "fldt %1 \n\t fisttpll %0" : "=m" (*&_r): "m" (*&_x) ); /*return*/ _r; })
+#else
+    #warning SSE3 disabled
+    static inline int64_t CVTTLD_SI64( long double ld ){ return (int64_t) ld; }
+#endif
     #define CVTLD_SI64( _ld )          ({ long double _x = _ld; int64_t _r; asm( "fldt %1 \n\t fistpll %0" : "=m" (*&_r): "m" (*&_x) ); /*return*/ _r; })
 
     #define EXPECT_TRUE( _a )           __builtin_expect( (_a), 1 ) 
@@ -134,3 +146,4 @@ typedef union
     #define ALWAYS_INLINE   __attribute__ ((always_inline))
 #endif
 
+#endif /* __XMMLIBM_PREFIX_H__ */

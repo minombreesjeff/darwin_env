@@ -84,7 +84,7 @@ static const double atancoeff[15] = {
 	  5019589575.0
 };
 
-static const uint32_t atanTable[] = {
+static const uint32_t atanTable[] __attribute__ ((aligned(8))) = {
 
 	//*******************************************************************
 	//	  Accurate table over range (	.093750,   .984375).            *

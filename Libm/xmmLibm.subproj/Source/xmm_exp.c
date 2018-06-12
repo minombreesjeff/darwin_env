@@ -318,7 +318,7 @@ static inline double _xexpm1( double _x )
 		if( M >= 1024 )	//overflow
 		{
 			x = _mm_set_sd (0x1.0p1023);
-			return XDOUBLE_2_DOUBLE( _mm_add_sd( x, x ) );  //Note that simpler C syntax here is optimized away resulting in missing overflow flag.
+			return XDOUBLE_2_DOUBLE( REQUIRED_ADD_sd( x, x ) );  //Note that simpler C syntax here is optimized away resulting in missing overflow flag.
 		}
 		else if( M >= 53 )
 		{

@@ -49,7 +49,7 @@
 ****************************************************************************/
 
 #pragma option nomaf
-#pragma fenv_access on
+#pragma STDC FENV_ACCESS ON
 
 #include "math.h"
 #include "complex.h"
@@ -503,7 +503,7 @@ static long double cssqsl ( long double complex z, int *k)
    return (rho);
 }
 #endif   
-   
+
 /****************************************************************************
    double complex csqrt(double complex z) returns the complex square root of its argument.
    The algorithm, which is from the Kahan paper, uses the following 
@@ -518,6 +518,8 @@ static long double cssqsl ( long double complex z, int *k)
    
    Calls:  cssqs, scalb, fabs, sqrt, copysign.
 ****************************************************************************/
+
+#if (defined(__ppc__) || defined(__ppc64__))
 
 double complex csqrt ( double complex z )   
 {
@@ -537,13 +539,13 @@ double complex csqrt ( double complex z )
       rho = rho + rho;
    }
    
-   rho = scalbn(sqrt(rho),k);            /* sqrt((|Real(z)| + |z|)/2) */
+   rho = scalbn(sqrt(rho),k);           /* sqrt((|Real(z)| + |z|)/2) */
    x = rho;
    y = Imag(z);
    
    if (rho != 0.0) {
       if (fabs(y) != INFINITY)
-         y = (y/rho)*0.5;          /* signbit(Imag(z))*sqrt((|z|-|Real(z)|)/2 */
+         y = (y/rho)*0.5;								/* signbit(Imag(z))*sqrt((|z|-|Real(z)|)/2 */
       if (Real(z) < 0.0) {
          x = fabs(y);
          y = copysign(rho,Imag(z));
@@ -573,13 +575,13 @@ float complex csqrtf ( float complex z )
       rho = rho + rho;
    }
    
-   rho = scalbnf(sqrtf(rho),k);            /* sqrt((|Real(z)| + |z|)/2) */
+   rho = scalbnf(sqrtf(rho),k);         /* sqrt((|Real(z)| + |z|)/2) */
    x = rho;
    y = Imag(z);
    
    if (rho != 0.0f) {
       if (fabsf(y) != INFINITY)
-         y = (y/rho)*0.5f;          /* signbit(Imag(z))*sqrt((|z|-|Real(z)|)/2 */
+         y = (y/rho)*0.5f;							/* signbit(Imag(z))*sqrt((|z|-|Real(z)|)/2 */
       if (Real(z) < 0.0f) {
          x = fabsf(y);
          y = copysignf(rho,Imag(z));
@@ -630,6 +632,297 @@ long double complex csqrtl ( long double complex z )
 }
 #endif
 
+#else // Intel csqrt code
+/* New Intel code written 9/26/06 by scanon
+ * Uses extra precision to compute |z| instead of cssqs(), saving environment calls.
+ * Note that we could also rescale using bits of the SSE2 code from ian's original intel hypot() routine, and will probably
+ * want to do exactly that in the future, to move away from using x87 for this.
+ */
+
+double complex csqrt ( double complex z )   
+{
+	static const double inf = __builtin_inf();
+	double u,v;
+	
+	// Special case for infinite y:
+	if (__builtin_fabs(Imag(z)) == inf)
+		return inf + I*Imag(z);				// csqrt(x ± i°) = ° ± i° for all x, including NaN.
+	
+	// Special cases for y = NaN:
+	if (Imag(z) != Imag(z)) {
+		if (Real(z) != Real(z))				// csqrt(NaN + iNaN) = NaN + iNaN, quietly. 
+			return z; 
+		else if (Real(z) == inf)			// csqrt(° + iNaN) = ° + iNaN
+			return z; 
+		else if (Real(z) == -inf)			// csqrt(-° ± iNaN) = NaN ± i°.
+			return Imag(z) + I*copysign(inf,Imag(z));
+		else {								// csqrt(x + iNaN) = NaN + iNaN if x is finite.
+			return Imag(z) + I*Imag(z);
+		}
+	}
+	
+	// At this point, we know that y is finite.  Deal with special cases for x:
+	// Special case for x = NaN:
+	if (Real(z) != Real(z)) {				// csqrt(NaN + ix) = NaN + iNaN.
+		return Real(z) + I*copysign(Real(z),Imag(z));
+	}
+	
+	// Special cases for x = 0:
+	if (Real(z) == 0.0) {
+		if (Imag(z) == 0.0)					// csqrt(±0 + i0) = 0 + i0, csqrt(±0 - i0) = 0 - i0.
+			return I*Imag(z); 
+		else {								// csqrt(0 ± iy) = sqrt(y/2) ± i sqrt(y/2).
+			u = __builtin_sqrt(0.5*__builtin_fabs(Imag(z)));
+			return u + I*copysign(u, Imag(z) );
+		}
+	}
+	
+	// Special cases for infinte x:
+	if (Real(z) == inf)						// csqrt(° ± iy) = ° ± i0 for finite y.
+		return inf + I*copysign(0.0,Imag(z));
+	if (Real(z) == -inf)					// csqrt(-° ± iy) = 0 ± i° for finite y.
+		return I*copysign(inf,Imag(z));
+	
+	// At this point, we know that x is finite, non-zero and y is finite.
+	else {
+		// We use extended (80-bit) precision to avoid over- or under-flow in computing |z|.
+		long double x = __builtin_fabsl(Real(z));
+		long double y = Imag(z);
+		
+		/* Compute
+		 *         +----------------                       +----------------
+		 *         |  |z| + |Re z|               Im z      |  |z| - |Re z|
+		 *    u =  | --------------         v = ------ = ± | --------------
+		 *        \|       2                      2u      \|       2
+		 *
+		 * There is no risk of drastic loss of precision due to cancellation using these formulas,
+		 * as there would be if we used the second expression (involving the square root) for v.
+		 *
+		 * Overflow or Underflow is possible, but only if the actual result does not fit in double width.
+		 */
+		u = (double)__builtin_sqrtl(0.5L*(__builtin_sqrtl(x*x + y*y) + x));
+		v = 0.5 * (Imag(z) / u);
+		
+		/* If x < 0, then sqrt(z) = |v| + I*copysign(u, Im z).
+		 * Otherwise, sqrt(z) = u + I*v.
+		 */
+		if (Real(z) < 0.0) {
+			return __builtin_fabs(v) + I*copysign(u,Imag(z));
+		} else {
+			return u + I*v;
+		}
+	}
+}
+
+float complex csqrtf ( float complex z )   
+{
+	static const float inf = __builtin_inff();
+	float u,v;
+	
+	// Special case for infinite y:
+	if (__builtin_fabsf(Imag(z)) == inf)
+		return inf + I*Imag(z);			// csqrt(x ± i°) = ° ± i° for all x, including NaN.
+	
+	// Special cases for y = NaN:
+	if (Imag(z) != Imag(z)) {
+		if (Real(z) != Real(z))			// csqrt(NaN + iNaN) = NaN + iNaN, quietly. 
+			return z; 
+		else if (Real(z) == inf)		// csqrt(° + iNaN) = ° + iNaN
+			return z; 
+		else if (Real(z) == -inf)		// csqrt(-° ± iNaN) = NaN ± i°.
+			return Imag(z) + I*copysignf(inf,Imag(z));
+		else {							// csqrt(x + iNaN) = NaN + iNaN if x is finite.
+			return Imag(z) + I*Imag(z);
+		}
+	}
+	
+	// At this point, we know that y is finite.  Deal with special cases for x:
+	// Special case for x = NaN:
+	if (Real(z) != Real(z)) {			// csqrt(NaN + ix) = NaN + iNaN.
+		return Real(z) + I*copysignf(Real(z),Imag(z));
+	}
+	
+	// Special cases for x = 0:
+	if (Real(z) == 0.0f) {
+		if (Imag(z) == 0.0f)			// csqrt(±0 + i0) = 0 + i0, csqrt(±0 - i0) = 0 - i0.
+			return I*Imag(z); 
+		else {							// csqrt(0 ± iy) = sqrt(y/2) ± i sqrt(y/2).
+			u = __builtin_sqrtf(0.5f*__builtin_fabsf(Imag(z)));
+			return u + I*copysign(u, Imag(z) );
+		}
+	}
+	
+	// Special cases for infinte x:
+	if (Real(z) == inf)					// csqrt(° ± iy) = ° ± i0 for finite y.
+		return inf + I*copysign(0.0f,Imag(z));
+	if (Real(z) == -inf)				// csqrt(-° ± iy) = 0 ± i° for finite y.
+		return I*copysign(inf,Imag(z));
+	
+	// At this point, we know that x is finite, non-zero and y is finite.
+	else {
+		// We use double (64-bit) precision to avoid over- or under-flow in computing |z|.
+		double x = __builtin_fabs(Real(z));
+		double y = Imag(z);
+		
+		/* Compute
+		 *         +----------------                       +----------------
+		 *         |  |z| + |Re z|               Im z      |  |z| - |Re z|
+		 *    u =  | --------------         v = ------ = ± | --------------
+		 *        \|       2                      2u      \|       2
+		 *
+		 * There is no risk of drastic loss of precision due to cancellation using these formulas,
+		 * as there would be if we used the second expression (involving the square root) for v.
+		 *
+		 * Overflow or Underflow is possible, but only if the actual result does not fit in double width.
+		 */
+		u = (float)__builtin_sqrt(0.5*(__builtin_sqrt(x*x + y*y) + x));
+		v = 0.5f * (Imag(z) / u);
+		
+		/* If x < 0, then sqrt(z) = |v| + I*copysign(u, Im z).
+		 * Otherwise, sqrt(z) = u + I*v.
+		 */
+		if (Real(z) < 0.0f) {
+			return __builtin_fabsf(v) + I*copysignf(u,Imag(z));
+		} else {
+			return u + I*v;
+		}
+	}	
+}
+
+typedef union
+{
+	long double ld;
+	struct
+	{
+		uint64_t	mantissa;
+		int16_t		sexp;
+	};
+}ld_parts;
+
+long double complex csqrtl ( long double complex z )  {
+	
+	static const long double inf = __builtin_infl();
+	static const long double zero = 0.0l;
+	static const long double half = 0.5l;
+	long double u,v;
+	
+	// Special case for infinite y:
+	if (__builtin_fabsl(Imag(z)) == inf)
+		return inf + I*Imag(z);				// csqrt(x ± i°) = ° ± i° for all x, including NaN.
+	
+	// Special cases for y = NaN:
+	if (Imag(z) != Imag(z)) {
+		if (Real(z) != Real(z))				// csqrt(NaN + iNaN) = NaN + iNaN, quietly. 
+			return z; 
+		else if (Real(z) == inf)			// csqrt(° + iNaN) = ° + iNaN
+			return z; 
+		else if (Real(z) == -inf)			// csqrt(-° ± iNaN) = NaN ± i°.
+			return Imag(z) + I*copysignl(inf,Imag(z));
+		else {								// csqrt(x + iNaN) = NaN + iNaN if x is finite.
+			return Imag(z) + I*Imag(z);
+		}
+	}
+			
+	// Special cases for y = 0:
+	if (Imag(z) == zero) {
+		if (Real(z) == zero)					// csqrt(±0 + i0) = 0 + i0, csqrt(±0 - i0) = 0 - i0.
+			return I*Imag(z);
+		else {
+			u = __builtin_sqrtl(__builtin_fabsl(Real(z)));
+			if (Real(z) < zero)
+				return zero + I*copysignl(u,Imag(z));
+			else
+				return u + I*copysign(zero,Imag(z));
+		}
+	}
+	
+	// At this point, we know that y is finite.  Deal with special cases for x:
+	// Special case for x = NaN:
+	if (Real(z) != Real(z)) {				// csqrt(NaN + ix) = NaN + iNaN.
+		return Real(z) + I*copysignl(Real(z),Imag(z));
+	}
+	
+	// Special cases for x = 0:
+	if (Real(z) == zero) {
+		// csqrt(0 ± iy) = sqrt(y/2) ± i sqrt(y/2).
+		u = __builtin_sqrtl(half*__builtin_fabsl(Imag(z)));
+		return u + I*copysignl(u, Imag(z) );
+	}
+	
+	// Special cases for infinte x:
+	if (Real(z) == inf)						// csqrt(° ± iy) = ° ± i0 for finite y.
+		return inf + I*copysignl(zero,Imag(z));
+	if (Real(z) == -inf)					// csqrt(-° ± iy) = 0 ± i° for finite y.
+		return I*copysignl(inf,Imag(z));
+	
+	// At this point, we know that x and y are finite, non-zero.
+	else {
+		long double x = __builtin_fabsl(Real(z));
+		long double y = __builtin_fabsl(Imag(z));
+		
+		/* Compute
+		 *         +----------------                       +----------------
+		 *         |  |z| + |Re z|               Im z      |  |z| - |Re z|
+		 *    u =  | --------------         v = ------ = ± | --------------
+		 *        \|       2                      2u      \|       2
+		 *
+		 * There is no risk of drastic loss of precision due to cancellation using these formulas,
+		 * as there would be if we used the second expression (involving the square root) for v.
+		 *
+		 */
+		
+		ld_parts *large = (ld_parts*) &x;
+		ld_parts *small = (ld_parts*) &y;
+		if (large->ld < small->ld) {
+			ld_parts *p = large;
+			large = small;
+			small = p;
+		}
+		int lexp = large->sexp;
+		int sexp = small->sexp;
+		if( lexp == 0 )
+		{
+			large->ld = large->mantissa;
+			lexp = large->sexp - 16445;
+		}
+		if( sexp == 0 )
+		{
+			small->ld = small->mantissa;
+			sexp = small->sexp - 16445;
+		}
+		large->sexp = 0x3fff;
+		int scale = 0x3fff - lexp;
+		int small_scale = sexp + scale;
+		if( small_scale < 64 )
+			small_scale = 64;
+		small->sexp = small_scale;
+		
+		u = sqrtl( large->ld * large->ld + small->ld * small->ld ) + x;
+		if (scale%2)
+			scale = 0x3fff - (scale + 1)/2;
+		else {
+			scale = 0x3fff - (scale/2 + 1);
+			u = u + u;
+		}
+		u = sqrtl(u);
+		large->sexp  = scale;
+		large->mantissa = 0x8000000000000000ULL;
+		u *= large->ld;
+		
+		v = Imag(z) / (2.0l * u);
+		
+		/* If x < 0, then sqrt(z) = |v| + I*copysign(u, Im z).
+		 * Otherwise, sqrt(z) = u + I*v.
+		 */
+		if (Real(z) < zero) {
+			return __builtin_fabsl(v) + I*copysignl(u,Imag(z));
+		} else {
+			return u + I*v;
+		}
+	}
+}
+
+#endif
 
 /****************************************************************************
    double complex clog(double complex z) returns the complex natural logarithm of its

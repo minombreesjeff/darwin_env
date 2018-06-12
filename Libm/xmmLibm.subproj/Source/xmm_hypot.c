@@ -12,6 +12,19 @@
 
 double hypot( double x, double y )
 {
+	/* New code, uses the x87 to compute
+	 *
+	 */
+	static const long double inf = __builtin_inf();
+	long double X = __builtin_fabsl(x);
+	long double Y = __builtin_fabsl(y);
+	if ( X == inf || Y == inf )
+		return (double)inf;
+	return (double)__builtin_sqrtl(X*X + Y*Y);
+	
+	/* old xmm code; this has been replaced with the faster x87 code.
+	 *
+	 *
     static const double oneD = 1.0;
     static const double infinity = __builtin_inf();
 	static const double minNormalD = 0x1.0p-1022;
@@ -93,12 +106,19 @@ double hypot( double x, double y )
 	scaledL = _mm_mul_sd( scaledL, (xDouble) correction1 );					//scale part way, this is exact
 	scaledL = _mm_mul_sd( scaledL, (xDouble) scale );						//scale the rest of the way. This may trigger overflow, underflow, inexact
 			
-	return XDOUBLE_2_DOUBLE( scaledL );
+	return XDOUBLE_2_DOUBLE( scaledL );		*/
 }
 
 float hypotf( float x, float y )
 {
-    static const float oneF = 1.0f;
+  static const double inf = __builtin_inf();
+	double X = __builtin_fabs(x);
+	double Y = __builtin_fabs(y);
+	if ( X == inf || Y == inf )
+		return (float)inf;
+	return (float)__builtin_sqrt(X*X + Y*Y);
+/* old code; this has been replaced with the above code which promotes to double.
+  static const float oneF = 1.0f;
     static const float infinity = __builtin_inff();
 	static const float minNormalF = 0x1.0p-126f;
 	static const xSInt32 smallF = { 0x21800000, 0, 0, 0};	//0x1.0p-60
@@ -179,7 +199,7 @@ float hypotf( float x, float y )
 	scaledL = _mm_mul_ss( scaledL, (xFloat) correction1 );					//scale part way, this is exact
 	scaledL = _mm_mul_ss( scaledL, (xFloat) scale );						//scale the rest of the way. This may trigger overflow, underflow, inexact
 			
-	return XFLOAT_2_FLOAT( scaledL );
+	return XFLOAT_2_FLOAT( scaledL ); */
 }
 
 typedef union

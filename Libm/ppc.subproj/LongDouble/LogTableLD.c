@@ -61,7 +61,7 @@
 #include "stdint.h"
 
 __private_extern__
-const uint32_t LogTableLD[] = {
+const uint32_t LogTableLD[]  __attribute__ ((aligned(8))) = {
 
    0x3FF02000, 0x00026746,   0x3FEFC07F, 0x01F74C65,   0x3F7FE02A, 0x6D72E887,   0x3B3F98BF, 0x5125A0D9,
    0x3FF06000, 0x000C15E4,   0x3FEF4465, 0x9E332ED4,   0x3F97B91B, 0x0AC9738C,   0x3B56E8A1, 0xB39F02BA,  
