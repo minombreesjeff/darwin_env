@@ -1,0 +1,22 @@
+<plist version="1.0">
+<dict>
+	<key>OpenSourceProject</key>
+	<string>libpcap</string>
+	<key>OpenSourceVersion</key>
+	<string>0.9.4</string>
+	<key>OpenSourceWebsiteURL</key>
+	<string>http://www.tcpdump.org/</string>
+	<key>OpenSourceURL</key>
+	<string>http://www.tcpdump.org/release/libpcap-0.9.4.tar.gz</string>
+	<key>OpenSourceMD5</key>
+	<string>79025766e8027df154cb1f32de8a7974</string>
+	<key>OpenSourceSHA1</key>
+	<string>046f7624e66da51eba1ed2cb169695d1e7f31c29</string>
+	<key>OpenSourceImportDate</key>
+	<string>2005-10-06</string>
+	<key>OpenSourceLicense</key>
+	<string>BSD</string>
+	<key>OpenSourceLicenseFile</key>
+	<string>LICENSE</string>
+</dict>
+</plist>
