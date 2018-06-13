@@ -302,7 +302,6 @@ void IONetworkInterface::free()
 
 bool IONetworkInterface::isPrimaryInterface() const
 {
-#if defined(__ppc__)
     IOService * provider  = getController();
     bool        isPrimary = false;
 
@@ -316,9 +315,6 @@ bool IONetworkInterface::isPrimaryInterface() const
     }
 
     return isPrimary;
-#else
-    return false;
-#endif
 }
 
 //---------------------------------------------------------------------------

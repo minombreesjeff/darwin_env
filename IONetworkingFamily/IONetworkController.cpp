@@ -1422,7 +1422,7 @@ static void _logMbuf(struct mbuf * m)
 #endif /* 0 */
 
 //---------------------------------------------------------------------------
-// Allocate and attache a new IOKernelDebugger client object.
+// Allocate and attach a new IOKernelDebugger client object.
 //
 // debuggerP: A handle that is updated by this method
 //            with the allocated IOKernelDebugger instance.
@@ -1433,7 +1433,16 @@ bool IONetworkController::attachDebuggerClient(IOKernelDebugger ** debugger)
 {
     IOKernelDebugger * client;
     bool               ret = false;
+	UInt32 debugArg=0;
 
+	// don't attach any debugger if kernel debugging isn't even enabled.
+	PE_parse_boot_arg( "debug", &debugArg );
+	if(debugArg == 0)
+	{
+		*debugger = 0;
+		return false;
+	}
+	
     // Prepare the controller.
 
     if (executeCommand(this, &IONetworkController::handleCommand,
