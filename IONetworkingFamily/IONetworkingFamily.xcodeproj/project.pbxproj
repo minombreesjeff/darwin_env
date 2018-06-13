@@ -90,7 +90,7 @@
 /* Begin PBXBundleTarget section */
 		089C1673FE841209C02AAC07 /* IONetworkingFamily */ = {
 			isa = PBXBundleTarget;
-			buildConfigurationList = DA42074E09D349F500A4FDA9 /* Build configuration list for PBXBundleTarget "IONetworkingFamily" */;
+			buildConfigurationList = DAD9E1EB09D4A8C0006678D2 /* Build configuration list for PBXBundleTarget "IONetworkingFamily" */;
 			buildPhases = (
 				06AA1267FFB2110C11CA28AA /* ShellScript */,
 				089C1674FE841209C02AAC07 /* Headers */,
@@ -108,7 +108,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IONetworkingFamily;
-				MODULE_VERSION = 1.5.1;
+				MODULE_VERSION = 1.5.0;
 				OTHER_CFLAGS = "-D__MBUF_TRANSITION_";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -137,7 +137,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IONetworkingFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>Version 1.5.1, Copyright 2000-2006 Apple Computer, Inc.</string>
+	<string>Version 1.6.0, Copyright 2000-2006 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -149,11 +149,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.5.1</string>
+	<string>1.6.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.5.1</string>
+	<string>1.6.0</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IONetworkStack</key>
@@ -290,7 +290,7 @@
 		B91BF40800CFEA6808CA29FD /* IOGatedOutputQueue.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOGatedOutputQueue.h; sourceTree = "<group>"; };
 		B91BF40A00CFEA6808CA29FD /* IONetworkStats.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IONetworkStats.h; sourceTree = "<group>"; };
 		B93FC6B0023527E308CA29FD /* IONetworkControllerPrivate.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IONetworkControllerPrivate.h; sourceTree = "<group>"; };
-		B9B7C75000CFEC3008CA29FD /* IONetworkingFamily Headers */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = "IONetworkingFamily Headers"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B9B7C75000CFEC3008CA29FD /* IONetworkingFamily Headers */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = "IONetworkingFamily Headers"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -414,7 +414,7 @@
 /* Begin PBXProject section */
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
-			buildConfigurationList = DA42075209D349F500A4FDA9 /* Build configuration list for PBXProject "IONetworkingFamily" */;
+			buildConfigurationList = DAD9E1EF09D4A8C0006678D2 /* Build configuration list for PBXProject "IONetworkingFamily" */;
 			buildSettings = {
 			};
 			buildStyles = (
@@ -532,7 +532,7 @@
 /* Begin PBXToolTarget section */
 		B9B7C75100CFEC3008CA29FD /* InstallHeaders */ = {
 			isa = PBXToolTarget;
-			buildConfigurationList = DA42074A09D349F500A4FDA9 /* Build configuration list for PBXToolTarget "InstallHeaders" */;
+			buildConfigurationList = DAD9E1E709D4A8C0006678D2 /* Build configuration list for PBXToolTarget "InstallHeaders" */;
 			buildPhases = (
 				B9B7C75200CFEC3008CA29FD /* Headers */,
 				B9B7C75300CFEC3008CA29FD /* Sources */,
@@ -567,7 +567,7 @@
 /* End PBXToolTarget section */
 
 /* Begin XCBuildConfiguration section */
-		DA42074B09D349F500A4FDA9 /* Development */ = {
+		DAD9E1E809D4A8C0006678D2 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = NO;
@@ -593,7 +593,7 @@
 			};
 			name = Development;
 		};
-		DA42074C09D349F500A4FDA9 /* Deployment */ = {
+		DAD9E1E909D4A8C0006678D2 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
@@ -615,7 +615,7 @@
 			};
 			name = Deployment;
 		};
-		DA42074D09D349F500A4FDA9 /* Default */ = {
+		DAD9E1EA09D4A8C0006678D2 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				INSTALLHDRS_COPY_PHASE = YES;
@@ -634,7 +634,7 @@
 			};
 			name = Default;
 		};
-		DA42074F09D349F500A4FDA9 /* Development */ = {
+		DAD9E1EC09D4A8C0006678D2 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = NO;
@@ -649,7 +649,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IONetworkingFamily;
-				MODULE_VERSION = 1.5.1;
+				MODULE_VERSION = 1.6.0;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "-D__MBUF_TRANSITION_";
 				OTHER_LDFLAGS = "";
@@ -666,7 +666,7 @@
 			};
 			name = Development;
 		};
-		DA42075009D349F500A4FDA9 /* Deployment */ = {
+		DAD9E1ED09D4A8C0006678D2 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
@@ -678,7 +678,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IONetworkingFamily;
-				MODULE_VERSION = 1.5.1;
+				MODULE_VERSION = 1.6.0;
 				OTHER_CFLAGS = "-D__MBUF_TRANSITION_";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -694,7 +694,7 @@
 			};
 			name = Deployment;
 		};
-		DA42075109D349F500A4FDA9 /* Default */ = {
+		DAD9E1EE09D4A8C0006678D2 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -704,7 +704,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IONetworkingFamily;
-				MODULE_VERSION = 1.5.1;
+				MODULE_VERSION = 1.6.0;
 				OTHER_CFLAGS = "-D__MBUF_TRANSITION_";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -719,19 +719,19 @@
 			};
 			name = Default;
 		};
-		DA42075309D349F500A4FDA9 /* Development */ = {
+		DAD9E1F009D4A8C0006678D2 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 			};
 			name = Development;
 		};
-		DA42075409D349F500A4FDA9 /* Deployment */ = {
+		DAD9E1F109D4A8C0006678D2 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 			};
 			name = Deployment;
 		};
-		DA42075509D349F500A4FDA9 /* Default */ = {
+		DAD9E1F209D4A8C0006678D2 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 			};
@@ -740,32 +740,32 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		DA42074A09D349F500A4FDA9 /* Build configuration list for PBXToolTarget "InstallHeaders" */ = {
+		DAD9E1E709D4A8C0006678D2 /* Build configuration list for PBXToolTarget "InstallHeaders" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA42074B09D349F500A4FDA9 /* Development */,
-				DA42074C09D349F500A4FDA9 /* Deployment */,
-				DA42074D09D349F500A4FDA9 /* Default */,
+				DAD9E1E809D4A8C0006678D2 /* Development */,
+				DAD9E1E909D4A8C0006678D2 /* Deployment */,
+				DAD9E1EA09D4A8C0006678D2 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		DA42074E09D349F500A4FDA9 /* Build configuration list for PBXBundleTarget "IONetworkingFamily" */ = {
+		DAD9E1EB09D4A8C0006678D2 /* Build configuration list for PBXBundleTarget "IONetworkingFamily" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA42074F09D349F500A4FDA9 /* Development */,
-				DA42075009D349F500A4FDA9 /* Deployment */,
-				DA42075109D349F500A4FDA9 /* Default */,
+				DAD9E1EC09D4A8C0006678D2 /* Development */,
+				DAD9E1ED09D4A8C0006678D2 /* Deployment */,
+				DAD9E1EE09D4A8C0006678D2 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		DA42075209D349F500A4FDA9 /* Build configuration list for PBXProject "IONetworkingFamily" */ = {
+		DAD9E1EF09D4A8C0006678D2 /* Build configuration list for PBXProject "IONetworkingFamily" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA42075309D349F500A4FDA9 /* Development */,
-				DA42075409D349F500A4FDA9 /* Deployment */,
-				DA42075509D349F500A4FDA9 /* Default */,
+				DAD9E1F009D4A8C0006678D2 /* Development */,
+				DAD9E1F109D4A8C0006678D2 /* Deployment */,
+				DAD9E1F209D4A8C0006678D2 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;

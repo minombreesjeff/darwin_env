@@ -1045,19 +1045,9 @@ void IONetworkController::freePacket(mbuf_t m, IOOptionBits options)
 UInt32 IONetworkController::releaseFreePackets()
 {
     UInt32 count = 0;
-	mbuf_t tempmb = _freeList;
 
-	// FIXME if 3730918 is implemented, mbuf_freem_list() will return the free count for us.
-	while(tempmb)
-	{
-		tempmb = mbuf_nextpkt(tempmb);
-		count++;
-	}
-    if ( count )
-    {
-		mbuf_freem_list( _freeList );
-        _freeList = 0;
-    }
+	count =	mbuf_freem_list( _freeList );
+	_freeList = 0;
     return count;
 }
 
@@ -1068,9 +1058,13 @@ static inline bool IO_COPY_MBUF(
 {
     caddr_t src_dat, dst_dat;
     int dst_len, src_len;
-
+	
     assert(src && dst);
 
+	// dupe the header to pick up internal things like csums and vlan tags
+	mbuf_copy_pkthdr(dst, src);
+	mbuf_pkthdr_setheader(dst, NULL); //otherwise it could be pointing into src's data
+	
     dst_len = mbuf_len(dst);
     dst_dat = (caddr_t)mbuf_data(dst);
 
@@ -1117,7 +1111,6 @@ static inline bool IO_COPY_MBUF(
         src = mbuf_next(src);
 
     } /* while (src) */
-    
     return (length == 0);   // returns true on success.
 }
 
@@ -1662,14 +1655,13 @@ bool IONetworkController::setLinkStatus(
 
 	// Update kIOLinkStatus property.
 
-	if (status != _linkStatus->unsigned32BitValue())
+	if (status != _linkStatus->unsigned32BitValue()) //status has changed
 	{
-        if (status & kIONetworkLinkValid)
-        {
-            linkEvent = (status & kIONetworkLinkActive) ?
-                        kIONetworkEventTypeLinkUp :
-                        kIONetworkEventTypeLinkDown;
-        }
+		//send an UP event when the link is up, or its state is unknown
+		if( (status & kIONetworkLinkActive) || !(status & kIONetworkLinkValid) )
+			linkEvent = kIONetworkEventTypeLinkUp;
+		else
+			linkEvent = kIONetworkEventTypeLinkDown;
 		_linkStatus->setValue(status);
 		changed = true;
 	}
