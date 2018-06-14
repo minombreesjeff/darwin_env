@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2008 Apple Inc. All rights reserved.
+ * Copyright (c) 2011 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -19,26 +19,27 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
- 
-#ifndef _IONETWORKCONTROLLERPRIVATE_H
-#define _IONETWORKCONTROLLERPRIVATE_H
 
-#define kMessageControllerWasEnabled  \
-        iokit_family_msg(sub_iokit_networking, 0x110)
+#ifndef _IONETWORKDEBUG_H
+#define _IONETWORKDEBUG_H
 
-#define kMessageControllerWasDisabled \
-        iokit_family_msg(sub_iokit_networking, 0x111)
+extern uint32_t gIONetworkDebugFlags;
 
-#define kMessageControllerWasEnabledForBSD  \
-        iokit_family_msg(sub_iokit_networking, 0x112)
+enum {
+    kIONF_kprintf   = 0x01,
+    kIONF_IOLog     = 0x02
+};
 
-#define kMessageControllerWasDisabledForBSD \
-        iokit_family_msg(sub_iokit_networking, 0x113)
+#define DLOG(fmt, args...)                              \
+        do {                                            \
+            if (gIONetworkDebugFlags & kIONF_kprintf)   \
+                kprintf(fmt, ## args);                  \
+            if (gIONetworkDebugFlags & kIONF_IOLog)     \
+                IOLog(fmt, ## args);                    \
+        } while (0)
 
-#define kMessageControllerWillShutdown \
-        iokit_family_msg(sub_iokit_networking, 0x114)
 
-#define kMessageDebuggerActivationChange \
-        iokit_family_msg(sub_iokit_networking, 0x1F0)
+#define LOG(fmt, args...)  \
+        do { kprintf(fmt, ## args); IOLog(fmt, ## args); } while(0)
 
-#endif /* !_IONETWORKCONTROLLERPRIVATE_H */
+#endif /* _IONETWORKDEBUG_H */
