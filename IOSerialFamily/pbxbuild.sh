@@ -15,6 +15,9 @@ BuildStyle=
 Actions=
 Assignments=
 
+# We change into the directory that contains the pbxbuild.sh script.
+cd "`dirname -- "$0"`"
+
 IFS='
 '
 
@@ -80,6 +83,7 @@ for Action in ${Actions}; do
 		echo "*** ${Action} ${Target} ***"
 		echo jam -d2 ${Action} JAMFILE=\"${TargetPath}/Jamfile.jam\" JAMBASE=pbxbuild.data/ProjectBuilderJambase TARGETNAME=\"${Target}\" ACTION=${Action} OS=darwin NATIVE_ARCH=`arch` SRCROOT=\"`pwd`\" OBJROOT=\"`pwd`/obj\" SYMROOT=\"`pwd`/sym\" DSTROOT=\"`pwd`/dst\" ${Assignments}
 		jam -d2 ${Action} JAMFILE="${TargetPath}/Jamfile.jam" JAMBASE=pbxbuild.data/ProjectBuilderJambase TARGETNAME="${Target}" ACTION=${Action} OS=darwin NATIVE_ARCH=`arch` SRCROOT="`pwd`" OBJROOT="`pwd`/obj" SYMROOT="`pwd`/sym" DSTROOT="`pwd`/dst" ${Assignments}
+		[ $? != 0 ] && exit 1
 	done
 done
 
