@@ -111,8 +111,8 @@ GATHERHEADERDOC default = /usr/bin/gatherHeaderDoc ;
 HEADERDOC2HTML	default = /usr/bin/headerdoc2html ;
 INTERFACER	default = $(APPLE_INTERNAL_TOOLS)/Interfacer ;
 JAR		default = /usr/bin/jar ;
-JAVA_COMPILER	default = /usr/bin/javac ;
-JAVACONFIG	default = /usr/bin/javaconfig ;
+export JAVA_COMPILER	default = /usr/bin/javac ;
+export JAVACONFIG	default = /usr/bin/javaconfig ;
 LD		default = /usr/bin/cc ;
 LEX		default = /usr/bin/lex ;
 LIBTOOL		default = /usr/bin/libtool ;
@@ -135,6 +135,7 @@ REZ		default = $(SYSTEM_DEVELOPER_TOOLS)/Rez ;
 RM		default = /bin/rm ;
 RPCGEN		default = /usr/bin/rpcgen ;
 SED		default = /usr/bin/sed ;
+SETFILE		default = $(SYSTEM_DEVELOPER_TOOLS)/SetFile ;
 SH		default = /bin/sh ;
 STRIP		default = /usr/bin/strip ;
 TOUCH		default = /usr/bin/touch ;
@@ -283,6 +284,25 @@ actions Strip
     $(STRIP) $(STRIPFLAGS) "$(2)"
 }
 
+# SetFile <fork file>
+# Appends type and creator to a file
+rule SetFile
+{
+    local MACOS_TYPE_ARG ;
+    local MACOS_CREATOR_ARG ;
+    if $(MACOS_TYPE) {
+        MACOS_TYPE_ARG = "-t" "'$(MACOS_TYPE)'" ;
+    }
+    if $(MACOS_CREATOR) {
+        MACOS_CREATOR_ARG = "-c" "'$(MACOS_CREATOR)'" ;
+    }
+    SETFILEFLAGS on $(1) = $(MACOS_TYPE_ARG) $(MACOS_CREATOR_ARG) "$(OTHER_SETFILEFLAGS)" ;
+}
+actions SetFile
+{
+    $(SETFILE) $(SETFILEFLAGS) "$(1)"
+}
+
 # Rez <fork file> : <target file>
 # Appends resource fork data to a file
 rule Rez
@@ -360,10 +380,13 @@ if $(FIXPRECOMPS) {
 rule Cp
 {
     DEPENDS $(1) : $(2) ;
+    if $(2) != $(JAVA_APP_STUB) {
+        CPFLAGS on $(1) default = -fRP ;
+    }
 }
 actions together piecemeal Cp
 {
-    $(CP) -fRP "$(2)" "$(1)"
+    $(CP) "$(CPFLAGS)" "$(2)" "$(1)"
 }
 
 # RobustCp <destination> : <source>
@@ -686,6 +709,7 @@ rule Bridget
     NOTFILE $(JAVA_BRIDGET_TARGET) ;
     DEPENDS $(1) : $(JAVA_BRIDGET_TARGET) ;
     DEPENDS $(JAVA_BRIDGET_TARGET) : $(BRIDGET_FILES_DIR) ;
+    DEPENDS $(JAVA_BRIDGET_TARGET) : $(OBJECT_FILE_DIR) ;
     Bridget.DeriveSources $(JAVA_BRIDGET_TARGET) : $(2) ;
     if $(BRIDGE_JAVA) = YES {
         JAVA_BRIDGE_COMPILE_TARGET = $(1:G=JavaBridgeCompile) ;
@@ -771,7 +795,7 @@ actions Bridget.CompileC
 }
 
 # GenerateVectorLibraryIntermediates <vector stub> <vector object file> : <exports file>
-# Generates and compiles vector stub, and also bridge file
+# Generates and compiles vector stub
 rule GenerateVectorLibraryIntermediates
 {
     DEPENDS $(1) : $(2) ;
@@ -783,7 +807,7 @@ rule GenerateVectorLibraryIntermediates
 }
 actions GenerateVectorLibraryIntermediates
 {
-    "$(MAKEPSEUDOLIB)" "$(2)" -strip -fragname "$(VECTOR_FRAGMENT_NAME)" -vector "$(VECTOR_STUB)" -dylibpath "$(DYLIB_INSTALLED_NAME)"
+    "$(MAKEPSEUDOLIB)" "$(2)" -strip -fragname "$(VECTOR_FRAGMENT_NAME)" -vector "$(VECTOR_STUB)" -dylibpath "$(DYLIB_INSTALLED_NAME)" && \
     $(CC) -Wa,-L -c $(ARCH_FLAGS) -O -fno-common -no-cpp-precomp -dynamic "$(FLAGS)" $(GLOBAL_CFLAGS) -o "$(VECTOR_OBJECT_FILE)" "$(VECTOR_STUB)"
 }
 
@@ -1456,7 +1480,6 @@ REMOVE_CVS_FROM_RESOURCES default = YES ;
 COPY_PHASE_STRIP default = YES ;
 CLONE_HEADERS default = YES ;
 PREBINDING default = YES ;
-GENERATE_MASTER_OBJECT_FILE default = YES ;
 
 # Set initial optimization level, debug, and profile settings
 export OPTIMIZATION_LEVEL default = 0 ;
@@ -1561,7 +1584,7 @@ rule BeginProduct
         }
     }
     OBJECT_FILE_DIR default = $(TEMP_DIR)$(/)Objects ;
-    CLASS_FILE_DIR default = $(TEMP_DIR)$(/)JavaClasses ;
+    export CLASS_FILE_DIR default = $(TEMP_DIR)$(/)JavaClasses ;
     if $(JAVA_ARCHIVE_CLASSES) != YES && ( $(PRODUCT_TYPE) != Tool || $(PRODUCT_TYPE) != Library ) {
         export PRODUCT_CLASS_FILE_DIR default = $(BUILD_DIR)$(/)$(PRODUCT_NAME) ;
     }
@@ -1961,12 +1984,12 @@ rule EndFramework
 .mig_RULE	= ProcessUsingMig ;
 .l_RULE		= ProcessUsingLex ;
 .lm_RULE	= ProcessUsingLex ;
-.LM_RULE	= ProcessUsingYacc ;
-.lmm_RULE	= ProcessUsingYacc ;
-.lpp_RULE	= ProcessUsingYacc ;
-.LPP_RULE	= ProcessUsingYacc ;
-.lxx_RULE	= ProcessUsingYacc ;
-.LXX_RULE	= ProcessUsingYacc ;
+.LM_RULE	= ProcessUsingLex ;
+.lmm_RULE	= ProcessUsingLex ;
+.lpp_RULE	= ProcessUsingLex ;
+.LPP_RULE	= ProcessUsingLex ;
+.lxx_RULE	= ProcessUsingLex ;
+.LXX_RULE	= ProcessUsingLex ;
 .y_RULE		= ProcessUsingYacc ;
 .ym_RULE	= ProcessUsingYacc ;
 .YM_RULE	= ProcessUsingYacc ;
@@ -1982,9 +2005,6 @@ rule EndFramework
 .rsrc_RULE	= ProcessRezFile ;
 .RSRC_RULE	= ProcessRezFile ;
 .ppob_RULE	= ProcessRezFile ;
-.unix_RULE	= ProcessSuffixedFile ;
-.nt_RULE	= ProcessSuffixedFile ;
-.$(OS:L)_RULE	= ProcessSuffixedFile ;
 
 PHASE_TARGETS = ;
 rule PhaseTarget
@@ -2321,7 +2341,7 @@ rule PrecompileHeader
         FLAGS on $(1) += "-Wp,-header-mapfile,$(CPP_HEADERMAP_FILE)" ;
     }
     if $(1:S) = .pp {
-        FLAGS on $(1) += -x c++ ;
+        FLAGS on $(1) += -x objective-c++ ;
     }
     if YES in $(GENERATE_CPP_ILOG_FILES) {
         local INCLUSION_LOG_FILE default = $(OBJECT_FILE_DIR)$(/)$(ARCH)$(/)$(2:DB).ilog ;
@@ -2362,6 +2382,14 @@ rule ProcessResources
                 # if available and not pure java
                 if $(PRODUCT_TYPE) = Framework {
                     INFO_PLIST_FILE default = $(RESOURCE_DIR)$(/)Info.plist ;
+                    if $(RESOURCE_LINK)
+                     && ! $(RESOURCE_LINK) in $(PRODUCT_FILES) {
+                        SymLink $(RESOURCE_LINK) : $(RESOURCE_LINK_PATH) ;
+                        PRODUCT_FILES += $(RESOURCE_LINK) ;
+                        if $(BUILD_PHASING) = YES {
+                            BUILD_PHASE_PRODUCTS += $(RESOURCE_LINK) ;
+                        }
+                    }
                 }
                 else {
                     INFO_PLIST_FILE default = $(1)$(/)Contents$(/)Info.plist ;
@@ -2678,6 +2706,9 @@ rule ProcessFrameworksAndLibraries
 
         # only link if there are object files
         if $(OBJECT_FILES) {
+            if ! ( $(PRODUCT_TYPE) = Library && $(LIBRARY_STYLE) = STATIC ) {
+                GENERATE_MASTER_OBJECT_FILE default = YES ;
+            }
 	    # process link based on product type
 	    switch $(PRODUCT_TYPE) {
 	        case Tool :
@@ -2690,15 +2721,18 @@ rule ProcessFrameworksAndLibraries
 		        LINK_FILE_LIST on $(INNER_PRODUCT) = $(FILE_LIST) ;
 		        INNER_PRODUCT_LINK = ;
 		        STRIPPED_PRODUCT default = $(INNER_PRODUCT) ;
-			if $(INNER_PRODUCT) && $(PROFILING_CODE) = YES {
-			    FLAGS.o on $(INNER_PRODUCT) += -pg ;
-			}
                         if $(GENERATE_MASTER_OBJECT_FILE) = YES || $(EXPORTED_SYMBOLS_FILE) {
                             ProcessSingleObjectLink $(INNER_PRODUCT) : $(LINKED_FILES) : StandaloneExecutable ;
                         }
                         else {
                             StandaloneExecutable $(INNER_PRODUCT) : $(LINKED_FILES) ;
                         }
+                        if $(PREBINDING) = YES {
+                            FLAGS.o on $(INNER_PRODUCT) += -prebind ;
+                        }
+                        if $(INNER_PRODUCT) && $(PROFILING_CODE) = YES {
+			    FLAGS.o on $(INNER_PRODUCT) += -pg ;
+			}
                         PRODUCT_FILES += $(INNER_PRODUCT) ;
 		        if $(BUILD_PHASING) = YES {
 			    BUILD_PHASE_PRODUCTS += $(INNER_PRODUCT) ;
@@ -2783,6 +2817,9 @@ rule ProcessFrameworksAndLibraries
 			    if $(DYLIB_CURRENT_VERSION) {
 			        FLAGS.o on $(INNER_PRODUCT) += -current_version "$(DYLIB_CURRENT_VERSION)" ;
 			    }
+                            if $(PREBINDING) = YES {
+                                FLAGS.o on $(INNER_PRODUCT) += -prebind ;
+                            }
 			    if $(INSTALL_PATH) {
 			        DYLIB_INSTALLED_NAME default = $(INSTALL_PATH)$(/)$(INNER_PRODUCT:G=) ;
                                 INSTALLED_NAME_FLAG on $(INNER_PRODUCT) = -install_name \"`echo \"$(DYLIB_INSTALLED_NAME)\" | $(SED) 's!//*!/!g'`\" ;
@@ -2801,9 +2838,6 @@ rule ProcessFrameworksAndLibraries
 		        LINK_FILE_LIST on $(INNER_PRODUCT) = $(FILE_LIST) ;
 		        INNER_PRODUCT_LINK default = ;
 		        PRODUCT_FILES += $(INNER_PRODUCT) ;
-			if $(INNER_PRODUCT) && $(PROFILING_CODE) = YES {
-			    FLAGS.o on $(INNER_PRODUCT) += -pg ;
-			}
 		        if $(BUILD_PHASING) = YES {
 			    BUILD_PHASE_PRODUCTS += $(INNER_PRODUCT) ;
 		        }
@@ -2848,6 +2882,13 @@ rule ProcessFrameworksAndLibraries
                         if $(KERNEL_MODULE) != YES {
 		            FLAGS.o on $(INNER_PRODUCT) += -bundle ;
                         }
+                        if $(INNER_PRODUCT) && $(PROFILING_CODE) = YES {
+			    FLAGS.o on $(INNER_PRODUCT) += -pg ;
+			}
+# !!!:mferris:20010725 Disbaled since prebinding is not supported for bundles.
+#                        if $(PREBINDING) = YES {
+#                            FLAGS.o on $(INNER_PRODUCT) += -prebind ;
+#                        }
 		    }
 	        case Application :
 		    # Define primary executable INNER_PRODUCT location in wrapper
@@ -2902,39 +2943,40 @@ rule ProcessFrameworksAndLibraries
 		        BUILD_PHASE_PRODUCTS += $(INNER_PRODUCT) ;
 		    }
 		    # link the final shared library
-		    if $(GENERATE_MASTER_OBJECT_FILE) = YES || $(EXPORTED_SYMBOLS_FILE) {
-                        ProcessSingleObjectLink $(INNER_PRODUCT) : $(LINKED_FILES) : DynamicLibrary ;
+                    for ARCH in $(ARCHS) {
+                        THIN_MASTER_OBJECT_FILE default = $(EXPORTED_SYMBOLS_FILE_$(ARCH)) ;
                     }
-		    else {
+                    if $(THIN_MASTER_OBJECT_FILE) {
+                        # link bundle with architecture specific symbols edited
+                        #!!!:cmolick:20001117 missing per-arch exports files not accounted for
                         for ARCH in $(ARCHS) {
-                            THIN_MASTER_OBJECT_FILE default = $(EXPORTED_SYMBOLS_FILE_$(ARCH)) ;
+                            MASTER_OBJECT_FILE_$(ARCH) default = $(TEMP_DIR)$(/)master_$(ARCH).o ;
+                            MasterObjectFile $(MASTER_OBJECT_FILE_$(ARCH)) : $(OBJECT_FILES_$(ARCH)) : $(EXPORTED_SYMBOLS_FILE_$(ARCH)) : $(ARCH) ;
                         }
-                        if $(THIN_MASTER_OBJECT_FILE) {
-                            # link bundle with architecture specific symbols edited
-                            #!!!:cmolick:20001117 missing per-arch exports files not accounted for
-                            for ARCH in $(ARCHS) {
-                                MASTER_OBJECT_FILE_$(ARCH) default = $(TEMP_DIR)$(/)master_$(ARCH).o ;
-                                MasterObjectFile $(MASTER_OBJECT_FILE_$(ARCH)) : $(OBJECT_FILES_$(ARCH)) : $(EXPORTED_SYMBOLS_FILE_$(ARCH)) : $(ARCH) ;
+                        NonObjectFiles OTHER_LINKED_FILES : $(LINKED_FILES) ;
+                        for ARCH in $(ARCHS) {
+                            if $(OTHER_LINKED_FILES) = "" {
+                                OTHER_LINKED_FILES = $(MASTER_OBJECT_FILE_$(ARCH)) ;
                             }
-                            NonObjectFiles OTHER_LINKED_FILES : $(LINKED_FILES) ;
-                            for ARCH in $(ARCHS) {
-                                if $(OTHER_LINKED_FILES) = "" {
-                                    OTHER_LINKED_FILES = $(MASTER_OBJECT_FILE_$(ARCH)) ;
-                                }
-                                else {
-                                    OTHER_LINKED_FILES += $(MASTER_OBJECT_FILE_$(ARCH)) ;
-                                }
+                            else {
+                                OTHER_LINKED_FILES += $(MASTER_OBJECT_FILE_$(ARCH)) ;
                             }
-                            DynamicLibrary $(INNER_PRODUCT) : $(OTHER_LINKED_FILES) ;
                         }
-                        else {
+                        DynamicLibrary $(INNER_PRODUCT) : $(OTHER_LINKED_FILES) ;
+                    }
+                    else {
+                        # default framework link
+		        if $(GENERATE_MASTER_OBJECT_FILE) = YES || $(EXPORTED_SYMBOLS_FILE) {
+                            ProcessSingleObjectLink $(INNER_PRODUCT) : $(LINKED_FILES) : DynamicLibrary ;
+                        }
+		        else {
                             # simple dynamic library link
 	                    if $(VECTOR_OBJECT_FILE) {
 		                OTHER_LINKED_FILES += $(VECTOR_OBJECT_FILE) ;
 		            }
 		            DynamicLibrary $(INNER_PRODUCT) : $(LINKED_FILES) ;
                         }
-		    }
+                    }
 		    if $(INNER_PRODUCT) && $(PROFILING_CODE) = YES {
 			FLAGS.o on $(INNER_PRODUCT) += -pg ;
 		    }
@@ -2945,6 +2987,9 @@ rule ProcessFrameworksAndLibraries
 		    if $(DYLIB_CURRENT_VERSION) {
 		        FLAGS.o on $(INNER_PRODUCT) += -current_version "$(DYLIB_CURRENT_VERSION)" ;
 	            }
+                    if $(PREBINDING) = YES {
+                        FLAGS.o on $(INNER_PRODUCT) += -prebind ;
+                    }
 		    if $(INSTALL_PATH) {
 		        FRAMEWORK_INSTALLED_NAME default = $(INSTALL_PATH)$(/)$(INNER_PRODUCT:G=) ;
                         INSTALLED_NAME_FLAG on $(INNER_PRODUCT) = -install_name \"`echo \"$(FRAMEWORK_INSTALLED_NAME)\" | $(SED) 's!//*!/!g'`\" ;
@@ -3144,12 +3189,30 @@ rule ProcessRezFiles
             BuildPhase $(BUILD_PHASE) : $(1) : $(PREVIOUS_BUILD_PHASE) ;
             BUILD_PHASE_PRODUCTS = ;
         }
-        for FILE in $(2) {
-            if $(BUILD_PHASING) = YES {
-                ProcessRezFile $(BUILD_PHASE) : $(FILE) ;
+        if $(2) {
+            for FILE in $(2) {
+                if $(BUILD_PHASING) = YES {
+                    ProcessRezFile $(BUILD_PHASE) : $(FILE) ;
+                }
+                else {
+                    ProcessRezFile $(1) : $(FILE) ;
+                }
             }
-            else {
-                ProcessRezFile $(1) : $(FILE) ;
+        }
+        else {
+            if ( $(MACOS_TYPE) || $(MACOS_CREATOR) ) && $(REZ_EXECUTABLE) = YES {
+                local RESOURCE_FORK = $(INNER_PRODUCT:G=ResourceFork) ;
+                if ! $(INNER_PRODUCT) in $(PRESERVE_RESOURCES) {
+                     PRESERVE_RESOURCES += $(INNER_PRODUCT) ;
+                }
+                PRODUCT_FILES += $(RESOURCE_FORK) ;
+                if $(BUILD_PHASING) = YES {
+                    BUILD_PHASE_PRODUCTS += $(RESOURCE_FORK) ;
+                }
+                if $(ALWAYS_REZ) = YES {
+                    ALWAYS $(RESOURCE_FORK) ;
+                }
+                SetFile $(RESOURCE_FORK) ;
             }
         }
         if $(BUILD_PHASING) = YES {
@@ -3428,7 +3491,7 @@ rule ProcessUsingJavaCompiler
         }
     }
     export JAVA_SOURCE_PATH default = $(SOURCE_ROOT)$(/)$(JAVA_SOURCE_SUBDIR) ;
-    JAVAC_FLAGS = $(JAVA_COMPILER_FLAGS) ;
+    export JAVAC_FLAGS = $(JAVA_COMPILER_FLAGS) ;
     if $(DEBUGGING_SYMBOLS) = YES {
         JAVAC_FLAGS += "-g" ;
     }
@@ -3470,15 +3533,12 @@ rule ProcessUsingJavaCompiler
         if ! $(JAVA_COMPILE_TARGET) in $(PRODUCT_FILES) {
             JAVAC_FLAGS on $(JAVA_COMPILE_TARGET) = $(JAVAC_FLAGS) ;
             JAVA_COMPILER on $(JAVA_COMPILE_TARGET) = $(JAVA_COMPILER) ;
+            JAVA_FILE_LIST_REFERENCE = @$(JAVA_FILE_LIST) ;
+            NOTFILE $(JAVA_FILE_LIST_REFERENCE) ;
             if $(JAVA_COMPILER:B) = jikes {
-                JAVA_FILE_LIST_REFERENCE = $(JAVA_FILE_LIST) ;
-                NOTFILE $(JAVA_FILE_LIST_REFERENCE) ;
-                #!!!:cmolick:20010329 @filelist not supported by jikes
-	        JavaCompile.jikesWithFileList $(JAVA_COMPILE_TARGET) : $(JAVA_FILE_LIST_REFERENCE) ;
+	        JavaCompile.jikes $(JAVA_COMPILE_TARGET) : $(JAVA_FILE_LIST_REFERENCE) ;
             }
             else {
-                JAVA_FILE_LIST_REFERENCE = @$(JAVA_FILE_LIST) ;
-                NOTFILE $(JAVA_FILE_LIST_REFERENCE) ;
 	        JavaCompile.default $(JAVA_COMPILE_TARGET) : $(JAVA_FILE_LIST_REFERENCE) ;
             }
             PRODUCT_FILES += $(JAVA_COMPILE_TARGET) ;
@@ -3487,9 +3547,16 @@ rule ProcessUsingJavaCompiler
             }
         }
         # set up class file dependence used to add java files to compile list
-        local JAVA_SOURCE ;
-        RemovePrefixPath JAVA_SOURCE : $(JAVA_SOURCE_SUBDIR) : $(2) ;
-        local CLASS_FILE = $(CLASS_FILE_DIR)$(/)$(JAVA_SOURCE:S=.class) ;
+        local CLASS_FILE ;
+        # use the main class, if it's there
+        if $($(2)_MAIN_CLASS) {
+            CLASS_FILE = $(CLASS_FILE_DIR)$(/)$($(2)_MAIN_CLASS) ;
+        }
+        else {
+            local JAVA_SOURCE ;
+            RemovePrefixPath JAVA_SOURCE : $(JAVA_SOURCE_SUBDIR) : $(2) ;
+            CLASS_FILE = $(CLASS_FILE_DIR)$(/)$(JAVA_SOURCE:S=.class) ;
+        }
         DEPENDS $(CLASS_FILE) : $(2) ;
         if $($(2)_JAVA_IMPORTS) {
             DEPENDS $(CLASS_FILE) : $($(2)_JAVA_IMPORTS) ;
@@ -3521,16 +3588,8 @@ actions together piecemeal JavaCompile.default {
 actions together piecemeal JavaCompile.jikes {
     frameworkjars=""
     for i in `echo $(JAVA_FRAMEWORK_JARS)/*.jar $(JAVA_FRAMEWORK_JARS)/*.zip ` ; do if [ -f "$i" ] ; then frameworkjars="$frameworkjars":"$i" ; fi ; done
-    classpath="$(CLASS_FILE_DIR)$(LINKED_CLASS_ARCHIVES):$(JAVA_SOURCE_PATH)$frameworkjars:"`$(JAVACONFIG) DefaultClasspath`
-    $(JAVA_COMPILER) +E $(JAVAC_FLAGS) -classpath "$classpath" -d "$(CLASS_FILE_DIR)" '$(2)'
-}
-actions together piecemeal JavaCompile.jikesWithFileList {
-    frameworkjars=""
-    for i in `echo $(JAVA_FRAMEWORK_JARS)/*.jar $(JAVA_FRAMEWORK_JARS)/*.zip ` ; do if [ -f "$i" ] ; then frameworkjars="$frameworkjars":"$i" ; fi ; done
-    classpath="$(CLASS_FILE_DIR)$(LINKED_CLASS_ARCHIVES):$(JAVA_SOURCE_PATH)$frameworkjars:"`$(JAVACONFIG) DefaultClasspath`
-    filelist=""
-    for i in `cat '$(2)'`; do filelist="$filelist $i"; done
-    $(JAVA_COMPILER) +E $(JAVAC_FLAGS) -classpath "$classpath" -d "$(CLASS_FILE_DIR)" $filelist
+    classpath="$(CLASS_FILE_DIR)$(LINKED_CLASS_ARCHIVES)$frameworkjars:"`$(JAVACONFIG) DefaultClasspath`
+    $(JAVA_COMPILER) +E $(JAVAC_FLAGS) -sourcepath "$(JAVA_SOURCE_PATH)" -classpath "$classpath" -d "$(CLASS_FILE_DIR)" '$(2)'
 }
 
 rule ProcessApplescripts
@@ -3611,7 +3670,7 @@ rule ProcessAppleScript
 
 actions OSACompile
 {
-    $(OSAC) -d -i $(SYSTEM_LIBRARY_DIR)/Frameworks/AppleScriptKit.framework -o "$(1)" $(OTHER_OSAFLAGS) "$(2)"
+    $(OSAC) -d -i $(SYSTEM_LIBRARY_DIR)/Frameworks/AppleScriptKit.framework -U "$(2)" -o "$(1)" $(OTHER_OSAFLAGS) "$(2)"
 }
 
 rule ProcessC
@@ -3639,10 +3698,14 @@ rule ProcessC
             DEPENDS $(OBJECT_FILE) : $(JAVA_BRIDGET_TARGET) ;
         }
         CompileC $(OBJECT_FILE) : $(2) ;
-        OBJECT_FILES += $(OBJECT_FILE) ;
-        OBJECT_FILES_$(ARCH) += $(OBJECT_FILE) ;
-        if $(BUILD_PHASING) = YES {
-            BUILD_PHASE_PRODUCTS += $(OBJECT_FILE) ;
+        if $(2:BS) != $(VECTOR_STUB:BS) {
+            # add object file to object files and phase products
+            # unless it is the compiled generated vector stub
+            OBJECT_FILES += $(OBJECT_FILE) ;
+            OBJECT_FILES_$(ARCH) += $(OBJECT_FILE) ;
+            if $(BUILD_PHASING) = YES {
+                BUILD_PHASE_PRODUCTS += $(OBJECT_FILE) ;
+            }
         }
         LOCATE on $(OBJECT_FILE) = $(OBJECT_SUBDIR) ;
         if $(2) = $(MODULE_INFO_FILE) {
@@ -3652,7 +3715,11 @@ rule ProcessC
             DEPENDS $(1) : $(MODULE_OBJECT_FILE) ;
         }
         else {
-            LINKED_FILES += $(OBJECT_FILE) ;
+            # object file is added to linked files
+            # unless it is the compiled generated vector stub
+            if $(2:BS) != $(VECTOR_STUB:BS) {
+                LINKED_FILES += $(OBJECT_FILE) ;
+            }
         }
     }
 }
@@ -3896,7 +3963,7 @@ rule ProcessUsingMig
 
 rule ProcessUsingLex
 {
-    local TEMP_FILE ;
+    local TEMP_FILES ;
     local FILE_BASE = $(2:B) ;
     if AbsolutePath in $($(2)_ATTRIBUTES) {
         FILE_BASE = $(DERIVED_FILE_DIR)$(2:DB) ;
@@ -3907,15 +3974,15 @@ rule ProcessUsingLex
         case ".LM" : TEMP_FILES += $(FILE_BASE).M ;
         case ".lmm" : TEMP_FILES += $(FILE_BASE).mm ;
         case ".lpp" : TEMP_FILES += $(FILE_BASE).cpp ;
-        case ".LP" : TEMP_FILES += $(FILE_BASE).CPP ;
+        case ".LPP" : TEMP_FILES += $(FILE_BASE).CPP ;
         case ".lxx" : TEMP_FILES += $(FILE_BASE).cxx ;
         case ".LXX" : TEMP_FILES += $(FILE_BASE).CXX ;
     }
     DEPENDS $(TEMP_FILES) : $(DERIVED_FILE_DIR) ;
-    Lex $(TEMP_FILE) : $(2) ;
-    DERIVED_FILES += $(TEMP_FILE) ;
+    Lex $(TEMP_FILES) : $(2) ;
+    DERIVED_FILES += $(TEMP_FILES) ;
     BUILD_PHASE_PRODUCTS += $(TEMP_FILES) ;
-    ProcessFiles $(1) : $(TEMP_FILE) ;
+    ProcessFiles $(1) : $(TEMP_FILES) ;
 }
 
 rule ProcessUsingYacc
@@ -3959,19 +4026,6 @@ rule ProcessUsingRPCGen
 rule ProcessUsingBridget
 {
     Bridget $(1) : $(2) ;
-}
-
-rule ProcessSuffixedFile
-{
-    if $(2:S=) = $(2) {
-        EXIT jam: error: ProcessSuffixedFile: file $(2) has no suffix ;
-    }
-    # Create a copy of the file without the suffix
-    Cp $(2:S=) : $(2) ;
-    DERIVED_FILES += $(2:S=) ;
-    BUILD_PHASE_PRODUCTS += $(2:S=) ;
-    # Process this desuffixed file in the usual way
-    ProcessFile $(1) : $(2:S=) ;
 }
 # Copyright (c) 1999,2000 Apple Computer, Inc.
 # All rights reserved.
@@ -4069,12 +4123,13 @@ rule Install
         BulkCopy $(INSTALLED_PRODUCT) : $(2) ;
         # additional resource preserving copies for special files
         for SPECIAL_FILE in $(PRESERVE_RESOURCES) {
-            local SPECIAL_FILE_PATH SPECIAL_FILE_PATH default = $(INSTALL_DIR)$(/)$(SPECIAL_FILE) ;
+            SPECIAL_FILE_INSTALLED_PATH default = $(INSTALL_DIR)$(/)$(SPECIAL_FILE:G=) ;
             # preserved copies are differentiated by "<Preserve>" grist
             # and depend on full installed path of the primary tar copy
-            INSTALLED_PRODUCT_PATH default = $(INSTALL_DIR)$(/)$(INSTALLED_PRODUCT) ;
-            DEPENDS $(SPECIAL_FILE_PATH:G=Preserve) : $(INSTALLED_PRODUCT_PATH) ;
-            ResourcePreservingCp $(SPECIAL_FILE_PATH:G=Preserve) : $(SPECIAL_FILE) ;
+            INSTALLED_PRODUCT_PATH default = $(INSTALL_DIR)$(/)$(INSTALLED_PRODUCT:G=) ;
+            DEPENDS $(SPECIAL_FILE_INSTALLED_PATH:G=Preserve) : $(INSTALLED_PRODUCT_PATH) ;
+            DEPENDS $(1) : $(SPECIAL_FILE_INSTALLED_PATH:G=Preserve) ;
+            ResourcePreservingCp $(SPECIAL_FILE_INSTALLED_PATH:G=Preserve) : $(SPECIAL_FILE) ;
         }
         # remove development property list
         if $(DEVELOPMENT_PLIST_FILE) {
@@ -4090,8 +4145,9 @@ rule Install
             LOCATE on $(INSTALLED_STRIPPED_PRODUCT) = $(INSTALL_DIR) ;
             DEPENDS $(INSTALLED_STRIPPED_PRODUCT) : $(INSTALL_DIR) ;
             if $(PRODUCT_TYPE) != Tool && $(PRODUCT_TYPE) != Application {
-                STRIPFLAGS on $(INSTALLED_PRODUCT) = $(STRIPFLAGS) -S ;
+                STRIPFLAGS default = -S ;
             }
+            STRIPFLAGS on $(INSTALLED_PRODUCT) = $(STRIPFLAGS) ;
             Strip $(INSTALLED_PRODUCT) : $(INSTALLED_STRIPPED_PRODUCT) ;
         }
         # set standard file mode and ownership
