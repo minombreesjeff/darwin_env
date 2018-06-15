@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2005 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1998-2007 Apple Inc.  All Rights Reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -42,6 +42,25 @@ const UInt32 kPollerInterval = 1000;                           // (ms, 1 second)
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 #define isMediaRemovable() _removable
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+#define kIOBlockStorageDriverAttributesUnsupported ( ( IOStorage::ExpansionData * ) 2 )
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+extern IOStorageAttributes gIOStorageAttributesUnsupported;
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+extern "C" void _ZN20IOBlockStorageDriver14prepareRequestEyP18IOMemoryDescriptor19IOStorageCompletion( IOBlockStorageDriver *, UInt64, IOMemoryDescriptor *, IOStorageCompletion );
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+static bool prepareRequestAttributes( IOBlockStorageDriver * driver )
+{
+    return ( OSMemberFunctionCast( void *, driver, ( void ( IOBlockStorageDriver::* )( UInt64, IOMemoryDescriptor *, IOStorageCompletion ) ) &IOBlockStorageDriver::prepareRequest ) == _ZN20IOBlockStorageDriver14prepareRequestEyP18IOMemoryDescriptor19IOStorageCompletion );
+}
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -100,6 +119,9 @@ bool IOBlockStorageDriver::init(OSDictionary * properties)
     //
     // Initialize this object's minimal state.
     //
+
+    if (prepareRequestAttributes(this) == false)
+        IOStorage::_expansionData = kIOBlockStorageDriverAttributesUnsupported;
 
     // Ask our superclass' opinion.
 
@@ -399,10 +421,11 @@ void IOBlockStorageDriver::handleClose(IOService * client, IOOptionBits options)
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void IOBlockStorageDriver::read(IOService *          /* client */,
-                                UInt64               byteStart,
-                                IOMemoryDescriptor * buffer,
-                                IOStorageCompletion  completion)
+void IOBlockStorageDriver::read(IOService *           client,
+                                UInt64                byteStart,
+                                IOMemoryDescriptor *  buffer,
+                                IOStorageAttributes * attributes,
+                                IOStorageCompletion * completion)
 {
     //
     // The read method is the receiving end for all read requests from the
@@ -419,19 +442,55 @@ void IOBlockStorageDriver::read(IOService *          /* client */,
 
     // State our assumptions.
 
-    assert(buffer->getDirection() == kIODirectionIn);
+    assert( buffer->getDirection( ) == kIODirectionIn );
 
     // Prepare the transfer.
 
-    prepareRequest(byteStart, buffer, completion);
+    if ( IOStorage::_expansionData )
+    {
+        if ( attributes == &gIOStorageAttributesUnsupported )
+        {
+            attributes = NULL;
+
+            if ( IOStorage::_expansionData == kIOBlockStorageDriverAttributesUnsupported )
+            {
+                prepareRequest( byteStart, buffer, completion ? *completion : ( IOStorageCompletion ) { 0 } );
+
+                return;
+            }
+        }
+        else
+        {
+            if ( attributes && attributes->options )
+            {
+                complete( completion, kIOReturnUnsupported );
+            }
+            else
+            {
+                if ( IOStorage::_expansionData == kIOBlockStorageDriverAttributesUnsupported )
+                {
+                    prepareRequest( byteStart, buffer, completion ? *completion : ( IOStorageCompletion ) { 0 } );
+                }
+                else
+                {
+                    read( client, byteStart, buffer, completion ? *completion : ( IOStorageCompletion ) { 0 } );
+                }
+            }
+
+            return;
+        }
+    }
+
+    prepareRequest( byteStart, buffer, attributes, completion );
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void IOBlockStorageDriver::write(IOService *          /* client */,
-                                 UInt64               byteStart,
-                                 IOMemoryDescriptor * buffer,
-                                 IOStorageCompletion  completion)
+void IOBlockStorageDriver::write(IOService *           client,
+                                 UInt64                byteStart,
+                                 IOMemoryDescriptor *  buffer,
+                                 IOStorageAttributes * attributes,
+                                 IOStorageCompletion * completion)
 {
     //
     // The write method is the receiving end for all write requests from the
@@ -448,11 +507,46 @@ void IOBlockStorageDriver::write(IOService *          /* client */,
 
     // State our assumptions.
 
-    assert(buffer->getDirection() == kIODirectionOut);
+    assert( buffer->getDirection( ) == kIODirectionOut );
 
     // Prepare the transfer.
 
-    prepareRequest(byteStart, buffer, completion);
+    if ( IOStorage::_expansionData )
+    {
+        if ( attributes == &gIOStorageAttributesUnsupported )
+        {
+            attributes = NULL;
+
+            if ( IOStorage::_expansionData == kIOBlockStorageDriverAttributesUnsupported )
+            {
+                prepareRequest( byteStart, buffer, completion ? *completion : ( IOStorageCompletion ) { 0 } );
+
+                return;
+            }
+        }
+        else
+        {
+            if ( attributes && attributes->options )
+            {
+                complete( completion, kIOReturnUnsupported );
+            }
+            else
+            {
+                if ( IOStorage::_expansionData == kIOBlockStorageDriverAttributesUnsupported )
+                {
+                    prepareRequest( byteStart, buffer, completion ? *completion : ( IOStorageCompletion ) { 0 } );
+                }
+                else
+                {
+                    write( client, byteStart, buffer, completion ? *completion : ( IOStorageCompletion ) { 0 } );
+                }
+            }
+
+            return;
+        }
+    }
+
+    prepareRequest( byteStart, buffer, attributes, completion );
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -603,37 +697,7 @@ void IOBlockStorageDriver::prepareRequest(UInt64               byteStart,
     // actual transfer from the block storage device.
     //
 
-    Context * context;
-
-    // Allocate a context structure to hold some of our state.
-
-    context = allocateContext();
-
-    if (context == 0)
-    {
-        complete(completion, kIOReturnNoMemory);
-        return;
-    }
-    
-    // Fill in the context structure with some of our state.
-
-    context->block.size = getMediaBlockSize();
-    context->block.type = kBlockTypeStandard;
-
-    context->original.byteStart  = byteStart;
-    context->original.buffer     = buffer;
-    context->original.buffer->retain();
-    context->original.completion = completion;
-
-    clock_get_uptime(&context->timeStart);
-
-    completion.target    = this;
-    completion.action    = prepareRequestCompletion;
-    completion.parameter = context;
-
-    // Deblock the transfer.
-
-    deblockRequest(byteStart, buffer, completion, context);
+    prepareRequest( byteStart, buffer, NULL, &completion );
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -769,12 +833,53 @@ IOReturn IOBlockStorageDriver::message(UInt32      type,
 
     switch (type)
     {
+        case kIOMessageMediaParametersHaveChanged:
+        {
+            IOReturn status;
+            IOLockLock(_mediaStateLock);
+            if (_mediaPresent) {
+                status = recordMediaParameters();
+                if (status == kIOReturnSuccess) {
+                    lockForArbitration();
+                    if (_mediaObject) {
+                        UInt64 nbytes;
+                        IOMedia *m;
+                        if (_maxBlockNumber) {
+                            nbytes = _mediaBlockSize * (_maxBlockNumber + 1);
+                        } else {
+                            nbytes = 0;
+                        }
+                        m = instantiateMediaObject(0,nbytes,_mediaBlockSize,"");                      
+                        if (m) {
+                            _mediaObject->init( m->getBase(),
+                                                m->getSize(),
+                                                m->getPreferredBlockSize(),
+                                                m->getAttributes(),
+                                                m->isWhole(),
+                                                m->isWritable(),
+                                                m->getContentHint() );
+                            _mediaObject->messageClients(kIOMessageServicePropertyChange);
+                            m->release();
+                        } else {
+                            status = kIOReturnBadArgument;
+                        }
+                    } else {
+                        status = kIOReturnNoMedia;
+                    }
+                    unlockForArbitration();
+                }
+            } else {
+                status = kIOReturnNoMedia;
+            }
+            IOLockUnlock(_mediaStateLock);
+            return status;
+        }
         case kIOMessageMediaStateHasChanged:
         {
             IOReturn status;
-            IOLockLock(_mediaStateLock);    
+            IOLockLock(_mediaStateLock);
             status = mediaStateHasChanged((IOMediaState) argument);
-            IOLockUnlock(_mediaStateLock);    
+            IOLockUnlock(_mediaStateLock);
             return status;
         }
         case kIOMessageServiceIsRequestingClose:
@@ -816,16 +921,16 @@ IOBlockStorageDriver::acceptNewMedia(void)
     name[0] = 0;
     nameSep = false;
     if (getProvider()->getVendorString()) {
-        strcat(name, getProvider()->getVendorString());
+        strlcat(name, getProvider()->getVendorString(), sizeof(name) - strlen(name));
         nameSep = true;
     }
     if (getProvider()->getProductString()) {
-        if (nameSep == true)  strcat(name, " ");
-        strcat(name, getProvider()->getProductString());
+        if (nameSep == true)  strlcat(name, " ", sizeof(name) - strlen(name));
+        strlcat(name, getProvider()->getProductString(), sizeof(name) - strlen(name));
         nameSep = true;
     }
-    if (nameSep == true)  strcat(name, " ");
-    strcat(name, "Media");
+    if (nameSep == true)  strlcat(name, " ", sizeof(name) - strlen(name));
+    strlcat(name, "Media", sizeof(name) - strlen(name));
     strclean(name);
 
     _mediaObject = instantiateMediaObject(0,nbytes,_mediaBlockSize,name);
@@ -875,9 +980,9 @@ IOBlockStorageDriver::acceptNewMedia(void)
                     if (_mediaObject->attachToParent(parent, gIODTPlane)) {
                         char location[ 32 ];
                         if (unitLUN && unitLUN->unsigned32BitValue()) {
-                            sprintf(location, "%x,%x:0", unit->unsigned32BitValue(), unitLUN->unsigned32BitValue());
+                            snprintf(location, sizeof(location), "%x,%x:0", unit->unsigned32BitValue(), unitLUN->unsigned32BitValue());
                         } else {
-                            sprintf(location, "%x:0", unit->unsigned32BitValue());
+                            snprintf(location, sizeof(location), "%x:0", unit->unsigned32BitValue());
                         }
                         _mediaObject->setLocation(location, gIODTPlane);
                         _mediaObject->setName(unitName ? unitName->getCStringNoCopy() : "", gIODTPlane);
@@ -887,7 +992,7 @@ IOBlockStorageDriver::acceptNewMedia(void)
             }
 
             _mediaPresent = true;
-            _mediaObject->registerService();		/* enable matching */
+            _mediaObject->registerService(kIOServiceAsynchronous);		/* enable matching */
         } else {
             _mediaObject->release();
             _mediaObject = 0;
@@ -1126,7 +1231,7 @@ IOBlockStorageDriver::executeRequest(UInt64                          byteStart,
 /* Now the protocol-specific provider implements the actual
      * start of the data transfer: */
 
-    result = getProvider()->doAsyncReadWrite(buffer,block,nblks,completion);
+    result = getProvider()->doAsyncReadWrite(buffer,block,nblks,&context->request.attributes,&completion);
     
     if (result != kIOReturnSuccess) {		/* it failed to start */
         IOLog("%s[IOBlockStorageDriver]; executeRequest: request failed to start!\n",getName());
@@ -1555,9 +1660,7 @@ IOBlockStorageDriver::instantiateMediaObject(UInt64 base,UInt64 byteSize,
                 OSString *string = OSDynamicCast(OSString, dictionary->getObject(kIOPropertyPhysicalInterconnectLocationKey));
 
                 if (string) {
-                    const char *value = string->getCStringNoCopy();
-
-                    if (value && !strcmp(value, kIOPropertyExternalKey)) {
+                    if (string->isEqualTo(kIOPropertyExternalKey)) {
                         picture = "External.icns";
                     } else {
                         picture = "Internal.icns";
@@ -1680,9 +1783,6 @@ IOBlockStorageDriver::recordMediaParameters(void)
      */
 
 err:
-    _mediaPresent = false;
-    _writeProtected = true;
-
     return(result);
 }
 
@@ -3287,7 +3387,77 @@ void IOBlockStorageDriver::breakUpRequestCompletion( void *   target,
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOBlockStorageDriver,  1);
+void IOBlockStorageDriver::prepareRequest(UInt64                byteStart,
+                                          IOMemoryDescriptor *  buffer,
+                                          IOStorageAttributes * attributes,
+                                          IOStorageCompletion * completion)
+{
+    //
+    // The prepareRequest method allocates and prepares state for the transfer.
+    //
+    // This method is part of a sequence of methods invoked for each read/write
+    // request.  The first is prepareRequest, which allocates and prepares some
+    // context for the transfer; the second is deblockRequest, which aligns the
+    // transfer at the media's block boundaries; third is breakUpRequest, which
+    // breaks up the transfer into multiple sub-transfers when certain hardware
+    // constraints are exceeded; fourth is executeRequest, which implements the
+    // actual transfer from the block storage device.
+    //
+
+    IOStorageCompletion completionOut; 
+    Context *           context;
+
+    // Determine whether the attributes are valid.
+
+    if (attributes)
+    {
+        if ((attributes->options & kIOStorageOptionReserved))
+        {
+            complete(completion, kIOReturnBadArgument);
+            return;
+        }
+
+        if ((attributes->reserved[0] | attributes->reserved[1] | attributes->reserved[2]))
+        {
+            complete(completion, kIOReturnBadArgument);
+            return;
+        }
+    }
+
+    // Allocate a context structure to hold some of our state.
+
+    context = allocateContext();
+
+    if (context == 0)
+    {
+        complete(completion, kIOReturnNoMemory);
+        return;
+    }
+    
+    // Fill in the context structure with some of our state.
+
+    context->block.size = getMediaBlockSize();
+    context->block.type = kBlockTypeStandard;
+
+    context->original.byteStart = byteStart;
+    context->original.buffer    = buffer;
+    context->original.buffer->retain();
+
+    if (attributes)  context->request.attributes = *attributes;
+    if (completion)  context->original.completion = *completion;
+
+    clock_get_uptime(&context->timeStart);
+
+    completionOut.target    = this;
+    completionOut.action    = prepareRequestCompletion;
+    completionOut.parameter = context;
+
+    // Deblock the transfer.
+
+    deblockRequest(byteStart, buffer, completionOut, context);
+}
+
+OSMetaClassDefineReservedUsed(IOBlockStorageDriver, 1);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3408,3 +3578,17 @@ OSMetaClassDefineReservedUnused(IOBlockStorageDriver, 30);
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 OSMetaClassDefineReservedUnused(IOBlockStorageDriver, 31);
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+extern "C" void _ZN20IOBlockStorageDriver4readEP9IOServiceyP18IOMemoryDescriptor19IOStorageCompletion( IOBlockStorageDriver * driver, IOService * client, UInt64 byteStart, IOMemoryDescriptor * buffer, IOStorageCompletion completion )
+{
+    driver->read( client, byteStart, buffer, NULL, &completion );
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+extern "C" void _ZN20IOBlockStorageDriver5writeEP9IOServiceyP18IOMemoryDescriptor19IOStorageCompletion( IOBlockStorageDriver * driver, IOService * client, UInt64 byteStart, IOMemoryDescriptor * buffer, IOStorageCompletion completion )
+{
+    driver->write( client, byteStart, buffer, NULL, &completion );
+}
