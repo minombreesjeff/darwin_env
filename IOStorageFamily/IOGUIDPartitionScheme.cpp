@@ -26,43 +26,67 @@
 #include <IOKit/IODeviceTreeSupport.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/storage/IOFDiskPartitionScheme.h>
+#include <IOKit/storage/IOGUIDPartitionScheme.h>
 #include <libkern/OSByteOrder.h>
+#include <sys/utfconv.h>
 
 #define super IOPartitionScheme
-OSDefineMetaClassAndStructors(IOFDiskPartitionScheme, IOPartitionScheme);
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// Notes
-//
-// o the on-disk structure's fields are: 16-bit packed, little-endian formatted
-// o the relsect and numsect block values assume the drive's natural block size
-// o the relsect block value is:
-//   o for data partitions:
-//     o relative to the FDisk map that defines the partition
-//   o for extended partitions defined in the root-level FDisk map:
-//     o relative to the FDisk map that defines the partition (start of disk)
-//   o for extended partitions defined in a second-level or deeper FDisk map:
-//     o relative to the second-level FDisk map, regardless of depth
-// o the valid extended partition types are: 0x05, 0x0F, 0x85 
-// o there should be no more than one extended partition defined per FDisk map
-//
+OSDefineMetaClassAndStructors(IOGUIDPartitionScheme, IOPartitionScheme);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-#define kIOFDiskPartitionSchemeContentTable "Content Table"
+#define UCS_LITTLE_ENDIAN 0x00000001
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-bool IOFDiskPartitionScheme::init(OSDictionary * properties)
+static size_t ucs2_to_utf8( const uint16_t * ucs2str,
+                            size_t           ucs2strsiz,
+                            char *           utf8str,
+                            size_t           utf8strsiz,
+                            uint32_t         flags )
+{
+    size_t ucs2strlen;
+    size_t utf8strlen;
+
+    for ( ucs2strlen = 0; ucs2strlen < ucs2strsiz; ucs2strlen++ )
+    {
+        if ( ucs2str[ucs2strlen] == 0 )  break;
+    }
+
+    utf8_encodestr( ucs2str,
+                    ucs2strlen * sizeof(uint16_t),
+                    (u_int8_t *) utf8str,
+                    &utf8strlen,
+                    utf8strsiz,
+                    '/',
+#ifdef __BIG_ENDIAN__
+                    (flags & UCS_LITTLE_ENDIAN) ? UTF_REVERSE_ENDIAN : 0 );
+#else /* !__BIG_ENDIAN__ */
+                    (flags & UCS_LITTLE_ENDIAN) ? 0 : UTF_REVERSE_ENDIAN );
+#endif /* !__BIG_ENDIAN__ */
+
+    return utf8strlen;
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+static void uuid_unswap(uuid_t uu)
+{
+    uint8_t tmp;
+
+    tmp = uu[0];  uu[0] = uu[3];  uu[3] = tmp;
+    tmp = uu[2];  uu[2] = uu[1];  uu[1] = tmp;
+    tmp = uu[4];  uu[4] = uu[5];  uu[5] = tmp;
+    tmp = uu[6];  uu[6] = uu[7];  uu[7] = tmp;
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+bool IOGUIDPartitionScheme::init(OSDictionary * properties)
 {
     //
     // Initialize this object's minimal state.
     //
-
-    // State our assumptions.
-
-    assert(sizeof(fdisk_part) ==  16);              // (compiler/platform check)
-    assert(sizeof(disk_blk0)  == 512);              // (compiler/platform check)
 
     // Ask our superclass' opinion.
 
@@ -77,7 +101,7 @@ bool IOFDiskPartitionScheme::init(OSDictionary * properties)
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void IOFDiskPartitionScheme::free()
+void IOGUIDPartitionScheme::free()
 {
     //
     // Free all of this object's outstanding resources.
@@ -90,10 +114,10 @@ void IOFDiskPartitionScheme::free()
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-IOService * IOFDiskPartitionScheme::probe(IOService * provider, SInt32 * score)
+IOService * IOGUIDPartitionScheme::probe(IOService * provider, SInt32 * score)
 {
     //
-    // Determine whether the provider media contains an FDisk partition map.
+    // Determine whether the provider media contains an GUID partition map.
     //
 
     // State our assumptions.
@@ -104,26 +128,16 @@ IOService * IOFDiskPartitionScheme::probe(IOService * provider, SInt32 * score)
 
     if ( super::probe(provider, score) == 0 )  return 0;
 
-    // Scan the provider media for an FDisk partition map.
+    // Scan the provider media for an GUID partition map.
 
     _partitions = scan(score);
-
-    // There might be an FDisk partition scheme on disk with boot code, but with
-    // no partitions defined.  We don't consider this a match and return failure
-    // from probe.
-
-    if ( _partitions && _partitions->getCount() == 0 )
-    {
-        _partitions->release();
-        _partitions = 0;        
-    }
 
     return ( _partitions ) ? this : 0;
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-bool IOFDiskPartitionScheme::start(IOService * provider)
+bool IOGUIDPartitionScheme::start(IOService * provider)
 {
     //
     // Publish the new media objects which represent our partitions.
@@ -162,7 +176,7 @@ bool IOFDiskPartitionScheme::start(IOService * provider)
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void IOFDiskPartitionScheme::stop(IOService * provider)
+void IOGUIDPartitionScheme::stop(IOService * provider)
 {
     //
     // Clean up after the media objects we published before terminating.
@@ -194,10 +208,10 @@ void IOFDiskPartitionScheme::stop(IOService * provider)
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSSet * IOFDiskPartitionScheme::scan(SInt32 * score)
+OSSet * IOGUIDPartitionScheme::scan(SInt32 * score)
 {
     //
-    // Scan the provider media for an FDisk partition map.  Returns the set
+    // Scan the provider media for a GUID partition map.    Returns the set
     // of media objects representing each of the partitions (the retain for
     // the set is passed to the caller), or null should no partition map be
     // found.  The default probe score can be adjusted up or down, based on
@@ -206,11 +220,17 @@ OSSet * IOFDiskPartitionScheme::scan(SInt32 * score)
 
     IOBufferMemoryDescriptor * buffer         = 0;
     UInt32                     bufferSize     = 0;
-    UInt32                     fdiskBlock     = 0;
-    UInt32                     fdiskBlockExtn = 0;
-    UInt32                     fdiskBlockNext = 0;
     UInt32                     fdiskID        = 0;
     disk_blk0 *                fdiskMap       = 0;
+    UInt64                     gptBlock       = 0;
+    UInt32                     gptCheck       = 0;
+    UInt32                     gptCount       = 0;
+    UInt32                     gptID          = 0;
+    gpt_ent *                  gptMap         = 0;
+    UInt32                     gptSize        = 0;
+    UInt32                     headerCheck    = 0;
+    gpt_hdr *                  headerMap      = 0;
+    UInt32                     headerSize     = 0;
     IOMedia *                  media          = getProvider();
     UInt64                     mediaBlockSize = media->getPreferredBlockSize();
     bool                       mediaIsOpen    = false;
@@ -235,7 +255,7 @@ OSSet * IOFDiskPartitionScheme::scan(SInt32 * score)
 
     // Allocate a set to hold the set of media objects representing partitions.
 
-    partitions = OSSet::withCapacity(4);
+    partitions = OSSet::withCapacity(8);
     if ( partitions == 0 )  goto scanErr;
 
     // Open the media with read access.
@@ -243,98 +263,143 @@ OSSet * IOFDiskPartitionScheme::scan(SInt32 * score)
     mediaIsOpen = media->open(this, 0, kIOStorageAccessReader);
     if ( mediaIsOpen == false )  goto scanErr;
 
-    // Scan the media for FDisk partition map(s).
+    // Read the protective map into our buffer.
 
-    do
+    status = media->read(this, 0, buffer);
+    if ( status != kIOReturnSuccess )  goto scanErr;
+
+    fdiskMap = (disk_blk0 *) buffer->getBytesNoCopy();
+
+    // Determine whether the protective map signature is present.
+
+    if ( OSSwapLittleToHostInt16(fdiskMap->signature) != DISK_SIGNATURE )
     {
-        // Read the next FDisk map into our buffer.
+         goto scanErr;
+    }
 
-        status = media->read(this, fdiskBlock * mediaBlockSize, buffer);
-        if ( status != kIOReturnSuccess )  goto scanErr;
+    // Scan for valid partition entries in the protective map.
 
-        fdiskMap = (disk_blk0 *) buffer->getBytesNoCopy();
-
-        // Determine whether the partition map signature is present.
-
-        if ( OSSwapLittleToHostInt16(fdiskMap->signature) != DISK_SIGNATURE )
+    for ( unsigned index = 0; index < DISK_NPART; index++ )
+    {
+        if ( fdiskMap->parts[index].systid )
         {
-            goto scanErr;
-        }
-
-        // Scan for valid partition entries in the partition map.
-
-        fdiskBlockNext = 0;
-
-        for ( unsigned index = 0; index < DISK_NPART; index++ )
-        {
-            // Determine whether this is an extended (vs. data) partition.
-
-            if ( isPartitionExtended(fdiskMap->parts + index) )    // (extended)
+            if ( fdiskMap->parts[index].systid == 0xEE )
             {
-                // If peer extended partitions exist, we accept only the first.
+                if ( fdiskID )  goto scanErr;
 
-                if ( fdiskBlockNext == 0 )      // (no peer extended partition)
-                {
-                    fdiskBlockNext = fdiskBlockExtn +
-                                     OSSwapLittleToHostInt32(
-                                    /* data */ fdiskMap->parts[index].relsect );
-
-                    if ( fdiskBlockNext * mediaBlockSize >= media->getSize() )
-                    {
-                        fdiskBlockNext = 0;       // (exceeds confines of media)
-                    }
-                }
-            }
-            else if ( isPartitionUsed(fdiskMap->parts + index) )       // (data)
-            {
-                // Prepare this partition's ID.
-
-                fdiskID = ( fdiskBlock == 0 ) ? (index + 1) : (fdiskID + 1);
-
-                // Determine whether the partition is corrupt (fatal).
-
-                if ( isPartitionCorrupt(
-                                   /* partition   */ fdiskMap->parts + index,
-                                   /* partitionID */ fdiskID,
-                                   /* fdiskBlock  */ fdiskBlock ) )
-                {
-                    goto scanErr;
-                }
-
-                // Determine whether the partition is invalid (skipped).
-
-                if ( isPartitionInvalid(
-                                   /* partition   */ fdiskMap->parts + index,
-                                   /* partitionID */ fdiskID,
-                                   /* fdiskBlock  */ fdiskBlock ) )
-                {
-                    continue;
-                }
-
-                // Create a media object to represent this partition.
-
-                IOMedia * newMedia = instantiateMediaObject(
-                                   /* partition   */ fdiskMap->parts + index,
-                                   /* partitionID */ fdiskID,
-                                   /* fdiskBlock  */ fdiskBlock );
-
-                if ( newMedia )
-                {
-                    partitions->setObject(newMedia);
-                    newMedia->release();
-                }
+                fdiskID = index + 1;
             }
         }
+    }
 
-        // Prepare for first extended partition, if any.
+    if ( fdiskID == 0 )  goto scanErr;
 
-        if ( fdiskBlock == 0 )
+    // Read the partition header into our buffer.
+
+    status = media->read(this, mediaBlockSize, buffer);
+    if ( status != kIOReturnSuccess )  goto scanErr;
+
+    headerMap = (gpt_hdr *) buffer->getBytesNoCopy();
+
+    // Determine whether the partition header signature is present.
+
+    if ( memcmp(headerMap->hdr_sig, GPT_HDR_SIG, strlen(GPT_HDR_SIG)) )
+    {
+        goto scanErr;
+    }
+
+    // Determine whether the partition header size is valid.
+
+    headerCheck = OSSwapLittleToHostInt32(headerMap->hdr_crc_self);
+    headerSize  = OSSwapLittleToHostInt32(headerMap->hdr_size);
+
+    if ( headerSize < offsetof(gpt_hdr, padding) )
+    {
+        goto scanErr;
+    }
+
+    // Determine whether the partition header checksum is valid.
+
+    headerMap->hdr_crc_self = 0;
+
+    if ( crc32(0, headerMap, headerSize) != headerCheck )
+    {
+        goto scanErr;
+    }
+
+    // Determine whether the partition entry size is valid.
+
+    gptBlock = OSSwapLittleToHostInt64(headerMap->hdr_lba_table);
+    gptCheck = OSSwapLittleToHostInt32(headerMap->hdr_crc_table);
+    gptCount = OSSwapLittleToHostInt32(headerMap->hdr_entries);
+    gptSize  = OSSwapLittleToHostInt32(headerMap->hdr_entsz);
+
+    if ( gptSize < sizeof(gpt_ent) )
+    {
+        goto scanErr;
+    }
+
+    // Allocate a buffer large enough to hold one map, rounded to a media block.
+
+    buffer->release();
+
+    bufferSize = IORound(gptCount * gptSize, mediaBlockSize);
+    buffer     = IOBufferMemoryDescriptor::withCapacity(
+                                           /* capacity      */ bufferSize,
+                                           /* withDirection */ kIODirectionIn );
+    if ( buffer == 0 )  goto scanErr;
+
+    // Read the partition header into our buffer.
+
+    status = media->read(this, gptBlock * mediaBlockSize, buffer);
+    if ( status != kIOReturnSuccess )  goto scanErr;
+
+    gptMap = (gpt_ent *) buffer->getBytesNoCopy();
+
+    // Determine whether the partition entry checksum is valid.
+
+    if ( crc32(0, gptMap, gptCount * gptSize) != gptCheck )
+    {
+        goto scanErr;
+    }
+
+    // Scan for valid partition entries in the partition map.
+
+    for ( gptID = 1; gptID <= gptCount; gptID++ )
+    {
+        gptMap = (gpt_ent *) ( ((UInt8 *) buffer->getBytesNoCopy()) +
+                               (gptID * gptSize) - gptSize );
+
+        uuid_unswap( gptMap->ent_type );
+        uuid_unswap( gptMap->ent_uuid );
+ 
+        if ( isPartitionUsed( gptMap ) )
         {
-            fdiskID        = DISK_NPART;
-            fdiskBlockExtn = fdiskBlockNext;
-        }
+            // Determine whether the partition is corrupt (fatal).
 
-    } while ( (fdiskBlock = fdiskBlockNext) );
+            if ( isPartitionCorrupt( gptMap, gptID ) )
+            {
+                goto scanErr;
+            }
+
+            // Determine whether the partition is invalid (skipped).
+
+            if ( isPartitionInvalid( gptMap, gptID ) )
+            {
+                continue;
+            }
+
+            // Create a media object to represent this partition.
+
+            IOMedia * newMedia = instantiateMediaObject( gptMap, gptID );
+
+            if ( newMedia )
+            {
+                partitions->setObject(newMedia);
+                newMedia->release();
+            }
+        }
+    }
 
     // Release our resources.
 
@@ -356,38 +421,23 @@ scanErr:
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-bool IOFDiskPartitionScheme::isPartitionExtended(fdisk_part * partition)
-{
-    //
-    // Ask whether the given partition is extended.
-    //
-
-    return ( partition->systid == 0x05 ||
-             partition->systid == 0x0F ||
-             partition->systid == 0x85 );
-}
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-bool IOFDiskPartitionScheme::isPartitionUsed(fdisk_part * partition)
+bool IOGUIDPartitionScheme::isPartitionUsed(gpt_ent * partition)
 {
     //
     // Ask whether the given partition is used.
     //
 
-    return ( partition->systid != 0 && partition->numsect != 0 );
+    return uuid_is_null(partition->ent_type) ? false : true;
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-bool IOFDiskPartitionScheme::isPartitionCorrupt( 
-                                                fdisk_part * /* partition   */ ,
-                                                UInt32       /* partitionID */ ,
-                                                UInt32       /* fdiskBlock  */ )
+bool IOGUIDPartitionScheme::isPartitionCorrupt( gpt_ent * /* partition   */ ,
+                                                UInt32    /* partitionID */ )
 {
     //
-    // Ask whether the given partition appears to be corrupt.  A partition that
-    // is corrupt will cause the failure of the FDisk partition map recognition
+    // Ask whether the given partition appears to be corrupt. A partition that
+    // is corrupt will cause the failure of the GUID partition map recognition
     // altogether.
     //
 
@@ -396,14 +446,13 @@ bool IOFDiskPartitionScheme::isPartitionCorrupt(
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-bool IOFDiskPartitionScheme::isPartitionInvalid( fdisk_part * partition,
-                                                 UInt32       partitionID,
-                                                 UInt32       fdiskBlock )
+bool IOGUIDPartitionScheme::isPartitionInvalid( gpt_ent * partition,
+                                                UInt32    partitionID )
 {
     //
     // Ask whether the given partition appears to be invalid.  A partition that
     // is invalid will cause it to be skipped in the scan, but will not cause a
-    // failure of the FDisk partition map recognition.
+    // failure of the GUID partition map recognition.
     //
 
     IOMedia * media          = getProvider();
@@ -413,28 +462,30 @@ bool IOFDiskPartitionScheme::isPartitionInvalid( fdisk_part * partition,
 
     // Compute the relative byte position and size of the new partition.
 
-    partitionBase  = OSSwapLittleToHostInt32(partition->relsect) + fdiskBlock;
-    partitionSize  = OSSwapLittleToHostInt32(partition->numsect);
+    partitionBase  = OSSwapLittleToHostInt64(partition->ent_lba_start);
+    partitionSize  = OSSwapLittleToHostInt64(partition->ent_lba_end);
     partitionBase *= mediaBlockSize;
     partitionSize *= mediaBlockSize;
 
-    // Determine whether the partition shares space with the partition map.
+    // Determine whether the partition is a placeholder.
 
-    if ( partitionBase == fdiskBlock * mediaBlockSize )  return true;
+    if ( partitionBase == partitionSize )  return true;
 
-    // Determine whether the partition starts at (or past) the end-of-media.
+    // Compute the relative byte position and size of the new partition.
 
-    if ( partitionBase >= media->getSize() )  return true;
+    partitionSize -= partitionBase - mediaBlockSize;
+
+    // Determine whether the new partition leaves the confines of the container.
+
+    if ( partitionBase + partitionSize > media->getSize() )  return true;
 
     return false;
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-IOMedia * IOFDiskPartitionScheme::instantiateMediaObject(
-                                                     fdisk_part * partition,
-                                                     UInt32       partitionID,
-                                                     UInt32       fdiskBlock )
+IOMedia * IOGUIDPartitionScheme::instantiateMediaObject( gpt_ent * partition,
+                                                         UInt32    partitionID )
 {
     //
     // Instantiate a new media object to represent the given partition.
@@ -443,47 +494,32 @@ IOMedia * IOFDiskPartitionScheme::instantiateMediaObject(
     IOMedia * media          = getProvider();
     UInt64    mediaBlockSize = media->getPreferredBlockSize();
     UInt64    partitionBase  = 0;
-    char *    partitionHint  = 0;
+    char      partitionHint[36 + 1];
+    char      partitionName[36 * 3 + 1];
     UInt64    partitionSize  = 0;
+
+    ucs2_to_utf8( partition->ent_name,
+                  sizeof(partition->ent_name),
+                  partitionName,
+                  sizeof(partitionName),
+                  UCS_LITTLE_ENDIAN );
+
+    uuid_unparse( partition->ent_type,
+                  partitionHint );
 
     // Compute the relative byte position and size of the new partition.
 
-    partitionBase  = OSSwapLittleToHostInt32(partition->relsect) + fdiskBlock;
-    partitionSize  = OSSwapLittleToHostInt32(partition->numsect);
+    partitionBase  = OSSwapLittleToHostInt64(partition->ent_lba_start);
+    partitionSize  = OSSwapLittleToHostInt64(partition->ent_lba_end);
     partitionBase *= mediaBlockSize;
     partitionSize *= mediaBlockSize;
-
-    // Clip the size of the new partition if it extends past the end-of-media.
-
-    if ( partitionBase + partitionSize > media->getSize() )
-    {
-        partitionSize = media->getSize() - partitionBase;
-    }
-
-    // Look up a type for the new partition.
-
-    OSDictionary * hintTable = OSDynamicCast( 
-              /* type     */ OSDictionary,
-              /* instance */ getProperty(kIOFDiskPartitionSchemeContentTable) );
-
-    if ( hintTable )
-    {
-        char       hintIndex[5];
-        OSString * hintValue;
-
-        sprintf(hintIndex, "0x%02X", partition->systid & 0xFF);
-
-        hintValue = OSDynamicCast(OSString, hintTable->getObject(hintIndex));
-
-        if ( hintValue ) partitionHint = (char *) hintValue->getCStringNoCopy();
-    }
+    partitionSize -= partitionBase - mediaBlockSize;
 
     // Create the new media object.
 
     IOMedia * newMedia = instantiateDesiredMediaObject(
                                    /* partition   */ partition,
-                                   /* partitionID */ partitionID,
-                                   /* fdiskBlock  */ fdiskBlock );
+                                   /* partitionID */ partitionID );
 
     if ( newMedia )
     {
@@ -500,7 +536,7 @@ IOMedia * IOFDiskPartitionScheme::instantiateMediaObject(
 
             char name[24];
             sprintf(name, "Untitled %ld", partitionID);
-            newMedia->setName(name);
+            newMedia->setName(partitionName[0] ? partitionName : name);
 
             // Set a location value (the partition number) for this partition.
 
@@ -511,6 +547,12 @@ IOMedia * IOFDiskPartitionScheme::instantiateMediaObject(
             // Set the "Partition ID" key for this partition.
 
             newMedia->setProperty(kIOMediaPartitionIDKey, partitionID, 32);
+
+            // Set the "Universal Unique ID" key for this partition.
+
+            char uuid[48];
+            uuid_unparse(partition->ent_uuid, uuid);
+            newMedia->setProperty(kIOMediaUUIDKey, uuid);
         }
         else
         {
@@ -524,10 +566,9 @@ IOMedia * IOFDiskPartitionScheme::instantiateMediaObject(
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-IOMedia * IOFDiskPartitionScheme::instantiateDesiredMediaObject(
-                                                     fdisk_part * partition,
-                                                     UInt32       partitionID,
-                                                     UInt32       fdiskBlock )
+IOMedia * IOGUIDPartitionScheme::instantiateDesiredMediaObject(
+                                                         gpt_ent * partition,
+                                                         UInt32    partitionID )
 {
     //
     // Allocate a new media object (called from instantiateMediaObject).
@@ -538,7 +579,7 @@ IOMedia * IOFDiskPartitionScheme::instantiateDesiredMediaObject(
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-bool IOFDiskPartitionScheme::attachMediaObjectToDeviceTree( IOMedia * media )
+bool IOGUIDPartitionScheme::attachMediaObjectToDeviceTree( IOMedia * media )
 {
     //
     // Attach the given media object to the device tree plane.
@@ -577,11 +618,9 @@ bool IOFDiskPartitionScheme::attachMediaObjectToDeviceTree( IOMedia * media )
     return false;
 }
 
-OSMetaClassDefineReservedUsed(IOFDiskPartitionScheme, 0);
-
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void IOFDiskPartitionScheme::detachMediaObjectFromDeviceTree( IOMedia * media )
+void IOGUIDPartitionScheme::detachMediaObjectFromDeviceTree( IOMedia * media )
 {
     //
     // Detach the given media object from the device tree plane.
@@ -595,60 +634,66 @@ void IOFDiskPartitionScheme::detachMediaObjectFromDeviceTree( IOMedia * media )
     }
 }
 
-OSMetaClassDefineReservedUsed(IOFDiskPartitionScheme, 1);
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 0);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 2);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 1);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 3);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 2);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 4);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 3);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 5);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 4);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 6);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 5);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 7);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 6);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 8);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 7);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 9);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 8);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 10);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 9);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 11);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 10);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 12);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 11);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 13);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 12);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 14);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 13);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-OSMetaClassDefineReservedUnused(IOFDiskPartitionScheme, 15);
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 14);
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+OSMetaClassDefineReservedUnused(IOGUIDPartitionScheme, 15);
