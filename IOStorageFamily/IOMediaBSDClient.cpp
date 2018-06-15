@@ -1279,6 +1279,42 @@ int dkioctl(dev_t dev, u_long cmd, caddr_t data, int flags, proc_t proc)
 
         } break;
 
+        case DKIOCGETMINSEGMENTALIGNMENTBYTECOUNT:              // (u_int64_t *)
+        {
+            //
+            // This ioctl returns the minimum segment alignment in bytes.
+            //
+
+            OSNumber * number = OSDynamicCast(
+                         /* class  */ OSNumber,
+                         /* object */ minor->media->getProperty(
+                                 /* key   */ kIOMinimumSegmentAlignmentByteCountKey,
+                                 /* plane */ gIOServicePlane ) );
+            if ( number )
+                *(u_int64_t *)data = number->unsigned64BitValue();
+            else
+                *(u_int64_t *)data = 0;
+
+        } break;
+
+        case DKIOCGETMAXSEGMENTADDRESSABLEBITCOUNT:             // (u_int64_t *)
+        {
+            //
+            // This ioctl returns the maximum segment width in bits.
+            //
+
+            OSNumber * number = OSDynamicCast(
+                         /* class  */ OSNumber,
+                         /* object */ minor->media->getProperty(
+                                 /* key   */ kIOMaximumSegmentAddressableBitCountKey,
+                                 /* plane */ gIOServicePlane ) );
+            if ( number )
+                *(u_int64_t *)data = number->unsigned64BitValue();
+            else
+                *(u_int64_t *)data = 0;
+
+        } break;
+
         case DKIOCISFORMATTED:                                  // (u_int32_t *)
         {
             //
