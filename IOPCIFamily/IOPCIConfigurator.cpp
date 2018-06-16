@@ -87,20 +87,20 @@ bool CLASS::start( IOService * provider )
 
     fFlags = kIOPCIConfiguratorEnable;
 
-    if (!fPCIBridgeList[0]->supportsHotPlug)
-    {
-	siz = sizeof(cacheLineSize);
-	if (0 != sysctlbyname("hw.cachelinesize", &cacheLineSize, &siz, 0, 0))
-	    cacheLineSize = 32;
-	fCacheLineSize = cacheLineSize >> 2;
-    }
-    else
+    if (kPCIHotPlug == fPCIBridgeList[0]->supportsHotPlug)
     {
 	fFlags |= 0
 	       | kIOPCIConfiguratorAllocate
 //	       | kIOPCIConfiguratorIOLog | kIOPCIConfiguratorKPrintf
 	       ;
 	fCacheLineSize = 0x40;
+    }
+    else
+    {
+	siz = sizeof(cacheLineSize);
+	if (0 != sysctlbyname("hw.cachelinesize", &cacheLineSize, &siz, 0, 0))
+	    cacheLineSize = 32;
+	fCacheLineSize = cacheLineSize >> 2;
     }
 
     DLOG("PCI cache line size = %u bytes\n", fCacheLineSize);
@@ -132,7 +132,10 @@ void CLASS::free( void )
 	IOPCIRange *
 	range = fRootBridge->reserved->rangeLists[i];
 	if (range)
+	{
+	    range->subRange     = NULL;
 	    range->nextSubRange = NULL;
+	}
     }
 
     for (int i = 0; i < kPCIBridgeMaxCount; i++)
@@ -483,8 +486,10 @@ OSDictionary * CLASS::constructProperties( pci_dev_t device )
 	nameProp->release();
     }
 
-    if (device->supportsHotPlug)
+    if (kPCIHotPlug == device->supportsHotPlug)
 	propTable->setObject(kIOPCIHotPlugKey, kOSBooleanTrue);
+    else if (kPCILinkChange == device->supportsHotPlug)
+	propTable->setObject(kIOPCILinkChangeKey, kOSBooleanTrue);
 
     return (propTable);
 }
@@ -525,11 +530,11 @@ static IOACPIPlatformDevice * IOPCICopyACPIDevice( IORegistryEntry * device )
 
 //---------------------------------------------------------------------------
 
-static bool IOPCIIsHotplugPort(IORegistryEntry * bridgeDevice)
+static UInt8 IOPCIIsHotplugPort(IORegistryEntry * bridgeDevice)
 {
+    UInt8                  type = kPCIStatic;
     IOACPIPlatformDevice * rp;
     IOACPIPlatformDevice * child;
-    UInt32 result32 = 0;
     const IORegistryPlane * plane = IORegistryEntry::getPlane("IOACPIPlane");
 
     rp = IOPCICopyACPIDevice(bridgeDevice);
@@ -538,16 +543,29 @@ static bool IOPCIIsHotplugPort(IORegistryEntry * bridgeDevice)
 	child = (IOACPIPlatformDevice *) rp->getChildEntry(plane);
 	if (child)
 	{
-	    IOReturn 
+	    IOReturn   ret;
+	    UInt32     result32 = 0;
+	    OSObject * obj;
+
 	    ret = child->evaluateInteger("_RMV", &result32);
-	    if (kIOReturnSuccess != ret)
-		result32 = 0;
+	    if (kIOReturnSuccess == ret)
+	    {
+		if (result32)
+		    type = kPCIHotPlug;
+	    }
+	    else if ((obj = child->copyProperty(kACPIDevicePropertiesKey)))
+	    {
+		OSDictionary * dict;
+		if ((dict = OSDynamicCast(OSDictionary, obj)) 
+		  && dict->getObject(kACPIPCILinkChangeKey))
+		    type = kPCILinkChange;
+	    }
 	}
     }
     if (rp)
 	rp->release();
 
-    return (result32 != 0);
+    return (type);
 }
 
 //---------------------------------------------------------------------------
@@ -676,8 +694,13 @@ void CLASS::pciBridgeConnectDeviceTree( pci_dev_t bridge )
     {
         if (!child->isBridge)
 	    continue;
-	child->supportsHotPlug = ((child->headerType == kPCIHeaderType2) 
-				|| (child->dtNub && IOPCIIsHotplugPort(child->dtNub)));
+
+	if (child->headerType == kPCIHeaderType2)
+	    child->supportsHotPlug = kPCIHotPlug;
+	else if (child->dtNub)
+	    child->supportsHotPlug = IOPCIIsHotplugPort(child->dtNub);
+	else
+	    child->supportsHotPlug = kPCIStatic;
     }
 }
 
@@ -709,7 +732,22 @@ void CLASS::pciBridgeConstructDeviceTree( pci_dev_t bridge )
 
 	    if (!child->dtNub)
 	    {
-		IOService * nub = OSTypeAlloc(IOService);
+		IOService *    nub;
+
+		if (child->acpiDevice)
+		{
+		    OSObject  *    obj;
+		    OSDictionary * mergeProps;
+		    obj = child->acpiDevice->copyProperty(kACPIDevicePropertiesKey);
+		    if (obj)
+		    {
+			if ((mergeProps = OSDynamicCast(OSDictionary, obj)))
+			    propTable->merge(mergeProps);
+			obj->release();
+		    }
+		}
+
+		nub = OSTypeAlloc(IOService);
 		if (nub && 
 		    (!nub->init(propTable) || (!nub->attachToParent(bridge->dtNub, gIODTPlane))))
 		{
@@ -722,31 +760,17 @@ void CLASS::pciBridgeConstructDeviceTree( pci_dev_t bridge )
 
 		if (child->acpiDevice)
 		{
-		    OSObject *        obj;
-		    const OSSymbol *  sym;
-		    char              acpiPath[512];
-		    int               pathSize = 512;
-
+		    const OSSymbol * sym;
 		    if ((sym = child->acpiDevice->copyName()))
 		    {
 			nub->setName(sym);
 			sym->release();
 		    }
-
 		    if ((sym = child->acpiDevice->copyLocation()))
 		    {
 			nub->setLocation(sym);
 			sym->release();
 		    }
-
-		    // Create a symbolic link to the ACPI entry.
-		    if (child->acpiDevice->getPath(acpiPath, &pathSize, gIOPCIACPIPlane))
-			nub->setProperty(kACPIDevicePathKey, acpiPath);
-
-		    // Clone the PCI interrupt routing table.
-		    obj = child->acpiDevice->getProperty(kPCIInterruptRoutingTableKey);
-		    if (obj)
-			nub->setProperty(kPCIInterruptRoutingTableKey, obj);
 		}
 	    }
 	    else
@@ -770,7 +794,7 @@ void CLASS::pciBridgeConstructDeviceTree( pci_dev_t bridge )
         }
 
 	if ((kIOPCIConfiguratorAllocate & fFlags)
-	 || !(bridge->supportsHotPlug))
+	 || (kPCIHotPlug != bridge->supportsHotPlug))
 	{
 	    dtBridge->setProperty(kIOPCIConfiguredKey, kOSBooleanTrue);
 	}
@@ -838,7 +862,7 @@ void CLASS::pciBridgeScanBus( pci_dev_t bridge,
         if (child->headerType != kPCIHeaderType1)
 	    continue;
 
-	if (child->supportsHotPlug && !(kIOPCIConfiguratorAllocate & fFlags))
+	if ((kPCIHotPlug == child->supportsHotPlug) && !(kIOPCIConfiguratorAllocate & fFlags))
 	    continue;
 
 	didAllocateBus = false;

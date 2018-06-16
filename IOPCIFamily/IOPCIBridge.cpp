@@ -603,9 +603,10 @@ static IOWorkLoop *	 gCommonWorkLoop;
 #define fHotplugCount			reserved->hotplugCount
 #define fPresence			reserved->presence
 #define fWaitingLinkEnable		reserved->waitingLinkEnable
-#define fHotplugFirstBus		reserved->hotplugFirstBus
-#define fHotplugLastBus			reserved->hotplugLastBus
+//#define fHotplugFirstBus		reserved->hotplugFirstBus
+//#define fHotplugLastBus		reserved->hotplugLastBus
 #define fBridgeInterruptEnablePending	reserved->interruptEnablePending
+#define fLinkChangeOnly			reserved->linkChangeOnly
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 // stub driver has two power states, off and on
@@ -676,6 +677,12 @@ bool IOPCIBridge::start( IOService * provider )
     registerService();
 
     return (true);
+}
+
+void IOPCIBridge::stop( IOService * provider )
+{
+    PMstop();
+    super::stop( provider);
 }
 
 void IOPCIBridge::free( void )
@@ -801,6 +808,18 @@ IOReturn IOPCIBridge::saveDeviceState( IOPCIDevice * device,
         if (kIOPCIVolatileRegsMask & (1 << i))
             device->savedConfig[i] = device->configRead32( i * 4 );
 
+    if (device->reserved->expressConfig)
+    {
+	device->savedConfig[kIOPCIConfigShadowXPress + 0]   // device control
+	    = device->configRead16( device->reserved->expressConfig + 0x08 );
+	device->savedConfig[kIOPCIConfigShadowXPress + 1]   // link control
+	    = device->configRead16( device->reserved->expressConfig + 0x10 );
+	if (0x100 & device->reserved->expressCapabilities)
+	{						    // slot control
+	    device->savedConfig[kIOPCIConfigShadowXPress + 2]
+		= device->configRead16( device->reserved->expressConfig + 0x18 );
+	}
+    }
     for (i = 0; i < device->reserved->msiBlockSize; i++)
 	device->savedConfig[kIOPCIConfigShadowMSI + i] 
 	    = device->configRead32( device->reserved->msiConfig + i * 4 );
@@ -837,6 +856,19 @@ IOReturn IOPCIBridge::_restoreDeviceState( IOPCIDevice * device,
 	if (kIOPCIVolatileRegsMask & (1 << i))
 	    device->configWrite32( i * 4, device->savedConfig[ i ]);
 
+    if (device->reserved->expressConfig)
+    {
+	device->configWrite16( device->reserved->expressConfig + 0x08,   // device control
+				device->savedConfig[kIOPCIConfigShadowXPress + 0]);
+	device->configWrite16( device->reserved->expressConfig + 0x10,    // link control
+				device->savedConfig[kIOPCIConfigShadowXPress + 1] );
+	if (0x100 & device->reserved->expressCapabilities)
+	{								  // slot control
+	    device->configWrite16( device->reserved->expressConfig + 0x18, 
+				    device->savedConfig[kIOPCIConfigShadowXPress + 2] );
+	}
+    }
+
     for (i = 0; i < device->reserved->msiBlockSize; i++)
 	device->configWrite32( device->reserved->msiConfig + i * 4,  
 				device->savedConfig[kIOPCIConfigShadowMSI + i]);
@@ -871,6 +903,7 @@ IOReturn IOPCIBridge::restoreMachineState( IOOptionBits options )
     }
     gIOAllPCI2PCIBridgeState = kRestoreBridgeState;
 
+#ifndef __ppc__
     while (!queue_empty(&gIOAllPCIDeviceRestoreQ))
     {
 	IOPCIConfigShadow * shadow;
@@ -879,8 +912,8 @@ IOReturn IOPCIBridge::restoreMachineState( IOOptionBits options )
 
 	_restoreDeviceState(shadow->device, false);
     }
+#endif
 
-    // callers expect success
     return (kIOReturnSuccess);
 }
 
@@ -891,13 +924,16 @@ IOReturn IOPCIBridge::restoreDeviceState( IOPCIDevice * device, IOOptionBits opt
     if (!device->savedConfig)
         return (kIOReturnNotReady);
 
+#ifndef __ppc__
     IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
     ret = restoreMachineState(0);
     IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
 
     if (kIOReturnSuccess != ret)
+#endif
 	ret = _restoreDeviceState(device, true);
 
+    // callers expect success
     return (kIOReturnSuccess);
 }
 
@@ -1378,7 +1414,10 @@ void IOPCIBridge::probeBus( IOService * provider, UInt8 busNum )
 
 		capa = 0;
 		if (nub->extendedFindPCICapability(kIOPCIPCIExpressCapability, &capa))
-		    nub->reserved->expressConfig = capa;
+		{
+		    nub->reserved->expressConfig       = capa;
+		    nub->reserved->expressCapabilities = nub->configRead16(capa + 0x02);
+		}
 		capa = 0;
 #if 0
 		if (nub->extendedFindPCICapability(kIOPCIMSIXCapability, &capa))
@@ -2157,6 +2196,9 @@ void IOPCI2PCIBridge::handleInterrupt( IOInterruptEventSource * source,
 	}
     }
 
+    if (fLinkChangeOnly)
+	return;
+
     present &= (0 != ((1 << 13) & linkStatus));
 
     if (fPresence == present)
@@ -2241,12 +2283,21 @@ bool IOPCI2PCIBridge::configure( IOService * provider )
     if (bridgeDevice->extendedFindPCICapability(kIOPCIPCIExpressCapability, &offset))
 	fXpressCapability = offset;
 
-    if (fXpressCapability && bridgeDevice->getProperty(kIOPCIHotPlugKey))
+    if (fXpressCapability)
     do
     {
 	IOReturn ret;
 
-	setProperty(kIOPCIHotPlugKey, kOSBooleanTrue);
+	if (bridgeDevice->getProperty(kIOPCIHotPlugKey))
+	    setProperty(kIOPCIHotPlugKey, kOSBooleanTrue);
+	else if (bridgeDevice->getProperty(kIOPCILinkChangeKey))
+	{
+	    setProperty(kIOPCILinkChangeKey, kOSBooleanTrue);
+	    fLinkChangeOnly = true;
+	}
+	else
+	    break;
+
 	if (!gCommonWorkLoop)
 	    gCommonWorkLoop = IOWorkLoop::workLoop();
 	fWorkLoop = gCommonWorkLoop;
@@ -2275,7 +2326,10 @@ bool IOPCI2PCIBridge::configure( IOService * provider )
 	fPresence = (0 != ((1 << 13) & linkStatus));
 	fPresence &= (0 != ((1 << 6) & slotStatus));
 	if (fPresence)
-	    bridgeDevice->setProperty(kIOPCIOnlineKey, kOSBooleanTrue);
+	{
+	    if (!fLinkChangeOnly)
+		bridgeDevice->setProperty(kIOPCIOnlineKey, kOSBooleanTrue);
+	}
 	else if (!((1 << 4) & linkControl))
 	{
 	    LOG("disable link\n");
@@ -2283,10 +2337,9 @@ bool IOPCI2PCIBridge::configure( IOService * provider )
 	    bridgeDevice->configWrite16( fXpressCapability + 0x10, linkControl );
 	}
 
-	fHotplugFirstBus = bridgeDevice->configRead8( kPCI2PCISecondaryBus );
-	fHotplugLastBus  = bridgeDevice->configRead8( kPCI2PCISubordinateBus );
-	
-	LOG("first bus %d, last bus %d\n", fHotplugFirstBus, fHotplugLastBus);    
+//	fHotplugFirstBus = bridgeDevice->configRead8( kPCI2PCISecondaryBus );
+//	fHotplugLastBus  = bridgeDevice->configRead8( kPCI2PCISubordinateBus );
+//	LOG("first bus %d, last bus %d\n", fHotplugFirstBus, fHotplugLastBus);    
 
 	fBridgeInterruptEnablePending = true;
     }
@@ -2383,8 +2436,20 @@ IOReturn IOPCI2PCIBridge::setPowerState( unsigned long powerState,
     return (super::setPowerState(powerState, whatDevice));
 }
 
-void IOPCI2PCIBridge::free()
+void IOPCI2PCIBridge::stop( IOService * provider )
 {
+    if (reserved && fBridgeInterruptSource)
+    {
+       fBridgeInterruptSource->disable();
+
+       IOWorkLoop * tempWL = fBridgeInterruptSource->getWorkLoop();
+       if (tempWL)
+	   tempWL->removeEventSource(fBridgeInterruptSource);
+
+       fBridgeInterruptSource->release();
+       fBridgeInterruptSource = 0;
+    }
+
     IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
 
     UInt32 i;
@@ -2397,6 +2462,11 @@ void IOPCI2PCIBridge::free()
 
     IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
 
+    super::stop( provider);
+}
+
+void IOPCI2PCIBridge::free()
+{
     super::free();
 }
 

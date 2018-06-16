@@ -106,6 +106,13 @@ enum {
     kPCIHeaderType2 = 2
 };
 
+// value of supportsHotPlug
+enum {
+    kPCIStatic     = 0,
+    kPCIHotPlug    = 1,
+    kPCILinkChange = 2
+};
+
 enum {
     kPCI2PCIPrimaryBus          = 0x18,
     kPCI2PCISecondaryBus        = 0x19,
