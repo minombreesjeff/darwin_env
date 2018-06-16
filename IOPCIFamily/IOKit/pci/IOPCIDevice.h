@@ -68,8 +68,23 @@ enum {
 enum {
     kIOPCICapabilityIDOffset		= 0x00,
     kIOPCINextCapabilityOffset		= 0x01,
+
     kIOPCIPowerManagementCapability	= 0x01,
-    kIOPCIAGPCapability        		= 0x02
+    kIOPCIAGPCapability        		= 0x02,
+    kIOPCIVitalProductDataCapability    = 0x03,
+    kIOPCISlotIDCapability       	= 0x04,
+    kIOPCIMSICapability       		= 0x05,
+    kIOPCICPCIHotswapCapability       	= 0x06,
+    kIOPCIPCIXCapability       		= 0x07,
+    kIOPCILDTCapability       		= 0x08,
+    kIOPCIVendorSpecificCapability      = 0x09,
+    kIOPCIDebugPortCapability       	= 0x0a,
+    kIOPCICPCIResourceControlCapability = 0x0b,
+    kIOPCIHotplugCapability       	= 0x0c,
+    kIOPCIAGP8Capability       		= 0x0e,
+    kIOPCISecureCapability       	= 0x0f,
+    kIOPCIPCIExpressCapability       	= 0x10,
+    kIOPCIMSIXCapability       		= 0x11
 };
 
 /* Space definitions */
