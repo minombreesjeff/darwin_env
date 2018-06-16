@@ -19,14 +19,8 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-/*
- * Copyright (c) 1998 Apple Computer, Inc.  All rights reserved. 
- *
- * HISTORY
- * 23 Nov 98 sdouglas created from objc version.
- */
 
-#ifdef __ppc__
+#if defined(__ppc__) || defined(__arm__)
 
 #include <IOKit/system.h>
 
@@ -38,7 +32,6 @@
 
 #include <libkern/OSByteOrder.h>
 #include <libkern/c++/OSContainers.h>
-
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -53,8 +46,8 @@ UInt32 IOPCIDevice::ioRead32( UInt16 offset, IOMemoryMap * map )
             return (0);
     }
 
-    value = OSReadSwapInt32( (volatile void *)map->getVirtualAddress(), offset);
-    eieio();
+    value = OSReadLittleInt32( (volatile void *)map->getVirtualAddress(), offset);
+    OSSynchronizeIO();
 
     return (value);
 }
@@ -70,8 +63,8 @@ UInt16 IOPCIDevice::ioRead16( UInt16 offset, IOMemoryMap * map )
             return (0);
     }
 
-    value = OSReadSwapInt16( (volatile void *)map->getVirtualAddress(), offset);
-    eieio();
+    value = OSReadLittleInt16( (volatile void *)map->getVirtualAddress(), offset);
+    OSSynchronizeIO();
 
     return (value);
 }
@@ -88,7 +81,7 @@ UInt8 IOPCIDevice::ioRead8( UInt16 offset, IOMemoryMap * map )
     }
 
     value = ((volatile UInt8 *) map->getVirtualAddress())[ offset ];
-    eieio();
+    OSSynchronizeIO();
 
     return (value);
 }
@@ -103,8 +96,8 @@ void IOPCIDevice::ioWrite32( UInt16 offset, UInt32 value,
             return ;
     }
 
-    OSWriteSwapInt32( (volatile void *)map->getVirtualAddress(), offset, value);
-    eieio();
+    OSWriteLittleInt32( (volatile void *)map->getVirtualAddress(), offset, value);
+    OSSynchronizeIO();
 }
 
 void IOPCIDevice::ioWrite16( UInt16 offset, UInt16 value,
@@ -117,8 +110,8 @@ void IOPCIDevice::ioWrite16( UInt16 offset, UInt16 value,
             return ;
     }
 
-    OSWriteSwapInt16( (volatile void *)map->getVirtualAddress(), offset, value);
-    eieio();
+    OSWriteLittleInt16( (volatile void *)map->getVirtualAddress(), offset, value);
+    OSSynchronizeIO();
 }
 
 void IOPCIDevice::ioWrite8( UInt16 offset, UInt8 value,
@@ -132,8 +125,9 @@ void IOPCIDevice::ioWrite8( UInt16 offset, UInt8 value,
     }
 
     ((volatile UInt8 *) map->getVirtualAddress())[ offset ] = value;
-    eieio();
+    OSSynchronizeIO();
 }
 
-#endif // __ppc__
+#endif // #if defined(__ppc__) || defined(__arm__)
+
 
