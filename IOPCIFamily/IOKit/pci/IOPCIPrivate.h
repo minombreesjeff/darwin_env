@@ -37,6 +37,7 @@ struct IOPCIDeviceExpansionData
     UInt16  msiConfig;
     UInt8   msiBlockSize;
     UInt8   msiMode;
+    UInt8   msiEnable;
 };
 
 enum
@@ -57,6 +58,7 @@ struct IOPCIConfigShadow
     UInt32        flags;
     queue_chain_t link;
     IOPCIDevice * device;
+    IOPCI2PCIBridge * bridge;
 };
 
 #define configShadow(device)	((IOPCIConfigShadow *) &device->savedConfig[0])
@@ -82,6 +84,7 @@ enum
 #define kIOPCIEjectableKey  "IOPCIEjectable"
 #define kIOPCIHotPlugKey    "IOPCIHotPlug"
 #define kIOPCILinkChangeKey "IOPCILinkChange"
+#define kIOPCIResetKey	    "IOPCIReset"
 #define kIOPCIOnlineKey	    "IOPCIOnline"
 #define kIOPCIConfiguredKey "IOPCIConfigured"
 #define kIOPCIResourcedKey  "IOPCIResourced"

@@ -63,8 +63,7 @@ static IOPCIMessagedInterruptController  * gIOPCIMessagedInterruptController;
 
 enum
 {
-    kMSIEnabled = 0x01,
-    kMSIX       = 0x02
+    kMSIX       = 0x01
 };
 
 enum
@@ -124,10 +123,13 @@ public:
                                         IOInterruptHandler handler,
                                         void *             refCon );
 
+    virtual IOReturn unregisterInterrupt( IOService *	   nub,
+					int                source);
+
     virtual void     initVector( long vectorNumber,
                                  IOInterruptVector * vector );
 
-    virtual int getVectorType(long vectorNumber, IOInterruptVector *vector);
+    virtual int      getVectorType(long vectorNumber, IOInterruptVector *vector);
 
     virtual bool     vectorCanBeShared( long vectorNumber,
                                         IOInterruptVector * vector );
@@ -431,29 +433,54 @@ IOReturn IOPCIMessagedInterruptController::registerInterrupt(
 
     ret = super::registerInterrupt(nub, source, target, handler, refCon);
 
-    if ((kIOReturnSuccess == ret) && device && !(kMSIEnabled & device->reserved->msiMode))
+    if ((kIOReturnSuccess == ret) && device)
+    {
+	if (!device->reserved->msiEnable)
+	{
+	    IOByteCount msi = device->reserved->msiConfig;
+	    uint16_t control;
+
+	    control = device->configRead16(msi + 2);
+
+	    if (kMSIX & device->reserved->msiMode)
+	    {
+		control |= (1 << 15);
+	    }
+	    else
+	    {
+		control |= 1;
+	    }
+
+	    device->configWrite16(msi + 2, control);
+	    control = device->configRead16(kIOPCIConfigCommand);
+	    control |= (1 << 10) | (1 << 2);
+	    device->configWrite16(kIOPCIConfigCommand, control);
+	    device->setProperty("IOPCIMSIMode", kOSBooleanTrue);
+	}
+	device->reserved->msiEnable++;
+    }
+
+    return (ret);
+}
+
+IOReturn IOPCIMessagedInterruptController::unregisterInterrupt( 
+					IOService *	   nub,
+					int                source)
+{
+    IOReturn      ret;
+    IOPCIDevice * device = OSDynamicCast(IOPCIDevice, nub);
+
+    ret = super::unregisterInterrupt(nub, source);
+
+    if (device && device->reserved->msiEnable && !(--device->reserved->msiEnable))
     {
 	IOByteCount msi = device->reserved->msiConfig;
 	uint16_t control;
 
 	control = device->configRead16(msi + 2);
-
-	if (kMSIX & device->reserved->msiMode)
-	{
-	    control |= (1 << 15);
-	}
-	else
-	{
-	    control |= 1;
-	}
-
+	control &= ~((1 << 15) | (7 << 4) | 1);
 	device->configWrite16(msi + 2, control);
-	control = device->configRead16(kIOPCIConfigCommand);
-	control |= (1 << 10) | (1 << 2);
-	device->configWrite16(kIOPCIConfigCommand, control);
-
-	device->reserved->msiMode |= kMSIEnabled;
-	device->setProperty("IOPCIMSIMode", kOSBooleanTrue);
+	device->removeProperty("IOPCIMSIMode");
     }
 
     return (ret);
@@ -579,11 +606,8 @@ enum {
 #define kIOPlatformDeviceMessageKey     "IOPlatformDeviceMessage"
 #endif
 
-enum { kIOPCIMaxPCI2PCIBridges = 32 };
-
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-static IOPCI2PCIBridge * gIOAllPCI2PCIBridges[kIOPCIMaxPCI2PCIBridges];
 static IOSimpleLock *  	 gIOAllPCI2PCIBridgesLock;
 UInt32			 gIOAllPCI2PCIBridgeState;
 
@@ -727,21 +751,15 @@ IOReturn IOPCIBridge::setDevicePowerState( IOPCIDevice * device,
     if ((kSaveDeviceState == whatToDo) || (kRestoreDeviceState == whatToDo))
     {
 	IOReturn ret = kIOReturnSuccess;
-	void * p3    = (kSaveDeviceState == whatToDo) ? (void *) 3 : (void *) 0;
 
-	device->callPlatformFunction(gIOPlatformDeviceMessageKey, false,
-	    (void *) kIOMessageDeviceWillPowerOff, device, p3, (void *) 0);
-
-        if (kOSBooleanFalse != device->getProperty(kIOPMPCIConfigSpaceVolatileKey))
+	if ((device->savedConfig && configShadow(device)->bridge)
+	|| (kOSBooleanFalse != device->getProperty(kIOPMPCIConfigSpaceVolatileKey)))
 	{
 	    if (kRestoreDeviceState == whatToDo)
 		ret = restoreDeviceState(device);
 	    else
 		ret = saveDeviceState(device);
 	}
-
-	device->callPlatformFunction(gIOPlatformDeviceMessageKey, false,
-	    (void *) kIOMessageDeviceHasPoweredOn, device, p3, (void *) 0);
 
 	return (ret);
     }
@@ -767,23 +785,9 @@ IOReturn IOPCIBridge::setDevicePowerState( IOPCIDevice * device,
     // Special for pci/pci-bridge devices - 
     // kSaveBridgeState(2) to save immediately, kRestoreBridgeState(3) to restore immediately
 
-    IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
-
-    if (gIOAllPCI2PCIBridgeState != whatToDo)
-    {
-	if (kRestoreBridgeState == whatToDo)
-	{
-	    restoreMachineState();
-	}
-	else for (UInt32 i = 0; i < kIOPCIMaxPCI2PCIBridges; i++)
-	{
-	    if (gIOAllPCI2PCIBridges[i])
-		gIOAllPCI2PCIBridges[i]->saveBridgeState();
-	}
-	gIOAllPCI2PCIBridgeState = whatToDo;
-    }
-
-    IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
+    if (kRestoreBridgeState == whatToDo)
+	restoreMachineState(0);
+    gIOAllPCI2PCIBridgeState = whatToDo;
 
     return (kIOReturnSuccess);
 }
@@ -792,21 +796,36 @@ IOReturn IOPCIBridge::saveDeviceState( IOPCIDevice * device,
                                        IOOptionBits options )
 {
     UInt32 flags;
+    void * p3 = (void *) 3;
     int i;
 
     if (!device->savedConfig)
         return (kIOReturnNotReady);
 
     flags = configShadow(device)->flags;
-    if ((kIOPCIConfigShadowValid | kIOPCIConfigShadowBridge) & flags)
+
+    if (kIOPCIConfigShadowValid & flags)
         return (kIOReturnSuccess);
 
     flags |= kIOPCIConfigShadowValid;
     configShadow(device)->flags = flags;
 
-    for (i = 0; i < kIOPCIConfigShadowRegs; i++)
-        if (kIOPCIVolatileRegsMask & (1 << i))
-            device->savedConfig[i] = device->configRead32( i * 4 );
+    device->callPlatformFunction(gIOPlatformDeviceMessageKey, false,
+	(void *) kIOMessageDeviceWillPowerOff, device, p3, (void *) 0);
+
+    if (kIOPCIConfigShadowBridge & flags)
+    {
+	if (configShadow(device)->bridge)
+	    configShadow(device)->bridge->saveBridgeState();
+    }
+    else
+    {
+	for (i = 0; i < kIOPCIConfigShadowRegs; i++)
+	{
+	    if (kIOPCIVolatileRegsMask & (1 << i))
+		device->savedConfig[i] = device->configRead32( i * 4 );
+	}
+    }
 
     if (device->reserved->expressConfig)
     {
@@ -824,6 +843,9 @@ IOReturn IOPCIBridge::saveDeviceState( IOPCIDevice * device,
 	device->savedConfig[kIOPCIConfigShadowMSI + i] 
 	    = device->configRead32( device->reserved->msiConfig + i * 4 );
 
+    device->callPlatformFunction(gIOPlatformDeviceMessageKey, false,
+	(void *) kIOMessageDeviceHasPoweredOn, device, p3, (void *) 0);
+
     IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
 
     queue_enter_first( &gIOAllPCIDeviceRestoreQ,
@@ -840,21 +862,35 @@ IOReturn IOPCIBridge::_restoreDeviceState( IOPCIDevice * device,
         IOOptionBits options )
 {
     UInt32 flags;
+    void * p3 = (void *) 0;
     int i;
 
     flags = configShadow(device)->flags;
-    if (kIOPCIConfigShadowBridge & flags)
-	return (kIOReturnSuccess);
+
     if (!(kIOPCIConfigShadowValid & flags))
 	return (kIOReturnNotReady);
     flags &= ~kIOPCIConfigShadowValid;
     configShadow(device)->flags = flags;
 
-    device->configWrite32(kIOPCIConfigCommand, 0);
+//    device->configWrite32(kIOPCIConfigCommand, 0);
 
-    for (i = (kIOPCIConfigRevisionID >> 2); i < kIOPCIConfigShadowRegs; i++)
-	if (kIOPCIVolatileRegsMask & (1 << i))
-	    device->configWrite32( i * 4, device->savedConfig[ i ]);
+    device->callPlatformFunction(gIOPlatformDeviceMessageKey, false,
+	(void *) kIOMessageDeviceWillPowerOff, device, p3, (void *) 0);
+
+    if (kIOPCIConfigShadowBridge & flags)
+    {
+	if (configShadow(device)->bridge)
+	    configShadow(device)->bridge->restoreBridgeState();
+    }
+    else
+    {
+	for (i = (kIOPCIConfigRevisionID >> 2); i < kIOPCIConfigShadowRegs; i++)
+	{
+	    if (kIOPCIVolatileRegsMask & (1 << i))
+		device->configWrite32( i * 4, device->savedConfig[ i ]);
+	}
+	device->configWrite32(kIOPCIConfigCommand, device->savedConfig[1]);
+    }
 
     if (device->reserved->expressConfig)
     {
@@ -873,46 +909,57 @@ IOReturn IOPCIBridge::_restoreDeviceState( IOPCIDevice * device,
 	device->configWrite32( device->reserved->msiConfig + i * 4,  
 				device->savedConfig[kIOPCIConfigShadowMSI + i]);
 
-    device->configWrite32(kIOPCIConfigCommand, device->savedConfig[1]);
-
-    if (options)
-	IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
-    if (configShadow(device)->link.next)
-    {
-	queue_remove( &gIOAllPCIDeviceRestoreQ,
-		      configShadow(device),
-		      IOPCIConfigShadow *,
-		      link );
-	configShadow(device)->link.next = configShadow(device)->link.prev = NULL;
-    }
-    if (options)
-	IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
+    device->callPlatformFunction(gIOPlatformDeviceMessageKey, false,
+	(void *) kIOMessageDeviceHasPoweredOn, device, p3, (void *) 0);
 
     return (kIOReturnSuccess);
 }
 
 IOReturn IOPCIBridge::restoreMachineState( IOOptionBits options )
 {
-    if (kSaveBridgeState != gIOAllPCI2PCIBridgeState)
-	return (kIOReturnNotFound);
+    IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
 
-    for (UInt32 i = 0; i < kIOPCIMaxPCI2PCIBridges; i++)
+    if (kSaveBridgeState != gIOAllPCI2PCIBridgeState)
     {
-	if (gIOAllPCI2PCIBridges[i])
-	    gIOAllPCI2PCIBridges[i]->restoreBridgeState();
+	IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
+	return (kIOReturnNotFound);
     }
+
     gIOAllPCI2PCIBridgeState = kRestoreBridgeState;
 
-#ifndef __ppc__
-    while (!queue_empty(&gIOAllPCIDeviceRestoreQ))
+    IOPCIConfigShadow * shadow;
+    IOPCIConfigShadow * next;
+    UInt32              bridgesOnly = true;
+
+    do
     {
-	IOPCIConfigShadow * shadow;
+	next = (IOPCIConfigShadow *) queue_first(&gIOAllPCIDeviceRestoreQ);
+	while (!queue_end(&gIOAllPCIDeviceRestoreQ, (queue_entry_t) next))
+	{
+	    shadow = next;
+	    next   = (IOPCIConfigShadow *) queue_next(&shadow->link);
 
-	shadow = (IOPCIConfigShadow *) queue_first(&gIOAllPCIDeviceRestoreQ);
+	    if (bridgesOnly && !(kIOPCIConfigShadowBridge & shadow->flags))
+		continue;
 
-	_restoreDeviceState(shadow->device, false);
+	    queue_remove( &gIOAllPCIDeviceRestoreQ,
+			  shadow,
+			  IOPCIConfigShadow *,
+			  link );
+	    shadow->link.next = shadow->link.prev = NULL;
+
+	    IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
+	    _restoreDeviceState(shadow->device, false);
+	    IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
+	}
     }
+#ifndef __ppc__
+    while (bridgesOnly--);
+#else
+    while (false);
 #endif
+
+    IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
 
     return (kIOReturnSuccess);
 }
@@ -925,14 +972,23 @@ IOReturn IOPCIBridge::restoreDeviceState( IOPCIDevice * device, IOOptionBits opt
         return (kIOReturnNotReady);
 
 #ifndef __ppc__
-    IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
     ret = restoreMachineState(0);
-    IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
 
     if (kIOReturnSuccess != ret)
 #endif
+    {
+	if (configShadow(device)->link.next)
+	{
+	    IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
+	    queue_remove( &gIOAllPCIDeviceRestoreQ,
+			  configShadow(device),
+			  IOPCIConfigShadow *,
+			  link );
+	    configShadow(device)->link.next = configShadow(device)->link.prev = NULL;
+	    IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
+	}
 	ret = _restoreDeviceState(device, true);
-
+    }
     // callers expect success
     return (kIOReturnSuccess);
 }
@@ -1353,6 +1409,7 @@ UInt8 IOPCIBridge::lastBusNum( void )
 void IOPCIBridge::probeBus( IOService * provider, UInt8 busNum )
 {
     IORegistryEntry *  found;
+    IOService *	       service;
     OSDictionary *     propTable;
     IOPCIDevice *      nub = 0;
     OSIterator *       kidsIter;
@@ -1402,6 +1459,9 @@ void IOPCIBridge::probeBus( IOService * provider, UInt8 busNum )
 	{
 	    if (!found->getProperty("vendor-id"))
 		continue;
+	    if ((service = OSDynamicCast(IOService, found)) && service->isInactive())
+		continue;
+
 	    propTable = found->getPropertyTable();
 	    nub = createNub( propTable );
 	    if ( nub 
@@ -2257,6 +2317,7 @@ void IOPCI2PCIBridge::handleInterrupt( IOInterruptEventSource * source,
 #endif
 	IOSleep(1* 1000);
 	LOG("probeBus()\n");
+    	setProperty(kIOPCIResetKey, kOSBooleanTrue);
 	probeBus( bridgeDevice, firstBusNum() );
     }
 }
@@ -2264,12 +2325,19 @@ void IOPCI2PCIBridge::handleInterrupt( IOInterruptEventSource * source,
 
 bool IOPCI2PCIBridge::start( IOService * provider )
 {
+    bool ok;
+
     reserved = IONew(ExpansionData, 1);
     if (reserved == 0) return (false);
 
     bzero(reserved, sizeof(ExpansionData));
 
-    return super::start(provider);
+    ok = super::start(provider);
+
+    if (ok && fBridgeInterruptSource)
+	changePowerStateTo(2);
+
+    return (ok);
 }
 
 bool IOPCI2PCIBridge::configure( IOService * provider )
@@ -2378,19 +2446,10 @@ bool IOPCI2PCIBridge::configure( IOService * provider )
 
     saveBridgeState();
     if (bridgeDevice->savedConfig)
+    {
         configShadow(bridgeDevice)->flags |= kIOPCIConfigShadowBridge;
-
-    IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
-
-    UInt32 i;
-    for (i = 0;
-	 gIOAllPCI2PCIBridges[i] && (i < kIOPCIMaxPCI2PCIBridges);
-	 i++)	{}
-
-    if (i < kIOPCIMaxPCI2PCIBridges)
-	gIOAllPCI2PCIBridges[i] = this;
-
-    IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
+        configShadow(bridgeDevice)->bridge = this;
+    }
 
     return (super::configure(provider));
 }
@@ -2449,18 +2508,6 @@ void IOPCI2PCIBridge::stop( IOService * provider )
        fBridgeInterruptSource->release();
        fBridgeInterruptSource = 0;
     }
-
-    IOSimpleLockLock(gIOAllPCI2PCIBridgesLock);
-
-    UInt32 i;
-    for (i = 0;
-	 (this != gIOAllPCI2PCIBridges[i]) && (i < kIOPCIMaxPCI2PCIBridges);
-	 i++)	{}
-
-    if (i < kIOPCIMaxPCI2PCIBridges)
-	gIOAllPCI2PCIBridges[i] = 0;
-
-    IOSimpleLockUnlock(gIOAllPCI2PCIBridgesLock);
 
     super::stop( provider);
 }
@@ -2637,12 +2684,12 @@ IOReturn IOPCIBridge::resolveLegacyInterrupts( IOService * provider, IOPCIDevice
     // Ask the platform driver to resolve the PCI interrupt route,
     // and return its corresponding system interrupt vector.
 
-    if ( provider->callPlatformFunction( "ResolvePCIInterrupt",
+    if ( kIOReturnSuccess == provider->callPlatformFunction( "ResolvePCIInterrupt",
                    /* waitForFunction */ false,
                    /* provider nub    */ provider,
                    /* device number   */ (void *) nub->space.s.deviceNum,
                    /* interrupt pin   */ (void *) pin,
-                   /* resolved IRQ    */ &irq ) == kIOReturnSuccess )
+                   /* resolved IRQ    */ &irq ))
     {
         if (1 & gIOPCIDebug)
             IOLog("%s: Resolved interrupt %ld (%d) for %s\n",

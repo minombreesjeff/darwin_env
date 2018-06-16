@@ -33,6 +33,7 @@
 #include <IOKit/assert.h>
 
 #include <libkern/c++/OSContainers.h>
+#include <libkern/version.h>
 
 #define	pmSleepEnabled		reserved->pmSleepEnabled
 #define	pmControlStatus		reserved->pmControlStatus
@@ -176,7 +177,11 @@ IOReturn IOPCIDevice::setPowerState( unsigned long powerState,
     
     if (kIOPCIDeviceDozeState == powerState)
     {
+#if VERSION_MAJOR >= 9
+	if (kIOPCIDeviceOffState == getPowerState())
+#else
 	if (kIOPCIDeviceOffState == pm_vars->myCurrentState)
+#endif
 	    powerState = kIOPCIDeviceOnState;
 	else
 	    powerState = kIOPCIDeviceOffState;
@@ -185,8 +190,11 @@ IOReturn IOPCIDevice::setPowerState( unsigned long powerState,
     switch (powerState)
     {
 	case kIOPCIDeviceOffState:
-
+#if VERSION_MAJOR >= 9
+	    if (getPowerState() > kIOPCIDeviceDozeState)
+#else
 	    if (pm_vars->myCurrentState > kIOPCIDeviceDozeState)
+#endif
 		parent->setDevicePowerState( this, 0 );
 
 	    if (pmSleepEnabled && pmControlStatus && sleepControlBits)

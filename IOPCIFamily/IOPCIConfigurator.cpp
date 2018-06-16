@@ -94,6 +94,11 @@ bool CLASS::start( IOService * provider )
 //	       | kIOPCIConfiguratorIOLog | kIOPCIConfiguratorKPrintf
 	       ;
 	fCacheLineSize = 0x40;
+	if (provider->getProperty(kIOPCIResetKey))
+	{
+	    provider->removeProperty(kIOPCIResetKey);
+	    fFlags |= kIOPCIConfiguratorReset;
+	}
     }
     else
     {
@@ -582,6 +587,7 @@ void CLASS::matchDTEntry( IORegistryEntry * dtEntry, void * _context )
     pci_dev_t             bridge = context->bridge;
     pci_dev_t             match = 0;
     const OSSymbol *      location;	
+    IOService *           service;
 
     assert(bridge);
     assert(dtEntry);
@@ -604,6 +610,9 @@ void CLASS::matchDTEntry( IORegistryEntry * dtEntry, void * _context )
             break;
         }
     }
+
+    if ((service = OSDynamicCast(IOService, dtEntry)) && service->isInactive())
+	match = 0;
 
     if (match)
     {
@@ -897,6 +906,7 @@ void CLASS::pciBridgeScanBus( pci_dev_t bridge,
 	    // close down to the allocated range
 	    child->subBusNum = nextChildBusNum;
 	    configWrite8( child->space, kPCI2PCISubordinateBus, child->subBusNum );
+	    *nextBusNum = nextChildBusNum;
 	}
 
 	DLOG("bridge %p scan final bus range %u:%u\n",
@@ -934,6 +944,11 @@ void CLASS::pciBridgeCheckConfiguration( pci_dev_t bridge )
     IOPCIRange * childRange;
     IOPCIRange * range;
 
+    static const IOPCIScalar minBridgeAlignments[kIOPCIResourceTypeCount] = {
+	kPCIBridgeMemoryAlignment, kPCIBridgeMemoryAlignment, 
+	kPCIBridgeIOAlignment, kPCIBridgeBusNumberAlignment
+    };
+
     DLOG("pciBridgeCheckConfiguration(bus %u, state %d)\n", bridge->secBusNum, bridge->deviceState);
 
     assert(bridge != fPCIBridgeList[0]);
@@ -960,12 +975,10 @@ void CLASS::pciBridgeCheckConfiguration( pci_dev_t bridge )
     memset(newRanges, 0, sizeof(IOPCIRange) * kIOPCIResourceTypeCount);
     for (int i = 0; i < kIOPCIResourceTypeCount; i++)
     {
-	static const IOPCIScalar alignments[kIOPCIResourceTypeCount] = {
-	    kPCIBridgeMemoryAlignment, kPCIBridgeMemoryAlignment, 
-	    kPCIBridgeIOAlignment, kPCIBridgeBusNumberAlignment
-	};
         newRanges[i].type = i;
-	newRanges[i].alignment = alignments[i];
+	newRanges[i].alignment = minBridgeAlignments[i];
+	if (kIOPCIResourceTypeBusNumber == i)
+	    newRanges[i].size = 1;
     }
 
     // Calculate total child resource requirements and propose new
@@ -1018,10 +1031,7 @@ void CLASS::pciBridgeCheckConfiguration( pci_dev_t bridge )
             // alignment. For devices, all ranges are naturally aligned.
 
             newRanges[i].size = IORound(newRanges[i].size,
-                                        newRanges[i].alignment);
-
-	    if ((kIOPCIResourceTypeBusNumber == i) && !newRanges[i].size)
-		newRanges[i].size = 1;
+					minBridgeAlignments[i]);
 
             memcpy(&bridge->ranges[BRIDGE_RANGE_NUM(i)],
                    &newRanges[i], sizeof(IOPCIRange));
@@ -1899,7 +1909,8 @@ void CLASS::pciProbeBaseAddressRegister( pci_dev_t device, UInt32 lastBarNum )
 
 	range->type = kIOPCIResourceTypeMemory;
         value &= ~barMask;
-        range->start = IOPhysical32( 0, saved & value );
+	if (!(fFlags & kIOPCIConfiguratorReset))
+	    range->start = IOPhysical32( 0, saved & value );
         range->size  = IOPhysical32( 0, -value );
         range->alignment = range->size;
 
@@ -1956,7 +1967,8 @@ void CLASS::pciProbeBaseAddressRegister( pci_dev_t device, UInt32 lastBarNum )
         }
 
         value &= ~barMask;
-        range->start = IOPhysical32( 0, saved & value );
+	if (!(fFlags & kIOPCIConfiguratorReset))
+	    range->start = IOPhysical32( 0, saved & value );
         range->size  = IOPhysical32( 0, -value );
         range->alignment = range->size;
 
@@ -1969,8 +1981,21 @@ void CLASS::pciProbeBaseAddressRegister( pci_dev_t device, UInt32 lastBarNum )
 
 void CLASS::pciDeviceProbeRanges( pci_dev_t device )
 {
+    uint32_t idx;
+
     // Probe BAR 0 through 5 and ROM
     pciSafeProbeBaseAddressRegister(device, kIOPCIRangeExpansionROM);
+
+    DLOG("  state %d\n", device->deviceState);
+    for (idx = kIOPCIRangeBAR0; idx <= kIOPCIRangeExpansionROM; idx++)
+    {
+	if (!device->ranges[idx].size)
+	    continue;
+	DLOG("   [%x %s] %llx:%llx\n",
+	     (idx == kIOPCIRangeExpansionROM) ? kIOPCIConfigExpansionROMBase : idx * 4 + 0x10,
+	     gPCIResourceTypeName[device->ranges[idx].type],
+	     device->ranges[idx].start, device->ranges[idx].size);
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -1980,7 +2005,7 @@ void CLASS::pciBridgeProbeBusRange( pci_dev_t bridge )
     IOPCIRange *    range;
 
     // Record the bridge secondary and subordinate bus numbers
-    
+
     bridge->secBusNum = configRead8(bridge->space, kPCI2PCISecondaryBus);
     bridge->subBusNum = configRead8(bridge->space, kPCI2PCISubordinateBus);
 
@@ -2051,7 +2076,7 @@ void CLASS::pciBridgeProbeRanges( pci_dev_t bridge )
     // Probe I/O base and limit
 
     end = configRead32(bridge->space, kPCI2PCIIORange);
-    if (end && ((end & (0x0f0f)) == 0))
+    if (end && ((end & (0x0e0e)) == 0))
     {
         // I/O Base and Limit register at dword 7 (0x1c).
         // If bridge does not implement an I/O address range, then both

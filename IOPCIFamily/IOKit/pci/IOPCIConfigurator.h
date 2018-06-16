@@ -44,8 +44,9 @@
 enum {
     kIOPCIConfiguratorEnable   = 0x00000001,
     kIOPCIConfiguratorAllocate = 0x00000002,
-    kIOPCIConfiguratorIOLog    = 0x00000004,
-    kIOPCIConfiguratorKPrintf  = 0x00000008
+    kIOPCIConfiguratorReset    = 0x00000004,
+    kIOPCIConfiguratorIOLog    = 0x00010000,
+    kIOPCIConfiguratorKPrintf  = 0x00020000
 };
 
 
@@ -200,30 +201,5 @@ public:
                            UInt32 offset, UInt8 data );
 };
 
-#if 0
-class IOPCI2PCIConfigurator : public IOPCIConfigurator
-{
-    OSDeclareDefaultStructors( IOPCI2PCIConfigurator );
-
-    IOPCIBridge *  fRootPCIBridge;
-
-public:
-
-    virtual bool    start( IOService * provider );
-    virtual void    free( void );
-
-    virtual bool    createRoot( IOService * provider );
-
-    virtual UInt32  configRead32( IOPCIAddressSpace space, UInt32 offset );
-    virtual UInt16  configRead16( IOPCIAddressSpace space, UInt32 offset );
-    virtual UInt8   configRead8(  IOPCIAddressSpace space, UInt32 offset );
-    virtual void    configWrite32( IOPCIAddressSpace space,
-                           UInt32 offset, UInt32 data );
-    virtual void    configWrite16( IOPCIAddressSpace space,
-                           UInt32 offset, UInt16 data );
-    virtual void    configWrite8(  IOPCIAddressSpace space,
-                           UInt32 offset, UInt8 data );
-};
-#endif
 
 #endif /* !_IOPCICONFIGURATOR_H */

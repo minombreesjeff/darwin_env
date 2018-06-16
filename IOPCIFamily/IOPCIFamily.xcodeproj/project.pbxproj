@@ -6,6 +6,20 @@
 	objectVersion = 42;
 	objects = {
 
+/* Begin PBXAggregateTarget section */
+		A6F210B90A7801AB00875EC6 /* AppleSamplePCI */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = A6F210BC0A7801EC00875EC6 /* Build configuration list for PBXAggregateTarget "AppleSamplePCI" */;
+			buildPhases = (
+				A6F2EDAF0A781FEC00688783 /* ShellScript */,
+			);
+			dependencies = (
+			);
+			name = AppleSamplePCI;
+			productName = AppleSamplePCI;
+		};
+/* End PBXAggregateTarget section */
+
 /* Begin PBXBuildFile section */
 		03DB1087033AA50A03CA2A5F /* IOAGPDevice.h in Headers */ = {isa = PBXBuildFile; fileRef = 03DB1084033AA50A03CA2A5F /* IOAGPDevice.h */; };
 		03DB1088033AA50A03CA2A5F /* IOPCIBridge.h in Headers */ = {isa = PBXBuildFile; fileRef = 03DB1085033AA50A03CA2A5F /* IOPCIBridge.h */; };
@@ -26,31 +40,6 @@
 		A6DD8EF80937A109000A918D /* IOPCIPrivate.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = A6DD8EEF0937A0EC000A918D /* IOPCIPrivate.h */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXBuildStyle section */
-		06AA1265FFB2107B11CA28AA /* Development */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_ENABLE_FIX_AND_CONTINUE = YES;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				OPTIMIZATION_CFLAGS = "-O0";
-				ZERO_LINK = YES;
-			};
-			name = Development;
-		};
-		06AA1266FFB2107B11CA28AA /* Deployment */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = YES;
-				GCC_ENABLE_FIX_AND_CONTINUE = NO;
-				ZERO_LINK = NO;
-			};
-			name = Deployment;
-		};
-/* End PBXBuildStyle section */
-
 /* Begin PBXBundleTarget section */
 		089C1673FE841209C02AAC07 /* IOPCIFamily */ = {
 			isa = PBXBundleTarget;
@@ -64,33 +53,9 @@
 				089C1679FE841209C02AAC07 /* Rez */,
 				06AA1264FFB2107B11CA28AA /* ShellScript */,
 			);
-			buildSettings = {
-				BUNDLE_STYLE = SHALLOW;
-				FRAMEWORK_SEARCH_PATHS = "";
-				HEADER_SEARCH_PATHS = "\"$(SRCROOT)\"";
-				INSTALL_GROUP = wheel;
-				INSTALL_MODE_FLAG = "a-w,u+w,a+rX";
-				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
-				KERNEL_MODULE = YES;
-				LIBRARY_SEARCH_PATHS = "";
-				MODULE_IOKIT = YES;
-				MODULE_NAME = com.apple.iokit.IOPCIFamily;
-				MODULE_VERSION = 2.2;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = IOPCIFamily;
-				SECTORDER_FLAGS = "";
-				VALID_ARCHS = "ppc i386";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-				WRAPPER_EXTENSION = kext;
-			};
 			dependencies = (
 				0358F57C0340F5D603CA2A5F /* PBXTargetDependency */,
+				A6F210E90A78039100875EC6 /* PBXTargetDependency */,
 			);
 			name = IOPCIFamily;
 			productInstallPath = "$(SYSTEM_LIBRARY_DIR)/Extensions";
@@ -105,7 +70,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOPCIFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>2.2, Copyright Apple Computer, Inc. 2000-2004</string>
+	<string>2.4, Copyright Apple Computer, Inc. 2000-2004</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -117,11 +82,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.2</string>
+	<string>2.4</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>2.2</string>
+	<string>2.4</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOPCI2PCIBridge-Name</key>
@@ -164,10 +129,14 @@
 	<string>1.0.0b1</string>
 	<key>OSBundleLibraries</key>
 	<dict>
-		<key>com.apple.kernel.iokit</key>
-		<string>1.1</string>
-		<key>com.apple.kernel.libkern</key>
-		<string>1.1</string>
+		<key>com.apple.kpi.unsupported</key>
+		<string>8.0</string>
+		<key>com.apple.kpi.iokit</key>
+		<string>8.0</string>
+		<key>com.apple.kpi.libkern</key>
+		<string>8.0</string>
+		<key>com.apple.kpi.mach</key>
+		<string>8.0</string>
 	</dict>
 	<key>OSBundleRequired</key>
 	<string>Root</string>
@@ -184,6 +153,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = 03DB107E033AA49603CA2A5F;
 			remoteInfo = "IOPCIFamily Headers";
+		};
+		A6F210D30A78022400875EC6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A6F210C30A78022400875EC6 /* AppleSamplePCI.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 0B81C263FFB7832611CA28AA;
+			remoteInfo = AppleSamplePCI;
+		};
+		A6F210E80A78039100875EC6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 089C1669FE841209C02AAC07 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A6F210B90A7801AB00875EC6;
+			remoteInfo = AppleSamplePCI;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -214,7 +197,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		03DB107F033AA49603CA2A5F /* IOPCIFamily Headers */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = "IOPCIFamily Headers"; sourceTree = BUILT_PRODUCTS_DIR; };
+		03DB107F033AA49603CA2A5F /* IOPCIFamily Headers */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = "IOPCIFamily Headers"; sourceTree = BUILT_PRODUCTS_DIR; };
 		03DB1084033AA50A03CA2A5F /* IOAGPDevice.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOAGPDevice.h; sourceTree = "<group>"; };
 		03DB1085033AA50A03CA2A5F /* IOPCIBridge.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOPCIBridge.h; sourceTree = "<group>"; };
 		03DB1086033AA50A03CA2A5F /* IOPCIDevice.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOPCIDevice.h; sourceTree = "<group>"; };
@@ -226,6 +209,12 @@
 		4094C51C00CEE7A80ACA2928 /* IOPCIDevicePPC.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = IOPCIDevicePPC.cpp; sourceTree = "<group>"; };
 		A6DD8EEE0937A0EC000A918D /* IOPCIConfigurator.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOPCIConfigurator.h; path = IOKit/pci/IOPCIConfigurator.h; sourceTree = SOURCE_ROOT; };
 		A6DD8EEF0937A0EC000A918D /* IOPCIPrivate.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOPCIPrivate.h; path = IOKit/pci/IOPCIPrivate.h; sourceTree = SOURCE_ROOT; };
+		A6F210C10A78022400875EC6 /* AppleSamplePCI.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = AppleSamplePCI.cpp; sourceTree = "<group>"; };
+		A6F210C20A78022400875EC6 /* AppleSamplePCI.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = AppleSamplePCI.h; sourceTree = "<group>"; };
+		A6F210C30A78022400875EC6 /* AppleSamplePCI.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = AppleSamplePCI.xcodeproj; sourceTree = "<group>"; };
+		A6F210C60A78022400875EC6 /* AppleSamplePCIClient.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = AppleSamplePCIClient.c; sourceTree = "<group>"; };
+		A6F210C70A78022400875EC6 /* AppleSamplePCIShared.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = AppleSamplePCIShared.h; sourceTree = "<group>"; };
+		A6F210C80A78022400875EC6 /* AppleSamplePCIUserClient.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = AppleSamplePCIUserClient.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -269,6 +258,7 @@
 		089C166AFE841209C02AAC07 /* IOPCIFamily */ = {
 			isa = PBXGroup;
 			children = (
+				A6F210C00A78022400875EC6 /* AppleSamplePCI */,
 				247142CAFF3F8F9811CA285C /* Source */,
 				19C28FB6FE9D52B211CA2CBB /* Products */,
 			);
@@ -287,14 +277,35 @@
 		247142CAFF3F8F9811CA285C /* Source */ = {
 			isa = PBXGroup;
 			children = (
-				4094C51900CEE7A80ACA2928 /* IOPCIBridge.cpp */,
 				1590524609368A190010639A /* IOPCIConfigurator.cpp */,
+				4094C51900CEE7A80ACA2928 /* IOPCIBridge.cpp */,
 				4094C51A00CEE7A80ACA2928 /* IOPCIDevice.cpp */,
 				4094C51B00CEE7A80ACA2928 /* IOPCIDeviceI386.cpp */,
 				4094C51C00CEE7A80ACA2928 /* IOPCIDevicePPC.cpp */,
 				03DB1082033AA50A03CA2A5F /* IOKit */,
 			);
 			name = Source;
+			sourceTree = "<group>";
+		};
+		A6F210C00A78022400875EC6 /* AppleSamplePCI */ = {
+			isa = PBXGroup;
+			children = (
+				A6F210C10A78022400875EC6 /* AppleSamplePCI.cpp */,
+				A6F210C20A78022400875EC6 /* AppleSamplePCI.h */,
+				A6F210C30A78022400875EC6 /* AppleSamplePCI.xcodeproj */,
+				A6F210C60A78022400875EC6 /* AppleSamplePCIClient.c */,
+				A6F210C70A78022400875EC6 /* AppleSamplePCIShared.h */,
+				A6F210C80A78022400875EC6 /* AppleSamplePCIUserClient.cpp */,
+			);
+			path = AppleSamplePCI;
+			sourceTree = "<group>";
+		};
+		A6F210C40A78022400875EC6 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A6F210D40A78022400875EC6 /* AppleSamplePCI.kext */,
+			);
+			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -327,21 +338,32 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 1590525209368A190010639A /* Build configuration list for PBXProject "IOPCIFamily" */;
-			buildSettings = {
-			};
-			buildStyles = (
-				06AA1265FFB2107B11CA28AA /* Development */,
-				06AA1266FFB2107B11CA28AA /* Deployment */,
-			);
 			hasScannedForEncodings = 0;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOPCIFamily */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = A6F210C40A78022400875EC6 /* Products */;
+					ProjectRef = A6F210C30A78022400875EC6 /* AppleSamplePCI.xcodeproj */;
+				},
+			);
 			targets = (
 				089C1673FE841209C02AAC07 /* IOPCIFamily */,
 				03DB107E033AA49603CA2A5F /* IOPCIFamily Headers */,
+				A6F210B90A7801AB00875EC6 /* AppleSamplePCI */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXReferenceProxy section */
+		A6F210D40A78022400875EC6 /* AppleSamplePCI.kext */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.cfbundle;
+			path = AppleSamplePCI.kext;
+			remoteRef = A6F210D30A78022400875EC6 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXReferenceProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
 		089C1675FE841209C02AAC07 /* Resources */ = {
@@ -389,6 +411,19 @@
 			shellPath = /bin/sh;
 			shellScript = "script=\"${SYSTEM_DEVELOPER_DIR}/ProjectBuilder Extras/Kernel Extension Support/KEXTPreprocess\";\nif [ -x \"$script\" ]; then\n    . \"$script\"\nfi";
 		};
+		A6F2EDAF0A781FEC00688783 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 12;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${MACOSX_DEPLOYMENT_TARGET}\" != \"10.4\" ]; then\nmkdir -p $DSTROOT/Developer/Examples/Kernel/IOKit/pci/AppleSamplePCI/AppleSamplePCI.xcodeproj\ninstall -v -m 664 AppleSamplePCI/AppleSamplePCI.xcodeproj/project.pbxproj $DSTROOT/Developer/Examples/Kernel/IOKit/pci/AppleSamplePCI/AppleSamplePCI.xcodeproj\ninstall -v -m 664 AppleSamplePCI/*.[^x]* $DSTROOT/Developer/Examples/Kernel/IOKit/pci/AppleSamplePCI\nfi\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -419,6 +454,11 @@
 			target = 03DB107E033AA49603CA2A5F /* IOPCIFamily Headers */;
 			targetProxy = 1590524109368A010010639A /* PBXContainerItemProxy */;
 		};
+		A6F210E90A78039100875EC6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A6F210B90A7801AB00875EC6 /* AppleSamplePCI */;
+			targetProxy = A6F210E80A78039100875EC6 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXToolTarget section */
@@ -433,20 +473,6 @@
 				03DB1081033AA4BB03CA2A5F /* CopyFiles */,
 				159053150936A1080010639A /* CopyFiles */,
 			);
-			buildSettings = {
-				INSTALLHDRS_COPY_PHASE = YES;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = "IOPCIFamily Headers";
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
 			dependencies = (
 			);
 			name = "IOPCIFamily Headers";
@@ -539,7 +565,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOPCIFamily;
-				MODULE_VERSION = 2.2;
+				MODULE_VERSION = 2.4;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
@@ -572,7 +598,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOPCIFamily;
-				MODULE_VERSION = 2.2;
+				MODULE_VERSION = 2.4;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -602,7 +628,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOPCIFamily;
-				MODULE_VERSION = 2.2;
+				MODULE_VERSION = 2.4;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -636,6 +662,35 @@
 			};
 			name = Default;
 		};
+		A6F210BD0A7801EC00875EC6 /* Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				PRODUCT_NAME = AppleSamplePCI;
+			};
+			name = Development;
+		};
+		A6F210BE0A7801EC00875EC6 /* Deployment */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				PRODUCT_NAME = AppleSamplePCI;
+				ZERO_LINK = NO;
+			};
+			name = Deployment;
+		};
+		A6F210BF0A7801EC00875EC6 /* Default */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = AppleSamplePCI;
+			};
+			name = Default;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -665,6 +720,16 @@
 				1590525309368A190010639A /* Development */,
 				1590525409368A190010639A /* Deployment */,
 				1590525509368A190010639A /* Default */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Default;
+		};
+		A6F210BC0A7801EC00875EC6 /* Build configuration list for PBXAggregateTarget "AppleSamplePCI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A6F210BD0A7801EC00875EC6 /* Development */,
+				A6F210BE0A7801EC00875EC6 /* Deployment */,
+				A6F210BF0A7801EC00875EC6 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
