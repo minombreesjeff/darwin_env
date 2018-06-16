@@ -29,13 +29,24 @@
 enum
 {
     kIOPCIConfigShadowSize	= 64 + 8,
-    kIOPCIConfigShadowFlags	= kIOPCIConfigShadowSize - 1,
+    kIOPCIConfigShadowMSI	= kIOPCIConfigShadowSize - 8,
     kIOPCIConfigShadowRegs 	= 16,
     kIOPCIVolatileRegsMask 	= ((1 << kIOPCIConfigShadowRegs) - 1)
 				& ~(1 << (kIOPCIConfigVendorID >> 2))
 				& ~(1 << (kIOPCIConfigRevisionID >> 2))
 				& ~(1 << (kIOPCIConfigSubSystemVendorID >> 2))
 };
+
+struct IOPCIConfigShadow
+{
+    UInt32	  savedConfig[kIOPCIConfigShadowSize];
+    UInt32        flags;
+    queue_chain_t link;
+    IOPCIDevice * device;
+};
+
+#define configShadow(device)	((IOPCIConfigShadow *) &device->savedConfig[0])
+
 
 // flags in kIOPCIConfigShadowFlags
 enum
@@ -53,6 +64,27 @@ enum
     kRestoreBridgeState = 3
 };
 
+
+#define kIOPCIEjectableKey  "IOPCIEjectable"
+#define kIOPCIHotPlugKey    "IOPCIHotPlug"
+#define kIOPCIOnlineKey	    "IOPCIOnline"
+#define kIOPCIConfiguredKey "IOPCIConfigured"
+#define kIOPCIResourcedKey  "IOPCIResourced"
+
+#ifndef kACPIDevicePathKey
+#define kACPIDevicePathKey             "acpi-path"
+#endif
+
+#ifndef kPCIInterruptRoutingTableKey
+#define kPCIInterruptRoutingTableKey   "acpi-pci-routing-table"
+#endif
+
+extern const IORegistryPlane * gIOPCIACPIPlane;
+
+enum
+{
+    kIOPCIProbeOptionEject = 0x00100000 
+};
 
 #endif /* ! _IOKIT_IOPCIPRIVATE_H */
 
