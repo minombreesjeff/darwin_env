@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1998-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -32,10 +32,10 @@
 #include <IOKit/storage/IOBlockStorageDriver.h>
 #include <IOKit/IOSyncer.h>
 #include <IOKit/usb/IOUFIStorageServices.h>
-#include <IOKit/scsi-commands/SCSICmds_INQUIRY_Definitions.h>
-#include <IOKit/scsi-commands/SCSICommandOperationCodes.h>
+#include <IOKit/scsi/SCSICmds_INQUIRY_Definitions.h>
+#include <IOKit/scsi/SCSICommandOperationCodes.h>
 
-#include <IOKit/scsi-commands/SCSITask.h>
+#include <IOKit/scsi/SCSITask.h>
 
 #include "Debugging.h"
 
@@ -89,15 +89,29 @@ IOUSBMassStorageUFIDevice::sProcessPoll( void * theUFIDriver, void * refCon )
 	IOUSBMassStorageUFIDevice *	driver;
 	
 	driver = (IOUSBMassStorageUFIDevice *) theUFIDriver;
-	driver->ProcessPoll();
+	require_nonzero ( driver, ErrorExit );
+	
 	if( driver->fPollingMode != kPollingMode_Suspended )
 	{
-		// schedule the poller again
-		driver->EnablePolling();
+	
+		driver->ProcessPoll();
+		
+		if( driver->fPollingMode != kPollingMode_Suspended )
+		{
+			// schedule the poller again
+			driver->EnablePolling();
+		}
+
 	}
 	
 	// drop the retain associated with this poll
 	driver->release();
+	
+	
+ErrorExit:
+
+	return;
+	
 }
 
 
@@ -1178,6 +1192,12 @@ IOUSBMassStorageUFIDevice::PollForMediaRemoval( void )
 	SCSITaskIdentifier			request = NULL;
 	bool						mediaRemoved = false;
 		
+		
+	if ( isInactive() == true )
+	{
+		fPollingMode = kPollingMode_Suspended;
+	}
+		
 	request = GetSCSITask();
 	if( request == NULL )
 	{
@@ -1193,7 +1213,7 @@ IOUSBMassStorageUFIDevice::PollForMediaRemoval( void )
 	}
 	else
 	{
-		PANIC_NOW(( "IOUSBMassStorageUFIDevice::PollForMedia malformed command" ));
+		PANIC_NOW(( "IOUSBMassStorageUFIDevice::PollForMediaRemoval malformed command" ));
 		goto REMOVE_CHECK_DONE;
 	}
 	
@@ -1224,7 +1244,7 @@ IOUSBMassStorageUFIDevice::PollForMediaRemoval( void )
 			}
 			else
 			{
-				PANIC_NOW(( "IOUSBMassStorageUFIDevice::PollForMedia malformed command" ));
+				PANIC_NOW(( "IOUSBMassStorageUFIDevice::PollForMediaRemoval malformed command" ));
 				bufferDesc->release();
 				goto REMOVE_CHECK_DONE;
 			}
@@ -1588,10 +1608,13 @@ IOUSBMassStorageUFIDevice::EjectTheMedium( void )
 	ResetMediumCharacteristics();
 	
 	// Set the polling to determine when media has been removed
-	fPollingMode = kPollingMode_MediaRemoval;
-    	
-	EnablePolling();
-		
+	if ( fPollingMode != kPollingMode_MediaRemoval )
+	{	
+		fPollingMode = kPollingMode_MediaRemoval;
+			
+		EnablePolling();
+	}
+	
 	return kIOReturnSuccess;
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1998-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -99,10 +99,10 @@ IOUSBMassStorageClass::SendSCSICommandForCBIProtocol( SCSITaskIdentifier request
 	theCBIRequestBlock = GetCBIRequestBlock();
 
 	bzero( theCBIRequestBlock, sizeof(CBIRequestBlock) );
-	
-	// Match IOMemoryDescriptor with the cbi phase descriptor.
-	theCBIRequestBlock->cbiPhaseDesc = fCBIMemoryDescriptor;
-	
+    
+    // After having bzero'd the struct we need reset the cbiPhaseDesc to fCBIMemoryDescriptor.
+    fCBICommandRequestBlock.cbiPhaseDesc = fCBIMemoryDescriptor;
+
 	// Get a local copy of the callers cdb
 	GetCommandDescriptorBlock( request, &theCBIRequestBlock->cbiCDB );
 	

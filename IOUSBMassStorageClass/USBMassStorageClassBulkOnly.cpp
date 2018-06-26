@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1998-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -54,6 +54,8 @@ enum
 	kBulkOnlyBulkIOComplete,
 	kBulkOnlyCheckBulkStall,
 	kBulkOnlyClearBulkStall,
+	kBulkOnlyCheckBulkStallPostCSW,
+	kBulkOnlyClearBulkStallPostCSW,
 	kBulkOnlyStatusReceived,
 	kBulkOnlyStatusReceived2ndTime,
 	kBulkOnlyResetCompleted,
@@ -61,7 +63,6 @@ enum
 	kBulkOnlyClearBulkOutCompleted
 };
 
-#define kBulkOnlyCommandPhaseTimeoutValue 5000
 
 #pragma mark -
 #pragma mark Protocol Services Methods
@@ -205,7 +206,7 @@ IOUSBMassStorageClass::BulkOnlySendCBWPacket(
     // Set our Bulk-Only phase descriptor.
 	require ( ( fBulkOnlyCBWMemoryDescriptor != NULL ), Exit );
 	boRequestBlock->boPhaseDesc = fBulkOnlyCBWMemoryDescriptor;
-	
+
 	boRequestBlock->boCBW.cbwSignature 			= kCommandBlockWrapperSignature;
 	boRequestBlock->boCBW.cbwTag 				= GetNextBulkOnlyCommandTag();
 	boRequestBlock->boCBW.cbwTransferLength 	= HostToUSBLong(
@@ -243,8 +244,8 @@ IOUSBMassStorageClass::BulkOnlySendCBWPacket(
 	
    	STATUS_LOG(( 6, "%s[%p]: BulkOnlySendCBWPacket sent", getName(), this ));
 	status = GetBulkOutPipe()->Write(	boRequestBlock->boPhaseDesc,
-										kBulkOnlyCommandPhaseTimeoutValue,  // Use the client's timeout for both
-										kBulkOnlyCommandPhaseTimeoutValue,
+										GetTimeoutDuration( boRequestBlock->request ),  // Use the client's timeout for both
+										GetTimeoutDuration( boRequestBlock->request ),
 										&boRequestBlock->boCompletion );
    	STATUS_LOG(( 5, "%s[%p]: BulkOnlySendCBWPacket returned %x", getName(), this, status ));
 	
@@ -330,7 +331,7 @@ IOUSBMassStorageClass::BulkOnlyReceiveCSWPacket(
     status = GetBulkInPipe()->Read( boRequestBlock->boPhaseDesc,
                                     GetTimeoutDuration( boRequestBlock->request ), // Use the client's timeout for both
                                     GetTimeoutDuration( boRequestBlock->request ), 
-                                    &boRequestBlock->boCompletion );	
+                                    &boRequestBlock->boCompletion );		
 
    	STATUS_LOG(( 5, "%s[%p]: BulkOnlyReceiveCSWPacket returned %x", getName(), this, status ));
 
@@ -561,7 +562,7 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
                     || ( resultingStatus == kIOUSBHighSpeedSplitError ) )
                 {
                 	// Was there a device error? The device could have been removed or lost power.
-                	
+           
                     status = StartDeviceRecovery();
                     if ( status == kIOReturnSuccess )
                     {
@@ -608,13 +609,23 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 		
 		
 		case kBulkOnlyCheckBulkStall:
+		case kBulkOnlyCheckBulkStallPostCSW:
 		{
    			STATUS_LOG(( 5, "%s[%p]: kBulkOnlyCheckBulkStall returned %x", getName(), this, resultingStatus ));
 
 			// Check to see if the endpoint was stalled
 			if ( (boRequestBlock->boGetStatusBuffer[0] & 1) == 1 )
 			{
-				boRequestBlock->currentState = kBulkOnlyClearBulkStall;
+				// Is this stall from the data or status phase?
+				if ( boRequestBlock->currentState == kBulkOnlyCheckBulkStall )
+				{
+					boRequestBlock->currentState = kBulkOnlyClearBulkStall;
+				}
+				else
+				{
+					boRequestBlock->currentState = kBulkOnlyClearBulkStallPostCSW;
+				}
+				
 				status = ClearFeatureEndpointStall( fPotentiallyStalledPipe, &boRequestBlock->boCompletion );
 				if ( status == kIOReturnSuccess )
 				{	
@@ -631,8 +642,21 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 					fPotentiallyStalledPipe->Abort();
 				}
 				
-				// If the endpoint was not stalled, attempt to get the CSW	
-				status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived );
+				// Did we think we were stalled following the data or status phase?
+				// We don't want to try to get the CSW again more than once.
+				if ( boRequestBlock->currentState == kBulkOnlyCheckBulkStall )
+				{
+					// If the endpoint was not stalled, attempt to get the CSW	
+					status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived );
+					
+				}
+				else
+				{
+					// If the endpoint was not stalled, attempt to get the CSW	
+					status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived2ndTime );
+					
+				}
+				
 				if ( status == kIOReturnSuccess )
 				{
 					commandInProgress = true;
@@ -642,13 +666,25 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 		break;
 		
 		case kBulkOnlyClearBulkStall:
+		case kBulkOnlyClearBulkStallPostCSW:
 		{
    			STATUS_LOG(( 5, "%s[%p]: kBulkOnlyClearBulkStall returned %x", getName(), this, resultingStatus ));
 
 			// The pipe was stalled and an attempt to clear it was made
 			// Try to get the CSW.  If the pipe was not successfully cleared, this will also
-			// set off a device reset sequence
-			status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived );
+			// set off a device reset sequence.
+			
+			// If we arlready tried to get the CSW once, only try to get it once again.
+			
+			if ( boRequestBlock->currentState == kBulkOnlyClearBulkStall )
+			{
+				status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived );
+			}
+			else
+			{
+				status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived2ndTime );
+			}
+			
 			if ( status == kIOReturnSuccess )
 			{
 				commandInProgress = true;
@@ -661,10 +697,10 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
    			STATUS_LOG(( 5, "%s[%p]: kBulkOnlyStatusReceived returned %x", getName(), this, resultingStatus ));
 			
 			// Bulk transfer is done, get the Command Status Wrapper from the device
-			if ( resultingStatus == kIOUSBPipeStalled )
+			if ( resultingStatus == kIOUSBPipeStalled)
 			{
 				// An error occurred trying to get the CSW, we should clear any stalls and try to get the CSW again.
-				boRequestBlock->currentState = kBulkOnlyCheckBulkStall;
+				boRequestBlock->currentState = kBulkOnlyCheckBulkStallPostCSW;
 				status = GetStatusEndpointStatus( GetBulkInPipe(), &boRequestBlock->boGetStatusBuffer, &boRequestBlock->boCompletion );
 				if ( status == kIOReturnSuccess )
 				{	
@@ -672,7 +708,7 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 					commandInProgress = true;
 				}
 			}
-            else if ( resultingStatus != kIOReturnSuccess )
+            else if ( resultingStatus != kIOReturnSuccess)
 			{
 				// An error occurred trying to get the first CSW, we should check and clear the stall,
 				// and then try the CSW again
@@ -682,7 +718,7 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 					commandInProgress = true;
 				}
 			}
-			else if( boRequestBlock->boCSW.cswTag == boRequestBlock->boCBW.cbwTag) 
+			else if ( ( boRequestBlock->boCSW.cswTag == boRequestBlock->boCBW.cbwTag ) || fKnownCSWTagMismatchIssues ) 
 			{
 				// Since the CBW and CSW tags match, process
 				// the CSW to determine the appropriate response.
@@ -690,8 +726,6 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 				{
 					case kCSWCommandPassedError:
 					{
-						STATUS_LOG(( 6, "%s[%p]: kBulkOnlyStatusReceived kCSWCommandPassedError", getName(), this ));
-			
 						// The device reports no error on the command, and the realized data count was set after the bulk
 						// data transfer completion state.  Return that the command was successfully completed.
 						status = kIOReturnSuccess;
@@ -801,6 +835,7 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 
 			if ( resultingStatus != kIOReturnSuccess) 
 			{
+			
 				// The Bulk-Only Reset failed. Try to recover the device.
 				FinishDeviceRecovery( resultingStatus );
 				commandInProgress = true;
