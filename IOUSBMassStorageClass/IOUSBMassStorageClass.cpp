@@ -567,7 +567,7 @@ IOUSBMassStorageClass::didTerminate( IOService * provider, IOOptionBits options,
     // This should already be set to true, but can't hurt ...
     fTerminating = true;
     
-    if ( ( fTerminating == true ) && ( GetInterfaceReference() != NULL ) && ( fResetInProgress == false ) ) 
+    if ( ( GetInterfaceReference() != NULL ) && ( fResetInProgress == false ) ) 
     {
 
         IOUSBInterface * currentInterface;
@@ -1615,10 +1615,6 @@ IOUSBMassStorageClass::GatedWaitForTaskAbort( void )
 		status = fCommandGate->commandSleep( &fAbortCurrentSCSITaskInProgress, THREAD_UNINT );
 	}
 	
-	// We retained the driver in AbortCurrentSCSITask() when
-	// we created a thread for sAbortCurrentSCSITask()
-	release();
-	
 	return status;
 	
 }
@@ -1690,8 +1686,7 @@ IOUSBMassStorageClass::sResetDevice( void * refcon )
 			// We set the device state to detached so the proper status for the 
 			// device is returned along with the aborted SCSITask.
 			driver->fWaitingForReconfigurationMessage = false;
-            driver->fDeviceAttached = false;
-			driver->AbortCurrentSCSITask();
+			driver->fDeviceAttached = false;
 			
 		}
 		
@@ -1716,6 +1711,10 @@ IOUSBMassStorageClass::sResetDevice( void * refcon )
 	
 ErrorExit:
 	
+	if ( status != kIOReturnSuccess )
+	{
+		driver->AbortCurrentSCSITask();
+	}
     
     if ( ( driver->fTerminating == true ) && ( driver->GetInterfaceReference() != NULL ) ) 
     {
@@ -1737,14 +1736,15 @@ ErrorExit:
         
 	if ( driver->fWaitingForReconfigurationMessage == false )
 	{
+        // Unblock our main thread.
 		driver->fCommandGate->commandWakeup( &driver->fResetInProgress, false );
 	}
 
 	
 	STATUS_LOG(( 6, "%s[%p]: sResetDevice exiting.", driver->getName(), driver ));
-	
-	// We retained the driver in HandlePowerOn() when
-	// we created a thread for sResetDevice()
+    	
+	// We retained the driver in ResetDeviceNow() when
+	// we created a thread for sResetDevice().
 	driver->release();
 	
 	return;
@@ -1782,8 +1782,7 @@ IOUSBMassStorageClass::sAbortCurrentSCSITask( void * refcon )
 		if ( driver->fDeviceAttached == false )
 		{
 			STATUS_LOG(( 1, "%s[%p]: sAbortCurrentSCSITask Aborting current SCSITask with device not present.", driver->getName(), driver ));
-			driver->CommandCompleted( currentTask, kSCSIServiceResponse_TASK_COMPLETE, kSCSITaskStatus_CHECK_CONDITION );
-		
+			driver->CommandCompleted( currentTask, kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE, kSCSITaskStatus_DeviceNotPresent );
 		}
 		else
 		{
@@ -1870,40 +1869,18 @@ IOUSBMassStorageClass::FinishDeviceRecovery( IOReturn status )
 		tempTask = fCBICommandRequestBlock.request;
 	}
 	
+    if ( ( fTerminating == true ) || isInactive() )
+    {
+        
+        // We're being terminated. Abort the outstanding command so the system can clean up.
+        goto ErrorExit;
+        
+    }
+        
 	if ( status != kIOReturnSuccess)
 	{
 		// The endpoint status could not be retrieved meaning that the device has
 		// stopped responding.  Begin the device reset sequence.
-		
-		STATUS_LOG(( 4, "%s[%p]: StartDeviceRecovery GetStatusEndpointStatus error. status = %x", getName(), this, status ));
-		
-        if ( ( fTerminating == true ) || isInactive() )
-        {
-            
-            // We're being terminated. Abort the outstanding command so the system can clean up.
-            goto ErrorExit;
-            
-        }
-        
-		// Are we still connected to the hub? We only need to check this for full and low speed devices. 
-		if ( GetInterfaceReference()->GetDevice()->GetSpeed() != kUSBDeviceSpeedHigh )
-		{
-			isDeviceConnectedStatus = GetInterfaceReference()->GetDevice()->message ( kIOUSBMessageHubIsDeviceConnected, NULL, 0 );
-		}
-		
-		if ( isDeviceConnectedStatus == kIOReturnNoDevice )
-		{
-		
-			STATUS_LOG(( 4, "%s[%p]: FinishDeviceRecovery Device has been removed! status = %x", getName(), this, isDeviceConnectedStatus ));
-			
-			// The device is no longer attached or we're being terminated! 
-            // Mark the device as being no longer attached.
-            fDeviceAttached = false;
-            
-			// Return outstanding commands so we don't wedge the system.
-			goto ErrorExit;
-			
-		}
 		
 		STATUS_LOG(( 4, "%s[%p]: FinishDeviceRecovery reseting device on separate thread.", getName(), this ));
 		
@@ -2011,7 +1988,7 @@ IOUSBMassStorageClass::ResetDeviceNow( bool waitForReset )
 		// stopped responding. Or this could be a device we know needs a reset.
 		// Begin the device reset sequence.
 		
-		STATUS_LOG(( 4, "%s[%p]: kIOMessageServiceIsResumed GetStatusEndpointStatus error or knownResetOnResumeDevice.", getName(), this ));
+		STATUS_LOG(( 4, "%s[%p]: ResetDeviceNow", getName(), this ));
 		
 		// Reset the device on its own thread so we don't deadlock.
 		fResetInProgress = true;
@@ -2040,7 +2017,6 @@ IOUSBMassStorageClass::AbortCurrentSCSITask( void )
 
 	// We call retain here so that the driver will stick around long enough for
 	// sAbortCurrentSCSITask() to do it's thing in case we are being terminated.  
-	// The retain() is balanced with a release in sAbortCurrentSCSITask().
 	retain();
 	
 	// The endpoint status could not be retrieved meaning that the device has
@@ -2055,19 +2031,11 @@ IOUSBMassStorageClass::AbortCurrentSCSITask( void )
 	IOCreateThread( IOUSBMassStorageClass::sAbortCurrentSCSITask, this );
 	fCommandGate->runAction ( ( IOCommandGate::Action ) &IOUSBMassStorageClass::sWaitForTaskAbort );
 	
-	// Make sure we aren't terminating. 
-	if ( ( fTerminating == false ) && ( isInactive() == false ) )
-	{
-		
-		fBulkInPipe->Abort();
-		fBulkOutPipe->Abort();
+	
+Exit:
 
-		if ( fInterruptPipe != NULL )
-		{
-			fInterruptPipe->Abort();
-		}
-		
-	}
+    // We retained ourselves earlier in this method, time to balance that out.
+	release();
 	
 	STATUS_LOG(( 4, "%s[%p]: AbortCurrentSCSITask Exiting", getName(), this ));
 	

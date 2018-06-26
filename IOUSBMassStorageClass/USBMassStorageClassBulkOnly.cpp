@@ -62,7 +62,6 @@ enum
 };
 
 #define kBulkOnlyCommandPhaseTimeoutValue 5000
-#define kBulkOnlyStatusPhaseTimeoutValue 5000
 
 #pragma mark -
 #pragma mark Protocol Services Methods
@@ -327,26 +326,11 @@ IOUSBMassStorageClass::BulkOnlyReceiveCSWPacket(
 	// Set the next state to be executed
 	boRequestBlock->currentState = nextExecutionState;
 
-	if ( GetDataTransferDirection( boRequestBlock->request ) == kSCSIDataTransfer_NoDataTransfer )
-	{
-	
-		// Retrieve the CSW from the device	
-		status = GetBulkInPipe()->Read( boRequestBlock->boPhaseDesc,
-										GetTimeoutDuration( boRequestBlock->request ), // Use the client's timeout for both
-										GetTimeoutDuration( boRequestBlock->request ), 
-										&boRequestBlock->boCompletion );		
-									
-	}
-	else
-	{
-	
-		// Retrieve the CSW from the device	
-		status = GetBulkInPipe()->Read( boRequestBlock->boPhaseDesc,
-										kBulkOnlyStatusPhaseTimeoutValue, // As getting the CSW requires no media access  
-										kBulkOnlyStatusPhaseTimeoutValue, // 5 seconds should be ample.
-										&boRequestBlock->boCompletion );
-									
-	}
+    // Retrieve the CSW from the device	
+    status = GetBulkInPipe()->Read( boRequestBlock->boPhaseDesc,
+                                    GetTimeoutDuration( boRequestBlock->request ), // Use the client's timeout for both
+                                    GetTimeoutDuration( boRequestBlock->request ), 
+                                    &boRequestBlock->boCompletion );	
 
    	STATUS_LOG(( 5, "%s[%p]: BulkOnlyReceiveCSWPacket returned %x", getName(), this, status ));
 
@@ -531,10 +515,9 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 
    			STATUS_LOG(( 5, "%s[%p]: kBulkOnlyBulkIOComplete returned %x", getName(), this, resultingStatus ));
 			
-            if ( ( resultingStatus == kIOUSBPipeStalled ) || ( resultingStatus == kIOReturnSuccess) )
-            {
-            
-                // Save the number of bytes tranferred in the request
+			if ( ( resultingStatus == kIOUSBPipeStalled ) || ( resultingStatus == kIOReturnSuccess ) )
+			{
+				// Save the number of bytes tranferred in the request
 				// Use the amount returned by USB to determine the amount of data transferred instead of
 				// the data residue field in the CSW since some devices will report the wrong value.
 				SetRealizedDataTransferCount( boRequestBlock->request, 
@@ -542,7 +525,7 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
             
             }
                     
-			if ( resultingStatus == kIOReturnSuccess)
+			if ( resultingStatus == kIOReturnSuccess )
 			{
 				// Bulk transfer is done, get the Command Status Wrapper from the device
 				status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived );
@@ -550,6 +533,23 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 				{
 					commandInProgress = true;
 				}
+			}
+			else if ( resultingStatus == kIOReturnOverrun )
+			{
+				
+				// We set the data transfered to size of the request because the IOUSBFamily
+				// discards the excess for us.
+				
+				SetRealizedDataTransferCount( boRequestBlock->request, 
+					GetRequestedDataTransferCount( boRequestBlock->request ) );
+					
+				// Reset the device. We have to do a full device reset since a fair quantity of
+				// stellar USB devices don't properly handle a mid I/O Bulk-Only device reset.
+				FinishDeviceRecovery ( kIOReturnError );
+				
+				// Since commandInProgress is false, we'll fall through and complete the command
+				// with an error.
+		
 			}
 			else
 			{	

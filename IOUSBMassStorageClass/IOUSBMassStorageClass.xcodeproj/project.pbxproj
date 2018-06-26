@@ -21,23 +21,6 @@
 		F5C72C5A02B5B8E201CE155F /* Debugging.h in Headers */ = {isa = PBXBuildFile; fileRef = F5C72C5902B5B8E201CE155F /* Debugging.h */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXBuildStyle section */
-		2A381DFD0BE275980045D91E /* Development */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-			};
-			name = Development;
-		};
-		2A381DFE0BE275980045D91E /* Deployment */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = YES;
-			};
-			name = Deployment;
-		};
-/* End PBXBuildStyle section */
-
 /* Begin PBXBundleTarget section */
 		089C1673FE841209C02AAC07 /* IOUSBMassStorageClass */ = {
 			isa = PBXBundleTarget;
@@ -67,7 +50,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOUSBMassStorageClass</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.4.9, Copyright Apple, Inc. 2000-2007</string>
+	<string>1.5.0, Copyright Apple, Inc. 2000-2007</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -79,11 +62,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.9</string>
+	<string>1.5.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.4.9</string>
+	<string>1.5.0</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOUSBMassStorageClass1</key>
@@ -338,12 +321,6 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 2A859F8308E4AA8C00F73457 /* Build configuration list for PBXProject "IOUSBMassStorageClass" */;
-			buildSettings = {
-			};
-			buildStyles = (
-				2A381DFD0BE275980045D91E /* Development */,
-				2A381DFE0BE275980045D91E /* Deployment */,
-			);
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOUSBMassStorageClass */;
 			projectDirPath = "";
@@ -426,7 +403,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOUSBMassStorageClass;
-				MODULE_VERSION = 1.4.9;
+				MODULE_VERSION = 1.5.0;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
