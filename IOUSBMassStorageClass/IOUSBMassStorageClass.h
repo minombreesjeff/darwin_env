@@ -369,8 +369,7 @@ public:
     virtual void 		stop( IOService * 		provider );
 	virtual	IOReturn	message( UInt32 type, IOService * provider, void * argument = 0 );
 
-	virtual IOReturn	HandlePowerOn( void );
-
+private:
 	// Space reserved for future expansion.
     OSMetaClassDeclareReservedUnused( IOUSBMassStorageClass, 1 );
     OSMetaClassDeclareReservedUnused( IOUSBMassStorageClass, 2 );
