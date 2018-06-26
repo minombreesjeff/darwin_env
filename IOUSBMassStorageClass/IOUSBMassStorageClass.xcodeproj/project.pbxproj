@@ -22,25 +22,17 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildStyle section */
-		06AA1265FFB2107B11CA28AA /* Development */ = {
+		2A57243D0AD20774000C884A /* Development */ = {
 			isa = PBXBuildStyle;
 			buildSettings = {
 				COPY_PHASE_STRIP = NO;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_ENABLE_FIX_AND_CONTINUE = YES;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				OPTIMIZATION_CFLAGS = "-O0";
-				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
-		06AA1266FFB2107B11CA28AA /* Deployment */ = {
+		2A57243E0AD20774000C884A /* Deployment */ = {
 			isa = PBXBuildStyle;
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
-				GCC_ENABLE_FIX_AND_CONTINUE = NO;
-				ZERO_LINK = NO;
 			};
 			name = Deployment;
 		};
@@ -60,28 +52,6 @@
 				089C1679FE841209C02AAC07 /* Rez */,
 				06AA1264FFB2107B11CA28AA /* ShellScript */,
 			);
-			buildSettings = {
-				FRAMEWORK_SEARCH_PATHS = "";
-				HEADER_SEARCH_PATHS = "";
-				INSTALLHDRS_COPY_PHASE = YES;
-				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
-				KERNEL_MODULE = YES;
-				LIBRARY_SEARCH_PATHS = "";
-				MODULE_IOKIT = YES;
-				MODULE_NAME = com.apple.iokit.IOUSBMassStorageClass;
-				MODULE_VERSION = 1.4.2;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = IOUSBMassStorageClass;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-				WRAPPER_EXTENSION = kext;
-			};
 			dependencies = (
 			);
 			name = IOUSBMassStorageClass;
@@ -97,7 +67,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOUSBMassStorageClass</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.4.5, Copyright Apple Computer, Inc. 2000-2006</string>
+	<string>1.4.7, Copyright Apple Computer, Inc. 2000-2006</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -109,11 +79,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.5</string>
+	<string>1.4.7</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.4.5</string>
+	<string>1.4.7</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOUSBMassStorageClass1</key>
@@ -371,8 +341,8 @@
 			buildSettings = {
 			};
 			buildStyles = (
-				06AA1265FFB2107B11CA28AA /* Development */,
-				06AA1266FFB2107B11CA28AA /* Deployment */,
+				2A57243D0AD20774000C884A /* Development */,
+				2A57243E0AD20774000C884A /* Deployment */,
 			);
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOUSBMassStorageClass */;
@@ -456,7 +426,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOUSBMassStorageClass;
-				MODULE_VERSION = 1.4.5;
+				MODULE_VERSION = 1.4.7;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";

@@ -1341,7 +1341,7 @@ IOUSBMassStorageUFIDevice::IssueRead( 	IOMemoryDescriptor *	buffer,
 	SCSIServiceResponse 	serviceResponse = kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE;
 	SCSITaskIdentifier		request;
 	
-	STATUS_LOG(( 7, "%s[%p]: syncRead Attempted", getName(), this ));
+	STATUS_LOG(( 6, "%s[%p]: syncRead Attempted", getName(), this ));
 
 	request = GetSCSITask ( );
 	
@@ -1388,7 +1388,7 @@ IOUSBMassStorageUFIDevice::IssueRead( 	IOMemoryDescriptor *	buffer,
 	IOReturn 				status = kIOReturnSuccess;
 	SCSITaskIdentifier		request;
 
-	STATUS_LOG(( 7, "%s[%p]: asyncRead Attempted", getName(), this ));
+	STATUS_LOG(( 6, "%s[%p]: asyncRead Attempted", getName(), this ));
 	
 	request = GetSCSITask();
 	
@@ -1403,7 +1403,7 @@ IOUSBMassStorageUFIDevice::IssueRead( 	IOMemoryDescriptor *	buffer,
     {
     	// The command was successfully built, now send it
     	SetApplicationLayerReference( request, clientData );
-		STATUS_LOG(( 7, "%s[%p]::IssueRead send command.", getName(), this ));
+		STATUS_LOG(( 6, "%s[%p]::IssueRead send command.", getName(), this ));
     	SendCommand( request, 0, &this->AsyncReadWriteComplete );
 	}
 	else
@@ -1428,7 +1428,7 @@ IOUSBMassStorageUFIDevice::IssueWrite( 	IOMemoryDescriptor *	buffer,
 	SCSIServiceResponse 	serviceResponse = kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE;
 	SCSITaskIdentifier		request;
 	
-	STATUS_LOG(( 7, "%s[%p]: syncWrite Attempted", getName(), this ));
+	STATUS_LOG(( 6, "%s[%p]: syncWrite Attempted", getName(), this ));
 	
 	request = GetSCSITask();
 	if ( WRITE_10( 	request,
@@ -1474,7 +1474,7 @@ IOUSBMassStorageUFIDevice::IssueWrite(	IOMemoryDescriptor *	buffer,
 	IOReturn				status = kIOReturnSuccess;
 	SCSITaskIdentifier		request;
 	
-	STATUS_LOG(( 7, "%s[%p]:: asyncWrite Attempted", getName(), this ));
+	STATUS_LOG(( 6, "%s[%p]:: asyncWrite Attempted", getName(), this ));
 
 	request = GetSCSITask();
 	
@@ -1489,7 +1489,7 @@ IOUSBMassStorageUFIDevice::IssueWrite(	IOMemoryDescriptor *	buffer,
     {
     	// The command was successfully built, now send it
     	SetApplicationLayerReference( request, clientData );
-		STATUS_LOG(( 7, "%s[%p]::IssueWrite send command.", getName(), this ));
+		STATUS_LOG(( 6, "%s[%p]::IssueWrite send command.", getName(), this ));
     	SendCommand( request, 0, &this->AsyncReadWriteComplete );
 	}
 	else
@@ -1727,7 +1727,7 @@ IOUSBMassStorageUFIDevice::GetProtocolCharacteristicsDictionary ( void )
 OSDictionary *
 IOUSBMassStorageUFIDevice::GetDeviceCharacteristicsDictionary ( void )
 {
-	STATUS_LOG(( 7, "%s[%p]::%s", getName(), this, __FUNCTION__ ));
+	STATUS_LOG(( 6, "%s[%p]::%s", getName(), this, __FUNCTION__ ));
 	return fDeviceCharacteristicsDictionary;
 }
 
