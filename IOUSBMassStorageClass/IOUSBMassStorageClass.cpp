@@ -567,7 +567,7 @@ IOUSBMassStorageClass::didTerminate( IOService * provider, IOOptionBits options,
     // This should already be set to true, but can't hurt ...
     fTerminating = true;
     
-    if ( ( fTerminating == true ) && ( GetInterfaceReference() != NULL ) ) 
+    if ( ( fTerminating == true ) && ( GetInterfaceReference() != NULL ) && ( fResetInProgress == false ) ) 
     {
 
         IOUSBInterface * currentInterface;
@@ -819,28 +819,11 @@ IOUSBMassStorageClass::SendSCSICommand(
    	STATUS_LOG(( 6, "%s[%p]: SendSCSICommand was called", getName(), this ));
 
 	// If we have been marked as inactive, or no longer have the device, return false.
-	if ( isInactive () || ( fDeviceAttached == false ) )
+	if ( isInactive () || ( fDeviceAttached == false ) || ( fTerminating == true ) )
 	{	
 		return false;
 	}
-	
-	// Verify that the SCSI Task to execute is valid.
-  	if ( request == NULL )
- 	{
- 		// An invalid SCSI Task object was passed into here.  Let the client know
- 		// by returning the default error for taskStatus and serviceResponse
- 		// and true to indicate that the command is completed.
-  		STATUS_LOG(( 1, "%s[%p]: SendSCSICommand was called with a NULL CDB", getName(), this ));
-		return true;
- 	}
-
-	if ( fTerminating == true )
-	{
- 		// We're closing up shop and process comamnds.  Let the client know
- 		// by returning the default error for taskStatus and serviceResponse
- 		// and true to indicate that the command is completed.
-		return true;
-	}
+    
 
 #if (USB_MASS_STORAGE_DEBUG == 1)
 	SCSICommandDescriptorBlock	cdbData;
@@ -1707,7 +1690,7 @@ IOUSBMassStorageClass::sResetDevice( void * refcon )
 			// We set the device state to detached so the proper status for the 
 			// device is returned along with the aborted SCSITask.
 			driver->fWaitingForReconfigurationMessage = false;
-			driver->fDeviceAttached = false;
+            driver->fDeviceAttached = false;
 			driver->AbortCurrentSCSITask();
 			
 		}
@@ -1756,14 +1739,7 @@ ErrorExit:
 	{
 		driver->fCommandGate->commandWakeup( &driver->fResetInProgress, false );
 	}
-	else
-	{
-	
-		// We retained the driver in HandlePowerOn() when
-		// we created a thread for sResetDevice()
-		driver->release();
-	
-	}
+
 	
 	STATUS_LOG(( 6, "%s[%p]: sResetDevice exiting.", driver->getName(), driver ));
 	
@@ -1806,16 +1782,16 @@ IOUSBMassStorageClass::sAbortCurrentSCSITask( void * refcon )
 		if ( driver->fDeviceAttached == false )
 		{
 			STATUS_LOG(( 1, "%s[%p]: sAbortCurrentSCSITask Aborting current SCSITask with device not present.", driver->getName(), driver ));
-			driver->CommandCompleted( currentTask, kSCSIServiceResponse_TASK_COMPLETE, kSCSITaskStatus_DeviceNotPresent );
+			driver->CommandCompleted( currentTask, kSCSIServiceResponse_TASK_COMPLETE, kSCSITaskStatus_CHECK_CONDITION );
 		
 		}
 		else
 		{
 			STATUS_LOG(( 1, "%s[%p]: sAbortCurrentSCSITask Aborting current SCSITask with delivery failure.", driver->getName(), driver ));
-			driver->CommandCompleted( currentTask, kSCSIServiceResponse_TASK_COMPLETE, kSCSITaskStatus_DeliveryFailure );
+			driver->CommandCompleted( currentTask, kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE, kSCSITaskStatus_DeliveryFailure );
 		
 		}
-	
+		
 	}
 	
 	driver->fBulkOnlyCommandStructInUse = false;
@@ -2080,7 +2056,7 @@ IOUSBMassStorageClass::AbortCurrentSCSITask( void )
 	fCommandGate->runAction ( ( IOCommandGate::Action ) &IOUSBMassStorageClass::sWaitForTaskAbort );
 	
 	// Make sure we aren't terminating. 
-	if ( ( fTerminating == true ) && ( isInactive() == false ) )
+	if ( ( fTerminating == false ) && ( isInactive() == false ) )
 	{
 		
 		fBulkInPipe->Abort();

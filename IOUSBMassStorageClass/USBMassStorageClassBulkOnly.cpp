@@ -531,42 +531,21 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 
    			STATUS_LOG(( 5, "%s[%p]: kBulkOnlyBulkIOComplete returned %x", getName(), this, resultingStatus ));
 			
-			if ( resultingStatus == kIOReturnSuccess)
-			{
-				// Save the number of bytes tranferred in the request
+            if ( ( resultingStatus == kIOUSBPipeStalled ) || ( resultingStatus == kIOReturnSuccess) )
+            {
+            
+                // Save the number of bytes tranferred in the request
 				// Use the amount returned by USB to determine the amount of data transferred instead of
 				// the data residue field in the CSW since some devices will report the wrong value.
 				SetRealizedDataTransferCount( boRequestBlock->request, 
 					GetRequestedDataTransferCount( boRequestBlock->request ) - bufferSizeRemaining);
-
+            
+            }
+                    
+			if ( resultingStatus == kIOReturnSuccess)
+			{
 				// Bulk transfer is done, get the Command Status Wrapper from the device
 				status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived );
-				if ( status == kIOReturnSuccess )
-				{
-					commandInProgress = true;
-				}
-			}
-			else if ( resultingStatus == kIOReturnOverrun )
-			{				
-				UInt8	deviceSpeed;
-				
-				deviceSpeed = GetInterfaceReference()->GetDevice()->GetSpeed();
-				
-				if ( deviceSpeed == kUSBDeviceSpeedHigh ) // Is this a high speed device?
-				{	// Yes, simply clear the halt bit and get the CSW and re-enter kBulkOnlyBulkIOComplete.
-					GetBulkInPipe()->Abort();
-					
-					status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyBulkIOComplete );
-				}
-				else
-				{	// No, this is either a full speed or low speed device.
-					// The data overrun leaves the bulk in pipe stalled. Clear the stall and move on.
-					fPotentiallyStalledPipe = GetBulkInPipe();
-				
-					boRequestBlock->currentState = kBulkOnlyClearBulkStall;
-					status = ClearFeatureEndpointStall( fPotentiallyStalledPipe, &boRequestBlock->boCompletion );
-				}
-				
 				if ( status == kIOReturnSuccess )
 				{
 					commandInProgress = true;
@@ -600,8 +579,8 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 				}
                 else
                 {
-					// Check if the bulk endpoint was stalled
-    
+					// Check if the bulk endpoint was stalled.
+                    
                     if ( GetDataTransferDirection( boRequestBlock->request ) == kSCSIDataTransfer_FromTargetToInitiator )
                     {
                         fPotentiallyStalledPipe = GetBulkInPipe();
@@ -653,7 +632,7 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 				}
 				
 				// If the endpoint was not stalled, attempt to get the CSW	
-				status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived2ndTime );
+				status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived );
 				if ( status == kIOReturnSuccess )
 				{
 					commandInProgress = true;
@@ -669,7 +648,7 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 			// The pipe was stalled and an attempt to clear it was made
 			// Try to get the CSW.  If the pipe was not successfully cleared, this will also
 			// set off a device reset sequence
-			status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived2ndTime );
+			status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived );
 			if ( status == kIOReturnSuccess )
 			{
 				commandInProgress = true;
@@ -682,7 +661,7 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
    			STATUS_LOG(( 5, "%s[%p]: kBulkOnlyStatusReceived returned %x", getName(), this, resultingStatus ));
 			
 			// Bulk transfer is done, get the Command Status Wrapper from the device
-			if ( resultingStatus != kIOReturnSuccess)
+			if ( resultingStatus == kIOUSBPipeStalled )
 			{
 				// An error occurred trying to get the CSW, we should clear any stalls and try to get the CSW again.
 				boRequestBlock->currentState = kBulkOnlyCheckBulkStall;
@@ -690,6 +669,16 @@ IOUSBMassStorageClass::BulkOnlyExecuteCommandCompletion(
 				if ( status == kIOReturnSuccess )
 				{	
 					fPotentiallyStalledPipe = GetBulkInPipe();
+					commandInProgress = true;
+				}
+			}
+            else if ( resultingStatus != kIOReturnSuccess )
+			{
+				// An error occurred trying to get the first CSW, we should check and clear the stall,
+				// and then try the CSW again
+				status = BulkOnlyReceiveCSWPacket( boRequestBlock, kBulkOnlyStatusReceived2ndTime );
+				if ( status == kIOReturnSuccess )
+				{
 					commandInProgress = true;
 				}
 			}
