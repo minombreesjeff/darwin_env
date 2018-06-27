@@ -140,7 +140,7 @@ static LoaderRelExpHeader * FindRelocationInfo  ( PEFPrivateInfo *  pefPrivate,
     for (relocIndex = 0; relocIndex < loopLimit; relocIndex += 1)
     {
         relocInfo = &pefPrivate->ldrSections[relocIndex];
-        if (sectionIndex == relocInfo->sectionNumber)
+        if (sectionIndex == (ItemCount) relocInfo->sectionNumber)
             return relocInfo;
     }
     return NULL;
@@ -163,7 +163,7 @@ static void GetSectionName  ( PEFPrivateInfo *      pefPrivate,
     ByteCount           nameLength;
 
 
-    if (sectionHeader->sectionName != -1)
+    if (sectionHeader->sectionName != ((ByteCount) -1))
     {
         nameText    = pefPrivate->stringTable + sectionHeader->sectionName;
         nameLength  = GetNameLength ( nameText );
@@ -318,7 +318,7 @@ OSStatus    PEF_OpenContainer   ( LogicalAddress            mappedAddress,
     // ! Note that although the ByteCount type used in the offset arrays is unsigned, ignoring
     // ! overflow lets things work right for a full -4GB to +4GB offset range.
 
-    for (sectionIndex = 0; sectionIndex < pefPrivate->sectionCount; sectionIndex += 1)
+    for (sectionIndex = 0; ((ItemCount) sectionIndex) < pefPrivate->sectionCount; sectionIndex += 1)
     {
         SectionHeader * section = & pefPrivate->sections[sectionIndex];
 
@@ -819,7 +819,7 @@ OSStatus    PEF_GetExportedSymbolInfo   ( CFContHandlerRef              containe
 
     if ((pefPrivate == NULL) || (exportInfo == NULL))
         goto ParameterError;
-    if (exportIndex >= pefPrivate->ldrHeader->numExportSyms)
+    if ((ItemCount) exportIndex >= pefPrivate->ldrHeader->numExportSyms)
         goto ParameterError;
     if (infoVersion != kCFContExportedSymbolInfoVersion)
         goto ParameterError;
@@ -1292,7 +1292,7 @@ static OSStatus UnpackFullSection   ( BytePtr   packedBase,
         {
             case kPEFPkDataZero :
 
-                if ((outPosLimit - outputPos) < count1)
+                if (((UInt32) (outPosLimit - outputPos)) < count1)
                     goto FragmentCorruptError;
 
                 PEF_BlockClear ( outputPos, count1 );
@@ -1303,7 +1303,7 @@ static OSStatus UnpackFullSection   ( BytePtr   packedBase,
 
             case kPEFPkDataBlock :
 
-                if ((outPosLimit - outputPos) < count1)
+                if (((UInt32)(outPosLimit - outputPos)) < count1)
                     goto FragmentCorruptError;
 
                 PEF_BlockMove ( packedPos, outputPos, count1 );
@@ -1317,7 +1317,7 @@ static OSStatus UnpackFullSection   ( BytePtr   packedBase,
 
                 count2 = GetPackedDataCount ( &packedPos ) + 1;     // ! Stored count is 1 less.
 
-                if ((outPosLimit - outputPos) < (count1 * count2))
+                if (((UInt32)(outPosLimit - outputPos)) < (count1 * count2))
                     goto FragmentCorruptError;
 
                 if (count1 == 1)
@@ -1345,7 +1345,7 @@ static OSStatus UnpackFullSection   ( BytePtr   packedBase,
                 count2  = GetPackedDataCount ( &packedPos );
                 count3  = GetPackedDataCount ( &packedPos );
 
-                if ((outPosLimit - outputPos) < (((count1 + count2) * count3) + count1))
+                if (((UInt32)(outPosLimit - outputPos)) < (((count1 + count2) * count3) + count1))
                     goto FragmentCorruptError;
 
                 {
@@ -1375,7 +1375,7 @@ static OSStatus UnpackFullSection   ( BytePtr   packedBase,
                 count2 = GetPackedDataCount ( &packedPos );
                 count3 = GetPackedDataCount ( &packedPos );
 
-                if ((outPosLimit - outputPos) < (((count1 + count2) * count3) + count1))
+                if (((UInt32)(outPosLimit - outputPos)) < (((count1 + count2) * count3) + count1))
                     goto FragmentCorruptError;
 
                 PEF_BlockClear ( outputPos, count1 );
@@ -1876,10 +1876,10 @@ OSStatus    PEF_RelocateSection ( CFContHandlerRef  containerRef,
 
     for (i = 0; ; i++)
     {
-        if (i >= pefPrivate->sectionCount)
+        if (((ItemCount) i) >= pefPrivate->sectionCount)
             return noErr;  // No relocations for this section.
         ldRelHdr = & pefPrivate->ldrSections [i];
-        if (ldRelHdr->sectionNumber == sectionIndex)
+        if (((ItemCount) ldRelHdr->sectionNumber) == sectionIndex)
             break;
     }
 

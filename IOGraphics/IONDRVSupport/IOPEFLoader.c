@@ -190,7 +190,7 @@ PCodeClose( PCodeInstance instance )
     OSStatus            err;
     InstanceVars     *  inst = instance;
     SectionVars      *  section;
-    int			i;
+    ItemCount		i;
 
     if (!inst)
         return (noErr);
