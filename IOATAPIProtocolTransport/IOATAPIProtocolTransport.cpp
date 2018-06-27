@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -21,15 +21,6 @@
  * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
- */
-
-/*
- * Copyright (c) 2000 Apple Computer, Inc.  All rights reserved.
- *
- * HISTORY
- *
- *		09.20.2000	CJS  Started ATAPI Transport Layer
- *
  */
 
 #include <libkern/OSAtomic.h>
@@ -128,7 +119,14 @@ enum
 	kATAPIRequestSenseNeededMask	= ( 1 << kATAPIRequestSenseNeededBit )
 };
 
-#define fSemaphore		reserved->fSemaphore
+enum
+{
+	kODDMediaNotifyValue0	= 0,
+	kODDMediaNotifyValue1	= 1
+};
+
+#define fSemaphore			reserved->fSemaphore
+#define fMediaNotifyValue	reserved->fMediaNotifyValue
 
 #define super IOSCSIProtocolServices
 OSDefineMetaClassAndStructors ( IOATAPIProtocolTransport, IOSCSIProtocolServices );
@@ -170,10 +168,11 @@ bool
 IOATAPIProtocolTransport::start ( IOService * provider )
 {
 	
-	IOReturn		theErr			= kIOReturnSuccess;
-	IOWorkLoop *	workLoop		= NULL;
-	OSDictionary *	dict			= NULL;
-	IOService *		powerProvider	= NULL;
+	IOReturn		theErr				= kIOReturnSuccess;
+	IOWorkLoop *	workLoop			= NULL;
+	OSDictionary *	dict				= NULL;
+	IOService *		powerProvider		= NULL;
+	OSNumber *		mediaNotifyValue	= NULL;
 	
 	STATUS_LOG ( ( "IOATAPIProtocolTransport::start called\n" ) );
 	
@@ -234,11 +233,21 @@ IOATAPIProtocolTransport::start ( IOService * provider )
 		STATUS_LOG ( ( "No ATAPI Mass Storage dictionary\n" ) );
 	}
 	
+	mediaNotifyValue = OSDynamicCast ( OSNumber, getProperty ( "media-notify", gIOServicePlane ) );
+	
+	if ( mediaNotifyValue != NULL )
+	{
+		fMediaNotifyValue = mediaNotifyValue->unsigned32BitValue ( );
+	}
+	else
+	{
+		fMediaNotifyValue = kODDMediaNotifyValue0;
+	}
 	
 	// First call start() in our superclass
 	if ( super::start ( provider ) == false )
 		return false;
-
+	
 	// Cache our provider
 	fATADevice = OSDynamicCast ( IOATADevice, provider );
 	if ( fATADevice == NULL )
@@ -247,7 +256,7 @@ IOATAPIProtocolTransport::start ( IOService * provider )
 		ERROR_LOG ( ( "Error in dynamic cast\n" ) );
 		// Error in the dynamic cast, so get out
 		return false;
-	
+		
 	}
 	
 	// Find out if the device type is ATAPI
@@ -507,6 +516,15 @@ IOATAPIProtocolTransport::free ( void )
 	{
 		IODelete ( reserved, ExpansionData, 1 );
 		reserved = NULL;
+	}
+	
+	if ( fPollingThread != NULL )
+	{
+		
+		thread_call_cancel ( fPollingThread );
+		thread_call_free ( fPollingThread );
+		fPollingThread = NULL;
+		
 	}
 	
 	super::free ( );
@@ -797,7 +815,7 @@ IOATAPIProtocolTransport::SCSITaskCallbackFunction ( IOATACommand * cmd,
 		case kATATimeoutErr:
 			{
 				
-				SCSITaskStatus		taskStatus;
+				SCSITaskStatus		taskStatus = kSCSITaskStatus_No_Status;
 				
 				if ( result == kATATimeoutErr )
 					taskStatus = kSCSITaskStatus_TaskTimeoutOccurred;
@@ -917,6 +935,11 @@ IOATAPIProtocolTransport::IsProtocolServiceSupported ( SCSIProtocolFeature featu
 			// ATAPI supports ATA SLEEP command.
 			isSupported = true;
 			break;
+			
+		case kSCSIProtocolFeature_ProtocolSpecificPowerOff:
+			// does platform support power off?
+			isSupported = ( fMediaNotifyValue != kODDMediaNotifyValue0 );
+			break;
 		
 		case kSCSIProtocolFeature_ACA:
 			// ATAPI does not support Auto Contingent Allegiance
@@ -947,7 +970,7 @@ IOATAPIProtocolTransport::HandleProtocolServiceFeature ( SCSIProtocolFeature fea
 	
 	bool	isSupported = false;
 	
-	STATUS_LOG ( ( "IOATAPIProtocolTransport::DoProtocolServiceFeature called\n" ) );
+	STATUS_LOG ( ( "IOATAPIProtocolTransport::HandleProtocolServiceFeature called\n" ) );
 	
 	switch ( feature )
 	{
@@ -962,6 +985,8 @@ IOATAPIProtocolTransport::HandleProtocolServiceFeature ( SCSIProtocolFeature fea
 				if ( value != 0 )
 				{
 					
+					// start low power polling
+					
 					bool	resetOccurred = false;
 					
 					STATUS_LOG ( ( "Enabling polling of ATA Status register\n" ) );					
@@ -974,11 +999,14 @@ IOATAPIProtocolTransport::HandleProtocolServiceFeature ( SCSIProtocolFeature fea
 					isSupported = true;
 					
 				}
-
+				
 				if ( value == 0 )
 				{
+				
+					// stop low power polling
 					
 					STATUS_LOG ( ( "Disabling polling of ATA Status register\n" ) );					
+									
 					DisablePollingOfStatusRegister ( );
 					isSupported = true;
 					
@@ -989,6 +1017,9 @@ IOATAPIProtocolTransport::HandleProtocolServiceFeature ( SCSIProtocolFeature fea
 			break;
 		
 		case kSCSIProtocolFeature_ProtocolSpecificSleepCommand:
+			
+			// WeÕre being told to do protocol specific sleep
+			
 			if ( serviceValue != NULL )
 			{
 				
@@ -998,6 +1029,7 @@ IOATAPIProtocolTransport::HandleProtocolServiceFeature ( SCSIProtocolFeature fea
 				{
 					
 					STATUS_LOG ( ( "Sending ATA sleep command\n" ) );
+					
 					( void ) SendATASleepCommand ( );
 					isSupported = true;
 					
@@ -1007,7 +1039,16 @@ IOATAPIProtocolTransport::HandleProtocolServiceFeature ( SCSIProtocolFeature fea
 			
 			break;
 			
+		case kSCSIProtocolFeature_ProtocolSpecificPowerOff:
+			
+			// WeÕre being told to cut power to the drive OFF
+			
+			( void ) TurnDrivePowerOff ( );
+			
+			break;
+			
 		default:
+			
 			break;
 		
 	}
@@ -1948,11 +1989,13 @@ void
 IOATAPIProtocolTransport::DisablePollingOfStatusRegister ( void )
 {
 	
-	// Cancel the thread if it is running
+	fWakeUpResetOccurred = true;
+	
+	// Cancel the thread if it is scheduled.
 	if ( thread_call_cancel ( fPollingThread ) )
 	{
 		
-		// It was running, so we balance out the retain ( )
+		// It was scheduled, so we balance out the retain ( )
 		// with a release ( )
 		release ( );
 		
@@ -2088,6 +2131,54 @@ IOATAPIProtocolTransport::SendATASleepCommand ( void )
 	cmd->setDevice_Head ( fATAUnitID << 4 );
 	cmd->setOpcode ( kATAFnExecIO );
 	cmd->setCommand ( kATAcmdSleep );
+	
+	previousRefCon = cmd->refCon;
+	cmd->refCon = ( void * ) syncer;
+	
+	status = fATADevice->executeCommand ( cmd );
+	
+	status = syncer->wait ( false );
+	syncer->release ( );
+
+	cmd->refCon = previousRefCon;
+		
+	ReturnATACommandObject ( cmd );
+	
+	return status;	
+	
+}
+
+
+//--------------------------------------------------------------------------------------
+//	¥ TurnDrivePowerOff	-	Called to turn power to the drive OFF.
+//--------------------------------------------------------------------------------------
+
+IOReturn
+IOATAPIProtocolTransport::TurnDrivePowerOff ( void )
+{
+	
+	IOReturn		status;
+	IOSyncer *		syncer;
+	IOATACommand *	cmd;
+	void *			previousRefCon;
+	
+	STATUS_LOG ( ( "IOATAPIProtocolTransport::TurnDrivePowerOff called\n" ) );
+			
+	syncer = IOSyncer::create ( );	
+	assert ( syncer != NULL );
+	
+	cmd = GetATACommandObject ( );
+	
+	// Zero the command
+	cmd->zeroCommand ( );
+	
+	// Set the command up for shutting the drive power off
+	cmd->setUnit ( fATAUnitID );	
+	cmd->setOpcode ( kATAFnRegAccess );
+	cmd->setRegMask ( mATAStatusCmdValid );
+	cmd->setFlags ( mATAFlagIORead | mATAFlagQuiesce );
+	cmd->setTimeoutMS ( kATATimeout10Seconds );
+	cmd->setCallbackPtr ( &IOATAPIProtocolTransport::sATACallbackSync );
 	
 	previousRefCon = cmd->refCon;
 	cmd->refCon = ( void * ) syncer;
