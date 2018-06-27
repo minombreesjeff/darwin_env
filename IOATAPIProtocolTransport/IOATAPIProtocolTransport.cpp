@@ -1,9 +1,7 @@
 /*
- * Copyright (c) 2000-2006 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2000-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
@@ -362,6 +360,7 @@ IOATAPIProtocolTransport::start ( IOService * provider )
 	
 	// Initialize the power provider to default
 	powerProvider = provider;
+	powerProvider->retain ( );
 	
 	// Look to see if we are the slave device and there is a master
 	// device on the bus.
@@ -402,7 +401,16 @@ IOATAPIProtocolTransport::start ( IOService * provider )
 					if ( deviceNumber->unsigned8BitValue ( ) == kATADevice0DeviceID )
 					{
 						
-						IOService *		possibleProvider = NULL;
+						IOService *			possibleProvider 	= NULL;
+						IOReturn			status 				= kIOReturnSuccess;
+						mach_timespec_t		timeout				= { 5, 0 };
+						
+						// Wait upto 5 seconds for matching to finish on master device.
+						status = obj->waitQuiet ( &timeout );
+						if ( status == kIOReturnTimeout )
+						{
+							break;
+						}
 						
 						// Find this object's child to get the item which is the master.
 						possibleProvider = ( IOService * ) obj->getChildEntry ( gIOServicePlane );
@@ -411,8 +419,11 @@ IOATAPIProtocolTransport::start ( IOService * provider )
 							
 							STATUS_LOG ( ( "Found the master.\n" ) );
 							
-							// Couldn't find the child entry, so reset the power provider
+							// This is our new power provider.
+							powerProvider->release ( );
 							powerProvider = possibleProvider;
+							powerProvider->retain ( );
+							break;
 							
 						}
 						
@@ -429,6 +440,8 @@ IOATAPIProtocolTransport::start ( IOService * provider )
 	}
 	
 	InitializePowerManagement ( powerProvider );
+	
+	powerProvider->release ( );
 	
 	STATUS_LOG ( ( "IOATAPIProtocolTransport::start complete\n" ) );
 	
