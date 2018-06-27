@@ -66,7 +66,7 @@
 			productName = IOATAFamily;
 			productReference = 0B81C263FFB7832611CA28AA /* IOATAFamily.kext */;
 			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 <plist version=\"1.0\">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -86,11 +86,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.7.1</string>
+	<string>1.7.2</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.7.1f4</string>
+	<string>1.7.3f1</string>
 	<key>IOKitPersonalities</key>
 	<dict/>
 	<key>OSBundleCompatibleVersion</key>
@@ -269,9 +269,11 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = A5EDE05D09660D8400EFBE07 /* Build configuration list for PBXProject "IOATAFamily" */;
+			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOATAFamily */;
 			projectDirPath = "";
+			projectRoot = "";
 			targets = (
 				089C1673FE841209C02AAC07 /* IOATAFamily */,
 			);
@@ -369,7 +371,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOATAFamily;
-				MODULE_VERSION = 1.7.1f4;
+				MODULE_VERSION = 1.7.3f1;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_REZFLAGS = "";
 				PER_ARCH_CFLAGS_ppc = "-mno-string";

@@ -48,8 +48,9 @@
 	};
 	019C1A32FFDDABCE7F000001 /* ATADeviceNub.cpp */ = {
 		uiCtxt = {
-			sepNavIntBoundsRect = "{{0, 0}, {944, 9114}}";
-			sepNavSelRange = "{0, 0}";
+			sepNavIntBoundsRect = "{{0, 0}, {915, 8428}}";
+			sepNavSelRange = "{1215, 4}";
+			sepNavVisRange = "{992, 366}";
 			sepNavVisRect = "{{0, 0}, {772, 731}}";
 			sepNavWindowFrame = "{{291, 202}, {811, 860}}";
 		};
@@ -79,9 +80,9 @@
 		};
 	};
 	089C1669FE841209C02AAC07 /* Project object */ = {
+		activeArchitecture = i386;
 		activeBuildConfigurationName = Development;
 		activeTarget = 089C1673FE841209C02AAC07 /* IOATAFamily */;
-		breakpointsGroup = A5B91AD40A37B3B9007A4DA3 /* XCBreakpointsBucket */;
 		codeSenseManager = A5EDE06209660D8400EFBE07 /* Code sense */;
 		perUserDictionary = {
 			PBXConfiguration.PBXFileTableDataSource3.PBXFileTableDataSource = {
@@ -111,8 +112,8 @@
 				PBXFileTableDataSourceColumnSortingKey = PBXFileDataSource_Filename_ColumnID;
 				PBXFileTableDataSourceColumnWidthsKey = (
 					20,
-					200,
-					312,
+					203,
+					60,
 					20,
 					48,
 					43,
@@ -128,40 +129,8 @@
 					PBXFileDataSource_Warnings_ColumnID,
 				);
 			};
-			PBXPerProjectTemplateStateSaveDate = 172190607;
-			PBXWorkspaceStateSaveDate = 172190607;
-		};
-		perUserProjectItems = {
-			A5300E460A38E53D00BF459B = A5300E460A38E53D00BF459B /* PBXTargetBookmark */;
-			A5300E470A38E53D00BF459B = A5300E470A38E53D00BF459B /* PBXTargetBookmark */;
-			A5300E480A38E53D00BF459B = A5300E480A38E53D00BF459B /* PBXTextBookmark */;
-			A53EA2B60A436E2E00BF9909 /* PBXBookmark */ = A53EA2B60A436E2E00BF9909 /* PBXBookmark */;
-			A53EA2B70A436E5500BF9909 /* PBXBookmark */ = A53EA2B70A436E5500BF9909 /* PBXBookmark */;
-			A53EA2B80A436E9900BF9909 /* PBXBookmark */ = A53EA2B80A436E9900BF9909 /* PBXBookmark */;
-			A53EA2BE0A4383C900BF9909 /* PBXTextBookmark */ = A53EA2BE0A4383C900BF9909 /* PBXTextBookmark */;
-			A53EA2C70A4383E100BF9909 /* PBXTextBookmark */ = A53EA2C70A4383E100BF9909 /* PBXTextBookmark */;
-			A53EA2CA0A4383E100BF9909 /* PBXTextBookmark */ = A53EA2CA0A4383E100BF9909 /* PBXTextBookmark */;
-			A53EA2CD0A4383E100BF9909 /* PBXTextBookmark */ = A53EA2CD0A4383E100BF9909 /* PBXTextBookmark */;
-			A53EA2D00A4383E100BF9909 /* PBXTextBookmark */ = A53EA2D00A4383E100BF9909 /* PBXTextBookmark */;
-			A53EA2D30A4383E100BF9909 /* PBXTextBookmark */ = A53EA2D30A4383E100BF9909 /* PBXTextBookmark */;
-			A53EA2D50A4383E100BF9909 /* PBXTextBookmark */ = A53EA2D50A4383E100BF9909 /* PBXTextBookmark */;
-			A53EA2D90A4383E100BF9909 /* PBXTargetBookmark */ = A53EA2D90A4383E100BF9909 /* PBXTargetBookmark */;
-			A53EA2DA0A4383E100BF9909 /* PBXTargetBookmark */ = A53EA2DA0A4383E100BF9909 /* PBXTargetBookmark */;
-			A53EA2E00A4385C800BF9909 /* PBXTextBookmark */ = A53EA2E00A4385C800BF9909 /* PBXTextBookmark */;
-			A53EA2E10A4385C800BF9909 /* PBXTextBookmark */ = A53EA2E10A4385C800BF9909 /* PBXTextBookmark */;
-			A53EA2E20A4385C800BF9909 /* PBXTextBookmark */ = A53EA2E20A4385C800BF9909 /* PBXTextBookmark */;
-			A53EA2E30A4385C800BF9909 /* PBXTextBookmark */ = A53EA2E30A4385C800BF9909 /* PBXTextBookmark */;
-			A53EA2E40A4385C800BF9909 /* PBXTextBookmark */ = A53EA2E40A4385C800BF9909 /* PBXTextBookmark */;
-			A53EA2E50A4385C800BF9909 /* PBXTargetBookmark */ = A53EA2E50A4385C800BF9909 /* PBXTargetBookmark */;
-			A53EA2ED0A478F1700BF9909 /* PBXTargetBookmark */ = A53EA2ED0A478F1700BF9909 /* PBXTargetBookmark */;
-			A53EA2EE0A478F1700BF9909 /* PBXTargetBookmark */ = A53EA2EE0A478F1700BF9909 /* PBXTargetBookmark */;
-			A53EA2EF0A478F1700BF9909 /* PBXTextBookmark */ = A53EA2EF0A478F1700BF9909 /* PBXTextBookmark */;
-			A53EA2F00A478F1700BF9909 /* PBXTextBookmark */ = A53EA2F00A478F1700BF9909 /* PBXTextBookmark */;
-			A53EA2F10A478F1700BF9909 /* PBXTextBookmark */ = A53EA2F10A478F1700BF9909 /* PBXTextBookmark */;
-			A53EA2F20A478F1700BF9909 /* PBXTextBookmark */ = A53EA2F20A478F1700BF9909 /* PBXTextBookmark */;
-			A53EA2F30A478F1700BF9909 /* PBXTextBookmark */ = A53EA2F30A478F1700BF9909 /* PBXTextBookmark */;
-			A5B91AE10A38E09A007A4DA3 = A5B91AE10A38E09A007A4DA3 /* PBXBookmark */;
-			A5B91AF50A38E115007A4DA3 = A5B91AF50A38E115007A4DA3 /* PBXTextBookmark */;
+			PBXPerProjectTemplateStateSaveDate = 207025646;
+			PBXWorkspaceStateSaveDate = 207025646;
 		};
 		sourceControlManager = A5EDE06109660D8400EFBE07 /* Source Control */;
 		userBuildSettings = {
@@ -178,315 +147,6 @@
 			sepNavWindowFrame = "{{408, 204}, {811, 860}}";
 		};
 	};
-	A5300E460A38E53D00BF459B /* PBXTargetBookmark */ = {
-		isa = PBXTargetBookmark;
-		trg = 089C1673FE841209C02AAC07 /* IOATAFamily */;
-	};
-	A5300E470A38E53D00BF459B /* PBXTargetBookmark */ = {
-		isa = PBXTargetBookmark;
-		trg = 089C1673FE841209C02AAC07 /* IOATAFamily */;
-	};
-	A5300E480A38E53D00BF459B /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A2BFFDDABCE7F000001 /* IOATABusCommand.h */;
-		name = IOATABusCommand64;
-		rLen = 17;
-		rLoc = 7223;
-		rType = 0;
-		vrLen = 1843;
-		vrLoc = 5942;
-	};
-	A53EA2B60A436E2E00BF9909 /* PBXBookmark */ = {
-		isa = PBXBookmark;
-		fRef = 019C1A2DFFDDABCE7F000001 /* IOATACommand.h */;
-	};
-	A53EA2B70A436E5500BF9909 /* PBXBookmark */ = {
-		isa = PBXBookmark;
-		fRef = 019C1A2BFFDDABCE7F000001 /* IOATABusCommand.h */;
-	};
-	A53EA2B80A436E9900BF9909 /* PBXBookmark */ = {
-		isa = PBXBookmark;
-		fRef = 019C1A36FFDDABCE7F000001 /* IOATAController.cpp */;
-	};
-	A53EA2BE0A4383C900BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		comments = "error: 'inDesc' was not declared in this scope";
-		fRef = 019C1A33FFDDABCE7F000001 /* IOATABusCommand.cpp */;
-		rLen = 1;
-		rLoc = 469;
-		rType = 1;
-	};
-	A53EA2C70A4383E100BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A33FFDDABCE7F000001 /* IOATABusCommand.cpp */;
-		name = "IOATABusCommand.cpp: 471";
-		rLen = 0;
-		rLoc = 9136;
-		rType = 0;
-		vrLen = 634;
-		vrLoc = 8583;
-	};
-	A53EA2CA0A4383E100BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A2DFFDDABCE7F000001 /* IOATACommand.h */;
-		name = _desc;
-		rLen = 5;
-		rLoc = 9831;
-		rType = 0;
-		vrLen = 2443;
-		vrLoc = 8203;
-	};
-	A53EA2CD0A4383E100BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A36FFDDABCE7F000001 /* IOATAController.cpp */;
-		name = setCommandInUse;
-		rLen = 15;
-		rLoc = 12809;
-		rType = 0;
-		vrLen = 1401;
-		vrLoc = 12605;
-	};
-	A53EA2D00A4383E100BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A2BFFDDABCE7F000001 /* IOATABusCommand.h */;
-		name = "IOATABusCommand.h: setCommandInUse";
-		rLen = 0;
-		rLoc = 7754;
-		rType = 0;
-		vrLen = 1832;
-		vrLoc = 6127;
-	};
-	A53EA2D30A4383E100BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = A53EA2D40A4383E100BF9909 /* IODMACommand.h */;
-		rLen = 0;
-		rLoc = 2147483647;
-		rType = 0;
-	};
-	A53EA2D40A4383E100BF9909 /* IODMACommand.h */ = {
-		isa = PBXFileReference;
-		lastKnownFileType = sourcecode.c.h;
-		name = IODMACommand.h;
-		path = /Developer/SDKs/MacOSX10.4u.sdk/System/Library/Frameworks/Kernel.framework/Versions/A/Headers/IOKit/IODMACommand.h;
-		sourceTree = "<absolute>";
-		uiCtxt = {
-			sepNavIntBoundsRect = "{{0, 0}, {4376, 6440}}";
-			sepNavSelRange = "{17381, 19}";
-			sepNavVisRect = "{{0, 3079}, {871, 830}}";
-		};
-	};
-	A53EA2D50A4383E100BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = A53EA2D60A4383E100BF9909 /* IODMACommand.h */;
-		name = getMemoryDescriptor;
-		rLen = 19;
-		rLoc = 17381;
-		rType = 0;
-		vrLen = 5807;
-		vrLoc = 13243;
-	};
-	A53EA2D60A4383E100BF9909 /* IODMACommand.h */ = {
-		isa = PBXFileReference;
-		name = IODMACommand.h;
-		path = /Developer/SDKs/MacOSX10.4u.sdk/System/Library/Frameworks/Kernel.framework/Versions/A/Headers/IOKit/IODMACommand.h;
-		sourceTree = "<absolute>";
-	};
-	A53EA2D90A4383E100BF9909 /* PBXTargetBookmark */ = {
-		isa = PBXTargetBookmark;
-		trg = 089C1673FE841209C02AAC07 /* IOATAFamily */;
-	};
-	A53EA2DA0A4383E100BF9909 /* PBXTargetBookmark */ = {
-		isa = PBXTargetBookmark;
-		trg = 089C1673FE841209C02AAC07 /* IOATAFamily */;
-		uiCtxt = {
-			TOCViewDetailVisibleRect = "{{0, 0}, {623, 336}}";
-			TOCViewExpandedItems = (
-				"com.apple.target-editor-pane.settings",
-				"com.apple.target-editor-pane.settings.simple",
-				"com.apple.target-editor-pane.info-plist",
-				"com.apple.target-editor-pane.info-plist.simple",
-				"com.apple.target-editor-pane.buildphases",
-			);
-			TOCViewMasterVisibleRect = "{{0, 0}, {248, 784}}";
-			TOCViewSelectedItems = (
-				PBXInfoPlistExpertSettingsEditorModule,
-			);
-		};
-	};
-	A53EA2E00A4385C800BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A33FFDDABCE7F000001 /* IOATABusCommand.cpp */;
-		name = "IOATABusCommand.cpp: 448";
-		rLen = 0;
-		rLoc = 8779;
-		rType = 0;
-		vrLen = 721;
-		vrLoc = 8557;
-	};
-	A53EA2E10A4385C800BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A2DFFDDABCE7F000001 /* IOATACommand.h */;
-		name = _desc;
-		rLen = 5;
-		rLoc = 9831;
-		rType = 0;
-		vrLen = 2443;
-		vrLoc = 8203;
-	};
-	A53EA2E20A4385C800BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A36FFDDABCE7F000001 /* IOATAController.cpp */;
-		name = setCommandInUse;
-		rLen = 15;
-		rLoc = 12809;
-		rType = 0;
-		vrLen = 1401;
-		vrLoc = 12605;
-	};
-	A53EA2E30A4385C800BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A2BFFDDABCE7F000001 /* IOATABusCommand.h */;
-		name = "IOATABusCommand.h: setCommandInUse";
-		rLen = 0;
-		rLoc = 7754;
-		rType = 0;
-		vrLen = 1832;
-		vrLoc = 6127;
-	};
-	A53EA2E40A4385C800BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = A53EA2D40A4383E100BF9909 /* IODMACommand.h */;
-		name = getMemoryDescriptor;
-		rLen = 19;
-		rLoc = 17381;
-		rType = 0;
-		vrLen = 5807;
-		vrLoc = 13243;
-	};
-	A53EA2E50A4385C800BF9909 /* PBXTargetBookmark */ = {
-		isa = PBXTargetBookmark;
-		trg = 089C1673FE841209C02AAC07 /* IOATAFamily */;
-		uiCtxt = {
-			TOCViewDetailVisibleRect = "{{0, 0}, {623, 336}}";
-			TOCViewExpandedItems = (
-				"com.apple.target-editor-pane.settings",
-				"com.apple.target-editor-pane.settings.simple",
-				"com.apple.target-editor-pane.info-plist",
-				"com.apple.target-editor-pane.info-plist.simple",
-				"com.apple.target-editor-pane.buildphases",
-			);
-			TOCViewMasterVisibleRect = "{{0, 0}, {248, 784}}";
-			TOCViewSelectedItems = (
-				PBXInfoPlistExpertSettingsEditorModule,
-			);
-		};
-	};
-	A53EA2ED0A478F1700BF9909 /* PBXTargetBookmark */ = {
-		isa = PBXTargetBookmark;
-		trg = 089C1673FE841209C02AAC07 /* IOATAFamily */;
-		uiCtxt = {
-			TOCViewDetailVisibleRect = "{{0, 0}, {623, 336}}";
-			TOCViewExpandedItems = (
-				"com.apple.target-editor-pane.settings",
-				"com.apple.target-editor-pane.settings.simple",
-				"com.apple.target-editor-pane.info-plist",
-				"com.apple.target-editor-pane.info-plist.simple",
-				"com.apple.target-editor-pane.buildphases",
-			);
-			TOCViewMasterVisibleRect = "{{0, 0}, {248, 784}}";
-			TOCViewSelectedItems = (
-				PBXInfoPlistExpertSettingsEditorModule,
-			);
-		};
-	};
-	A53EA2EE0A478F1700BF9909 /* PBXTargetBookmark */ = {
-		isa = PBXTargetBookmark;
-		trg = 089C1673FE841209C02AAC07 /* IOATAFamily */;
-		uiCtxt = {
-			TOCViewDetailVisibleRect = "{{0, 0}, {623, 424}}";
-			TOCViewExpandedItems = (
-				"com.apple.target-editor-pane.settings",
-				"com.apple.target-editor-pane.settings.simple",
-				"com.apple.target-editor-pane.info-plist",
-				"com.apple.target-editor-pane.info-plist.simple",
-				"com.apple.target-editor-pane.buildphases",
-			);
-			TOCViewMasterVisibleRect = "{{0, 0}, {248, 784}}";
-			TOCViewSelectedItems = (
-				"com.apple.target-editor-pane.settings.expert",
-			);
-		};
-	};
-	A53EA2EF0A478F1700BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A33FFDDABCE7F000001 /* IOATABusCommand.cpp */;
-		name = "IOATABusCommand.cpp: 425";
-		rLen = 0;
-		rLoc = 8521;
-		rType = 0;
-		vrLen = 775;
-		vrLoc = 8041;
-	};
-	A53EA2F00A478F1700BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A2DFFDDABCE7F000001 /* IOATACommand.h */;
-		name = _desc;
-		rLen = 5;
-		rLoc = 9831;
-		rType = 0;
-		vrLen = 2443;
-		vrLoc = 8203;
-	};
-	A53EA2F10A478F1700BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A36FFDDABCE7F000001 /* IOATAController.cpp */;
-		name = setCommandInUse;
-		rLen = 15;
-		rLoc = 12809;
-		rType = 0;
-		vrLen = 1401;
-		vrLoc = 12605;
-	};
-	A53EA2F20A478F1700BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A2BFFDDABCE7F000001 /* IOATABusCommand.h */;
-		name = "IOATABusCommand.h: 290";
-		rLen = 0;
-		rLoc = 8058;
-		rType = 0;
-		vrLen = 1887;
-		vrLoc = 6115;
-	};
-	A53EA2F30A478F1700BF9909 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = A53EA2D40A4383E100BF9909 /* IODMACommand.h */;
-		name = getMemoryDescriptor;
-		rLen = 19;
-		rLoc = 17381;
-		rType = 0;
-		vrLen = 5807;
-		vrLoc = 13243;
-	};
-	A5B91AD40A37B3B9007A4DA3 /* XCBreakpointsBucket */ = {
-		isa = XCBreakpointsBucket;
-		name = "Project Breakpoints";
-		objects = (
-		);
-	};
-	A5B91AE10A38E09A007A4DA3 /* PBXBookmark */ = {
-		isa = PBXBookmark;
-		fRef = 019C1A2BFFDDABCE7F000001 /* IOATABusCommand.h */;
-	};
-	A5B91AF50A38E115007A4DA3 /* PBXTextBookmark */ = {
-		isa = PBXTextBookmark;
-		fRef = 019C1A2BFFDDABCE7F000001 /* IOATABusCommand.h */;
-		name = IOATABusCommand64;
-		rLen = 17;
-		rLoc = 7223;
-		rType = 0;
-		vrLen = 1843;
-		vrLoc = 5942;
-	};
 	A5EDE06109660D8400EFBE07 /* Source Control */ = {
 		isa = PBXSourceControlManager;
 		fallbackIsa = XCSourceControlManager;
@@ -498,5 +158,19 @@
 	A5EDE06209660D8400EFBE07 /* Code sense */ = {
 		isa = PBXCodeSenseManager;
 		indexTemplatePath = "";
+	};
+	B91829CD0197498808CA29FD /* IOATARegI386.cpp */ = {
+		uiCtxt = {
+			sepNavIntBoundsRect = "{{0, 0}, {866, 1092}}";
+			sepNavSelRange = "{29, 0}";
+			sepNavVisRect = "{{0, 0}, {866, 906}}";
+		};
+	};
+	B9D54E10019702DB08CA29FD /* IOATARegI386.h */ = {
+		uiCtxt = {
+			sepNavIntBoundsRect = "{{0, 0}, {866, 1078}}";
+			sepNavSelRange = "{0, 0}";
+			sepNavVisRect = "{{0, 0}, {866, 906}}";
+		};
 	};
 }
