@@ -20,28 +20,34 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
+#ifndef _IOKIT_IOGRAPHICSTYPESPRIVATE_H
+#define _IOKIT_IOGRAPHICSTYPESPRIVATE_H
 
-#ifndef _IOKIT_IOGRAPHICSDEVICE_H
-#define _IOKIT_IOGRAPHICSDEVICE_H
-
-#include <IOKit/IOService.h>
 #include <IOKit/graphics/IOGraphicsTypes.h>
 
-
-class IOGraphicsDevice : public IOService
-{
-    OSDeclareAbstractStructors(IOGraphicsDevice)
-
-public:
-
-    virtual void hideCursor( void ) = 0;
-    virtual void showCursor( Point * cursorLoc, int frame ) = 0;
-    virtual void moveCursor( Point * cursorLoc, int frame ) = 0;
-
-    virtual void getVBLTime( AbsoluteTime * time, AbsoluteTime * delta ) = 0;
-
-    virtual void getBoundingRect ( Bounds ** bounds ) = 0;
+enum {
+    // options for IOServiceRequestProbe()
+    kIOFBForceReadEDID			= 0x00000100,
 };
 
-#endif /* ! _IOKIT_IOGRAPHICSDEVICE_H */
+enum {
+    // flags for IOHardwareCursorDescriptor flags
+    // kIOFBHardwareCursorInVRAM	= 0x00000002,	// IOFramebufferShared.h defines
+    kIOFBCursorWidthRoundMask		= 0x00ff0000,
+    kIOFBCursorWidthRoundShift		= 16,
+};
+
+enum {
+    kFramebufferAGPFastWriteAccess	= 0x00100000,
+};
+
+enum {
+    // Controller attributes
+    kIOSystemPowerAttribute		= 'spwr',
+    kIOVRAMSaveAttribute		= 'vrsv',
+    // Connection attributes
+    kConnectionPostWake			= 'pwak'
+};
+
+#endif /* ! _IOKIT_IOGRAPHICSTYPESPRIVATE_H */
 
