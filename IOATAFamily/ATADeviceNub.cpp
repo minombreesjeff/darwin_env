@@ -193,7 +193,7 @@ IOATACommand*
 ATADeviceNub::allocCommand( void )
 {
 
-	IOATABusCommand* cmd = IOATABusCommand::allocateCmd();
+	IOATABusCommand64* cmd = IOATABusCommand64::allocateCmd32();
 	
 	return (IOATACommand*) cmd;
 
