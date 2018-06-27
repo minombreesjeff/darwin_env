@@ -327,6 +327,10 @@ public:
                                     void * 		security_id,
                                     UInt32  		type,
                                     IOUserClient **	handler );
+    virtual IOReturn callPlatformFunction( const OSSymbol * functionName,
+				    bool waitForFunction,
+				    void *p1, void *p2,
+				    void *p3, void *p4 );
 
     virtual void hideCursor( void );
     virtual void showCursor( Point * cursorLoc, int frame );

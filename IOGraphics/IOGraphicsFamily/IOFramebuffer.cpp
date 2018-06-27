@@ -83,6 +83,9 @@ static SInt32		gIOFBSuspendCount;
 static IOFramebuffer *  gIOFBConsoleFramebuffer;
 bool			gIOFBDesktopModeAllowed = true;
 IOOptionBits		gIOFBLastClamshellState;
+const OSSymbol *	gIOFBGetSensorValueKey;
+
+#define	kIOFBGetSensorValueKey	"getSensorValue"
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -136,6 +139,7 @@ struct IOFramebufferPrivate
     UInt8			pendingSpeedChange;
 
     UInt32			reducedSpeed;
+    IOService *			temperatureSensor;
 };
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -216,6 +220,27 @@ public:
     virtual bool doUpdate( void );
 
     void displayModeChange( void );
+};
+
+class IOFramebufferSensor : public IOService
+{
+    OSDeclareDefaultStructors(IOFramebufferSensor)
+
+    IOFramebuffer * 	fFramebuffer;
+
+public:
+    static IOFramebufferSensor * withFramebuffer( IOFramebuffer * framebuffer );
+    virtual void free();
+
+    virtual IOReturn callPlatformFunction( const OSSymbol * functionName,
+					   bool waitForFunction,
+					   void *param1, void *param2,
+					   void *param3, void *param4 );
+
+    virtual IOReturn callPlatformFunction( const char * functionName,
+					   bool waitForFunction,
+					   void *param1, void *param2,
+					   void *param3, void *param4 );
 };
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -2774,6 +2799,8 @@ IOReturn IOFramebuffer::open( void )
 
     do
     {
+        if (gIOFBGate)
+	    FBLOCK();
         if (opened)
             continue;
         if (dead)
@@ -2795,6 +2822,11 @@ IOReturn IOFramebuffer::open( void )
             gIOFBDesktopModeAllowed = !data || (0 != (8 & *((UInt32 *) data->getBytesNoCopy())));
         }
 
+	if (!gIOFBGetSensorValueKey)
+	    gIOFBGetSensorValueKey = OSSymbol::withCStringNoCopy(kIOFBGetSensorValueKey);
+	if (!gIOFBGetSensorValueKey)
+            continue;
+	
         if (!gAllFramebuffers)
             continue;
         if (!gIOFBRootNotifier)
@@ -2832,12 +2864,14 @@ IOReturn IOFramebuffer::open( void )
         if (!gIOFBWorkLoop)
             continue;
         if (!gIOFBGate)
+	{
             gIOFBGate = IOFBGate::gate( this );
-        if (!gIOFBGate)
-            continue;
-        gIOFBWorkLoop->addEventSource( gIOFBGate );
-
-        FBLOCK();
+	    if (!gIOFBGate)
+		continue;
+	    gIOFBWorkLoop->addEventSource( gIOFBGate );
+    
+	    FBLOCK();
+	}
 
         serverNotified   = true;
         serverState      = true;
@@ -2992,6 +3026,7 @@ IOReturn IOFramebuffer::open( void )
     }
     while (false);
 
+    if (opened)
     checkConnectionChange();
 
     if (gIOFBGate)
@@ -3002,6 +3037,8 @@ IOReturn IOFramebuffer::open( void )
 
 IOReturn IOFramebuffer::postOpen( void )
 {
+    IOService * sensor = 0;
+
     if (__private->cursorAttributes)
     {
         __private->cursorAttributes->release();
@@ -3041,7 +3078,82 @@ IOReturn IOFramebuffer::postOpen( void )
 
     setProperty( kIOFBCursorInfoKey, __private->cursorAttributes );
 
+
+    UInt32 value[16];
+
+//#define kTempAttribute	kConnectionWSSB
+#define kTempAttribute	'thrm'
+
+    if (!__private->temperatureSensor
+     && (kIOReturnSuccess == getAttributeForConnection(0, kTempAttribute, &value[0])))
+    do
+    {
+	UInt32	   data;
+	OSNumber * num;
+
+        num = OSDynamicCast(OSNumber, getProperty(kIOFBDependentIndexKey));
+        if (num && num->unsigned32BitValue())
+	    continue;
+
+	sensor = new IOService;
+	if (!sensor)
+	    continue;
+	if (!sensor->init())
+	    continue;
+
+#define kTempSensorName 	"temp-sensor"
+	sensor->setName(kTempSensorName);
+	sensor->setProperty("name", (void *) kTempSensorName, strlen(kTempSensorName) + 1);
+	sensor->setProperty("compatible", (void *) kTempSensorName, strlen(kTempSensorName) + 1);
+	sensor->setProperty("device_type", (void *) kTempSensorName, strlen(kTempSensorName) + 1);
+	sensor->setProperty("type", "temperature");
+	sensor->setProperty("location", "GPU");
+	data = 0xff000002;
+	sensor->setProperty("zone", &data, sizeof(data));
+	data = 0x00000001;
+	sensor->setProperty("version", &data, sizeof(data));
+
+	OSData * prop;
+	IOService * device;
+	data = 0x12345678;
+	if ((device = getProvider())
+  	 && (prop = OSDynamicCast(OSData, device->getProperty("AAPL,phandle"))))
+	    data = (*((UInt32 *) prop->getBytesNoCopy())) << 8;
+	sensor->setProperty("sensor-id", &data, sizeof(data));
+
+	if (!sensor->attach(this))
+	    continue;
+
+	sensor->registerService();
+	__private->temperatureSensor = sensor;
+    }
+    while (false);
+
+    if (sensor)
+	sensor->release();
+
     return (kIOReturnSuccess);
+}
+
+IOReturn IOFramebuffer::callPlatformFunction( const OSSymbol * functionName,
+						    bool waitForFunction,
+						    void *p1, void *p2,
+						    void *p3, void *p4 )
+{
+    UInt32   value[16];
+    IOReturn ret;
+
+    if (functionName != gIOFBGetSensorValueKey)
+	return (super::callPlatformFunction(functionName, waitForFunction, p1, p2, p3, p4));
+
+    FBLOCK();
+    ret = getAttributeForConnection(0, kTempAttribute, &value[0]);
+    FBUNLOCK();
+
+    if (kIOReturnSuccess == ret)
+	*((UInt32 *)p2) = ((value[0] & 0xffff) << 16);
+
+    return (ret);
 }
 
 IOWorkLoop * IOFramebuffer::getWorkLoop() const
