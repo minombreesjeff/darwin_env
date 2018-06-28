@@ -1736,7 +1736,8 @@ AbsoluteTime IOAudioEngine::getTimerInterval()
 
 		outputIterator = OSCollectionIterator::withCollection(outputStreams);
 
-		if (outputIterator) {
+		if (outputIterator) 
+		{
 			while (outputStream = (IOAudioStream *)outputIterator->getNextObject()) {
 				bufferSize = outputStream->getSampleBufferSize();
 				if ((bufferSize / numErasesPerBuffer) > 65536) {
@@ -1746,6 +1747,7 @@ AbsoluteTime IOAudioEngine::getTimerInterval()
 					}
 				}
 			}
+			outputIterator->release();
 		}
 		nanoseconds_to_absolutetime(((UInt64)NSEC_PER_SEC * (UInt64)getNumSampleFramesPerBuffer() / (UInt64)currentRate->whole / (UInt64)numErasesPerBuffer), &interval);
     }
