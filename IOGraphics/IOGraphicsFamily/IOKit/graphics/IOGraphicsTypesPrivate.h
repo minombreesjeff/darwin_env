@@ -48,8 +48,10 @@ enum {
     kIOFBRotate270			= kIOFBSwapAxes | kIOFBInvertY
 };
 
+// private IOPixelInformation.flags
 enum {
-    kFramebufferAGPFastWriteAccess	= 0x00100000
+    kFramebufferAGPFastWriteAccess	= 0x00100000,
+    kFramebufferDeepMode		= 0x00200000
 };
 
 enum {
@@ -95,6 +97,8 @@ enum {
 #define kIOFBRotatePrefsKey 		"framebuffer-rotation"
 #define kIOFBCapturedKey 		"IOFBCaptured"
 
+#define kIOFBMirrorDisplayModeSafeKey	"IOFBMirrorDisplayModeSafe"
+
 #define kIOFBConnectInterruptDelayKey 	"connect-interrupt-delay"
 
 #define kIOGraphicsPrefsKey 		"IOGraphicsPrefs"
@@ -105,8 +109,17 @@ enum {
 
 #define kIOFBBuiltInKey			"built-in"
 
+#define kIOMultimediaConnectionIDKey		"IOMultimediaConnectionID"
+#define kIOMultimediaConnectionIDDefault	"hdmi-1"
+#define kIOMultimediaConnectionPropertiesKey	"IOMultimediaConnectionProperties"
+#define kIOCEAEDIDVersionKey			"IOCEAEDIDVersion"
+#define kIOCEADataBlocksKey			"IOCEADataBlocks"
 
 #define detailedTimingModeID		__reservedA[0]
+
+#ifndef kIORequestIdleKey
+#define kIORequestIdleKey		"IORequestIdle"
+#endif
 
 enum {
     kIOAccelSpecificID		= 0x00000002

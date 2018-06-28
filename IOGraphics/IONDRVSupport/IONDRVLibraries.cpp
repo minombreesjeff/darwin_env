@@ -58,6 +58,8 @@ if( ml_at_interrupt_context()) {				\
     return( nrLockedErr );					\
 }
 
+extern "C" IOReturn _IONDRVLibrariesMappingInitialize( IOService * provider );
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 //#define EXP(s)	_e ## s
@@ -289,6 +291,9 @@ OSStatus EXP(RegistryPropertyGetSize)( const RegEntryID * entryID,
     CHECK_INTERRUPT(propertyName)
     REG_ENTRY_TO_PT( entryID, regEntry)
 
+    if (!strcmp(kPropertyAAPLAddress, propertyName))
+	_IONDRVLibrariesMappingInitialize((IOService *) regEntry);
+
     prop = OSDynamicCast( OSData, regEntry->getProperty( propertyName));
     if (prop)
 	*propertySize = prop->getLength();
@@ -311,6 +316,9 @@ OSStatus EXP(RegistryPropertyGet)(const RegEntryID * entryID,
 
     CHECK_INTERRUPT(propertyName)
     REG_ENTRY_TO_PT( entryID, regEntry)
+
+    if (!strcmp(kPropertyAAPLAddress, propertyName))
+	_IONDRVLibrariesMappingInitialize((IOService *) regEntry);
 
     prop = OSDynamicCast( OSData, regEntry->getProperty( propertyName));
     if (prop)
@@ -1894,7 +1902,7 @@ static FunctionEntry PrivateInterfaceLibFuncs[] =
 	MAKEFUNC( "LMGetPowerMgrVars", _eLMGetPowerMgrVars )
     };
 
-#define NUMLIBRARIES	7
+#define NUMLIBRARIES	6
 const ItemCount IONumNDRVLibraries = NUMLIBRARIES;
 LibraryEntry IONDRVLibraries[ NUMLIBRARIES ] =
     {
@@ -2030,9 +2038,70 @@ extern "C" IOReturn _IONDRVLibrariesFinalize( IOService * provider )
 {
     provider->removeProperty(kIONDRVISTPropertyName);
     provider->removeProperty("AAPL,ndrv-interrupt-set");
-    provider->removeProperty("AAPL,address");
+    provider->removeProperty(kPropertyAAPLAddress);
     provider->removeProperty("AAPL,maps");
 
+    return (kIOReturnSuccess);
+}
+
+extern "C" IOReturn _IONDRVLibrariesMappingInitialize( IOService * provider )
+{
+    // map memory
+    OSData *     data;
+    unsigned int i;
+    IOItemCount  numMaps;
+    OSArray *    maps = 0;
+    data = 0;
+
+    if (provider->getProperty(kPropertyAAPLAddress))
+	return (kIOReturnSuccess);
+
+    numMaps = provider->getDeviceMemoryCount();
+    for (i = 0; i < numMaps; i++)
+    {
+	IODeviceMemory * mem;
+	IOMemoryMap *    map;
+	IOVirtualAddress virtAddress;
+
+	mem = provider->getDeviceMemoryWithIndex(i);
+	if (!mem)
+	    continue;
+        if (!maps)
+	    maps = OSArray::withCapacity(numMaps);
+        if (!maps)
+            continue;
+
+	map = mem->map();
+	if (!map)
+	{
+//	    IOLog("%s: map[%ld] failed\n", provider->getName(), i);
+	    maps->setObject(kOSBooleanFalse);		// placeholder
+	    continue;
+	}
+
+	maps->setObject(map);
+	map->release();
+
+	virtAddress = map->getVirtualAddress();
+	mem->setMapping(kernel_task, virtAddress, kIOMapInhibitCache);
+        if (!data)
+            data = OSData::withCapacity( numMaps * sizeof( IOVirtualAddress));
+        if (!data)
+            continue;
+	data->appendBytes( &virtAddress, sizeof( IOVirtualAddress));
+    }
+
+    // NDRV aperture vectors
+    if (maps)
+    {
+	provider->setProperty( "AAPL,maps", maps );
+        maps->release();
+    }
+    if (data)
+    {
+        provider->setProperty(kPropertyAAPLAddress, data );
+        data->release();
+    }
     return (kIOReturnSuccess);
 }
 
@@ -2108,58 +2177,9 @@ extern "C" IOReturn _IONDRVLibrariesInitialize( IOService * provider )
         set->release();
     }
 
-    // map memory
-
-    IOItemCount numMaps = provider->getDeviceMemoryCount();
-    OSArray *   maps = 0;
-    data = 0;
-
-    for (i = 0; i < numMaps; i++)
-    {
-	IODeviceMemory * mem;
-	IOMemoryMap *    map;
-	IOVirtualAddress virtAddress;
-
-	mem = provider->getDeviceMemoryWithIndex(i);
-	if (!mem)
-	    continue;
-        if (!maps)
-	    maps = OSArray::withCapacity(numMaps);
-        if (!maps)
-            continue;
-
-	map = mem->map();
-	if (!map)
-	{
-//	    IOLog("%s: map[%ld] failed\n", provider->getName(), i);
-	    maps->setObject(maps);		// placeholder
-	    continue;
-	}
-
-	maps->setObject(map);
-	map->release();
-
-	virtAddress = map->getVirtualAddress();
-	mem->setMapping(kernel_task, virtAddress, kIOMapInhibitCache);
-        if (!data)
-            data = OSData::withCapacity( numMaps * sizeof( IOVirtualAddress));
-        if (!data)
-            continue;
-	data->appendBytes( &virtAddress, sizeof( IOVirtualAddress));
-	kprintf("ndrv base = %lx\n", virtAddress);
-    }
-
-    // NDRV aperture vectors
-    if (maps)
-    {
-	provider->setProperty( "AAPL,maps", maps );
-        maps->release();
-    }
-    if (data)
-    {
-        provider->setProperty( "AAPL,address", data );
-        data->release();
-    }
+#if VERSION_MAJOR < 9
+    _IONDRVLibrariesMappingInitialize(provider);
+#endif
 
     return (kIOReturnSuccess);
 }

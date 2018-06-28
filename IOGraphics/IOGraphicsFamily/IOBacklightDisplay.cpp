@@ -26,6 +26,7 @@
 #include <IOKit/graphics/IODisplay.h>
 #include <IOKit/ndrvsupport/IOMacOSVideo.h>
 #include <IOKit/pwr_mgt/RootDomain.h>
+#include <IOKit/pwr_mgt/IOPM.h>
 
 /*
     We further divide the actual display panel brightness levels into four
@@ -59,9 +60,6 @@ OSDefineMetaClassAndStructors(IOBacklightDisplay, IODisplay)
 enum {
     kIOBacklightDisplayMaxUsableState  = kIODisplayMaxPowerState - 1
 };
-
-extern IOOptionBits gIOFBLastClamshellState;
-extern bool	    gIOFBSystemPower;
 
 #define kIOBacklightUserBrightnessKey	"IOBacklightUserBrightness"
 
@@ -98,7 +96,13 @@ IOService * IOBacklightDisplay::probe( IOService * provider, SInt32 * score )
                     && (kPanelFSTNConnect != displayType))
                 continue;
 
-            OSIterator * iter = getMatchingServices(nameMatching("backlight"));
+	    OSDictionary * matching = nameMatching("backlight");
+	    OSIterator *   iter     = NULL;
+	    if (matching)
+	    {
+		iter = getMatchingServices(matching);
+		matching->release();
+	    }
             if (iter)
             {
                 haveBacklight = (0 != iter->getNextObject());
@@ -118,6 +122,10 @@ IOService * IOBacklightDisplay::probe( IOService * provider, SInt32 * score )
 
 void IOBacklightDisplay::stop( IOService * provider )
 {
+    if( fPMSettingNotificationHandle ) {
+        fPMSettingNotificationHandle->release();
+    }
+
     return (super::stop(provider));
 }
 
@@ -140,9 +148,11 @@ void IOBacklightDisplay::initPowerManagement( IOService * provider )
 	// staticPower, unbudgetedPower, powerToAttain, timeToAttain, settleUpTime,
 	// timeToLower, settleDownTime, powerDomainBudget
     };
+    static bool displayDimsPublished = false;
 
     OSNumber *     num;
-    OSDictionary * displayParams;
+    OSDictionary * displayParams;    
+    const OSSymbol  *settingsArray[2];
 
     displayParams = OSDynamicCast(OSDictionary, copyProperty(gIODisplayParametersKey));
     if (!displayParams
@@ -169,7 +179,8 @@ void IOBacklightDisplay::initPowerManagement( IOService * provider )
 
     if (displayParams)
 	displayParams->release();
-
+	
+	
     fMaxBrightnessLevel[0] = 0;
     fMaxBrightnessLevel[1] = fMinBrightness;
     fMaxBrightnessLevel[2] = fMinBrightness + 1;
@@ -177,7 +188,35 @@ void IOBacklightDisplay::initPowerManagement( IOService * provider )
 
     fDisplayPMVars->currentState = kIODisplayMaxPowerState;
 
-    getPMRootDomain()->publishFeature("DisplayDims");
+    if (!displayDimsPublished)
+    {
+	displayDimsPublished = true;
+	getPMRootDomain()->publishFeature("DisplayDims");	
+    }
+    
+    // Register to manage the "DisplaySleepUsesDim" setting
+    fDisplaySleepUsesDimSettingKey = (OSSymbol *)OSSymbol::withCString( 
+                                                kIOPMSettingDisplaySleepUsesDimKey );
+    settingsArray[0] = fDisplaySleepUsesDimSettingKey;
+    settingsArray[1] = NULL;
+
+    getPMRootDomain()->registerPMSettingController( settingsArray,
+                                    OSMemberFunctionCast(IOPMSettingControllerCallback,
+                                        (OSObject*)this,
+                                        &IOBacklightDisplay::handlePMSettingCallback),
+                                    (OSObject *)this,
+                                    (uintptr_t)NULL,
+                                    (OSObject **)&fPMSettingNotificationHandle);                                    
+
+    // Check initial state of "DisplaySleepUsesDim"
+    OSObject * obj = getPMRootDomain()->copyPMSetting(fDisplaySleepUsesDimSettingKey);
+    if ((num = OSDynamicCast(OSNumber, obj)) && (!num->unsigned32BitValue()))
+    {
+	// display stays at full power until display sleep
+	fMaxBrightnessLevel[2] = fMaxBrightness;
+    }
+    if (obj)
+	obj->release();
 
     // initialize superclass variables
     PMinit();
@@ -188,12 +227,30 @@ void IOBacklightDisplay::initPowerManagement( IOService * provider )
     registerPowerDriver(this, (IOPMPowerState *) ourPowerStates, kIODisplayNumPowerStates);
 }
 
-IOReturn IOBacklightDisplay::setAggressiveness( unsigned long type, unsigned long newLevel )
+void IOBacklightDisplay::handlePMSettingCallback(
+    const OSSymbol *arg_type, 
+    OSObject *arg_val, 
+    uintptr_t refcon)
 {
-    if (type == (unsigned long) kIODisplayDimAggressiveness)
+    OSNumber    *newSetting;
+    int         setting;
+    UInt8       newLevel;
+    
+    if( (arg_type == fDisplaySleepUsesDimSettingKey)
+        && (newSetting = OSDynamicCast(OSNumber, arg_val)) )
     {
-        newLevel = newLevel ? (fMinBrightness + 1) : fMaxBrightness;
-        if (newLevel != fMaxBrightnessLevel[2])
+        setting = newSetting->unsigned32BitValue();
+        if(setting) {
+            // display will dim before sleep
+            newLevel = fMinBrightness + 1;
+        } else {
+            // display will not before sleep
+            newLevel = fMaxBrightness;
+        }
+
+        // Set the new brightness value for the 2nd highest power state
+        // either full brightness or dim
+        if( newLevel != fMaxBrightnessLevel[2] )
         {
             fMaxBrightnessLevel[2] = newLevel;
             if (2 == fCurrentPowerState)
@@ -201,25 +258,9 @@ IOReturn IOBacklightDisplay::setAggressiveness( unsigned long type, unsigned lon
         }
     }
 
-    super::setAggressiveness(type, newLevel);
-
-    return (kIOReturnSuccess);
+    return;
 }
 
-IOReturn IOBacklightDisplay::getAggressiveness( unsigned long type, unsigned long * currentLevel )
-{
-    IOReturn ret;
-
-    if (type == (unsigned long) kIODisplayDimAggressiveness)
-    {
-	*currentLevel = (fMaxBrightnessLevel[2] == (fMinBrightness + 1));
-	ret = kIOReturnSuccess;
-    }
-    else
-	ret = super::getAggressiveness(type, currentLevel);
-
-    return (ret);
-}
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 // setPowerState
@@ -238,12 +279,20 @@ IOReturn IOBacklightDisplay::setPowerState( unsigned long powerState, IOService 
     value = fMaxBrightnessLevel[fCurrentPowerState];
     if (value > fCurrentUserBrightness)
         value = fCurrentUserBrightness;
-    //if(gIOFBSystemPower)
-    setBrightness( value );
 
-    powerState |= (powerState >= kIOBacklightDisplayMaxUsableState) ? kFBDisplayUsablePowerState : 0;
-    if (fConnection)
-        fConnection->setAttributeForConnection( kConnectionPower, powerState );
+    OSObject * obj;
+    if ((!powerState) && (obj = copyProperty(kIOHibernatePreviewActiveKey, gIOServicePlane)))
+    {
+	obj->release();
+    }
+    else
+    {
+	powerState |= (powerState >= kIOBacklightDisplayMaxUsableState) ? kFBDisplayUsablePowerState : 0;
+	//if(gIOFBSystemPower)
+	    setBrightness( value );
+	if (fConnection)
+	    fConnection->setAttributeForConnection( kConnectionPower, powerState );
+    }
 
     return (ret);
 }
@@ -260,7 +309,7 @@ bool IOBacklightDisplay::doIntegerSet( OSDictionary * params,
     else
     {
         if (!gIOFBLastClamshellState)
-            fCurrentUserBrightness = value;
+	    fCurrentUserBrightness = value;
         return (setBrightness(value));
     }
 }
@@ -329,7 +378,6 @@ unsigned long IOBacklightDisplay::maxCapabilityForDomainState( IOPMPowerFlags do
         return (0);
 }
 
-
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 // initialPowerStateForDomainState
 //
@@ -339,20 +387,10 @@ unsigned long IOBacklightDisplay::maxCapabilityForDomainState( IOPMPowerFlags do
 
 unsigned long IOBacklightDisplay::initialPowerStateForDomainState( IOPMPowerFlags domainState )
 {
-    UInt32	newState;
-
     if (domainState & IOPMPowerOn)
-    {
-        // domain has power,
-        // find power state that has our current brightness level
-        for (newState = 0; newState < kIODisplayNumPowerStates; newState++)
-        {
-            if (fCurrentBrightness <= fMaxBrightnessLevel[newState])
-                return (newState);
-        }
-    }
-    // domain is down, so display is off
-    return (0);
+        return (kIODisplayMaxPowerState);
+    else
+        return (0);
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -364,20 +402,10 @@ unsigned long IOBacklightDisplay::initialPowerStateForDomainState( IOPMPowerFlag
 
 unsigned long IOBacklightDisplay::powerStateForDomainState( IOPMPowerFlags domainState )
 {
-    UInt32	newState;
-
     if (domainState & IOPMPowerOn)
-    {
-        // domain has power,
-        // find power state that has our current brightness level
-        for (newState = 0; newState < kIODisplayNumPowerStates; newState++)
-        {
-            if (fCurrentBrightness <= fMaxBrightnessLevel[newState])
-                return (newState);
-        }
-    }
-    // domain is down, so display is off
-    return (0);
+        return (kIODisplayMaxPowerState);
+    else
+        return (0);
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -447,6 +475,7 @@ void AppleBacklightDisplay::stop( IOService * provider )
     if (fDeferredEvents)
     {
         getWorkLoop()->removeEventSource(fDeferredEvents);
+        fDeferredEvents->release();
         fDeferredEvents = 0;
     }
 
@@ -472,10 +501,10 @@ void AppleBacklightDisplay::_deferredEvent( OSObject * target,
     // of the clamshell state at setPowerState time.
     if (self->fCurrentPowerState)
     {
-        SInt32 brightness = self->fMaxBrightnessLevel[self->fCurrentPowerState];
-        if (brightness > self->fCurrentUserBrightness)
-            brightness = self->fCurrentUserBrightness;
-        self->setBrightness( brightness );
+	SInt32 brightness = self->fMaxBrightnessLevel[self->fCurrentPowerState];
+	if (brightness > self->fCurrentUserBrightness)
+	    brightness = self->fCurrentUserBrightness;
+	self->setBrightness( brightness );
     }
 }
 
@@ -513,9 +542,6 @@ IOReturn AppleBacklightDisplay::framebufferEvent( IOFramebuffer * framebuffer,
 
 bool AppleBacklightDisplay::setBrightness( SInt32 value )
 {
-    if (gIOFBLastClamshellState)
-        value = 0;
-
 #if DEBUG
     IOLog("brightness[%d,%d] %d\n", fCurrentPowerState, gIOFBLastClamshellState, value);
 #endif

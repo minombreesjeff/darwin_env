@@ -26,13 +26,13 @@
 #include <IOKit/IOLocks.h>
 #include <IOKit/IOMessage.h>
 #include <IOKit/pwr_mgt/RootDomain.h>
+#include <IOKit/IOHibernatePrivate.h>
 #include <IOKit/graphics/IOGraphicsPrivate.h>
 #include <IOKit/graphics/IOGraphicsInterfaceTypes.h>
 #include <IOKit/ndrvsupport/IONDRVFramebuffer.h>
 #include <IOKit/i2c/IOI2CInterface.h>
 #include <IOKit/pci/IOAGPDevice.h>
 #include <IOKit/IOTimerEventSource.h>
-#include <IOKit/IOHibernatePrivate.h>
 #include <IOKit/assert.h>
 
 #include <libkern/c++/OSContainers.h>
@@ -212,8 +212,6 @@ static int gIONDRVFramebufferGeneration[2] = { 0, 0 };
 IOService * IONDRVFramebuffer::probe( IOService * provider, SInt32 * score )
 {
     IOService *	 inst;
-    IOService *	 newInst = 0;
-    const char * name;
 
     if (0 != provider->getProperty(kIONDRVIgnoreKey))
         return (0);
@@ -542,6 +540,7 @@ IOReturn IONDRVFramebuffer::enableController( void )
     IOReturn		err;
     const char *	logname;
     UInt32		grayValue;
+    OSObject *		prop;
 
     logname = getProvider()->getName();
     do
@@ -559,8 +558,15 @@ IOReturn IONDRVFramebuffer::enableController( void )
                          _videoJackStateChangeHandler, this, 0 );
 
         grayValue = kIOFBBootGrayValue;
-        device->setProperty("AAPL,gray-value", &grayValue, sizeof(grayValue));
-        nub->setProperty("AAPL,gray-value", &grayValue, sizeof(grayValue));
+	prop = nub->copyProperty("AAPL,gray-value", gIOServicePlane);
+	if (!prop)
+	    prop = OSData::withBytes(&grayValue, sizeof(grayValue));
+	if (prop)
+	{
+	    device->setProperty("AAPL,gray-value", prop);
+	    nub->setProperty("AAPL,gray-value", prop);
+	    prop->release();
+	}
 
         grayValue = 1;
         device->setProperty("AAPL,gray-page", &grayValue, sizeof(grayValue));
@@ -600,7 +606,7 @@ IOReturn IONDRVFramebuffer::enableController( void )
 	    }
         }
         online = isOnline;
-        vramMemory = findVRAM();
+//        vramMemory = findVRAM();
 
         OSData * data;
         if ((data = OSDynamicCast(OSData, device->getProperty(kIOAGPCommandValueKey))))
@@ -727,6 +733,9 @@ IOReturn IONDRVFramebuffer::requestProbe( IOOptionBits options )
 
 IODeviceMemory * IONDRVFramebuffer::getVRAMRange( void )
 {
+    if (ndrvState && !vramMemory)
+	vramMemory = findVRAM();
+
     if (vramMemory)
         vramMemory->retain();
 
@@ -1028,6 +1037,17 @@ IOReturn IONDRVFramebuffer::_doControl( IONDRVFramebuffer * self, UInt32 code, v
 
     err = self->doDriverIO( /*ID*/ (UInt32) &pb, &pb,
                                    kIONDRVControlCommand, kIONDRVImmediateIOCommandKind );
+
+#if FORCE_CONNECT_CHANGE
+    if (cscProbeConnection == code)
+    {
+	_VSLService * vslService  = self->vslServices;
+	while (vslService && (kIOFBConnectInterruptType != vslService->type))
+	    vslService = vslService->next;
+	if (vslService)
+	    VSLDoInterruptService(vslService);
+    }
+#endif
 
     return (err);
 }
@@ -1738,36 +1758,20 @@ void IONDRVFramebuffer::getCurrentConfiguration( void )
 	else
 	    __private->currentModeTiming = timingInvalid;
 
-	OSArray *	maps = OSDynamicCast(OSArray, nub->getProperty("AAPL,maps"));
-	IOMemoryMap *	map = 0;
-	UInt32		addr, vAddr = (UInt32) switchInfo.csBaseAddr;
-	unsigned int	i, count = maps ? maps->getCount() : 0;
-	bool		tryPhys = false;
-
-	physicalFramebuffer = 0;
-	do
+	mach_vm_address_t vAddr = (mach_vm_address_t) switchInfo.csBaseAddr;
+	ppnum_t           page  = 0;
+	if (vAddr)
 	{
-	    for (i = 0; i < count; i++)
+	    if (1 & vAddr)
+		physicalFramebuffer = vAddr ^ 1;
+	    else
 	    {
-		map = OSDynamicCast(IOMemoryMap, maps->getObject(i));
-		if (!map)
-		    continue;
-		addr = tryPhys ? map->getPhysicalAddress() : map->getVirtualAddress();
-		if ((vAddr >= addr) && (vAddr < (addr + map->getLength())))
-		{
-		    physicalFramebuffer = (vAddr - addr) + map->getPhysicalAddress();
-		    break;
-		}
-		map = 0;
+		page = pmap_find_phys(kernel_pmap, vAddr);
+		if (!page)
+		    panic("pmap_find_phys %qx", vAddr);
+		physicalFramebuffer = ptoa_32(page) + (PAGE_MASK & vAddr);
 	    }
-	    if (map || tryPhys)
-		break;
-	    tryPhys = true;
 	}
-	while (!map);
-
-	if (!map)
-	    physicalFramebuffer = vAddr;
     }
 }
 
@@ -1802,12 +1806,23 @@ IODeviceMemory * IONDRVFramebuffer::getApertureRange( IOPixelAperture aper )
     IOPixelInformation		info;
     IOByteCount			bytes;
 
+    if (!physicalFramebuffer)
+    {
+	if (!vramMemory)
+	    vramMemory = getVRAMRange();
+	if (vramMemory)
+	    physicalFramebuffer = vramMemory->getPhysicalAddress();
+    }
+
+    if (!physicalFramebuffer)
+	return (NULL);
+
     err = getPixelInformation( currentDisplayMode, currentDepth, aper,
                                &info );
     if (err)
     {
 	DEBG(thisIndex, " getAper(%x) %x\n", err, currentDisplayMode);
-        return (0);
+        return (NULL);
     }
 
     bytes = (info.bytesPerRow * info.activeHeight) + 128;
@@ -1872,7 +1887,7 @@ IODeviceMemory * IONDRVFramebuffer::findVRAM( void )
             mem = makeSubRange( vramBase, vramLength );
     }
 
-    DEBG("%s: vram [%08lx:%08lx]\n", nub->getName(), vramBase, vramLength);
+    DEBG(thisIndex, " %s: vram [%08lx:%08lx]\n", nub->getName(), vramBase, vramLength);
     return (mem);
 }
 
@@ -1955,6 +1970,7 @@ IOReturn IONDRVFramebuffer::setDetailedTimings( OSArray * array )
         detailedTimings = array;
         detailedTimingsSeed++;
 
+//	if (((UInt32) currentDisplayMode) >= ((UInt32) kDisplayModeIDReservedBase))
         if (currentDisplayMode == kDisplayModeIDBootProgrammable)
         {
             VDDetailedTimingRec			look;
@@ -1968,12 +1984,12 @@ IOReturn IONDRVFramebuffer::setDetailedTimings( OSArray * array )
 
             bzero( &look, sizeof( VDDetailedTimingRec) );
             look.csTimingSize = sizeof( VDDetailedTimingRec);
-            look.csDisplayModeID = kDisplayModeIDBootProgrammable;
+            look.csDisplayModeID = currentDisplayMode;
             err = _doStatus( this, cscGetDetailedTiming, &look );
 
             bzero( &scaler, sizeof( VDScalerRec) );
             scaler.csScalerSize = sizeof( VDScalerRec);
-            scaler.csDisplayModeID = kDisplayModeIDBootProgrammable;
+            scaler.csDisplayModeID = currentDisplayMode;
             bootScaled = (noErr == _doStatus( this, cscGetScaler, &scaler ));
 
 	    if (bootScaled 
@@ -2069,6 +2085,9 @@ IOReturn IONDRVFramebuffer::getPixelInformation(
     SInt32			err;
     VDVideoParametersInfoRec	pixelParams;
     VPBlock			pixelInfo;
+    UInt32			pixelType;
+    const char *		pixelFormat;
+    
 
     bzero( info, sizeof( *info));
 
@@ -2102,7 +2121,7 @@ IOReturn IONDRVFramebuffer::getPixelInformation(
                 pixelInfo.vpPixelSize = 8;
             case 0:
             case 1:
-                strncpy( info->pixelFormat, "PPPPPPPP", pixelInfo.vpPixelSize);
+                strncpy( info->pixelFormat, IO8BitIndexedPixels, pixelInfo.vpPixelSize);
                 info->pixelType = kIOCLUTPixels;
                 info->componentMasks[0] = (1 << pixelInfo.vpPixelSize) - 1;
                 info->bitsPerPixel = pixelInfo.vpPixelSize;
@@ -2111,7 +2130,7 @@ IOReturn IONDRVFramebuffer::getPixelInformation(
                 break;
 
             case 2:
-                strcpy( info->pixelFormat, "-RRRRRGGGGGBBBBB");
+                strcpy( info->pixelFormat, IO16BitDirectPixels);
                 info->pixelType = kIORGBDirectPixels;
                 info->componentMasks[0] = 0x7c00;
                 info->componentMasks[1] = 0x03e0;
@@ -2121,16 +2140,83 @@ IOReturn IONDRVFramebuffer::getPixelInformation(
                 info->bitsPerComponent = 5;
                 break;
 
-            case 4:
-                strcpy( info->pixelFormat, "--------RRRRRRRRGGGGGGGGBBBBBBBB");
-                info->pixelType = kIORGBDirectPixels;
-                info->componentMasks[0] = 0x00ff0000;
-                info->componentMasks[1] = 0x0000ff00;
-                info->componentMasks[2] = 0x000000ff;
-                info->bitsPerPixel = 32;
-                info->componentCount = 3;
-                info->bitsPerComponent = 8;
-                break;
+	    case 4:
+	    case 8:
+		info->bitsPerPixel     = pixelInfo.vpPixelSize;
+		info->componentCount   = pixelInfo.vpCmpCount;
+		info->bitsPerComponent = pixelInfo.vpCmpSize;
+
+		pixelType = kIORGBDirectPixels;
+		switch (pixelInfo.vpPixelType)
+		{
+		    case kIORGBSignedFloatingPointPixels:
+			pixelType = pixelInfo.vpPixelType;
+			if (info->bitsPerComponent == 16)
+			    pixelFormat = kIO16BitFloatPixels;
+			else
+			    pixelFormat = kIO32BitFloatPixels;
+			break;
+
+		    case kIORGBSignedDirectPixels:
+			pixelType = pixelInfo.vpPixelType;
+			// fall thru
+		    default:
+			if (info->bitsPerComponent == 10)
+			    pixelFormat = kIO30BitDirectPixels;
+			else if (info->bitsPerComponent == 16)
+			    pixelFormat = kIO64BitDirectPixels;
+			else
+			    pixelFormat = IO32BitDirectPixels;
+			break;
+		}
+
+		strcpy(info->pixelFormat, pixelFormat);
+		info->pixelType = pixelType;
+
+		switch (8 == info->bitsPerComponent)
+		{
+		    default:
+		    case 8:
+			info->componentMasks[0] = 0x00ff0000;
+			info->componentMasks[1] = 0x0000ff00;
+			info->componentMasks[2] = 0x000000ff;
+			break;
+
+		    case 10:
+			info->componentMasks[0] = 0x3ff00000;
+			info->componentMasks[1] = 0x000ffc00;
+			info->componentMasks[2] = 0x000003ff;
+			break;
+
+		    case 16:
+			info->componentMasks[0] = 0x0000ffff;
+//			info->componentMasks[1] = 0x00000000;
+
+//			info->componentMasks[2] = 0x00000000;
+			info->componentMasks[3] = 0xffff0000;
+
+//			info->componentMasks[4] = 0x00000000;
+			info->componentMasks[5] = 0x0000ffff;
+			break;
+		    
+		    case 32:
+//			info->componentMasks[0]  = 0x00000000;
+			info->componentMasks[1]  = 0xffffffff;
+//			info->componentMasks[2]  = 0x00000000;
+//			info->componentMasks[3]  = 0x00000000;
+
+//			info->componentMasks[4]  = 0x00000000;
+//			info->componentMasks[5]  = 0x00000000;
+			info->componentMasks[6]  = 0xffffffff;
+//			info->componentMasks[7]  = 0x00000000;
+
+//			info->componentMasks[8]  = 0x00000000;
+//			info->componentMasks[9]  = 0x00000000;
+//			info->componentMasks[10] = 0x00000000;
+			info->componentMasks[11] = 0xffffffff;
+			break;
+		}
+		break;
         }
     }
     while (false);
@@ -3606,7 +3692,6 @@ void IONDRVFramebuffer::initForPM( void )
     }
 
     // register ourselves with superclass policy-maker
-    pm_vars->theNumberOfPowerStates = 0;
     registerPowerDriver( this, powerStates, kIONDRVFramebufferPowerStateCount );
     // no sleep until children
     temporaryPowerClampOn();
@@ -3661,7 +3746,7 @@ unsigned long IONDRVFramebuffer::powerStateForDomainState(
     IOPMPowerFlags domainState )
 {
     if (domainState & IOPMPowerOn)
-        return (pm_vars->myCurrentState);
+        return (getPowerState());
     else
         return (kNDRVFramebufferSleepState);
 }
@@ -4142,7 +4227,7 @@ IOReturn IOBootNDRV::doStatus( UInt32 code, void * params )
                 switchInfo->csData     = kIOBootNDRVDisplayMode;
                 switchInfo->csMode     = kDepthMode1;
                 switchInfo->csPage     = 1;
-                switchInfo->csBaseAddr = (Ptr) fAddress;
+                switchInfo->csBaseAddr = (Ptr) (1 | (UInt32) fAddress);
                 ret = kIOReturnSuccess;
             }
             break;

@@ -153,7 +153,6 @@ public:
     virtual bool doUpdate( void );
 
     // power management methods
-    virtual IOReturn setAggressiveness( unsigned long, unsigned long newLevel );
     virtual IOReturn setPowerState( unsigned long, IOService * );
     virtual unsigned long maxCapabilityForDomainState( IOPMPowerFlags );
     virtual unsigned long initialPowerStateForDomainState( IOPMPowerFlags );
@@ -209,6 +208,9 @@ protected:
     SInt32	fMinBrightness;
     SInt32	fMaxBrightness;
     UInt16	fMaxBrightnessLevel[kIODisplayNumPowerStates];
+    
+    OSSymbol    *fDisplaySleepUsesDimSettingKey;
+    OSObject    *fPMSettingNotificationHandle;
 
 public:
     virtual IOService * probe( IOService *, SInt32 * );
@@ -229,6 +231,8 @@ public:
     virtual bool setBrightness( SInt32 value );
 
 private:
+    void handlePMSettingCallback(const OSSymbol *, OSObject *, uintptr_t);
+
     OSMetaClassDeclareReservedUnused(IOBacklightDisplay, 0);
     OSMetaClassDeclareReservedUnused(IOBacklightDisplay, 1);
     OSMetaClassDeclareReservedUnused(IOBacklightDisplay, 2);
