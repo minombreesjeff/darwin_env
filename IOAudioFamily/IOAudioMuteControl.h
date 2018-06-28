@@ -20,41 +20,21 @@
  * @APPLE_LICENSE_HEADER_END@
  */  
 
-#ifndef _IOKIT_IOAUDIOTOGGLECONTROl_H
-#define _IOKIT_IOAUDIOTOGGLECONTROL_H
+#ifndef _IOKIT_IOAUDIOMUTECONTROL_H
+#define _IOKIT_IOAUDIOMUTECONTROL_H
 
 #include <IOKit/audio/IOAudioControl.h>
 
 /*!
- * @class IOAudioToggleControl
+ * @class IOAudioMuteControl
  */
 
-class IOAudioToggleControl : public IOAudioControl
+class IOAudioMuteControl : public IOAudioControl
 {
-    OSDeclareDefaultStructors(IOAudioToggleControl)
+    OSDeclareDefaultStructors(IOAudioMuteControl)
 
 protected:
-    struct ExpansionData { };
-    
-    ExpansionData *reserved;
-    
-private:
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 0);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 1);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 2);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 3);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 4);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 5);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 6);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 7);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 8);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 9);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 10);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 11);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 12);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 13);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 14);
-    OSMetaClassDeclareReservedUnused(IOAudioToggleControl, 15);
+    bool master;
 
 public:
     /*!
@@ -66,22 +46,14 @@ public:
      * @param cntrlID An optional ID for the control that can be used to uniquely identify controls
      * @result Returns a newly allocated and initialized mute IOAudioControl
      */
-    static IOAudioToggleControl *create(bool initialValue,
-                                        UInt32 channelID,
-                                        const char *channelName = 0,
-                                        UInt32 cntrlID = 0,
-                                        UInt32 subType = 0,
-                                        UInt32 usage = 0);
-                                      
-    static IOAudioToggleControl *createMuteControl(bool initialValue,
-                                                    UInt32 channelID,
-                                                    const char *channelName = 0,
-                                                    UInt32 cntrlID = 0,
-                                                    UInt32 usage = 0);
+    static IOAudioMuteControl *create(bool initialValue,
+                                      UInt32 channelID,
+                                      const char *channelName = 0,
+                                      UInt32 cntrlID = 0);
 
     /*!
      * @function init
-     * @abstract Initializes a newly allocated IOAudioToggleControl with the given attributes
+     * @abstract Initializes a newly allocated IOAudioMuteControl with the given attributes
      * @param initialValue The initial value of the control
      * @param channelID The ID of the channel(s) that the control acts on.  Common IDs are located in IOAudioTypes.h.
      * @param channelName An optional name for the channel.  Common names are located in IOAudioPort.h.
@@ -92,10 +64,22 @@ public:
                       UInt32 channelID, 
                       const char *channelName = 0,
                       UInt32 cntrlID = 0,
-                      UInt32 subType = 0,
-                      UInt32 usage = 0,
                       OSDictionary *properties = 0);
 
+    /*!
+     * @function setMaster
+     * @abstract Records whether or not this level control should be changed when the system-wide master
+     *  volume is changed
+     */
+    virtual void setMaster(bool isMaster);
+
+    /*!
+     * @function isMaster
+     * @abstract Reports whether or not this level control should be changed when the system-wide master
+     *  volume is changed
+     * @result Returns true if the level control is a master level control
+     */
+    virtual bool isMaster();
 };
 
-#endif /* _IOKIT_IOAUDIOTOGGLECONTROL_H */
+#endif /* _IOKIT_IOAUDIOMUTECONTROL_H */

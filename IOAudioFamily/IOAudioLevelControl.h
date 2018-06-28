@@ -25,8 +25,6 @@
 
 #include <IOKit/audio/IOAudioControl.h>
 
-class OSArray;
-
 /*!
  * @class IOAudioLevelControl
  * @abstract
@@ -38,35 +36,12 @@ class IOAudioLevelControl : public IOAudioControl
     OSDeclareDefaultStructors(IOAudioLevelControl)
 
 protected:
-    SInt32	minValue;
-    SInt32	maxValue;
+    UInt32	minValue;
+    UInt32	maxValue;
     IOFixed	minDB;
     IOFixed	maxDB;
     
-    OSArray *ranges;
-    
-protected:
-    struct ExpansionData { };
-    
-    ExpansionData *reserved;
-    
-private:
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 0);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 1);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 2);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 3);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 4);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 5);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 6);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 7);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 8);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 9);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 10);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 11);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 12);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 13);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 14);
-    OSMetaClassDeclareReservedUnused(IOAudioLevelControl, 15);
+    bool master;
 
 public:
     /*!
@@ -82,26 +57,14 @@ public:
      * @param cntrlID An optional ID for the control that can be used to uniquely identify controls.
      * @result Returns a newly allocted and initialized level IOAudioControl
      */
-    static IOAudioLevelControl *create(SInt32 initialValue,
-                                       SInt32 minValue,
-                                       SInt32 maxValue,
+    static IOAudioLevelControl *create(UInt32 initialValue,
+                                       UInt32 minValue,
+                                       UInt32 maxValue,
                                        IOFixed minDB,
                                        IOFixed maxDB,
                                        UInt32 channelID,
                                        const char *channelName = 0,
-                                       UInt32 cntrlID = 0,
-                                       UInt32 subType = 0,
-                                       UInt32 usage = 0);
-                                       
-    static IOAudioLevelControl *createVolumeControl(SInt32 initialValue,
-                                                    SInt32 minValue,
-                                                    SInt32 maxValue,
-                                                    IOFixed minDB,
-                                                    IOFixed maxDB,
-                                                    UInt32 channelID,
-                                                    const char *channelName = 0,
-                                                    UInt32 cntrlID = 0,
-                                                    UInt32 usage = 0);
+                                       UInt32 cntrlID = 0);
 
     /*!
      * @function init
@@ -118,37 +81,33 @@ public:
      *  gets stored in the registry entry for this service.
      * @result Returns true on success
      */
-    virtual bool init(SInt32 initialValue,
-                      SInt32 minValue,
-                      SInt32 maxValue,
+    virtual bool init(UInt32 initialValue,
+                      UInt32 minValue,
+                      UInt32 maxValue,
                       IOFixed minDB,
                       IOFixed maxDB,
                       UInt32 channelID,
                       const char *channelName = 0,
                       UInt32 cntrlID = 0,
-                      UInt32 subType = 0,
-                      UInt32 usage = 0,
                       OSDictionary *properties = 0);
-                      
-    virtual void free();
 
     /*!
      * @function setMinValue
      * @abstract Sets the minimum value the control may have
      * @param minValue The minimum value for the control
      */
-    virtual void setMinValue(SInt32 minValue);
+    virtual void setMinValue(UInt32 minValue);
 
-    virtual SInt32 getMinValue();
+    virtual UInt32 getMinValue();
      
     /*!
      * @function setMaxValue
      * @abstract Sets the maximum value the control may have
      * @param maxValue The maximum value for the control
      */ 
-    virtual void setMaxValue(SInt32 maxValue);
+    virtual void setMaxValue(UInt32 maxValue);
 
-    virtual SInt32 getMaxValue();
+    virtual UInt32 getMaxValue();
      
      /*!
      * @function setMinDB
@@ -171,11 +130,21 @@ public:
     virtual void setMaxDB(IOFixed maxDB);
 
     virtual IOFixed getMaxDB();
-    
-    virtual IOReturn addRange(SInt32 minValue, SInt32 maxValue, IOFixed minDB, IOFixed maxDB);
-    virtual IOReturn addNegativeInfinity(SInt32 negativeInfinityValue);
-    
-    virtual IOReturn validateValue(OSObject *newValue);
+
+    /*!
+     * @function setMaster
+     * @abstract Records whether or not this level control should be changed when the system-wide master
+     *  volume is changed
+     */
+    virtual void setMaster(bool isMaster);
+
+    /*!
+     * @function isMaster
+     * @abstract Reports whether or not this level control should be changed when the system-wide master
+     *  volume is changed
+     * @result Returns true if the level control is a master level control
+     */
+    virtual bool isMaster();
 };
 
 #endif /* _IOKIT_IOAUDIOLEVELCONTROL_H */
