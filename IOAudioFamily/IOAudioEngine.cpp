@@ -56,8 +56,8 @@ OSMetaClassDefineReservedUsed(IOAudioEngine, 8);
 OSMetaClassDefineReservedUsed(IOAudioEngine, 9);
 OSMetaClassDefineReservedUsed(IOAudioEngine, 10);
 OSMetaClassDefineReservedUsed(IOAudioEngine, 11);
+OSMetaClassDefineReservedUsed(IOAudioEngine, 12);
 
-OSMetaClassDefineReservedUnused(IOAudioEngine, 12);
 OSMetaClassDefineReservedUnused(IOAudioEngine, 13);
 OSMetaClassDefineReservedUnused(IOAudioEngine, 14);
 OSMetaClassDefineReservedUnused(IOAudioEngine, 15);
@@ -95,6 +95,23 @@ OSMetaClassDefineReservedUnused(IOAudioEngine, 46);
 OSMetaClassDefineReservedUnused(IOAudioEngine, 47);
 
 // New Code:
+// OSMetaClassDefineReservedUsed(IOAudioEngine, 12);
+IOReturn IOAudioEngine::createUserClient(task_t task, void *securityID, UInt32 type, IOAudioEngineUserClient **newUserClient, OSDictionary *properties)
+{
+    IOReturn result = kIOReturnSuccess;
+    IOAudioEngineUserClient *userClient;
+    
+    userClient = IOAudioEngineUserClient::withAudioEngine(this, task, securityID, type, properties);
+    
+    if (userClient) {
+        *newUserClient = userClient;
+    } else {
+        result = kIOReturnNoMemory;
+    }
+    
+    return result;
+}
+
 // OSMetaClassDefineReservedUsed(IOAudioEngine, 11);
 void IOAudioEngine::setInputSampleOffset(UInt32 numSamples) {
     audioDebugIOLog(3, "IOAudioEngine[%p]::setInputSampleOffset(0x%lx)", this, numSamples);
@@ -737,6 +754,9 @@ IOReturn IOAudioEngine::createUserClient(task_t task, void *securityID, UInt32 t
 
 IOReturn IOAudioEngine::newUserClient(task_t task, void *securityID, UInt32 type, IOUserClient **handler)
 {
+#if __i386__
+    return kIOReturnUnsupported;
+#else
     IOReturn				result = kIOReturnSuccess;
     IOAudioEngineUserClient	*client;
 
@@ -761,7 +781,49 @@ IOReturn IOAudioEngine::newUserClient(task_t task, void *securityID, UInt32 type
                 if (result == kIOReturnSuccess) {
                     *handler = client;
                 }
+			}
+        } else {
+            result = kIOReturnNoMemory;
         }
+    } else {
+        result = kIOReturnNoDevice;
+    }
+	
+    return result;
+#endif
+}
+
+IOReturn IOAudioEngine::newUserClient(task_t task, void *securityID, UInt32 type, OSDictionary *properties, IOUserClient **handler)
+{
+    IOReturn				result = kIOReturnSuccess;
+    IOAudioEngineUserClient	*client;
+	
+	if (kIOReturnSuccess == newUserClient(task, securityID, type, handler)) {
+		return kIOReturnSuccess;
+	}
+	
+    audioDebugIOLog(3, "IOAudioEngine[%p]::newUserClient(0x%x, %p, 0x%lx, %p, %p)", this, (unsigned int)task, securityID, type, properties, handler);
+	
+    if (!isInactive()) {
+        result = createUserClient(task, securityID, type, &client, properties);
+    
+        if ((result == kIOReturnSuccess) && (client != NULL)) {
+            if (!client->attach(this)) {
+                client->release();
+                result = kIOReturnError;
+            } else if (!client->start(this)) {
+                client->detach(this);
+                client->release();
+                result = kIOReturnError;
+            } else {
+                assert(commandGate);
+    
+                result = commandGate->runAction(addUserClientAction, client);
+                
+                if (result == kIOReturnSuccess) {
+                    *handler = client;
+                }
+			}
         } else {
             result = kIOReturnNoMemory;
         }
@@ -1454,12 +1516,17 @@ IOReturn IOAudioEngine::resumeAudioEngine()
     IOReturn result = kIOReturnSuccess;
     
     audioDebugIOLog(3, "IOAudioEngine[%p]::resumeAudioEngine()", this);
-
-	if (--reserved->pauseCount == 0) {
-		if (getState() == kIOAudioEnginePaused) {
-			setState(kIOAudioEngineResumed);
-			sendNotification(kIOAudioEngineResumedNotification);
+	
+	if (0 != reserved->pauseCount) {
+		if (0 == --reserved->pauseCount) {
+			if (getState() == kIOAudioEnginePaused) {
+				setState(kIOAudioEngineResumed);
+				sendNotification(kIOAudioEngineResumedNotification);
+			}
 		}
+	}
+	else {
+		audioDebugIOLog(1, "IOAudioEngine[%p]::resumeAudioEngine() - attempting to resume while not paused", this);
 	}
     
     return result;

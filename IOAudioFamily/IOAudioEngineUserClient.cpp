@@ -32,6 +32,7 @@
 #include <IOKit/IOMemoryDescriptor.h>
 #include <IOKit/IOWorkLoop.h>
 #include <IOKit/IOCommandGate.h>
+#include <IOKit/IOKitKeys.h>
 
 #define super OSObject
 
@@ -257,8 +258,8 @@ OSMetaClassDefineReservedUsed(IOAudioEngineUserClient, 1);
 OSMetaClassDefineReservedUsed(IOAudioEngineUserClient, 2);
 OSMetaClassDefineReservedUsed(IOAudioEngineUserClient, 3);
 OSMetaClassDefineReservedUsed(IOAudioEngineUserClient, 4);
+OSMetaClassDefineReservedUsed(IOAudioEngineUserClient, 5);
 
-OSMetaClassDefineReservedUnused(IOAudioEngineUserClient, 5);
 OSMetaClassDefineReservedUnused(IOAudioEngineUserClient, 6);
 OSMetaClassDefineReservedUnused(IOAudioEngineUserClient, 7);
 OSMetaClassDefineReservedUnused(IOAudioEngineUserClient, 8);
@@ -287,6 +288,102 @@ OSMetaClassDefineReservedUnused(IOAudioEngineUserClient, 30);
 OSMetaClassDefineReservedUnused(IOAudioEngineUserClient, 31);
 
 // New code added here
+
+// OSMetaClassDefineReservedUsed(IOAudioEngineUserClient, 5);
+bool IOAudioEngineUserClient::initWithAudioEngine(IOAudioEngine *engine, task_t task, void *securityToken, UInt32 type, OSDictionary* properties)
+{
+    audioDebugIOLog(3, "IOAudioEngineUserClient[%p]::initWithAudioEngine(%p, 0x%lx, %p, 0x%lx, %p)", this, engine, (UInt32)task, securityToken, type, properties);
+    
+	// Declare Rosetta compatibility
+	if (properties) {
+		properties->setObject(kIOUserClientCrossEndianCompatibleKey, kOSBooleanTrue);
+	}
+	
+    if (!initWithTask(task, securityToken, type, properties)) {
+        return false;
+    }
+
+    if (!engine || !task) {
+        return false;
+    }
+
+    clientTask = task;
+    audioEngine = engine;
+    
+    setOnline(false);
+
+    clientBufferSetList = NULL;
+    
+    clientBufferLock = IORecursiveLockAlloc();
+    if (!clientBufferLock) {
+        return false;
+    }
+    
+    workLoop = audioEngine->getWorkLoop();
+    if (!workLoop) {
+        return false;
+    }
+    
+    workLoop->retain();
+    
+    commandGate = IOCommandGate::commandGate(this);
+    if (!commandGate) {
+        return false;
+    }
+    
+ 	reserved = (ExpansionData *)IOMalloc (sizeof(struct ExpansionData));
+	if (!reserved) {
+		return false;
+	}
+
+	reserved->extendedInfo = NULL;
+ 	reserved->classicMode = 0;
+//	reserved->securityToken = securityToken;
+
+	workLoop->addEventSource(commandGate);
+    
+    reserved->methods[kIOAudioEngineCallRegisterClientBuffer].object = this;
+    reserved->methods[kIOAudioEngineCallRegisterClientBuffer].func = (IOMethod) &IOAudioEngineUserClient::registerBuffer;
+    reserved->methods[kIOAudioEngineCallRegisterClientBuffer].count0 = 4;
+    reserved->methods[kIOAudioEngineCallRegisterClientBuffer].count1 = 0;
+    reserved->methods[kIOAudioEngineCallRegisterClientBuffer].flags = kIOUCScalarIScalarO;
+    
+    reserved->methods[kIOAudioEngineCallUnregisterClientBuffer].object = this;
+    reserved->methods[kIOAudioEngineCallUnregisterClientBuffer].func = (IOMethod) &IOAudioEngineUserClient::unregisterBuffer;
+    reserved->methods[kIOAudioEngineCallUnregisterClientBuffer].count0 = 2;
+    reserved->methods[kIOAudioEngineCallUnregisterClientBuffer].count1 = 0;
+    reserved->methods[kIOAudioEngineCallUnregisterClientBuffer].flags = kIOUCScalarIScalarO;
+    
+    reserved->methods[kIOAudioEngineCallGetConnectionID].object = this;
+    reserved->methods[kIOAudioEngineCallGetConnectionID].func = (IOMethod) &IOAudioEngineUserClient::getConnectionID;
+    reserved->methods[kIOAudioEngineCallGetConnectionID].count0 = 0;
+    reserved->methods[kIOAudioEngineCallGetConnectionID].count1 = 1;
+    reserved->methods[kIOAudioEngineCallGetConnectionID].flags = kIOUCScalarIScalarO;
+    
+    reserved->methods[kIOAudioEngineCallStart].object = this;
+    reserved->methods[kIOAudioEngineCallStart].func = (IOMethod) &IOAudioEngineUserClient::clientStart;
+    reserved->methods[kIOAudioEngineCallStart].count0 = 0;
+    reserved->methods[kIOAudioEngineCallStart].count1 = 0;
+    reserved->methods[kIOAudioEngineCallStart].flags = kIOUCScalarIScalarO;
+    
+    reserved->methods[kIOAudioEngineCallStop].object = this;
+    reserved->methods[kIOAudioEngineCallStop].func = (IOMethod) &IOAudioEngineUserClient::clientStop;
+    reserved->methods[kIOAudioEngineCallStop].count0 = 0;
+    reserved->methods[kIOAudioEngineCallStop].count1 = 0;
+    reserved->methods[kIOAudioEngineCallStop].flags = kIOUCScalarIScalarO;
+
+    reserved->methods[kIOAudioEngineCallGetNearestStartTime].object = this;
+    reserved->methods[kIOAudioEngineCallGetNearestStartTime].func = (IOMethod) &IOAudioEngineUserClient::getNearestStartTime;
+    reserved->methods[kIOAudioEngineCallGetNearestStartTime].count0 = 3;
+    reserved->methods[kIOAudioEngineCallGetNearestStartTime].count1 = 0;
+    reserved->methods[kIOAudioEngineCallGetNearestStartTime].flags = kIOUCScalarIScalarO;
+
+    trap.object = this;
+    trap.func = (IOTrap) &IOAudioEngineUserClient::performClientIO;
+
+    return true;
+}
+
 // Used so that a pointer to a kernel IOAudioStream isn't passed out of the kernel
 IOReturn IOAudioEngineUserClient::safeRegisterClientBuffer(UInt32 audioStreamIndex, void *sourceBuffer, UInt32 bufSizeInBytes, UInt32 bufferSetID) {
 	IOAudioStream *					audioStream;
@@ -428,6 +525,24 @@ IOReturn IOAudioEngineUserClient::getClientNearestStartTime(IOAudioStream *audio
 	}
 
 	return result;
+}
+
+IOAudioEngineUserClient *IOAudioEngineUserClient::withAudioEngine(IOAudioEngine *engine, task_t clientTask, void *securityToken, UInt32 type, OSDictionary *properties)
+{
+    IOAudioEngineUserClient *client;
+    
+    audioDebugIOLog(3, "IOAudioEngineUserClient::withAudioEngine(%p, 0x%lx, %p, 0x%lx, %p)", engine, (UInt32)clientTask, securityToken, type, properties);
+
+    client = new IOAudioEngineUserClient;
+
+    if (client) {
+        if (!client->initWithAudioEngine(engine, clientTask, securityToken, type, properties)) {
+            client->release();
+            client = NULL;
+        }
+    }
+
+    return client;
 }
 
 // Original code
@@ -1010,7 +1125,7 @@ IOReturn IOAudioEngineUserClient::registerClientBuffer(IOAudioStream *audioStrea
             goto Exit;
         }
 		// offset past per buffer info
-        audioDebugIOLog(3, "IOAudioEngineUserClient::registerClientBuffer() - clientBuffer->sourceBuffer before offset: %p, offset size: %d", clientBuffer->sourceBuffer, offsetof(IOAudioBufferDataDescriptor, fData));
+        audioDebugIOLog(3, "IOAudioEngineUserClient::registerClientBuffer() - clientBuffer->sourceBuffer before offset: %p, offset size: %d", clientBuffer->sourceBuffer, (int)offsetof(IOAudioBufferDataDescriptor, fData));
 		clientBuffer->bufferDataDescriptor = (IOAudioBufferDataDescriptor *)(clientBuffer->sourceBuffer);
 		clientBuffer->sourceBuffer = (UInt8 *)(clientBuffer->sourceBuffer) + offsetof(IOAudioBufferDataDescriptor, fData);
         audioDebugIOLog(3, "IOAudioEngineUserClient::registerClientBuffer() - clientBuffer->sourceBuffer after offset: %p", clientBuffer->sourceBuffer);
@@ -1299,6 +1414,18 @@ void FlipFloats(void *p, long fcnt)
 	}
 }
 
+static inline IOAudioBufferDataDescriptor * FlipBufferDataDescriptor(IOAudioBufferDataDescriptor *in, IOAudioBufferDataDescriptor *tmp, UInt32 doFlip)
+{	
+	if (in && doFlip) {
+		tmp->fActualDataByteSize = CFSwapInt32(in->fActualDataByteSize);
+		tmp->fActualNumSampleFrames = CFSwapInt32(in->fActualNumSampleFrames);
+		tmp->fTotalDataByteSize = CFSwapInt32(in->fTotalDataByteSize);
+		tmp->fNominalDataByteSize = CFSwapInt32(in->fNominalDataByteSize);
+		return tmp;
+	}
+	return in;
+}
+
 IOReturn IOAudioEngineUserClient::performClientOutput(UInt32 firstSampleFrame, UInt32 loopCount, IOAudioClientBufferSet *bufferSet, UInt32 sampleIntervalHi, UInt32 sampleIntervalLo)
 {
     IOReturn result = kIOReturnSuccess;
@@ -1324,10 +1451,17 @@ IOReturn IOAudioEngineUserClient::performClientOutput(UInt32 firstSampleFrame, U
 		
 		clientBuf = bufferSet->outputBufferList;    
 
-		if (NULL != clientBuf->bufferDataDescriptor) {
-			audioDebugIOLog(6, "performClientOutput ------------------------------", clientIndex);
-			audioDebugIOLog(6, "  actual frames = %ld, actual bytes = %ld, nominal bytes = %ld, total bytes = %ld", clientBuf->bufferDataDescriptor->fActualNumSampleFrames, clientBuf->bufferDataDescriptor->fActualDataByteSize, clientBuf->bufferDataDescriptor->fNominalDataByteSize, clientBuf->bufferDataDescriptor->fTotalDataByteSize);
-			numSampleFrames = clientBuf->bufferDataDescriptor->fActualNumSampleFrames;
+		IOAudioBufferDataDescriptor localBufferDataDescriptor;
+		IOAudioBufferDataDescriptor * localBufferDataDescriptorPtr = FlipBufferDataDescriptor ( clientBuf->bufferDataDescriptor, &localBufferDataDescriptor, reserved->classicMode );
+
+		if (NULL != localBufferDataDescriptorPtr) {
+			audioDebugIOLog(6, "performClientOutput -------------- %d ----------------", (int)clientIndex);
+			audioDebugIOLog ( 6, "  actual frames = %ld, actual bytes = %ld, nominal bytes = %ld, total bytes = %ld",
+								localBufferDataDescriptorPtr->fActualNumSampleFrames, 
+								localBufferDataDescriptorPtr->fActualDataByteSize, 
+								localBufferDataDescriptorPtr->fNominalDataByteSize, 
+								localBufferDataDescriptorPtr->fTotalDataByteSize );
+			numSampleFrames = localBufferDataDescriptorPtr->fActualNumSampleFrames;
 		} else {
 			audioDebugIOLog(6, "  no buffer descriptor found, using bufferSet->outputBufferList->numSampleFrames"); 
 			numSampleFrames = bufferSet->outputBufferList->numSampleFrames;
@@ -1366,22 +1500,36 @@ IOReturn IOAudioEngineUserClient::performClientOutput(UInt32 firstSampleFrame, U
                 
 				maxNumSampleFrames = clientBuf->numSampleFrames;
 				// get the per buffer info
-				if (NULL != clientBuf->bufferDataDescriptor) {
-					audioDebugIOLog(6, "  clientBuffer = %p: actual frames = %lu, actual bytes = %lu, nominal bytes = %lu, total bytes = %lu, source buffer size = %lu", clientBuf, clientBuf->bufferDataDescriptor->fActualNumSampleFrames, clientBuf->bufferDataDescriptor->fActualDataByteSize, clientBuf->bufferDataDescriptor->fNominalDataByteSize, clientBuf->bufferDataDescriptor->fTotalDataByteSize, clientBuf->sourceBufferDescriptor->getLength () - offsetof(IOAudioBufferDataDescriptor, fData));
+				if (NULL != localBufferDataDescriptorPtr) {
+					audioDebugIOLog ( 6, "  clientBuffer = %p: actual frames = %lu, actual bytes = %lu, nominal bytes = %lu, total bytes = %lu, source buffer size = %lu", 
+											clientBuf, 
+											localBufferDataDescriptorPtr->fActualNumSampleFrames, 
+											localBufferDataDescriptorPtr->fActualDataByteSize, 
+											localBufferDataDescriptorPtr->fNominalDataByteSize, 
+											localBufferDataDescriptorPtr->fTotalDataByteSize, 
+											clientBuf->sourceBufferDescriptor->getLength () - offsetof ( IOAudioBufferDataDescriptor, fData ) );
 
 					clientBuf->numSampleFrames = numSampleFrames;
 					
-					if ((clientBuf->bufferDataDescriptor->fActualDataByteSize > (clientBuf->sourceBufferDescriptor->getLength () - offsetof(IOAudioBufferDataDescriptor, fData))) ||
-						(clientBuf->bufferDataDescriptor->fActualDataByteSize > clientBuf->bufferDataDescriptor->fTotalDataByteSize) ||
-						(clientBuf->bufferDataDescriptor->fNominalDataByteSize > clientBuf->bufferDataDescriptor->fTotalDataByteSize)) {
-						audioDebugIOLog(1, "  **** VBR OUTPUT ERROR! clientBuffer = %p: actual frames = %ld, actual bytes = %ld, nominal bytes = %ld, total bytes = %ld, source buffer size = %ld", clientBuf, clientBuf->bufferDataDescriptor->fActualNumSampleFrames, clientBuf->bufferDataDescriptor->fActualDataByteSize, clientBuf->bufferDataDescriptor->fNominalDataByteSize, clientBuf->bufferDataDescriptor->fTotalDataByteSize, clientBuf->sourceBufferDescriptor->getLength () - offsetof(IOAudioBufferDataDescriptor, fData));
+					if ((localBufferDataDescriptorPtr->fActualDataByteSize > (clientBuf->sourceBufferDescriptor->getLength () - offsetof(IOAudioBufferDataDescriptor, fData))) ||
+						(localBufferDataDescriptorPtr->fActualDataByteSize > localBufferDataDescriptorPtr->fTotalDataByteSize) ||
+						(localBufferDataDescriptorPtr->fNominalDataByteSize > localBufferDataDescriptorPtr->fTotalDataByteSize)) {
+						audioDebugIOLog ( 1, "  **** VBR OUTPUT ERROR! clientBuffer = %p: actual frames = %ld, actual bytes = %ld, nominal bytes = %ld, total bytes = %ld, source buffer size = %ld", 
+											clientBuf, 
+											localBufferDataDescriptorPtr->fActualNumSampleFrames, 
+											localBufferDataDescriptorPtr->fActualDataByteSize, 
+											localBufferDataDescriptorPtr->fNominalDataByteSize, 
+											localBufferDataDescriptorPtr->fTotalDataByteSize, 
+											clientBuf->sourceBufferDescriptor->getLength () - offsetof(IOAudioBufferDataDescriptor, fData ) );
 						audioStream->unlockStreamForIO();
 						result = kIOReturnBadArgument;
 						goto Exit;
 					}	
 #ifdef DEBUG					
-					if (clientBuf->numSampleFrames != clientBuf->bufferDataDescriptor->fActualDataByteSize / (audioStream->format.fNumChannels * sizeof(float))) {
-						audioDebugIOLog(6, "  DEBUGGING - calculated sample frames (%ld) does not match actual sample frames (%ld)", this, clientBuf->bufferDataDescriptor->fActualDataByteSize / (audioStream->format.fNumChannels * sizeof(float)), clientBuf->numSampleFrames);
+					if (clientBuf->numSampleFrames != localBufferDataDescriptorPtr->fActualDataByteSize / (audioStream->format.fNumChannels * sizeof(float))) {
+						audioDebugIOLog ( 6, "  DEBUGGING - calculated sample frames (%ld) does not match actual sample frames (%ld)",
+											localBufferDataDescriptorPtr->fActualDataByteSize / (audioStream->format.fNumChannels * sizeof(float)), 
+											clientBuf->numSampleFrames);
 					}
 #endif
 				}
@@ -1390,7 +1538,9 @@ IOReturn IOAudioEngineUserClient::performClientOutput(UInt32 firstSampleFrame, U
                 if (reserved->classicMode && clientBuf->sourceBuffer != NULL) {
 					const IOAudioStreamFormat *fmt = audioStream->getFormat();
 					if (fmt->fIsMixable && fmt->fSampleFormat == kIOAudioStreamSampleFormatLinearPCM)
+					{
 						FlipFloats(clientBuf->sourceBuffer, clientBuf->numSampleFrames * clientBuf->numChannels);
+					}
 				}
 #endif
 
@@ -1405,7 +1555,17 @@ IOReturn IOAudioEngineUserClient::performClientOutput(UInt32 firstSampleFrame, U
                 }
                 
                 clientBuf = clientBuf->next;
-
+				
+				if (clientBuf) {  // need to update localBufferDataDescriptor for the current client buffer
+					localBufferDataDescriptorPtr = FlipBufferDataDescriptor ( clientBuf->bufferDataDescriptor, &localBufferDataDescriptor, reserved->classicMode );
+					
+					if (NULL != localBufferDataDescriptorPtr) {
+						numSampleFrames = localBufferDataDescriptorPtr->fActualNumSampleFrames;
+					} else {
+						numSampleFrames = clientBuf->numSampleFrames;
+					}
+				}
+				
 				clientIndex++;
             }
             
@@ -1431,15 +1591,20 @@ IOReturn IOAudioEngineUserClient::performClientInput(UInt32 firstSampleFrame, IO
 {
     IOReturn						result = kIOReturnSuccess;
     IOAudioClientBuffer				*clientBuf;
-	UInt32							numSampleFrames;
+	UInt32							numSampleFrames = 0;
     
     clientBuf = bufferSet->inputBufferList;
 
+	IOAudioBufferDataDescriptor localBufferDataDescriptor;
+	IOAudioBufferDataDescriptor * localBufferDataDescriptorPtr = 0;
+
 	if (NULL != clientBuf) {    
-		if (NULL != clientBuf->bufferDataDescriptor) {
+		localBufferDataDescriptorPtr = FlipBufferDataDescriptor ( clientBuf->bufferDataDescriptor, &localBufferDataDescriptor, reserved->classicMode );
+		if (NULL != localBufferDataDescriptorPtr) {
 			audioDebugIOLog(6, "performClientInput ------------------------------");
-			audioDebugIOLog(6, "  found buffer descriptor, using actual frames = %ld", clientBuf->bufferDataDescriptor->fActualNumSampleFrames);
-			numSampleFrames = clientBuf->bufferDataDescriptor->fActualNumSampleFrames;
+			audioDebugIOLog ( 6, "  found buffer descriptor, using actual frames = %ld", 
+								localBufferDataDescriptorPtr->fActualNumSampleFrames);
+			numSampleFrames = localBufferDataDescriptorPtr->fActualNumSampleFrames;
 		} else {
 			audioDebugIOLog(6, "  no buffer descriptor found, using bufferSet->inputBufferList->numSampleFrames"); 
 			numSampleFrames = bufferSet->inputBufferList->numSampleFrames;
@@ -1462,20 +1627,34 @@ IOReturn IOAudioEngineUserClient::performClientInput(UInt32 firstSampleFrame, IO
 
 		maxNumSampleFrames = clientBuf->numSampleFrames;
 
-		if (NULL != clientBuf->bufferDataDescriptor) {
+		if (NULL != localBufferDataDescriptorPtr) {
 
 			clientBuf->numSampleFrames = numSampleFrames;
 
-			audioDebugIOLog (6, " clientBuffer = %p:  actual frames = %lu, actual bytes = %lu, nominal bytes = %lu, total bytes = %lu, source buffer size = %lu", clientBuf, clientBuf->numSampleFrames, clientBuf->bufferDataDescriptor->fActualDataByteSize, clientBuf->bufferDataDescriptor->fNominalDataByteSize, clientBuf->bufferDataDescriptor->fTotalDataByteSize, clientBuf->sourceBufferDescriptor->getLength () - offsetof(IOAudioBufferDataDescriptor, fData));
+			audioDebugIOLog ( 6, " clientBuffer = %p:  actual frames = %lu, actual bytes = %lu, nominal bytes = %lu, total bytes = %lu, source buffer size = %lu", 
+									clientBuf, 
+									clientBuf->numSampleFrames, 
+									localBufferDataDescriptorPtr->fActualDataByteSize, 
+									localBufferDataDescriptorPtr->fNominalDataByteSize, 
+									localBufferDataDescriptorPtr->fTotalDataByteSize, 
+									clientBuf->sourceBufferDescriptor->getLength () - offsetof ( IOAudioBufferDataDescriptor, fData ) );
 
 	#ifdef DEBUG					
-			if (clientBuf->numSampleFrames != clientBuf->bufferDataDescriptor->fActualDataByteSize / (audioStream->format.fNumChannels * sizeof(float))) {
-				audioDebugIOLog (6, "  DEBUGGING - calculated sample frames (%ld) does not match actual sample frames (%ld)", this, clientBuf->bufferDataDescriptor->fActualDataByteSize / (audioStream->format.fNumChannels * sizeof(float)), clientBuf->numSampleFrames);
+			if (clientBuf->numSampleFrames != localBufferDataDescriptorPtr->fActualDataByteSize / (audioStream->format.fNumChannels * sizeof(float))) {
+				audioDebugIOLog ( 6, "  DEBUGGING - calculated sample frames (%ld) does not match actual sample frames (%ld)",
+									localBufferDataDescriptorPtr->fActualDataByteSize / (audioStream->format.fNumChannels * sizeof(float)), 
+									clientBuf->numSampleFrames);
 			}
 	#endif
-			if ((clientBuf->bufferDataDescriptor->fActualDataByteSize > (clientBuf->sourceBufferDescriptor->getLength () - offsetof(IOAudioBufferDataDescriptor, fData))) ||
-				(clientBuf->bufferDataDescriptor->fActualDataByteSize > clientBuf->bufferDataDescriptor->fTotalDataByteSize)) {
-				audioDebugIOLog (1, "  *** VBR INPUT ERROR! clientBuffer = %p: actual frames = %ld, actual bytes = %ld, nominal bytes = %ld, total bytes = %ld, source buffer size = %ld", clientBuf, clientBuf->numSampleFrames, clientBuf->bufferDataDescriptor->fActualDataByteSize, clientBuf->bufferDataDescriptor->fNominalDataByteSize, clientBuf->bufferDataDescriptor->fTotalDataByteSize, clientBuf->sourceBufferDescriptor->getLength () - offsetof(IOAudioBufferDataDescriptor, fData));
+			if ((localBufferDataDescriptorPtr->fActualDataByteSize > (clientBuf->sourceBufferDescriptor->getLength () - offsetof(IOAudioBufferDataDescriptor, fData))) ||
+				(localBufferDataDescriptorPtr->fActualDataByteSize > localBufferDataDescriptorPtr->fTotalDataByteSize)) {
+				audioDebugIOLog (1, "  *** VBR INPUT ERROR! clientBuffer = %p: actual frames = %ld, actual bytes = %ld, nominal bytes = %ld, total bytes = %ld, source buffer size = %ld", 
+									clientBuf, 
+									clientBuf->numSampleFrames, 
+									localBufferDataDescriptorPtr->fActualDataByteSize, 
+									localBufferDataDescriptorPtr->fNominalDataByteSize, 
+									localBufferDataDescriptorPtr->fTotalDataByteSize, 
+									clientBuf->sourceBufferDescriptor->getLength () - offsetof ( IOAudioBufferDataDescriptor, fData ) );
 				audioStream->unlockStreamForIO(); 
 				result = kIOReturnBadArgument;
 				goto Exit;
@@ -1491,16 +1670,22 @@ IOReturn IOAudioEngineUserClient::performClientInput(UInt32 firstSampleFrame, IO
 		if (reserved->classicMode && clientBuf->sourceBuffer != NULL) {
 			const IOAudioStreamFormat *fmt = audioStream->getFormat();
 			if (fmt->fIsMixable && fmt->fSampleFormat == kIOAudioStreamSampleFormatLinearPCM)
+			{
 				FlipFloats(clientBuf->sourceBuffer, clientBuf->numSampleFrames * clientBuf->numChannels);
+			}
 		}
 #endif        
 
 		// get how many samples the driver actually read & update the rest of the structures
 		numSampleFramesRead = audioStream->getNumSampleFramesRead();
-		clientBuf->bufferDataDescriptor->fActualDataByteSize = numSampleFramesRead * audioStream->format.fNumChannels * sizeof(float);
-		clientBuf->bufferDataDescriptor->fActualNumSampleFrames = numSampleFramesRead;
+		localBufferDataDescriptorPtr->fActualDataByteSize = numSampleFramesRead * audioStream->format.fNumChannels * sizeof(float);
+		localBufferDataDescriptorPtr->fActualNumSampleFrames = numSampleFramesRead;
+		FlipBufferDataDescriptor(localBufferDataDescriptorPtr, clientBuf->bufferDataDescriptor, reserved->classicMode); // save changes back to clientBuf
 
-		audioDebugIOLog (5, "  numSampleFramesRead = %ld, fActualNumSampleFrames = %ld, fActualDataByteSize = %ld", numSampleFramesRead, clientBuf->bufferDataDescriptor->fActualNumSampleFrames, clientBuf->bufferDataDescriptor->fActualDataByteSize);
+		audioDebugIOLog ( 5, "  numSampleFramesRead = %ld, fActualNumSampleFrames = %ld, fActualDataByteSize = %ld", 
+							numSampleFramesRead, 
+							localBufferDataDescriptorPtr->fActualNumSampleFrames, 
+							localBufferDataDescriptorPtr->fActualDataByteSize );
 
 		clientBuf->numSampleFrames = maxNumSampleFrames;
 
@@ -1511,6 +1696,16 @@ IOReturn IOAudioEngineUserClient::performClientInput(UInt32 firstSampleFrame, IO
         }
         
         clientBuf = clientBuf->next;
+		
+		if (clientBuf) {  // need to update localBufferDataDescriptor for the current client buffer
+			localBufferDataDescriptorPtr = FlipBufferDataDescriptor ( clientBuf->bufferDataDescriptor, &localBufferDataDescriptor, reserved->classicMode );
+			
+			if (NULL != localBufferDataDescriptorPtr) {
+				numSampleFrames = localBufferDataDescriptorPtr->fActualNumSampleFrames;
+			} else {
+				numSampleFrames = clientBuf->numSampleFrames;
+			}
+		}
     }
 
 Exit:    
