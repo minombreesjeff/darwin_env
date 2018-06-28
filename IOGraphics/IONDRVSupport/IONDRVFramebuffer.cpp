@@ -428,7 +428,7 @@ bool IONDRVFramebuffer::start( IOService * provider )
                         continue;
                     }
                     nub->attach(provider);
-                    nub->registerService();
+                    nub->registerService(kIOServiceSynchronous);
                 }
                 toDo->release();
             }
@@ -719,17 +719,8 @@ IOReturn IONDRVFramebuffer::_probeAction( IONDRVFramebuffer * self, IOOptionBits
 IOReturn IONDRVFramebuffer::requestProbe( IOOptionBits options )
 {
     IOReturn	 err;
-    IOWorkLoop * wl;
 
-    if ((wl = getWorkLoop()))
-    {
-        err = wl->runAction( (IOWorkLoop::Action) &_probeAction, this, (void *) options );
-    }
-    else
-        err = kIOReturnNotReady;
-
-    if (kIOReturnSuccess != err)
-	err = super::requestProbe(options);
+    err = super::requestProbe(options);
 
     return (err);
 }
@@ -3123,6 +3114,10 @@ IOReturn IONDRVFramebuffer::setAttributeForConnection( IOIndex connectIndex,
             nub->setProperty(kIONDRVDisplayConnectFlagsKey, 
                 &__private->displayConnectFlags, sizeof(__private->displayConnectFlags));
             err = setConnectionFlags();
+            break;
+
+        case kConnectionProbe:
+	    err = _probeAction(this, value);
             break;
 
         default:

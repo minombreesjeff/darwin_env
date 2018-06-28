@@ -93,6 +93,7 @@ enum {
 
 #define kIOFBTransformKey 		"IOFBTransform"
 #define kIOFBRotatePrefsKey 		"framebuffer-rotation"
+#define kIOFBCapturedKey 		"IOFBCaptured"
 
 #define kIOFBConnectInterruptDelayKey 	"connect-interrupt-delay"
 

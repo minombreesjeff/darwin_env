@@ -108,6 +108,8 @@ static bool		    gIOFBDimDisable;
 OSDictionary *   	    gIOFBPrefs;
 OSDictionary *   	    gIOFBPrefsParameters;
 OSSerializer * 		    gIOFBPrefsSerializer;
+IOService *                 gIOGraphicsControl;
+AbsoluteTime		    gIOFBNextProbeAllTime;
 
 #define	kIOFBGetSensorValueKey	"getSensorValue"
 
@@ -233,6 +235,10 @@ public:
     inline void wakeupGate(void *event, bool oneThread)
     {
 	return IOCommandGate::wakeupGate(event, oneThread);
+    }
+    inline bool inGate()
+    {
+	return workLoop->inGate();
     }
 };
 
@@ -3201,7 +3207,14 @@ IOReturn IOFramebuffer::open( void )
             }
             gIOFBDesktopModeAllowed = !data || (0 != (8 & *((UInt32 *) data->getBytesNoCopy())));
 
-	    OSIterator * iter = getMatchingServices(serviceMatching("IOAccelerator"));
+	    OSIterator * iter = getMatchingServices(serviceMatching("AppleGraphicsControl"));
+	    if (iter)
+	    {
+		gIOGraphicsControl = OSDynamicCast(IOService, iter->getNextObject());
+		iter->release();
+	    }
+
+	    iter = getMatchingServices(serviceMatching("IOAccelerator"));
 	    if (iter)
 	    {
 		IOService * accel;
@@ -3566,18 +3579,59 @@ IOReturn IOFramebuffer::checkMirrorSafe( UInt32 value, IOFramebuffer * other )
 
 IOReturn IOFramebuffer::requestProbe( IOOptionBits options )
 {
-    IOReturn	    err;
+    IOReturn err;
+
+    if (!gIOFBGate || gIOFBGate->inGate())
+	return (kIOReturnNotReady);
+
+    if ((err = extEntry()))
+	return (err);
 
     if (kIOFBSetTransform & options)
     {
-	if ((err = extEntry()))
-	    return (err);
-
 	options >>= 16;
         selectTransform(options, true);
-
-	FBUNLOCK();
     }
+    else
+    {
+	if (captured)
+	{
+	    err = kIOReturnBusy;
+	}
+	else
+	{
+	    AbsoluteTime now;
+	    clock_get_uptime(&now);
+	    if (CMP_ABSOLUTETIME(&now, &gIOFBNextProbeAllTime) >= 0) 
+	    {
+		do
+		{
+		    unsigned int    index;
+		    IOFramebuffer * fb;
+
+		    if (gIOGraphicsControl)
+		    {
+			err = gIOGraphicsControl->requestProbe(options);
+//			if (kIOReturnSuccess == err)
+			    break;
+		    }
+		    for (index = 0;
+			    (fb = (IOFramebuffer *) gAllFramebuffers->getObject(index));
+			    index++)
+		    {
+			IOReturn
+			thisErr = fb->setAttributeForConnection(0, kConnectionProbe, options);
+			if (kIOReturnSuccess == err)
+			    err = thisErr;
+		    }
+		}
+		while (false);
+		clock_interval_to_deadline(10, kSecondScale, &gIOFBNextProbeAllTime);
+	    }
+	}
+    }
+
+    FBUNLOCK();
 
     return (kIOReturnSuccess);
 }
@@ -3710,6 +3764,14 @@ IOWorkLoop * IOFramebuffer::getWorkLoop() const
 
 void IOFramebuffer::setCaptured( bool isCaptured )
 {
+    if (captured != isCaptured)
+    {
+	if (isCaptured)
+	    setProperty(kIOFBCapturedKey, kOSBooleanTrue);
+	else
+	    removeProperty(kIOFBCapturedKey);
+	deliverFramebufferNotification(kIOFBNotifyCaptureChange, (void *) isCaptured);
+    }
     captured = isCaptured;
 }
 
@@ -4209,12 +4271,15 @@ IOReturn IOFramebuffer::setAttribute( IOSelect attribute, UInt32 value )
 
                 if (wasCaptured && !captured)
                 {
-                    next = this;
-                    do
-                    {
-                        next->getAttributeForConnection( 0, kConnectionChanged, 0 );
-                    }
-                    while ((next = next->getNextDependent()) && (next != this));
+		    if (!gIOGraphicsControl)
+		    {
+			next = this;
+			do
+			{
+			    next->getAttributeForConnection( 0, kConnectionChanged, 0 );
+			}
+			while ((next = next->getNextDependent()) && (next != this));
+		    }
 
                     next = this;
                     do
