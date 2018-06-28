@@ -517,6 +517,7 @@ bool IOAudioEngine::start(IOService *provider, IOAudioDevice *device)
         return false;
     }
 
+	
     setAudioDevice(device);
     
     workLoop = audioDevice->getWorkLoop();
@@ -648,16 +649,16 @@ OSString *IOAudioEngine::getGlobalUniqueID()
 		bzero(uniqueIDStr, uniqueIDSize);
 
         if (className) {
-            sprintf(uniqueIDStr, "%s:", className);
+            snprintf(uniqueIDStr, uniqueIDSize, "%s:", className);
         }
         
         if (location) {
-            strcat(uniqueIDStr, location);
-            strcat(uniqueIDStr, ":");
+            strncat(uniqueIDStr, location, uniqueIDSize);
+            strncat(uniqueIDStr, ":", uniqueIDSize);
         }
         
         if (localID) {
-            strcat(uniqueIDStr, localID->getCStringNoCopy());
+            strncat(uniqueIDStr, localID->getCStringNoCopy(), uniqueIDSize);
             localID->release();
         }
         
@@ -672,9 +673,10 @@ OSString *IOAudioEngine::getGlobalUniqueID()
 OSString *IOAudioEngine::getLocalUniqueID()
 {
     OSString *localUniqueID;
-    char localUniqueIDStr[(sizeof(UInt32)*2)+1];
-    
-    sprintf(localUniqueIDStr, "%lx", index);
+	int strSize = (sizeof(UInt32)*2)+1;
+    char localUniqueIDStr[strSize];
+   
+    snprintf(localUniqueIDStr, strSize, "%lx", index);
     
     localUniqueID = OSString::withCString(localUniqueIDStr);
     
