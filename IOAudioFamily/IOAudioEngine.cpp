@@ -343,6 +343,18 @@ bool IOAudioEngine::init(OSDictionary *properties)
         return false;
     }
 
+	OSDictionary * pDict =  dictionaryWithProperties();
+	if (NULL != pDict)
+	{
+		audioDebugIOLog(3, "IOAudioEngine[%p]::init  replacing dictionary ", this);
+		setPropertyTable(pDict); // <rdar://problem/4676828> M44: Audio: Corrupting an object in the registry
+	}
+	else
+	{
+		IOLog("IOAudioEngine[%p]::init  no dictionary \n ", this);
+		
+		
+	}
     duringStartup = true;
 
     sampleRate.whole = 0;

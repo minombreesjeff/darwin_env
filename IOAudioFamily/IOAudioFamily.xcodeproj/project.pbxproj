@@ -100,7 +100,7 @@
 	<key>CFBundleSignature</key>
 	<string>aaud</string>
 	<key>CFBundleVersion</key>
-	<string>1.6.0b3</string>
+	<string>1.6.0b6</string>
 	<key>IOKitPersonalities</key>
 	<dict/>
 	<key>OSBundleCompatibleVersion</key>
@@ -775,7 +775,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOAudioFamily;
-				MODULE_VERSION = 1.6.0b3;
+				MODULE_VERSION = 1.6.0b6;
 				OPTIMIZATION_CFLAGS = "-O2";
 				OTHER_CFLAGS = "\"$(DEBUG_CFLAGS)\"";
 				OTHER_LDFLAGS = "";
@@ -806,7 +806,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOAudioFamily;
-				MODULE_VERSION = 1.6.0b3;
+				MODULE_VERSION = 1.6.0b6;
 				OPTIMIZATION_CFLAGS = "-Os";
 				OTHER_CFLAGS = "\"$(DEBUG_CFLAGS)\"";
 				OTHER_LDFLAGS = "";
@@ -834,7 +834,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOAudioFamily;
-				MODULE_VERSION = 1.6.0b3;
+				MODULE_VERSION = 1.6.0b6;
 				OPTIMIZATION_CFLAGS = "-Os";
 				OTHER_CFLAGS = "\"$(DEBUG_CFLAGS)\"";
 				OTHER_LDFLAGS = "";
