@@ -63,7 +63,10 @@ enum {
 
     // Connection attributes
     kConnectionInTVMode			= 'tvmd',
-    kConnectionWSSB			= 'wssb'
+    kConnectionWSSB			= 'wssb',
+
+    kConnectionRawBacklight		= 'bklt',
+    kConnectionBacklightSave		= 'bksv'
 };
 
 enum {

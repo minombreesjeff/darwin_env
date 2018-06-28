@@ -30,6 +30,9 @@ int main(int argc, char * argv[])
     CFNumberRef		clk, count;
 
     service = CGDisplayIOServicePort(CGMainDisplayID());
+   
+    if (!service) service = IOServiceGetMatchingService(kIOMasterPortDefault, 
+				    IOServiceMatching(IOFRAMEBUFFER_CONFORMSTO));
 
     clk = IORegistryEntryCreateCFProperty(service, CFSTR(kIOFBCurrentPixelClockKey),
 							    kCFAllocatorDefault, kNilOptions);

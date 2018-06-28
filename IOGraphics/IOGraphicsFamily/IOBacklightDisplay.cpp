@@ -400,7 +400,6 @@ class AppleBacklightDisplay : public IOBacklightDisplay
     OSDeclareDefaultStructors(AppleBacklightDisplay)
 
 protected:
-    IONotifier *	     fNotify;
     IOInterruptEventSource * fDeferredEvents;
 
 public:
@@ -413,8 +412,6 @@ public:
                                        IOIndex event, void * info );
 
 private:
-    static bool _clamshellHandler( void * target, void * ref,
-                                   IOService * resourceService );
     static void _deferredEvent( OSObject * target,
                                 IOInterruptEventSource * evtSrc, int intCount );
 };
@@ -433,10 +430,6 @@ bool AppleBacklightDisplay::start( IOService * provider )
     if (!super::start(provider))
         return (false);
 
-    fNotify = addNotification( gIOPublishNotification,
-                               resourceMatching(kAppleClamshellStateKey),
-                               _clamshellHandler, this, 0, 10000 );
-
     fDeferredEvents = IOInterruptEventSource::interruptEventSource(this, _deferredEvent);
     if (fDeferredEvents)
         getWorkLoop()->addEventSource(fDeferredEvents);
@@ -451,18 +444,10 @@ void AppleBacklightDisplay::stop( IOService * provider )
 {
     IOFramebuffer::clamshellEnable( -1 );
 
-    getPMRootDomain()->removeProperty(kAppleClamshellStateKey);
-
     if (fDeferredEvents)
     {
         getWorkLoop()->removeEventSource(fDeferredEvents);
         fDeferredEvents = 0;
-    }
-
-    if (fNotify)
-    {
-        fNotify->remove();
-        fNotify = 0;
     }
 
     getConnection()->getFramebuffer()->setProperty(kIOBacklightUserBrightnessKey,
@@ -507,55 +492,23 @@ IOReturn AppleBacklightDisplay::framebufferEvent( IOFramebuffer * framebuffer,
 
         setBrightness( value );
     }
-
-    return (super::framebufferEvent( framebuffer, event, info ));
-}
-
-bool AppleBacklightDisplay::_clamshellHandler( void * target, void * ref,
-        IOService * resourceService )
-{
-    AppleBacklightDisplay * self = (AppleBacklightDisplay *) target;
-    UInt32		    value;
-    OSObject *		    prop = 0;
-    OSObject *		    clamshellProperty;
-
-
-    clamshellProperty = resourceService->getProperty(kAppleClamshellStateKey);
-    if (!clamshellProperty)
-        return (true);
-
-    value = (clamshellProperty == kOSBooleanTrue);
-    gIOFBLastClamshellState  = value;
-
-    //    if( !prop)        return( true );
-
-    getPMRootDomain()->setProperty(kAppleClamshellStateKey, clamshellProperty);
-    resourceService->removeProperty(kAppleClamshellStateKey);
-
-    if ((kOSBooleanTrue == prop) && (kIOPMEnableClamshell & IOFramebuffer::clamshellState()))
+    else if (kIOFBNotifyClamshellChange == event)
     {
-        if (value)
-        {
+	if ((kOSBooleanTrue == info) && (kIOPMEnableClamshell & IOFramebuffer::clamshellState()))
+	{
 #if LCM_HWSLEEP
-            self->fConnection->getFramebuffer()->changePowerStateTo(0);
+	    fConnection->getFramebuffer()->changePowerStateTo(0);
 #endif
-            self->changePowerStateToPriv( 0 );
-        }
-        else
-        {
-            self->changePowerStateToPriv( kIODisplayMaxPowerState );
-#if LCM_HWSLEEP
-            self->fConnection->getFramebuffer()->changePowerStateTo(1);
-#endif
-        }
+	    changePowerStateToPriv( 0 );
+	}
+
+	// may be in the right power state already, but wrong brightness because
+	// of the clamshell state at setPowerState time.
+	if (fDeferredEvents)
+	    fDeferredEvents->interruptOccurred(0, 0, 0);
     }
 
-    // may be in the right power state already, but wrong brightness because
-    // of the clamshell state at setPowerState time.
-    if (self->fDeferredEvents)
-        self->fDeferredEvents->interruptOccurred(0, 0, 0);
-
-    return (true);
+    return (super::framebufferEvent( framebuffer, event, info ));
 }
 
 bool AppleBacklightDisplay::setBrightness( SInt32 value )

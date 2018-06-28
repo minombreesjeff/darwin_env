@@ -58,6 +58,12 @@ do { 					\
 #define DEBG(idx, fmt, args...)  {}
 #endif
 
+#define STOREINC(_ptr_, _data_, _type_)	{   \
+	*((_type_ *)(_ptr_)) = _data_;					\
+	_ptr_ = (typeof(_ptr_)) (((char *) (_ptr_)) + sizeof(_type_));	\
+    }
+
+
 #define kIOFBBootGrayValue		0x00648cc3
 // blue actual:0x00426bad gamma:0x00648cc3 bootx:0x00bfbfbf
 #define kIOFBGrayValue			0x00648cc3
@@ -81,7 +87,13 @@ do { 					\
 #define kIOFBWaitCursorPeriodKey	"IOFBWaitCursorPeriod"
 #endif
 
+#ifndef kIOUserClientSharedInstanceKey
+#define kIOUserClientSharedInstanceKey  "IOUserClientSharedInstance"
+#endif
+
 extern "C" vm_map_t IOPageableMapForAddress( vm_address_t address );
+
+extern "C" IOReturn IOGetHardwareClamshellState( IOOptionBits * result );
 
 #if __ppc__
 extern "C" void bcopy_nc( void * from, void * to, UInt32 l );

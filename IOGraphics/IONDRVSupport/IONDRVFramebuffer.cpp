@@ -304,6 +304,76 @@ bool IONDRVFramebuffer::start( IOService * provider )
         if (0 == provider->getProperty("AAPL,ndrv-dev"))
         {
             provider->setProperty("AAPL,ndrv-dev", kOSBooleanTrue);
+
+	    if (provider->getProperty("@0,name"))
+	    {
+		OSDictionary *         dict;
+		OSCollectionIterator * keys;
+		const OSSymbol *       key;
+		char                   buffer[80];
+		const char *           keyChrs;
+		size_t                 len;
+		char                   c;
+
+		dict = provider->dictionaryWithProperties();
+		keys = OSCollectionIterator::withCollection(dict);
+		if (dict)
+		    dict->release();
+		if (keys)
+		{
+		    while ((key = OSDynamicCast(OSSymbol, keys->getNextObject())))
+		    {
+			keyChrs = key->getCStringNoCopy();
+			if ('@' != keyChrs[0])
+			    continue;
+
+			len = 0;
+			do
+			{
+			    c = keyChrs[len];
+			    if (!c || (c == ','))
+				break;
+			    buffer[len] = c;
+			    len++;
+			}
+			while (len < (sizeof(buffer) - 1));
+			if (!c)
+			    continue;
+
+			buffer[len] = 0;
+			keyChrs += len + 1;
+
+			next = provider->childFromPath(buffer, gIODTPlane);
+			if (!next)
+			{
+			    next = new IOService;
+			    if (next && !next->init())
+			    {
+				next->release();
+				next = 0;
+			    }
+			    if (!next)
+				continue;
+			    next->setLocation(&buffer[1]);
+			    if (!next->attachToParent(provider, gIODTPlane))
+				continue;
+			}
+
+			OSObject * obj = dict->getObject(key);
+			next->setProperty(keyChrs, dict->getObject(key));
+			if (!strcmp(keyChrs, "name"))
+			{
+			    OSData * data = OSDynamicCast(OSData, obj);
+			    if (data)
+				next->setName((const char *) data->getBytesNoCopy());
+			}
+			next->release();
+			provider->removeProperty(key);
+		    }
+		    keys->release();
+		}
+	    }
+
             iter = IORegistryIterator::iterateOver( provider, gIODTPlane, 0 );
             toDo = OSArray::withCapacity(2);
 
@@ -365,6 +435,10 @@ bool IONDRVFramebuffer::start( IOService * provider )
         }
         return (false);
     }
+
+    data = OSDynamicCast(OSData, provider->getProperty("device_type"));
+    if (data && (0 != strcmp("display", (char *) data->getBytesNoCopy())))
+	return (false);
 
     do
     {
@@ -431,8 +505,12 @@ bool IONDRVFramebuffer::start( IOService * provider )
         if ((obj = nub->getProperty(kIOFBDependentIndexKey)))
             setProperty( kIOFBDependentIndexKey, obj );
 
+#ifdef __ppc__
         platformSleep = (false == getPlatform()->hasPrivPMFeature( kPMHasLegacyDesktopSleepMask )
                          && (false == getPlatform()->hasPMFeature( kPMCanPowerOffPCIBusMask )));
+#else
+	platformSleep = false;
+#endif
 
 	__private->removable = (0 != device->metaCast("IOCardBusDevice"));
 
@@ -1133,6 +1211,7 @@ IOReturn IONDRVFramebuffer::checkDriver( void )
 #endif /* IONDRVI2CLOG */
 
         // duplicate QD InitGDevice
+	_doStatus( this, cscGetCurMode, &switchInfo );
         pageInfo.csMode = switchInfo.csMode;
         pageInfo.csData = 0;
         pageInfo.csPage = 0;
@@ -1276,7 +1355,8 @@ IOIndex IONDRVFramebuffer::mapDepthIndex(
     IOIndex			mapped, index, lastDepth, lastIndex;
     IOReturn			err;
 
-    if (modeID != __private->depthMapModeID)
+    if ((modeID == kDisplayModeIDPreflight)
+	|| (modeID != __private->depthMapModeID))
     {
 	lastDepth = kDepthMode1;
 	lastIndex = 0;
@@ -1299,8 +1379,7 @@ IOIndex IONDRVFramebuffer::mapDepthIndex(
 	for (; index <= (kDepthMode6 - kDepthMode1); index++)
 	    __private->indexToDepthMode[index] = lastDepth;
     
-	if (modeID != kDisplayModeIDPreflight)
-	    __private->depthMapModeID = modeID;
+	__private->depthMapModeID = modeID;
 //	DEBG(thisIndex, " cache miss for %08lx\n", modeID);
     }
 
@@ -1802,7 +1881,7 @@ IODeviceMemory * IONDRVFramebuffer::findVRAM( void )
             mem = makeSubRange( vramBase, vramLength );
     }
 
-    IOLog("%s: vram [%08lx:%08lx]\n", nub->getName(), vramBase, vramLength);
+    DEBG("%s: vram [%08lx:%08lx]\n", nub->getName(), vramBase, vramLength);
     return (mem);
 }
 
@@ -1924,12 +2003,26 @@ IOReturn IONDRVFramebuffer::setDetailedTimings( OSArray * array )
                         (data = OSDynamicCast(OSData, detailedTimings->getObject(i)));
                         i++)
                 {
-
                     detailed = (IODetailedTimingInformationV2 *) data->getBytesNoCopy();
 
                     if ((detailed->horizontalActive != look.csHorizontalActive)
                             || (detailed->verticalActive != look.csVerticalActive))
                         continue;
+
+		    if (!bootScaled || (!scaler.csHorizontalPixels && !scaler.csVerticalPixels))
+		    {
+			UInt32 refreshRate1, refreshRate2;
+			refreshRate1 = detailed->pixelClock * 65536ULL /
+					    ((detailed->verticalActive + detailed->verticalBlanking)
+						* (detailed->horizontalActive + detailed->horizontalBlanking));
+			refreshRate2 = look.csPixelClock * 65536ULL /
+					    ((look.csVerticalActive + look.csVerticalBlanking)
+						* (look.csHorizontalActive + look.csHorizontalBlanking));
+			refreshRate1 = (refreshRate1 + 0x8000) >> 16;
+			refreshRate2 = (refreshRate2 + 0x8000) >> 16;
+			if (refreshRate1 != refreshRate2)
+			    continue;
+		    }
 
                     if (bootScaled
                             && ((detailed->horizontalScaled      != scaler.csHorizontalPixels)
@@ -3488,10 +3581,14 @@ void IONDRVFramebuffer::initForPM( void )
     IOReturn err;
     bool dozeOnly;
 
+#ifdef __ppc__
     dozeOnly = getPlatform()->hasPrivPMFeature( kPMHasLegacyDesktopSleepMask );
     if (!dozeOnly 
      && (getPlatform()->hasPMFeature(kPMCanPowerOffPCIBusMask)
 	|| __private->removable))
+#else
+    dozeOnly = false;
+#endif
     {
         sleepInfo.powerState = 0;
         sleepInfo.powerFlags = 0;
@@ -3591,10 +3688,6 @@ IOReturn IONDRVFramebuffer::ndrvSetDisplayPowerState( UInt32 state )
         // pick new sync state
         if (state)
             syncInfo.csMode = kDPMSSyncOn;
-        else if (syncInfo.csMode & (1<<kNoSeparateSyncControlBit))
-            syncInfo.csMode = kDPMSSyncOff;
-        else if (getPlatform()->hasPMFeature(kPMHasDimSuspendSupportMask))
-            syncInfo.csMode = kDPMSSyncOff;
         else
             syncInfo.csMode = kDPMSSyncOff;
         syncInfo.csFlags = kDPMSSyncMask;
@@ -3770,8 +3863,10 @@ IOReturn IONDRVFramebuffer::ndrvSetPowerState( UInt32 newState )
 
         else if (kAVPowerSuspend == ndrvPowerState)
         {
+#ifdef __ppc__
             if (false == getPlatform()->hasPMFeature(kPMHasDimSuspendSupportMask))
                 ndrvPowerState = kAVPowerStandby;
+#endif
         }
 
 
@@ -3887,7 +3982,7 @@ IONDRV * IOBootNDRV::fromRegistryEntry( IORegistryEntry * regEntry )
     IOBootNDRV *  result = 0;
     OSData *	  data;
 #ifndef __ppc__
-    IOPCIDevice * device;
+    IOService *   device;
 #endif
 
     do
@@ -3920,7 +4015,7 @@ IONDRV * IOBootNDRV::fromRegistryEntry( IORegistryEntry * regEntry )
 #ifdef __ppc__
 	&& regEntry->getProperty("AAPL,boot-display")
 #else
-	&& (device = OSDynamicCast(IOPCIDevice, regEntry))
+	&& (device = OSDynamicCast(IOService, regEntry))
 #endif
     )
     {
@@ -3931,6 +4026,7 @@ IONDRV * IOBootNDRV::fromRegistryEntry( IORegistryEntry * regEntry )
 
 #ifndef __ppc__
 	IODeviceMemory * mem;
+	IOPCIDevice *    pciDevice;
 	UInt32           numMaps, i;
 	bool             matched = false;
 
@@ -3944,7 +4040,11 @@ IONDRV * IOBootNDRV::fromRegistryEntry( IORegistryEntry * regEntry )
 		    && ((bootDisplay.v_baseAddr < (mem->getPhysicalAddress() + mem->getLength())));
 	}
 
-	if (device->getFunctionNumber())
+	OSNumber * num = OSDynamicCast(OSNumber, device->getProperty(kIOFBDependentIndexKey));
+	if (num && (0 != num->unsigned32BitValue()))
+	    matched = false;
+	else if ((pciDevice = OSDynamicCast(IOPCIDevice, device))
+		    && pciDevice->getFunctionNumber())
 	    matched = false;
 
 	if (matched)

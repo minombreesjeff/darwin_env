@@ -159,6 +159,9 @@
     static IOReturn systemPowerChange( void * target, void * refCon,
                                     UInt32 messageType, IOService * service,
                                     void * messageArgument, vm_size_t argSize );
+    static bool clamshellHandler( void * target, void * ref,
+   				       IOService * resourceService );
+    static void clamshellProbeAction( OSObject * owner, IOTimerEventSource * sender );
 
     IOReturn selectTransform( UInt64 newTransform, bool generateChange );
     void setTransform( UInt64 newTransform, bool generateChange );
