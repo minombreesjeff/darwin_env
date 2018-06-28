@@ -72,8 +72,8 @@ OSDefineMetaClassAndStructors(IOAudioDevice, IOService)
 OSMetaClassDefineReservedUsed(IOAudioDevice, 0);
 OSMetaClassDefineReservedUsed(IOAudioDevice, 1);
 OSMetaClassDefineReservedUsed(IOAudioDevice, 2);
+OSMetaClassDefineReservedUsed(IOAudioDevice, 3);
 
-OSMetaClassDefineReservedUnused(IOAudioDevice, 3);
 OSMetaClassDefineReservedUnused(IOAudioDevice, 4);
 OSMetaClassDefineReservedUnused(IOAudioDevice, 5);
 OSMetaClassDefineReservedUnused(IOAudioDevice, 6);
@@ -191,6 +191,17 @@ void IOAudioDevice::idleAudioSleepHandlerTimer(OSObject *owner, IOTimerEventSour
 	}
 
 	return;
+}
+
+void IOAudioDevice::setConfigurationApplicationBundle(const char *bundleID)
+{
+#ifdef DEBUG_CALLS
+    IOLog("IOAudioDevice[%p]::setConfigurationApplicationBundle(%p)\n", this, bundleID);
+#endif
+
+    if (bundleID) {
+        setProperty(kIOAudioDeviceConfigurationAppKey, bundleID);
+    }
 }
 
 // Original code here...
@@ -330,8 +341,6 @@ bool IOAudioDevice::start(IOService *provider)
         return false;
     }
 
-	reserved->ourProvider = provider;
-
 	if (provider->getProperty("preserveIODeviceTree") != 0) {		// [3206968]
 		provider->callPlatformFunction("mac-io-publishChildren", 0, (void*)this, (void*)0, (void*)0, (void*)0);
 	}
@@ -413,23 +422,21 @@ void IOAudioDevice::stop(IOService *provider)
 
 bool IOAudioDevice::willTerminate(IOService *provider, IOOptionBits options)
 {
-    OSCollectionIterator *engineIterator;
-
 #ifdef DEBUG_CALLS
     IOLog("IOAudioDevice[%p]::willTerminate(%p, %lx)\n", this, provider, options);
 #endif
 
-	if (reserved->ourProvider == provider) {
-		engineIterator = OSCollectionIterator::withCollection(audioEngines);
-		if (engineIterator) {
-			IOAudioEngine *audioEngine;
-			
-			while (audioEngine = OSDynamicCast(IOAudioEngine, engineIterator->getNextObject())) {
-				audioEngine->setState(kIOAudioEngineStopped);
-			}
-			engineIterator->release();
-		}
-	}
+    OSCollectionIterator *engineIterator;
+    
+    engineIterator = OSCollectionIterator::withCollection(audioEngines);
+    if (engineIterator) {
+        IOAudioEngine *audioEngine;
+        
+        while (audioEngine = OSDynamicCast(IOAudioEngine, engineIterator->getNextObject())) {
+            audioEngine->setState(kIOAudioEngineStopped);
+        }
+        engineIterator->release();
+    }
 
 	return super::willTerminate(provider, options);
 }
@@ -716,6 +723,10 @@ void IOAudioDevice::audioEngineStarting()
             pendingPowerState = kIOAudioDeviceActive;
             
             initiatePowerStateChange();
+
+            if (asyncPowerStateChangeInProgress) {	// Sleep if there is a transition in progress
+                waitForPendingPowerStateChange();
+            }
         } else if (getPendingPowerState () != kIOAudioDeviceSleep) {
 			// Make sure that when the idle timer fires that we won't go to sleep.
             pendingPowerState = kIOAudioDeviceActive;

@@ -90,7 +90,13 @@ bool IOAudioControlUserClient::initWithAudioControl(IOAudioControl *control, tas
     if (!initWithTask(task, securityID, type)) {
         return false;
     }
-
+/*
+	// For 3019260
+	if (clientHasPrivilege(securityID, kIOClientPrivilegeLocalUser)) {
+		// You don't have enough privileges to control the audio
+		return false;
+	}
+*/
     if (!control) {
         return false;
     }
@@ -113,6 +119,10 @@ void IOAudioControlUserClient::free()
         IOFreeAligned(notificationMessage, sizeof(IOAudioNotificationMessage));
         notificationMessage = 0;
     }
+
+	if (reserved) {
+		IOFree (reserved, sizeof(struct ExpansionData));
+	}
 
     super::free();
 }

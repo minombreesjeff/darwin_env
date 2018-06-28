@@ -94,6 +94,17 @@
  */
 #define kIOAudioEngineOutputSampleLatencyKey		"IOAudioEngineOutputSampleLatency"
 
+/*!
+ * @defined kIOAudioStreamSampleLatencyKey
+ * @abstract The key in the IORegistry for the IOAudioStream output sample latency key
+ * @discussion Tells the HAL how much latency is on a particular stream.  If two streams
+ * on the same engine have different latencies (e.g. one is analog, one is digital), then
+ * set this property on both streams to inform the HAL of the latency differences.  Alternately,
+ * you can set the engine latency, and just include the latency additional to that for the particular
+ * stream.  The HAL will add the engine and stream latency numbers together to get the total latency.
+ */
+#define kIOAudioStreamSampleLatencyKey				"IOAudioStreamSampleLatency"
+
 #define kIOAudioEngineInputSampleLatencyKey			"IOAudioEngineInputSampleLatency"
 
 #define kIOAudioEngineSampleOffsetKey				"IOAudioEngineSampleOffset"
@@ -130,6 +141,8 @@
  * @discussion 
  */
 #define	kIOAudioEngineFullChannelNumberNamesKey		"IOAudioEngineChannelNumberNames"
+
+#define kIOAudioEngineFlavorKey						"IOAudioEngineFlavor"
 
 /*****
  *

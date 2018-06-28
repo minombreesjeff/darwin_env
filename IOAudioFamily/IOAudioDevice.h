@@ -180,7 +180,6 @@ protected:
     struct ExpansionData {
 		unsigned long long			idleSleepDelayTime;
 		IOTimerEventSource *		idleTimer;
-		IOService *					ourProvider;
 	};
     
     ExpansionData *reserved;
@@ -205,13 +204,22 @@ public:
      */
 	virtual void setIdleAudioSleepTime(unsigned long long sleepDelay);
 	virtual void scheduleIdleAudioSleep(void);
+    /*!
+	 * @function setConfigurationApplicationBundle
+     * @abstract This function is to be called if an external configuration application is available to set
+	 * which application to launch.
+	 * @discussion This is useful for device drivers that are too complex to be represented by the Sound Preferences
+	 * panel.  The bundle ID is a more flexible way of specifying where the application is than a hard coded path.
+     * @param bundleID The bundle ID of the application to be launched by the HAL for configuration of the device and its engine(s).
+     */
+	virtual void setConfigurationApplicationBundle(const char *bundleID);
 
 private:
     OSMetaClassDeclareReservedUsed(IOAudioDevice, 0);
     OSMetaClassDeclareReservedUsed(IOAudioDevice, 1);
     OSMetaClassDeclareReservedUsed(IOAudioDevice, 2);
+    OSMetaClassDeclareReservedUsed(IOAudioDevice, 3);
 
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 3);
     OSMetaClassDeclareReservedUnused(IOAudioDevice, 4);
     OSMetaClassDeclareReservedUnused(IOAudioDevice, 5);
     OSMetaClassDeclareReservedUnused(IOAudioDevice, 6);
@@ -297,8 +305,7 @@ public:
      * @param The service provider nub for the device.
      */
     virtual void stop(IOService *provider);
-
-	virtual bool willTerminate(IOService *provider, IOOptionBits options);
+    virtual bool willTerminate(IOService *provider, IOOptionBits options);
 
     /*!
      * @function initHardware

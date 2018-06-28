@@ -42,6 +42,8 @@ typedef enum _IOAudioEngineMemory {
     kIOAudioStatusBuffer 			= 0,
     kIOAudioSampleBuffer			= 1,
     kIOAudioMixBuffer				= 2,
+	kIOAudioBytesInInputBuffer		= 3,
+	kIOAudioBytesInOutputBuffer		= 4
 } IOAudioEngineMemory;
 
 /*!
@@ -54,11 +56,12 @@ typedef enum _IOAudioEngineCalls {
     kIOAudioEngineCallUnregisterClientBuffer		= 1,
     kIOAudioEngineCallGetConnectionID				= 2,
     kIOAudioEngineCallStart							= 3,
-    kIOAudioEngineCallStop							= 4
+    kIOAudioEngineCallStop							= 4,
+	kIOAudioEngineCallGetNearestStartTime			= 5
 } IOAudioEngineCalls;
 
 /*! @defined kIOAudioEngineNumCalls The number of elements in the IOAudioEngineCalls enum. */
-#define kIOAudioEngineNumCalls		5
+#define kIOAudioEngineNumCalls		6
 
 typedef enum _IOAudioEngineTraps {
     kIOAudioEngineTrapPerformClientIO				= 0
@@ -145,6 +148,66 @@ typedef struct _IOAudioSampleIntervalDescriptor {
 	UInt32	sampleIntervalHi;
 	UInt32	sampleIntervalLo;
 } IOAudioSampleIntervalDescriptor;
+
+//	A struct for encapsulating a SMPTE time. The running rate should
+//	be expressed in the AudioTimeStamp's mRateScalar field.
+typedef struct _IOAudioSMPTETime
+{
+	UInt64	fCounter;			//	total number of messages received
+	UInt32	fType;				//	the SMPTE type (see constants)
+	UInt32	fFlags;				//	flags indicating state (see constants
+	SInt16	fHours;				//	number of hours in the full message
+	SInt16	fMinutes;			//	number of minutes in the full message
+	SInt16	fSeconds;			//	number of seconds in the full message
+	SInt16	fFrames;			//	number of frames in the full message
+} IOAudioSMPTETime;
+
+//	constants describing SMPTE types (taken from the MTC spec)
+enum
+{
+	kIOAudioSMPTETimeType24			= 0,
+	kIOAudioSMPTETimeType25			= 1,
+	kIOAudioSMPTETimeType30Drop		= 2,
+	kIOAudioSMPTETimeType30			= 3,
+	kIOAudioSMPTETimeType2997		= 4,
+	kIOAudioSMPTETimeType2997Drop	= 5
+};
+
+//	flags describing a SMPTE time stamp
+enum
+{
+	kIOAudioSMPTETimeValid		= (1L << 0),	//	the full time is valid
+	kIOAudioSMPTETimeRunning	= (1L << 1)		//	time is running
+};
+
+//	A struct for encapsulating the parts of a time stamp. The flags
+//	say which fields are valid.
+typedef struct _IOAudioTimeStamp
+{
+	UInt64				fSampleTime;	//	the absolute sample time, was a Float64
+	UInt64				fHostTime;		//	the host's root timebase's time
+	UInt64				fRateScalar;	//	the system rate scalar, was a Float64
+	UInt64				fWordClockTime;	//	the word clock time
+	IOAudioSMPTETime	fSMPTETime;		//	the SMPTE time
+	UInt32				fFlags;			//	the flags indicate which fields are valid
+	UInt32				fReserved;		//	reserved, pads the structure out to force 8 byte alignment
+} IOAudioTimeStamp;
+
+//	flags for the AudioTimeStamp sturcture
+enum
+{
+	kIOAudioTimeStampSampleTimeValid	= (1L << 0),
+	kIOAudioTimeStampHostTimeValid		= (1L << 1),
+	kIOAudioTimeStampRateScalarValid	= (1L << 2),
+	kIOAudioTimeStampWordClockTimeValid	= (1L << 3),
+	kIOAudioTimeStampSMPTETimeValid		= (1L << 4)
+};
+
+//	Some commonly used combinations of timestamp flags
+enum
+{
+	kIOAudioTimeStampSampleHostTimeValid	= (kIOAudioTimeStampSampleTimeValid | kIOAudioTimeStampHostTimeValid)
+};
 
 /*!
 * @enum IOAudioStreamDirection
@@ -243,17 +306,17 @@ enum {
 };
 
 enum {
-    kIOAudioLevelControlSubTypeVolume			= 'vlme',
-	kIOAudioLevelControlSubTypeLFEVolume		= 'subv',
-	kIOAudioLevelControlSubTypePRAMVolume		= 'pram',
-    kIOAudioToggleControlSubTypeMute			= 'mute',
-	kIOAudioToggleControlSubTypeLFEMute			= 'subm',
-	kIOAudioToggleControlSubTypeiSubAttach		= 'atch',
-    kIOAudioSelectorControlSubTypeOutput		= 'outp',
-    kIOAudioSelectorControlSubTypeInput			= 'inpt',
-    kIOAudioSelectorControlSubTypeClockSource	= 'clck',
-    kIOAudioSelectorControlSubTypeDestination	= 'dest',
-	kIOAudioSelectorControlSubTypeChannelImpedance	= 'cimp'
+    kIOAudioLevelControlSubTypeVolume						= 'vlme',
+	kIOAudioLevelControlSubTypeLFEVolume					= 'subv',
+	kIOAudioLevelControlSubTypePRAMVolume					= 'pram',
+    kIOAudioToggleControlSubTypeMute						= 'mute',
+	kIOAudioToggleControlSubTypeLFEMute						= 'subm',
+	kIOAudioToggleControlSubTypeiSubAttach					= 'atch',
+    kIOAudioSelectorControlSubTypeOutput					= 'outp',
+    kIOAudioSelectorControlSubTypeInput						= 'inpt',
+    kIOAudioSelectorControlSubTypeClockSource				= 'clck',
+    kIOAudioSelectorControlSubTypeDestination				= 'dest',
+	kIOAudioSelectorControlSubTypeChannelNominalLineLevel	= 'nlev'
 };
 
 enum {
@@ -301,7 +364,9 @@ enum {
     kIOAudioStreamSampleFormatAC3			= 'ac-3',
     kIOAudioStreamSampleFormat1937AC3		= 'cac3',
     kIOAudioStreamSampleFormat1937MPEG1		= 'mpg1',
-    kIOAudioStreamSampleFormat1937MPEG2		= 'mpg2'
+    kIOAudioStreamSampleFormat1937MPEG2		= 'mpg2',
+	kIOAudioStreamSampleFormatTimeCode		= 'time'
+		//	a stream of IOAudioTimeStamp structures that capture any incoming time code information
 };
 
 enum {
