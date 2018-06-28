@@ -1,11 +1,11 @@
 /*
-  File:PhantomAudioDevice.h
+  File:PCMBlitterLibPPC.h
 
   Contains:
 
   Version:1.0.0
 
-  Copyright:Copyright ) 1997-2000 by Apple Computer, Inc., All Rights Reserved.
+  Copyright:Copyright ) 1997-2002 by Apple Computer, Inc., All Rights Reserved.
 
 Disclaimer:IMPORTANT:  This Apple software is supplied to you by Apple Computer, Inc. 
 ("Apple") in consideration of your agreement to the following terms, and your use, 
@@ -40,47 +40,30 @@ LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE POSSIBILITY OF SUC
 
 */
 
-#ifndef _SAMPLEAUDIODEVICE_H
-#define _SAMPLEAUDIODEVICE_H
+#ifndef __PCMBlitterLibPPC_h__
+#define __PCMBlitterLibPPC_h__
 
-#include <IOKit/audio/IOAudioDevice.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-#define AUDIO_ENGINES_KEY			"AudioEngines"
-#define DESCRIPTION_KEY				"Description"
-#define BLOCK_SIZE_KEY				"BlockSize"
-#define NUM_BLOCKS_KEY				"NumBlocks"
-#define NUM_STREAMS_KEY				"NumStreams"
-#define FORMATS_KEY					"Formats"
-#define SAMPLE_RATES_KEY			"SampleRates"
-#define SEPARATE_STREAM_BUFFERS_KEY	"SeparateStreamBuffers"
-#define SEPARATE_INPUT_BUFFERS_KEY	"SeparateInputBuffers"
+void NativeInt16ToFloat32( signed short *src, float *dest, unsigned int count, int bitDepth );
+void SwapInt16ToFloat32( signed short *src, float *dest, unsigned int count, int bitDepth );
+void NativeInt24ToFloat32( long *src, float *dest, unsigned int count, int bitDepth );
+void SwapInt24ToFloat32( long *src, float *dest, unsigned int count, int bitDepth );
+void NativeInt32ToFloat32( long *src, float *dest, unsigned int count, int bitDepth );
+void SwapInt32ToFloat32( long *src, float *dest, unsigned int count, int bitDepth );
 
-#define PhantomAudioDevice com_MyCompany_driver_PhantomAudioDevice
+void Float32ToNativeInt16( float *src, signed short *dst, unsigned int count );
+void Float32ToSwapInt16( float *src, signed short *dst, unsigned int count );
+void Float32ToNativeInt24( float *src, signed long *dst, unsigned int count );
+void Float32ToSwapInt24( float *src, signed long *dst, unsigned int count );
+void Float32ToNativeInt32( float *src, signed long *dst, unsigned int count );
+void Float32ToSwapInt32( float *src, signed long *dst, unsigned int count );
 
-class PhantomAudioDevice : public IOAudioDevice
-{
-    friend class com_MyCompany_driver_PhantomAudioEngine;
-    
-    OSDeclareDefaultStructors(PhantomAudioDevice)
-    
-    virtual bool initHardware(IOService *provider);
-    virtual bool createAudioEngines();
-    
-    static IOReturn volumeChangeHandler(IOService *target, IOAudioControl *volumeControl, SInt32 oldValue, SInt32 newValue);
-    virtual IOReturn volumeChanged(IOAudioControl *volumeControl, SInt32 oldValue, SInt32 newValue);
-    
-    static IOReturn outputMuteChangeHandler(IOService *target, IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue);
-    virtual IOReturn outputMuteChanged(IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue);
-
-    static IOReturn gainChangeHandler(IOService *target, IOAudioControl *gainControl, SInt32 oldValue, SInt32 newValue);
-    virtual IOReturn gainChanged(IOAudioControl *gainControl, SInt32 oldValue, SInt32 newValue);
-    
-    static IOReturn inputMuteChangeHandler(IOService *target, IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue);
-    virtual IOReturn inputMuteChanged(IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue);
-    
-    static IOReturn passThruChangeHandler(IOService *target, IOAudioControl *passThruControl, SInt32 oldValue, SInt32 newValue);
-    virtual IOReturn passThruChanged(IOAudioControl *passThruControl, SInt32 oldValue, SInt32 newValue);
-    
+#ifdef __cplusplus
 };
+#endif
 
-#endif /* _SAMPLEAUDIODEVICE_H */
+
+#endif // __PCMBlitterLibPPC_h__
