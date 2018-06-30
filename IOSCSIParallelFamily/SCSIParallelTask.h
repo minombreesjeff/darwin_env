@@ -59,6 +59,9 @@ public:
 	
 	bool					SetTargetIdentifier ( SCSITargetIdentifier theTargetID );
 	SCSITargetIdentifier	GetTargetIdentifier ( void );
+
+	bool							SetDevice ( IOSCSIParallelInterfaceDevice * device );
+	IOSCSIParallelInterfaceDevice *	GetDevice ( void );
 	
 	// ---- Methods for Accessing data in the client's SCSI Task Object ----	
 	// Method to retrieve the LUN that identifies the Logical Unit whose Task
@@ -82,7 +85,7 @@ public:
 	UInt64	GetRealizedDataTransferCount ( void );
 	bool	SetRealizedDataTransferCount ( UInt64 realizedTransferCountInBytes );
 	void	IncrementRealizedDataTransferCount ( UInt64 realizedTransferCountInBytes );
-
+	
 	IOMemoryDescriptor * GetDataBuffer ( void );
 	UInt64	GetDataBufferOffset ( void );
 	UInt32	GetTimeoutDuration ( void );
@@ -134,7 +137,8 @@ public:
 	
 private:
 	
-	SCSITargetIdentifier		fTargetID;
+	SCSITargetIdentifier				fTargetID;
+	IOSCSIParallelInterfaceDevice *		fDevice;
 	
 	// --> Wide, Sync and other parallel specific fields.
 	// The member variables to indicate if wide transfers should be

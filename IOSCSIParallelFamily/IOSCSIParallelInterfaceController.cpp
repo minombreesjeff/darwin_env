@@ -110,6 +110,14 @@ enum
 SInt32	IOSCSIParallelInterfaceController::fSCSIParallelDomainCount = 0;
 
 
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	Prototypes
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+static IOSCSIParallelInterfaceDevice *
+GetDevice (	SCSIParallelTaskIdentifier 	parallelTask );
+
+
 #if 0
 #pragma mark -
 #pragma mark IOKit Member Routines
@@ -196,6 +204,7 @@ IOSCSIParallelInterfaceController::start ( IOService * provider )
 {
 	
 	OSDictionary *	dict		= NULL;
+	OSDictionary *	copyDict	= NULL;
 	OSNumber *		number		= NULL;
 	bool			result		= false;
 	
@@ -234,8 +243,8 @@ IOSCSIParallelInterfaceController::start ( IOService * provider )
 	dict = NULL;
 	
 	// See if a protocol characteristics property already exists for the controller
-	dict = OSDynamicCast ( OSDictionary, getProperty ( kIOPropertyProtocolCharacteristicsKey ) );
-	if ( dict == NULL )
+	copyDict = OSDynamicCast ( OSDictionary, copyProperty ( kIOPropertyProtocolCharacteristicsKey ) );
+	if ( copyDict == NULL )
 	{
 		
 		// A Protocol Characteristics dictionary could not be retrieved, so one
@@ -248,7 +257,8 @@ IOSCSIParallelInterfaceController::start ( IOService * provider )
 	{
 		
 		// Create a copy of the dictionary.
-		dict = OSDictionary::withDictionary ( dict );
+		dict = ( OSDictionary * ) copyDict->copyCollection ( );
+		copyDict->release ( );
 		
 	}
 	
@@ -572,12 +582,17 @@ IOSCSIParallelInterfaceController::SetHBAProperty (
 	
 	bool			result 		= false;
 	OSDictionary *	hbaDict		= NULL;
+	OSDictionary *	copyDict	= NULL;
 	
 	require_nonzero ( key, ErrorExit );
 	require_nonzero ( value, ErrorExit );
 	
-	hbaDict = OSDynamicCast ( OSDictionary, getProperty ( kIOPropertyControllerCharacteristicsKey ) );
-	hbaDict = OSDictionary::withDictionary ( hbaDict );
+	copyDict = OSDynamicCast ( OSDictionary, copyProperty ( kIOPropertyControllerCharacteristicsKey ) );
+	require_nonzero ( copyDict, ErrorExit );
+	
+	hbaDict = ( OSDictionary * ) copyDict->copyCollection ( );
+	copyDict->release ( );
+	
 	require_nonzero ( hbaDict, ErrorExit );
 	
 	if ( strcmp ( key, kIOPropertyVendorNameKey ) == 0 )
@@ -690,12 +705,17 @@ void
 IOSCSIParallelInterfaceController::RemoveHBAProperty ( const char * key )
 {
 	
-	OSDictionary *	hbaDict = NULL;
+	OSDictionary *	hbaDict		= NULL;
+	OSDictionary *	copyDict	= NULL;
 	
 	require_nonzero ( key, ErrorExit );
 	
-	hbaDict = OSDynamicCast ( OSDictionary, getProperty ( kIOPropertyControllerCharacteristicsKey ) );
-	hbaDict = OSDictionary::withDictionary ( hbaDict );
+	copyDict = OSDynamicCast ( OSDictionary, copyProperty ( kIOPropertyControllerCharacteristicsKey ) );
+	require_nonzero ( copyDict, ErrorExit );
+	
+	hbaDict = ( OSDictionary * ) copyDict->copyCollection ( );
+	copyDict->release ( );
+	
 	require_nonzero ( hbaDict, ErrorExit );
 	
 	if ( hbaDict->getObject ( key ) != NULL )
@@ -1156,7 +1176,7 @@ IOSCSIParallelInterfaceController::CompleteParallelTask (
 	// Remove the task from the timeout list.
 	( ( SCSIParallelTimer * ) fTimerEvent )->RemoveTask ( parallelRequest );
 	
-	target = GetTargetForID ( GetTargetIdentifier ( parallelRequest ) );
+	target = GetDevice ( parallelRequest );
 	require_nonzero ( target, Exit );
 	
 	// Complete the command
@@ -1427,6 +1447,8 @@ IOSCSIParallelInterfaceController::TimeoutOccurred (
 	if ( timer != NULL )
 	{
 		
+		timer->BeginTimeoutContext ( );
+		
 		expiredTask = timer->GetExpiredTask ( );
 		while ( expiredTask != NULL )
 		{
@@ -1435,6 +1457,8 @@ IOSCSIParallelInterfaceController::TimeoutOccurred (
 			expiredTask = timer->GetExpiredTask ( );
 			
 		}
+		
+		timer->EndTimeoutContext ( );
 		
 		// Rearm the timer
 		timer->Rearm ( );
@@ -2009,53 +2033,52 @@ IOSCSIParallelInterfaceController::NotifyClientsOfPortStatusChange (
 												SCSIPortStatus newStatus )
 {
 	
-	OSDictionary *	hbaDict = NULL;
+	OSDictionary *	hbaDict		= NULL;
+	OSDictionary *	copyDict	= NULL;
+	OSString *		string 		= NULL;
+	char *			linkStatus	= NULL;
 	
-	hbaDict = OSDynamicCast ( OSDictionary, getProperty ( kIOPropertyControllerCharacteristicsKey ) );
-	hbaDict = OSDictionary::withDictionary ( hbaDict );
+	copyDict = OSDynamicCast ( OSDictionary, copyProperty ( kIOPropertyControllerCharacteristicsKey ) );
+	require_nonzero ( copyDict, ErrorExit );
+	
+	hbaDict = ( OSDictionary * ) copyDict->copyCollection ( );
+	copyDict->release ( );
+	
 	require_nonzero ( hbaDict, ErrorExit );
 	
-	if ( hbaDict != NULL )
+	switch ( newStatus )
 	{
 		
-		OSString *	string 		= NULL;
-		char *		linkStatus	= NULL;
+		case kSCSIPort_StatusOnline:
+			linkStatus = kIOPropertyPortStatusLinkEstablishedKey;
+			break;
 		
-		switch ( newStatus )
-		{
-			
-			case kSCSIPort_StatusOnline:
-				linkStatus = kIOPropertyPortStatusLinkEstablishedKey;
-				break;
-			
-			case kSCSIPort_StatusOffline:
-				linkStatus = kIOPropertyPortStatusNoLinkEstablishedKey;
-				break;
-			
-			case kSCSIPort_StatusFailure:
-				linkStatus = kIOPropertyPortStatusLinkFailedKey;
-				break;
-			
-			default:
-				break;
-			
-		}
+		case kSCSIPort_StatusOffline:
+			linkStatus = kIOPropertyPortStatusNoLinkEstablishedKey;
+			break;
 		
-		string = OSString::withCString ( linkStatus );
-		if ( string != NULL )
-		{
-			
-			hbaDict->setObject ( kIOPropertyPortStatusKey, string );
-			string->release ( );
-			string = NULL;
-			
-		}
+		case kSCSIPort_StatusFailure:
+			linkStatus = kIOPropertyPortStatusLinkFailedKey;
+			break;
 		
-		setProperty ( kIOPropertyControllerCharacteristicsKey, hbaDict );
-		hbaDict->release ( );
-		hbaDict = NULL;
+		default:
+			break;
 		
 	}
+	
+	string = OSString::withCString ( linkStatus );
+	if ( string != NULL )
+	{
+		
+		hbaDict->setObject ( kIOPropertyPortStatusKey, string );
+		string->release ( );
+		string = NULL;
+		
+	}
+	
+	setProperty ( kIOPropertyControllerCharacteristicsKey, hbaDict );
+	hbaDict->release ( );
+	hbaDict = NULL;
 	
 	
 ErrorExit:
@@ -2111,6 +2134,26 @@ IOSCSIParallelInterfaceController::GetTargetIdentifier (
 	}
 	
 	return tempTask->GetTargetIdentifier ( );
+	
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	GetDevice - Gets Device for task.								   [STATIC]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+static IOSCSIParallelInterfaceDevice *
+GetDevice (	SCSIParallelTaskIdentifier 	parallelTask )
+{
+	
+	SCSIParallelTask *	tempTask = ( SCSIParallelTask * ) parallelTask;
+	
+	if ( tempTask == NULL )
+	{
+		return NULL;
+	}
+	
+	return tempTask->GetDevice ( );
 	
 }
 

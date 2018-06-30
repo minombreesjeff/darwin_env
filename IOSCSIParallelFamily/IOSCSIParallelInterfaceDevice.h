@@ -343,6 +343,20 @@ protected:
 								SCSIParallelTaskIdentifier 	parallelTask );
 			
 	/*!
+		@function SetDevice
+		@abstract Method to set the device to be associated
+		with a SCSIParallelTaskIdentifier.
+		@discussion Method to set the device to be associated
+		with a SCSIParallelTaskIdentifier.
+		@param parallelTask A valid SCSIParallelTaskIdentifier.
+		@param device A pointer to a valid  IOSCSIParallelInterfaceDevice.
+		@result returns true if successful.
+	*/
+	bool				SetDevice ( 
+							SCSIParallelTaskIdentifier			parallelTask,
+							IOSCSIParallelInterfaceDevice * 	device );
+
+	/*!
 		@function SetTargetIdentifier
 		@abstract Set Target Identifier
 		@discussion xxx
@@ -604,6 +618,7 @@ protected:
 	IOMemoryDescriptor * 	GetHBADataDescriptor ( 
 								SCSIParallelTaskIdentifier 	parallelTask );
 
+	
 #if 0
 #pragma mark -
 #pragma mark For Internal Use Only
@@ -617,8 +632,7 @@ public:
 	bool		start ( IOService * provider );
 	void		stop ( IOService *  provider );
 	void		free ( void );
-	bool		willTerminate ( IOService * provider, IOOptionBits options );
-	bool		didTerminate ( IOService * provider, IOOptionBits options, bool * defer );	
+	bool		finalize ( IOOptionBits options );	
 	
 	IOReturn	message ( UInt32 clientMsg, IOService * forProvider, void * forArg = 0 );
 	IOReturn	requestProbe ( IOOptionBits options );
@@ -657,6 +671,7 @@ private:
 	// Lock for controlling access to the resend task queue.
 	IOSimpleLock *				fResendQueueLock;
 	SCSIParallelTask *			fResendTaskList;
+	bool						fAllowResends;
 	
 	IOSCSIParallelInterfaceController *	fController;
 	

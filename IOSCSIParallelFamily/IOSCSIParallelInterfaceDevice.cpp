@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -67,13 +67,13 @@
 #endif
 
 #if ( SCSI_PARALLEL_DEVICE_DEBUGGING_LEVEL >= 2 )
-#define ERROR_LOG(x)           kprintf x
+#define ERROR_LOG(x)           IOLog x
 #else
 #define ERROR_LOG(x)
 #endif
 
 #if ( SCSI_PARALLEL_DEVICE_DEBUGGING_LEVEL >= 3 )
-#define STATUS_LOG(x)          kprintf x
+#define STATUS_LOG(x)          IOLog x
 #else
 #define STATUS_LOG(x)
 #endif
@@ -88,10 +88,7 @@ OSDefineMetaClassAndStructors ( IOSCSIParallelInterfaceDevice, IOSCSIProtocolSer
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 #define kIOPropertyIOUnitKey		"IOUnit"
-
-#ifndef kIOPropertySASAddressKey
-#define kIOPropertySASAddressKey	"SAS Address"
-#endif
+#define kIODeviceLocationKey		"io-device-location"
 
 enum
 {
@@ -165,6 +162,7 @@ IOSCSIParallelInterfaceDevice::start ( IOService * provider )
 {
 	
 	OSDictionary *	protocolDict	= NULL;
+	OSDictionary *	copyDict		= NULL;
 	bool			result			= false;
 	char			unit[10];
 	
@@ -187,8 +185,15 @@ IOSCSIParallelInterfaceDevice::start ( IOService * provider )
 	// Setup power management for this object.
 	InitializePowerManagement ( provider );
 	
-	protocolDict = OSDynamicCast ( OSDictionary, getProperty ( kIOPropertyProtocolCharacteristicsKey ) );	
-	protocolDict = OSDictionary::withDictionary ( protocolDict );
+	copyDict = OSDynamicCast ( OSDictionary, copyProperty ( kIOPropertyProtocolCharacteristicsKey ) );
+	if ( copyDict != NULL )
+	{
+		
+		protocolDict = ( OSDictionary * ) copyDict->copyCollection ( );
+		copyDict->release ( );
+		
+	}
+	
 	if ( protocolDict != NULL )
 	{
 		
@@ -248,33 +253,12 @@ IOSCSIParallelInterfaceDevice::stop ( IOService * provider )
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ willTerminate													   [PUBLIC]                                                                                                     [PUBLIC]
+//	¥ finalize													       [PUBLIC]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 bool
-IOSCSIParallelInterfaceDevice::willTerminate ( IOService *		provider,
-                       						   IOOptionBits 	options )
+IOSCSIParallelInterfaceDevice::finalize ( IOOptionBits options )
 {
-	
-	ERROR_LOG ( ( "IOSCSIParallelInterfaceDevice::willTerminate\n" ) );
-	
-	SendNotification_DeviceRemoved ( );
-	return true;
-	
-}
-
-
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ didTerminate													   [PUBLIC]                                                                                                     [PUBLIC]
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-
-bool
-IOSCSIParallelInterfaceDevice::didTerminate ( IOService *		provider,
-                              				  IOOptionBits  	options,
-                       						  bool *  			defer )
-{
-	
-	ERROR_LOG ( ( "IOSCSIParallelInterfaceDevice::didTerminate\n" ) );
 	
 	if ( fController != NULL )
 	{
@@ -284,13 +268,13 @@ IOSCSIParallelInterfaceDevice::didTerminate ( IOService *		provider,
 		
 	}
 	
-	return true;
+	return super::finalize ( options );
 	
 }
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ free															   [PUBLIC]                                                                                                     [PUBLIC]
+//	¥ free															   [PUBLIC]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 void
@@ -412,7 +396,6 @@ IOSCSIParallelInterfaceDevice::requestProbe ( IOOptionBits options )
 	else
 	{
 		return kIOReturnNotPermitted;
-		
 	}
 	
 }
@@ -437,14 +420,37 @@ IOSCSIParallelInterfaceDevice::CreateTarget (
 							IORegistryEntry *			entry )
 {
 	
-	IOSCSIParallelInterfaceDevice * newDevice = OSTypeAlloc ( IOSCSIParallelInterfaceDevice );
+	IOSCSIParallelInterfaceDevice * newDevice	= NULL;
+	OSObject *						value		= NULL;
+	bool							result		= false;
 	
+	newDevice = OSTypeAlloc ( IOSCSIParallelInterfaceDevice );
 	require_nonzero ( newDevice, DEVICE_CREATION_FAILURE );
 	
 	if ( entry != NULL )
-		newDevice->init ( entry, gIODTPlane );
+	{
+		
+		result = newDevice->init ( 0 );
+		require ( result, RELEASE_DEVICE );
+		
+		newDevice->lockForArbitration ( );
+		result = newDevice->attachToParent ( entry, gIODTPlane );
+		newDevice->unlockForArbitration ( );
+		
+		value = entry->copyProperty ( kIODeviceLocationKey );
+		if ( value != NULL )
+		{
+			newDevice->setProperty ( kIODeviceLocationKey, value );
+		}
+		
+	}
+	
 	else
-		newDevice->init ( 0 );
+	{
+		result = newDevice->init ( 0 );
+	}
+	
+	require ( result, RELEASE_DEVICE );
 	
 	// Set all of the fields to their defaults
 	newDevice->fHBAData					= NULL;
@@ -469,6 +475,8 @@ IOSCSIParallelInterfaceDevice::CreateTarget (
 	
 	newDevice->fResendQueueLock = IOSimpleLockAlloc ( );
 	require_nonzero ( newDevice->fResendQueueLock, LOCK_ALLOC_FAILURE );
+	
+	newDevice->fAllowResends = true;
 	
 	if ( sizeOfHBAData != 0 )
 	{
@@ -509,6 +517,7 @@ HBA_DATA_ALLOC_FAILURE:
 	
 	
 LOCK_ALLOC_FAILURE:
+RELEASE_DEVICE:
 	
 	
 	require_nonzero_quiet ( newDevice, DEVICE_CREATION_FAILURE );
@@ -532,37 +541,32 @@ void
 IOSCSIParallelInterfaceDevice::DestroyTarget ( void )
 {
 	
-	// First walk the queue holding any Tasks that completed
-	// with TASK_SET_FULL and reject each one.
+	IORegistryEntry *		parent = NULL;
 	
-#if 0
+	SendNotification_DeviceRemoved ( );
 	
-	// This code isn't ready for primetime. We need to add a method to complete
-	// all these things on the workloop, not on some arbitrary thread like this
-	// code would be doing. We can keep this loop and just write a
-	// CompleteCommandOnWorkloop() routine to get the desired behavior...
+	// Get rid of the io-device-location property first.
+	removeProperty ( kIODeviceLocationKey );
 	
-	while ( fResendTaskList != NULL )
+	// Remove this entry from the IODeviceTree plane.
+	lockForArbitration ( );
+	
+	parent = getParentEntry ( gIODTPlane );
+	
+	if ( parent != NULL )
 	{
-		
-		SCSIParallelTaskIdentifier 	parallelTask	= NULL;
-		SCSITaskIdentifier			request			= NULL;
-		
-		parallelTask = fResendTaskList;
-		
-		RemoveFromResendTaskList ( parallelTask);
-		RemoveFromOutstandingTaskList ( parallelTask );
-		request = GetSCSITaskIdentifier ( parallelTask );
-		
-		// Release the SCSI Parallel Task object
-		FreeSCSIParallelTask ( parallelTask );
-		
-		CommandCompleted ( request,
-						   kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE,
-						   kSCSITaskStatus_DeviceNotPresent );
-		
+		detachFromParent ( parent, gIODTPlane );
 	}
-#endif
+	
+	unlockForArbitration ( );	
+	
+	// Remove anything from the "resend queue".
+	IOSimpleLockLock ( fResendQueueLock );
+	
+	fResendTaskList = NULL;
+	fAllowResends = false;
+	
+	IOSimpleLockUnlock ( fResendQueueLock );
 	
 }
 
@@ -624,6 +628,7 @@ IOSCSIParallelInterfaceDevice::DetermineParallelFeatures ( UInt8 * inqData )
 {
 	
 	OSDictionary *	dict			= NULL;
+	OSDictionary *	copyDict		= NULL;
 	OSNumber *		features		= NULL;
 	UInt64			deviceFeatures	= 0;
 	UInt64			ITNexusFeatures	= 0;
@@ -725,9 +730,16 @@ IOSCSIParallelInterfaceDevice::DetermineParallelFeatures ( UInt8 * inqData )
 		}
 		
 	}
-
-	dict = ( OSDictionary * ) getProperty ( kIOPropertyProtocolCharacteristicsKey );
-	dict = OSDictionary::withDictionary ( dict );
+	
+	copyDict = ( OSDictionary * ) copyProperty ( kIOPropertyProtocolCharacteristicsKey );
+	if ( copyDict != NULL )
+	{
+		
+		dict = ( OSDictionary * ) copyDict->copyCollection ( );
+		copyDict->release ( );
+		
+	}
+	
 	if ( dict != NULL )
 	{
 		
@@ -914,14 +926,19 @@ IOSCSIParallelInterfaceDevice::SetTargetProperty (
 									OSObject *			value )
 {
 	
-	bool			result 		 = false;
-	OSDictionary *	protocolDict = NULL;
+	bool			result			= false;
+	OSDictionary *	protocolDict	= NULL;
+	OSDictionary *	copyDict		= NULL;
 	
 	require_nonzero ( key, ErrorExit );
 	require_nonzero ( value, ErrorExit );
 	
-	protocolDict = OSDynamicCast ( OSDictionary, getProperty ( kIOPropertyProtocolCharacteristicsKey ) );
-	protocolDict = OSDictionary::withDictionary ( protocolDict );
+	copyDict = OSDynamicCast ( OSDictionary, copyProperty ( kIOPropertyProtocolCharacteristicsKey ) );
+	require_nonzero ( copyDict, ErrorExit );
+	
+	protocolDict = ( OSDictionary * ) copyDict->copyCollection ( );
+	copyDict->release ( );
+	
 	require_nonzero ( protocolDict, ErrorExit );
 	
 	if ( strcmp ( key, kIOPropertyFibreChannelPortWorldWideNameKey ) == 0 )
@@ -1008,12 +1025,17 @@ void
 IOSCSIParallelInterfaceDevice::RemoveTargetProperty ( const char * key )
 {
 	
-	OSDictionary *	protocolDict = NULL;
+	OSDictionary *	protocolDict	= NULL;
+	OSDictionary *	copyDict		= NULL;
 	
 	require_nonzero ( key, ErrorExit );
 	
-	protocolDict = OSDynamicCast ( OSDictionary, getProperty ( kIOPropertyProtocolCharacteristicsKey ) );
-	protocolDict = OSDictionary::withDictionary ( protocolDict );
+	copyDict = OSDynamicCast ( OSDictionary, copyProperty ( kIOPropertyProtocolCharacteristicsKey ) );
+	require_nonzero ( copyDict, ErrorExit );
+	
+	protocolDict = ( OSDictionary * ) copyDict->copyCollection ( );
+	copyDict->release ( );
+	
 	require_nonzero ( protocolDict, ErrorExit );
 	
 	if ( protocolDict->getObject ( key ) != NULL )
@@ -1057,35 +1079,50 @@ IOSCSIParallelInterfaceDevice::SendSCSICommand (
 	SCSIParallelTaskIdentifier		parallelTask	= NULL;
 	IOMemoryDescriptor *			buffer			= NULL;
 	IOReturn						status			= kIOReturnBadArgument;
+	IOWorkLoop *					workLoop		= NULL;
+	bool							block			= true;
 	
 	// Set the defaults to an error state.		
 	*taskStatus			= kSCSITaskStatus_No_Status;
 	*serviceResponse	= kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE;
 	
-	// Verify that the task to execute is valid
-  	if ( request == NULL )
- 	{
+	if ( isInactive ( ) == true )
+	{
 		
-		// An invalid SCSI Task object was passed into here.  Let the client 
-		// know by returning the default error for taskStatus and 
-		// serviceResponse and true to indicate that the command is completed.
-		return true;
+		return false;
 		
- 	}
+	}
 	
 	// Check if there is an SCSIParallelTask available to allow the request
-	// to be sent to the device.	
-	parallelTask = GetSCSIParallelTask ( true );
+	// to be sent to the device. If we don't block on the client thread, we
+	// risk the chance of never being able to send an I/O to the controller for
+	// this device.
+	//
+	// But, we can't block the ISR either. Depending on what thread we're on,
+	// we have to make the right decision here.
+	workLoop = getWorkLoop ( );
+	if ( workLoop != NULL )
+	{
+		
+		if ( workLoop->onThread ( ) )
+		{
+			block = false;
+		}
+		
+	}
+	
+	parallelTask = GetSCSIParallelTask ( block );
 	if ( parallelTask == NULL )
 	{
 		
-		// A SCSI Parallel Task could not be gotten, report
+		// A SCSI Parallel Task could not be obtained, report
 		// that the task was not executed and wait for a task to complete.
 		return false;
 		
 	}
 	
 	SetTargetIdentifier ( parallelTask, fTargetIdentifier );
+	SetDevice ( parallelTask, this );
 	SetSCSITaskIdentifier ( parallelTask, request );
 	
 	// Set the Parallel SCSI transfer features.	
@@ -1105,7 +1142,7 @@ IOSCSIParallelInterfaceDevice::SendSCSICommand (
 		
 	}
 	
-	// Add the task to the outstanding Task list
+	// Add the task to the outstanding task list.
 	AddToOutstandingTaskList ( parallelTask );
 	
 	// Set the buffer for IODMACommand.
@@ -1175,7 +1212,8 @@ IOSCSIParallelInterfaceDevice::CompleteSCSITask (
 	
 	// Check if the device rejected the task because its queue is full
 	if ( ( serviceResponse == kSCSIServiceResponse_TASK_COMPLETE ) &&
-		 ( completionStatus == kSCSITaskStatus_TASK_SET_FULL ) )
+		 ( completionStatus == kSCSITaskStatus_TASK_SET_FULL ) &&
+		 ( fAllowResends == true ) )
 	{
 		
 		// The task was not executed because the device reported
@@ -1378,6 +1416,7 @@ IOSCSIParallelInterfaceDevice::HandleProtocolServiceFeature (
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 //	¥ AbortSCSICommand - Not used.	   		   			   [¥OBSOLETE¥][PUBLIC]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
 SCSIServiceResponse
 IOSCSIParallelInterfaceDevice::AbortSCSICommand ( 
 							SCSITaskIdentifier 			request )
@@ -1529,11 +1568,32 @@ IOSCSIParallelInterfaceDevice::RemoveFromOutstandingTaskList (
 							SCSIParallelTaskIdentifier 	parallelTask )
 {
 	
-	SCSIParallelTask *	tempTask = ( SCSIParallelTask * ) parallelTask;
-	SCSIParallelTask *	nextTask = NULL;
-	SCSIParallelTask *	prevTask = NULL;
+	SCSIParallelTask *	tempTask	= ( SCSIParallelTask * ) parallelTask;
+	SCSIParallelTask *	nextTask	= NULL;
+	SCSIParallelTask *	prevTask	= NULL;
+	bool				inList		= false;
 	
 	IOSimpleLockLock ( fQueueLock );
+	
+	// Validate that this command is in the outstanding list first (avoid
+	// errant drivers doing double completions).
+	nextTask = fOutstandingTaskList;
+	while ( nextTask != NULL )
+	{
+		
+		if ( nextTask == tempTask )
+		{
+			
+			inList = true;
+			break;
+			
+		}
+		
+		nextTask = nextTask->GetNextTaskInList ( );
+		
+	}
+	
+	require ( inList, ErrorExit );
 	
 	nextTask = tempTask->GetNextTaskInList ( );
 	prevTask = tempTask->GetPreviousTaskInList ( );
@@ -1562,7 +1622,11 @@ IOSCSIParallelInterfaceDevice::RemoveFromOutstandingTaskList (
 	// Clear out the victim's previous and next pointers
 	tempTask->SetNextTaskInList ( NULL );
 	tempTask->SetPreviousTaskInList ( NULL );
-
+	
+	
+ErrorExit:
+	
+	
 	IOSimpleLockUnlock ( fQueueLock );
 	
 }
@@ -1713,6 +1777,28 @@ IOSCSIParallelInterfaceDevice::GetSCSITaskIdentifier (
 	}
 	
 	return tempTask->GetSCSITaskIdentifier ( );
+	
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	¥ SetDevice - Sets the device in the parallelTask.				[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+bool
+IOSCSIParallelInterfaceDevice::SetDevice ( 
+							SCSIParallelTaskIdentifier			parallelTask,
+							IOSCSIParallelInterfaceDevice * 	device )
+{
+	
+	SCSIParallelTask *	tempTask = ( SCSIParallelTask * ) parallelTask;
+	
+	if ( tempTask == NULL )
+	{
+		return false;
+	}
+	
+	return tempTask->SetDevice ( device );
 	
 }
 

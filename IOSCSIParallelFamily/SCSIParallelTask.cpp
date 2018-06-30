@@ -207,6 +207,7 @@ SCSIParallelTask::ResetForNewTask ( void )
 {
 	
 	fTargetID					= 0;
+	fDevice						= NULL;
 	fSCSITask					= NULL;
 	fRealizedTransferCount		= 0;
 	fControllerTaskIdentifier	= 0;
@@ -273,6 +274,29 @@ SCSITargetIdentifier
 SCSIParallelTask::GetTargetIdentifier ( void )
 {
 	return fTargetID;
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	SetDevice - Sets device for this task.							   [PUBLIC]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+bool
+SCSIParallelTask::SetDevice ( IOSCSIParallelInterfaceDevice * device )
+{
+	fDevice = device;
+	return true;
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	GetDevice - Gets device for this task.							   [PUBLIC]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+IOSCSIParallelInterfaceDevice *
+SCSIParallelTask::GetDevice ( void )
+{
+	return fDevice;
 }
 
 
