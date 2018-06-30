@@ -54,15 +54,15 @@ bool IOFireWirePCRSpace::init(IOFireWireBus *bus)
 	}
 	
 	// Output Master Control - 400 Mbit, broadcast channel base 63, 31 output plugs
-    fBuf[0] = (2 << kIOFWPCRDataRatePhase) |
+    fBuf[0] = OSSwapHostToBigInt32((2 << kIOFWPCRDataRatePhase) |
                 (63 << kIOFWPCRBroadcastBasePhase) |
                 (0xff << kIOFWPCRExtensionPhase) |
-                (31 << kIOFWPCRNumPlugsPhase);
+                (31 << kIOFWPCRNumPlugsPhase));
                 
 	// Input Master Control - 400 Mbit, 31 output plugs
-    fBuf[32] = (2 << kIOFWPCRDataRatePhase) |
+    fBuf[32] = OSSwapHostToBigInt32((2 << kIOFWPCRDataRatePhase) |
                 (0xff << kIOFWPCRExtensionPhase) |
-                (31 << kIOFWPCRNumPlugsPhase);
+                (31 << kIOFWPCRNumPlugsPhase));
 
 	fAVCTargetSpace = NULL;
 
@@ -113,17 +113,17 @@ UInt32 IOFireWirePCRSpace::doWrite(UInt16 nodeID, IOFWSpeed &speed, FWAddress ad
         
     UInt32 newVal = *(const UInt32 *)buf;
     UInt32 offset = (addr.addressLo - kPCRBaseAddress)/4;
-    UInt32 oldVal = fBuf[offset];
+    UInt32 oldVal = OSSwapBigToHostInt32(fBuf[offset]);
     
     fBuf[offset] = newVal;
     if(fClients[offset].func)
-        (fClients[offset].func)(fClients[offset].refcon, nodeID, (offset-1) & 31, oldVal, newVal);
+        (fClients[offset].func)(fClients[offset].refcon, nodeID, (offset-1) & 31, oldVal, OSSwapBigToHostInt32(newVal));
 
 	// Notify target space object of plug value modification
 	if ((fAVCTargetSpace) && (offset > 0) && (offset < 32))
-		fAVCTargetSpace->pcrModified(IOFWAVCPlugIsochOutputType,(offset-1),newVal);
+		fAVCTargetSpace->pcrModified(IOFWAVCPlugIsochOutputType,(offset-1),OSSwapBigToHostInt32(newVal));
 	else if ((fAVCTargetSpace) && (offset > 32) && (offset < 64))
-		fAVCTargetSpace->pcrModified(IOFWAVCPlugIsochInputType,(offset-33),newVal);
+		fAVCTargetSpace->pcrModified(IOFWAVCPlugIsochInputType,(offset-33),OSSwapBigToHostInt32(newVal));
 
     return kFWResponseComplete;
 }
@@ -185,7 +185,7 @@ UInt32 IOFireWirePCRSpace::readPlug(UInt32 plug)
 
     UInt32 val;
     fControl->closeGate();
-    val = fBuf[plug];
+    val = OSSwapBigToHostInt32(fBuf[plug]);
     fControl->openGate();
     return val;
 }
@@ -197,8 +197,8 @@ IOReturn IOFireWirePCRSpace::updatePlug(UInt32 plug, UInt32 oldVal, UInt32 newVa
 
 	IOReturn res;
     fControl->closeGate();
-    if(oldVal == fBuf[plug]) {
-        fBuf[plug] = newVal;
+    if(oldVal == OSSwapBigToHostInt32(fBuf[plug])) {
+        fBuf[plug] = OSSwapHostToBigInt32(newVal);
         res = kIOReturnSuccess;
 
 		// Notify target space object of plug value modification
@@ -325,18 +325,18 @@ void IOFireWirePCRSpace::clearAllP2PConnections(void)
     for(i=0; i<32; i++)
 	{
 		fControl->closeGate();
-		oldVal = fBuf[i+1];
+		oldVal = OSSwapBigToHostInt32(fBuf[i+1]);
 		if ((oldVal & 0x3F000000) != 0)
 		{
-			fBuf[i+1] &= 0xC0FFFFFF;	// Clear P2P field
+			fBuf[i+1] &= OSSwapHostToBigInt32(0xC0FFFFFF);	// Clear P2P field
 
 			// If this plug has a client, notify it
 			if(fClients[i+1].func)
-				(fClients[i+1].func)(fClients[i+1].refcon, 0xFFFF, i, oldVal, fBuf[i+1]);
+				(fClients[i+1].func)(fClients[i+1].refcon, 0xFFFF, i, oldVal, OSSwapBigToHostInt32(fBuf[i+1]));
 
 			// Notify the AVC Target Space Object of the change
 			if (fAVCTargetSpace)
-				fAVCTargetSpace->pcrModified(IOFWAVCPlugIsochOutputType,i,fBuf[i+1]);
+				fAVCTargetSpace->pcrModified(IOFWAVCPlugIsochOutputType,i,OSSwapBigToHostInt32(fBuf[i+1]));
 		}
 		fControl->openGate();
 	}
@@ -345,18 +345,18 @@ void IOFireWirePCRSpace::clearAllP2PConnections(void)
     for(i=0; i<32; i++)
 	{
 		fControl->closeGate();
-		oldVal = fBuf[i+33];
+		oldVal = OSSwapBigToHostInt32(fBuf[i+33]);
 		if ((oldVal & 0x3F000000) != 0)
 		{
-			fBuf[i+33] &= 0xC0FFFFFF;	// Clear P2P field
+			fBuf[i+33] &= OSSwapHostToBigInt32(0xC0FFFFFF);	// Clear P2P field
 
 			// If this plug has a client, notify it
 			if(fClients[i+33].func)
-				(fClients[i+33].func)(fClients[i+33].refcon, 0xFFFF, i, oldVal, fBuf[i+33]);
+				(fClients[i+33].func)(fClients[i+33].refcon, 0xFFFF, i, oldVal, OSSwapBigToHostInt32(fBuf[i+33]));
 
 			// Notify the AVC Target Space Object of the change
 			if (fAVCTargetSpace)
-				fAVCTargetSpace->pcrModified(IOFWAVCPlugIsochInputType,i,fBuf[i+33]);
+				fAVCTargetSpace->pcrModified(IOFWAVCPlugIsochInputType,i,OSSwapBigToHostInt32(fBuf[i+33]));
 		}
 		fControl->openGate();
 	}

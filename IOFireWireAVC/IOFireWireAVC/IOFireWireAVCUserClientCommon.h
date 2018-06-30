@@ -92,8 +92,8 @@ typedef struct _AVCConnectTargetPlugsInParams
 	UInt32 destSubunitTypeAndID;
 	IOFWAVCPlugTypes destPlugType;
 	UInt32 destPlugNum;
-	bool lockConnection;
-	bool permConnection;
+	Boolean lockConnection;
+	Boolean permConnection;
 }AVCConnectTargetPlugsInParams;
 
 typedef struct _AVCConnectTargetPlugsOutParams
@@ -114,8 +114,8 @@ typedef struct _AVCGetTargetPlugConnectionOutParams
 	UInt32 connectedSubunitTypeAndID;
 	IOFWAVCPlugTypes connectedPlugType;
 	UInt32 connectedPlugNum;
-	bool lockConnection;
-	bool permConnection;
+	Boolean lockConnection;
+	Boolean permConnection;
 }AVCGetTargetPlugConnectionOutParams;
 
 #define kAsyncCmdSharedBufInterimRespOffset 0

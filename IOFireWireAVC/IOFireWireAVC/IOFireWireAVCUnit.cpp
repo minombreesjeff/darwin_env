@@ -567,6 +567,12 @@ void IOFireWireAVCUnit::updateSubUnits(bool firstTime)
             IOSleep(10);
             continue;	// Try again
         }
+		else if(res == kIOReturnOffline){
+			// Bus-reset occurred.
+			FIRELOG_MSG(("IOFireWireAVCUnit %p, bus-reset during subunit scan! firstTime=%s\n",this,firstTime == true ? "true" : "false"));
+			IOSleep(10);
+			continue;	// Try again
+		}
         else
             break;		// Got a final result code
     }

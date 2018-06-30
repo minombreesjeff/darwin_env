@@ -30,6 +30,10 @@
 
 #include <mach/mach_port.h>
 
+#import <System/libkern/OSCrossEndian.h>
+
+#include <syslog.h>	// Debug messages
+
 __BEGIN_DECLS
 #include <IOKit/iokitmig.h>
 __END_DECLS
@@ -134,12 +138,28 @@ static void avcCommandHandlerCallback( void *refcon, IOReturn result,
     UInt32 pos;
     UInt32 len;
     const UInt8* src;
+	UInt32 fixedArgs[kMaxAsyncArgs];
+	UInt32 i;
 	
 	//printf("DEBUG: AVCProtocol::avcCommandHandlerCallback\n");
 
+	// First copy all the args with endian byte-swapping. Note that only
+	// the args that contain command-bytes need this, but doing them all
+	// here simplifies the logic below.
+	IF_ROSETTA()
+	{
+		for (i=0;i<numArgs;i++)
+			fixedArgs[i] = OSSwapInt32((UInt32) args[i]); 
+	}
+	else
+	{
+		for (i=0;i<numArgs;i++)
+			fixedArgs[i] = (UInt32) args[i]; 
+	}
+
     pos = (UInt32)args[0];
     len = (UInt32)args[1];
-    src = (const UInt8*)(args+2);
+    src = (const UInt8*)(fixedArgs+2);
     if(pos == 0)
 	{
         me->fCmdGeneration = (UInt32)args[2];
@@ -149,9 +169,10 @@ static void avcCommandHandlerCallback( void *refcon, IOReturn result,
 		me->userRefCon = args[6];
 		me->speed = (IOFWSpeed) args[7];
 		me->handlerSearchIndex = (UInt32) args[8];
-		src = (const UInt8*)(args+9);
+		src = (const UInt8*)(fixedArgs+9);
     }
-    bcopy(src, me->fCommand+pos, len);
+	
+	bcopy(src, me->fCommand+pos, len);
     if(pos+len == me->fCmdLen)
 	{
         IOReturn status;
@@ -862,6 +883,17 @@ IOReturn connectTargetPlugs(void *self,
 	inParams.lockConnection = lockConnection;
 	inParams.permConnection = permConnection;
 
+	ROSETTA_ONLY(
+		{
+			inParams.sourceSubunitTypeAndID = OSSwapInt32(inParams.sourceSubunitTypeAndID);
+			inParams.sourcePlugType = OSSwapInt32(inParams.sourcePlugType);
+			inParams.sourcePlugNum = OSSwapInt32(inParams.sourcePlugNum);
+			inParams.destSubunitTypeAndID = OSSwapInt32(inParams.destSubunitTypeAndID);
+			inParams.destPlugType = OSSwapInt32(inParams.destPlugType);
+			inParams.destPlugNum = OSSwapInt32(inParams.destPlugNum);
+		}
+	);
+
 	status = IOConnectMethodStructureIStructureO(me->fConnection,
 											  kIOFWAVCProtocolUserClientConnectTargetPlugs,
 											  sizeof(AVCConnectTargetPlugsInParams),
@@ -869,6 +901,13 @@ IOReturn connectTargetPlugs(void *self,
 											  (UInt8 *) &inParams,
 											  (UInt8 *) &outParams);
 											  
+	ROSETTA_ONLY(
+		{
+			outParams.sourcePlugNum = OSSwapInt32(outParams.sourcePlugNum);
+			outParams.destPlugNum = OSSwapInt32(outParams.destPlugNum);
+		}
+	);
+
 	*pSourcePlugNum = outParams.sourcePlugNum;
 	*pDestPlugNum = outParams.destPlugNum;
 	return status;
@@ -917,12 +956,28 @@ IOReturn getTargetPlugConnection(void *self,
 	inParams.plugType = plugType;
 	inParams.plugNum = plugNum;
 		
+	ROSETTA_ONLY(
+		{
+			inParams.subunitTypeAndID = OSSwapInt32(inParams.subunitTypeAndID);
+			inParams.plugType = OSSwapInt32(inParams.plugType);
+			inParams.plugNum = OSSwapInt32(inParams.plugNum);
+		}
+	);
+		
 	status = IOConnectMethodStructureIStructureO(me->fConnection,
 											  kIOFWAVCProtocolUserClientGetTargetPlugConnection,
 											  sizeof(AVCConnectTargetPlugsInParams),
 											  &outputCnt,
 											  (UInt8 *) &inParams,
 											  (UInt8 *) &outParams);
+
+	ROSETTA_ONLY(
+		{
+			outParams.connectedSubunitTypeAndID = OSSwapInt32(outParams.connectedSubunitTypeAndID);
+			outParams.connectedPlugType = OSSwapInt32(outParams.connectedPlugType);
+			outParams.connectedPlugNum = OSSwapInt32(outParams.connectedPlugNum);
+		}
+	);
 
 	*pConnectedSubunitTypeAndID = outParams.connectedSubunitTypeAndID;
 	*pConnectedPlugType = outParams.connectedPlugType;

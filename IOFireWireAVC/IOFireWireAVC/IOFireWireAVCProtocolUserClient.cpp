@@ -402,6 +402,14 @@ IOReturn IOFireWireAVCProtocolUserClient::newUserClient( task_t owningTask, void
     *handler = this;
     fStarted = true;
     fTask = owningTask;
+
+	// Allow Rosetta based apps access to this user-client
+	if (properties)
+	{
+		properties->setObject("IOUserClientCrossEndianCompatible", kOSBooleanTrue);
+		setProperty("IOUserClientCrossEndianCompatible", kOSBooleanTrue);
+	}
+	
     return kIOReturnSuccess;
 }
 

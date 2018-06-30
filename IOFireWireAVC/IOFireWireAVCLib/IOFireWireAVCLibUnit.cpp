@@ -38,6 +38,8 @@
 #import <sys/mman.h>
 #include <mach/mach_port.h>
 
+#import <System/libkern/OSCrossEndian.h>
+
 #if 0
 #define FWLOG(x) printf x
 #else
@@ -145,7 +147,7 @@ static void AVCAsyncCommandCallback( void *refcon, IOReturn result, void **args,
 	AVCLibAsynchronousCommandPriv *pPrivCmd;
 	bool found = false;
 	
-	printf("AY_DEBUG:AVCAsyncCommandCallback\n");
+	//printf("AY_DEBUG:AVCAsyncCommandCallback\n");
 	
 	pthread_mutex_lock( &me->fAVCAsyncCommandArrayLock );
 	count = CFArrayGetCount( me->fAVCAsyncCommandArray );
@@ -693,6 +695,12 @@ static IOReturn AVCCommandInGeneration(void *self, UInt32 generation,
     IOByteCount outputCnt = *responseLen;
 	if( !me->fConnection )		    
         return kIOReturnNotOpen; 
+
+	ROSETTA_ONLY(
+		{
+			generation = OSSwapInt32(generation);
+		}
+	);
 		
     // Have to stick the generation in with the command bytes.
     *(UInt32 *)annoying = generation;
@@ -1052,6 +1060,12 @@ static IOReturn createAVCAsynchronousCommand(void * self,
 		ppSharedBufAddress = (UInt8**) &(pPrivCmd->pCmd->pCommandBuf[cmdLen]);
 		*ppSharedBufAddress = pPrivCmd->pResponseBuf;
 		
+		ROSETTA_ONLY(
+			{
+				*ppSharedBufAddress = (UInt8*) OSSwapInt32( (UInt32) pPrivCmd->pResponseBuf);
+			}
+		);
+		
 		// Initialize the command object
 		pPrivCmd->pCmd->cmdLen = cmdLen;
 		pPrivCmd->pCmd->cmdState = kAVCAsyncCommandStatePendingRequest;
@@ -1069,6 +1083,13 @@ static IOReturn createAVCAsynchronousCommand(void * self,
 													 &outputCnt, 
 													 pPrivCmd->pCmd->pCommandBuf, 
 													 &(pPrivCmd->kernelAsyncAVCCommandHandle));
+
+		ROSETTA_ONLY(
+			{
+				pPrivCmd->kernelAsyncAVCCommandHandle = OSSwapInt32(pPrivCmd->kernelAsyncAVCCommandHandle);
+			}
+		);
+
 		if (status != kIOReturnSuccess)
 			*ppCommandObject = nil;
 		else
