@@ -43,6 +43,8 @@
 //083
 //084
 		08FB7793FE84155DC02AAC07 = {
+			buildSettings = {
+			};
 			buildStyles = (
 				014CEA490018CE3211CA2923,
 				014CEA4A0018CE3211CA2923,
@@ -77,6 +79,7 @@
 		};
 		08FB779DFE84155DC02AAC07 = {
 			children = (
+				AC4F40960523A2AB00BDBFCF,
 				09AB6884FE841BABC02AAC07,
 			);
 			isa = PBXGroup;
@@ -213,6 +216,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8DD76F790486A8DE00D96B5E,
+				AC4F40970523A2AB00BDBFCF,
 			);
 			isa = PBXFrameworksBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -246,6 +250,30 @@
 			path = OtherUnitTestUnixTool;
 			refType = 3;
 			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+//8D0
+//8D1
+//8D2
+//8D3
+//8D4
+//AC0
+//AC1
+//AC2
+//AC3
+//AC4
+		AC4F40960523A2AB00BDBFCF = {
+			expectedFileType = wrapper.framework;
+			isa = PBXFileReference;
+			name = IOKit.framework;
+			path = /System/Library/Frameworks/IOKit.framework;
+			refType = 0;
+			sourceTree = "<absolute>";
+		};
+		AC4F40970523A2AB00BDBFCF = {
+			fileRef = AC4F40960523A2AB00BDBFCF;
+			isa = PBXBuildFile;
+			settings = {
+			};
 		};
 	};
 	rootObject = 08FB7793FE84155DC02AAC07;

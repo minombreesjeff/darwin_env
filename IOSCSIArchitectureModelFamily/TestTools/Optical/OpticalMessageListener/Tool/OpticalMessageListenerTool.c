@@ -148,7 +148,7 @@ main ( int argc, const char * argv[] )
 	// The iterator might have objects here. Clear it out.
 	ServiceMatched ( NULL, iterator );
 	
-	printf ( "OpticalMessageListner\n" );
+	printf ( "OpticalMessageListener\n" );
 	printf ( "Copyright 2002-2003, Apple Computer, Inc.\n\n" );
 	fflush ( stdout );
 	

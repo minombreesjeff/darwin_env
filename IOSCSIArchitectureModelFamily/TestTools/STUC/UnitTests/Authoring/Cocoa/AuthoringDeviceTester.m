@@ -42,10 +42,12 @@
 
 #import <string.h>
 #import <mach/mach_error.h>
+#import <libkern/OSByteOrder.h>
 #import <IOKit/IOTypes.h>
 #import <IOKit/IOCFPlugIn.h>
 #import <IOKit/IOKitLib.h>
 #import <IOKit/IOBSD.h>
+#import	<IOKit/storage/IODVDTypes.h>
 #import <IOKit/scsi/SCSITaskLib.h>
 #import <IOKit/scsi/SCSITask.h>
 #import <IOKit/scsi/SCSICommandOperationCodes.h>
@@ -347,7 +349,7 @@ ErrorExit:
 	require ( ( taskStatus == kSCSITaskStatus_GOOD ), ErrorExit );
 	
 	// First word of returned data is where the size is stored.
-	size = *( UInt16 * ) parameterHeader;
+	size = OSReadBigInt16 ( parameterHeader, 0 );
 	
 	[ [ self parentDoc ] appendLogText:
 		[ NSString stringWithFormat: @"Mechanical Capabilities page size = %d\n", size ] ];
@@ -417,7 +419,7 @@ ErrorExit:
 		
 	}
 	
-	// Since it reponded to the CD Mechanical Capabilities Mode Page, it must at
+	// Since it responded to the CD Mechanical Capabilities Mode Page, it must at
 	// least be a CD-ROM...
 	[ [ self parentDoc ] appendLogText: @"Device supports CD-ROM\n" ];
 	
@@ -647,7 +649,7 @@ ErrorExit:
 			// Find out how much data there is. Add the size of the first word because it isn't counted
 			// and then round up to the nearest even value since the spec isn't clear what should happen
 			// on ATAPI devices with odd byte requests.
-			requestSize = tocSize = *( UInt16 * ) tocBuffer + 2;
+			requestSize = tocSize = OSReadBigInt16 ( tocBuffer, 0 ) + sizeof ( UInt16 );
 			if ( tocSize & 1 )
 				requestSize += 1;
 			[ [ self parentDoc ] appendLogText: [ NSString stringWithFormat: @"Toc size = %d\n", tocSize ] ];
@@ -717,7 +719,7 @@ ErrorExit:
 		{
 			
 			// The first word contains the size. Add 2 bytes for the first word since it isn't counted
-			discInfoSize = *( UInt16 * ) discInfoBuffer + 2;
+			discInfoSize = OSReadBigInt16 ( discInfoBuffer, 0 ) + sizeof ( UInt16 );
 	
 			[ [ self parentDoc ] appendLogText: [ NSString stringWithFormat: @"Disc Info size = %d\n", discInfoSize ] ];
 			
@@ -788,7 +790,7 @@ ErrorExit:
 		{
 			
 			// Get the size in the first word. Add 2 bytes for the word itself.
-			trackInfoSize = *( UInt16 * ) trackInfoBuffer + 2;
+			trackInfoSize = OSReadBigInt16 ( trackInfoBuffer, 0 ) + sizeof ( UInt16 );
 			
 			[ [ self parentDoc ] appendLogText: [ NSString stringWithFormat: @"Track Info size = %d\n", trackInfoSize ] ];
 			
@@ -842,13 +844,20 @@ ErrorExit:
 - ( void ) testReadDVDStructure
 {
 	
-	UInt8			dvdStructureBuffer[8];
-	IOReturn		err;
-	SCSITaskStatus	taskStatus;
-	SCSI_Sense_Data	senseData;
+	DVDPhysicalFormatInfo	physicalFormatInfo	= { { 0 } };
+	SCSI_Sense_Data			senseData			= { 0 };
+	SCSITaskStatus			taskStatus			= kSCSITaskStatus_No_Status;
+	IOReturn				err					= kIOReturnSuccess;
 	
 	// Issue a READ_DVD_STRUCTURE command to the device. Ask for 8 bytes to get the medium's book type.
-	err = ( *interface )->ReadDVDStructure ( interface, 0x00, 0x00, 0x00, dvdStructureBuffer, sizeof ( dvdStructureBuffer ), &taskStatus, &senseData );
+	err = ( *interface )->ReadDVDStructure ( interface,
+											 0x00,
+											 0x00,
+											 0x00,
+											 &physicalFormatInfo,
+											 8,
+											 &taskStatus,
+											 &senseData );
 	if ( err == kIOReturnSuccess )
 	{
 		
@@ -864,8 +873,8 @@ ErrorExit:
 		{
 			
 			[ [ self parentDoc ] appendLogText: @"DVD Structure Data\n" ];
-			[ [ self parentDoc ] appendLogText: [ NSString stringWithFormat:@"Book Type = %d\n", dvdStructureBuffer[5] & 0xF0 ] ];
-			[ [ self parentDoc ] appendLogText: [ NSString stringWithFormat:@"Number of Layers = %d\n", ( ( dvdStructureBuffer[6] & 0x60 ) >> 5 ) + 1] ];
+			[ [ self parentDoc ] appendLogText: [ NSString stringWithFormat:@"Book Type = %d\n", physicalFormatInfo.bookType ] ];
+			[ [ self parentDoc ] appendLogText: [ NSString stringWithFormat:@"Number of Layers = %d\n", physicalFormatInfo.numberOfLayers + 1] ];
 			
 		}
 		
@@ -1192,7 +1201,7 @@ ErrorExit:
 	
 	}
 	
-	// Since it reponded to the CD Mechanical Capabilities Mode Page, it must at
+	// Since it responded to the CD Mechanical Capabilities Mode Page, it must at
 	// least be a CD-ROM...
 	[ [ self parentDoc ] appendLogText: @"Device supports CD-ROM\n" ];
 	

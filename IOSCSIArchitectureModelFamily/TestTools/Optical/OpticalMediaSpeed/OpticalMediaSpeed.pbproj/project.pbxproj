@@ -43,8 +43,6 @@
 //083
 //084
 		08FB7793FE84155DC02AAC07 = {
-			buildSettings = {
-			};
 			buildStyles = (
 				014CEA490018CE3211CA2923,
 				014CEA4A0018CE3211CA2923,
@@ -65,13 +63,13 @@
 				19C28FBDFE9D53C911CA2CBB,
 			);
 			isa = PBXGroup;
-			name = CDTOC;
+			name = OpticalMediaSpeed;
 			refType = 4;
 			sourceTree = "<group>";
 		};
 		08FB7795FE84155DC02AAC07 = {
 			children = (
-				ACBD639904AB81E700F90689,
+				AC26631604ACCDC7009EDF98,
 			);
 			isa = PBXGroup;
 			name = Source;
@@ -81,7 +79,7 @@
 		08FB779DFE84155DC02AAC07 = {
 			children = (
 				09AB6884FE841BABC02AAC07,
-				ACBD63BC04ABCC2800F90689,
+				AC26633204ACCFA2009EDF98,
 			);
 			isa = PBXGroup;
 			name = "External Frameworks and Libraries";
@@ -160,7 +158,7 @@
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = CDTOC;
+				PRODUCT_NAME = OpticalMediaSpeed;
 				REZ_EXECUTABLE = YES;
 				SECTORDER_FLAGS = "";
 				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
@@ -168,9 +166,9 @@
 			dependencies = (
 			);
 			isa = PBXNativeTarget;
-			name = CDTOC;
+			name = OpticalMediaSpeed;
 			productInstallPath = "$(HOME)/bin";
-			productName = CDTOC;
+			productName = OpticalMediaSpeed;
 			productReference = 8DD76F7E0486A8DE00D96B5E;
 			productType = "com.apple.product-type.tool";
 		};
@@ -184,7 +182,7 @@
 		8DD76F760486A8DE00D96B5E = {
 			buildActionMask = 2147483647;
 			files = (
-				ACBD639A04AB81E700F90689,
+				AC26631704ACCDC7009EDF98,
 			);
 			isa = PBXSourcesBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -193,7 +191,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8DD76F790486A8DE00D96B5E,
-				ACBD63BD04ABCC2800F90689,
+				AC26633304ACCFA2009EDF98,
 			);
 			isa = PBXFrameworksBuildPhase;
 			runOnlyForDeploymentPostprocessing = 0;
@@ -224,7 +222,7 @@
 			expectedFileType = "compiled.mach-o.executable";
 			includeInIndex = 0;
 			isa = PBXFileReference;
-			path = CDTOC;
+			path = OpticalMediaSpeed;
 			refType = 3;
 			sourceTree = BUILT_PRODUCTS_DIR;
 		};
@@ -238,21 +236,21 @@
 //AC2
 //AC3
 //AC4
-		ACBD639904AB81E700F90689 = {
+		AC26631604ACCDC7009EDF98 = {
 			expectedFileType = sourcecode.c.c;
 			fileEncoding = 30;
 			isa = PBXFileReference;
-			path = CDTOC.c;
+			path = OpticalMediaSpeed.c;
 			refType = 4;
 			sourceTree = "<group>";
 		};
-		ACBD639A04AB81E700F90689 = {
-			fileRef = ACBD639904AB81E700F90689;
+		AC26631704ACCDC7009EDF98 = {
+			fileRef = AC26631604ACCDC7009EDF98;
 			isa = PBXBuildFile;
 			settings = {
 			};
 		};
-		ACBD63BC04ABCC2800F90689 = {
+		AC26633204ACCFA2009EDF98 = {
 			expectedFileType = wrapper.framework;
 			isa = PBXFileReference;
 			name = IOKit.framework;
@@ -260,8 +258,8 @@
 			refType = 0;
 			sourceTree = "<absolute>";
 		};
-		ACBD63BD04ABCC2800F90689 = {
-			fileRef = ACBD63BC04ABCC2800F90689;
+		AC26633304ACCFA2009EDF98 = {
+			fileRef = AC26633204ACCFA2009EDF98;
 			isa = PBXBuildFile;
 			settings = {
 			};
