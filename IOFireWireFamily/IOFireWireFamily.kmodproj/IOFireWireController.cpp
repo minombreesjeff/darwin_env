@@ -60,6 +60,7 @@
 #import <IOKit/IODeviceTreeSupport.h>
 #import <IOKit/IOMessage.h>
 #import <IOKit/IOTimerEventSource.h>
+#import <IOKit/IOLib.h>
 
 ///////////////////////////////////////////////////////////////////////////////////
 // timing constants
@@ -3278,20 +3279,27 @@ void IOFireWireController::initSecurity( void )
 	//
 	
 	{
-		IORegistryEntry * options = IORegistryEntry::fromPath( "/options", gIODTPlane );
+		char matchPath[32];	// IODeviceTree:/:options
+		OSDictionary * optionsMatchDictionary = IOOFPathMatching( "/options", matchPath, 32 ); // need to release
+		
+		mach_timespec_t t = { 10, 0 };	//wait 10 secs
+		IOService * options = IOService::waitForService( optionsMatchDictionary, &t );	// consumes dict ref, don't release options
 		
 		if( options != NULL )
 		{
 			OSString * securityModeProperty = OSDynamicCast( OSString, options->getProperty("security-mode") );
 	
-			if( securityModeProperty != NULL && strcmp("none", securityModeProperty->getCStringNoCopy()) != 0 )
+			if( securityModeProperty != NULL && strncmp( "none", securityModeProperty->getCStringNoCopy(), 5 ) != 0 )
 			{
 				// set security mode to secure/permanent
 				mode = kIOFWSecurityModeSecurePermanent;
 			}
-			
-			options->release();
-			options = NULL;
+		}
+		else
+		{			
+			ErrorLog("FireWire unable to determine security-mode; defaulting to full-secure.\n");
+			// turn security on because we can't determine security-mode
+			mode = kIOFWSecurityModeSecurePermanent;
 		}
 	}
 	
