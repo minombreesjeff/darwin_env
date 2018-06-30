@@ -43,6 +43,7 @@
 // Generic IOKit includes
 #include <IOKit/IOLib.h>
 #include <IOKit/IOService.h>
+#include <IOKit/IOKitKeys.h>
 #include <IOKit/IOCommandPool.h>
 #include <IOKit/storage/IOStorageProtocolCharacteristics.h>
 #include <IOKit/storage/IOStorageDeviceCharacteristics.h>
@@ -69,13 +70,13 @@
 #endif
 
 #if ( SCSI_PARALLEL_INTERFACE_CONTROLLER_DEBUGGING_LEVEL >= 2 )
-#define ERROR_LOG(x)		IOLog x
+#define ERROR_LOG(x)		kprintf x
 #else
 #define ERROR_LOG(x)		
 #endif
 
 #if ( SCSI_PARALLEL_INTERFACE_CONTROLLER_DEBUGGING_LEVEL >= 3 )
-#define STATUS_LOG(x)		IOLog x
+#define STATUS_LOG(x)		kprintf x
 #else
 #define STATUS_LOG(x)		
 #endif
@@ -92,6 +93,7 @@ OSDefineAbstractStructors ( IOSCSIParallelInterfaceController, IOService );
 
 #define kIOPropertySCSIInitiatorManagesTargets		"Manages Targets"
 #define kIOPropertyControllerCharacteristicsKey		"Controller Characteristics"
+#define kIOPropertyDeviceTreeEntryKey				"IODeviceTreeEntry"
 
 enum
 {
@@ -470,7 +472,7 @@ PROVIDER_START_FAILURE:
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	stop - Begins provided services.								  [PRIVATE]
+//	stop - Ends provided services.									  [PRIVATE]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 void
@@ -549,6 +551,13 @@ IOSCSIParallelInterfaceController::GetSCSIDomainIdentifier ( void )
 {
 	return fSCSIDomainIdentifier;
 }
+
+
+#if 0
+#pragma mark -
+#pragma mark Property Management
+#pragma mark -
+#endif
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
@@ -935,15 +944,72 @@ IOSCSIParallelInterfaceController::AllocateSCSIParallelTasks ( void )
 	
 	bool				result			= false;
 	SCSIParallelTask *	parallelTask 	= NULL;
-	UInt32				taskSize		= ReportHBASpecificTaskDataSize ( );
+	UInt32				taskSize		= 0;
+	UInt64				mask			= 0;
+	OSNumber *			value			= NULL;
+	OSDictionary *		constraints		= NULL;
+	
+	// Default alignment is 16-byte aligned, 32-bit memory only.
+	taskSize 	= ReportHBASpecificTaskDataSize ( );
+	constraints = OSDictionary::withCapacity ( 7 );
+	
+	require_nonzero ( constraints, ERROR_EXIT );
+	
+	ReportHBAConstraints ( constraints );
+	
+	// Set constraints for cluster layer / IOBlockStorageDriver.
+	value = OSDynamicCast ( OSNumber, constraints->getObject ( kIOMaximumSegmentCountReadKey ) );
+	if ( value != NULL )
+	{
+		setProperty ( kIOMaximumSegmentCountReadKey, value );
+	}
+
+	value = OSDynamicCast ( OSNumber, constraints->getObject ( kIOMaximumSegmentCountWriteKey ) );
+	if ( value != NULL )
+	{
+		setProperty ( kIOMaximumSegmentCountWriteKey, value );
+	}
+
+	value = OSDynamicCast ( OSNumber, constraints->getObject ( kIOMaximumSegmentByteCountReadKey ) );
+	if ( value != NULL )
+	{
+		setProperty ( kIOMaximumSegmentByteCountReadKey, value );
+	}
+
+	value = OSDynamicCast ( OSNumber, constraints->getObject ( kIOMaximumSegmentByteCountWriteKey ) );
+	if ( value != NULL )
+	{
+		setProperty ( kIOMaximumSegmentByteCountWriteKey, value );
+	}
+
+	value = OSDynamicCast ( OSNumber, constraints->getObject ( kIOMinimumSegmentAlignmentByteCountKey ) );
+	if ( value != NULL )
+	{
+		setProperty ( kIOMinimumSegmentAlignmentByteCountKey, value );
+	}
+
+	value = OSDynamicCast ( OSNumber, constraints->getObject ( kIOMaximumSegmentAddressableBitCountKey ) );
+	if ( value != NULL )
+	{
+		setProperty ( kIOMaximumSegmentAddressableBitCountKey, value );
+	}
+	
+	value = OSDynamicCast ( OSNumber, constraints->getObject ( kIOMinimumHBADataAlignmentMaskKey ) );
+	mask  = value->unsigned64BitValue ( );
+	
+	constraints->release ( );
+	constraints = NULL;
 	
 	fParallelTaskPool = IOCommandPool::withWorkLoop ( fWorkLoop );
 	require_nonzero ( fParallelTaskPool, POOL_CREATION_FAILURE );
 	
 	// As long as a single SCSI Parallel Task can be allocated, the HBA
 	// can function.  Check to see if the first one can be allocated.
-	parallelTask = SCSIParallelTask::Create ( taskSize );
+	parallelTask = SCSIParallelTask::Create ( taskSize, mask );
 	require_nonzero ( parallelTask, TASK_CREATION_FAILURE );
+	
+	result = InitializeDMASpecification ( parallelTask );
+	require ( result, TASK_INIT_FAILURE );
 	
 	// Send the single command into the pool.
 	fParallelTaskPool->returnCommand ( parallelTask );
@@ -954,9 +1020,18 @@ IOSCSIParallelInterfaceController::AllocateSCSIParallelTasks ( void )
 	{
 		
 		// Allocate the command with enough space for the HBA specific data
-		parallelTask = SCSIParallelTask::Create ( taskSize );
+		parallelTask = SCSIParallelTask::Create ( taskSize, mask );
 		if ( parallelTask != NULL )
 		{
+			
+			result = InitializeDMASpecification ( parallelTask );
+			if ( result == false )
+			{
+				
+				parallelTask->release ( );
+				break;
+				
+			}
 			
 			// Send the next command into the pool.
 			fParallelTaskPool->returnCommand ( parallelTask );
@@ -972,6 +1047,14 @@ IOSCSIParallelInterfaceController::AllocateSCSIParallelTasks ( void )
 	return result;
 	
 	
+TASK_INIT_FAILURE:
+	
+	
+	require_nonzero ( parallelTask, TASK_CREATION_FAILURE );
+	parallelTask->release ( );
+	parallelTask = NULL;
+	
+	
 TASK_CREATION_FAILURE:
 	
 	
@@ -981,6 +1064,7 @@ TASK_CREATION_FAILURE:
 	
 	
 POOL_CREATION_FAILURE:
+ERROR_EXIT:
 	
 	
 	return result;
@@ -1424,6 +1508,7 @@ IOSCSIParallelInterfaceController::CreateTargetForID (
 {
 	
 	IOSCSIParallelInterfaceDevice *		newDevice 	= NULL;
+	IORegistryEntry *					entry		= NULL;
 	bool								result		= false;
 	
 	// Verify that the device ID is not that of the initiator.
@@ -1432,17 +1517,18 @@ IOSCSIParallelInterfaceController::CreateTargetForID (
 	// First check to see if this device already exists
 	require ( ( GetTargetForID ( targetID ) == NULL ), INVALID_PARAMETER_EXIT );
 	
+	// See if the controller has a device tree entry it wants us to hook this
+	// target upto (e.g. to get io-device-location keys).
+	entry = OSDynamicCast ( IORegistryEntry, properties->getObject ( kIOPropertyDeviceTreeEntryKey ) );
+	
 	// Create the IOSCSIParallelInterfaceDevice object
 	newDevice = IOSCSIParallelInterfaceDevice::CreateTarget (
 									targetID,
-									ReportHBASpecificDeviceDataSize ( ) );
+									ReportHBASpecificDeviceDataSize ( ),
+									entry );
 	require_nonzero ( newDevice, DEVICE_CREATION_FAILED_EXIT );
 	
 	AddDeviceToTargetList ( newDevice );
-	
-	// Attach the device
-	result = newDevice->init ( 0 );
-	require ( result, ATTACH_FAILED_EXIT );
 	
 	result = newDevice->attach ( this );
 	require ( result, ATTACH_FAILED_EXIT );
@@ -1720,7 +1806,8 @@ IOSCSIParallelInterfaceController::AddDeviceToTargetList (
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	RemoveDeviceFromTargetList - Adds a device to the target list.	  [PRIVATE]
+//	RemoveDeviceFromTargetList - Removes a device from the target list.
+//																	  [PRIVATE]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 void
@@ -1796,6 +1883,80 @@ bool
 IOSCSIParallelInterfaceController::DoesHBAPerformAutoSense ( void )
 {
 	return false;
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	ReportHBAConstraints - Default implementation.				 	   [PUBLIC]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+void
+IOSCSIParallelInterfaceController::ReportHBAConstraints (
+	OSDictionary *		constraints )
+{
+	
+	UInt64			value	= 0;
+	OSNumber *		number	= NULL;
+	
+	// Default alignment is 16-byte aligned, 32-bit memory only.
+	value = 0x00000000FFFFFFF0ULL;
+	
+	number = OSNumber::withNumber ( value, 64 );
+	if ( number != NULL )
+	{
+		
+		constraints->setObject ( kIOMinimumHBADataAlignmentMaskKey, number );
+		number->release ( );
+		
+	}
+	
+	// 32-bit addressing by default.
+	value = 32;
+	number = OSNumber::withNumber ( value, 64 );
+	if ( number != NULL )
+	{
+		
+		constraints->setObject ( kIOMaximumSegmentAddressableBitCountKey, number );
+		number->release ( );
+		
+	}
+	
+	// 4-byte alignment by default.
+	value = 4;
+	number = OSNumber::withNumber ( value, 64 );
+	if ( number != NULL )
+	{
+		
+		constraints->setObject ( kIOMinimumSegmentAlignmentByteCountKey, number );
+		number->release ( );
+		
+	}
+	
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	InitializeDMASpecification - Default implementation.		 	[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+bool
+IOSCSIParallelInterfaceController::InitializeDMASpecification (
+	IODMACommand * command )
+{
+	
+	bool	result = false;
+	
+	result = command->initWithSpecification (
+		kIODMACommandOutputHost32,
+		32,			// addressBits
+		4096,		// PAGE_SIZE
+		IODMACommand::kMapped,
+		1048576,	// 1MB I/O
+		4			// 4-byte aligned segments
+		);
+	
+	return result;
+	
 }
 
 
@@ -2224,6 +2385,18 @@ IOSCSIParallelInterfaceController::GetDataBufferOffset (
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	GetDMACommand - Gets IODMACommand associated with this task.	[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+IODMACommand *
+IOSCSIParallelInterfaceController::GetDMACommand ( 
+							SCSIParallelTaskIdentifier 		parallelTask )
+{
+	return ( IODMACommand * ) parallelTask;
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 //	GetTimeoutDuration - 	Gets timeout duration in milliseconds associated.
 //							with this task.							[PROTECTED]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
@@ -2596,8 +2769,8 @@ IOSCSIParallelInterfaceController::GetHBATargetDataPointer (
 
 // Space reserved for future expansion.
 OSMetaClassDefineReservedUsed ( IOSCSIParallelInterfaceController,  1 );		// Used for DoesHBAPerformAutoSense
+OSMetaClassDefineReservedUsed ( IOSCSIParallelInterfaceController,  2 );		// Used for ReportHBAConstraints
 
-OSMetaClassDefineReservedUnused ( IOSCSIParallelInterfaceController,  2 );
 OSMetaClassDefineReservedUnused ( IOSCSIParallelInterfaceController,  3 );
 OSMetaClassDefineReservedUnused ( IOSCSIParallelInterfaceController,  4 );
 OSMetaClassDefineReservedUnused ( IOSCSIParallelInterfaceController,  5 );
@@ -2607,8 +2780,8 @@ OSMetaClassDefineReservedUnused ( IOSCSIParallelInterfaceController,  8 );
 
 OSMetaClassDefineReservedUsed ( IOSCSIParallelInterfaceController,  9 );		// Used for HandleTimeout
 OSMetaClassDefineReservedUsed ( IOSCSIParallelInterfaceController, 10 );		// Used for FilterInterruptRequest
+OSMetaClassDefineReservedUsed ( IOSCSIParallelInterfaceController, 11 );		// Used for InitializeDMASpecification
 
-OSMetaClassDefineReservedUnused ( IOSCSIParallelInterfaceController, 11 );
 OSMetaClassDefineReservedUnused ( IOSCSIParallelInterfaceController, 12 );
 OSMetaClassDefineReservedUnused ( IOSCSIParallelInterfaceController, 13 );
 OSMetaClassDefineReservedUnused ( IOSCSIParallelInterfaceController, 14 );

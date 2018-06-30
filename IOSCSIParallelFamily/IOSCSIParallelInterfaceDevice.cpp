@@ -33,6 +33,7 @@
 // General IOKit includes
 #include <IOKit/IOBufferMemoryDescriptor.h>
 #include <IOKit/IOMessage.h>
+#include <IOKit/IODeviceTreeSupport.h>
 
 // IOKit storage includes
 #include <IOKit/storage/IOStorageDeviceCharacteristics.h>
@@ -66,13 +67,13 @@
 #endif
 
 #if ( SCSI_PARALLEL_DEVICE_DEBUGGING_LEVEL >= 2 )
-#define ERROR_LOG(x)           IOLog x
+#define ERROR_LOG(x)           kprintf x
 #else
 #define ERROR_LOG(x)
 #endif
 
 #if ( SCSI_PARALLEL_DEVICE_DEBUGGING_LEVEL >= 3 )
-#define STATUS_LOG(x)          IOLog x
+#define STATUS_LOG(x)          kprintf x
 #else
 #define STATUS_LOG(x)
 #endif
@@ -88,11 +89,16 @@ OSDefineMetaClassAndStructors ( IOSCSIParallelInterfaceDevice, IOSCSIProtocolSer
 
 #define kIOPropertyIOUnitKey		"IOUnit"
 
+#ifndef kIOPropertySASAddressKey
+#define kIOPropertySASAddressKey	"SAS Address"
+#endif
+
 enum
 {
 	kWorldWideNameDataSize 		= 8,
 	kAddressIdentifierDataSize 	= 3,
-	kALPADataSize				= 1
+	kALPADataSize				= 1,
+	kSASAddressDataSize			= 8
 };
 
 
@@ -136,6 +142,9 @@ IOSCSIParallelInterfaceDevice::SetInitialTargetProperties (
 	value = properties->getObject ( kIOPropertyFibreChannelALPAKey );
 	SetTargetProperty ( kIOPropertyFibreChannelALPAKey, value );
 	
+	value = properties->getObject ( kIOPropertySASAddressKey );
+	SetTargetProperty ( kIOPropertySASAddressKey, value );
+
 	result = true;
 	
 	
@@ -424,12 +433,18 @@ IOSCSIParallelInterfaceDevice::requestProbe ( IOOptionBits options )
 IOSCSIParallelInterfaceDevice *
 IOSCSIParallelInterfaceDevice::CreateTarget (
 							SCSITargetIdentifier 		targetID, 
-							UInt32 						sizeOfHBAData )
+							UInt32 						sizeOfHBAData,
+							IORegistryEntry *			entry )
 {
 	
 	IOSCSIParallelInterfaceDevice * newDevice = OSTypeAlloc ( IOSCSIParallelInterfaceDevice );
 	
 	require_nonzero ( newDevice, DEVICE_CREATION_FAILURE );
+	
+	if ( entry != NULL )
+		newDevice->init ( entry, gIODTPlane );
+	else
+		newDevice->init ( 0 );
 	
 	// Set all of the fields to their defaults
 	newDevice->fHBAData					= NULL;
@@ -774,7 +789,7 @@ IOSCSIParallelInterfaceDevice::GetHBADataPointer ( void )
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 UInt32
-IOSCSIParallelInterfaceDevice::GetHBADataSize( void )
+IOSCSIParallelInterfaceDevice::GetHBADataSize ( void )
 {
 	return fHBADataSize;
 }
@@ -923,11 +938,15 @@ IOSCSIParallelInterfaceDevice::SetTargetProperty (
 	else if ( strcmp ( key, kIOPropertyFibreChannelNodeWorldWideNameKey ) == 0 )
 	{
 		
-		OSData * data = OSDynamicCast ( OSData, value );
+		OSData *	data		= OSDynamicCast ( OSData, value );
+		char		name[27]	= { 0 };
 		
 		require_nonzero ( data, ErrorExit );
 		require ( ( data->getLength ( ) == kWorldWideNameDataSize ), ErrorExit );
 		result = protocolDict->setObject ( key, value );
+		
+		snprintf ( name, sizeof ( name ), "FC Target %016qX", OSSwapHostToBigInt64 ( *( UInt64 * ) data->getBytesNoCopy ( ) ) );
+		setName ( name, gIOServicePlane );
 		
 	}
 	
@@ -950,6 +969,21 @@ IOSCSIParallelInterfaceDevice::SetTargetProperty (
 		require_nonzero ( data, ErrorExit );
 		require ( ( data->getLength ( ) == kALPADataSize ), ErrorExit );
 		result = protocolDict->setObject ( key, value );
+		
+	}
+
+	else if ( strcmp ( key, kIOPropertySASAddressKey ) == 0 )
+	{
+		
+		OSData *	data		= OSDynamicCast ( OSData, value );
+		char		name[28]	= { 0 };
+		
+		require_nonzero ( data, ErrorExit );
+		require ( ( data->getLength ( ) == kSASAddressDataSize ), ErrorExit );
+		result = protocolDict->setObject ( key, value );
+		
+		snprintf ( name, sizeof ( name ), "SAS Target %016qX", OSSwapHostToBigInt64 ( *( UInt64 * ) data->getBytesNoCopy ( ) ) );
+		setName ( name, gIOServicePlane );
 		
 	}
 	
@@ -1020,7 +1054,9 @@ IOSCSIParallelInterfaceDevice::SendSCSICommand (
 							SCSITaskStatus *			taskStatus )
 {
 	
-	SCSIParallelTaskIdentifier		parallelTask;
+	SCSIParallelTaskIdentifier		parallelTask	= NULL;
+	IOMemoryDescriptor *			buffer			= NULL;
+	IOReturn						status			= kIOReturnBadArgument;
 	
 	// Set the defaults to an error state.		
 	*taskStatus			= kSCSITaskStatus_No_Status;
@@ -1071,6 +1107,31 @@ IOSCSIParallelInterfaceDevice::SendSCSICommand (
 	
 	// Add the task to the outstanding Task list
 	AddToOutstandingTaskList ( parallelTask );
+	
+	// Set the buffer for IODMACommand.
+	buffer = GetDataBuffer ( parallelTask );
+	if ( buffer != NULL )
+	{
+		
+		status = SetDMABuffer ( parallelTask, buffer );
+		if ( status != kIOReturnSuccess )
+		{
+			
+			ERROR_LOG ( ( "SetDMABuffer failed, status = 0x%08x\n", status ) );
+			
+			RemoveFromOutstandingTaskList ( parallelTask );
+			
+			// Release the SCSI Parallel Task object
+			FreeSCSIParallelTask ( parallelTask );
+			
+			CommandCompleted ( request, *serviceResponse, *taskStatus );
+			
+			return true;
+			
+		}
+		
+	}
+	
 	*serviceResponse = ExecuteParallelTask ( parallelTask );
 	if ( *serviceResponse != kSCSIServiceResponse_Request_In_Process )
 	{
@@ -1635,7 +1696,7 @@ IOSCSIParallelInterfaceDevice::SetSCSITaskIdentifier (
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ SetSCSITaskIdentifier - 	Retrieves the SCSITaskIdentifier from the
+//	¥ GetSCSITaskIdentifier - 	Retrieves the SCSITaskIdentifier from the
 //								parallelTask.						[PROTECTED]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
@@ -1657,7 +1718,7 @@ IOSCSIParallelInterfaceDevice::GetSCSITaskIdentifier (
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ SetSCSITaskIdentifier - 	Sets the SCSITargetIdentifier in the
+//	¥ SetTargetIdentifier - 	Sets the SCSITargetIdentifier in the
 //								parallelTask.						[PROTECTED]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
@@ -1680,7 +1741,7 @@ IOSCSIParallelInterfaceDevice::SetTargetIdentifier (
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ SetSCSITaskIdentifier - 	Retrieves the SCSITargetIdentifier from the
+//	¥ GetTargetIdentifier - 	Retrieves the SCSITargetIdentifier from the
 //								parallelTask.						[PROTECTED]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
@@ -1697,6 +1758,28 @@ IOSCSIParallelInterfaceDevice::GetTargetIdentifier (
 	}
 	
 	return tempTask->GetTargetIdentifier ( );
+	
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	¥ SetDMABuffer - Sets the DMA buffer in the task.				[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+IOReturn
+IOSCSIParallelInterfaceDevice::SetDMABuffer ( 
+							SCSIParallelTaskIdentifier 	parallelTask,
+							IOMemoryDescriptor *		buffer )
+{
+	
+	SCSIParallelTask *	tempTask = ( SCSIParallelTask * ) parallelTask;
+	
+	if ( tempTask == NULL )
+	{
+		return NULL;
+	}
+	
+	return tempTask->SetBuffer ( buffer );
 	
 }
 

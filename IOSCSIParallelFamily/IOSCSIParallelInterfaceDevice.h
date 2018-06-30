@@ -180,7 +180,8 @@ public:
 	*/
 	static IOSCSIParallelInterfaceDevice *	CreateTarget ( 
 									SCSITargetIdentifier 		targetID,
-									UInt32 						sizeOfHBAData );
+									UInt32 						sizeOfHBAData,
+									IORegistryEntry *			entry = NULL );
 	
 	/*!
 		@function DestroyTarget
@@ -362,6 +363,18 @@ protected:
 	*/
 	SCSITargetIdentifier	GetTargetIdentifier ( 
 								SCSIParallelTaskIdentifier 	parallelTask );
+
+	/*!
+		@function SetDMABuffer
+		@abstract Set DMA buffer
+		@discussion xxx
+		@param parallelTask A valid SCSIParallelTaskIdentifier.
+		@param buffer A valid IOMemoryDescriptor.
+		@result returns IOReturn value.
+	*/
+	IOReturn	SetDMABuffer ( 
+							SCSIParallelTaskIdentifier 	parallelTask,
+							IOMemoryDescriptor *		buffer );
 	
 	// ---- Methods for Accessing data in the client's SCSI Task Object ----	
 	// Method to retrieve the LUN that identifies the Logical Unit whose Task

@@ -400,15 +400,20 @@ SCSIParallelTimer::RemoveTask ( SCSIParallelTaskIdentifier parallelRequest )
 	SCSIParallelTask *	task 		= NULL;
 	SCSIParallelTask *	prevTask	= NULL;
 	
+	closeGate ( );
+	
 	require_nonzero ( OSDynamicCast ( SCSIParallelTask, parallelRequest ), Exit );
 	require_nonzero ( fTimeoutTaskListHead, Exit );
-	
-	closeGate ( );
 	
 	// Special case for parallelRequest being the list head.
 	if ( parallelRequest == fTimeoutTaskListHead )
 	{
+		
 		fTimeoutTaskListHead = GetNextTask ( ( SCSIParallelTask * ) parallelRequest );
+		
+		// Rearm the timer.
+		Rearm ( );
+		
 	}
 	
 	else
@@ -436,16 +441,11 @@ SCSIParallelTimer::RemoveTask ( SCSIParallelTaskIdentifier parallelRequest )
 		
 	}
 	
-	openGate ( );
-	
-	// Rearm the timer.
-	Rearm ( );
-	
 	
 Exit:
 	
 	
-	return;
+	openGate ( );
 	
 }
 
@@ -468,6 +468,14 @@ SCSIParallelTimer::Rearm ( void )
 		// Re-arm the timer with new timeout deadline
 		wakeAtTime ( GetDeadline ( fTimeoutTaskListHead ) );
 		result = true;
+		
+	}
+	
+	else
+	{
+		
+		// No list head, cancel the timer.
+		cancelTimeout ( );
 		
 	}
 	
