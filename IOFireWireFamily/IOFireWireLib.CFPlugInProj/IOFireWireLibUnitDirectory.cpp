@@ -56,8 +56,12 @@ namespace IOFireWireLib {
 	  mUserClient(userclient), 
 	  mPublished(false)
 	{
-		IOConnectMethodScalarIScalarO(  mUserClient.GetUserClientConnection(), kLocalConfigDirectory_Create, 
-										0, 1, & mKernUnitDirRef ) ;
+		uint32_t outputCnt = 1;
+		uint64_t outputVal = 0;
+		IOConnectCallScalarMethod(mUserClient.GetUserClientConnection(), 
+								  kLocalConfigDirectory_Create,
+								  NULL,0,&outputVal,&outputCnt);
+		mKernUnitDirRef = (UserObjectHandle) outputVal;
 	}
 	
 	LocalUnitDirectory::~LocalUnitDirectory()
@@ -135,8 +139,11 @@ namespace IOFireWireLib {
 			descCString = CFStringGetChars( desc, descLen ) ;
 		}
 		
-		return ::IOConnectMethodScalarIScalarO( mUserClient.GetUserClientConnection(), kLocalConfigDirectory_AddEntry_Buffer, 6, 0,
-				mKernUnitDirRef, key, buffer, len, descCString, descLen ) ;
+		uint32_t outputCnt = 0;
+		const uint64_t inputs[6] = {(const uint64_t)mKernUnitDirRef, key, (const uint64_t)buffer,len, (const uint64_t)descCString, descLen};
+		return IOConnectCallScalarMethod(mUserClient.GetUserClientConnection(), kLocalConfigDirectory_AddEntry_Buffer,
+										 inputs,6,
+										 NULL,&outputCnt);
 	}
 	
 	IOReturn
@@ -153,9 +160,12 @@ namespace IOFireWireLib {
 			descCString = CFStringGetChars( desc, descLen ) ;
 		}
 		
-		IOReturn err = IOConnectMethodScalarIScalarO(   mUserClient.GetUserClientConnection(), 
-														kLocalConfigDirectory_AddEntry_UInt32, 5, 0, mKernUnitDirRef, key, value, descCString, descLen ) ;
-	
+		uint32_t outputCnt = 0;
+		const uint64_t inputs[5] = {(const uint64_t)mKernUnitDirRef, key, value, (const uint64_t)descCString, descLen};
+		IOReturn err = IOConnectCallScalarMethod(mUserClient.GetUserClientConnection(), kLocalConfigDirectory_AddEntry_UInt32,
+												 inputs,5,
+												 NULL,&outputCnt);
+		
 		DebugLogCond( err, "LocalUnitDirectory::AddEntry[UInt32](): result = 0x%08x\n", err ) ;
 	
 		return err ;
@@ -177,6 +187,7 @@ namespace IOFireWireLib {
 
 		FWAddress host_value(value);
 		
+#ifndef __LP64__		
 		ROSETTA_ONLY(
 			{
 				host_value.nodeID = OSSwapInt16( value.nodeID );
@@ -184,10 +195,16 @@ namespace IOFireWireLib {
 				host_value.addressLo = OSSwapInt32( value.addressLo );
 			}
 		);
-		
-		return IOConnectMethodScalarIStructureI(	mUserClient.GetUserClientConnection(), 
-													kLocalConfigDirectory_AddEntry_FWAddr, 
-													4, sizeof(value), mKernUnitDirRef, key, descCString, descLen, & host_value) ;
+#endif		
+		uint32_t outputCnt = 0;
+		size_t outputStructSize =  0 ;
+		const uint64_t inputs[4] = {(const uint64_t)mKernUnitDirRef, key, (const uint64_t)descCString,descLen};
+		return IOConnectCallMethod(mUserClient.GetUserClientConnection(), 
+								   kLocalConfigDirectory_AddEntry_FWAddr,
+								   inputs,4,
+								   &host_value,sizeof(value),
+								   NULL,&outputCnt,
+								   NULL,&outputStructSize);
 	}
 	
 	IOReturn
@@ -196,10 +213,14 @@ namespace IOFireWireLib {
 		if (mPublished)
 			return kIOReturnSuccess ;
 	
-		IOReturn err = IOConnectMethodScalarIScalarO(   mUserClient.GetUserClientConnection(), 
-														kLocalConfigDirectory_Publish, 
-														1, 0, mKernUnitDirRef ) ;
-	
+		uint32_t outputCnt = 0;
+		const uint64_t inputs[1]={(const uint64_t)mKernUnitDirRef};
+
+		IOReturn err = IOConnectCallScalarMethod(mUserClient.GetUserClientConnection(), 
+												 kLocalConfigDirectory_Publish,
+												 inputs,1,
+												 NULL,&outputCnt);
+		
 		mPublished = ( kIOReturnSuccess == err ) ;
 	
 		return err ;
@@ -210,10 +231,14 @@ namespace IOFireWireLib {
 	{
 		if (!mPublished)
 			return kIOReturnSuccess ;
-			
-		IOReturn err = IOConnectMethodScalarIScalarO(   mUserClient.GetUserClientConnection(), 
-														kLocalConfigDirectory_Unpublish, 1, 0, mKernUnitDirRef) ;
-			
+
+		uint32_t outputCnt = 0;
+		const uint64_t inputs[1]={(const uint64_t)mKernUnitDirRef};
+		IOReturn err = IOConnectCallScalarMethod(mUserClient.GetUserClientConnection(), 
+												 kLocalConfigDirectory_Unpublish,
+												 inputs,1,
+												 NULL,&outputCnt);
+		
 		mPublished = (!err) ;
 		
 		return err ;

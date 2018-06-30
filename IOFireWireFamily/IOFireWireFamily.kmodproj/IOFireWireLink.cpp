@@ -132,14 +132,14 @@ IOFWWorkLoop * IOFireWireLink::getFireWireWorkLoop() const
 }
 
 IOFWDCLPool *
-IOFireWireLink :: createDCLPool ( 
+IOFireWireLink::createDCLPool ( 
 	UInt32				capacity )
 {
 	return NULL ;
 }
 
 IOFWBufferFillIsochPort * 
-IOFireWireLink :: createBufferFillIsochPort ()
+IOFireWireLink::createBufferFillIsochPort ()
 {
 	return NULL ;
 }
@@ -184,6 +184,26 @@ void IOFireWireLink::configureAsyncRobustness( bool enabled )
 bool IOFireWireLink::isPhysicalAccessEnabledForNodeID( UInt16 nodeID )
 {
 	return false;
+}
+
+void IOFireWireLink::notifyInvalidSelfIDs (void)
+{
+
+}
+
+IOReturn IOFireWireLink::asyncPHYPacket( UInt32 data, UInt32 data2, IOFWAsyncPHYCommand * cmd )
+{
+	return kIOReturnUnsupported;
+}
+
+bool IOFireWireLink::enterLoggingMode( void )
+{
+	return false;
+}
+
+IOReturn IOFireWireLink::getCycleTimeAndUpTime( UInt32 &cycleTime, UInt64 &uptime )
+{
+	return kIOReturnUnsupported;
 }
 
 UInt32 IOFireWireLink::setLinkMode( UInt32 arg1, UInt32 arg2 )

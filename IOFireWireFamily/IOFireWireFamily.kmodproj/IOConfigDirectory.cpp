@@ -101,6 +101,14 @@ bool IOConfigDirectory::initWithOffset(int start, int type)
 		fNumEntries = (OSSwapBigToHostInt32(data[start]) & kConfigLeafDirLength) >> kConfigLeafDirLengthPhase;
 		unlockData();
 	
+		if( fNumEntries > 256 ) // 1k request
+		{
+			status = kIOReturnNoMemory;
+		}
+	}
+	
+	if( status == kIOReturnSuccess )
+	{
 	//	FWKLOG(( "IOConfigDirectory::initWithOffset updateROMCache( %d, %d )\n", start, fNumEntries ));
 		status = updateROMCache(start + 1, fNumEntries);
 	}
@@ -535,7 +543,10 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSString *&value)
 	if( status == kIOReturnSuccess )
 	{
 		if( index < 0 || index >= fNumEntries )
+		{
+			DebugLog("IOConfigDirectory<%p>::getIndexValue -- index out of bounds\n", this ) ;
 			status = kIOReturnBadArgument;
+		}
 	}
 
 	if( status == kIOReturnSuccess )
@@ -545,13 +556,19 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSString *&value)
 		unlockData();
 	
 		if( ((entry & kConfigEntryKeyValue) >> kConfigEntryKeyValuePhase) != kConfigTextualDescriptorKey )
-        	status = kIOReturnBadArgument;
+		{
+			DebugLog("IOConfigDirectory<%p>::getIndexValue -- key is not a textual descriptor key entry=0x%lx\n", this, entry ) ;
+			status = kIOReturnBadArgument;
+		}
 	}
 	
 	if( status == kIOReturnSuccess )
 	{
 		if( ((entry & kConfigEntryKeyType) >> kConfigEntryKeyTypePhase) != kConfigLeafKeyType )
+		{
+			DebugLog("IOConfigDirectory<%p>::getIndexValue -- key type is not leaf\n", this ) ;
 			status = kIOReturnBadArgument;
+		}
 	}
     
 	if( status == kIOReturnSuccess )
@@ -585,22 +602,54 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSString *&value)
 	if( status == kIOReturnSuccess )
 	{
 		data = lockData();
-    
-		// Skip over length, CRC, spec_type, specifier_ID, language_ID
-		char *text = (char *)(&data[offset+3]);
+		
 		len -= 2;	// skip spec_type, specifier_ID, language_ID
 		len *= sizeof(UInt32);	// Convert from Quads to chars
+		
+		char tbuf[len];
+		char * text;
+	
+		UInt32 specifier = OSSwapBigToHostInt32(data[offset+1]);
+		//UInt32 specifier_ID = specifier & 0x00FFFFFF;
+		UInt8 specifier_type = (UInt8)(specifier >> 24);	//descriptor_type
+		UInt32 language_ID = OSSwapBigToHostInt32(data[offset+2]) & 0x0000FFFF;
+		
+		if ( specifier_type == 0x80 && language_ID == 0x409 )
+		{
+			// Decode using vendor specific UTF-16 simple conversion
+			char * aUniStr = (char *)(&data[offset+3]);
+			const unsigned int halfsize = len/2;
+			unsigned int i;
+			for ( i=0; i < halfsize; i++ )
+				tbuf[i] = aUniStr[i*2];
+				
+			text = (char *)tbuf;
+			len = halfsize;
+		}
+		else
+		{
+			// Skip over length, CRC, spec_type, specifier_ID, language_ID
+			text = (char *)(&data[offset+3]);
+		}
 
 		// Now skip over leading zeros in string
 		while(len && !*text) {
 			len--;
 			text++;
 		}
-		if(len) {
-			char saved = text[len];
-			text[len] = 0;
-			value = OSString::withCString(text);
-			text[len] = saved;
+		
+		if(len)
+		{
+			// strings aren't required to have null terminators
+			// add one just in case
+			char * temp_string = (char *)IOMalloc( len+1 );
+			if( temp_string )
+			{
+				bcopy( text, temp_string, len );
+				temp_string[len] = '\0';
+				value = OSString::withCString(temp_string);
+				IOFree( temp_string, len+1 );
+			}
 		}
 		else
 			value = OSString::withCString("");
@@ -611,7 +660,9 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSString *&value)
 			status = kIOReturnNoMemory;
 	}
 	
-    return status;
+	DebugLogCond( status != kIOReturnSuccess, "IOConfigDirectory<%p>::getIndexValue -- return status 0x%x\n", this, status ) ;
+	
+	return status;
 }
 
 // getIndexValue

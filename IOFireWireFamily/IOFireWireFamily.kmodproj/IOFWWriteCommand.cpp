@@ -30,7 +30,6 @@
 
 // system
 #include <IOKit/assert.h>
-#include <IOKit/IOSyncer.h>
 #include <IOKit/IOWorkLoop.h>
 #include <IOKit/IOCommand.h>
 
@@ -257,18 +256,22 @@ IOReturn IOFWWriteCommand::execute()
 	{
 		UInt32 flags = kIOFWWriteFlagsNone;
 		
-		if( fMembers && 
-			fMembers->fSubclassMembers &&
-			((MemberVariables*)fMembers->fSubclassMembers)->fDeferredNotify )
+		if( fMembers && fMembers->fSubclassMembers )
 		{
-			flags |= kIOFWWriteFlagsDeferredNotify;
-		}
-		
-		if( fMembers && 
-			fMembers->fSubclassMembers &&
-			((MemberVariables*)fMembers->fSubclassMembers)->fFastRetryOnBusy )
-		{
-			flags |= kIOFWWriteFastRetryOnBusy;
+			if( ((MemberVariables*)fMembers->fSubclassMembers)->fDeferredNotify )
+			{
+				flags |= kIOFWWriteFlagsDeferredNotify;
+			}
+			
+			if( ((MemberVariables*)fMembers->fSubclassMembers)->fFastRetryOnBusy )
+			{
+				flags |= kIOFWWriteFastRetryOnBusy;
+			}
+
+			if( ((IOFWAsyncCommand::MemberVariables*)fMembers)->fForceBlockRequests )
+			{
+				flags |= kIOFWWriteBlockRequest;
+			}
 		}
 		
         result = fControl->asyncWrite(	fGeneration, 

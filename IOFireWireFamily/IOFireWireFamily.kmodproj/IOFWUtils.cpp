@@ -160,7 +160,7 @@ UInt32 SubtractFWCycleTimeFromFWCycleTime( UInt32 cycleTime1, UInt32 cycleTime2)
 // takes a pointer and a list of ranges, and finds the offset of the pointer into 
 // the range array
 bool
-findOffsetInRanges ( IOVirtualAddress address, unsigned rangeCount, IOVirtualRange ranges[], IOByteCount & outOffset )
+findOffsetInRanges ( mach_vm_address_t address, unsigned rangeCount, IOAddressRange ranges[], IOByteCount & outOffset )
 {
 	UInt32			index			= 0 ;
 	IOByteCount		distanceInRange ;

@@ -25,8 +25,6 @@
 
 #if FIRELOGCORE
 
-#error FIRELOGCORE is on
-
 #include <IOKit/firewire/IOFireLog.h>
 
 #include <libkern/c++/OSObject.h>

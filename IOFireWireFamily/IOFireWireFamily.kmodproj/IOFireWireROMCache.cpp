@@ -493,7 +493,7 @@ IOReturn IOFireWireROMCache::updateROMCache( UInt32 offset, UInt32 length )
 	FWKLOG(( "IOFireWireROMCache@0x%08lx::updateROMCache entered offset = %ld, length = %ld\n", (UInt32)this, offset, length ));
 
 	FWKLOGASSERT( fOwner->getController()->inGate() == false );
-		
+	
 	//
 	// get the generation and make sure we're resumed
 	//
@@ -545,7 +545,7 @@ IOReturn IOFireWireROMCache::updateROMCache( UInt32 offset, UInt32 length )
 				status = checkROMState( generation );
                 if(status == kIOReturnSuccess && generation == oldGeneration) 
 				{
-                    setROMState( kROMStateSuspended );
+                    setROMState(kROMStateSuspended);
                 }
 			}
 			else if( status == kIOReturnSuccess ) 
@@ -569,8 +569,8 @@ IOReturn IOFireWireROMCache::updateROMCache( UInt32 offset, UInt32 length )
 			else
 			{
 				FWKLOG(( "%p: err 0x%x reading ROM\n", this, status ));
-				
-				setROMState( kROMStateInvalid );
+			
+				setROMState( kROMStateInvalid );	
 			}
 			
 			IOFree( buff, bufLen );

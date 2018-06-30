@@ -26,9 +26,14 @@
 #import <IOKit/firewire/IOFireWireFamilyCommon.h>
 #import <IOKit/firewire/IOLocalConfigDirectory.h>
 #import <IOKit/firewire/IOFWUtils.h>
+#import <IOKit/firewire/IOFireWireNub.h>
+#import <IOKit/firewire/IOFireWireBus.h>
 
 // private
 #import "IOConfigEntry.h"
+#import "IOFireWireUserClient.h"
+#import "IOFWUserObjectExporter.h"
+
 
 // system
 #import <libkern/c++/OSIterator.h>
@@ -597,4 +602,11 @@ IOLocalConfigDirectory::getIndexValue(int index, IOConfigDirectory *&value)
 	}
     
 	return error ;
+}
+
+void
+IOLocalConfigDirectory::exporterCleanup( const OSObject * self, IOFWUserObjectExporter * exporter )
+{
+	IOLocalConfigDirectory * me = (IOLocalConfigDirectory*)self;
+	((IOFireWireUserClient*)exporter->getOwner())->getOwner()->getBus()->RemoveUnitDirectory( me ) ;
 }

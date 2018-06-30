@@ -65,25 +65,6 @@ class IOFireWireLink : public IOService
 {
     OSDeclareAbstractStructors(IOFireWireLink)
 
-#if 0
-	public :
-	
-		// Subclass of IOFilterInterruptEventSource, just to get public access to opengate, closegate.
-		class FWOHCIIsocInterruptEventSource : public IOFilterInterruptEventSource
-		{
-		
-		public:
-			static FWOHCIIsocInterruptEventSource *
-			filterInterruptEventSource(OSObject *owner,
-						IOInterruptEventSource::Action action,
-						Filter filter,
-						IOService *provider,
-						int intIndex = 0);
-			inline void openGate()		{IOEventSource::openGate();};
-			inline void closeGate()		{IOEventSource::closeGate();};
-		};
-#endif
-
 	protected:
 	
 		IOFireWireController *fControl;
@@ -103,9 +84,10 @@ class IOFireWireLink : public IOService
 		{ fControl->processBusReset(); };
 		void processSelfIDs(UInt32 *IDs, int numIDs, UInt32 *ownIDs, int numOwnIDs)
 		{ fControl->processSelfIDs(IDs, numIDs, ownIDs, numOwnIDs); };
-		void processRcvPacket(UInt32 *data, int numQuads)
-			{ fControl->processRcvPacket(data, numQuads); };
-	
+		void processRcvPacket(UInt32 *data, int numQuads, IOFWSpeed speed )
+			{ fControl->processRcvPacket(data, numQuads, speed ); };
+		void processCycle64Int()
+		{ fControl->processCycle64Int(); };
 		virtual IOFireWireController * createController();
 		virtual IOFWWorkLoop* createWorkLoop();
 	
@@ -137,7 +119,8 @@ class IOFireWireLink : public IOService
 		virtual IOReturn 				resetBus( bool useIBR = false ) = 0;
 	
 		virtual IOReturn 				asyncRead(UInt16 nodeID, UInt16 addrHi, UInt32 addrLo, 
-												int speed, int label, int size, IOFWAsyncCommand *cmd) = 0;
+												int speed, int label, int size, IOFWAsyncCommand *cmd,
+												IOFWReadFlags 			flags) = 0;
 	
 		virtual IOReturn 				asyncReadQuadResponse(UInt16 nodeID, int speed, 
 												int label, int rcode, UInt32 data) = 0;
@@ -240,6 +223,14 @@ class IOFireWireLink : public IOService
 		virtual void configureAsyncRobustness( bool enabled );
 
 		virtual bool isPhysicalAccessEnabledForNodeID( UInt16 nodeID );	
+
+		virtual void notifyInvalidSelfIDs ();
+
+		virtual IOReturn asyncPHYPacket( UInt32 data, UInt32 data2, IOFWAsyncPHYCommand * cmd );
+
+		virtual bool enterLoggingMode( void );
+
+		virtual IOReturn getCycleTimeAndUpTime( UInt32 &cycleTime, UInt64 &uptime );
 
 		virtual UInt32 setLinkMode( UInt32 arg1, UInt32 arg2 );
 		

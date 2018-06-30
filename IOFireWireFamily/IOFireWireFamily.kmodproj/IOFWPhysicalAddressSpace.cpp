@@ -469,9 +469,10 @@ UInt32 IOFWPhysicalAddressSpace::doWrite(UInt16 nodeID, IOFWSpeed &speed, FWAddr
             // OK, block is in space
 
 			getMemoryDescriptor()->writeBytes( pos + (address - phys), buf, len);
-			
+			getDMACommand()->writeBytes( pos + (address - phys), buf, len );
+				
 			// make sure any bounce buffers have the new data
-			synchronize( kIODirectionOut );
+		//	synchronize( kIODirectionOut );
 
 			res = kFWResponseComplete;
             break;

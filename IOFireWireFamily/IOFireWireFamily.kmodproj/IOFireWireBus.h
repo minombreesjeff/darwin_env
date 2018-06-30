@@ -352,7 +352,6 @@ protected:
 		inline IOFWSimplePhysicalAddressSpace * createSimplePhysicalAddressSpace( vm_size_t size, IODirection direction )
 			{ return fAuxiliary->createSimplePhysicalAddressSpace( size, direction ); }
 			
-
 	private:
 	
 		OSMetaClassDeclareReservedUsed(IOFireWireBus, 0);

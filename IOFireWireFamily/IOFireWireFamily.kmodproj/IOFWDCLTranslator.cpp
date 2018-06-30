@@ -488,7 +488,7 @@ bool IODCLTranslator::init(DCLCommand* toInterpret)
 }
 
 IOReturn 
-IODCLTranslator :: notify (
+IODCLTranslator::notify (
 	IOFWDCLNotificationType 	notificationType,
 	DCLCommand ** 				dclCommandList, 
 	UInt32	 					numDCLCommands )

@@ -24,45 +24,8 @@ using namespace IOFireWireLib ;
 
 OSDefineMetaClassAndAbstractStructors( IOFWDCLPool, super ) ;
 
-#if 0
-// static in IOFWUtils.cpp, shouldn't be included in IOFWUtils.h
-extern bool findOffsetInRanges ( IOVirtualAddress address, unsigned rangeCount, IOVirtualRange ranges[], IOByteCount & outOffset ) ;
-
-static bool
-convertUserRanges (
-	IOVirtualRange			userRanges[],
-	IOVirtualRange			kernRanges[],
-	unsigned				rangeCount,
-	IOVirtualRange			allUserRanges[],
-	unsigned				allUserRangeCount,
-	IOMemoryMap *			bufferMap )
-{
-	IOVirtualAddress kernBaseAddress = bufferMap->getVirtualAddress() ;
-	bool ok = true ;	
-	unsigned index = 0 ;
-	
-	while ( index < rangeCount && ok )
-	{
-		IOByteCount offset ;
-
-		ok = findOffsetInRanges( userRanges[ index ].address, allUserRangeCount, allUserRanges, offset ) ;
-		
-		if ( ok )
-		{
-			kernRanges[ index ].address = kernBaseAddress + offset ;
-			kernRanges[ index ].length = userRanges[ index ].length ;
-			ok = ( kernRanges[ index ].address < kernBaseAddress + bufferMap->getLength() ) ;
-		}
-
-		++index ;
-	}
-	
-	return ok ;
-}
-#endif	
-
 bool
-IOFWDCLPool :: initWithLink ( IOFireWireLink& link, UInt32 capacity )
+IOFWDCLPool::initWithLink ( IOFireWireLink& link, UInt32 capacity )
 {
 	fLink = & link ;
 	fCurrentTag = 0 ;
@@ -78,14 +41,14 @@ IOFWDCLPool :: initWithLink ( IOFireWireLink& link, UInt32 capacity )
 }
 
 void
-IOFWDCLPool :: setCurrentTagAndSync ( UInt8 tag, UInt8 sync )
+IOFWDCLPool::setCurrentTagAndSync ( UInt8 tag, UInt8 sync )
 {
 	fCurrentTag = tag ;
 	fCurrentSync = sync ;
 }
 
 void
-IOFWDCLPool :: free ()
+IOFWDCLPool::free ()
 {
 	if ( fProgram )
 	{
@@ -97,7 +60,7 @@ IOFWDCLPool :: free ()
 }
 
 IOFWReceiveDCL *
-IOFWDCLPool :: appendReceiveDCL ( 
+IOFWDCLPool::appendReceiveDCL ( 
 	OSSet * 				updateSet, 
 	UInt8 					headerBytes,
 	UInt32					rangesCount,
@@ -120,7 +83,7 @@ IOFWDCLPool :: appendReceiveDCL (
 }
 
 IOFWSendDCL *
-IOFWDCLPool :: appendSendDCL ( 
+IOFWDCLPool::appendSendDCL ( 
 	OSSet * 				updateSet, 
 	UInt32					rangesCount,
 	IOVirtualRange			ranges[] )
@@ -142,7 +105,7 @@ IOFWDCLPool :: appendSendDCL (
 }
 
 IOFWSkipCycleDCL *
-IOFWDCLPool :: appendSkipCycleDCL ()
+IOFWDCLPool::appendSkipCycleDCL ()
 {
 	IOFWSkipCycleDCL * dcl = allocSkipCycleDCL() ;
 
@@ -162,14 +125,14 @@ IOFWDCLPool :: appendSkipCycleDCL ()
 }
 
 const OSArray *
-IOFWDCLPool :: getProgramRef () const
+IOFWDCLPool::getProgramRef () const
 {
 	fProgram->retain () ;
 	return fProgram ;
 }
 
 void
-IOFWDCLPool :: appendDCL( IOFWDCL * dcl )
+IOFWDCLPool::appendDCL( IOFWDCL * dcl )
 {
 	if ( dcl )
 	{
@@ -178,10 +141,10 @@ IOFWDCLPool :: appendDCL( IOFWDCL * dcl )
 }
 
 IOReturn
-IOFWDCLPool :: importUserProgram (
+IOFWDCLPool::importUserProgram (
 	IOMemoryDescriptor *	userExportDesc,
 	unsigned				bufferRangeCount,
-	IOVirtualRange			bufferRanges[],
+	IOAddressRange			bufferRanges[],
 	IOMemoryMap *			bufferMap )
 {
 	InfoLog("+IOFWDCLPool<%p>::importUserProgram()\n", this ) ;
@@ -200,16 +163,17 @@ IOFWDCLPool :: importUserProgram (
 		return kIOReturnNoMemory ;
 	}
 
+	IOReturn error = kIOReturnSuccess ;
+	
+
 	// copy user export data block to kernel
 	{
 		unsigned byteCount = userExportDesc->readBytes( 0, exportData, exportLength ) ;
 		if ( byteCount < exportLength )
 		{
-			return kIOReturnVMError ;
+			error = kIOReturnVMError ;
 		}
 	}
-	
-	IOReturn error = kIOReturnSuccess ;
 	
 	{
 		// import first pass
@@ -220,8 +184,8 @@ IOFWDCLPool :: importUserProgram (
 		
 		while( !error && exportCursor < exportData + exportLength )
 		{
-			NuDCLSharedData * data = (NuDCLSharedData*)exportCursor ;
-			exportCursor += ( sizeof( *data ) + 4 ) & ~(size_t)0x3 ;
+			NuDCLExportData * data = (NuDCLExportData*)exportCursor ;
+			exportCursor += sizeof(NuDCLExportData );
 
 			InfoLog("IOFWDCLPool<%p>::importUserProgram()--data=%p, data->rangeCount=0x%lx\n", this, data, data ? data->rangeCount : 0 ) ;
 			
@@ -232,7 +196,7 @@ IOFWDCLPool :: importUserProgram (
 			
 			for( unsigned index=0; index < data->rangeCount; ++index )
 			{
-				kernRanges[ index ].address = kernBaseAddress + (IOByteCount)data->ranges[ index ].address ;
+				kernRanges[ index ].address = kernBaseAddress + data->ranges[ index ].address ;
 				kernRanges[ index ].length = data->ranges[ index ].length ;
 			}
 
@@ -244,7 +208,7 @@ IOFWDCLPool :: importUserProgram (
 			
 			if ( !error )
 			{
-				if ( data->update.count )
+				if ( data->updateCount )
 				{
 					// In the shared data struct for this DCL, the updateList field has 
 					// been filled in with the updateList length, if any, replacing 
@@ -252,7 +216,7 @@ IOFWDCLPool :: importUserProgram (
 					// The update list data follows the dcl shared data struct
 					// in the export data block.
 					
-					exportCursor += sizeof( UInt32 ) * (UInt32)data->update.count ;
+					exportCursor += sizeof( uint64_t ) * data->updateCount ;
 				} 
 	
 				// what type of DCL?
@@ -260,8 +224,8 @@ IOFWDCLPool :: importUserProgram (
 				{
 					case NuDCLSharedData::kSendType :
 					{
-						SendNuDCLSharedData * sendData = ( SendNuDCLSharedData * )exportCursor ;
-						exportCursor += ( sizeof( *sendData ) + 4 ) & ~(size_t)0x3 ;
+						//SendNuDCLExportData * sendData = ( SendNuDCLExportData * )exportCursor ;
+						exportCursor += sizeof(SendNuDCLExportData) ;
 
 						if ( !appendSendDCL( NULL, data->rangeCount, kernRanges ) )
 						{
@@ -273,8 +237,8 @@ IOFWDCLPool :: importUserProgram (
 	
 					case NuDCLSharedData::kReceiveType :
 					{
-						ReceiveNuDCLSharedData * rcvData = ( ReceiveNuDCLSharedData * )exportCursor ;
-						exportCursor += ( sizeof( *rcvData ) + 4 ) & ~(size_t)0x3 ;
+						ReceiveNuDCLExportData * rcvData = ( ReceiveNuDCLExportData * )exportCursor ;
+						exportCursor += sizeof( ReceiveNuDCLExportData ) ;
 
 						if ( !appendReceiveDCL( NULL, rcvData->headerBytes, data->rangeCount, kernRanges ) )
 						{
@@ -336,7 +300,11 @@ IOFWDCLPool :: importUserProgram (
 DCLCommand *
 IOFWDCLPool::getProgram()
 {
-	return 0 ;
+	fLeader.opcode = kDCLNuDCLLeaderOp ;
+	fLeader.pNextDCLCommand = NULL ;
+	fLeader.program = this ;
+
+	return (DCLCommand*) & fLeader ;
 }
 
 OSMetaClassDefineReservedUnused ( IOFWDCLPool, 0);

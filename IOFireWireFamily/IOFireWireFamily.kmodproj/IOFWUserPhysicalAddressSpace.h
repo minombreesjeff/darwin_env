@@ -46,7 +46,7 @@ class IOFWUserPhysicalAddressSpace: public IOFWPhysicalAddressSpace
 	public:
 	
 		virtual void		free() ;
-		void				exporterCleanup () ;
+		static void			exporterCleanup( const OSObject * self );
 
 		virtual bool 		initWithDesc(
 									IOFireWireBus *			bus,

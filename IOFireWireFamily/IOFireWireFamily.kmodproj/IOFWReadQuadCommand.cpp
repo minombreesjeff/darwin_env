@@ -30,7 +30,6 @@
 
 // system
 #include <IOKit/assert.h>
-#include <IOKit/IOSyncer.h>
 #include <IOKit/IOWorkLoop.h>
 #include <IOKit/IOCommand.h>
 
@@ -189,12 +188,22 @@ IOReturn IOFWReadQuadCommand::execute()
 		transfer = maxPack;
 	}
 
+	UInt32 flags = kIOFWReadFlagsNone;
+
+	if( fMembers )
+	{
+		if( ((IOFWAsyncCommand::MemberVariables*)fMembers)->fForceBlockRequests )
+		{
+			flags |= kIOFWWriteBlockRequest;
+		}
+	}
+	
     // Do this when we're in execute, not before,
     // so that Reset handling knows which commands are waiting a response.
     fTrans = fControl->allocTrans(this);
     if(fTrans) {
         result = fControl->asyncRead(fGeneration, fNodeID, fAddressHi,
-                        fAddressLo, fSpeed, fTrans->fTCode, transfer, this);
+                        fAddressLo, fSpeed, fTrans->fTCode, transfer, this, (IOFWReadFlags)flags );
     }
     else {
 	//	IOLog("IOFWReadCommand::execute: Out of tLabels?\n");

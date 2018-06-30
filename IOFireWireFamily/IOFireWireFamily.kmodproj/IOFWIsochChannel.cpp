@@ -63,7 +63,7 @@ bool IOFWIsochChannel::init(	IOFireWireController *		control,
 
 	FWKLOG(( "IOFWIsochChannel::init - doIRM = %d\n", doIRM ));
 	
-	DebugLog("fPacketSize = %d\n", packetSize) ;
+	DebugLog("fPacketSize = %ld\n", packetSize) ;
 	
 	success = OSObject::init();
     
@@ -416,6 +416,14 @@ IOReturn IOFWIsochChannel::start()
     IOFWIsochPort *listen;
 	IOReturn error = kIOReturnSuccess ;
 
+	// <rdar://problem/4033119>
+	// the user requested doIRM, but we don't have an allocation..
+	// they should have called allocateChannel()...
+	if ( fDoIRM && fChannel == 64 )
+	{
+		return kIOReturnNotReady ;
+	}
+
     //
 	// start all listeners
 	//
@@ -447,7 +455,7 @@ IOReturn IOFWIsochChannel::start()
 	}
 	else
 	{
-		DebugLog("channel %p start - started on isoch channel %d\n", this, fChannel ) ;
+		DebugLog("channel %p start - started on isoch channel %ld\n", this, fChannel ) ;
 	}
 	
     return error ;
@@ -621,7 +629,7 @@ IOReturn IOFWIsochChannel::allocateChannelBegin( 	IOFWSpeed		inSpeed,
 													UInt64			inAllowedChans,
 													UInt32 *		outChannel )
 {
-	DebugLog( "IOFWIsochChannel<%p>::allocateChannelBegin() - entered, inSpeed = %d, fDoIRM = %d, inAllowedChans = 0x%016llx, fChannel=%u, fBandwidth=%u\n", this, inSpeed, fDoIRM, inAllowedChans, fChannel, fBandwidth );
+	DebugLog( "IOFWIsochChannel<%p>::allocateChannelBegin() - entered, inSpeed = %d, fDoIRM = %d, inAllowedChans = 0x%016llx, fChannel=%ld, fBandwidth=%ld\n", this, inSpeed, fDoIRM, inAllowedChans, fChannel, fBandwidth );
 
 	IOReturn		status = kIOReturnSuccess;
 
@@ -650,7 +658,7 @@ IOReturn IOFWIsochChannel::allocateChannelBegin( 	IOFWSpeed		inSpeed,
 			
 			fControl->getIRMNodeID( generation, addr.nodeID );
 			
-			DebugLog( "IOFWIsochChannel<%p>::allocateChannelBegin() - generation %d\n", this, generation );
+			DebugLog( "IOFWIsochChannel<%p>::allocateChannelBegin() - generation %ld\n", this, generation );
 			
 			//
 			// Make sure we're at least one second from the last bus-reset
@@ -672,7 +680,7 @@ IOReturn IOFWIsochChannel::allocateChannelBegin( 	IOFWSpeed		inSpeed,
 					{
 						delayInMSec = (UInt32) ((1000000000LL - nanos)/1000000LL);
 						
-						DebugLog( "IOFWIsochChannel<%p>::allocateChannelBegin() - delaying for %u msec\n", this, delayInMSec);
+						DebugLog( "IOFWIsochChannel<%p>::allocateChannelBegin() - delaying for %ld msec\n", this, delayInMSec);
 						
 						// Delay until it's been one second from last bus-reset
 						IOSleep(delayInMSec);
@@ -757,7 +765,7 @@ IOReturn IOFWIsochChannel::allocateChannelBegin( 	IOFWSpeed		inSpeed,
 					
 					if( status == kIOReturnSuccess )
 					{
-						DebugLog("IOFWIsochChannel<%p>::allocateChannelBegin() - allocated bandwidth %u\n", this, bandwidth) ;
+						DebugLog("IOFWIsochChannel<%p>::allocateChannelBegin() - allocated bandwidth %lu\n", this, bandwidth) ;
 						
 						fBandwidth = bandwidth;
 					}
@@ -838,6 +846,11 @@ IOReturn IOFWIsochChannel::allocateChannelBegin( 	IOFWSpeed		inSpeed,
 					{
 						*outChannel = channel;
 					}
+				}
+				else if ( fBandwidth != 0 )
+				{
+					// Release the bandwidth we allocated, since we did not get the channel
+					fControl->releaseIRMBandwidthInGeneration(fBandwidth, generation);
 				}
 			}
 			
@@ -972,7 +985,7 @@ void IOFWIsochChannel::reallocBandwidth( UInt32 generation )
 		
 	IOLockLock( fLock );
 
-	DebugLog( "IOFWIsochChannel<%p>::reallocBandwidth() - bandwidth %d, channel = %d\n", this, fBandwidth, fChannel );
+	InfoLog( "IOFWIsochChannel<%p>::reallocBandwidth() - bandwidth %ld, channel = %ld\n", this, fBandwidth, fChannel );
 	
 	if( result == kIOReturnSuccess )
 	{
@@ -1048,7 +1061,7 @@ void IOFWIsochChannel::reallocBandwidth( UInt32 generation )
 		
 		if( result == kIOReturnNoSpace ) 
 		{
-			DebugLog( "IOFWIsochChannel<%p>::reallocBandwidth() - failed to reallocate bandwidth = %d, channel = %d\n", this, fBandwidth, fChannel );
+			DebugLog( "IOFWIsochChannel<%p>::reallocBandwidth() - failed to reallocate bandwidth = %ld, channel = %ld\n", this, fBandwidth, fChannel );
 			
 			// Couldn't reallocate bandwidth!
 			fBandwidth = 0;
@@ -1056,7 +1069,7 @@ void IOFWIsochChannel::reallocBandwidth( UInt32 generation )
 		}
 		else
 		{
-			DebugLog( "IOFWIsochChannel<%p>::reallocBandwidth() - reallocated bandwidth = %d\n", this, fBandwidth );
+			InfoLog( "IOFWIsochChannel<%p>::reallocBandwidth() - reallocated bandwidth = %ld\n", this, fBandwidth );
 		}
 	}
 
@@ -1119,7 +1132,7 @@ void IOFWIsochChannel::reallocBandwidth( UInt32 generation )
 		
 		if( result == kIOFireWireChannelNotAvailable )
 		{
-			DebugLog( "IOFWIsochChannel<%p>::reallocBandwidth() - failed to reallocate channel = %d\n", this, fChannel );
+			DebugLog( "IOFWIsochChannel<%p>::reallocBandwidth() - failed to reallocate channel = %ld\n", this, fChannel );
 
 			// Couldn't reallocate the channel
 			fChannel = 64;
@@ -1127,13 +1140,13 @@ void IOFWIsochChannel::reallocBandwidth( UInt32 generation )
 		}
 		else
 		{
-			DebugLog( "IOFWIsochChannel<%p>::reallocBandwidth() - reallocated channel = %d\n", this, fChannel );
+			InfoLog( "IOFWIsochChannel<%p>::reallocBandwidth() - reallocated channel = %ld\n", this, fChannel );
 		}
 	}
 
 	fGeneration = generation;
 
-	DebugLog( "IOFWIsochChannel<%p>::reallocBandwidth() - exited with result = 0x%08lx\n", this, result );
+	DebugLogCond( result, "IOFWIsochChannel<%p>::reallocBandwidth() - exited with result = 0x%x\n", this, result );
 
 	IOLockUnlock( fLock );
     

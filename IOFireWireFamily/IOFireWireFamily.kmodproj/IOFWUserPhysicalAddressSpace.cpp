@@ -81,11 +81,13 @@ IOFWUserPhysicalAddressSpace::free()
 //
 
 void
-IOFWUserPhysicalAddressSpace::exporterCleanup ()
+IOFWUserPhysicalAddressSpace::exporterCleanup( const OSObject * self )
 {
+	IOFWUserPhysicalAddressSpace * me = (IOFWUserPhysicalAddressSpace*)self;
+	
 	DebugLog("IOFWUserPseudoAddressSpace::exporterCleanup\n");
 	
-	deactivate();
+	me->deactivate();
 }
 
 IOReturn
@@ -96,11 +98,16 @@ IOFWUserPhysicalAddressSpace::getSegmentCount( UInt32 * outSegmentCount )
 }
 
 IOReturn
-IOFWUserPhysicalAddressSpace :: getSegments (
+IOFWUserPhysicalAddressSpace::getSegments (
 	UInt32*				ioSegmentCount,
 	IOMemoryCursor::IOPhysicalSegment	outSegments[] )
 {
-	unsigned segmentCount = *ioSegmentCount <? fSegmentCount ;	// min
+	unsigned segmentCount = *ioSegmentCount;
+	if( fSegmentCount < segmentCount )
+	{
+		segmentCount = fSegmentCount;
+	}
+
 	IOByteCount currentOffset = 0 ;
 	
 	for( unsigned index = 0; index < segmentCount; ++index )

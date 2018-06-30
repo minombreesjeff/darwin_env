@@ -217,6 +217,7 @@ namespace IOFireWireLib {
 			UInt32							mDeferredReleaseCount ;
 			FinalizeCallback				mFinalizeCallback ;
 			IOVirtualRange *				mBufferRanges ;
+			IOAddressRange *				mBufferAddressRanges;
 			unsigned						mBufferRangeCount ;
 			
 			pthread_mutex_t					mMutex ;
@@ -333,13 +334,13 @@ namespace IOFireWireLib {
 	} ;
 
 	inline void
-	LocalIsochPort :: Lock ()
+	LocalIsochPort::Lock ()
 	{
 		pthread_mutex_lock( & mMutex ) ;
 	}
 	
 	inline void
-	LocalIsochPort :: Unlock ()
+	LocalIsochPort::Unlock ()
 	{
 		pthread_mutex_unlock( & mMutex ) ;
 	}	

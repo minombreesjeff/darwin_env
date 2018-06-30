@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOFireWireFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IOFireWireFamily version 2.6.0, Copyright 2007 Apple Computer, Inc.</string>
+	<string>IOFireWireFamily version 3.3.8, Copyright 2007 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -19,11 +19,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.6.0</string>
+	<string>3.3.8</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>2.6.0</string>
+	<string>3.3.8</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOFireWireUserClient</key>
@@ -62,6 +62,8 @@ FIRELOG_COMMENT -->
 		<string>8.0</string>
 		<key>com.apple.kpi.mach</key>
 		<string>8.0</string>
+		<key>com.apple.kpi.bsd</key>
+		<string>8.0</string>		
 	</dict>
 	<key>OSBundleRequired</key>
 	<string>Local-Root</string>
