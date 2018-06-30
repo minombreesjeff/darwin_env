@@ -502,9 +502,13 @@ IOFWPseudoAddressSpace *IOFireWireNub::createPseudoAddressSpace(FWAddress *addr,
 
 IOReturn IOFireWireNub::getConfigDirectory(IOConfigDirectory *&dir)
 {
+	fControl->closeGate();
+	
     dir = fDirectory;
 	fConfigDirectorySet->setObject( fDirectory );
     
+	fControl->openGate();
+	
 	return kIOReturnSuccess;    
 }
 

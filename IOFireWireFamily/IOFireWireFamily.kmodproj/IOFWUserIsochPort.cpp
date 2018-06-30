@@ -374,6 +374,7 @@ IOReturn checkMemoryInRange( IOMemoryDescriptor * memory, UInt64 mask )
 		
 	if( dma_command )
 	{
+		dma_command->clearMemoryDescriptor(); 
 		dma_command->release();
 		dma_command = NULL;
 	}

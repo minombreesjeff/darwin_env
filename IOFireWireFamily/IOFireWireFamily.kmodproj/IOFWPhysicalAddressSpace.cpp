@@ -208,6 +208,7 @@ IOReturn IOFWPhysicalAddressSpace::checkMemoryInRange( IOMemoryDescriptor * memo
 		
 	if( dma_command )
 	{
+		dma_command->clearMemoryDescriptor(); 
 		dma_command->release();
 		dma_command = NULL;
 	}
@@ -267,6 +268,7 @@ bool IOFWPhysicalAddressSpace::initWithDesc( IOFireWireBus *control,
 	if( status == kIOReturnSuccess )
 	{
 		setDMACommand( dma_command );
+		dma_command->release();
 		status = setMemoryDescriptor( mem );
 	} 
 
@@ -523,6 +525,7 @@ IOReturn IOFWPhysicalAddressSpace::setMemoryDescriptor( IOMemoryDescriptor * des
 		}
 		else
 		{
+			dma_command->clearMemoryDescriptor(); 
 			status = dma_command->setMemoryDescriptor( descriptor, false );
 			if( status == kIOReturnSuccess )
 			{
@@ -596,6 +599,7 @@ void IOFWPhysicalAddressSpaceAux::free()
 
 	if( fDMACommand )
 	{
+		fDMACommand->clearMemoryDescriptor();
 		fDMACommand->release();
 		fDMACommand = NULL;
 	}

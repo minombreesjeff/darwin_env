@@ -524,6 +524,8 @@ IOFireWireBusAux * IOFireWireController::createAuxiliary( void )
 
 void IOFireWireController::free()
 {
+	fInstantiated = false;
+	
     // Release everything I can think of.
 
 	if( fIRM != NULL )
@@ -668,6 +670,8 @@ bool IOFireWireController::start( IOService * provider )
 	// pending queue creates the command gate used by setPowerState()
 	createPendingQ();
 	createTimeoutQ();
+
+	fInstantiated = true;
 
     // register ourselves with superclass policy-maker
     PMinit();
@@ -899,13 +903,19 @@ IOReturn IOFireWireController::setPowerState( unsigned long powerStateOrdinal,
 {
     IOReturn res;
     IOReturn sleepRes;
-
+	
 	if( !fStarted && (powerStateOrdinal != kFWPMWakeState) )
 	{
 		// if we're not started yet wait for a wake state
 		return IOPMAckImplied;
 	}
-		
+	
+	if( !fInstantiated )
+	{
+		// we're being torn down, bail
+		return IOPMAckImplied;
+	}
+	
     // use gate to keep other threads off the hardware,
     // Either close gate or wake workloop.
     // First time through, we aren't really asleep.
@@ -3221,13 +3231,42 @@ bool IOFireWireController::isPhysicalAccessEnabledForNodeID( UInt16 nodeID )
 // security
 //
 
-// initSecurityState
+// findKeyswitchDevice
 //
 //
+IOService *IOFireWireController::findKeyswitchDevice( void )
+{
+    IORegistryIterator * iter;
+    IORegistryEntry *    entry = 0;
 
+    iter = IORegistryIterator::iterateOver( gIODTPlane,
+                                            kIORegistryIterateRecursively );
+
+    if ( iter )
+    {
+        while (( entry = iter->getNextObject() ))
+		{
+			if (( strcmp( entry->getName(), "keySwitch-gpio" ) == 0 ) or
+				( strcmp( entry->getName(), "keySwitch" ) == 0 ) or
+				( strcmp( entry->getName(), "KYLK" ) == 0 ) )
+                break;
+		}
+        iter->release();
+    }
+	
+    return OSDynamicCast( IOService, entry );
+}
+
+// initSecurity
+//
+//
 void IOFireWireController::initSecurity( void )
 {
-
+	bool	waitForKeyswitch	= false;
+	
+	if( findKeyswitchDevice() )
+		waitForKeyswitch = true;
+		
 	//
 	// assume security mode is normal
 	//
@@ -3266,29 +3305,47 @@ void IOFireWireController::initSecurity( void )
 		//
 		// check state of secruity keyswitch
 		//
+		UInt8	retryCount = 5;
 		
-		OSIterator *	iterator		= NULL;
-		OSBoolean *		keyswitchState	= NULL;
-			
-		iterator = getMatchingServices( nameMatching("AppleKeyswitch") );
-		if( iterator != NULL )
+		do
 		{
-			OSObject * obj = NULL;
-			if( (obj = iterator->getNextObject()) )
-			{
-				IOService *	service = (IOService*)obj;
-				keyswitchState = OSDynamicCast( OSBoolean, service->getProperty( "Keyswitch" ) );
+			OSIterator *	iterator		= NULL;
+			OSBoolean *		keyswitchState	= NULL;
 				
-				if( keyswitchState->isTrue() )
+			iterator = getMatchingServices( nameMatching("AppleKeyswitch") );
+			if( iterator != NULL )
+			{
+				OSObject * obj = NULL;
+				waitForKeyswitch = false;
+
+				if( (obj = iterator->getNextObject()) )
 				{
-					// set security mode to secure
-					mode = kIOFWSecurityModeSecure;
+					IOService *	service = (IOService*)obj;
+					keyswitchState = OSDynamicCast( OSBoolean, service->getProperty( "Keyswitch" ) );
+					
+					if( keyswitchState->isTrue() )
+					{
+						// set security mode to secure
+						mode = kIOFWSecurityModeSecure;
+					}
 				}
+				
+				iterator->release();
+				iterator = NULL;
 			}
-			
-			iterator->release();
-			iterator = NULL;
-		}
+
+			if( retryCount == 0 )
+				waitForKeyswitch = false;
+
+			retryCount--;
+
+			if( waitForKeyswitch )
+			{
+				IOLog("Waiting for AppleKeyswitch ...\n");
+				IOSleep(1000);
+			}
+
+		}while( waitForKeyswitch );
 		
 		//
 		// add notification for changes to secruity keyswitch

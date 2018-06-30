@@ -293,6 +293,7 @@ IOReturn IOFWIsochChannel::checkMemoryInRange( IOMemoryDescriptor * memory )
 		
 	if( dma_command )
 	{
+		dma_command->clearMemoryDescriptor(); 
 		dma_command->release();
 		dma_command = NULL;
 	}

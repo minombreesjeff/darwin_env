@@ -40,8 +40,8 @@ class IOFWUserPhysicalAddressSpace: public IOFWPhysicalAddressSpace
 
 	protected:
 	
-		UInt32				fSegmentCount ;
-		bool				fMemPrepared ;
+		UInt32					fSegmentCount;
+		IOMemoryDescriptor *	fDescriptor;
 
 	public:
 	

@@ -1268,7 +1268,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.5.1;
+				MODULE_VERSION = 2.5.5;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-DIOFIREWIREDEBUG=1",
@@ -1314,7 +1314,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.5.1;
+				MODULE_VERSION = 2.5.5;
 				OTHER_CFLAGS = (
 					"-DIOFIREWIREDEBUG=0",
 					"-DIOFIREWIREUSERCLIENTDEBUG=0",
@@ -1359,7 +1359,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.5.1;
+				MODULE_VERSION = 2.5.5;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-DIOFIREWIREDEBUG=1",
@@ -1403,7 +1403,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.5.1;
+				MODULE_VERSION = 2.5.5;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";

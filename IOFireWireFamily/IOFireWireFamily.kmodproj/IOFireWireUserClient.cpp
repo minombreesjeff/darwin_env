@@ -28,6 +28,9 @@
 */
 /*
 	$Log: IOFireWireUserClient.cpp,v $
+	Revision 1.110.4.6  2006/09/07 01:12:04  collin
+	*** empty log message ***
+	
 	Revision 1.110.4.5  2006/07/13 01:42:00  collin
 	*** empty log message ***
 	
@@ -233,6 +236,7 @@
 
 #import <sys/proc.h>
 #import <IOKit/IOMessage.h>
+#include <IOKit/IOKitKeysPrivate.h>
 
 #if FIRELOG
 #import <IOKit/firewire/FireLog.h>
@@ -1723,7 +1727,7 @@ IOFireWireUserClient :: physicalAddressSpace_Create (
 		return kIOReturnNoMemory ;
 	}
 	
-	IOReturn error = mem->prepare() ;
+	IOReturn error = mem->prepare( kIODirectionPrepareToPhys32 );
 	if ( error )
 	{
 		DebugLog("couldn't prepare address space memory descriptor\n") ;
