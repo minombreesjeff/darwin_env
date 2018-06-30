@@ -34,6 +34,9 @@
 #include <IOKit/IOKitKeys.h>
 #include <IOKit/IOMemoryDescriptor.h>
 
+// IOKit storage related headers
+#include <IOKit/storage/IOStorageProtocolCharacteristics.h>
+
 // SCSI Architecture Model Family includes
 #include <IOKit/scsi/SCSITask.h>
 #include <IOKit/scsi/SCSICmds_INQUIRY_Definitions.h>
@@ -645,19 +648,19 @@ IOSCSIPeripheralDeviceNub::ClearACA( UInt8 theLogicalUnit )
 SCSIServiceResponse		
 IOSCSIPeripheralDeviceNub::ClearTaskSet( UInt8 theLogicalUnit )
 {
-	return 	fProvider->ClearTaskSet( theLogicalUnit );
+	return 	fProvider->ClearTaskSet ( theLogicalUnit );
 }
     
 SCSIServiceResponse		
 IOSCSIPeripheralDeviceNub::LogicalUnitReset( UInt8 theLogicalUnit )
 {
-	return 	fProvider->LogicalUnitReset( theLogicalUnit );
+	return 	fProvider->LogicalUnitReset ( theLogicalUnit );
 }
 
 SCSIServiceResponse		
 IOSCSIPeripheralDeviceNub::TargetReset( void )
 {
-	return 	fProvider->TargetReset();
+	return 	fProvider->TargetReset ( );
 }
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
@@ -1113,6 +1116,7 @@ IOSCSILogicalUnitNub::start ( IOService * provider )
 {
 	
 	OSDictionary * 	characterDict 	= NULL;
+	OSNumber *		number			= NULL;
 	OSObject *		obj				= NULL;
 	bool			result			= false;
 	
@@ -1202,6 +1206,19 @@ IOSCSILogicalUnitNub::start ( IOService * provider )
 		characterDict->setObject ( kIOPropertyPhysicalInterconnectLocationKey, obj );
 	}
 	
+	// Create an OSNumber object with the SCSI Logical Unit Identifier
+	number = OSNumber::withNumber ( fLogicalUnitNumber, 64 );
+	if ( number != NULL )
+	{
+		
+		// Set the SCSI Logical Unit Number key
+		characterDict->setObject ( kIOPropertySCSILogicalUnitNumberKey, number );
+		
+		number->release ( );
+		number = NULL;
+		
+	}
+	
 	setProperty ( kIOPropertyProtocolCharacteristicsKey, characterDict );
 	
 	characterDict->release ( );
@@ -1264,6 +1281,7 @@ IOSCSILogicalUnitNub::SetLogicalUnitNumber ( UInt8 newLUN )
 	if ( logicalUnitNumber != NULL )
 	{
 		
+		// Backwards compatibility with 10.3. Set the LUN here as well...
 		setProperty ( kIOPropertySCSILogicalUnitNumberKey, logicalUnitNumber );
 		
 		// Set the Unit number used to build the device tree path

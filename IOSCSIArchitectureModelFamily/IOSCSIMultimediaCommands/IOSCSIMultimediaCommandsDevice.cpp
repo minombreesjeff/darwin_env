@@ -3103,7 +3103,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 								bufferDesc,
 								0x02, /* Only one feature descriptor */
 								kGetConfigurationProfile_AnalogAudio,
-								4,
+								kProfileFeatureHeaderSize + 4,
 								0 ) == true )
 	{
 		// The command was successfully built, now send it
@@ -3123,7 +3123,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 							 bufferDesc,
 							 0x02, /* Only one feature descriptor */
 							 kGetConfigurationProfile_IncrementalStreamedWrite,
-							 4,
+							 kProfileFeatureHeaderSize + 4,
 							 0 ) == true )
 	{
 		// The command was successfully built, now send it
@@ -3144,7 +3144,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 								bufferDesc,
 								0x02, /* Only one feature descriptor */
 								kGetConfigurationProfile_CDTAO,
-								8,
+								kProfileFeatureHeaderSize + 8,
 								0 ) == true )
 	{
 		// The command was successfully built, now send it
@@ -3158,7 +3158,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 		STATUS_LOG ( ( "Device supports TAO Write\n" ) );
 		fSupportedCDFeatures |= kCDFeaturesTAOWriteMask;
 		
-		if ( profilePtr[4] & kCDTAOTestWriteMask )
+		if ( profilePtr[kProfileFeatureHeaderSize + 4] & kCDTAOTestWriteMask )
 		{
 			
 			STATUS_LOG ( ( "Device supports TAO Test Write\n" ) );
@@ -3166,7 +3166,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 			
 		}
 		
-		if ( profilePtr[4] & kCDTAOBUFWriteMask )
+		if ( profilePtr[kProfileFeatureHeaderSize + 4] & kCDTAOBUFWriteMask )
 		{
 			
 			STATUS_LOG ( ( "Device supports TAO BUF\n" ) );
@@ -3181,7 +3181,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 								bufferDesc,
 								0x02, /* Only one feature descriptor */
 								kGetConfigurationProfile_CDMastering,
-								8,
+								kProfileFeatureHeaderSize + 8,
 								0 ) == true )
 	{
 		// The command was successfully built, now send it
@@ -3192,7 +3192,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 		 ( GetTaskStatus ( request ) == kSCSITaskStatus_GOOD ) )
 	{
 		
-		if ( profilePtr[4] & kCDMasteringCDRWMask )
+		if ( profilePtr[kProfileFeatureHeaderSize + 4] & kCDMasteringCDRWMask )
 		{
 			
 			fSupportedCDFeatures |= kCDFeaturesReWriteableMask;
@@ -3217,7 +3217,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 			
 		}
 		
-		if ( profilePtr[4] & kCDMasteringTestWriteMask )
+		if ( profilePtr[kProfileFeatureHeaderSize + 4] & kCDMasteringTestWriteMask )
 		{
 			
 			STATUS_LOG ( ( "Device supports CD-Mastering Test Write\n" ) );
@@ -3225,7 +3225,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 			
 		}
 		
-		if ( profilePtr[4] & kCDMasteringRawWriteMask )
+		if ( profilePtr[kProfileFeatureHeaderSize + 4] & kCDMasteringRawWriteMask )
 		{
 			
 			STATUS_LOG ( ( "Device supports CD-Mastering Raw Write\n" ) );
@@ -3233,7 +3233,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 			
 		}
 		
-		if ( profilePtr[4] & kCDMasteringSAOWriteMask )
+		if ( profilePtr[kProfileFeatureHeaderSize + 4] & kCDMasteringSAOWriteMask )
 		{
 			
 			STATUS_LOG ( ( "Device supports CD-Mastering SAO Write\n" ) );
@@ -3241,7 +3241,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 			
 		}
 
-		if ( profilePtr[4] & kCDMasteringBUFWriteMask )
+		if ( profilePtr[kProfileFeatureHeaderSize + 4] & kCDMasteringBUFWriteMask )
 		{
 			
 			STATUS_LOG ( ( "Device supports CD-Mastering BUF\n" ) );
@@ -3261,7 +3261,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 									bufferDesc,
 									0x02, /* Only one feature descriptor */
 									kGetConfigurationProfile_DVDWrite,
-									8,
+									kProfileFeatureHeaderSize + 8,
 									0 ) == true )
 		{
 			// The command was successfully built, now send it
@@ -3272,7 +3272,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 			 ( GetTaskStatus ( request ) == kSCSITaskStatus_GOOD ) )
 		{
 			
-			if ( profilePtr[4] & kDVDRWMask )
+			if ( profilePtr[kProfileFeatureHeaderSize + 4] & kDVDRWMask )
 			{
 				
 				STATUS_LOG ( ( "Device supports DVD-RW Write\n" ) );
@@ -3298,7 +3298,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 				
 			}
 			
-			if ( profilePtr[4] & kDVDTestWriteMask )
+			if ( profilePtr[kProfileFeatureHeaderSize + 4] & kDVDTestWriteMask )
 			{
 				
 				STATUS_LOG ( ( "Device supports DVD-R Write Test Write\n" ) );
@@ -3306,7 +3306,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 				
 			}
 			
-			if ( profilePtr[4] & kDVDBUFWriteMask )
+			if ( profilePtr[kProfileFeatureHeaderSize + 4] & kDVDBUFWriteMask )
 			{
 				
 				STATUS_LOG ( ( "Device supports DVD-R Write BUF\n" ) );
@@ -3326,7 +3326,7 @@ IOSCSIMultimediaCommandsDevice::GetDeviceConfiguration ( void )
 									bufferDesc,
 									0x02, /* Only one feature descriptor */
 									kGetConfigurationProfile_DVDCSS,
-									4,
+									kProfileFeatureHeaderSize + 4,
 									0 ) == true )
 		{
 			// The command was successfully built, now send it
