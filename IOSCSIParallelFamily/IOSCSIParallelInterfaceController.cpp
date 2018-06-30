@@ -249,7 +249,7 @@ IOSCSIParallelInterfaceController::start ( IOService * provider )
 	{
 		
 		OSString *		string = NULL;
-		OSNumber *		domainID = NULL;
+		OSNumber *		number = NULL;
 		
 		// Set the Physical Interconnect property if it doesn't already exist
 		string = OSDynamicCast ( OSString, getProperty ( kIOPropertyPhysicalInterconnectTypeKey ) );
@@ -298,13 +298,29 @@ IOSCSIParallelInterfaceController::start ( IOService * provider )
 			
 		}
 		
-		domainID = OSNumber::withNumber ( fSCSIDomainIdentifier, 32 );
-		if ( domainID != NULL )
+		number = OSNumber::withNumber ( fSCSIDomainIdentifier, 32 );
+		if ( number != NULL )
 		{
 			
-			protocolDict->setObject ( kIOPropertySCSIDomainIdentifierKey, domainID );
-			domainID->release ( );
-			domainID = NULL;
+			protocolDict->setObject ( kIOPropertySCSIDomainIdentifierKey, number );
+			number->release ( );
+			number = NULL;
+			
+		}
+
+		number = OSDynamicCast ( OSNumber, getProperty ( kIOPropertyReadTimeOutDurationKey ) );
+		if ( number != NULL )
+		{
+			
+			protocolDict->setObject ( kIOPropertyReadTimeOutDurationKey, number );
+			
+		}
+		
+		number = OSDynamicCast ( OSNumber, getProperty ( kIOPropertyWriteTimeOutDurationKey ) );
+		if ( number != NULL )
+		{
+			
+			protocolDict->setObject ( kIOPropertyWriteTimeOutDurationKey, number );
 			
 		}
 		
