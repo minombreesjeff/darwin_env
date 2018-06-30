@@ -39,8 +39,8 @@
 #include <IOKit/IOUserClient.h>
 
 // SCSI Architecture Model Family includes
-#include <IOKit/scsi-commands/SCSITask.h>
-#include <IOKit/scsi-commands/IOSCSIProtocolInterface.h>
+#include <IOKit/scsi/SCSITask.h>
+#include <IOKit/scsi/IOSCSIProtocolInterface.h>
 
 // Private includes
 #include "SCSITaskLib.h"
@@ -97,8 +97,6 @@ public:
 	
     virtual bool 	start 				( IOService * provider );
 	virtual void	free				( void );
-	
-    virtual IOReturn message 			( UInt32 type, IOService * provider, void * arg );
 	
     virtual IOReturn clientClose 		( void );
 	
@@ -173,6 +171,18 @@ public:
 									   	  SCSITaskStatus * 				taskStatus,
 									   	  UInt32 						inStructSize,
 									   	  UInt32 * 						outStructSize );
+	
+	virtual IOReturn SetCDSpeed 		( AppleSetCDSpeedStruct *		setCDSpeedData,
+										  SCSITaskStatus * 				taskStatus,
+									   	  UInt32 						inStructSize,
+									   	  UInt32 * 						outStructSize );
+	
+	virtual IOReturn ReadFormatCapacities ( AppleReadFormatCapacitiesStruct *	readFormatCapacitiesData,
+											SCSITaskStatus * 					taskStatus,
+											UInt32 								inStructSize,
+											UInt32 * 							outStructSize );
+	
+	bool didTerminate ( IOService * provider, IOOptionBits options, bool * defer );
 	
 protected:
 	

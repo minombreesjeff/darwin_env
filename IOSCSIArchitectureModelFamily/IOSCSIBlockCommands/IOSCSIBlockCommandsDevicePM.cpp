@@ -36,7 +36,7 @@
 #include <IOKit/pwr_mgt/RootDomain.h>
 
 // SCSI Architecture Model Family includes
-#include <IOKit/scsi-commands/SCSITask.h>
+#include <IOKit/scsi/SCSITask.h>
 #include "IOSCSIBlockCommandsDevice.h"
 
 
@@ -146,53 +146,10 @@ IOSCSIBlockCommandsDevice::PowerDownHandler (	void * 			refCon,
 												vm_size_t 		argSize )
 {
 	
-	SCSIServiceResponse			serviceResponse = kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE;
-	IOReturn					status 			= kIOReturnUnsupported;
-	SCSITaskIdentifier			request			= NULL;
+	if ( messageType == kIOMessageSystemWillPowerOff )
+		setProperty ( "Power Off", true );
 	
-	switch ( messageType )
-	{
-		
-		case kIOMessageSystemWillPowerOff:
-			
-			if ( ( fMediumPresent == true ) && ( fDeviceIsShared == false ) )
-			{
-				
-				// Media is present (but may be spinning). Make sure the drive is spun down.
-				if ( fCurrentPowerState > kSBCPowerStateSleep )
-				{
-					
-					request = GetSCSITask ( );
-					
-					// Make sure the drive is spun down
-					if ( START_STOP_UNIT ( request, 1, 0, 0, 0, 0 ) == true )
-					{
-						
-						serviceResponse = SendCommand ( request, 0 );
-						
-					}
-					
-					// Give the drive some time to park the heads.
-					IOSleep ( 500 );
-					
-					ReleaseSCSITask ( request );
-					
-				}
-				
-			}
-			break;
-			
-		case kIOMessageSystemWillSleep:
-		case kIOMessageSystemWillRestart:
-		default:
-			// We don't do anything at sleep or restart time here. That is handled via
-			// standard power management functions. See HandlePowerChange() for more
-			// information.
-			break;
-		
-	}
-	
-	return status;
+	return kIOReturnSuccess;
 	
 }
 
@@ -307,8 +264,8 @@ void
 IOSCSIBlockCommandsDevice::HandlePowerChange ( void )
 {
 	
-	SCSIServiceResponse		serviceResponse;
-	SCSITaskIdentifier		request = NULL;
+	SCSIServiceResponse		serviceResponse = kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE;
+	SCSITaskIdentifier		request			= NULL;
 	
 	STATUS_LOG ( ( "IOSCSIBlockCommandsDevice::HandlePowerChange called\n" ) );
 	

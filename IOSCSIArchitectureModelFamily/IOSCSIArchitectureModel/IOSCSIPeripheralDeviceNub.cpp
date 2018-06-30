@@ -37,9 +37,9 @@
 #include <IOKit/IOMemoryDescriptor.h>
 
 // SCSI Architecture Model Family includes
-#include <IOKit/scsi-commands/SCSITask.h>
-#include <IOKit/scsi-commands/SCSICmds_INQUIRY_Definitions.h>
-#include <IOKit/scsi-commands/IOSCSIPeripheralDeviceNub.h>
+#include <IOKit/scsi/SCSITask.h>
+#include <IOKit/scsi/SCSICmds_INQUIRY_Definitions.h>
+#include "IOSCSIPeripheralDeviceNub.h"
 #include "SCSITaskLib.h"
 #include "SCSITaskLibPriv.h"
 #include "SCSIPrimaryCommands.h"
@@ -906,6 +906,7 @@ IOSCSIPeripheralDeviceNub::InterrogateDevice ( void )
    	for ( index = 0; ( index < kMaxInquiryAttempts ) && ( isInactive ( ) == false ); index++ )
 	{
 		
+		request->ResetForNewTask ( );
 		fSCSIPrimaryCommandObject->INQUIRY (
 									request,
 									bufferDesc,
@@ -974,7 +975,7 @@ IOSCSIPeripheralDeviceNub::InterrogateDevice ( void )
    	// Set the Product Indentification property for the device.
    	for ( index = 0; index < kINQUIRY_PRODUCT_IDENTIFICATION_Length; index++ )
    	{
-   		tempString[index] = inqData->PRODUCT_INDENTIFICATION[index];
+   		tempString[index] = inqData->PRODUCT_IDENTIFICATION[index];
    	}
    	tempString[index] = 0;
 	
@@ -1256,11 +1257,11 @@ IOSCSILogicalUnitNub::SetLogicalUnitNumber ( UInt8 newLUN )
 	// Set the location and the IOUnit values in the IORegistry
 	fLogicalUnitNumber = newLUN;	
 	
-	// Set the location to allow booting 
-    sprintf ( unit, "%x", ( int ) fLogicalUnitNumber );
-    setLocation ( unit );
+	// Set the location to allow booting.
+	sprintf ( unit, "%x", ( int ) fLogicalUnitNumber );
+	setLocation ( unit );
 	
-	// Create an OSNumber object with the SCSI Target Identifier
+	// Create an OSNumber object with the SCSI Logical Unit Identifier
 	logicalUnitNumber = OSNumber::withNumber ( fLogicalUnitNumber, 64 );
 	if ( logicalUnitNumber != NULL )
 	{
@@ -1268,7 +1269,7 @@ IOSCSILogicalUnitNub::SetLogicalUnitNumber ( UInt8 newLUN )
 		setProperty ( kIOPropertySCSILogicalUnitNumberKey, logicalUnitNumber );
 		
 		// Set the Unit number used to build the device tree path
-		setProperty ( "IOUnit", logicalUnitNumber );
+		setProperty ( "IOUnitLUN", logicalUnitNumber );
 		
 		logicalUnitNumber->release ( );
 		logicalUnitNumber = NULL;

@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -29,7 +27,7 @@
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 // SCSI Architecture Model Family includes
-#include <IOKit/scsi-commands/SCSITask.h>
+#include <IOKit/scsi/SCSITask.h>
 #include <IOKit/IOMessage.h>
 #include <IOKit/pwr_mgt/RootDomain.h>
 #include "IOSCSIReducedBlockCommandsDevice.h"
@@ -148,49 +146,10 @@ IOSCSIReducedBlockCommandsDevice::PowerDownHandler ( void * 		refCon,
 													vm_size_t 		argSize )
 {
 	
-	SCSIServiceResponse		serviceResponse;
-	IOReturn				status 		= kIOReturnUnsupported;
-	SCSITaskIdentifier		request		= NULL;
+	if ( messageType == kIOMessageSystemWillPowerOff )
+		setProperty ( "Power Off", true );
 	
-	switch ( messageType )
-	{
-		
-		case kIOMessageSystemWillPowerOff:
-			if ( fMediaPresent == true )
-			{
-				
-				// Media is present (but may be spinning). Make sure the drive is spun down.
-				if ( fCurrentPowerState > kRBCPowerStateSleep )
-				{
-					
-					request = GetSCSITask ( );
-					
-					// Make sure the drive is spun down
-					if ( START_STOP_UNIT ( request, 0, 0, 0, 0 ) == true )
-					{
-						
-						serviceResponse = SendCommand ( request, 0 );
-						
-					}
-					
-					ReleaseSCSITask ( request );
-					
-				}
-				
-			}
-			break;
-			
-		case kIOMessageSystemWillSleep:
-		case kIOMessageSystemWillRestart:
-		default:
-			// We don't do anything at sleep or restart time. That is handled via
-			// standard power management functions. See HandlePowerChange() for more
-			// information.
-			break;
-		
-	}
-	
-	return status;
+	return kIOReturnSuccess;
 	
 }
 
@@ -306,8 +265,8 @@ void
 IOSCSIReducedBlockCommandsDevice::HandlePowerChange ( void )
 {
 	
-	SCSIServiceResponse		serviceResponse;
-	SCSITaskIdentifier		request = NULL;
+	SCSIServiceResponse		serviceResponse = kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE;
+	SCSITaskIdentifier		request			= NULL;
 	
 	STATUS_LOG ( ( "IOSCSIReducedBlockCommandsDevice::HandlePowerChange called\n" ) );
 	

@@ -87,7 +87,7 @@
 #include <IOKit/IOCommandGate.h>
 
 // SCSI Architecture Model Family includes
-#include <IOKit/scsi-commands/SCSITask.h>
+#include <IOKit/scsi/SCSITask.h>
 
 
 // SCSI Protocol Interface Device Notification values

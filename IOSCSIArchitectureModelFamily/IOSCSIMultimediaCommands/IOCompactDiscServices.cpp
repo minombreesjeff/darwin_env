@@ -392,42 +392,6 @@ ErrorExit:
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ doSyncReadWrite - Sends a synchronous I/O to the driver	  	   [PUBLIC]
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-
-IOReturn
-IOCompactDiscServices::doSyncReadWrite ( IOMemoryDescriptor *	buffer,
-										 UInt32					block,
-										 UInt32					nblks )
-{
-	
-	IOReturn	status = kIOReturnNotAttached;
-	
-	require ( ( isInactive ( ) == false ), ErrorExit );
-	
-	// Make sure we don't go away while the command in being executed.
-	retain ( );
-	fProvider->retain ( );
-	
-	fProvider->CheckPowerState ( );		
-	
-	// Execute the command
-	status = fProvider->SyncReadWrite ( buffer, block, nblks );
-	
-	// Release the retain for this command.	
-	fProvider->release ( );
-	release ( );
-	
-	
-ErrorExit:
-	
-	
-	return status;
-	
-}
-
-
-//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 //	¥ doFormatMedia - Sends a format media request to the driver  	   [PUBLIC]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 

@@ -38,10 +38,10 @@
 #include <IOKit/storage/IOBlockStorageDriver.h>
 
 // SCSI Architecture Model Family includes
-#include <IOKit/scsi-commands/SCSICommandDefinitions.h>
+#include <IOKit/scsi/SCSICommandDefinitions.h>
+#include <IOKit/scsi/IOReducedBlockServices.h>
 
-#include <IOKit/scsi-commands/IOReducedBlockServices.h>
-#include <IOKit/scsi-commands/IOSCSIReducedBlockCommandsDevice.h>
+#include "IOSCSIReducedBlockCommandsDevice.h"
 #include "SCSIReducedBlockCommands.h"
 
 
@@ -117,28 +117,7 @@ IOSCSIReducedBlockCommandsDevice::SyncReadWrite (
 					UInt64					startBlock,
 					UInt64					blockCount )
 {
-	
-	IODirection		direction;
-	IOReturn		status = kIOReturnBadArgument;
-	
-	direction = buffer->getDirection ( );
-	
-	if ( direction == kIODirectionIn )
-	{
-		
-		status = IssueRead ( buffer, startBlock, blockCount );
-		
-	}
-	
-	else if ( direction == kIODirectionOut )
-	{
-		
-		status = IssueWrite ( buffer, startBlock, blockCount );
-		
-	}
-	
-	return status;
-	
+	return kIOReturnUnsupported;
 }
 
 
@@ -189,8 +168,9 @@ IOReturn
 IOSCSIReducedBlockCommandsDevice::EjectTheMedia ( void )
 {
 	
-	SCSITaskIdentifier		request				= NULL;
 	IOReturn				status				= kIOReturnNoResources;
+	SCSIServiceResponse		serviceResponse		= kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE;
+	SCSITaskIdentifier		request				= NULL;
 	bool					doPollForRemoval	= false;
 	
 	STATUS_LOG ( ( "%s::%s called\n", getName ( ), __FUNCTION__ ) );
@@ -206,10 +186,40 @@ IOSCSIReducedBlockCommandsDevice::EjectTheMedia ( void )
 	if ( fMediaIsRemovable == false )
 	{
 		
-		// Not a removable disk. Synchronize the drive's write cache.
-		status = SynchronizeCache ( );
+		if ( getProperty ( "Power Off" ) != NULL )
+		{
+			
+			// Spin down the media now. We use to queue up a power change but we found
+			// that since the PM stuff happens at a deferred point, the machine might shutdown
+			// before we finish the PM change. So, we do the spindown now, then sync with PM
+			// so it knows the state.
+			if ( fCurrentPowerState > kRBCPowerStateSleep )
+			{
+				
+				request = GetSCSITask ( );
+				require_nonzero ( request, ErrorExit );
+				
+				// At a minimum, make sure the drive is spun down
+				if ( START_STOP_UNIT ( request, 1, 0, 0, 0 ) == true )
+				{
+					
+					serviceResponse = SendCommand ( request, 0 );
+					
+				}
+				
+				// Give the drive some time to park the heads.
+				IOSleep ( 500 );
+				
+				ReleaseSCSITask ( request );
+				request = NULL;
+				
+			}
+			
+			fCurrentPowerState = kRBCPowerStateSleep;
+			
+		}
 		
-		// Tell power management to ask us to spin the drive down.
+		// Sync ourselves with PM.
 		changePowerStateToPriv ( kRBCPowerStateSleep );
 		
 	}
@@ -241,9 +251,7 @@ IOSCSIReducedBlockCommandsDevice::EjectTheMedia ( void )
 			// Eject it.
 			if ( START_STOP_UNIT ( request, 0, 0, 1, 0 ) == true )
 			{
-
-				SCSIServiceResponse		serviceResponse;
-
+				
 				// The command was successfully built, now send it
 				serviceResponse = SendCommand ( request, kTenSecondTimeoutInMS );
 			
@@ -511,12 +519,17 @@ IOSCSIReducedBlockCommandsDevice::ReportMaxReadTransfer (
 						kSCSIProtocolFeature_MaximumReadTransferByteCount,
 						&maxByteCount );	
 	
-	if ( ( supported == true ) && ( maxByteCount > 0 ) && ( fMediaBlockSize > 0 ) )
+	if ( ( supported == true ) && ( maxByteCount > 0 ) )
 	{
 		
-		maxBlockCount = min ( maxBlockCount, ( maxByteCount / fMediaBlockSize ) );
+		setProperty ( kIOMaximumByteCountReadKey, maxByteCount, 64 );
+		
+		if ( fMediaBlockSize > 0 )
+			maxBlockCount = min ( maxBlockCount, ( maxByteCount / fMediaBlockSize ) );
 		
 	}
+	
+	setProperty ( kIOMaximumBlockCountReadKey, maxBlockCount, 64 );
 	
 	*max = maxBlockCount * blockSize;
 	
@@ -555,12 +568,17 @@ IOSCSIReducedBlockCommandsDevice::ReportMaxWriteTransfer (
 						kSCSIProtocolFeature_MaximumWriteTransferByteCount,
 						&maxByteCount );	
 	
-	if ( ( supported == true ) && ( maxByteCount > 0 ) && ( fMediaBlockSize > 0 ) )
+	if ( ( supported == true ) && ( maxByteCount > 0 ) )
 	{
 		
-		maxBlockCount = min ( maxBlockCount, ( maxByteCount / fMediaBlockSize ) );
+		setProperty ( kIOMaximumByteCountWriteKey, maxByteCount, 64 );
+		
+		if ( fMediaBlockSize > 0 )
+			maxBlockCount = min ( maxBlockCount, ( maxByteCount / fMediaBlockSize ) );
 		
 	}
+	
+	setProperty ( kIOMaximumBlockCountWriteKey, maxBlockCount, 64 );
 	
 	*max = maxBlockCount * blockSize;
 	
@@ -1289,8 +1307,6 @@ IOSCSIReducedBlockCommandsDevice::SetMediaCharacteristics (
 	
 	UInt64		maxBytesRead	= 0;
 	UInt64		maxBytesWrite	= 0;
-	UInt64		maxBlocksRead	= 0;
-	UInt64		maxBlocksWrite	= 0;
 	
 	STATUS_LOG ( ( "mediaBlockSize = %ld, blockCount = %ld\n",
 					blockSize, blockCount ) );
@@ -1300,18 +1316,7 @@ IOSCSIReducedBlockCommandsDevice::SetMediaCharacteristics (
 	
 	ReportMaxReadTransfer  ( fMediaBlockSize, &maxBytesRead );
 	ReportMaxWriteTransfer ( fMediaBlockSize, &maxBytesWrite );
-	
-	if ( fMediaBlockSize > 0 )
-	{
 		
-		maxBlocksRead 	= maxBytesRead / fMediaBlockSize;
-		maxBlocksWrite	= maxBytesWrite / fMediaBlockSize;
-		
-		setProperty ( kIOMaximumBlockCountReadKey, maxBlocksRead, 64 );
-		setProperty ( kIOMaximumBlockCountWriteKey, maxBlocksWrite, 64 );
-		
-	}
-	
 }
 
 
@@ -1907,7 +1912,7 @@ IOSCSIReducedBlockCommandsDevice::SetMediaIcon ( void )
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ IssueRead - Issues a synchronous read command.				[PROTECTED]
+//	¥ IssueRead - DEPRECATED.										[PROTECTED]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 IOReturn
@@ -1916,56 +1921,7 @@ IOSCSIReducedBlockCommandsDevice::IssueRead (
 									UInt64					startBlock,
 									UInt64					blockCount )
 {
-	
-	SCSIServiceResponse 	serviceResponse = kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE;
-	SCSITaskIdentifier		request			= NULL;
-	IOReturn				status 			= kIOReturnNoResources;
-	
-	request = GetSCSITask ( );
-	require_nonzero ( request, ErrorExit );
-	
-	if ( READ_10 ( 	request,
-					buffer,
-				 	fMediaBlockSize,
-					( SCSICmdField4Byte ) startBlock,
-					( SCSICmdField2Byte ) blockCount ) == true )
-	{
-		
-		// The command was successfully built, now send it
-		serviceResponse = SendCommand ( request, fReadTimeoutDuration );
-		
-		if ( ( serviceResponse == kSCSIServiceResponse_TASK_COMPLETE ) &&
-			 ( GetTaskStatus ( request ) == kSCSITaskStatus_GOOD ) )
-		{
-			
-			status = kIOReturnSuccess;
-			
-		}
-		
-		else
-		{
-			
-			status = kIOReturnIOError;
-			
-		}
-		
-	}
-	
-	else
-	{
-		
-		status = kIOReturnBadArgument;
-		
-	}
-	
-	ReleaseSCSITask ( request );
-	
-	
-ErrorExit:
-	
-	
-	return status;
-	
+	return kIOReturnUnsupported;
 }
 
 
@@ -2022,7 +1978,7 @@ ErrorExit:
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ IssueRead - Issues a synchronous write command.				[PROTECTED]
+//	¥ IssueWrite - DEPRECATED.										[PROTECTED]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 IOReturn
@@ -2031,62 +1987,12 @@ IOSCSIReducedBlockCommandsDevice::IssueWrite (
 						UInt64					startBlock,
 						UInt64					blockCount )
 {
-	
-	SCSIServiceResponse 	serviceResponse = kSCSIServiceResponse_SERVICE_DELIVERY_OR_TARGET_FAILURE;
-	SCSITaskIdentifier		request			= NULL;
-	IOReturn				status 			= kIOReturnNoResources;
-	
-	request = GetSCSITask ( );
-	require_nonzero ( request, ErrorExit );
-	
-	if ( WRITE_10 (	request,
-					buffer,
-					fMediaBlockSize,
-					0,
-					( SCSICmdField4Byte ) startBlock,
-					( SCSICmdField2Byte ) blockCount ) == true )
-	{
-		
-		// The command was successfully built, now send it
-		serviceResponse = SendCommand ( request, fWriteTimeoutDuration );
-		
-		if ( ( serviceResponse == kSCSIServiceResponse_TASK_COMPLETE ) &&
-			 ( GetTaskStatus ( request ) == kSCSITaskStatus_GOOD ) )
-		{
-			
-			status = kIOReturnSuccess;
-			
-		}
-		
-		else
-		{
-			
-			status = kIOReturnIOError;
-			
-		}
-		
-	}
-	
-	else
-	{
-		
-		status = kIOReturnBadArgument;
-		
-	}
-	
-	ReleaseSCSITask ( request );
-	
-	
-ErrorExit:
-	
-	
-	return status;
-	
+	return kIOReturnUnsupported;
 }
 
 
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
-//	¥ IssueRead - Issues an asynchronous write command.				[PROTECTED]
+//	¥ IssueWrite - Issues an asynchronous write command.			[PROTECTED]
 //ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
 
 IOReturn
@@ -2212,7 +2118,7 @@ IOSCSIReducedBlockCommandsDevice::AsyncReadWriteComplete (
 	
 	IOReducedBlockServices::AsyncReadWriteComplete ( clientData, status, actCount );
 	
-	taskOwner->ReleaseSCSITask ( request );
+	taskOwner->ReleaseSCSITask ( request );	
 	
 	return;
 	
