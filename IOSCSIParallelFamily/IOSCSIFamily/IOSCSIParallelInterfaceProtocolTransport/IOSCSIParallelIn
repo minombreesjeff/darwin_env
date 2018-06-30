@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -43,12 +41,14 @@
 #include <IOKit/IOMessage.h>
 #include <IOKit/IOService.h>
 #include <IOKit/IOCommandPool.h>
+#include <IOKit/IOBufferMemoryDescriptor.h>
 
 /* SCSI includes */
-#include <IOKit/scsi/IOSCSIDeviceInterface.h>
+#include "IOSCSICommand.h"
+#include "SCSIPublic.h"
 
 /* SCSI Architecture Model Family includes */
-#include <IOKit/scsi-commands/IOSCSIProtocolServices.h>
+#include <IOKit/scsi/IOSCSIProtocolServices.h>
 
 // Forward class declaration
 class IOSCSIParallelInterfaceProtocolTransport;
@@ -57,8 +57,7 @@ struct SCSIClientData
 {
     IOSCSICommand *								cmd;
     SCSITaskIdentifier							scsiTask;
-    SCSISenseData								senseBytes;
-    IOMemoryDescriptor *						senseBuffer;
+    IOBufferMemoryDescriptor *					senseBuffer;
 };
 typedef struct SCSIClientData SCSIClientData;
 
@@ -70,7 +69,6 @@ class IOSCSIParallelInterfaceProtocolTransport : public IOSCSIProtocolServices
 	
 public:
 	
-	virtual IOService *		probe	( IOService *  provider, SInt32 * score );	
 	virtual bool 			start 	( IOService * provider );
 	virtual void 			stop 	( IOService *  provider );
 	
