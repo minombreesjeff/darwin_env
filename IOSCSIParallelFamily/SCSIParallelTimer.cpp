@@ -357,7 +357,7 @@ SCSIParallelTimer::SetTimeout ( SCSIParallelTaskIdentifier	taskIdentifier,
 	// element at the beginning.
 	// 2) Check if the task has a shorter timeout than the list head
 	if ( ( fTimeoutTaskListHead == NULL ) ||
-		 ( CompareDeadlines ( GetDeadline ( task ), GetDeadline ( fTimeoutTaskListHead ) ) == 1 ) )
+		 ( CompareDeadlines ( GetDeadline ( fTimeoutTaskListHead ), GetDeadline ( task ) ) == 1 ) )
 	{
 		
 		SCSIParallelTask *	oldHead = fTimeoutTaskListHead;

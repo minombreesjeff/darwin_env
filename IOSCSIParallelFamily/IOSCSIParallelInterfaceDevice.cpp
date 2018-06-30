@@ -1282,7 +1282,7 @@ IOSCSIParallelInterfaceDevice::CompleteSCSITask (
 			// The task has already completed
 			RemoveFromOutstandingTaskList ( parallelTask );
 			
-			nextRequest = GetSCSITaskIdentifier ( completedTask );
+			nextRequest = GetSCSITaskIdentifier ( parallelTask );
 			
 			// Release the SCSI Parallel Task object
 			FreeSCSIParallelTask ( parallelTask );
@@ -1408,7 +1408,7 @@ IOSCSIParallelInterfaceDevice::HandleProtocolServiceFeature (
 
 #if 0
 #pragma mark -
-#pragma mark ¥ SCSI Management Functions
+#pragma mark ¥ SCSI Task Management Functions
 #pragma mark -
 #endif
 
@@ -1422,6 +1422,82 @@ IOSCSIParallelInterfaceDevice::AbortSCSICommand (
 							SCSITaskIdentifier 			request )
 {
 	return kSCSIServiceResponse_FUNCTION_REJECTED;
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	¥ HandleAbortTask - Calls controller to perform abort task.		[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+SCSIServiceResponse
+IOSCSIParallelInterfaceDevice::HandleAbortTask ( 
+							UInt8 						theLogicalUnit, 
+							SCSITaggedTaskIdentifier 	theTag )
+{
+	return fController->AbortTaskRequest ( fTargetIdentifier, theLogicalUnit, theTag );
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	¥ HandleAbortTaskSet - Calls controller to perform abort task set.
+//																	[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+SCSIServiceResponse
+IOSCSIParallelInterfaceDevice::HandleAbortTaskSet ( 
+							UInt8 						theLogicalUnit )
+{
+	return fController->AbortTaskSetRequest ( fTargetIdentifier, theLogicalUnit );
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	¥ HandleClearACA - Calls controller to perform Clear ACA.		[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+SCSIServiceResponse
+IOSCSIParallelInterfaceDevice::HandleClearACA ( 
+							UInt8						theLogicalUnit )
+{
+	return fController->ClearACARequest ( fTargetIdentifier, theLogicalUnit );
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	¥ HandleClearTaskSet - Calls controller to perform clear task set.
+//																	[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+SCSIServiceResponse
+IOSCSIParallelInterfaceDevice::HandleClearTaskSet ( 
+							UInt8						theLogicalUnit )
+{
+	return fController->ClearTaskSetRequest ( fTargetIdentifier, theLogicalUnit );
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	¥ HandleLogicalUnitReset - Calls controller to perform LUN reset.
+//																	[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+SCSIServiceResponse
+IOSCSIParallelInterfaceDevice::HandleLogicalUnitReset (
+							UInt8 						theLogicalUnit )
+{
+	return fController->LogicalUnitResetRequest ( fTargetIdentifier, theLogicalUnit );
+}
+
+
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+//	¥ HandleTargetReset - Calls controller to perform Target reset.
+//																	[PROTECTED]
+//ÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑÑ
+
+SCSIServiceResponse
+IOSCSIParallelInterfaceDevice::HandleTargetReset ( void )
+{
+	return fController->TargetResetRequest ( fTargetIdentifier );
 }
 
 

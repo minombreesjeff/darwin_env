@@ -14,6 +14,8 @@
 		AC8CA7A7047B192C00E15A64 /* CDBCommand.h in Headers */ = {isa = PBXBuildFile; fileRef = AC8CA7A4047B192C00E15A64 /* CDBCommand.h */; };
 		AC8CA7A8047B192C00E15A64 /* IOCDBCommand.h in Headers */ = {isa = PBXBuildFile; fileRef = AC8CA7A5047B192C00E15A64 /* IOCDBCommand.h */; };
 		AC8CA7A9047B192C00E15A64 /* IOCDBDevice.h in Headers */ = {isa = PBXBuildFile; fileRef = AC8CA7A6047B192C00E15A64 /* IOCDBDevice.h */; };
+		ACAA41470B9D0CD400EDEE0F /* SCSIParallelWorkLoop.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ACAA41450B9D0CD400EDEE0F /* SCSIParallelWorkLoop.cpp */; };
+		ACAA41480B9D0CD400EDEE0F /* SCSIParallelWorkLoop.h in Headers */ = {isa = PBXBuildFile; fileRef = ACAA41460B9D0CD400EDEE0F /* SCSIParallelWorkLoop.h */; };
 		ACEE3AC20471C7A20005C2E0 /* IOSCSIParallelInterfaceProtocolTransport.h in Headers */ = {isa = PBXBuildFile; fileRef = F5E88B160246CD9C01CE15B2 /* IOSCSIParallelInterfaceProtocolTransport.h */; };
 		ACEE3AC30471C7A20005C2E0 /* IOSCSIParallelInterfaceProtocolTransport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F5E88B150246CD9C01CE15B2 /* IOSCSIParallelInterfaceProtocolTransport.cpp */; };
 		F588854B025AAC1E01CE15B2 /* IOSCSIParallelInterfaceController.h in Headers */ = {isa = PBXBuildFile; fileRef = F5888546025AAC1E01CE15B2 /* IOSCSIParallelInterfaceController.h */; };
@@ -62,7 +64,7 @@
 			productName = IOSCSIParallelFamily;
 			productReference = 0A5A7D55FFB780D811CA28AA /* IOSCSIParallelFamily.kext */;
 			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 <plist version=\"1.0\">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -70,7 +72,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOSCSIParallelFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.4.5, Copyright Apple Computer, Inc. 1998-2006</string>
+	<string>1.5.0, Copyright 1998-2007 Apple Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -82,11 +84,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.5</string>
+	<string>1.5.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.4.5</string>
+	<string>1.5.0</string>
 	<key>OSBundleCompatibleVersion</key>
 	<string>1.2.0</string>
 	<key>OSBundleLibraries</key>
@@ -125,7 +127,7 @@
 			productName = IOSCSIFamily;
 			productReference = F5DD57480246911101CE15B2 /* IOSCSIFamily.kext */;
 			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 <plist version=\"1.0\">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -133,7 +135,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOSCSIFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.4.5, Copyright Apple Computer, Inc. 1998-2006</string>
+	<string>1.5.0, Copyright 1998-2007 Apple Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -145,11 +147,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.5</string>
+	<string>1.5.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.4.5</string>
+	<string>1.5.0</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOSCSIParallelInterfaceProtocolTransport</key>
@@ -235,6 +237,8 @@
 		AC8CA7A4047B192C00E15A64 /* CDBCommand.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = CDBCommand.h; path = IOSCSIFamily/IOSCSIParallel/CDBCommand.h; sourceTree = "<group>"; };
 		AC8CA7A5047B192C00E15A64 /* IOCDBCommand.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOCDBCommand.h; path = IOSCSIFamily/IOSCSIParallel/IOCDBCommand.h; sourceTree = "<group>"; };
 		AC8CA7A6047B192C00E15A64 /* IOCDBDevice.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOCDBDevice.h; path = IOSCSIFamily/IOSCSIParallel/IOCDBDevice.h; sourceTree = "<group>"; };
+		ACAA41450B9D0CD400EDEE0F /* SCSIParallelWorkLoop.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = SCSIParallelWorkLoop.cpp; sourceTree = "<group>"; };
+		ACAA41460B9D0CD400EDEE0F /* SCSIParallelWorkLoop.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = SCSIParallelWorkLoop.h; sourceTree = "<group>"; };
 		F5888545025AAC1E01CE15B2 /* IOSCSIParallelInterfaceController.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = IOSCSIParallelInterfaceController.cpp; sourceTree = SOURCE_ROOT; };
 		F5888546025AAC1E01CE15B2 /* IOSCSIParallelInterfaceController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = IOSCSIParallelInterfaceController.h; sourceTree = SOURCE_ROOT; };
 		F5888547025AAC1E01CE15B2 /* IOSCSIParallelInterfaceDevice.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = IOSCSIParallelInterfaceDevice.cpp; sourceTree = SOURCE_ROOT; };
@@ -242,7 +246,7 @@
 		F5888549025AAC1E01CE15B2 /* SCSIParallelTask.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = SCSIParallelTask.cpp; sourceTree = SOURCE_ROOT; };
 		F588854A025AAC1E01CE15B2 /* SCSIParallelTask.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SCSIParallelTask.h; sourceTree = SOURCE_ROOT; };
 		F5DD57480246911101CE15B2 /* IOSCSIFamily.kext */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = IOSCSIFamily.kext; sourceTree = BUILT_PRODUCTS_DIR; };
-		F5DF5C510246952E01CE15B2 /* InstallHeaders */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = InstallHeaders; sourceTree = BUILT_PRODUCTS_DIR; };
+		F5DF5C510246952E01CE15B2 /* InstallHeaders */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = InstallHeaders; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5DF5C610246979701CE15B2 /* IOSCSICommand.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = IOSCSICommand.h; path = IOSCSIFamily/IOSCSIParallel/IOSCSICommand.h; sourceTree = "<group>"; };
 		F5DF5C640246979701CE15B2 /* IOSCSIDevice.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = IOSCSIDevice.h; path = IOSCSIFamily/IOSCSIParallel/IOSCSIDevice.h; sourceTree = "<group>"; };
 		F5DF5C660246979701CE15B2 /* IOSCSIParallelController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = IOSCSIParallelController.h; path = IOSCSIFamily/IOSCSIParallel/IOSCSIParallelController.h; sourceTree = "<group>"; };
@@ -323,6 +327,8 @@
 				F5888549025AAC1E01CE15B2 /* SCSIParallelTask.cpp */,
 				5C91D3F70380A00705CE70BB /* SCSIParallelTimer.h */,
 				5C91D3F60380A00705CE70BB /* SCSIParallelTimer.cpp */,
+				ACAA41460B9D0CD400EDEE0F /* SCSIParallelWorkLoop.h */,
+				ACAA41450B9D0CD400EDEE0F /* SCSIParallelWorkLoop.cpp */,
 				F5888548025AAC1E01CE15B2 /* IOSCSIParallelInterfaceDevice.h */,
 				F5888547025AAC1E01CE15B2 /* IOSCSIParallelInterfaceDevice.cpp */,
 				F5888546025AAC1E01CE15B2 /* IOSCSIParallelInterfaceController.h */,
@@ -384,6 +390,7 @@
 				F588854D025AAC1E01CE15B2 /* SCSIParallelTask.h in Headers */,
 				5C91D3F503809FFE05CE70BB /* IOSCSIParallelFamilyDebugging.h in Headers */,
 				5C91D3F90380A00705CE70BB /* SCSIParallelTimer.h in Headers */,
+				ACAA41480B9D0CD400EDEE0F /* SCSIParallelWorkLoop.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -421,9 +428,12 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = E6B5F3790A40B2E600F7D6D1 /* Build configuration list for PBXProject "IOSCSIParallelFamily" */;
+			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOSCSIParallelFamily */;
 			projectDirPath = "";
+			projectRoot = "";
+			shouldCheckCompatibility = 1;
 			targets = (
 				089C1673FE841209C02AAC07 /* IOSCSIParallelFamily */,
 				F5DD57490246911101CE15B2 /* IOSCSIFamily */,
@@ -514,6 +524,7 @@
 				F588854F025AAC1E01CE15B2 /* IOSCSIParallelInterfaceDevice.cpp in Sources */,
 				F5888550025AAC1E01CE15B2 /* SCSIParallelTask.cpp in Sources */,
 				5C91D3F80380A00705CE70BB /* SCSIParallelTimer.cpp in Sources */,
+				ACAA41470B9D0CD400EDEE0F /* SCSIParallelWorkLoop.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -653,7 +664,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIFamily;
-				MODULE_VERSION = 1.4.5;
+				MODULE_VERSION = 1.5.0;
 				OPTIMIZATION_CFLAGS = "-Os";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
@@ -682,7 +693,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIFamily;
-				MODULE_VERSION = 1.4.5;
+				MODULE_VERSION = 1.5.0;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -708,7 +719,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIFamily;
-				MODULE_VERSION = 1.4.5;
+				MODULE_VERSION = 1.5.0;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -736,7 +747,7 @@
 				KERNEL_MODULE = YES;
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIParallelFamily;
-				MODULE_VERSION = 1.4.5;
+				MODULE_VERSION = 1.5.0;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
@@ -762,7 +773,7 @@
 				KERNEL_MODULE = YES;
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIParallelFamily;
-				MODULE_VERSION = 1.4.5;
+				MODULE_VERSION = 1.5.0;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -785,7 +796,7 @@
 				KERNEL_MODULE = YES;
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIParallelFamily;
-				MODULE_VERSION = 1.4.5;
+				MODULE_VERSION = 1.5.0;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";

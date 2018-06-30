@@ -648,6 +648,27 @@ public:
 	
 	// This member routine is obsoleted and should not be used by a client.
 	virtual SCSIServiceResponse AbortSCSICommand ( SCSITaskIdentifier request );
+
+protected:
+	
+	
+	SCSIServiceResponse		HandleAbortTask ( 
+											UInt8 						theLogicalUnit, 
+											SCSITaggedTaskIdentifier 	theTag );
+	
+	SCSIServiceResponse		HandleAbortTaskSet ( 
+											UInt8 						theLogicalUnit );
+	
+	SCSIServiceResponse		HandleClearACA ( 
+											UInt8 						theLogicalUnit );
+	
+	SCSIServiceResponse		HandleClearTaskSet (
+											UInt8 						theLogicalUnit );
+	
+	SCSIServiceResponse		HandleLogicalUnitReset (
+											UInt8 						theLogicalUnit );
+											
+	SCSIServiceResponse		HandleTargetReset ( void );
 	
 private:
 	
