@@ -300,7 +300,8 @@ bool IOFireWireROMCache::hasROMChanged( const UInt32 * newBIB, UInt32 newBIBSize
 		
 		// is this a unit less, generation zero device?
 		
-		UInt32 romGeneration = (newBIB[2] & kFWBIBGeneration) >> kFWBIBGenerationPhase;
+		UInt32 bib_quad = OSSwapBigToHostInt32( newBIB[2] );
+		UInt32 romGeneration = (bib_quad & kFWBIBGeneration) >> kFWBIBGenerationPhase;
 		if( romGeneration == 0 )
 		{
 			if( fOwner->getUnitCount() == 0 )
@@ -456,7 +457,11 @@ void IOFireWireROMCache::setROMState( ROMState state, UInt32 generation )
 	}
 #endif
 
-	fState = state;
+	// no coming back from an invalid state
+	if( fState != kROMStateInvalid )
+	{
+		fState = state;
+	}
 	
 	if( fState == kROMStateResumed )
 	{
@@ -538,8 +543,9 @@ IOReturn IOFireWireROMCache::updateROMCache( UInt32 offset, UInt32 length )
                 // generation back that we know isn't up to date - so suspend the ROM
                 UInt32 oldGeneration = generation;
 				status = checkROMState( generation );
-                if(status == kIOReturnSuccess && generation == oldGeneration) {
-                    setROMState(kROMStateSuspended);
+                if(status == kIOReturnSuccess && generation == oldGeneration) 
+				{
+                    setROMState( kROMStateSuspended );
                 }
 			}
 			else if( status == kIOReturnSuccess ) 
@@ -563,6 +569,8 @@ IOReturn IOFireWireROMCache::updateROMCache( UInt32 offset, UInt32 length )
 			else
 			{
 				FWKLOG(( "%p: err 0x%x reading ROM\n", this, status ));
+				
+				setROMState( kROMStateInvalid );
 			}
 			
 			IOFree( buff, bufLen );

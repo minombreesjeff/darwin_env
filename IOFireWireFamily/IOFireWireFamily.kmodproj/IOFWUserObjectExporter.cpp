@@ -6,6 +6,12 @@
  *  Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  *	$Log: IOFWUserObjectExporter.cpp,v $
+ *	Revision 1.8.18.3  2006/01/31 04:49:50  collin
+ *	*** empty log message ***
+ *	
+ *	Revision 1.8.18.1  2005/07/23 00:30:44  collin
+ *	*** empty log message ***
+ *	
  *	Revision 1.8  2003/12/18 00:08:12  niels
  *	fix panic calling methods on deallocated user objects
  *	
@@ -115,9 +121,9 @@ IOFWUserObjectExporter :: addObject ( OSObject & obj, CleanupFunction cleanupFun
 	if ( ! fObjects )
 	{
 		fCapacity = 8 ;
-		fObjects = (const OSObject **) new (const OSObject*)[ fCapacity ] ;
-		fCleanupFunctions = new (CleanupFunction)[ fCapacity ] ;
-		
+		fObjects = (const OSObject **) new const OSObject*[ fCapacity ] ;
+		fCleanupFunctions = new CleanupFunction[ fCapacity ] ;
+				
 		if ( ! fObjects || !fCleanupFunctions )
 		{
 			DebugLog( "Couldn't make fObjects\n" ) ;
@@ -143,7 +149,7 @@ IOFWUserObjectExporter :: addObject ( OSObject & obj, CleanupFunction cleanupFun
 
 		if ( ! error )
 		{
-			newObjects = (const OSObject **) new (OSObject*)[ newCapacity ] ;
+			newObjects = (const OSObject **) new OSObject*[ newCapacity ] ;
 		
 			if ( !newObjects )
 				error = kIOReturnNoMemory ;
@@ -151,7 +157,7 @@ IOFWUserObjectExporter :: addObject ( OSObject & obj, CleanupFunction cleanupFun
 		
 		if ( !error )
 		{
-			newCleanupFunctions = new (CleanupFunction)[ newCapacity ] ;
+			newCleanupFunctions = new CleanupFunction[ newCapacity ] ;
 			if ( !newCleanupFunctions )
 				error = kIOReturnNoMemory ;
 		}

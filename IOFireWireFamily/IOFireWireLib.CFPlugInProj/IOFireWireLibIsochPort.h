@@ -247,7 +247,8 @@ namespace IOFireWireLib {
 			// local port methods:
 			
 			IOReturn				ModifyJumpDCL ( DCLJump * jump, DCLLabel * label ) ;
-			IOReturn				ModifyTransferPacketDCLSize ( DCLTransferPacket * dcl, IOByteCount newSize ) ;																				
+			IOReturn				ModifyTransferPacketDCLSize ( DCLTransferPacket * dcl, IOByteCount newSize ) ;	
+			static void				s_DCLStopTokenCallProcHandler ( void * self, IOReturn) ;																						
 			void					DCLStopTokenCallProcHandler ( IOReturn) ;
 #if 0
 			void					S_DCLKernelCallout( DCLCallProc * dcl ) ;

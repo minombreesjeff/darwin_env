@@ -8,6 +8,9 @@
  */
 /*
 	$Log: IOFireWireLibDCLCommandPool.cpp,v $
+	Revision 1.11.20.2  2006/01/31 04:49:57  collin
+	*** empty log message ***
+	
 	Revision 1.11  2003/07/21 10:01:29  niels
 	*** empty log message ***
 	

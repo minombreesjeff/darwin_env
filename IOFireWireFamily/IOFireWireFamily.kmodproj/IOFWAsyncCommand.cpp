@@ -380,7 +380,7 @@ IOReturn IOFWAsyncCommand::complete(IOReturn status)
         }
         else if(fDevice) 
 		{
-            IOLog("Command for device %p that's gone away\n", fDevice);
+         //   IOLog("Command for device %p that's gone away\n", fDevice);
             completion_status = kIOReturnOffline;	// device must have gone.
         }
     }

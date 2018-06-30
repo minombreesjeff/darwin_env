@@ -32,6 +32,7 @@
 // system
 #import <libkern/c++/OSIterator.h>
 #import <libkern/c++/OSData.h>
+#import <libkern/OSByteOrder.h>
 
 static int findIndex(const UInt32* base, int size, int key,
                      UInt32 type = kInvalidConfigROMEntryType);
@@ -49,7 +50,7 @@ int findIndex(const UInt32* base, int size, int key, UInt32 type)
     // OR test into mask, in case key was more than just the key value
     mask |= test;
     for(i=0; i<size; i++) {
-        if( (base[i] & mask) == test )
+        if( (OSSwapBigToHostInt32(base[i]) & mask) == test )
             break;
     }
     if(i >= size)
@@ -97,7 +98,7 @@ bool IOConfigDirectory::initWithOffset(int start, int type)
 	if( status == kIOReturnSuccess )
 	{
 		data = lockData();
-		fNumEntries = (data[start] & kConfigLeafDirLength) >> kConfigLeafDirLengthPhase;
+		fNumEntries = (OSSwapBigToHostInt32(data[start]) & kConfigLeafDirLength) >> kConfigLeafDirLengthPhase;
 		unlockData();
 	
 	//	FWKLOG(( "IOConfigDirectory::initWithOffset updateROMCache( %d, %d )\n", start, fNumEntries ));
@@ -385,7 +386,7 @@ IOReturn IOConfigDirectory::getIndexType(int index, IOConfigKeyType &type)
 	if( status == kIOReturnSuccess )
 	{	
 		const UInt32 * data = lockData();
-		entry = data[fStart + 1 + index];
+		entry = OSSwapBigToHostInt32(data[fStart + 1 + index]);
 		unlockData();
 
 		type = (IOConfigKeyType)((entry & kConfigEntryKeyType) >> kConfigEntryKeyTypePhase);
@@ -414,7 +415,7 @@ IOReturn IOConfigDirectory::getIndexKey(int index, int &key)
 	if( status == kIOReturnSuccess )
 	{
 		const UInt32 * data = lockData();	
-		entry = data[fStart + 1 + index];
+		entry = OSSwapBigToHostInt32(data[fStart + 1 + index]);
 		unlockData();
 	
 		key = (IOConfigKeyType)((entry & kConfigEntryKeyValue) >> kConfigEntryKeyValuePhase);
@@ -443,7 +444,7 @@ IOReturn IOConfigDirectory::getIndexValue(int index, UInt32 &value)
 	if( status == kIOReturnSuccess )
 	{
 		const UInt32 * data = lockData();	
-		entry = data[fStart + 1 + index];
+		entry = OSSwapBigToHostInt32(data[fStart + 1 + index]);
 		unlockData();
 	
 		// Return the value as an integer, whatever it really is.
@@ -476,7 +477,7 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSData *&value)
 	if( status == kIOReturnSuccess )
 	{
 		data = lockData();	
-		entry = data[fStart + 1 + index];
+		entry = OSSwapBigToHostInt32(data[fStart + 1 + index]);
 		unlockData();
 	
 		if( ((entry & kConfigEntryKeyType) >> kConfigEntryKeyTypePhase) != kConfigLeafKeyType)
@@ -496,7 +497,7 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSData *&value)
 	if( status == kIOReturnSuccess )
 	{
 		data = lockData();
-		len = ((data[offset] & kConfigLeafDirLength) >> kConfigLeafDirLengthPhase);
+		len = ((OSSwapBigToHostInt32(data[offset]) & kConfigLeafDirLength) >> kConfigLeafDirLengthPhase);
 		unlockData();
 
 	//	FWKLOG(( "IOConfigDirectory::getIndexValue(OSData) updateROMCache( %ld, %d )\n", offset, len ));
@@ -540,7 +541,7 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSString *&value)
 	if( status == kIOReturnSuccess )
 	{
 		data = lockData();
-		entry = data[fStart + 1 + index];
+		entry = OSSwapBigToHostInt32(data[fStart + 1 + index]);
 		unlockData();
 	
 		if( ((entry & kConfigEntryKeyValue) >> kConfigEntryKeyValuePhase) != kConfigTextualDescriptorKey )
@@ -566,7 +567,7 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSString *&value)
 	if( status == kIOReturnSuccess )
 	{
 		data = lockData();
-		len = (data[offset] & kConfigLeafDirLength) >> kConfigLeafDirLengthPhase;
+		len = (OSSwapBigToHostInt32(data[offset]) & kConfigLeafDirLength) >> kConfigLeafDirLengthPhase;
 		unlockData();
 	
 		// Check for silly length, people are careless with string data!
@@ -589,6 +590,7 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSString *&value)
 		char *text = (char *)(&data[offset+3]);
 		len -= 2;	// skip spec_type, specifier_ID, language_ID
 		len *= sizeof(UInt32);	// Convert from Quads to chars
+
 		// Now skip over leading zeros in string
 		while(len && !*text) {
 			len--;
@@ -602,7 +604,7 @@ IOReturn IOConfigDirectory::getIndexValue(int index, OSString *&value)
 		}
 		else
 			value = OSString::withCString("");
-		
+
 		unlockData();
 	
 		if( value == NULL )
@@ -633,7 +635,7 @@ IOReturn IOConfigDirectory::getIndexValue(int index, IOConfigDirectory *&value)
 	if( status == kIOReturnSuccess )
 	{
 		const UInt32 * data = lockData();
-		entry = data[fStart + 1 + index];
+		entry = OSSwapBigToHostInt32(data[fStart + 1 + index]);
 		unlockData();
 	
 		if( ((entry & kConfigEntryKeyType) >> kConfigEntryKeyTypePhase) != kConfigDirectoryKeyType)
@@ -676,7 +678,7 @@ IOReturn IOConfigDirectory::getIndexOffset(int index, FWAddress &value)
 	if( status == kIOReturnSuccess )
 	{
 		const UInt32 * data = lockData();
-		entry = data[fStart + 1 + index];
+		entry = OSSwapBigToHostInt32(data[fStart + 1 + index]);
 		unlockData();
 	
 		if(((entry & kConfigEntryKeyType) >> kConfigEntryKeyTypePhase) == kConfigImmediateKeyType)
@@ -721,7 +723,7 @@ IOReturn IOConfigDirectory::getIndexOffset(int index, UInt32 &value)
 	if( status == kIOReturnSuccess )
 	{
 		const UInt32 * data = lockData();
-		entry = data[fStart + 1 + index];
+		entry = OSSwapBigToHostInt32(data[fStart + 1 + index]);
 		unlockData();
 		
 		if(((entry & kConfigEntryKeyType) >> kConfigEntryKeyTypePhase) == kConfigImmediateKeyType)
@@ -762,7 +764,7 @@ IOReturn IOConfigDirectory::getIndexEntry(int index, UInt32 &value)
 	if( status == kIOReturnSuccess )
 	{
 		const UInt32 * data = lockData();
-		value = data[fStart + 1 + index];
+		value = OSSwapBigToHostInt32(data[fStart + 1 + index]);
 		unlockData();
 	}
 	

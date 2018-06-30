@@ -22,6 +22,7 @@
 
 #import <IOKit/iokitmig.h>
 #import <mach/mach.h>
+#import <System/libkern/OSCrossEndian.h>
 
 namespace IOFireWireLib {
 
@@ -505,8 +506,29 @@ namespace IOFireWireLib {
 	
 		IOByteCount 			resultSize	 	= sizeof( *size ) ;
 		ReadParams	 			params 			= { addr, buf, *size, failOnReset, generation, device == 0 /*isAbs*/ } ;
+
+		ROSETTA_ONLY(
+			{
+				params.addr.nodeID = OSSwapInt16( params.addr.nodeID );
+				params.addr.addressHi = OSSwapInt16( params.addr.addressHi );
+				params.addr.addressLo = OSSwapInt32( params.addr.addressLo );
+				params.buf = (const void*)OSSwapInt32( (UInt32)params.buf);
+				params.size = OSSwapInt32( params.size);
+			//	params.failOnReset = params.failOnReset;
+				params.generation = OSSwapInt32( params.generation );
+			//	params.isAbs = params.isAbs;
+			}
+		);
+		
+		IOReturn status = IOConnectMethodStructureIStructureO( mConnection, kRead, sizeof(params), & resultSize, & params, size ) ;
 	
-		return IOConnectMethodStructureIStructureO( mConnection, kRead, sizeof(params), & resultSize, & params, size ) ;
+		ROSETTA_ONLY(
+			{
+				*size = OSSwapInt32( *size );
+			}
+		);		
+		
+		return status;
 	}
 	
 	IOReturn
@@ -520,6 +542,19 @@ namespace IOFireWireLib {
 	
 		IOByteCount 				resultSize 		= sizeof( *val ) ;
 		ReadQuadParams	 			params 			= { addr, val, 1, failOnReset, generation, device == 0 /*isAbs*/ } ;
+
+		ROSETTA_ONLY(
+			{
+				params.addr.nodeID = OSSwapInt16( params.addr.nodeID );
+				params.addr.addressHi = OSSwapInt16( params.addr.addressHi );
+				params.addr.addressLo = OSSwapInt32( params.addr.addressLo );
+				params.buf = (const void*)OSSwapInt32( (UInt32)params.buf);
+				params.size = OSSwapInt32( params.size);
+			//	params.failOnReset = params.failOnReset; // byte
+				params.generation = OSSwapInt32( params.generation);
+			//	params.isAbs = params.isAbs; // byte
+			}
+		);
 	
 		return IOConnectMethodStructureIStructureO( mConnection, kReadQuad, sizeof(params), & resultSize, & params, val ) ;
 	}
@@ -540,8 +575,29 @@ namespace IOFireWireLib {
 	
 		IOByteCount 				resultSize 		= sizeof( *size ) ;
 		WriteParams		 			params 			= { addr, buf, *size, failOnReset, generation, device == 0 /*isAbs*/ } ;
-	
-		return IOConnectMethodStructureIStructureO( mConnection, kWrite, sizeof(params), & resultSize, & params, size ) ;
+
+		ROSETTA_ONLY(
+			{
+				params.addr.nodeID = OSSwapInt16( params.addr.nodeID );
+				params.addr.addressHi = OSSwapInt16( params.addr.addressHi );
+				params.addr.addressLo = OSSwapInt32( params.addr.addressLo );
+				params.buf = (const void*)OSSwapInt32( (UInt32)params.buf );
+				params.size = OSSwapInt32( params.size);
+			//	params.failOnReset = params.failOnReset; // byte
+				params.generation = OSSwapInt32( params.generation);
+			//	params.isAbs = params.isAbs; // byte
+			}
+		);
+			
+		IOReturn status = IOConnectMethodStructureIStructureO( mConnection, kWrite, sizeof(params), & resultSize, & params, size ) ;
+
+		ROSETTA_ONLY(
+			{
+				*size = OSSwapInt32( *size );
+			}
+		);		
+
+		return status;
 	}
 	
 	IOReturn
@@ -559,6 +615,18 @@ namespace IOFireWireLib {
 	
 		WriteQuadParams 			params 			= { addr, val, failOnReset, generation, device == 0 } ;
 		IOByteCount 				resultSize 		= 0 ;
+
+		ROSETTA_ONLY(
+			{
+				params.addr.nodeID = OSSwapInt16( params.addr.nodeID );
+				params.addr.addressHi = OSSwapInt16( params.addr.addressHi );
+				params.addr.addressLo = OSSwapInt32( params.addr.addressLo );
+			//	params.val = params.val; // data
+			//	params.failOnReset = params.failOnReset; // byte
+				params.generation = OSSwapInt32( params.generation);
+			//	params.isAbs = params.isAbs; // byte
+			}
+		);
 	
 		return IOConnectMethodStructureIStructureO( mConnection, kWriteQuad, sizeof(params), & resultSize, & params, nil ) ;
 	}
@@ -588,7 +656,21 @@ namespace IOFireWireLib {
 		params.failOnReset			= failOnReset ;
 		params.generation			= generation ;
 		params.isAbs				= device == 0 ;
-	
+
+		ROSETTA_ONLY(
+			{
+				params.addr.nodeID = OSSwapInt16( params.addr.nodeID );
+				params.addr.addressHi = OSSwapInt16( params.addr.addressHi );
+				params.addr.addressLo = OSSwapInt32( params.addr.addressLo );
+			//	params.cmpVal = params.cmpVal;	// data
+			//	params.newVal = params.newVal;	// data
+				params.size = OSSwapInt32( params.size);
+			//	params.failOnReset = params.failOnReset; // byte
+				params.generation = OSSwapInt32( params.generation);
+			//	params.isAbs = params.isAbs; // byte
+			}
+		);
+		
 		return IOConnectMethodStructureIStructureO( mConnection, kCompareSwap, sizeof(params), & resultSize, & params, & result ) ;
 	}
 	
@@ -627,6 +709,20 @@ namespace IOFireWireLib {
 		params.failOnReset		= failOnReset ;
 		params.generation		= generation ;
 		params.isAbs			= device == 0 ;
+
+		ROSETTA_ONLY(
+			{
+				params.addr.nodeID = OSSwapInt16( params.addr.nodeID );
+				params.addr.addressHi = OSSwapInt16( params.addr.addressHi );
+				params.addr.addressLo = OSSwapInt32( params.addr.addressLo );
+			//	params.cmpVal = params.cmpVal;	// data
+			//	params.newVal = params.newVal;	// data
+				params.size = OSSwapInt32( params.size);
+			//	params.failOnReset = params.failOnReset; // byte
+				params.generation = OSSwapInt32( params.generation);
+			//	params.isAbs = params.isAbs; // byte
+			}
+		);
 	
 		UInt64			result ;
 		IOByteCount 	resultSize 	= sizeof(UInt64) ;
@@ -821,7 +917,16 @@ namespace IOFireWireLib {
 		AbsoluteTime*			resetTime)
 	{
 		IOByteCount		size = sizeof(*resetTime) ;
-		return IOConnectMethodStructureIStructureO( mConnection, kGetResetTime, 0, & size, NULL, resetTime ) ;
+		IOReturn status = IOConnectMethodStructureIStructureO( mConnection, kGetResetTime, 0, & size, NULL, resetTime ) ;
+
+		ROSETTA_ONLY(
+			{
+				(*resetTime).hi = OSSwapInt32( (*resetTime).hi );
+				(*resetTime).lo = OSSwapInt32( (*resetTime).lo );
+			}
+		);
+				
+		return status;
 	}
 	
 	#pragma mark -
@@ -973,12 +1078,30 @@ namespace IOFireWireLib {
 		params.isInitialUnits	= isInitialUnits ;
 		params.addressLo		= inAddressLo ;
 		
+		ROSETTA_ONLY(
+			{
+				params.size = OSSwapInt32( params.size );
+				params.queueBuffer = (void*)OSSwapInt32( (UInt32)params.queueBuffer );
+				params.queueSize = OSSwapInt32( params.queueSize );
+				params.backingStore = (void*)OSSwapInt32( (UInt32)params.backingStore );
+				params.flags = OSSwapInt32( params.flags );
+				// params.isInitialUnits = params.isInitialUnits // byte
+				params.addressLo = OSSwapInt32( params.addressLo );
+			}
+		);
+		
 		UserObjectHandle	addrSpaceRef ;
 		IOByteCount			size	= sizeof(addrSpaceRef) ;
 		
 		// call the routine which creates a pseudo address space in the kernel.
 		IOReturn err = ::IOConnectMethodStructureIStructureO( mConnection, kPseudoAddrSpace_Allocate,
 										sizeof(params), & size, & params, & addrSpaceRef ) ;
+	
+		ROSETTA_ONLY(
+			{
+				addrSpaceRef = (UserObjectHandle)OSSwapInt32( (UInt32)addrSpaceRef );
+			}
+		);
 	
 		if ( !err )
 		{

@@ -9,22 +9,9 @@
 /* Begin PBXAggregateTarget section */
 		4D4C30A205F6702000D8DB71 /* All */ = {
 			isa = PBXAggregateTarget;
-			buildConfigurationList = 7D8C28EF08D252FE001783D4 /* Build configuration list for PBXAggregateTarget "All" */;
+			buildConfigurationList = 30CE48180843F92A00746571 /* Build configuration list for PBXAggregateTarget "All" */;
 			buildPhases = (
 			);
-			buildSettings = {
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = All;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-					"-Wpmf-conversions",
-				);
-			};
 			dependencies = (
 				4D4C316D05F6702100D8DB71 /* PBXTargetDependency */,
 				4D4C316B05F6702100D8DB71 /* PBXTargetDependency */,
@@ -35,11 +22,14 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		3026127C0A03068C00A3619F /* IOFWSimplePhysicalAddressSpace.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 302B203C0A02DC3E00E8D1E4 /* IOFWSimplePhysicalAddressSpace.cpp */; };
+		3026127D0A03068C00A3619F /* IOFWSimpleContiguousPhysicalAddressSpace.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 302B203A0A02DC3E00E8D1E4 /* IOFWSimpleContiguousPhysicalAddressSpace.cpp */; };
+		302612970A03072100A3619F /* IOFWSimplePhysicalAddressSpace.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 302B203D0A02DC3E00E8D1E4 /* IOFWSimplePhysicalAddressSpace.h */; };
+		302612980A03072100A3619F /* IOFWSimpleContiguousPhysicalAddressSpace.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 302B203B0A02DC3E00E8D1E4 /* IOFWSimpleContiguousPhysicalAddressSpace.h */; };
 		4D4C30A805F6702000D8DB71 /* IOFWDCLPool.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 4D2B253204CBD0C100E10E69 /* IOFWDCLPool.h */; };
 		4D4C30A905F6702000D8DB71 /* IOFireWireFamilyCommon.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 0212CDA9FFE5A54911CE206C /* IOFireWireFamilyCommon.h */; };
 		4D4C30AA05F6702000D8DB71 /* IOFWIsoch.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 0212CDBAFFE5A54911CE206C /* IOFWIsoch.h */; };
 		4D4C30AB05F6702000D8DB71 /* IOFWDCL.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 4D2B247504CBBD3F00E10E69 /* IOFWDCL.h */; };
-		4D4C30AC05F6702000D8DB71 /* IOFireLog.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = F52DF93702878C0101845C1A /* IOFireLog.h */; };
 		4D4C30AD05F6702000D8DB71 /* IOConfigDirectory.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8C30A5B50111F11D04CE206D /* IOConfigDirectory.h */; };
 		4D4C30AE05F6702000D8DB71 /* IOLocalConfigDirectory.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 0212CDC3FFE5A54911CE206C /* IOLocalConfigDirectory.h */; };
 		4D4C30AF05F6702000D8DB71 /* IORemoteConfigDirectory.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 0212CDA2FFE5A54911CE206C /* IORemoteConfigDirectory.h */; };
@@ -210,57 +200,6 @@
 		4D4C316505F6702100D8DB71 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F5410DC301B8073901CE2124 /* Security.framework */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXBuildStyle section */
-		06AA1265FFB2107B11CA28AA /* Development */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_ENABLE_FIX_AND_CONTINUE = YES;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				OPTIMIZATION_CFLAGS = "-O0";
-				OTHER_CFLAGS = (
-					"\U0001-DIOFIREWIREDEBUG=1",
-					"-DIOFIREWIREUSERCLIENTDEBUG=1",
-					"-DIOFIREWIRELIBDEBUG=1",
-					"-DFIRELOG=0",
-					"-DFIRELOGCORE=0",
-				);
-				ZERO_LINK = YES;
-			};
-			name = Development;
-		};
-		06AA1266FFB2107B11CA28AA /* Deployment */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				GCC_ENABLE_FIX_AND_CONTINUE = NO;
-				OTHER_CFLAGS = (
-					"\U0001-DIOFIREWIREDEBUG=0",
-					"-DIOFIREWIREUSERCLIENTDEBUG=0",
-					"-DIOFIREWIRELIBDEBUG=0",
-					"-DFIRELOG=0",
-					"-DFIRELOGCORE=0",
-				);
-				ZERO_LINK = NO;
-			};
-			name = Deployment;
-		};
-		F52DF94702878EF001845C1A /* FireLog */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				OPTIMIZATION_CFLAGS = "-O0";
-				OTHER_CFLAGS = (
-					"\U0001-DIOFIREWIREDEBUG=1",
-					"-DIOFIREWIREUSERCLIENTDEBUG=1",
-					"-DIOFIREWIRELIBDEBUG=1",
-					"-DFIRELOG=1",
-					"-DFIRELOGCORE=1",
-				);
-			};
-			name = FireLog;
-		};
-/* End PBXBuildStyle section */
-
 /* Begin PBXContainerItemProxy section */
 		4D4C316A05F6702100D8DB71 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -285,11 +224,12 @@
 			dstPath = "$(SYSTEM_LIBRARY_DIR)/Frameworks/Kernel.framework/Versions/A/Headers/IOKit/firewire";
 			dstSubfolderSpec = 0;
 			files = (
+				302612970A03072100A3619F /* IOFWSimplePhysicalAddressSpace.h in CopyFiles */,
+				302612980A03072100A3619F /* IOFWSimpleContiguousPhysicalAddressSpace.h in CopyFiles */,
 				4D4C30A805F6702000D8DB71 /* IOFWDCLPool.h in CopyFiles */,
 				4D4C30A905F6702000D8DB71 /* IOFireWireFamilyCommon.h in CopyFiles */,
 				4D4C30AA05F6702000D8DB71 /* IOFWIsoch.h in CopyFiles */,
 				4D4C30AB05F6702000D8DB71 /* IOFWDCL.h in CopyFiles */,
-				4D4C30AC05F6702000D8DB71 /* IOFireLog.h in CopyFiles */,
 				4D4C30AD05F6702000D8DB71 /* IOConfigDirectory.h in CopyFiles */,
 				4D4C30AE05F6702000D8DB71 /* IOLocalConfigDirectory.h in CopyFiles */,
 				4D4C30AF05F6702000D8DB71 /* IORemoteConfigDirectory.h in CopyFiles */,
@@ -415,6 +355,10 @@
 		03610215000A549811CE2050 /* IOFWUserPseudoAddressSpace.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = IOFWUserPseudoAddressSpace.cpp; path = IOFireWireFamily.kmodproj/IOFWUserPseudoAddressSpace.cpp; sourceTree = "<group>"; };
 		080C09530017B84F7F000001 /* IOFWUserPhysicalAddressSpace.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFWUserPhysicalAddressSpace.h; path = IOFireWireFamily.kmodproj/IOFWUserPhysicalAddressSpace.h; sourceTree = "<group>"; };
 		080C09540017B84F7F000001 /* IOFWUserPhysicalAddressSpace.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = IOFWUserPhysicalAddressSpace.cpp; path = IOFireWireFamily.kmodproj/IOFWUserPhysicalAddressSpace.cpp; sourceTree = "<group>"; };
+		302B203A0A02DC3E00E8D1E4 /* IOFWSimpleContiguousPhysicalAddressSpace.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = IOFWSimpleContiguousPhysicalAddressSpace.cpp; path = IOFireWireFamily.kmodproj/IOFWSimpleContiguousPhysicalAddressSpace.cpp; sourceTree = "<group>"; };
+		302B203B0A02DC3E00E8D1E4 /* IOFWSimpleContiguousPhysicalAddressSpace.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFWSimpleContiguousPhysicalAddressSpace.h; path = IOFireWireFamily.kmodproj/IOFWSimpleContiguousPhysicalAddressSpace.h; sourceTree = "<group>"; };
+		302B203C0A02DC3E00E8D1E4 /* IOFWSimplePhysicalAddressSpace.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = IOFWSimplePhysicalAddressSpace.cpp; path = IOFireWireFamily.kmodproj/IOFWSimplePhysicalAddressSpace.cpp; sourceTree = "<group>"; };
+		302B203D0A02DC3E00E8D1E4 /* IOFWSimplePhysicalAddressSpace.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFWSimplePhysicalAddressSpace.h; path = IOFireWireFamily.kmodproj/IOFWSimplePhysicalAddressSpace.h; sourceTree = "<group>"; };
 		4D2B247504CBBD3F00E10E69 /* IOFWDCL.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFWDCL.h; path = IOFireWireFamily.kmodproj/IOFWDCL.h; sourceTree = "<group>"; };
 		4D2B247604CBBD3F00E10E69 /* IOFWBufferFillIsochPort.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFWBufferFillIsochPort.h; path = IOFireWireFamily.kmodproj/IOFWBufferFillIsochPort.h; sourceTree = "<group>"; };
 		4D2B247704CBBD3F00E10E69 /* IOFWUserObjectExporter.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFWUserObjectExporter.h; path = IOFireWireFamily.kmodproj/IOFWUserObjectExporter.h; sourceTree = "<group>"; };
@@ -740,6 +684,8 @@
 				8CC990C80173CB1D04CE206D /* IOFWAddressSpace.h */,
 				F56DE49A0344560C012C70AC /* IOFWPseudoAddressSpace.h */,
 				F56DE49E03445631012C70AC /* IOFWPhysicalAddressSpace.h */,
+				302B203D0A02DC3E00E8D1E4 /* IOFWSimplePhysicalAddressSpace.h */,
+				302B203B0A02DC3E00E8D1E4 /* IOFWSimpleContiguousPhysicalAddressSpace.h */,
 				0212CDBCFFE5A54911CE206C /* IOFWIsochChannel.h */,
 				0212CDBEFFE5A54911CE206C /* IOFWIsochPort.h */,
 				0212CDBFFFE5A54911CE206C /* IOFWLocalIsochPort.h */,
@@ -783,6 +729,8 @@
 				0212CDB0FFE5A54911CE206C /* IOFWAddressSpace.cpp */,
 				F56DE49B0344560C012C70AC /* IOFWPseudoAddressSpace.cpp */,
 				F56DE49F03445631012C70AC /* IOFWPhysicalAddressSpace.cpp */,
+				302B203C0A02DC3E00E8D1E4 /* IOFWSimplePhysicalAddressSpace.cpp */,
+				302B203A0A02DC3E00E8D1E4 /* IOFWSimpleContiguousPhysicalAddressSpace.cpp */,
 			);
 			name = "Address Spaces";
 			sourceTree = "<group>";
@@ -905,7 +853,7 @@
 /* Begin PBXNativeTarget section */
 		4D4C30A505F6702000D8DB71 /* IOFireWireFamily */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 7D8C28EA08D252FE001783D4 /* Build configuration list for PBXNativeTarget "IOFireWireFamily" */;
+			buildConfigurationList = 30CE48130843F92A00746571 /* Build configuration list for PBXNativeTarget "IOFireWireFamily" */;
 			buildPhases = (
 				4D4C30A605F6702000D8DB71 /* ShellScript */,
 				4D4C30A705F6702000D8DB71 /* CopyFiles */,
@@ -920,37 +868,6 @@
 			);
 			buildRules = (
 			);
-			buildSettings = {
-				FRAMEWORK_SEARCH_PATHS = "";
-				GCC_ENABLE_CPP_EXCEPTIONS = NO;
-				GCC_PREFIX_HEADER = IOFireWireFamily.kmodproj/prefix.h;
-				GCC_PREPROCESSOR_DEFINITIONS = FIREWIREPRIVATE;
-				GCC_USE_GCC3_PFE_SUPPORT = YES;
-				HEADER_SEARCH_PATHS = "";
-				INFOPLIST_FILE = "Info-IOFireWireFamily.plist";
-				INSTALLHDRS_COPY_PHASE = YES;
-				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/";
-				KERNEL_MODULE = YES;
-				LIBRARY_SEARCH_PATHS = "";
-				MODULE_IOKIT = YES;
-				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.2.5;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PREBINDING = NO;
-				PRODUCT_NAME = IOFireWireFamily;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wno-unused-parameter",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
-				WRAPPER_EXTENSION = kext;
-			};
 			dependencies = (
 			);
 			name = IOFireWireFamily;
@@ -961,7 +878,7 @@
 		};
 		4D4C313A05F6702100D8DB71 /* IOFireWireLib.plugin */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 7D8C28E508D252FE001783D4 /* Build configuration list for PBXNativeTarget "IOFireWireLib.plugin" */;
+			buildConfigurationList = 30CE480E0843F92A00746571 /* Build configuration list for PBXNativeTarget "IOFireWireLib.plugin" */;
 			buildPhases = (
 				4D4C313B05F6702100D8DB71 /* Headers */,
 				4D4C314F05F6702100D8DB71 /* Resources */,
@@ -971,33 +888,6 @@
 			);
 			buildRules = (
 			);
-			buildSettings = {
-				BUILD_SETTING = "";
-				GCC_PREFIX_HEADER = IOFireWireLib.CFPlugInProj/prefix.h;
-				GCC_PREPROCESSOR_DEFINITIONS = FIREWIREPRIVATE;
-				GCC_USE_GCC3_PFE_SUPPORT = YES;
-				INFOPLIST_FILE = "Info-IOFireWireLib.plist";
-				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/IOFireWireFamily.kext/Contents/PlugIns";
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = (
-					"-bundle",
-					"-undefined",
-					error,
-				);
-				OTHER_REZFLAGS = "";
-				PREBINDING = YES;
-				PRODUCT_NAME = IOFireWireLib;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-W",
-					"-Wall",
-					"-Wno-unused-parameter",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
-				WRAPPER_EXTENSION = plugin;
-			};
 			dependencies = (
 			);
 			name = IOFireWireLib.plugin;
@@ -1011,14 +901,7 @@
 /* Begin PBXProject section */
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
-			buildConfigurationList = 7D8C28F408D252FE001783D4 /* Build configuration list for PBXProject "IOFireWireFamily" */;
-			buildSettings = {
-			};
-			buildStyles = (
-				06AA1265FFB2107B11CA28AA /* Development */,
-				06AA1266FFB2107B11CA28AA /* Deployment */,
-				F52DF94702878EF001845C1A /* FireLog */,
-			);
+			buildConfigurationList = 30CE481D0843F92A00746571 /* Build configuration list for PBXProject "IOFireWireFamily" */;
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOFireWireFamily */;
 			projectDirPath = "";
@@ -1081,9 +964,11 @@
 			buildActionMask = 2147483647;
 			files = (
 			);
+			inputPaths = (
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "script=\"${SYSTEM_DEVELOPER_DIR}/ProjectBuilder Extras/Kernel Extension Support/KEXTPostprocess\";\nif [ -x \"$script\" ]; then\n    . \"$script\"\nfi";
+			shellScript = "script=\"${SYSTEM_DEVELOPER_DIR}/ProjectBuilder Extras/Kernel Extension Support/KEXTPostprocess\";\nif [ -x \"$script\" ]; then\n    . \"$script\"\nfi\n\nif [ $FIRELOG ]; then\n\techo \"$PROJECT_DIR/$INFOPLIST_FILE\"\n\techo \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\n\n\tgrep -v \"FIRELOG_COMMENT\" \"$PROJECT_DIR/$INFOPLIST_FILE\" > \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\nfi";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1144,6 +1029,8 @@
 				4D4C313105F6702000D8DB71 /* IOFWBufferFillIsochPort.cpp in Sources */,
 				4D4C313205F6702000D8DB71 /* IOFWLocalIsochPort.cpp in Sources */,
 				4D4C313305F6702000D8DB71 /* IOFWUserObjectExporter.cpp in Sources */,
+				3026127C0A03068C00A3619F /* IOFWSimplePhysicalAddressSpace.cpp in Sources */,
+				3026127D0A03068C00A3619F /* IOFWSimpleContiguousPhysicalAddressSpace.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1205,7 +1092,7 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		7D8C28E608D252FE001783D4 /* Development */ = {
+		30CE480F0843F92A00746571 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_SETTING = "";
@@ -1241,14 +1128,15 @@
 					"-Wno-unused-parameter",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
+					"-Wno-unused-label",
 				);
-				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
+				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions -Wno-unused-label";
 				WRAPPER_EXTENSION = plugin;
 				ZERO_LINK = YES;
 			};
 			name = Development;
 		};
-		7D8C28E708D252FE001783D4 /* Deployment */ = {
+		30CE48100843F92A00746571 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_SETTING = "";
@@ -1280,14 +1168,15 @@
 					"-Wno-unused-parameter",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
+					"-Wno-unused-label",
 				);
-				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
+				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions -Wno-unused-label";
 				WRAPPER_EXTENSION = plugin;
 				ZERO_LINK = NO;
 			};
 			name = Deployment;
 		};
-		7D8C28E808D252FE001783D4 /* FireLog */ = {
+		30CE48110843F92A00746571 /* FireLog */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_SETTING = "";
@@ -1302,7 +1191,7 @@
 					"-DIOFIREWIREUSERCLIENTDEBUG=1",
 					"-DIOFIREWIRELIBDEBUG=1",
 					"-DFIRELOG=1",
-					"-DFIRELOGCORE=1",
+					"-DFIRELOGCORE=0",
 				);
 				OTHER_LDFLAGS = (
 					"-bundle",
@@ -1319,13 +1208,14 @@
 					"-Wno-unused-parameter",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
+					"-Wno-unused-label",
 				);
-				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
+				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions -Wno-unused-label";
 				WRAPPER_EXTENSION = plugin;
 			};
 			name = FireLog;
 		};
-		7D8C28E908D252FE001783D4 /* Default */ = {
+		30CE48120843F92A00746571 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_SETTING = "";
@@ -1350,13 +1240,14 @@
 					"-Wno-unused-parameter",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
+					"-Wno-unused-label",
 				);
-				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
+				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions -Wno-unused-label";
 				WRAPPER_EXTENSION = plugin;
 			};
 			name = Default;
 		};
-		7D8C28EB08D252FE001783D4 /* Development */ = {
+		30CE48140843F92A00746571 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -1368,6 +1259,7 @@
 				GCC_PREFIX_HEADER = IOFireWireFamily.kmodproj/prefix.h;
 				GCC_PREPROCESSOR_DEFINITIONS = FIREWIREPRIVATE;
 				GCC_USE_GCC3_PFE_SUPPORT = YES;
+				GCC_WARN_PEDANTIC = NO;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireFamily.plist";
 				INSTALLHDRS_COPY_PHASE = YES;
@@ -1376,7 +1268,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.2.5;
+				MODULE_VERSION = 2.5.1;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-DIOFIREWIREDEBUG=1",
@@ -1396,6 +1288,7 @@
 					"-Wno-unused-parameter",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
+					"-Wno-unused-label",
 				);
 				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
 				WRAPPER_EXTENSION = kext;
@@ -1403,7 +1296,7 @@
 			};
 			name = Development;
 		};
-		7D8C28EC08D252FE001783D4 /* Deployment */ = {
+		30CE48150843F92A00746571 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -1412,6 +1305,7 @@
 				GCC_PREFIX_HEADER = IOFireWireFamily.kmodproj/prefix.h;
 				GCC_PREPROCESSOR_DEFINITIONS = FIREWIREPRIVATE;
 				GCC_USE_GCC3_PFE_SUPPORT = YES;
+				GCC_WARN_PEDANTIC = NO;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireFamily.plist";
 				INSTALLHDRS_COPY_PHASE = YES;
@@ -1420,7 +1314,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.2.5;
+				MODULE_VERSION = 2.5.1;
 				OTHER_CFLAGS = (
 					"-DIOFIREWIREDEBUG=0",
 					"-DIOFIREWIREUSERCLIENTDEBUG=0",
@@ -1439,6 +1333,7 @@
 					"-Wno-unused-parameter",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
+					"-Wno-unused-label",
 				);
 				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
 				WRAPPER_EXTENSION = kext;
@@ -1446,14 +1341,16 @@
 			};
 			name = Deployment;
 		};
-		7D8C28ED08D252FE001783D4 /* FireLog */ = {
+		30CE48160843F92A00746571 /* FireLog */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				FIRELOG = 1;
 				FRAMEWORK_SEARCH_PATHS = "";
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_PREFIX_HEADER = IOFireWireFamily.kmodproj/prefix.h;
 				GCC_PREPROCESSOR_DEFINITIONS = FIREWIREPRIVATE;
 				GCC_USE_GCC3_PFE_SUPPORT = YES;
+				GCC_WARN_PEDANTIC = NO;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireFamily.plist";
 				INSTALLHDRS_COPY_PHASE = YES;
@@ -1462,14 +1359,14 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.2.5;
+				MODULE_VERSION = 2.5.1;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-DIOFIREWIREDEBUG=1",
 					"-DIOFIREWIREUSERCLIENTDEBUG=1",
 					"-DIOFIREWIRELIBDEBUG=1",
 					"-DFIRELOG=1",
-					"-DFIRELOGCORE=1",
+					"-DFIRELOGCORE=0",
 				);
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1482,13 +1379,14 @@
 					"-Wno-unused-parameter",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
+					"-Wno-unused-label",
 				);
 				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
 				WRAPPER_EXTENSION = kext;
 			};
 			name = FireLog;
 		};
-		7D8C28EE08D252FE001783D4 /* Default */ = {
+		30CE48170843F92A00746571 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -1496,6 +1394,7 @@
 				GCC_PREFIX_HEADER = IOFireWireFamily.kmodproj/prefix.h;
 				GCC_PREPROCESSOR_DEFINITIONS = FIREWIREPRIVATE;
 				GCC_USE_GCC3_PFE_SUPPORT = YES;
+				GCC_WARN_PEDANTIC = NO;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireFamily.plist";
 				INSTALLHDRS_COPY_PHASE = YES;
@@ -1504,7 +1403,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.2.5;
+				MODULE_VERSION = 2.5.1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1517,13 +1416,14 @@
 					"-Wno-unused-parameter",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
+					"-Wno-unused-label",
 				);
 				WARNING_CPLUSPLUSFLAGS = "-W -Wall -Wno-unused-parameter -Wno-four-char-constants -Wno-unknown-pragmas -Wno-pmf-conversions";
 				WRAPPER_EXTENSION = kext;
 			};
 			name = Default;
 		};
-		7D8C28F008D252FE001783D4 /* Development */ = {
+		30CE48190843F92A00746571 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -1552,7 +1452,7 @@
 			};
 			name = Development;
 		};
-		7D8C28F108D252FE001783D4 /* Deployment */ = {
+		30CE481A0843F92A00746571 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
@@ -1577,7 +1477,7 @@
 			};
 			name = Deployment;
 		};
-		7D8C28F208D252FE001783D4 /* FireLog */ = {
+		30CE481B0843F92A00746571 /* FireLog */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				OPTIMIZATION_CFLAGS = "-O0";
@@ -1601,7 +1501,7 @@
 			};
 			name = FireLog;
 		};
-		7D8C28F308D252FE001783D4 /* Default */ = {
+		30CE481C0843F92A00746571 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				OTHER_CFLAGS = "";
@@ -1618,73 +1518,93 @@
 			};
 			name = Default;
 		};
-		7D8C28F508D252FE001783D4 /* Development */ = {
+		30CE481E0843F92A00746571 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					i386,
+				);
+				GCC_WARN_UNUSED_LABEL = NO;
 			};
 			name = Development;
 		};
-		7D8C28F608D252FE001783D4 /* Deployment */ = {
+		30CE481F0843F92A00746571 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					i386,
+				);
+				GCC_WARN_UNUSED_LABEL = NO;
 			};
 			name = Deployment;
 		};
-		7D8C28F708D252FE001783D4 /* FireLog */ = {
+		30CE48200843F92A00746571 /* FireLog */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					i386,
+				);
+				GCC_WARN_UNUSED_LABEL = NO;
 			};
 			name = FireLog;
 		};
-		7D8C28F808D252FE001783D4 /* Default */ = {
+		30CE48210843F92A00746571 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					i386,
+				);
+				GCC_WARN_UNUSED_LABEL = NO;
 			};
 			name = Default;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		7D8C28E508D252FE001783D4 /* Build configuration list for PBXNativeTarget "IOFireWireLib.plugin" */ = {
+		30CE480E0843F92A00746571 /* Build configuration list for PBXNativeTarget "IOFireWireLib.plugin" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7D8C28E608D252FE001783D4 /* Development */,
-				7D8C28E708D252FE001783D4 /* Deployment */,
-				7D8C28E808D252FE001783D4 /* FireLog */,
-				7D8C28E908D252FE001783D4 /* Default */,
+				30CE480F0843F92A00746571 /* Development */,
+				30CE48100843F92A00746571 /* Deployment */,
+				30CE48110843F92A00746571 /* FireLog */,
+				30CE48120843F92A00746571 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		7D8C28EA08D252FE001783D4 /* Build configuration list for PBXNativeTarget "IOFireWireFamily" */ = {
+		30CE48130843F92A00746571 /* Build configuration list for PBXNativeTarget "IOFireWireFamily" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7D8C28EB08D252FE001783D4 /* Development */,
-				7D8C28EC08D252FE001783D4 /* Deployment */,
-				7D8C28ED08D252FE001783D4 /* FireLog */,
-				7D8C28EE08D252FE001783D4 /* Default */,
+				30CE48140843F92A00746571 /* Development */,
+				30CE48150843F92A00746571 /* Deployment */,
+				30CE48160843F92A00746571 /* FireLog */,
+				30CE48170843F92A00746571 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		7D8C28EF08D252FE001783D4 /* Build configuration list for PBXAggregateTarget "All" */ = {
+		30CE48180843F92A00746571 /* Build configuration list for PBXAggregateTarget "All" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7D8C28F008D252FE001783D4 /* Development */,
-				7D8C28F108D252FE001783D4 /* Deployment */,
-				7D8C28F208D252FE001783D4 /* FireLog */,
-				7D8C28F308D252FE001783D4 /* Default */,
+				30CE48190843F92A00746571 /* Development */,
+				30CE481A0843F92A00746571 /* Deployment */,
+				30CE481B0843F92A00746571 /* FireLog */,
+				30CE481C0843F92A00746571 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;
 		};
-		7D8C28F408D252FE001783D4 /* Build configuration list for PBXProject "IOFireWireFamily" */ = {
+		30CE481D0843F92A00746571 /* Build configuration list for PBXProject "IOFireWireFamily" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				7D8C28F508D252FE001783D4 /* Development */,
-				7D8C28F608D252FE001783D4 /* Deployment */,
-				7D8C28F708D252FE001783D4 /* FireLog */,
-				7D8C28F808D252FE001783D4 /* Default */,
+				30CE481E0843F92A00746571 /* Development */,
+				30CE481F0843F92A00746571 /* Deployment */,
+				30CE48200843F92A00746571 /* FireLog */,
+				30CE48210843F92A00746571 /* Default */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Default;

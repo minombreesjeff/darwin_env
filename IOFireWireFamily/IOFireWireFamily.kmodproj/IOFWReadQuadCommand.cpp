@@ -64,7 +64,9 @@ void IOFWReadQuadCommand::gotPacket(int rcode, const void* data, int size)
         int i;
         UInt32 *src = (UInt32 *)data;
         for(i=0; i<size/4; i++)
-            *fQuads++ = *src++;
+        {
+			*fQuads++ = *src++;
+        }
         fSize -= size;
 		
 		// nwg: should update bytes transferred count

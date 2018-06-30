@@ -25,6 +25,12 @@
  * HISTORY
  *
  * $Log: IOFireWireUserClient.h,v $
+ * Revision 1.45.18.3  2006/01/31 04:49:51  collin
+ * *** empty log message ***
+ *
+ * Revision 1.45.18.1  2005/08/17 03:33:57  collin
+ * *** empty log message ***
+ *
  * Revision 1.45  2004/01/22 01:49:59  niels
  * fix user space physical address space getPhysicalSegments
  *
@@ -169,6 +175,7 @@ class IOFireWireUserClient : public IOUserClient
 		virtual IOReturn				setProperties ( OSObject * properties ) ;
 
 		// IOService
+		virtual bool					initWithTask( task_t owningTask, void * securityToken, UInt32 type, OSDictionary * properties );
 		virtual bool 					start ( IOService * provider );
 		virtual void 					stop ( IOService * provider );
 		virtual IOReturn 				message(
@@ -204,7 +211,6 @@ class IOFireWireUserClient : public IOUserClient
 
 		// me
 		
-		static IOFireWireUserClient*	withTask( task_t owningTask ) ;
 //		void							deallocateSets () ; 
 		const task_t					getOwningTask () const {return fTask;}
 		IOFireWireNub *					getOwner ()	const				{ return (IOFireWireNub*) getProvider() ; }

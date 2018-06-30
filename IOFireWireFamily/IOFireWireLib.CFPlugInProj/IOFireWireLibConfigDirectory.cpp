@@ -11,6 +11,8 @@
 #import "IOFireWireLibConfigDirectory.h"
 #import "IOFireWireLibDevice.h"
 
+#import <System/libkern/OSCrossEndian.h>
+
 namespace IOFireWireLib {
 
 	ConfigDirectoryCOM::Interface 	ConfigDirectoryCOM::sInterface = {
@@ -114,7 +116,16 @@ namespace IOFireWireLib {
 		IOReturn error = IOConnectMethodScalarIStructureO( mUserClient.GetUserClientConnection(), 
 				kConfigDirectory_GetKeyValue_Data, 3, & resultsSize, mKernConfigDirectoryRef, key, text != nil,
 				& results ) ;
-	
+
+		ROSETTA_ONLY(
+			{
+				results.data = (UserObjectHandle)OSSwapInt32( (UInt32)results.data );
+				results.dataLength = OSSwapInt32( results.dataLength );
+				results.text = (UserObjectHandle)OSSwapInt32( (UInt32)results.text );
+				results.textLength = OSSwapInt32( results.textLength );
+			}
+		);
+		
 		if ( text && (kIOReturnSuccess == error))
 			error = mUserClient.CreateCFStringWithOSStringRef( results.text, results.textLength, text ) ;
 		if ( kIOReturnSuccess == error )
@@ -167,6 +178,16 @@ namespace IOFireWireLib {
 																kConfigDirectory_GetKeyOffset_FWAddress,
 																3, & resultsSize, mKernConfigDirectoryRef, key, text != nil, & results ) ;
 		
+		ROSETTA_ONLY(
+			{
+				results.address.nodeID = OSSwapInt16( results.address.nodeID );
+				results.address.addressHi = OSSwapInt16( results.address.addressHi );
+				results.address.addressLo = OSSwapInt32( results.address.addressLo );
+				results.text = (UserObjectHandle)OSSwapInt32( (UInt32)results.text );
+				results.length = OSSwapInt32( results.length );
+			}
+		);
+
 		value = results.address ;
 
 		if (text && (kIOReturnSuccess == error))
@@ -292,6 +313,14 @@ namespace IOFireWireLib {
 		IOReturn result = IOConnectMethodScalarIStructureO( mUserClient.GetUserClientConnection(), 
 															kConfigDirectory_GetIndexOffset_FWAddress, 
 															2, &resultsSize, mKernConfigDirectoryRef, index, &value) ;
+		
+		ROSETTA_ONLY(
+			{
+				value.nodeID = OSSwapInt16( value.nodeID );
+				value.addressHi = OSSwapInt16( value.addressHi );
+				value.addressLo = OSSwapInt32( value.addressLo );
+			}
+		);
 		
 		return result ;
 	}

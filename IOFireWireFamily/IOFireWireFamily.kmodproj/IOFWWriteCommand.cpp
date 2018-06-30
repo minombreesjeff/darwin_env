@@ -255,13 +255,20 @@ IOReturn IOFWWriteCommand::execute()
     fTrans = fControl->allocTrans( this );
     if( fTrans ) 
 	{
-		IOFWWriteFlags flags = kIOFWWriteFlagsNone;
+		UInt32 flags = kIOFWWriteFlagsNone;
 		
 		if( fMembers && 
 			fMembers->fSubclassMembers &&
 			((MemberVariables*)fMembers->fSubclassMembers)->fDeferredNotify )
 		{
-			flags = kIOFWWriteFlagsDeferredNotify;
+			flags |= kIOFWWriteFlagsDeferredNotify;
+		}
+		
+		if( fMembers && 
+			fMembers->fSubclassMembers &&
+			((MemberVariables*)fMembers->fSubclassMembers)->fFastRetryOnBusy )
+		{
+			flags |= kIOFWWriteFastRetryOnBusy;
 		}
 		
         result = fControl->asyncWrite(	fGeneration, 
@@ -274,7 +281,7 @@ IOReturn IOFWWriteCommand::execute()
 										fBytesTransferred, 
 										fPackSize, 
 										this,
-										flags );
+										(IOFWWriteFlags)flags );
     }
     else 
 	{

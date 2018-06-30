@@ -36,6 +36,7 @@
 #include <IOKit/firewire/IOFireWireDevice.h>
 #include <IOKit/firewire/IOFireWireController.h>
 #include <IOKit/firewire/IOConfigDirectory.h>
+#import <IOKit/firewire/IOFWSimpleContiguousPhysicalAddressSpace.h>
 
 #include "FWDebugging.h"
 
@@ -74,6 +75,49 @@ bool IOFireWireUnitAux::init( IOFireWireUnit * primary )
 void IOFireWireUnitAux::free()
 {	    
 	IOFireWireNubAux::free();
+}
+
+// isPhysicalAccessEnabled
+//
+//
+
+bool IOFireWireUnitAux::isPhysicalAccessEnabled( void )
+{
+	IOFireWireUnit * unit = (IOFireWireUnit*)fPrimary;
+	IOFireWireDevice * device = unit->fDevice;
+	return device->isPhysicalAccessEnabled();
+}
+
+// createSimpleContiguousPhysicalAddressSpace
+//
+//
+
+IOFWSimpleContiguousPhysicalAddressSpace * IOFireWireUnitAux::createSimpleContiguousPhysicalAddressSpace( vm_size_t size, IODirection direction )
+{
+    IOFWSimpleContiguousPhysicalAddressSpace * space = IOFireWireNubAux::createSimpleContiguousPhysicalAddressSpace( size, direction );
+	
+	if( space != NULL )
+	{
+		space->addTrustedNode( ((IOFireWireUnit*)fPrimary)->fDevice );
+	}
+	
+	return space;
+}
+
+// createSimplePhysicalAddressSpace
+//
+//
+
+IOFWSimplePhysicalAddressSpace * IOFireWireUnitAux::createSimplePhysicalAddressSpace( vm_size_t size, IODirection direction )
+{
+    IOFWSimplePhysicalAddressSpace * space = IOFireWireNubAux::createSimplePhysicalAddressSpace( size, direction );
+	
+	if( space != NULL )
+	{
+		space->addTrustedNode( ((IOFireWireUnit*)fPrimary)->fDevice );
+	}
+	
+	return space;
 }
 
 #pragma mark -

@@ -13,6 +13,7 @@
 #import "IOFireWireLibNuDCLPool.h"
 #import "IOFireWireLibDevice.h"
 #import "IOFireWireLibCoalesceTree.h"
+#import <System/libkern/OSCrossEndian.h>
 
 namespace IOFireWireLib {
 
@@ -167,8 +168,11 @@ namespace IOFireWireLib {
 	{
 		if ( fData.rangeCount > 0 )
 		{
+			fprintf( file, "\t\t\tranges:\n" ) ;
 			for( unsigned index=0; index < fData.rangeCount; ++index )
-				fprintf( file, "\t\t\t%u: < %x, %lu >\n", index, fData.ranges[index].address, fData.ranges[index].length ) ;
+			{
+				fprintf( file, "\t\t\t\t%u: < %x, %lu >\n", index, fData.ranges[index].address, fData.ranges[index].length ) ;
+			}
 		}
 		if ( fData.branch.dcl )
 			fprintf( file, "\t\t\tbranch --> %p\n", fData.branch.dcl ) ;
@@ -222,49 +226,100 @@ namespace IOFireWireLib {
 		IOVirtualRange			bufferRanges[],
 		unsigned				bufferRangeCount ) const
 	{
+		unsigned updateSetCount = 0 ;
+
 		if ( where )
 		{
 			NuDCLSharedData * exportedData = reinterpret_cast<NuDCLSharedData *>( *where ) ;
 			*where += ( sizeof( *exportedData ) + 4 ) & ~(size_t)0x3 ;
 			*exportedData = fData ;
 			
+
+#if __LP64__
+#error this code assumes sizeof(callback) = sizeof(UInt32)
+#endif
+
+#if IOFIREWIRELIBDEBUG
+assert( sizeof( exportedData->type ) == sizeof( UInt32 ) ) ;
+#endif
+			// export buffer ranges
+			
 			for( unsigned index=0; index < exportedData->rangeCount; ++index )
 			{
 				exportedData->ranges[ index ].address = findOffsetInRanges( exportedData->ranges[ index ].address, bufferRanges, bufferRangeCount ) ;
 			}
+						
+			// export update list
 			
-			if( exportedData->update.set )
+			UInt32 * exportList = NULL ;
+			
+			if( fData.update.set )
 			{
-				unsigned count = ::CFSetGetCount( exportedData->update.set ) ;
-
-				UInt32 * exportList = reinterpret_cast<UInt32 *>( *where ) ;
-				*where += sizeof( NuDCL*) * count ;
+				updateSetCount = ::CFSetGetCount( fData.update.set ) ;
+				exportList = reinterpret_cast<UInt32 *>( *where ) ;
+				*where += sizeof( NuDCL*) * updateSetCount ;
 				
 				// copy contents of update list to export data as array of NuDCL*
 				::CFSetGetValues( exportedData->update.set, reinterpret_cast<const void **>( exportList ) ) ;
 				
 				// for each NuDCL* in update list in export data, change NuDCL* to corresponding NuDCL's fData->exportIndex 
 				// field value
-				for( unsigned index=0; index < count; ++index )
+				for( unsigned index=0; index < updateSetCount; ++index )
 				{
 					exportList[ index ] = ((NuDCL*)exportList[ index ])->GetExportIndex() ;
 				}
 
 				// stuff update list field in exported data with number of DCLs in update list
-				exportedData->update.count = count ;
+				exportedData->update.count = updateSetCount ;
 			}
+			
+			// export user timestamp
 			
 			if ( exportedData->timeStamp.ptr )
 			{
 				exportedData->timeStamp.offset = findOffsetInRanges( (IOVirtualAddress)exportedData->timeStamp.ptr, bufferRanges, bufferRangeCount ) + 1 ;
 			}
 			
+			// export user status field
+			
 			if ( exportedData->status.ptr )
 			{
 				exportedData->status.offset = findOffsetInRanges( (IOVirtualAddress)exportedData->status.ptr, bufferRanges, bufferRangeCount ) + 1 ;
 			}
 			
+			// export branch
+			
 			exportedData->branch.index = exportedData->branch.dcl ? exportedData->branch.dcl->GetExportIndex() : 0 ;
+
+			ROSETTA_ONLY(
+				{
+					for( unsigned index=0; index < exportedData->rangeCount; ++index )
+					{
+#if __LP64__
+#error CFSwapInt32 should be changed to CFSwapInt64 on 'address' here, I believe, for LP64
+#endif
+						exportedData->ranges[ index ].address = CFSwapInt32( exportedData->ranges[ index ].address ) ;
+						exportedData->ranges[ index ].length = CFSwapInt32( exportedData->ranges[ index ].length ) ;
+					}
+					
+					for( unsigned index=0; index < updateSetCount; ++index )
+					{
+#if __LP64__
+#error This code assumes UInt32 is the same size as NuDCL*
+#endif
+							exportList[ index ] = CFSwapInt32( exportList[ index ] ) ;
+					}
+					exportedData->update.count = CFSwapInt32( exportedData->update.count ) ;
+					exportedData->timeStamp.offset = CFSwapInt32( exportedData->timeStamp.offset ) ;
+					exportedData->status.offset = CFSwapInt32( exportedData->status.offset ) ;
+					exportedData->type = (NuDCLSharedData::Type)CFSwapInt32( exportedData->type ) ;
+					exportedData->callback = (NuDCLCallback)CFSwapInt32( (UInt32)exportedData->callback ) ;
+					exportedData->refcon = (void*)CFSwapInt32( (UInt32)exportedData->refcon) ;
+					exportedData->flags = CFSwapInt32( exportedData->flags ) ;
+					exportedData->rangeCount = CFSwapInt32( exportedData->rangeCount ) ;
+					exportedData->branch.index = CFSwapInt32( exportedData->branch.index ) ;
+				}
+			) ;
 		}
 		
 		return  ( ( sizeof( NuDCLSharedData ) + 4 ) & ~(size_t)0x3 ) + ( fData.update.set ? ::CFSetGetCount( fData.update.set ) * sizeof( UInt32 ) : 0 ) ;
@@ -311,8 +366,26 @@ namespace IOFireWireLib {
 		
 		if ( where )
 		{
-			*reinterpret_cast<ReceiveNuDCLSharedData *>( *where ) = fReceiveData ; 
+			ReceiveNuDCLSharedData * exportedData = reinterpret_cast<ReceiveNuDCLSharedData *>( *where ) ;
 			*where += ( sizeof( fReceiveData ) + 4 & ~(size_t)0x3 ) ;
+			
+			*exportedData = fReceiveData ; 
+
+#if IOFIREWIRELIBDEBUG
+assert( sizeof( exportedData->headerBytes ) == sizeof( UInt8 ) ) ;
+#endif
+			
+			ROSETTA_ONLY(
+				{
+					exportedData->headerBytes = /* CFSwapUInt8(*/ exportedData->headerBytes /*)*/ ;
+#if IOFIREWIRELIBDEBUG
+assert( sizeof( exportedData->wait) == sizeof( UInt8 ) ) ;
+#endif
+
+					exportedData->wait = /*CFSwapUInt8(*/ exportedData->wait /*)*/ ;
+				}
+			) ;
+
 		}
 			
 		return size + ( ( sizeof( fReceiveData ) + 4 ) & ~(size_t)0x3 ) ;
@@ -336,14 +409,23 @@ namespace IOFireWireLib {
 		fprintf( file, "\tSEND %p\thdr=", this ) ;
 		if ( fSendData.userHeader.ptr )
 		{
-			fprintf( file, "user @ %08lx %08lx, mask=%08lx %08lx\n", fSendData.userHeader.ptr[0], fSendData.userHeader.ptr[1], 
-					fSendData.userHeaderMask.ptr[0], fSendData.userHeaderMask.ptr[1] ) ;
+			fprintf( file, "user @ %p, mask @ %p\n", fSendData.userHeader.ptr, fSendData.userHeaderMask.ptr ) ;
 		}
 		else
 		{
 			fprintf( file, "auto\n" ) ;
 		}
 		
+		if ( fSendData.skipBranch.dcl )
+		{
+			fprintf( file, "\t\t\tskip --> %p\n", fSendData.skipBranch.dcl ) ;
+		}
+
+		if ( fSendData.skipCallback )
+		{
+			fprintf( file, "\t\t\tskip callback:%p refcon:%p\n", fSendData.skipCallback, fSendData.skipRefcon ) ;
+		}
+			
 		super::Print( file ) ;
 	}
 
@@ -375,8 +457,18 @@ namespace IOFireWireLib {
 			{
 				exportedData->userHeaderMask.offset = findOffsetInRanges( (IOVirtualAddress)exportedData->userHeaderMask.ptr, bufferRanges, bufferRangeCount ) + 1;
 			}
+			
+			ROSETTA_ONLY(
+				{
+					exportedData->skipBranch.index = CFSwapInt32( exportedData->skipBranch.index ) ;
+					exportedData->skipCallback = (NuDCLCallback)CFSwapInt32( (UInt32)exportedData->skipCallback ) ;
+					exportedData->skipRefcon = (void*)CFSwapInt32( (UInt32)exportedData->skipRefcon ) ;
+					exportedData->userHeader.offset = CFSwapInt32( exportedData->userHeader.offset ) ;
+					exportedData->userHeaderMask.offset = CFSwapInt32( exportedData->userHeaderMask.offset ) ;
+				}
+			) ;
 		}
-		
+			
 		return size + ( ( sizeof( fSendData ) + 4 ) & ~(size_t)0x3 ) ;
 	}
 

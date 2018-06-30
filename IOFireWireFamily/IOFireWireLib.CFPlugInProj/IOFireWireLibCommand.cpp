@@ -40,6 +40,7 @@
 #import <assert.h>
 #import <IOKit/IOKitLib.h>
 #import <IOKit/iokitmig.h>
+#import <System/libkern/OSCrossEndian.h>
 
 #define IOFIREWIRELIBCOMMANDIMP_INTERFACE \
 	& Cmd::SGetStatus,	\
@@ -241,20 +242,66 @@ namespace IOFireWireLib {
 		// so we set kFireWireCommandStale_MaxPacket before we submit
 		if (mParams->newMaxPacket > 0)
 			mParams->staleFlags |= kFireWireCommandStale_MaxPacket;
+
+		CommandSubmitParams	* submit_params = params;
 		
-		IOReturn 			err ;
-		err = io_async_method_structureI_structureO( mUserClient.GetUserClientConnection(),
-														mUserClient.GetAsyncPort(),
-														mAsyncRef,
-														1,
-														kCommand_Submit,
-														(char*) params,
-														paramsSize,
-														(char*) submitResult,
-														submitResultSize ) ;
+		IOReturn 			err = 0;
+		vm_address_t vm_address = 0;
+		ROSETTA_ONLY(
+			{
+				err = vm_allocate( mach_task_self(), &vm_address, paramsSize, true /*anywhere*/ );
+				if( vm_address == 0 )
+				{
+					err = kIOReturnNoMemory;
+				}
+			
+				if( !err )
+				{
+					submit_params = (CommandSubmitParams*)vm_address;
+					bcopy( params, submit_params, paramsSize );
+					
+					//submit_params->kernCommandRef = submit_params->kernCommandRef;  // no swap
+					submit_params->type = (IOFireWireCommandType)OSSwapInt32(submit_params->type);
+					submit_params->callback = (void*)OSSwapInt32( (UInt32)submit_params->callback );
+					submit_params->refCon = (void*)OSSwapInt32( (UInt32)submit_params->refCon );
+					submit_params->flags = OSSwapInt32( submit_params->flags );
+					submit_params->staleFlags = OSSwapInt32( submit_params->staleFlags );
+					submit_params->newTarget.nodeID = OSSwapInt16( submit_params->newTarget.nodeID );
+					submit_params->newTarget.addressHi = OSSwapInt16( submit_params->newTarget.addressHi );
+					submit_params->newTarget.addressLo = OSSwapInt32( submit_params->newTarget.addressLo );
+					submit_params->newBuffer = (void*)OSSwapInt32( (UInt32)submit_params->newBuffer);
+					submit_params->newBufferSize = OSSwapInt32( submit_params->newBufferSize );
+					//submit_params->newFailOnReset = submit_params->newFailOnReset;
+					submit_params->newGeneration = OSSwapInt32( submit_params->newGeneration );
+					submit_params->newMaxPacket = OSSwapInt32( submit_params->newMaxPacket );
+				}
+			}
+		);
+			
+		if( !err )
+		{
+			err = io_async_method_structureI_structureO( mUserClient.GetUserClientConnection(),
+															mUserClient.GetAsyncPort(),
+															mAsyncRef,
+															1,
+															kCommand_Submit,
+															(char*) submit_params,
+															paramsSize,
+															(char*) submitResult,
+															submitResultSize ) ;
+		}
 		
+
 		if ( !err )
 		{
+			ROSETTA_ONLY(
+				{
+			//		submitResult->kernCommandRef = submitResult->kernCommandRef;
+					submitResult->result = OSSwapInt32( submitResult->result );
+					submitResult->bytesTransferred = OSSwapInt32( submitResult->bytesTransferred );
+				}
+			);
+
 			if (mParams->flags & kFWCommandInterfaceSyncExecute)
 			{
 				mStatus = submitResult->result ;
@@ -266,6 +313,11 @@ namespace IOFireWireLib {
 			mParams->staleFlags = 0 ;
 			if (!mParams->kernCommandRef)
 				mParams->kernCommandRef = submitResult->kernCommandRef ;
+		}
+
+		if( vm_address )
+		{
+			vm_deallocate( mach_task_self(), vm_address, paramsSize );
 		}
 	
 		return err ;
@@ -674,9 +726,10 @@ namespace IOFireWireLib {
 		
 		if (kIOReturnSuccess == result && syncFlag)
 		{
+				
 			bcopy(submitResult + 1, mParams->newBuffer, mBytesTransferred) ;
 		}
-	
+
 		return result ;
 	}
 	
@@ -698,7 +751,21 @@ namespace IOFireWireLib {
 		me->mIsExecuting 		= false ;
 		
 		bcopy(quads, me->mParams->newBuffer, me->mBytesTransferred) ;
-	
+
+		ROSETTA_ONLY(
+			{
+				// async results get auto swapped on 32 bit boundaries
+				// unswap what shouldn't have been swapped
+				
+				UInt32 * buffer_quads = (UInt32*)me->mParams->newBuffer;
+				int i;
+				for( i = 0; i < numQuads; i++ )
+				{
+					buffer_quads[i] = OSSwapInt32( buffer_quads[i] );
+				}
+			}
+		);
+				
 		if (me->mCallback)
 			(*(me->mCallback))(me->mRefCon, me->mStatus) ;
 	}
@@ -1100,7 +1167,7 @@ namespace IOFireWireLib {
 		if (mParams->newBufferSize != sizeof(UInt32))
 			return kIOReturnBadArgument ;
 
-		*oldValue = *(UInt32*)&mSubmitResult.lockInfo.value ;
+		*oldValue = *(UInt32*)&mSubmitResult.lockInfo.value;
 		return kIOReturnSuccess ;
 	}
 	
@@ -1115,7 +1182,7 @@ namespace IOFireWireLib {
 		if (mParams->newBufferSize != sizeof(UInt64))
 			return kIOReturnBadArgument ;
 
-		*oldValue = mSubmitResult.lockInfo.value ;
+		*oldValue = mSubmitResult.lockInfo.value;
 		return kIOReturnSuccess ;
 	}
 
@@ -1177,6 +1244,21 @@ namespace IOFireWireLib {
 	
 		bcopy((CompareSwapSubmitResult*)quads, & me->mSubmitResult, sizeof(me->mSubmitResult)) ;
 
+		ROSETTA_ONLY(
+			{
+				// async results get auto swapped on 32 bit boundaries
+				// unswap what shouldn't have been swapped
+				
+				// no one uses kernCommandRef currently
+				me->mSubmitResult.kernCommandRef = (UserObjectHandle)OSSwapInt32( (UInt32)me->mSubmitResult.kernCommandRef );
+				me->mSubmitResult.lockInfo.didLock = OSSwapInt32( me->mSubmitResult.lockInfo.didLock );
+				
+				UInt32 * value_quads = (UInt32*)&me->mSubmitResult.lockInfo.value;
+				value_quads[0] = OSSwapInt32( value_quads[0] );
+				value_quads[1] = OSSwapInt32( value_quads[1] );
+			}
+		);
+		
 		me->mStatus 			= result ;
 		me->mBytesTransferred	= me->mSubmitResult.bytesTransferred ;
 		me->mIsExecuting 		= false ;		

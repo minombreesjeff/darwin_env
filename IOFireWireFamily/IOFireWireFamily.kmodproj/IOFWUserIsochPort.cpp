@@ -36,6 +36,8 @@
 #import <IOKit/firewire/IOFWDCLPool.h>
 #import <IOKit/firewire/IOFWDCL.h>
 #import <IOKit/IOBufferMemoryDescriptor.h>
+#include <IOKit/IOKitKeysPrivate.h>
+#include <IOKit/IODMACommand.h>
 
 // protected
 #import <IOKit/firewire/IOFireWireLink.h>
@@ -269,6 +271,124 @@ IOFWUserLocalIsochPort :: free()
 	super :: free() ;
 }
 
+#if 0
+
+IOReturn checkMemoryInRange( IOMemoryDescriptor * memory, UInt64 mask )
+{
+	IOReturn status = kIOReturnSuccess;
+
+	if( memory == NULL )
+	{
+		status = kIOReturnBadArgument;
+	}
+	
+	//
+	// setup
+	//
+	
+	bool memory_prepared = false;
+	if( status == kIOReturnSuccess )
+	{
+		status = memory->prepare( kIODirectionInOut );
+	}
+	
+	if( status == kIOReturnSuccess )
+	{
+		memory_prepared = true;
+	}
+	
+	UInt64 length = 0;
+	IODMACommand * dma_command = NULL;
+	if( status == kIOReturnSuccess )
+	{
+		length = memory->getLength();
+		dma_command = IODMACommand::withSpecification( 
+												kIODMACommandOutputHost64,		// segment function
+												64,								// max address bits
+												length,							// max segment size
+												IODMACommand::kMapped | IODMACommand::kIterateOnly,		// IO mapped & don't bounce buffer
+												length,							// max transfer size
+												0,								// page alignment
+												NULL,							// mapper
+												NULL );							// refcon
+		if( dma_command == NULL )
+			status = kIOReturnError;
+		
+	}
+	
+	if( status == kIOReturnSuccess )
+	{
+		// set memory descriptor and don't prepare it
+		status = dma_command->setMemoryDescriptor( memory, false ); 
+	}	
+
+	bool dma_command_prepared = false;
+	if( status == kIOReturnSuccess )
+	{
+		status = dma_command->prepare( 0, length, true );
+	}
+
+	if( status == kIOReturnSuccess )
+	{
+		dma_command_prepared = true;
+	}
+	
+	//
+	// check ranges
+	//
+
+	if( status == kIOReturnSuccess )
+	{
+		UInt64 offset = 0;
+		while( (offset < length) && (status == kIOReturnSuccess) )
+		{
+			IODMACommand::Segment64 segments[10];
+			UInt32 num_segments = 10;
+			status = dma_command->gen64IOVMSegments( &offset, segments, &num_segments );
+			if( status == kIOReturnSuccess )
+			{
+				for( UInt32 i = 0; i < num_segments; i++ )
+				{
+				//	IOLog( "checkSegments - segments[%d].fIOVMAddr = 0x%016llx, fLength = %d\n", i, segments[i].fIOVMAddr, segments[i].fLength  );
+						
+					if( (segments[i].fIOVMAddr & (~mask)) )
+					{
+						IOLog( "checkSegmentsFailed - 0x%016llx & 0x%016llx\n", segments[i].fIOVMAddr, mask );
+						status = kIOReturnNotPermitted;
+						break;
+					}
+				}
+			}
+		}
+	}
+	
+	//
+	// clean up
+	//
+	
+	if( dma_command_prepared )
+	{
+		dma_command->complete();
+		dma_command_prepared = false;
+	}
+		
+	if( dma_command )
+	{
+		dma_command->release();
+		dma_command = NULL;
+	}
+	
+	if( memory_prepared )
+	{
+		memory->complete();
+		memory_prepared = false;
+	}
+	
+	return status;
+}
+
+#endif
+
 bool
 IOFWUserLocalIsochPort :: initWithUserDCLProgram ( 
 		AllocateParams * 			params,
@@ -333,7 +453,15 @@ IOFWUserLocalIsochPort :: initWithUserDCLProgram (
 		if ( ! bufferDesc )
 			error = kIOReturnNoMemory ;
 		else
-			error = bufferDesc->prepare() ;
+		{
+		
+			// IOLog( "IOFWUserLocalIsochPort :: initWithUserDCLProgram - checkMemoryInRange status 0x%08lx\n", checkMemoryInRange( bufferDesc, 0x000000001FFFFFFF ) );
+		
+			error = bufferDesc->prepare( kIODirectionPrepareToPhys32 ) ;
+				
+			// IOLog( "IOFWUserLocalIsochPort :: initWithUserDCLProgram - prep 32 checkMemoryInRange status 0x%08lx\n", checkMemoryInRange( bufferDesc, 0x000000001FFFFFFF ) );
+			
+		}
 	}
 	
 // create map for buffers; we will need to get a virtual address for them
@@ -373,7 +501,7 @@ IOFWUserLocalIsochPort :: initWithUserDCLProgram (
 		DCLCommand * opcodes = NULL ;
 		switch ( params->version )
 		{
-			case 0 :
+			case kDCLExportDataLegacyVersion :
 
 				error = importUserProgram( userProgramExportDesc, params->bufferRangeCount, bufferRanges, bufferMap ) ;
 				ErrorLogCond( error, "importUserProgram returned %x\n", error ) ;
@@ -385,7 +513,7 @@ IOFWUserLocalIsochPort :: initWithUserDCLProgram (
 				
 				break ;
 			
-			case 1 :
+			case kDCLExportDataNuDCLRosettaVersion :
 
 				fDCLPool = fUserClient->getOwner()->getBus()->createDCLPool() ;
 				
@@ -606,7 +734,7 @@ IOFWUserLocalIsochPort :: importUserProgram (
 			++fProgramCount ;			
 		}
 		
-		fDCLTable = new (DCLCommand*)[ fProgramCount ] ;
+		fDCLTable = new DCLCommand*[ fProgramCount ] ;
 		
 		InfoLog( "made DCL table, %d entries\n", fProgramCount ) ;
 		

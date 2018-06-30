@@ -31,6 +31,8 @@
 #import "IOFWUserPhysicalAddressSpace.h"
 #import "FWDebugging.h"
 
+#include <IOKit/IOKitKeysPrivate.h>
+
 OSDefineMetaClassAndStructors(IOFWUserPhysicalAddressSpace, IOFWPhysicalAddressSpace) ;
 
 bool
@@ -43,7 +45,7 @@ IOFWUserPhysicalAddressSpace::initWithDesc(
 	if (!IOFWPhysicalAddressSpace::initWithDesc(bus, mem))
 		return false ;
 	
-	if ( kIOReturnSuccess != mem->prepare() )
+	if ( kIOReturnSuccess != mem->prepare( kIODirectionPrepareToPhys32 ) )
 	{
 		fMemPrepared = false ;
 		return false ;

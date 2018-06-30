@@ -94,8 +94,8 @@ IOFireWireLink::createDeviceNub(CSRNodeUniqueID guid, const IOFWNodeScan *scan)
             propTable->setObject(gFireWire_GUID, prop);
             prop->release();
         }
-        prop = OSNumber::withNumber((scan->fSelfIDs[0] & kFWSelfID0SP) >> kFWSelfID0SPPhase, 32);
-        if(prop) {
+		prop = OSNumber::withNumber((OSSwapBigToHostInt32(scan->fSelfIDs[0]) & kFWSelfID0SP) >> kFWSelfID0SPPhase, 32);
+		if(prop) {
             propTable->setObject(gFireWireSpeed, prop);
             prop->release();
         }
@@ -105,12 +105,10 @@ IOFireWireLink::createDeviceNub(CSRNodeUniqueID guid, const IOFWNodeScan *scan)
             newDevice = NULL;
         }
         
-//        IOLog("Guid is 0x%x:0x%x\n", scan->fBuf[3], scan->fBuf[4]);
-        // QPS DVDRam, CD R/W
-		// Temporarily do only quadlet reads from all Config ROMs (sorry William)
-//		if(scan->fBuf[3] == 0x0080cf02 || scan->fBuf[3] == 0x00101002) {
-            newDevice->setMaxPackLog(false, true, 2);
-//		}
+//        IOLog("IOFireWireLink::createDeviceNub - GUID is 0x%llx\n", guid );
+
+        // use quadlet reads for config rom
+		newDevice->setMaxPackLog(false, true, 2);
     } while (false);
     if(propTable)
         propTable->release();	// done with it after init
@@ -178,3 +176,12 @@ void IOFireWireLink::handleSystemShutDown( UInt32 messageType )
 	// nothing to do
 }
 
+void IOFireWireLink::configureAsyncRobustness( bool enabled )
+{
+	// nothing to do
+}
+
+bool IOFireWireLink::isPhysicalAccessEnabledForNodeID( UInt16 nodeID )
+{
+	return false;
+}

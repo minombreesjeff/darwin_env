@@ -32,6 +32,7 @@
 #import "IOFireWireLibDevice.h"
 
 #import <IOKit/iokitmig.h>
+#import <System/libkern/OSCrossEndian.h>
 
 namespace IOFireWireLib {
 	
@@ -197,7 +198,15 @@ namespace IOFireWireLib {
 		{
 			throw error ;
 		}
-		
+
+		ROSETTA_ONLY(
+			{
+				info.address.nodeID = OSSwapInt16( info.address.nodeID );
+				info.address.addressHi = OSSwapInt16( info.address.addressHi );
+				info.address.addressLo = OSSwapInt32( info.address.addressLo );
+			}
+		);
+				
 		mFWAddress = info.address ;
 	}
 	
@@ -422,7 +431,7 @@ namespace IOFireWireLib {
 		else if ( (bool)args[7] )
 		{
 //			void** lockValues 	= new (void*)[numArgs+1] ;
-			void** lockValues 	= (void**) new ( UInt32 * )[numArgs+1] ;
+			void** lockValues 	= (void**) new UInt32 *[numArgs+1] ;
 	
 			bcopy( args, & lockValues[1], sizeof(void*) * numArgs ) ;
 			lockValues[0] = refcon ;

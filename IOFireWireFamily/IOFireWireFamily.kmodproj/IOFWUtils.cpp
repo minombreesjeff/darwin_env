@@ -45,11 +45,12 @@
 
 UInt16 FWUpdateCRC16(UInt16 crc16, UInt32 quad)
 {
+	UInt32 host_quad = OSSwapBigToHostInt32( quad );
     SInt32 shift;
     UInt32 sum;
     UInt32 crc = crc16;
     for (shift = 28; shift >= 0; shift -= 4) {
-        sum = ((crc >> 12) ^ (quad >> shift)) & 0x0F;
+        sum = ((crc >> 12) ^ (host_quad >> shift)) & 0x0F;
         crc = (crc << 4) ^ (sum << 12) ^ (sum << 5) ^ (sum);
     }
     return (crc & 0xFFFF);
@@ -72,7 +73,7 @@ UInt16	FWComputeCRC16(const UInt32 *pQuads, UInt32 numQuads)
     // Compute CRC 16 over all quads.
     crc16 = 0;
     for (quadNum = 0; quadNum < numQuads; quadNum++) {
-        quad = *pQuads++;
+        quad = OSSwapBigToHostInt32(*pQuads++);
         for (shift = 28; shift >= 0; shift -= 4) {
             sum = ((crc16 >> 12) ^ (quad >> shift)) & 0x0F;
             crc16 = (crc16 << 4) ^ (sum << 12) ^ (sum << 5) ^ (sum);

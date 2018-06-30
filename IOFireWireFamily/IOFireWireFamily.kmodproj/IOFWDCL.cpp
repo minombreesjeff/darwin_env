@@ -17,7 +17,7 @@
 #import <libkern/c++/OSCollectionIterator.h>
 
 #if FIRELOG
-#import "IOFireLog.h"
+#import <IOKit/firewire/FireLog.h>
 #define FIRELOG_MSG(x) FireLog x
 #else
 #define FIRELOG_MSG(x) do {} while (0)
@@ -257,7 +257,15 @@ IOFWDCL :: debug()
 	
 	if ( fCallback )
 	{
-		FIRELOG_MSG(( "    callback %p\n", fCallback )) ;
+		if ( fCallback == IOFWUserLocalIsochPort::s_nuDCLCallout )
+		{
+			natural_t * asyncRef = (natural_t*)getRefcon() ;
+			FIRELOG_MSG(( "    callback (USER) callback=%p refcon=%p\n", asyncRef[ kIOAsyncCalloutFuncIndex ], asyncRef[ kIOAsyncCalloutRefconIndex ] )) ;
+		}
+		else
+		{
+			FIRELOG_MSG(( "    callback %p\n", fCallback )) ;
+		}
 	}
 	
 	if ( fTimeStampPtr )
@@ -627,7 +635,7 @@ IOFWSendDCL :: setSkipCallback( Callback callback )
 void
 IOFWSendDCL :: setSkipRefcon( void * refcon )
 {
-	fSkipRefcon = 0 ; 
+	fSkipRefcon = refcon ; 
 }
 
 IOFWDCL::Callback
@@ -682,10 +690,32 @@ void
 IOFWSendDCL :: debug ()
 {
 	FIRELOG_MSG(("%p: SEND\n", this )) ;
+	if ( fUserHeaderPtr )
+	{
+		FIRELOG_MSG(("    user hdr: %p, user hdr mask --> %p\n", fUserHeaderPtr, fUserHeaderMaskPtr )) ;
+	}
+
 	if ( fSkipBranchDCL )
 	{
 		FIRELOG_MSG(("    skip --> %p\n", fSkipBranchDCL )) ;
-		if ( fSkipCallback )
+	}
+	
+	if ( fSkipCallback )
+	{
+		if ( fSkipCallback == IOFWUserLocalIsochPort::s_nuDCLCallout )
+		{
+			FIRELOG_MSG(("        skip callback: (USER) " )) ;
+			
+			if ( fSkipRefcon )
+			{
+				FIRELOG_MSG(("callback:%p refcon:0x%lx\n", ((natural_t*)fSkipRefcon)[ kIOAsyncCalloutFuncIndex ], ((natural_t*)fSkipRefcon)[ kIOAsyncCalloutRefconIndex ] )) ;
+			}
+			else
+			{
+				FIRELOG_MSG(("NULL\n")) ;
+			}
+		}
+		else
 		{
 			FIRELOG_MSG(("        skip callback: %p\n", fSkipCallback )) ;
 			FIRELOG_MSG(("        skip refcon: 0x%lx\n", fSkipRefcon )) ;

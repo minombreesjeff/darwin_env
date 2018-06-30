@@ -29,6 +29,12 @@
  */
 /*
 	$Log: IOFireWireLibPriv.h,v $
+	Revision 1.34.6.3  2006/01/31 04:49:57  collin
+	*** empty log message ***
+	
+	Revision 1.34.6.1  2006/01/17 00:35:00  niels
+	<rdar://problem/4399365> FireWire NuDCL APIs need Rosetta support
+	
 	Revision 1.34  2004/05/04 22:52:20  niels
 	*** empty log message ***
 	
@@ -306,6 +312,12 @@ namespace IOFireWireLib {
 	enum
 	{
 		kNuDCLUser			= BIT( 18 )		// set back to BIT(18) when we want to support user space update before callback
+	} ;
+	
+	enum
+	{
+		kDCLExportDataLegacyVersion = 0
+		, kDCLExportDataNuDCLRosettaVersion = 8
 	} ;
 	
 	//

@@ -46,6 +46,7 @@
 #import <IOKit/firewire/IOConfigDirectory.h>
 #import "IORemoteConfigDirectory.h"
 #import "IOFireWireROMCache.h"
+#import <IOKit/firewire/IOFWSimpleContiguousPhysicalAddressSpace.h>
 
 OSDefineMetaClassAndStructors(IOFireWireDeviceAux, IOFireWireNubAux);
 OSMetaClassDefineReservedUnused(IOFireWireDeviceAux, 0);
@@ -166,6 +167,56 @@ void IOFireWireDeviceAux::setUnitCount( UInt32 count )
 UInt32 IOFireWireDeviceAux::getUnitCount( void )
 {
 	return fUnitCount;
+}
+
+// isPhysicalAccessEnabled
+//
+//
+
+bool IOFireWireDeviceAux::isPhysicalAccessEnabled( void )
+{
+	IOFireWireDevice * device = (IOFireWireDevice*)fPrimary;
+	
+	bool enabled = false;
+	
+	if( device->fNodeID != kFWBadNodeID )
+    {
+		enabled = device->fControl->isPhysicalAccessEnabledForNodeID( device->fNodeID & 0x3f );
+    }
+
+	return enabled;
+}
+
+// createSimpleContiguousPhysicalAddressSpace
+//
+//
+
+IOFWSimpleContiguousPhysicalAddressSpace * IOFireWireDeviceAux::createSimpleContiguousPhysicalAddressSpace( vm_size_t size, IODirection direction )
+{
+    IOFWSimpleContiguousPhysicalAddressSpace * space = IOFireWireNubAux::createSimpleContiguousPhysicalAddressSpace( size, direction );
+	
+	if( space != NULL )
+	{
+		space->addTrustedNode( (IOFireWireDevice*)fPrimary );
+	}
+	
+	return space;
+}
+
+// createSimplePhysicalAddressSpace
+//
+//
+
+IOFWSimplePhysicalAddressSpace * IOFireWireDeviceAux::createSimplePhysicalAddressSpace( vm_size_t size, IODirection direction )
+{
+    IOFWSimplePhysicalAddressSpace * space = IOFireWireNubAux::createSimplePhysicalAddressSpace( size, direction );
+	
+	if( space != NULL )
+	{
+		space->addTrustedNode( (IOFireWireDevice*)fPrimary );
+	}
+	
+	return space;
 }
 
 // free
@@ -318,21 +369,26 @@ bool IOFireWireDevice::init(OSDictionary *propTable, const IOFWNodeScan *info)
 {
     if(!IOFireWireNub::init(propTable))
        return false;
-       
+    
+	fROMReadRetry = 4;
+      
     // Terminator...
     // fUniqueID = (UInt64)this;
     
-    
-    if(info->fROMSize > 8) {
-        UInt32 maxPackLog =
-        ((info->fBuf[2] & kFWBIBMaxRec) >> kFWBIBMaxRecPhase) + 1;
-        if(maxPackLog == 1) {
+    if(info->fROMSize > 8) 
+	{
+		UInt32 bib_quad = OSSwapBigToHostInt32( info->fBuf[2] );
+        UInt32 maxPackLog = ((bib_quad & kFWBIBMaxRec) >> kFWBIBMaxRecPhase) + 1;
+        if( maxPackLog == 1 ) 
+		{
             IOLog("Illegal maxrec, using 512 bytes\n");
             maxPackLog = 9;
         }
+		
         // if 1394A bus info block, respect maxROM
-        if(info->fBuf[2] & kFWBIBGeneration) {
-            if(((info->fBuf[2] & kFWBIBMaxROM) >> kFWBIBMaxROMPhase) == 2)
+        if( bib_quad & kFWBIBGeneration ) 
+		{
+            if(((bib_quad & kFWBIBMaxROM) >> kFWBIBMaxROMPhase) == 2)
                 fMaxReadROMPackLog = 10;	// 1024 bytes max.
             else
                 fMaxReadROMPackLog = 2; // Just quads for ROM reads
@@ -599,7 +655,8 @@ void IOFireWireDevice::setNodeROM(UInt32 gen, UInt16 localID, const IOFWNodeScan
 	
     if( newROMSize > 12 ) 
 	{
-        UInt32 vendorID = info->fBuf[3] >> 8;
+		UInt32 bib_quad = OSSwapBigToHostInt32( info->fBuf[3] );
+        UInt32 vendorID = bib_quad >> 8;
         prop = OSNumber::withNumber( vendorID, 32 );
         setProperty( gFireWireVendor_ID, prop );
         prop->release();
@@ -818,7 +875,8 @@ void IOFireWireDevice::processROM( RomScan *romScan )
 		
 		fControl->openGate();
 	}
-	else if( status != kIOFireWireConfigROMInvalid )
+
+	if( (status != kIOReturnSuccess) && (status != kIOFireWireConfigROMInvalid) )
 	{
 		fControl->closeGate();
 		
@@ -834,6 +892,25 @@ void IOFireWireDevice::processROM( RomScan *romScan )
 			adjustBusy( -1 );
 		}
 		
+		fControl->openGate();
+	}
+
+	// if we've got a non-bus reset error reading the rom
+	// cause a bus reset and try again
+
+	if( (status != kIOReturnSuccess) && (status != kIOFireWireBusReset) )
+	{
+		// use workloop lock to serial accesses to the retry count
+		fControl->closeGate();
+
+		if( fROMReadRetry > 0 )
+		{
+			fROMReadRetry--;
+			
+			// something's a miss let's try it all again
+			fControl->resetBus();
+		}
+
 		fControl->openGate();
 	}
 	

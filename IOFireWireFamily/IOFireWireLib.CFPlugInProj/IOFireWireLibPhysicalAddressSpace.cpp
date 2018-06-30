@@ -32,6 +32,8 @@
 #import "IOFireWireLibDevice.h"
 #import <exception>
 
+#import <System/libkern/OSCrossEndian.h>
+
 namespace IOFireWireLib {
 	
 	// COM
@@ -171,6 +173,17 @@ namespace IOFireWireLib {
 		{
 			throw error ;
 		}
+
+		ROSETTA_ONLY(	
+			{
+				UInt32 i;
+				for( i = 0; i < mSegmentCount; i++ );
+				{
+					mSegments[i].location = OSSwapInt32( mSegments[i].location );
+					mSegments[i].length = OSSwapInt32( mSegments[i].length );
+				}
+			}
+		);
 
 		mFWAddress = FWAddress(0, mSegments[0].location, 0) ;
 	}

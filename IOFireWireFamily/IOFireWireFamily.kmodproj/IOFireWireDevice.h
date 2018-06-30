@@ -77,6 +77,12 @@ protected:
 	
 	void setUnitCount( UInt32 count );
 	UInt32 getUnitCount( void );
+
+	bool isPhysicalAccessEnabled( void );
+
+	virtual IOFWSimpleContiguousPhysicalAddressSpace * createSimpleContiguousPhysicalAddressSpace( vm_size_t size, IODirection direction );
+		
+    virtual IOFWSimplePhysicalAddressSpace * createSimplePhysicalAddressSpace( vm_size_t size, IODirection direction );
 		
 private:
     OSMetaClassDeclareReservedUnused(IOFireWireDeviceAux, 0);
@@ -111,6 +117,7 @@ protected:
     UInt32		fROMGeneration;
     IORecursiveLock *fROMLock;
     RegistrationState	fRegistrationState;
+	UInt32		fROMReadRetry;
 	
 /*! @struct ExpansionData
     @discussion This structure will be used to expand the capablilties of the class in the future.

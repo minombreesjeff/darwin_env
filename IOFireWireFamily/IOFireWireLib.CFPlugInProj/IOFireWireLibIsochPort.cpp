@@ -27,6 +27,21 @@
  *  Copyright (c) 2001-2002 Apple Computer, Inc. All rights reserved.
  *
  * $Log: IOFireWireLibIsochPort.cpp,v $
+ * Revision 1.36.4.6  2006/01/31 04:49:57  collin
+ * *** empty log message ***
+ *
+ * Revision 1.36.4.4  2006/01/17 00:35:00  niels
+ * <rdar://problem/4399365> FireWire NuDCL APIs need Rosetta support
+ *
+ * Revision 1.36.4.3  2006/01/04 00:45:54  collin
+ * *** empty log message ***
+ *
+ * Revision 1.36.4.2  2005/08/06 01:31:31  collin
+ * *** empty log message ***
+ *
+ * Revision 1.36.4.1  2005/07/23 00:30:46  collin
+ * *** empty log message ***
+ *
  * Revision 1.36  2005/03/12 03:27:52  collin
  * *** empty log message ***
  *
@@ -103,6 +118,7 @@
 
 #import <IOKit/iokitmig.h>
 #import <mach/mach.h>
+#import <System/libkern/OSCrossEndian.h>
 
 #define IOFIREWIREISOCHPORTIMP_INTERFACE	\
 	& IsochPortCOM::SGetSupported,	\
@@ -630,6 +646,9 @@ namespace IOFireWireLib {
 				bufferTree.CoalesceRange( userBufferRanges[index]) ;
 		}		
 
+		IOByteCount			programExportBytes = 0 ;
+		IOVirtualAddress	programData = 0 ;
+
 		LocalIsochPortAllocateParams params ;
 		{
 			params.programExportBytes = 0 ;
@@ -638,30 +657,41 @@ namespace IOFireWireLib {
 
 		if ( program->opcode == kDCLNuDCLLeaderOp )
 		{
-			NuDCLPool*	pool	= reinterpret_cast<NuDCLPool*>( reinterpret_cast< DCLNuDCLLeader* >( program )->program ) ;
-
-			params.version 				= 1 ;		// new-style DCL program
-
-			pool->CoalesceBuffers( bufferTree ) ;
+//			IF_ROSETTA()
+//			{
+//				//zzz we need NuDCL Rosetta support
+//				error = kIOReturnUnsupported;
+//			}
 			
-			mBufferRangeCount = bufferTree.GetCount() ;
-			mBufferRanges = new IOVirtualRange[ mBufferRangeCount ] ;
-			if ( !mBufferRanges )
+			if( !error )
 			{
-				error = kIOReturnNoMemory ;
-			}
-			else
-			{
-				bufferTree.GetCoalesceList( mBufferRanges ) ;
-			
-				params.programExportBytes 	= pool->Export( & params.programData, mBufferRanges, mBufferRangeCount ) ;
+				NuDCLPool*	pool	= reinterpret_cast<NuDCLPool*>( reinterpret_cast< DCLNuDCLLeader* >( program )->program ) ;
+
+				params.version 				= kDCLExportDataNuDCLRosettaVersion ;		// new-style DCL program
+
+				pool->CoalesceBuffers( bufferTree ) ;
+				
+				mBufferRangeCount = bufferTree.GetCount() ;
+				mBufferRanges = new IOVirtualRange[ mBufferRangeCount ] ;
+				if ( !mBufferRanges )
+				{
+					error = kIOReturnNoMemory ;
+				}
+				else
+				{
+					bufferTree.GetCoalesceList( mBufferRanges ) ;
+				
+					programExportBytes 	= pool->Export( &programData, mBufferRanges, mBufferRangeCount ) ;				
+					params.programExportBytes = programExportBytes ;
+					params.programData = programData;
+				}
 			}
 		}
 		else
 		{	
 			unsigned programCount = 0 ;
 			
-			params.version = 0 ;					// old-style DCL program
+			params.version = kDCLExportDataLegacyVersion ;					// old-style DCL program
 			
 			// count DCLs in program and coalesce buffers:
 			for( DCLCommand * dcl = mDCLProgram; dcl != nil; dcl = dcl->pNextDCLCommand )
@@ -679,7 +709,9 @@ namespace IOFireWireLib {
 			
 			if ( !error )
 			{
-				error = ExportDCLs( & params.programData, & params.programExportBytes ) ;
+				error = ExportDCLs( &programData, &programExportBytes ) ;
+				params.programData = programData;
+				params.programExportBytes = programExportBytes;
 			}
 
 			if ( !error )
@@ -727,10 +759,40 @@ namespace IOFireWireLib {
 		
 		InfoLog("startEvent=%x, startState=%x, startMask=%x\n", params.startEvent, params.startState, params.startMask) ;
 
+		ROSETTA_ONLY(
+			{
+				params.version = OSSwapInt32( params.version );
+				params.talking = params.talking; // byte
+				params.startEvent = OSSwapInt32( params.startEvent );
+				params.startState = OSSwapInt32( params.startState );
+				params.startMask = OSSwapInt32( params.startMask );
+				params.programExportBytes = OSSwapInt32( params.programExportBytes );
+				params.programData = OSSwapInt32( params.programData );
+				
+				for( UInt32 i = 0; i < params.bufferRangeCount; i++ )
+				{
+					params.bufferRanges[i].address = OSSwapInt32( params.bufferRanges[i].address );
+					params.bufferRanges[i].length = OSSwapInt32( params.bufferRanges[i].length );
+					
+				}
+				
+				params.bufferRangeCount = OSSwapInt32( params.bufferRangeCount );
+				params.bufferRanges = (IOVirtualRange*)OSSwapInt32( (UInt32)params.bufferRanges );
+				params.options = (IOFWIsochPortOptions)OSSwapInt32( params.options | kFWIsochBigEndianUpdates );
+				params.userObj = (void*)OSSwapInt32( (UInt32)params.userObj );
+			}
+		);
+
 		IOByteCount	outputSize = sizeof( UserObjectHandle ) ;
 		error = :: IOConnectMethodStructureIStructureO (	mDevice.GetUserClientConnection(),
 															kLocalIsochPort_Allocate, sizeof ( params ), 
 															& outputSize, & params, & mKernPortRef ) ;
+		ROSETTA_ONLY(
+			{
+				mKernPortRef = (UserObjectHandle)OSSwapInt32( (UInt32)mKernPortRef );
+			}
+		);
+
 		if (error)
 		{
 			DebugLog ( "Couldn't create local isoch port (error=%x)\nCheck your buffers!\n", error ) ;
@@ -753,7 +815,7 @@ namespace IOFireWireLib {
 
 			// nnn a bit skanky: turn a function pointer to member function into an integer:
 			OSAsyncReference asyncRef ;
-			asyncRef[ kIOAsyncCalloutFuncIndex ] =  (natural_t) (void (*)(void*, int )) & LocalIsochPort::DCLStopTokenCallProcHandler ;
+			asyncRef[ kIOAsyncCalloutFuncIndex ] =  (natural_t) & LocalIsochPort::s_DCLStopTokenCallProcHandler ;
 			asyncRef[ kIOAsyncCalloutRefconIndex ] = (natural_t) this ;
 
 			error = :: io_async_method_scalarI_scalarO (	mDevice.GetUserClientConnection(), 
@@ -768,8 +830,10 @@ namespace IOFireWireLib {
 		}
 		
 		if ( params.programData )
-			vm_deallocate( mach_task_self (), (vm_address_t) params.programData, params.programExportBytes ) ;		// this is temporary storage
-						
+		{
+			vm_deallocate( mach_task_self (), (vm_address_t) programData, programExportBytes ) ;		// this is temporary storage
+		}
+	
 		// make our mutex
 		pthread_mutex_init ( & mMutex, nil ) ;	
 	}
@@ -860,6 +924,12 @@ namespace IOFireWireLib {
 //		return :: IOConnectMethodScalarIScalarO (	mDevice.GetUserClientConnection(), kLocalIsochPort_ModifyTransferPacketDCLSize, 
 //													3, 0, mKernPortRef, dcl->compilerData, newSize ) ;
 		return kIOReturnUnsupported ;
+	}
+
+	void
+	LocalIsochPort::s_DCLStopTokenCallProcHandler ( void * self, IOReturn e )
+	{
+		((LocalIsochPort*)self)->DCLStopTokenCallProcHandler(e) ;
 	}
 
 	void
@@ -1066,6 +1136,98 @@ namespace IOFireWireLib {
 					
 						break ;
 				}
+
+
+				ROSETTA_ONLY(
+					{	
+						switch(dcl->opcode & ~kFWDCLOpFlagMask)
+						{
+							case kDCLSendPacketStartOp:
+							case kDCLSendPacketWithHeaderStartOp:
+							case kDCLSendPacketOp:
+							case kDCLReceivePacketStartOp:
+							case kDCLReceivePacketOp:
+								((DCLTransferPacket*)dcl)->pNextDCLCommand = (DCLCommand*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->pNextDCLCommand );
+								((DCLTransferPacket*)dcl)->compilerData = OSSwapInt32( ((DCLTransferPacket*)dcl)->compilerData );
+								((DCLTransferPacket*)dcl)->opcode = OSSwapInt32( ((DCLTransferPacket*)dcl)->opcode );
+								((DCLTransferPacket*)dcl)->buffer = (void*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->buffer );
+								((DCLTransferPacket*)dcl)->size = OSSwapInt32( ((DCLTransferPacket*)dcl)->size );
+								break ;
+								
+							case kDCLSendBufferOp:
+							case kDCLReceiveBufferOp:
+								((DCLTransferPacket*)dcl)->pNextDCLCommand = (DCLCommand*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->pNextDCLCommand );
+								((DCLTransferBuffer*)dcl)->compilerData = OSSwapInt32( ((DCLTransferBuffer*)dcl)->compilerData );
+								((DCLTransferBuffer*)dcl)->opcode = OSSwapInt32( ((DCLTransferBuffer*)dcl)->opcode );
+								((DCLTransferBuffer*)dcl)->buffer = (void*)OSSwapInt32( (UInt32)((DCLTransferBuffer*)dcl)->buffer );
+								((DCLTransferBuffer*)dcl)->size = OSSwapInt32( ((DCLTransferBuffer*)dcl)->size );
+								((DCLTransferBuffer*)dcl)->packetSize = OSSwapInt16( ((DCLTransferBuffer*)dcl)->packetSize );
+								((DCLTransferBuffer*)dcl)->reserved = OSSwapInt16( ((DCLTransferBuffer*)dcl)->reserved );
+								((DCLTransferBuffer*)dcl)->bufferOffset = OSSwapInt32( ((DCLTransferBuffer*)dcl)->bufferOffset );
+								break ;
+					
+							case kDCLCallProcOp:
+								((DCLTransferPacket*)dcl)->pNextDCLCommand = (DCLCommand*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->pNextDCLCommand );
+								((DCLCallProc*)dcl)->compilerData = OSSwapInt32( ((DCLCallProc*)dcl)->compilerData );
+								((DCLCallProc*)dcl)->opcode = OSSwapInt32( ((DCLCallProc*)dcl)->opcode );
+								((DCLCallProc*)dcl)->proc = (DCLCallCommandProc *)OSSwapInt32( (UInt32)((DCLCallProc*)dcl)->proc );
+								((DCLCallProc*)dcl)->procData = OSSwapInt32( ((DCLCallProc*)dcl)->procData );
+								break ;
+								
+							case kDCLLabelOp:
+								((DCLTransferPacket*)dcl)->pNextDCLCommand = (DCLCommand*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->pNextDCLCommand );
+								((DCLLabel*)dcl)->compilerData = OSSwapInt32( ((DCLLabel*)dcl)->compilerData );
+								((DCLLabel*)dcl)->opcode = OSSwapInt32( ((DCLLabel*)dcl)->opcode );
+								break ;
+								
+							case kDCLJumpOp:
+								((DCLTransferPacket*)dcl)->pNextDCLCommand = (DCLCommand*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->pNextDCLCommand );
+								((DCLJump*)dcl)->compilerData = OSSwapInt32( ((DCLJump*)dcl)->compilerData );
+								((DCLJump*)dcl)->opcode = OSSwapInt32( ((DCLJump*)dcl)->opcode );
+								((DCLJump*)dcl)->pJumpDCLLabel = (DCLLabel*)OSSwapInt32( (UInt32)((DCLJump*)dcl)->pJumpDCLLabel );
+								break ;
+								
+							case kDCLSetTagSyncBitsOp:
+								((DCLTransferPacket*)dcl)->pNextDCLCommand = (DCLCommand*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->pNextDCLCommand );
+								((DCLSetTagSyncBits*)dcl)->compilerData = OSSwapInt32( ((DCLSetTagSyncBits*)dcl)->compilerData );
+								((DCLSetTagSyncBits*)dcl)->opcode = OSSwapInt32( ((DCLSetTagSyncBits*)dcl)->opcode );
+								((DCLSetTagSyncBits*)dcl)->tagBits = OSSwapInt16( ((DCLSetTagSyncBits*)dcl)->tagBits );
+								((DCLSetTagSyncBits*)dcl)->syncBits = OSSwapInt16( ((DCLSetTagSyncBits*)dcl)->syncBits );
+								break ;
+								
+							case kDCLUpdateDCLListOp:
+								((DCLTransferPacket*)dcl)->pNextDCLCommand = (DCLCommand*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->pNextDCLCommand );
+								((DCLUpdateDCLList*)dcl)->compilerData = OSSwapInt32( ((DCLUpdateDCLList*)dcl)->compilerData );
+								((DCLUpdateDCLList*)dcl)->opcode = OSSwapInt32( ((DCLUpdateDCLList*)dcl)->opcode );
+								
+								{
+									DCLCommand ** list = (DCLCommand**)( ((DCLUpdateDCLList*)dcl) + 1 )  ;
+									for( unsigned index=0; index < ((DCLUpdateDCLList*)dcl)->numDCLCommands; ++index )
+									{
+										list[ index ] = (DCLCommand*)OSSwapInt32( (UInt32)list[ index ] );
+									}
+								}
+								
+								((DCLUpdateDCLList*)dcl)->dclCommandList = (DCLCommand**)OSSwapInt32( (UInt32)((DCLUpdateDCLList*)dcl)->dclCommandList );
+								((DCLUpdateDCLList*)dcl)->numDCLCommands = OSSwapInt32( ((DCLUpdateDCLList*)dcl)->numDCLCommands );
+								break ;
+					
+							case kDCLPtrTimeStampOp:
+								((DCLTransferPacket*)dcl)->pNextDCLCommand = (DCLCommand*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->pNextDCLCommand );
+								((DCLPtrTimeStamp*)dcl)->compilerData = OSSwapInt32( ((DCLPtrTimeStamp*)dcl)->compilerData );
+								((DCLPtrTimeStamp*)dcl)->opcode = OSSwapInt32( ((DCLPtrTimeStamp*)dcl)->opcode );
+								((DCLPtrTimeStamp*)dcl)->timeStampPtr = (UInt32 *)OSSwapInt32( (UInt32)((DCLPtrTimeStamp*)dcl)->timeStampPtr );
+								break;
+								
+							case kDCLSkipCycleOp:
+								((DCLTransferPacket*)dcl)->pNextDCLCommand = (DCLCommand*)OSSwapInt32( (UInt32)((DCLTransferPacket*)dcl)->pNextDCLCommand );
+								((DCLCommand*)dcl)->compilerData = OSSwapInt32( ((DCLCommand*)dcl)->compilerData );
+								((DCLCommand*)dcl)->opcode = OSSwapInt32( ((DCLCommand*)dcl)->opcode );
+								((DCLCommand*)dcl)->operands[1] = OSSwapInt32( ((DCLCommand*)dcl)->operands[1] );
+								break;
+						}
+					}
+				);
 				
 				offset += size ;
 				

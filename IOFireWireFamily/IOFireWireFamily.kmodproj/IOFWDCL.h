@@ -6,8 +6,14 @@
 *  Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
 *
 *	$Log: IOFWDCL.h,v $
-*	Revision 1.12.8.1  2006/04/19 17:48:13  ayanowit
-*	Merged in changes for Leopard
+*	Revision 1.12.4.2  2006/04/19 23:16:48  ayanowit
+*	Merge in ChardLondon changes.
+*	
+*	Revision 1.12.4.1.2.1  2006/04/19 17:51:43  ayanowit
+*	Merged in changes for ChardLondon
+*	
+*	Revision 1.12.4.1  2005/08/06 01:31:31  collin
+*	*** empty log message ***
 *	
 *	Revision 1.12  2005/02/18 03:19:03  niels
 *	fix isight
@@ -82,6 +88,7 @@ class IOFWDCL : public OSObject
 			kDynamic					= BIT(1)//kNuDCLDynamic,
 			,kUpdateBeforeCallback		= BIT(2)//kNuDCLUpdateBeforeCallback
 			,kUser						= BIT(18) // kNuDCLUser
+			,kBigEndianUpdates			= BIT(19)
 		} ;
 
 		class InternalData 
@@ -159,7 +166,8 @@ class IOFWDCL : public OSObject
 		
 		OSMetaClassDeclareReservedUnused ( IOFWDCL, 4 ) ;		// used to be relink()
 		
-	public:
+public :
+			
 		virtual bool					interrupt( bool &, IOFWDCL * & ) = 0 ;
 		virtual void					finalize ( IODCLProgram & ) ;
 		virtual IOReturn				importUserDCL (
@@ -189,6 +197,7 @@ class IOFWDCL : public OSObject
     OSMetaClassDeclareReservedUnused ( IOFWDCL, 1 ) ;
     OSMetaClassDeclareReservedUnused ( IOFWDCL, 2 ) ;
     OSMetaClassDeclareReservedUnused ( IOFWDCL, 3 ) ;
+	//	OSMetaClassDeclareReservedUnused ( ***, 4 ) ;			// used above
 
 } ;
 

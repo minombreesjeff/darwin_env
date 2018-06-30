@@ -43,22 +43,22 @@ namespace IOFireWireLib {
 	}
 
 	NuDCLPool::NuDCLPool( const IUnknownVTbl & vTable, Device& device, UInt32 capacity )
-		: super( vTable )
-		,fDevice( device )
-		,fCurrentTag( 0 )
-		,fCurrentSync( 0 )
+	: super( vTable )
+	,fDevice( device )
+	,fCurrentTag( 0 )
+	,fCurrentSync( 0 )
 	{
-			CFArrayCallBacks arrayCallbacks;
+		CFArrayCallBacks arrayCallbacks;
 	
-			// Initialize callbacks
-			arrayCallbacks.version = 0;
-			arrayCallbacks.retain = NULL;
-			arrayCallbacks.copyDescription = NULL;
-			arrayCallbacks.equal = NULL;
-			arrayCallbacks.release = cfArrayReleaseNuDCLObject;
+		// Initialize callbacks
+		arrayCallbacks.version = 0;
+		arrayCallbacks.retain = NULL;
+		arrayCallbacks.copyDescription = NULL;
+		arrayCallbacks.equal = NULL;
+		arrayCallbacks.release = cfArrayReleaseNuDCLObject;
 	
-			// Create fProgram array
-			fProgram = ::CFArrayCreateMutable( kCFAllocatorDefault, capacity, &arrayCallbacks );
+		// Create fProgram array
+		fProgram = ::CFArrayCreateMutable( kCFAllocatorDefault, capacity, &arrayCallbacks );
 	}
 
 	NuDCLPool::~NuDCLPool()

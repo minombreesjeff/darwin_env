@@ -6,6 +6,9 @@
  *  Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  *	$Log: IOFWUserObjectExporter.h,v $
+ *	Revision 1.2.20.2  2006/01/31 04:49:50  collin
+ *	*** empty log message ***
+ *	
  *	Revision 1.2  2003/07/21 06:52:59  niels
  *	merge isoch to TOT
  *	

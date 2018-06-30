@@ -28,6 +28,18 @@
 */
 /*
 	$Log: IOFireWireUserClient.cpp,v $
+	Revision 1.110.4.5  2006/07/13 01:42:00  collin
+	*** empty log message ***
+	
+	Revision 1.110.4.4  2006/01/31 04:49:51  collin
+	*** empty log message ***
+	
+	Revision 1.110.4.2  2005/08/17 03:33:57  collin
+	*** empty log message ***
+	
+	Revision 1.110.4.1  2005/07/23 00:30:44  collin
+	*** empty log message ***
+	
 	Revision 1.110  2005/01/18 23:40:16  collin
 	*** empty log message ***
 	
@@ -223,7 +235,7 @@
 #import <IOKit/IOMessage.h>
 
 #if FIRELOG
-#import <IOKit/firewire/IOFireLog.h>
+#import <IOKit/firewire/FireLog.h>
 #endif
 
 // protected
@@ -307,25 +319,20 @@ IOFWUserDebugInfo :: free ()
 
 OSDefineMetaClassAndStructors(IOFireWireUserClient, super ) ;
 
-IOFireWireUserClient *
-IOFireWireUserClient :: withTask ( task_t owningTask )
-{
-	IOFireWireUserClient*	me				= new IOFireWireUserClient;
 
-	if (me)
-		if (me->init())
-		{
-			me->fTask = owningTask;
-			me->mappings = 0 ;
-			
-		}
-		else
-		{
-			me->release();
-			return NULL;
-		}
+bool IOFireWireUserClient::initWithTask(
+                    task_t owningTask, void * securityToken, UInt32 type,
+                    OSDictionary * properties)
+{
+    if( properties )
+		properties->setObject( "IOUserClientCrossEndianCompatible" , kOSBooleanTrue);
+
+    bool res = IOUserClient::initWithTask( owningTask, securityToken, type, properties );
 	
-	return me;
+	fTask = owningTask;
+	mappings = 0;
+	
+    return res;
 }
 
 bool
@@ -953,10 +960,10 @@ IOFireWireUserClient :: writeQuad( const WriteQuadParams* params)
 	IOFWWriteQuadCommand*	cmd ;
 
 	if ( params->isAbs )
-		cmd = this->createWriteQuadCommand( params->generation, params->addr, & (UInt32)params->val, 1, NULL, NULL ) ;
+		cmd = this->createWriteQuadCommand( params->generation, params->addr, (UInt32*) & params->val, 1, NULL, NULL ) ;
 	else
 	{
-		cmd = getOwner ()->createWriteQuadCommand( params->addr, & (UInt32)params->val, 1, NULL, NULL, params->failOnReset ) ;
+		cmd = getOwner ()->createWriteQuadCommand( params->addr, (UInt32*)&params->val, 1, NULL, NULL, params->failOnReset ) ;
 		cmd->setGeneration( params->generation ) ;
 	}
 	
@@ -1485,7 +1492,7 @@ IOFireWireUserClient :: addressSpace_Create (
 	
 	if ( !error )
 		error = fExporter->addObject ( * addressSpace, 
-									   (IOFWUserObjectExporter::CleanupFunction) & IOFWUserPseudoAddressSpace::exporterCleanup, 
+									  OSMemberFunctionCast( IOFWUserObjectExporter::CleanupFunction, addressSpace, & IOFWUserPseudoAddressSpace::exporterCleanup ), 
 									   * outAddressSpaceHandle ) ;		// nnn needs cleanup function?
 
 	if ( error )
@@ -1741,7 +1748,7 @@ IOFireWireUserClient :: physicalAddressSpace_Create (
 
 		if ( ! error )
 			error = fExporter->addObject( *addrSpace, 
-										  (IOFWUserObjectExporter::CleanupFunction) &IOFWUserPhysicalAddressSpace::exporterCleanup, 
+										  OSMemberFunctionCast( IOFWUserObjectExporter::CleanupFunction, addrSpace, &IOFWUserPhysicalAddressSpace::exporterCleanup ), 
 										  *outAddressSpaceHandle );
 										 
 		addrSpace->release () ;	// fExporter will retain this
@@ -2473,7 +2480,7 @@ IOFireWireUserClient :: localIsochPort_Create (
 	}
 
 	IOReturn error = fExporter->addObject( *port, 
-			(IOFWUserObjectExporter::CleanupFunction) & IOFWUserLocalIsochPort::exporterCleanup, 
+			OSMemberFunctionCast( IOFWUserObjectExporter::CleanupFunction, port, & IOFWUserLocalIsochPort::exporterCleanup ), 
 			*outPortHandle ) ;
 	
 	port->release() ;
@@ -2665,7 +2672,7 @@ IOFireWireUserClient::setAsyncRef_IsochChannelForceStop(
 	natural_t * asyncRef = NULL;
 	if( result == kIOReturnSuccess )
 	{
-		asyncRef = new (natural_t)[ kOSAsyncRefCount ] ;
+		asyncRef = new natural_t[ kOSAsyncRefCount ] ;
 	
 		if ( !asyncRef )
 		{

@@ -139,7 +139,7 @@ class IOFireWireLink : public IOService
 	
 		virtual IOReturn				asyncReadResponse(UInt16 nodeID, int speed,
 											int label, int rcode, IOMemoryDescriptor *buf,
-											IOByteCount offset, int len) = 0;
+											IOByteCount offset, int len, IODMACommand * in_dma_command ) = 0;
 	
 		virtual IOReturn				asyncWrite(	UInt16 					nodeID, 
 													UInt16 					addrHi, 
@@ -216,6 +216,7 @@ class IOFireWireLink : public IOService
 		virtual void						flushWaitingPackets ( void ) = 0;
 		virtual IOFWDCLPool*				createDCLPool ( UInt32 capacity ) ;
 		inline IOWorkLoop *					getIsochWorkloop ()											{ return fIsocWorkloop ; }
+		inline IOWorkLoop *					getWorkloop()											{ return (IOWorkLoop*)fWorkLoop; }
 		virtual IOFWBufferFillIsochPort *   createBufferFillIsochPort () ;
 
 		virtual IOReturn					clipMaxRec2K( bool clipMaxRec ) = 0;
@@ -230,6 +231,10 @@ class IOFireWireLink : public IOService
 		virtual IOReturn					handleAsyncCompletion( IOFWCommand *cmd, IOReturn status );
 
 		virtual void handleSystemShutDown( UInt32 messageType );
+
+		virtual void configureAsyncRobustness( bool enabled );
+
+		virtual bool isPhysicalAccessEnabledForNodeID( UInt16 nodeID );	
 
 	private:
 	

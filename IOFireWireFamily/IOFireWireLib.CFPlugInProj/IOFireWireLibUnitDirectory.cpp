@@ -31,6 +31,8 @@
 #import "IOFireWireLibUnitDirectory.h"
 #import "IOFireWireLibDevice.h"
 
+#import <System/libkern/OSCrossEndian.h>
+
 namespace IOFireWireLib {
 
 	// static interface table
@@ -173,9 +175,19 @@ namespace IOFireWireLib {
 			descCString = CFStringGetChars( desc, descLen ) ;
 		}
 
+		FWAddress host_value(value);
+		
+		ROSETTA_ONLY(
+			{
+				host_value.nodeID = OSSwapInt16( value.nodeID );
+				host_value.addressHi = OSSwapInt16( value.addressHi );
+				host_value.addressLo = OSSwapInt32( value.addressLo );
+			}
+		);
+		
 		return IOConnectMethodScalarIStructureI(	mUserClient.GetUserClientConnection(), 
 													kLocalConfigDirectory_AddEntry_FWAddr, 
-													4, sizeof(value), mKernUnitDirRef, key, descCString, descLen, & value) ;
+													4, sizeof(value), mKernUnitDirRef, key, descCString, descLen, & host_value) ;
 	}
 	
 	IOReturn

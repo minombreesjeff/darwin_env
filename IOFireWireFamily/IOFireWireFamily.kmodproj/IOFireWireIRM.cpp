@@ -98,7 +98,7 @@ bool IOFireWireIRM::initWithController(IOFireWireController * control)
     // create BROADCAST_CHANNEL register
 	//
 	
-	fBroadcastChannelBuffer = kBroadcastChannelInitialValues;
+	fBroadcastChannelBuffer = OSSwapHostToBigInt32( kBroadcastChannelInitialValues );
     fBroadcastChannelAddressSpace = IOFWPseudoAddressSpace::simpleRWFixed( fControl, FWAddress(kCSRRegisterSpaceBaseAddressHi, kCSRBroadcastChannel), 
 																			 sizeof(fBroadcastChannelBuffer), &fBroadcastChannelBuffer );
 	FWPANICASSERT( fBroadcastChannelAddressSpace != NULL );
@@ -209,14 +209,14 @@ void IOFireWireIRM::processBusReset( UInt16 ourNodeID, UInt16 irmNodeID, UInt32 
 		
 		// initialize fOldChannelsAvailable31_0 and fLockRetries
 		fLockRetries = 8;
-		fOldChannelsAvailable31_0 = 0xffffffff;
+		fOldChannelsAvailable31_0 = OSSwapHostToBigInt32( 0xffffffff );  // don't really need to swap of course
 
 		allocateBroadcastChannel();
 	}
 	else
 	{
 		FWLOCALKLOG(( "IOFireWireIRM::processBusReset() - clear valid bit in BROADCAST_CHANNEL register\n" ));
-		fBroadcastChannelBuffer = kBroadcastChannelInitialValues;
+		fBroadcastChannelBuffer = OSSwapHostToBigInt32(kBroadcastChannelInitialValues);
 	}
 	
 }
@@ -234,7 +234,9 @@ void IOFireWireIRM::allocateBroadcastChannel( void )
 	FWAddress address( kCSRRegisterSpaceBaseAddressHi, kCSRChannelsAvailable31_0 );
 	address.nodeID = fIRMNodeID;
 
-	fNewChannelsAvailable31_0 = fOldChannelsAvailable31_0 & ~kChannel31Mask;
+	UInt32 host_channels_available = OSSwapBigToHostInt32( fOldChannelsAvailable31_0 );
+	host_channels_available &= ~kChannel31Mask;
+	fNewChannelsAvailable31_0 = OSSwapHostToBigInt32( host_channels_available );
 	
 	fLockCmd->reinit( fGeneration, address, &fOldChannelsAvailable31_0, &fNewChannelsAvailable31_0, 1, IOFireWireIRM::lockCompleteStatic, this );
 	
@@ -300,7 +302,7 @@ void IOFireWireIRM::lockComplete( IOReturn status )
 		{
 			FWLOCALKLOG(( "IOFireWireIRM::lockComplete() - set valid bit in BROADCAST_CHANNEL register\n" ));
 			
-			fBroadcastChannelBuffer = kBroadcastChannelInitialValues | kBroadcastChannelValidMask;
+			fBroadcastChannelBuffer = OSSwapHostToBigInt32( kBroadcastChannelInitialValues | kBroadcastChannelValidMask );
 		}
 	}
 }
