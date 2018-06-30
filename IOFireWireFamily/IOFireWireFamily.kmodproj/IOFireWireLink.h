@@ -47,6 +47,11 @@ enum
 
 enum
 {
+	kIOFWSetDSLimit = 0
+};
+
+enum
+{
 	kIOFWNodeFlagRetryOnAckD	= (1 << 0)
 };
 
@@ -236,6 +241,11 @@ class IOFireWireLink : public IOService
 
 		virtual bool isPhysicalAccessEnabledForNodeID( UInt16 nodeID );	
 
+		virtual UInt32 setLinkMode( UInt32 arg1, UInt32 arg2 );
+		
+		void requestBusReset()
+			{ fControl->resetBus(); };
+		
 	private:
 	
 		OSMetaClassDeclareReservedUnused(IOFireWireLink, 0);

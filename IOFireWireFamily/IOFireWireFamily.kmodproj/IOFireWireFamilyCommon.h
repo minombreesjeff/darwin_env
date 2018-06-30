@@ -29,6 +29,9 @@
  */
 /*
 	$Log: IOFireWireFamilyCommon.h,v $
+	Revision 1.55.4.3  2007/08/30 01:55:56  collin
+	<rdar://problem/5410339> [FP-121] M72/M78: FireWire bus constantly resets with 2001-era Mac connected via FireWire TDM
+	
 	Revision 1.55.4.2  2006/03/10 03:59:44  collin
 	*** empty log message ***
 	
@@ -373,6 +376,13 @@ enum
 	kConfigGenerationKey			= 0x38,		// Apple-specific
 
 	kConfigRootDirectoryKey			= 0xffff	// Not a real key
+};
+
+enum
+{
+	kConfigSBP2LUN					= 0x14,
+	kConfigSBP2Revision				= 0x21,
+	kConfigSBP2MAO					= 0x54	
 };
 
 // Core CSR registers.

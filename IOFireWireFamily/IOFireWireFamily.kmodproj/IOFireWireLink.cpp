@@ -185,3 +185,8 @@ bool IOFireWireLink::isPhysicalAccessEnabledForNodeID( UInt16 nodeID )
 {
 	return false;
 }
+
+UInt32 IOFireWireLink::setLinkMode( UInt32 arg1, UInt32 arg2 )
+{
+	return 0;
+}

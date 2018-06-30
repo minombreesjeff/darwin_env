@@ -200,23 +200,6 @@
 		4D4C316505F6702100D8DB71 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F5410DC301B8073901CE2124 /* Security.framework */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXBuildStyle section */
-		07A6FFB80BE7B9B3003E66FE /* Development */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-			};
-			name = Development;
-		};
-		07A6FFB90BE7B9B3003E66FE /* Deployment */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = YES;
-			};
-			name = Deployment;
-		};
-/* End PBXBuildStyle section */
-
 /* Begin PBXContainerItemProxy section */
 		4D4C316A05F6702100D8DB71 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -674,8 +657,8 @@
 			isa = PBXGroup;
 			children = (
 				4D2B247604CBBD3F00E10E69 /* IOFWBufferFillIsochPort.h */,
-				01955135003A7B117F000001 /* IOFWWorkLoop.h */,
 				0160F2FF0010FFF211CE237E /* IOFireWireLink.h */,
+				01955135003A7B117F000001 /* IOFWWorkLoop.h */,
 			);
 			name = protected;
 			sourceTree = "<group>";
@@ -919,12 +902,6 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 30CE481D0843F92A00746571 /* Build configuration list for PBXProject "IOFireWireFamily" */;
-			buildSettings = {
-			};
-			buildStyles = (
-				07A6FFB80BE7B9B3003E66FE /* Development */,
-				07A6FFB90BE7B9B3003E66FE /* Deployment */,
-			);
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOFireWireFamily */;
 			projectDirPath = "";
@@ -1291,7 +1268,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.5.7;
+				MODULE_VERSION = 2.6.0;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-DIOFIREWIREDEBUG=1",
@@ -1337,7 +1314,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.5.7;
+				MODULE_VERSION = 2.6.0;
 				OTHER_CFLAGS = (
 					"-DIOFIREWIREDEBUG=0",
 					"-DIOFIREWIREUSERCLIENTDEBUG=0",
@@ -1382,7 +1359,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.5.7;
+				MODULE_VERSION = 2.6.0;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = (
 					"-DIOFIREWIREDEBUG=1",
@@ -1426,7 +1403,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireFamily;
-				MODULE_VERSION = 2.5.7;
+				MODULE_VERSION = 2.6.0;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";

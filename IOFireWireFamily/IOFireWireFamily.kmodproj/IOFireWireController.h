@@ -540,6 +540,8 @@ protected:
 	UInt32 fHubPort;
 	
 	bool fInstantiated;
+
+	bool fDSLimited;
 	
 /*! @struct ExpansionData
     @discussion This structure will be used to expand the capablilties of the class in the future.

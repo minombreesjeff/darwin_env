@@ -125,6 +125,7 @@ const OSSymbol *gFireWireSpeed;
 const OSSymbol *gFireWireVendor_Name;
 const OSSymbol *gFireWireProduct_Name;
 const OSSymbol *gFireWireModel_ID;
+const OSSymbol *gFireWireTDM;
 
 const IORegistryPlane * IOFireWireBus::gIOFireWirePlane = NULL;
 
@@ -454,6 +455,7 @@ bool IOFireWireController::init( IOFireWireLink *fwim )
     gFireWireVendor_Name = OSSymbol::withCString("FireWire Vendor Name");
     gFireWireProduct_Name = OSSymbol::withCString("FireWire Product Name");
 	gFireWireModel_ID = OSSymbol::withCString("Model_ID");
+    gFireWireTDM = OSSymbol::withCString("TDM");
 
     if(NULL == gIOFireWirePlane) 
 	{
@@ -1869,6 +1871,17 @@ void IOFireWireController::startBusScan()
     int i;
 
 	FWKLOG(( "IOFireWireController::startBusScan entered\n" ));
+
+	OSObject * existProp = fFWIM->getProperty( "FWDSLimit" );
+	
+	if( existProp )
+	{
+		fDSLimited = true;
+	}
+	else
+	{
+		fDSLimited = false;
+	}
 	
     // Send global resume packet
 	fFWIM->sendPHYPacket(((fLocalNodeID & 0x3f) << kFWPhyPacketPhyIDPhase) | 0x003c0000);
@@ -2021,13 +2034,21 @@ void IOFireWireController::readDeviceROM(IOFWNodeScan *scan, IOReturn status)
    		FWKLOG(( "IOFireWireController::readDeviceROM speedcheck %lx ; speed %lx\n", (UInt32)scan->speedChecking, (UInt32)FWSpeed( scan->fAddr.nodeID ) ));
         if( scan->speedChecking && FWSpeed( scan->fAddr.nodeID ) > kFWSpeed100MBit )
         {
-        	if( scan->generation == fBusGeneration )
-        	{
-  				FWKLOG(( "IOFireWireController::readDeviceROM reseting speed for node %lx from local %lx\n", (UInt32)scan->fAddr.nodeID, (UInt32)fLocalNodeID));
-              	fSpeedCodes[(kFWMaxNodesPerBus + 1)*(scan->fAddr.nodeID & 63) + (fLocalNodeID & 63)]--;
-                fSpeedCodes[(kFWMaxNodesPerBus + 1)*(fLocalNodeID & 63) + (scan->fAddr.nodeID & 63)]--;
-               
-               	// Retry command at slower speed
+			if( scan->generation == fBusGeneration )
+			{
+				FWKLOG(( "IOFireWireController::readDeviceROM reseting speed for node %lx from local %lx\n", (UInt32)scan->fAddr.nodeID, (UInt32)fLocalNodeID));
+				if( fDSLimited )
+				{
+					fSpeedCodes[(kFWMaxNodesPerBus + 1)*(scan->fAddr.nodeID & 63) + (fLocalNodeID & 63)] = kFWSpeed100MBit;
+					fSpeedCodes[(kFWMaxNodesPerBus + 1)*(fLocalNodeID & 63) + (scan->fAddr.nodeID & 63)] = kFWSpeed100MBit;
+				}
+				else
+				{
+					fSpeedCodes[(kFWMaxNodesPerBus + 1)*(scan->fAddr.nodeID & 63) + (fLocalNodeID & 63)]--;
+					fSpeedCodes[(kFWMaxNodesPerBus + 1)*(fLocalNodeID & 63) + (scan->fAddr.nodeID & 63)]--;
+				}
+				
+				// Retry command at slower speed
 				scan->fCmd->reinit(scan->fAddr, scan->fBuf, 1, &readROMGlue, scan, true);
 				
 				if ( scan->fAddr.addressLo == kConfigBIBHeaderAddress )
@@ -2042,9 +2063,9 @@ void IOFireWireController::readDeviceROM(IOFWNodeScan *scan, IOReturn status)
 					scan->fRetriesBumped = 0;
 				}
 				
-              	scan->fCmd->submit();
-  				return;
-        	}
+				scan->fCmd->submit();
+				return;
+			}
         }
 
 		if( (scan->fAddr.nodeID & 63) == (fIRMNodeID & 63) )
@@ -2556,8 +2577,8 @@ void IOFireWireController::finishedBusScan()
                 }
             }
             
-            if( !retoolGap )
-            {
+			if( !retoolGap && !fDSLimited )
+			{
 				// is the gap something we set?
 				for( i = 0; i <= fRootNodeID; i++ )
 				{
@@ -2901,7 +2922,12 @@ void IOFireWireController::buildTopology(bool doFWPlane)
         	if( speedCode == kFWSpeedReserved )
         		speedCode = kFWSpeed800MBit | kFWSpeedUnknownMask;	// Remember that we don't know how fast it is
         }
-        
+
+		if( fDSLimited && !(speedCode & kFWSpeedUnknownMask) )
+      	{
+			speedCode = kFWSpeed100MBit;
+		}
+		
         fSpeedCodes[(kFWMaxNodesPerBus + 1)*i + i] = speedCode;
 		fHopCounts[(kFWMaxNodesPerBus + 1)*i + i] = 0;
 		
@@ -3040,9 +3066,10 @@ void IOFireWireController::buildTopology(bool doFWPlane)
 void IOFireWireController::updatePlane()
 {
     OSIterator *childIterator;
-		
+    bool foundTDM = false;
+	
 	fDevicePruneDelay = kNormalDevicePruneDelay;
-
+	
     childIterator = getClientIterator();
     if( childIterator ) 
 	{
@@ -3052,29 +3079,53 @@ void IOFireWireController::updatePlane()
             IOFireWireDevice * found = OSDynamicCast(IOFireWireDevice, child);
 			
             // don't need to sync with open/close routines when checking for kNotTerminated
-            if( found && (found->getTerminationState() == kNotTerminated) && found->fNodeID == kFWBadNodeID )  
-			{
-                if( found->isOpen() )
-                {
-                    //IOLog( "IOFireWireController : message request close device object %p\n", found);
-                    // send our custom requesting close message
-					found->lockForArbitration();
-					found->setTerminationState( kNeedsTermination );
-					found->unlockForArbitration();
-                    messageClient( kIOFWMessageServiceIsRequestingClose, found );
-                }
-                else
-                {	
-					found->lockForArbitration();
-					found->setTerminationState( kTerminated );
-					found->unlockForArbitration();
-					IOFireWireDevice::terminateDevice( found );
-                }
-            }
+            if( found && (found->getTerminationState() == kNotTerminated) )
+            {
+				if( found->fNodeID == kFWBadNodeID )  
+				{
+					if( found->isOpen() )
+					{
+						//IOLog( "IOFireWireController : message request close device object %p\n", found);
+						// send our custom requesting close message
+						found->lockForArbitration();
+						found->setTerminationState( kNeedsTermination );
+						found->unlockForArbitration();
+						messageClient( kIOFWMessageServiceIsRequestingClose, found );
+					}
+					else
+					{	
+						found->lockForArbitration();
+						found->setTerminationState( kTerminated );
+						found->unlockForArbitration();
+						IOFireWireDevice::terminateDevice( found );
+					}
+				}
+				else
+				{
+					OSString * tdm_string = OSDynamicCast( OSString, found->getProperty( gFireWireTDM ) );
+					
+					if( (tdm_string != NULL) && 
+						(strncmp( "PPC", tdm_string->getCStringNoCopy(), 4 ) == 0) )
+					{
+						foundTDM = true;
+					}	
+				}
+			}
         }
+
         childIterator->release();
     }
-
+	
+	OSObject * existProp = fFWIM->getProperty( "FWDSLimit" );
+	
+	if( existProp && !foundTDM )
+	{
+		fFWIM->setLinkMode( kIOFWSetDSLimit, 0 );
+		
+		// Make sure medicine takes effect
+		resetBus();
+	}
+	
     buildTopology(true);
 	
 	messageClients( kIOFWMessageTopologyChanged );

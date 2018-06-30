@@ -47,6 +47,7 @@ extern const OSSymbol *gFireWire_GUID;
 extern const OSSymbol *gFireWireVendor_Name;
 extern const OSSymbol *gFireWireProduct_Name;
 extern const OSSymbol *gFireWireModel_ID;
+extern const OSSymbol *gFireWireTDM;
 
 class IOFireWireDevice;
 class IOLocalConfigDirectory;

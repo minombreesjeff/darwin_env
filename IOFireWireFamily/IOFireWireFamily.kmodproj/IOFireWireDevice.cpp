@@ -262,6 +262,10 @@ private:
     OSDictionary * fPropTable;
     IOConfigDirectory * fDirectory;
     
+	UInt32		fSBP2LUN;
+	UInt32		fSBP2MAO;
+	UInt32		fSBP2Revision;
+	
 protected:
     virtual void free();
     
@@ -275,6 +279,14 @@ public:
 	void setDirectory( IOConfigDirectory * directory );
 	IOConfigDirectory * getDirectory( void );
 	
+	void setSBP2LUN( UInt32 sbp2_lun );
+	UInt32 getSBP2LUN( void );
+	
+	void setSBP2MAO( UInt32 sbp2_mao );
+	UInt32 getSBP2MAO( void );
+	
+	void setSBP2Revision( UInt32 sbp2_revision );
+	UInt32 getSBP2Revision( void );
 };
 
 OSDefineMetaClassAndStructors(IOFireWireUnitInfo, OSObject);
@@ -359,6 +371,60 @@ void IOFireWireUnitInfo::setDirectory( IOConfigDirectory * directory )
 IOConfigDirectory * IOFireWireUnitInfo::getDirectory( void )
 {
 	return fDirectory;
+}
+
+// setSBP2LUN
+//
+//
+
+void IOFireWireUnitInfo::setSBP2LUN( UInt32 sbp2_lun )
+{
+	fSBP2LUN = sbp2_lun;
+}
+
+// getSBP2LUN
+//
+//
+
+UInt32 IOFireWireUnitInfo::getSBP2LUN( void )
+{
+	return fSBP2LUN;
+}
+
+// setSBP2MAO
+//
+//
+
+void IOFireWireUnitInfo::setSBP2MAO( UInt32 sbp2_mao )
+{
+	fSBP2MAO = sbp2_mao;
+}
+
+// getSBP2MAO
+//
+//
+
+UInt32 IOFireWireUnitInfo::getSBP2MAO( void )
+{
+	return fSBP2MAO;
+}
+
+// setSBP2Revision
+//
+//
+
+void IOFireWireUnitInfo::setSBP2Revision( UInt32 sbp2_revision )
+{
+	fSBP2Revision = sbp2_revision;
+}
+
+// getSBP2Revision
+//
+//
+
+UInt32 IOFireWireUnitInfo::getSBP2Revision( void )
+{
+	return fSBP2Revision;
 }
 
 #pragma mark -
@@ -980,6 +1046,38 @@ void IOFireWireDevice::preprocessDirectories( OSDictionary * rootPropTable, OSSe
 		{
 			propTable->setObject( gFireWireVendor_Name, vendorNameProperty );
 		}
+		
+		UInt32 modelID = 0;
+		UInt32 modelVendorID = 0;
+		
+		{
+			OSNumber * prop = (OSNumber*)rootPropTable->getObject( gFireWireModel_ID );
+			if( prop )
+			{
+				modelID = prop->unsigned32BitValue();				
+			}
+		}
+		
+		{
+			OSNumber * prop = (OSNumber*)rootPropTable->getObject( gFireWireVendor_ID );
+			if( prop )
+			{
+				modelVendorID = prop->unsigned32BitValue();				
+			}
+		}
+		
+		UInt32 sbp2_revision = info->getSBP2Revision();
+		UInt32 sbp2_lun = info->getSBP2LUN();
+		UInt32 sbp2_mao = info->getSBP2MAO();
+		
+		if( (modelVendorID == 0x000a27) && (modelID == 0x54444d) )
+		{	
+			if( ((sbp2_lun & 0x0000ffff) == 0) && (sbp2_revision == 0xffffffff) && 
+				((sbp2_mao == 0x004000) || (sbp2_mao == 0x00c000)) )
+			{
+				rootPropTable->setObject( gFireWireTDM, OSString::withCString("PPC") );
+			}
+		}
 	}
 	
 	// always release iterators :)
@@ -1187,6 +1285,10 @@ IOReturn IOFireWireDevice::readUnitDirectories( IOConfigDirectory * directory, O
 				bool		modelIDPresent = false;
 				OSString *	t = NULL;
 		
+				UInt32		sbp2_revision = 0xffffffff;
+				UInt32		sbp2_lun = 0xffffffff;
+				UInt32		sbp2_mao = 0xffffffff;
+				
                 result = unit->getKeyValue(kConfigUnitSpecIdKey, unitSpecID);
 				if( result == kIOReturnSuccess )
 					result = unit->getKeyValue(kConfigUnitSwVersionKey, unitSoftwareVersion);
@@ -1207,6 +1309,27 @@ IOReturn IOFireWireDevice::readUnitDirectories( IOConfigDirectory * directory, O
                     modelName = t;
                     t = NULL;
                 }
+
+				if( status == kIOReturnSuccess )
+				{
+					result = unit->getKeyValue( kConfigSBP2LUN, sbp2_lun );
+					if( result == kIOFireWireConfigROMInvalid )
+						status = result;
+				}
+				
+				if( status == kIOReturnSuccess )
+				{
+					result = unit->getKeyValue( kConfigSBP2Revision, sbp2_revision );
+					if( result == kIOFireWireConfigROMInvalid )
+						status = result;
+				}
+				
+				if( status == kIOReturnSuccess )
+				{
+					result = unit->getKeyValue( kConfigSBP2MAO, sbp2_mao );
+					if( result == kIOFireWireConfigROMInvalid )
+						status = result;
+				}
 				
 				if( status == kIOReturnSuccess )
 				{
@@ -1257,8 +1380,13 @@ IOReturn IOFireWireDevice::readUnitDirectories( IOConfigDirectory * directory, O
 							propTable->setObject(gFireWire_GUID, prop);
 						
 						IOFireWireUnitInfo * info = IOFireWireUnitInfo::create();
+						
 						info->setDirectory( unit );
 						info->setPropTable( propTable );
+						info->setSBP2Revision( sbp2_revision );
+						info->setSBP2LUN( sbp2_lun );
+						info->setSBP2MAO( sbp2_mao );
+						
 						unitInfo->setObject( info );
 						info->release();
 					
