@@ -70,7 +70,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOSCSIParallelFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.4.4, Copyright Apple Computer, Inc. 1998-2006</string>
+	<string>1.4.5, Copyright Apple Computer, Inc. 1998-2006</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -82,11 +82,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.4</string>
+	<string>1.4.5</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.4.4</string>
+	<string>1.4.5</string>
 	<key>OSBundleCompatibleVersion</key>
 	<string>1.2.0</string>
 	<key>OSBundleLibraries</key>
@@ -133,7 +133,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOSCSIFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.4.4, Copyright Apple Computer, Inc. 1998-2006</string>
+	<string>1.4.5, Copyright Apple Computer, Inc. 1998-2006</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -145,11 +145,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.4.4</string>
+	<string>1.4.5</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.4.4</string>
+	<string>1.4.5</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOSCSIParallelInterfaceProtocolTransport</key>
@@ -653,7 +653,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIFamily;
-				MODULE_VERSION = 1.4.4;
+				MODULE_VERSION = 1.4.5;
 				OPTIMIZATION_CFLAGS = "-Os";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
@@ -682,7 +682,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIFamily;
-				MODULE_VERSION = 1.4.4;
+				MODULE_VERSION = 1.4.5;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -708,7 +708,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIFamily;
-				MODULE_VERSION = 1.4.4;
+				MODULE_VERSION = 1.4.5;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -736,7 +736,7 @@
 				KERNEL_MODULE = YES;
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIParallelFamily;
-				MODULE_VERSION = 1.4.4;
+				MODULE_VERSION = 1.4.5;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
@@ -762,7 +762,7 @@
 				KERNEL_MODULE = YES;
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIParallelFamily;
-				MODULE_VERSION = 1.4.4;
+				MODULE_VERSION = 1.4.5;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -785,7 +785,7 @@
 				KERNEL_MODULE = YES;
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOSCSIParallelFamily;
-				MODULE_VERSION = 1.4.4;
+				MODULE_VERSION = 1.4.5;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
