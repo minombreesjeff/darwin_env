@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -19,13 +19,20 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-/*
- *  IOFWUserClientIsoch.h
- *  IOFireWireFamily
- *
- *  Created by NWG on Mon Mar 12 2001.
- *  Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
- *
- */
+ 
+#ifndef _IOKIT_IOFIRELOG_H
+#define _IOKIT_IOFIRELOG_H
 
+//#define FIRELOG 0
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void FireLog( const char *format, ... );
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
