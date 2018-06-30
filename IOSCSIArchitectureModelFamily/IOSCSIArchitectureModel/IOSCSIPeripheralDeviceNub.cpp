@@ -3,8 +3,6 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
@@ -202,9 +200,7 @@ IOSCSIPeripheralDeviceNub::start ( IOService * provider )
 	characterDict = OSDynamicCast ( OSDictionary, fProvider->getProperty ( kIOPropertyProtocolCharacteristicsKey ) );
 	if ( characterDict == NULL )
 	{
-		
 		characterDict = OSDictionary::withCapacity ( 1 );
-		
 	}
 	
 	else
@@ -244,6 +240,7 @@ IOSCSIPeripheralDeviceNub::start ( IOService * provider )
 	registerService ( );
 	
 	STATUS_LOG ( ( "%s: Registered and setup is complete\n", getName ( ) ) );
+	
 	// Setup was successful, return true.
 	result = true;
 	
@@ -853,6 +850,7 @@ IOSCSIPeripheralDeviceNub::InterrogateDevice ( void )
 														   kSenseDefaultSize,
 														   0 );
 				serviceResponse = SendTask ( request );
+				
 				if ( ( serviceResponse == kSCSIServiceResponse_TASK_COMPLETE ) &&
 					 ( request->GetTaskStatus ( ) == kSCSITaskStatus_GOOD ) )
 				{
@@ -887,7 +885,9 @@ IOSCSIPeripheralDeviceNub::InterrogateDevice ( void )
 						   ( senseBuffer.ADDITIONAL_SENSE_CODE == 0x25 ) &&
 						   ( senseBuffer.ADDITIONAL_SENSE_CODE_QUALIFIER == 0x00 ) )
 				 	{
+				 		
 						goto ReleaseTask;
+						
 					}
 					
 				}
@@ -1182,9 +1182,7 @@ IOSCSILogicalUnitNub::start ( IOService * provider )
 	characterDict = OSDynamicCast ( OSDictionary, fProvider->getProperty ( kIOPropertyProtocolCharacteristicsKey ) );
 	if ( characterDict == NULL )
 	{
-		
 		characterDict = OSDictionary::withCapacity ( 1 );
-		
 	}
 	
 	else
