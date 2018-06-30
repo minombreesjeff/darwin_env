@@ -8,6 +8,8 @@
 	<string>IOFireWireFamily</string>
 	<key>CFBundleGetInfoString</key>
 	<string>IOFireWireFamily version 4.1.7, Copyright © 2009 Apple Inc. All rights reserved.</string>
+	<key>CFBundleIconFile</key>
+	<string></string>
 	<key>CFBundleIdentifier</key>
 	<string>com.apple.iokit.IOFireWireFamily</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -50,10 +52,16 @@
 	<string>1.0.0</string>
 	<key>OSBundleLibraries</key>
 	<dict>
-		<key>com.apple.kernel.iokit</key>
-		<string>6.0</string>
-		<key>com.apple.kernel.libkern</key>
-		<string>6.0</string>
+		<key>com.apple.FireLog</key>
+		<string>2.0.0</string>
+		<key>com.apple.kpi.iokit</key>
+		<string>8.0</string>
+		<key>com.apple.kpi.libkern</key>
+		<string>8.0</string>
+		<key>com.apple.kpi.mach</key>
+		<string>8.0</string>
+		<key>com.apple.kpi.bsd</key>
+		<string>8.0</string>		
 	</dict>
 	<key>OSBundleRequired</key>
 	<string>Local-Root</string>
