@@ -3,22 +3,19 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
  * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -28,6 +25,15 @@
  * HISTORY
  *
  *	$Log: IOFWDCLProgram.cpp,v $
+ *	Revision 1.24.10.2  2004/09/14 00:43:29  niels
+ *	*** empty log message ***
+ *	
+ *	Revision 1.24.10.1  2004/09/13 21:10:10  niels
+ *	*** empty log message ***
+ *	
+ *	Revision 1.24  2003/12/19 22:07:46  niels
+ *	send force stop when channel dies/system sleeps
+ *	
  *	Revision 1.23  2003/08/30 00:16:44  collin
  *	*** empty log message ***
  *	
@@ -104,9 +110,7 @@ getDCLDataBuffer(
 	return result ;
 }
 
-//extern bool gLogMe ;
-
-IOMemoryMap *
+void
 IODCLProgram :: generateBufferMap( DCLCommand * program )
 {
 	IOVirtualAddress lowAddress = (IOVirtualAddress)-1 ;
@@ -117,7 +121,7 @@ IODCLProgram :: generateBufferMap( DCLCommand * program )
 		IOVirtualRange tempRange ;
 		if ( getDCLDataBuffer( dcl, tempRange ) )
 		{
-			DebugLog( "see range %p +0x%x\n", (void*)(tempRange.address), (unsigned)(tempRange.length) ) ;
+//			DebugLog( "see range %p +0x%x\n", (void*)(tempRange.address), (unsigned)(tempRange.length) ) ;
 			
 			lowAddress = lowAddress <? trunc_page( tempRange.address ) ;
 			highAddress = highAddress >? round_page( tempRange.address + tempRange.length ) ;
@@ -128,19 +132,13 @@ IODCLProgram :: generateBufferMap( DCLCommand * program )
 	
 	if ( lowAddress == 0 )
 	{
-		return NULL ;
+		return ;
 	}
 	
 	IOMemoryDescriptor * desc = IOMemoryDescriptor::withAddress( (void*)lowAddress, highAddress - lowAddress, kIODirectionOutIn ) ;
-//	IOMemoryDescriptor * desc ;
-//	{
-//		IOVirtualRange range = { lowAddress, highAddress - lowAddress } ;
-//		desc = IOMemoryDescriptor::withOptions( &range, 1, 0, kernel_task, kIOMemoryTypeVirtual ) ;
-//	}
-	
+
 	DebugLogCond(!desc, "couldn't make memory descriptor!\n") ;
 
-//	gLogMe = true ;
 	if ( desc && kIOReturnSuccess != desc->prepare() )
 	{
 		ErrorLog("couldn't prepare memory descriptor\n") ;
@@ -148,18 +146,14 @@ IODCLProgram :: generateBufferMap( DCLCommand * program )
 		desc->release() ;
 		desc = NULL ;
 	}
-//	gLogMe = false ;
-	
-	IOMemoryMap * result = NULL ;
+
 	if ( desc )
 	{
-		result = desc->map() ;
+		fBufferMem = desc->map() ;
 		desc->release() ;
 		
-		DebugLogCond(!result, "couldn't make mapping\n") ;
+		DebugLogCond(!fBufferMem, "couldn't make mapping\n") ;
 	}
-	
-	return result ;
 }
 
 IOReturn
@@ -221,8 +215,13 @@ IODCLProgram :: init ( IOFireWireBus :: DCLTaskInfo * info)
 	
 	fExpansionData->resourceFlags = kFWDefaultIsochResourceFlags ;
 
+	bool success = true ;
+	
 	if ( info )
 	{
+		// this part sets up fBufferMem is passed in 'info'
+		
+	
 		if ( ( !info->unused0 && !info->unused1 && !info->unused2 && !info->unused3 && !info->unused4
 			&& ! info->unused5 ) && info->auxInfo )
 		{
@@ -231,18 +230,33 @@ IODCLProgram :: init ( IOFireWireBus :: DCLTaskInfo * info)
 				case 0 :
 				{
 					fBufferMem = info->auxInfo->u.v0.bufferMemoryMap ;
-					fBufferMem->retain() ;
+					if ( fBufferMem )
+					{
+						fBufferMem->retain() ;
+					}
+					
+					break ;
+				}
+
+				case 1 :
+				{
+					fBufferMem = info->auxInfo->u.v1.bufferMemoryMap ;
+					if ( fBufferMem )
+					{
+						fBufferMem->retain() ;
+					}
 					
 					break ;
 				}
 				default :
 					ErrorLog( "unsupported version found in info->auxInfo!\n" ) ;
+					success = false ;
 					break ;
 			} ;
 		}
 	}
 
-    return true ;
+    return success ;
 }
 
 void IODCLProgram::free()
@@ -278,6 +292,7 @@ IODCLProgram :: setForceStopProc (
 	void * 						refCon,
 	IOFWIsochChannel *			channel )
 {
+	DebugLog("IODCLProgram :: setForceStopProc\n") ;
 }
 
 void
@@ -297,3 +312,20 @@ IODCLProgram :: getBufferMap() const
 {
 	return fBufferMem ;
 }
+
+void
+IODCLProgram :: closeGate()
+{
+}
+
+void
+IODCLProgram :: openGate()
+{
+}
+
+IOReturn
+IODCLProgram :: synchronizeWithIO()
+{
+	return kIOReturnSuccess ;
+}
+

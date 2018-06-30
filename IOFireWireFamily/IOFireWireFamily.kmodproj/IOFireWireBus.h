@@ -3,22 +3,19 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
  * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -148,14 +145,23 @@ public:
 													// for your program's buffers, just call map() on it
 													// and pass the returned object here...
 			} v0 ;
+			
+			struct  // v1
+			{
+				IOMemoryMap * bufferMemoryMap ;				// same as 'bufferMemoryMap' from version 0, above.
+				
+				IOWorkLoop * workloop ;						// A workloop on which to run callbacks for this port..
+															// Can be NULL to use FireWire isochronous workloop...
+															// The workloop will be retained by the program object.
+			} v1 ;
 		} u ;
 	} ;
 	
 	// this struct has been redefined for our next generation isochronous architecture,
 	// but is backwards compatible with the old definition.. This means we should
 	// be safe when an old-style driver is loaded..
-	// Make sure all unused fields are set to 0/NULL and that auxInfo points to
-	// a valid DCLTaskInfoAux struct, defined above.
+	// To use DCLTaskInfo (see createLocalIsochPort) make sure all 'unused' fields are set to 0 or NULL
+	// and that auxInfo points to a valid DCLTaskInfoAux struct, defined above.
 	
 //    typedef void (CallUserProc)(void *refcon, void * userProc, void * dclCommand);
 	struct DCLTaskInfo

@@ -3,22 +3,19 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
  * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -33,6 +30,15 @@
  * HISTORY
  *
  * $Log: IOFWLocalIsochPort.h,v $
+ * Revision 1.9.14.2  2004/09/13 21:40:38  niels
+ * *** empty log message ***
+ *
+ * Revision 1.9.14.1  2004/09/13 21:10:10  niels
+ * *** empty log message ***
+ *
+ * Revision 1.9.10.1  2004/08/09 19:57:12  niels
+ * *** empty log message ***
+ *
  * Revision 1.9  2003/08/30 00:16:44  collin
  * *** empty log message ***
  *
@@ -122,7 +128,16 @@ class IOFWLocalIsochPort : public IOFWIsochPort
 		IOReturn				setIsochResourceFlags (
 										IOFWIsochResourceFlags	flags ) ;
 		IODCLProgram *			getProgramRef() const ;
-										
+
+		/*! @function synchronizeWithIO
+			@abstract Complete any work needed to be done on this local isoch port.
+			@discussion Immediately completes any pending callbacks, updates, &c.
+				on the caller's thread. Call this function to to give FireWire a chance
+				to process completed DCLs on a high priority thread.
+			@result IOKit error code. */
+
+		IOReturn				synchronizeWithIO() ;
+
 	private:
 
 		OSMetaClassDeclareReservedUnused ( IOFWLocalIsochPort, 0 ) ;
