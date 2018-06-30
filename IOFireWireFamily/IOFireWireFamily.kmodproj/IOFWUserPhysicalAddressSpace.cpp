@@ -28,9 +28,9 @@
  *
  */
 
-#include "IOFWUserClientPhysAddrSpace.h"
+#import "IOFWUserPhysicalAddressSpace.h"
 
-#define MIN(a,b) ((a < b) ? a : b)
+#import <IOKit/IOLib.h>
 
 OSDefineMetaClassAndStructors(IOFWUserClientPhysicalAddressSpace, IOFWPhysicalAddressSpace) ;
 
@@ -86,7 +86,7 @@ IOFWUserClientPhysicalAddressSpace::getSegments(
 	IOPhysicalAddress	outPages[],
 	IOByteCount			outLength[])
 {
-	UInt32 segmentCount = MIN(*ioSegmentCount, mSegmentCount) ;
+	UInt32 segmentCount = min(*ioSegmentCount, mSegmentCount) ;
 	IOReturn	result = kIOReturnSuccess ;
 
 	IOByteCount currentOffset = 0 ;

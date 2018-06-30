@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- *  IOFireWirePseudoAddressSpacePriv.cpp
+ *  IOFireWireLibPseudoAddressSpace.cpp
  *  IOFireWireLib
  *
  *  Created by NWG on Wed Dec 06 2000.
@@ -29,7 +29,7 @@
  */
 
 #import "IOFireWireLibPriv.h"
-#import "IOFireWireLibPsudoAddrSpace.h"
+#import "IOFireWireLibPseudoAddressSpace.h"
 #import <CoreFoundation/CoreFoundation.h>
 #import <IOKit/IOKitLib.h>
 #import <IOKit/iokitmig.h>
@@ -56,13 +56,13 @@ namespace IOFireWireLib {
 	} ;
 	
 	IUnknownVTbl** 
-	PseudoAddressSpace::Alloc( Device& inUserClient, FWKernAddrSpaceRef inKernAddrSpaceRef, void* inBuffer, UInt32 inBufferSize, 
+	PseudoAddressSpace::Alloc( Device& userclient, KernAddrSpaceRef inKernAddrSpaceRef, void* inBuffer, UInt32 inBufferSize, 
 			void* inBackingStore, void* inRefCon )
 	{
 		PseudoAddressSpace* me = nil ;
 		
 		try {
-			me = new PseudoAddressSpace(inUserClient, inKernAddrSpaceRef, inBuffer, inBufferSize, inBackingStore, inRefCon) ;
+			me = new PseudoAddressSpace(userclient, inKernAddrSpaceRef, inBuffer, inBufferSize, inBackingStore, inRefCon) ;
 		} catch (...) {
 		}
 		
@@ -171,21 +171,21 @@ namespace IOFireWireLib {
 	//
 	// ============================================================
 	
-	PseudoAddressSpace::PseudoAddressSpace( Device& inUserClient, FWKernAddrSpaceRef inKernAddrSpaceRef,
+	PseudoAddressSpace::PseudoAddressSpace( Device& userclient, KernAddrSpaceRef inKernAddrSpaceRef,
 												void* inBuffer, UInt32 inBufferSize, void* inBackingStore, void* inRefCon) 
 	: IOFireWireIUnknown( reinterpret_cast<IUnknownVTbl*>(& sInterface) ),
 		mNotifyIsOn(false),
 		mWriter( nil ),
 		mReader( nil ),
 		mSkippedPacketHandler( nil ),
-		mUserClient(inUserClient), 
+		mUserClient(userclient), 
 		mKernAddrSpaceRef(inKernAddrSpaceRef),
 		mBuffer((char*)inBuffer),
 		mBufferSize(inBufferSize),
 		mBackingStore(inBackingStore),
 		mRefCon(inRefCon)
 	{
-		inUserClient.AddRef() ;
+		userclient.AddRef() ;
 
 		mPendingLocks = ::CFDictionaryCreateMutable( kCFAllocatorDefault, 0, NULL, NULL ) ;
 		if (!mPendingLocks)
@@ -196,7 +196,7 @@ namespace IOFireWireLib {
 		UInt32 addressLo ;
 
 		IOReturn error ;
-		error = ::IOConnectMethodScalarIScalarO( mUserClient.GetUserClientConnection(), kFWPseudoAddrSpace_GetFWAddrInfo, 1, 3, mKernAddrSpaceRef,
+		error = ::IOConnectMethodScalarIScalarO( mUserClient.GetUserClientConnection(), kPseudoAddrSpace_GetFWAddrInfo, 1, 3, mKernAddrSpaceRef,
 				& nodeID, & addressHi, & addressLo ) ;
 		if (error)
 			throw std::exception() ;
@@ -209,7 +209,7 @@ namespace IOFireWireLib {
 		#if IOFIREWIREUSERCLIENTDEBUG > 0
 		IOReturn result = 
 		#endif
-		IOConnectMethodScalarIScalarO( mUserClient.GetUserClientConnection(), kFWPseudoAddrSpace_Release, 1, 0, mKernAddrSpaceRef ) ;
+		IOConnectMethodScalarIScalarO( mUserClient.GetUserClientConnection(), kPseudoAddrSpace_Release, 1, 0, mKernAddrSpaceRef ) ;
 		IOFireWireLibLogIfErr_(result, "PseudoAddressSpace::~PseudoAddressSpace: error %x releasing address space!\n", result) ;
 	
 		mUserClient.Release() ;
@@ -277,7 +277,7 @@ namespace IOFireWireLib {
 					mUserClient.GetAsyncPort(),
 					mPacketAsyncRef,
 					1,
-					kFWSetAsyncRef_Packet,
+					kSetAsyncRef_Packet,
 					params,
 					3,
 					output,
@@ -293,7 +293,7 @@ namespace IOFireWireLib {
 			params[2]	= (UInt32) callBackRefCon;
 			
 			err = io_async_method_scalarI_scalarO( connection, mUserClient.GetAsyncPort(), mSkippedPacketAsyncRef, 1,
-					kFWSetAsyncRef_SkippedPacket, params, 3, output, & size) ;
+					kSetAsyncRef_SkippedPacket, params, 3, output, & size) ;
 		}
 		
 		if ( kIOReturnSuccess == err)
@@ -303,7 +303,7 @@ namespace IOFireWireLib {
 			params[2]	= (UInt32) callBackRefCon ;
 			
 			err = io_async_method_scalarI_scalarO( connection, mUserClient.GetAsyncPort(), mReadPacketAsyncRef, 1,
-					kFWSetAsyncRef_Read, params, 3, params, & size ) ;
+					kSetAsyncRef_Read, params, 3, params, & size ) ;
 		}
 	
 		if ( kIOReturnSuccess == err )
@@ -334,16 +334,8 @@ namespace IOFireWireLib {
 			params[1]	= (UInt32)(IOAsyncCallback) 0 ;
 			params[2]	= (UInt32) this ;
 		
-			err = io_async_method_scalarI_scalarO(
-					connection,
-					mUserClient.GetAsyncPort(),
-					mPacketAsyncRef,
-					1,
-					kFWSetAsyncRef_Packet,
-					params,
-					3,
-					params,
-					& size) ;
+			err = ::io_async_method_scalarI_scalarO( connection, mUserClient.GetAsyncPort(), mPacketAsyncRef,
+							1, kSetAsyncRef_Packet, params, 3, params, & size) ;
 			
 	
 			// set callback for skipped packets to 0
@@ -351,32 +343,16 @@ namespace IOFireWireLib {
 			params[1]	= (UInt32)(IOAsyncCallback) 0 ;
 			params[2]	= (UInt32) this ;
 			
-			err = io_async_method_scalarI_scalarO(
-					connection,
-					mUserClient.GetAsyncPort(),
-					mSkippedPacketAsyncRef,
-					1,
-					kFWSetAsyncRef_SkippedPacket,
-					params,
-					3,
-					params,
-					& size) ;
+			err = io_async_method_scalarI_scalarO( connection, mUserClient.GetAsyncPort(), mSkippedPacketAsyncRef, 
+							1, kSetAsyncRef_SkippedPacket, params, 3, params, & size) ;
 	
 			// set callback for skipped packets to 0
 			params[0]	= (UInt32) mKernAddrSpaceRef ;
 			params[1]	= (UInt32)(IOAsyncCallback) 0 ;
 			params[2]	= (UInt32) this ;
 			
-			err = io_async_method_scalarI_scalarO(
-					connection,
-					mUserClient.GetAsyncPort(),
-					mReadPacketAsyncRef,
-					1,
-					kFWSetAsyncRef_Read,
-					params,
-					3,
-					params,
-					& size) ;
+			err = io_async_method_scalarI_scalarO( connection, mUserClient.GetAsyncPort(),
+					mReadPacketAsyncRef, 1, kSetAsyncRef_Read, params, 3, params, & size) ;
 		}
 		
 		mNotifyIsOn = false ;
@@ -427,7 +403,7 @@ namespace IOFireWireLib {
 		#if IOFIREWIREUSERCLIENTDEBUG > 0
 		OSStatus err = 
 		#endif
-		::IOConnectMethodScalarIScalarO( mUserClient.GetUserClientConnection(), kFWPseudoAddrSpace_ClientCommandIsComplete,
+		::IOConnectMethodScalarIScalarO( mUserClient.GetUserClientConnection(), kPseudoAddrSpace_ClientCommandIsComplete,
 				3, 0, mKernAddrSpaceRef, commandID, status) ;
 								
 		IOFireWireLibLogIfErr_(err, "PseudoAddressSpace::ClientCommandIsComplete: err=0x%08lX\n", err) ;

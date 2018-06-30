@@ -19,28 +19,17 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-/*
- * Copyright (c) 1999-2002 Apple Computer, Inc.  All rights reserved.
- *
- * HISTORY
- * 27 April 99 wgulland created.
- *
- */
+ 
+#include "IOFireWireMagicMatchingNub.h"
 
-#include <IOKit/firewire/IOFireWireBus.h>
+OSDefineMetaClassAndStructors(IOFireWireMagicMatchingNub, IOService)
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-OSDefineMetaClass( IOFireWireBus, IOService )
-OSDefineAbstractStructors(IOFireWireBus, IOService)
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 0);
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 1);
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 2);
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 3);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 4);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 5);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 6);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 7);
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
+bool IOFireWireMagicMatchingNub::matchPropertyTable( OSDictionary * table )
+{
+    OSObject *clientClass;
+    clientClass = table->getObject("IOClass");
+    if(!clientClass)
+        return false;
+        
+    return clientClass->isEqualTo( getProperty( "IODesiredChild" ) );
+}

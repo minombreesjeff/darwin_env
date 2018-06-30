@@ -20,16 +20,17 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- *  IOFireWireLibPhysicalAddressSpace.h
- *  IOFireWireLib
- *
- *  Created by NWG on Fri Dec 08 2000.
- *  Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
- *
- */
+*  IOFireWireLibPhysicalAddressSpace.h
+*  IOFireWireLib
+*
+*  Created by NWG on Fri Dec 08 2000.
+*  Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
+*
+*/
+
+#import "IOFireWireLibPriv.h"
 
 #import <IOKit/IOKitLib.h>
-#import "IOFireWireLibPriv.h"
 
 namespace IOFireWireLib {
 
@@ -58,7 +59,7 @@ namespace IOFireWireLib {
 			// static allocator
 			static IUnknownVTbl**		Alloc(
 											Device&	inUserClient,
-											FWKernPhysicalAddrSpaceRef inKernPhysicalAddrSpaceRef,
+											KernPhysicalAddrSpaceRef inKernPhysicalAddrSpaceRef,
 											UInt32 					inSize, 
 											void* 					inBackingStore, 
 											UInt32 					inFlags) ;
@@ -89,7 +90,7 @@ namespace IOFireWireLib {
 			// --- constructor/destructor ------------------
 									PhysicalAddressSpace(
 											Device& inUserClient,
-											FWKernPhysicalAddrSpaceRef    inKernPhysicalAddrSpaceRef,
+											KernPhysicalAddrSpaceRef    inKernPhysicalAddrSpaceRef,
 											UInt32 					inSize, 
 											void* 					inBackingStore, 
 											UInt32 					inFlags) ;
@@ -107,7 +108,7 @@ namespace IOFireWireLib {
 		protected:
 			// --- member data -----------------------------
 			Device&	mUserClient ;
-			FWKernPhysicalAddrSpaceRef		mKernPhysicalAddrSpaceRef ;
+			KernPhysicalAddrSpaceRef		mKernPhysicalAddrSpaceRef ;
 			UInt32							mSize ;
 			void*							mBackingStore ;
 			FWAddress						mFWAddress ;

@@ -20,27 +20,26 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- * Copyright (c) 1999-2002 Apple Computer, Inc.  All rights reserved.
- *
- * HISTORY
- * 27 April 99 wgulland created.
- *
- */
+	$Log: IOFWQEventSource.cpp,v $
+	Revision 1.2  2002/09/25 00:27:20  niels
+	flip your world upside-down
+	
+*/
 
-#include <IOKit/firewire/IOFireWireBus.h>
+#import "IOFWQEventSource.h"
+#import "IOFireWireController.h"
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+// IOFWQEventSource
+OSDefineMetaClassAndStructors(IOFWQEventSource, IOEventSource)
 
-OSDefineMetaClass( IOFireWireBus, IOService )
-OSDefineAbstractStructors(IOFireWireBus, IOService)
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 0);
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 1);
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 2);
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 3);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 4);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 5);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 6);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 7);
+bool IOFWQEventSource::checkForWork()
+{
+    return fQueue->executeQueue(false);
+}
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
+bool
+IOFWQEventSource::init( IOFireWireController* owner )
+{
+    fQueue = &owner->getPendingQ();
+    return IOEventSource::init(owner);
+}

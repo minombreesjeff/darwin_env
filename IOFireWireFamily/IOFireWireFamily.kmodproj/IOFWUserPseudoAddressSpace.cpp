@@ -28,7 +28,10 @@
  *
  */
 /*
-	$Log: IOFWUserClientPsdoAddrSpace.cpp,v $
+	$Log: IOFWUserPseudoAddressSpace.cpp,v $
+	Revision 1.1  2002/09/25 00:27:22  niels
+	flip your world upside-down
+	
 	Revision 1.21  2002/08/06 21:10:06  wgulland
 	Add IOfireWireBus::isCompleteRequest(reqrefcon)
 	
@@ -43,19 +46,19 @@
 #ifndef __IOFWUserClientPseuAddrSpace_H__
 #define __IOFWUserClientPseuAddrSpace_H__
 
-#include <IOKit/assert.h>
-#include <IOKit/IOLib.h>
-#include <IOKit/IOWorkLoop.h>
-#include <IOKit/IOTypes.h>
-#include <IOKit/IOMessage.h>
-#include <IOKit/IOUserClient.h>
-#include <IOKit/firewire/IOFireWireNub.h>
-#include <IOKit/firewire/IOFireWireController.h>
-#include <IOKit/firewire/IOFireWireLink.h>
+#import "IOFWUserPseudoAddressSpace.h"
+#import "IOFireWireNub.h"
+#import "IOFireWireController.h"
+#import "IOFireWireLink.h"
+#import "IOFireWireUserClient.h"
+#import "IOFireWireLib.h"
 
-#include "IOFWUserClientPsdoAddrSpace.h"
-
-class IOFireWireUserClient ;
+#import <IOKit/assert.h>
+#import <IOKit/IOLib.h>
+#import <IOKit/IOWorkLoop.h>
+#import <IOKit/IOTypes.h>
+#import <IOKit/IOMessage.h>
+#import <IOKit/IOUserClient.h>
 
 // ============================================================
 //
@@ -278,21 +281,19 @@ IOFWUserPseudoAddressSpace::deactivate()
 }
 
 bool
-IOFWUserPseudoAddressSpace::completeInit( 
-	IOFireWireUserClient*		inUserClient, 
-	FWAddrSpaceCreateParams* 	inParams)
+IOFWUserPseudoAddressSpace::completeInit( IOFireWireUserClient* userclient, AddressSpaceCreateParams* params )
 {
 	Boolean	status = true ;
 
-	fUserRefCon					= inParams->refCon ;
-	fFlags						= inParams->flags ;
+	fUserRefCon					= (UInt32)params->refCon ;
+	fFlags						= params->flags ;
 	fWaitingForUserCompletion	= false ;
 
 	// set user client
-	fUserClient = inUserClient ;
+	fUserClient = userclient ;
 
 	// see if user specified a packet queue and queue size
-	if ( !inParams->queueBuffer && ( !(fFlags & kFWAddressSpaceAutoWriteReply) || !(fFlags & kFWAddressSpaceAutoReadReply) ) )
+	if ( !params->queueBuffer && ( !(fFlags & kFWAddressSpaceAutoWriteReply) || !(fFlags & kFWAddressSpaceAutoReadReply) ) )
 	{
 		IOFireWireUserClientLog_("IOFWUserPseudoAddressSpace::initAll: address space without queue buffer must have both auto-write and auto-read set\n") ;
 		status = false ;
@@ -301,10 +302,10 @@ IOFWUserPseudoAddressSpace::completeInit(
 	// make memory descriptor around queue
 	if ( status )
 	{
-		if ( inParams->queueBuffer )
+		if ( params->queueBuffer )
 		{
-			fPacketQueueBuffer = IOMemoryDescriptor::withAddress( (vm_address_t) inParams->queueBuffer,
-																	(IOByteCount) inParams->queueSize,
+			fPacketQueueBuffer = IOMemoryDescriptor::withAddress( (vm_address_t) params->queueBuffer,
+																	(IOByteCount) params->queueSize,
 																	kIODirectionOutIn,
 																	fUserClient->getOwningTask() ) ;
 			if ( !fPacketQueueBuffer )
@@ -343,12 +344,12 @@ IOFWUserPseudoAddressSpace::completeInit(
 	
 	// get a backing store if needed
 	if ( status )
-		if ( NULL != inParams->backingStore )
+		if ( NULL != params->backingStore )
 		{
-			fDesc = IOMemoryDescriptor::withAddress( (vm_address_t) inParams->backingStore,
-															(IOByteCount) inParams->size,
+			fDesc = IOMemoryDescriptor::withAddress( (vm_address_t) params->backingStore,
+															(IOByteCount) params->size,
 															kIODirectionOutIn,
-															inUserClient->getOwningTask() ) ;
+															userclient->getOwningTask() ) ;
 			if (!fDesc)
 			{
 				IOFireWireUserClientLog_("%s %u: failed to make backing store memory descriptor\n", __FILE__, __LINE__) ;
@@ -364,11 +365,11 @@ IOFWUserPseudoAddressSpace::completeInit(
 	// set reader and writer callbacks based on access flags and user callback flags
 	if (status)
 	{		
-		if (!(inParams->flags & kFWAddressSpaceNoWriteAccess))
+		if (!(params->flags & kFWAddressSpaceNoWriteAccess))
 		{
-			if (inParams->flags & kFWAddressSpaceAutoWriteReply)
+			if (params->flags & kFWAddressSpaceAutoWriteReply)
 			{
-				if (inParams->backingStore)
+				if (params->backingStore)
 					fWriter = & IOFWUserPseudoAddressSpace::simpleWriter ;
 				else
 				{	// this macro needs braces
@@ -382,11 +383,11 @@ IOFWUserPseudoAddressSpace::completeInit(
 			}
 		}
 
-		if (!(inParams->flags & kFWAddressSpaceNoReadAccess))
+		if (!(params->flags & kFWAddressSpaceNoReadAccess))
 		{
-			if (inParams->flags & kFWAddressSpaceAutoReadReply)
+			if (params->flags & kFWAddressSpaceAutoReadReply)
 			{
-				if (inParams->backingStore)
+				if (params->backingStore)
 					fReader = & IOFWUserPseudoAddressSpace::simpleReader ;
 				else
 				{	// this macro needs braces
@@ -407,36 +408,36 @@ IOFWUserPseudoAddressSpace::completeInit(
 
 bool
 IOFWUserPseudoAddressSpace::initPseudo( 
-	IOFireWireUserClient*		inUserClient, 
-	FWAddrSpaceCreateParams* 	inParams)
+	IOFireWireUserClient*		userclient, 
+	IOFireWireLib::AddressSpaceCreateParams* 	params)
 {
-	if ( !IOFWPseudoAddressSpace::initAll( inUserClient->getOwner()->getController(), & fAddress, inParams->size, NULL, NULL, this ))
+	if ( !IOFWPseudoAddressSpace::initAll( userclient->getOwner()->getController(), & fAddress, params->size, NULL, NULL, this ))
 	{
 		IOFireWireUserClientLog_("IOFWUserPseudoAddressSpace::initPseudo: IOFWPseudoAddressSpace::initAll failed\n") ;
 		return false ;
 	}
 	
-	bool result = completeInit( inUserClient, inParams ) ;
+	bool result = completeInit( userclient, params ) ;
 	
 	return result ;
 }
 
 bool
 IOFWUserPseudoAddressSpace::initFixed(
-	IOFireWireUserClient*		inUserClient,
-	FWAddrSpaceCreateParams*	inParams )
+	IOFireWireUserClient*		userclient,
+	IOFireWireLib::AddressSpaceCreateParams*	params )
 {
-	IOFWAddressSpace*	addrSpace = inUserClient->getOwner()->getController()->getAddressSpace( FWAddress( kCSRRegisterSpaceBaseAddressHi, inParams->addressLo ) ) ;
+	IOFWAddressSpace*	addrSpace = userclient->getOwner()->getController()->getAddressSpace( FWAddress( kCSRRegisterSpaceBaseAddressHi, params->addressLo ) ) ;
 	
-	fAddress = FWAddress( kCSRRegisterSpaceBaseAddressHi, inParams->addressLo ) ;
+	fAddress = FWAddress( kCSRRegisterSpaceBaseAddressHi, params->addressLo ) ;
 
-	if ( addrSpace && !(inParams->flags & kFWAddressSpaceShareIfExists ) )
+	if ( addrSpace && !(params->flags & kFWAddressSpaceShareIfExists ) )
 		return false ;
 
-	if ( !IOFWPseudoAddressSpace::initFixed( inUserClient->getOwner()->getController(), fAddress, inParams->size, NULL, NULL, this ))
+	if ( !IOFWPseudoAddressSpace::initFixed( userclient->getOwner()->getController(), fAddress, params->size, NULL, NULL, this ))
 		return false ;
 	
-	return completeInit( inUserClient, inParams ) ;
+	return completeInit( userclient, params ) ;
 }
 
 UInt32 IOFWUserPseudoAddressSpace::doLock(UInt16 nodeID, IOFWSpeed &speed, FWAddress addr, UInt32 inLen,

@@ -20,27 +20,39 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- * Copyright (c) 1999-2002 Apple Computer, Inc.  All rights reserved.
+ *  IOFWUserClientPhysAddrSpace.h
+ *  IOFireWireFamily
  *
- * HISTORY
- * 27 April 99 wgulland created.
+ *  Created by NWG on Fri Dec 08 2000.
+ *  Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
  *
  */
 
-#include <IOKit/firewire/IOFireWireBus.h>
+#ifndef _IOKIT_IOFWUserClientPhysAddrSpace_H_
+#define _IOKIT_IOFWUserClientPhysAddrSpace_H_
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+#import "IOFWAddressSpace.h"
 
-OSDefineMetaClass( IOFireWireBus, IOService )
-OSDefineAbstractStructors(IOFireWireBus, IOService)
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 0);
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 1);
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 2);
-//OSMetaClassDefineReservedUnused(IOFireWireBus, 3);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 4);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 5);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 6);
-OSMetaClassDefineReservedUnused(IOFireWireBus, 7);
+class IOFWUserClientPhysicalAddressSpace: public IOFWPhysicalAddressSpace
+{
+	OSDeclareDefaultStructors(IOFWUserClientPhysicalAddressSpace)
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ public:
+ 	virtual void		free() ;
+    virtual bool 		initWithDesc(
+    							IOFireWireBus *			bus,
+								IOMemoryDescriptor*		mem);
 
+	// getters
+	UInt32				getSegmentCount() ;
+	IOReturn			getSegments(
+								UInt32*					ioMaxPages,
+								IOPhysicalAddress		outPages[],
+								IOByteCount				outLengths[]) ;
+
+ protected:
+	UInt32				mSegmentCount ;
+	bool				fMemPrepared ;
+} ;
+
+#endif //_IOKIT_IOFWUserClientPhysAddrSpace_H_

@@ -20,39 +20,34 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- *  IOFWUserClientPhysAddrSpace.h
- *  IOFireWireFamily
- *
- *  Created by NWG on Fri Dec 08 2000.
- *  Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
- *
- */
+	$Log: IOFWQEventSource.h,v $
+	Revision 1.2  2002/09/25 00:27:20  niels
+	flip your world upside-down
+	
+*/
 
-#ifndef _IOKIT_IOFWUserClientPhysAddrSpace_H_
-#define _IOKIT_IOFWUserClientPhysAddrSpace_H_
+#ifndef _IOKIT_IOFWQEVENTSOURCE_H
+#define _IOKIT_IOFWQEVENTSOURCE_H
 
-#include <IOKit/firewire/IOFWAddressSpace.h>
+#import <IOKit/IOEventSource.h>
 
-class IOFWUserClientPhysicalAddressSpace: public IOFWPhysicalAddressSpace
+class IOFWCmdQ ;
+class IOFireWireController ;
+
+class IOFWQEventSource : public IOEventSource
 {
-	OSDeclareDefaultStructors(IOFWUserClientPhysicalAddressSpace)
+    OSDeclareDefaultStructors(IOFWQEventSource)
 
- public:
- 	virtual void		free() ;
-    virtual bool 		initWithDesc(
-    							IOFireWireBus *			bus,
-								IOMemoryDescriptor*		mem);
+protected:
+    IOFWCmdQ *fQueue;
+    virtual bool checkForWork();
 
-	// getters
-	UInt32				getSegmentCount() ;
-	IOReturn			getSegments(
-								UInt32*					ioMaxPages,
-								IOPhysicalAddress		outPages[],
-								IOByteCount				outLengths[]) ;
+public:
+    bool init(IOFireWireController *owner);
+    inline void signalWorkAvailable()	{IOEventSource::signalWorkAvailable();};
+    inline void openGate()		{IOEventSource::openGate();};
+    inline void closeGate()		{IOEventSource::closeGate();};
+	inline bool inGate( void )  {return workLoop->inGate();};
+};
 
- protected:
-	UInt32				mSegmentCount ;
-	bool				fMemPrepared ;
-} ;
-
-#endif //_IOKIT_IOFWUserClientPhysAddrSpace_H_
+#endif

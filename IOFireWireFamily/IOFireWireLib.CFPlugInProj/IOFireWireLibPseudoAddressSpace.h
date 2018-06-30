@@ -45,7 +45,7 @@ namespace IOFireWireLib {
 		
 		public:
 			// static allocator
-			static IUnknownVTbl** 	Alloc( Device& inUserClient, FWKernAddrSpaceRef inKernAddrSpaceRef, 
+			static IUnknownVTbl** 	Alloc( Device& userclient, KernAddrSpaceRef inKernAddrSpaceRef, 
 											void* inBuffer, UInt32 inBufferSize, void* inBackingStore, 
 											void* inRefCon) ;
 		
@@ -87,8 +87,8 @@ namespace IOFireWireLib {
 		
 			// --- constructor/destructor ----------
 									PseudoAddressSpace(
-											Device&	inUserClient,
-											FWKernAddrSpaceRef				inKernAddrSpaceRef,
+											Device&	userclient,
+											KernAddrSpaceRef				inKernAddrSpaceRef,
 											void*							inBuffer,
 											UInt32							inBufferSize,
 											void*							inBackingStore,
@@ -132,7 +132,7 @@ namespace IOFireWireLib {
 			SkippedPacketHandler	mSkippedPacketHandler ;
 			Device&					mUserClient ;
 			FWAddress				mFWAddress ;
-			FWKernAddrSpaceRef		mKernAddrSpaceRef ;
+			KernAddrSpaceRef		mKernAddrSpaceRef ;
 			char*					mBuffer ;
 			UInt32					mBufferSize ;
 		

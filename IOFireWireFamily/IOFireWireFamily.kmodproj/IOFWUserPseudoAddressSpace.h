@@ -28,7 +28,10 @@
  *
  */
 /*
-	$Log: IOFWUserClientPsdoAddrSpace.h,v $
+	$Log: IOFWUserPseudoAddressSpace.h,v $
+	Revision 1.1  2002/09/25 00:27:22  niels
+	flip your world upside-down
+	
 	Revision 1.11  2002/08/06 19:42:54  niels
 	now send conflict response if user pseudo address space can't receive a write because the queue is full in cases where the hardware has not already responded 'ack complete'
 	
@@ -37,27 +40,31 @@
 #ifndef __IOFWUserClientPsduAddrSpace_H__
 #define __IOFWUserClientPsduAddrSpace_H__
 
-#include <IOKit/OSMessageNotification.h>
-#include <IOKit/firewire/IOFireWireFamilyCommon.h>
-#include <IOKit/firewire/IOFWAddressSpace.h>
-#include "IOFireWireUserClient.h"
+#import "IOFireWireFamilyCommon.h"
+#import "IOFWAddressSpace.h"
+#import "IOFireWireLibPriv.h"
+
+#import <IOKit/OSMessageNotification.h>
+#import <IOKit/IOLocks.h>
+
+using namespace IOFireWireLib ;
 
 typedef union IOFWPacketHeader_t
 {
-    typedef enum QueueTag_t
+    typedef enum
     {
         kFree = 0,
-        kStopPacket     	= 'stop',
+        kStopPacket   	  	= 'stop',
         kBadPacket	   		= ' bad',
-        kIncomingPacket 	= 'pckt',
+        kIncomingPacket	 	= 'pckt',
         kSkippedPacket		= 'skip',
 		kReadPacket			= 'read',
 		kLockPacket			= 'lock'
     } QueueTag ;
 
-    struct CommonHeader_t
+    struct
     {
-        QueueTag_t 					type ;
+        QueueTag 					type ;
         IOFWPacketHeader_t*			next ;
         OSAsyncReference*			whichAsyncRef ;
         UInt32						argCount ;
@@ -65,10 +72,10 @@ typedef union IOFWPacketHeader_t
         UInt32						args[9] ;
     } CommonHeader ;
 
-    struct IncomingPacket_t
+    struct
     {
         // -----------------------------------------------
-        QueueTag_t 					type ;
+        QueueTag					type ;
         IOFWPacketHeader_t*			next ;
         OSAsyncReference*			whichAsyncRef ;
         UInt32						argCount ;
@@ -90,7 +97,7 @@ typedef union IOFWPacketHeader_t
     struct SkippedPacket_t
     {
         // -----------------------------------------------
-        QueueTag_t 					type ;
+        QueueTag 					type ;
         IOFWPacketHeader_t*			next ;
         OSAsyncReference*			whichAsyncRef ;
         UInt32						argCount ;
@@ -103,7 +110,7 @@ typedef union IOFWPacketHeader_t
 	struct ReadPacket_t
 	{
 	    // -----------------------------------------------
-	    QueueTag_t 					type ;
+	    QueueTag 					type ;
 		IOFWPacketHeader_t*			next ;
 		OSAsyncReference*			whichAsyncRef ;
 		UInt32						argCount ;
@@ -168,6 +175,8 @@ inline Boolean IsSkippedPacketHeader(const union IOFWPacketHeader_t* header) ;
 inline Boolean IsFreePacketHeader(const union IOFWPacketHeader_t* header) ;
 //inline Boolean IsReadPacketHeader(const union IOFWPacketHeader_t* header) ;
 
+class IOFireWireUserClient ;
+
 // To support mapping the memory descriptor within
 // a pseudo address space to user space, we need to add
 // accessors to IOFWPseudoAddressSpace. This class
@@ -178,25 +187,19 @@ class IOFWUserPseudoAddressSpace: public IOFWPseudoAddressSpace
 
 public:
 	// --- OSObject ----------
-	#if IOFIREWIREUSERCLIENTDEBUG > 0
-    virtual bool 					serialize(OSSerialize *s) const;
-	#endif
-	virtual void					free() ;
+#if IOFIREWIREUSERCLIENTDEBUG > 0
+    virtual bool 						serialize(OSSerialize *s) const;
+#endif
+	virtual void						free() ;
 
 	// --- IOFWPseudoAddressSpace ----------
 	// override deactivate so we can delete any notification related structures...
-	virtual IOReturn				activate() ;
-	virtual void					deactivate() ;
+	virtual IOReturn					activate() ;
+	virtual void						deactivate() ;
 	
-	bool							completeInit( 
-											IOFireWireUserClient*		inUserClient, 
-											FWAddrSpaceCreateParams* 	inParams) ;
-	bool							initPseudo( 
-											IOFireWireUserClient*		inUserClient, 
-											FWAddrSpaceCreateParams* 	inParams) ;
-	bool							initFixed(
-											IOFireWireUserClient*		inUserClient,
-											FWAddrSpaceCreateParams*	inParams ) ;
+	bool							completeInit( IOFireWireUserClient* userclient, AddressSpaceCreateParams* params ) ;
+	bool							initPseudo( IOFireWireUserClient* userclient, AddressSpaceCreateParams* params ) ;
+	bool							initFixed( IOFireWireUserClient* userclient, AddressSpaceCreateParams* params ) ;
 	virtual UInt32 					doLock(
 											UInt16 						nodeID, 
 											IOFWSpeed &					speed, 
@@ -221,7 +224,7 @@ public:
 	// --- getters ----------
     const FWAddress& 				getBase() { return fAddress ; }
 	const UInt32					getUserRefCon() { return fUserRefCon ;}
-	const IOFireWireUserClient&		getUserClient() { return *fUserClient ;}
+	const IOFireWireUserClient&				getUserClient() { return *fUserClient ;}
 
 	// --- readers/writers ----------
     static UInt32					pseudoAddrSpaceReader(
@@ -259,7 +262,7 @@ private:
 	IOLock*						fLock ;							// to lock this object
 
 	UInt32						fUserRefCon ;
-	IOFireWireUserClient*		fUserClient ;
+	IOFireWireUserClient*					fUserClient ;
 	IOFWPacketHeader*			fLastWrittenHeader ;
 	IOFWPacketHeader*			fLastReadHeader ;
 	UInt32						fBufferAvailable ;				// amount of queue space remaining
