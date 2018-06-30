@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,13 +22,43 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
+
 /*
  *
- *	IOFireWirePCRSpace.h
+ *	IOFireWireAVCLocalNode.h
  *
- * Class to multiplex access to the FCP request address.
+ * Class to initialize the Local node's AVC Target mode support
+ *
  */
-#ifndef _IOKIT_IOFIREWIREAVCREQUESTSPACE_H
-#define _IOKIT_IOFIREWIREAVCREQUESTSPACE_H
 
-#endif /* _IOKIT_IOFIREWIREAVCREQUESTSPACE_H */
+#include <IOKit/IOService.h>
+#include <IOKit/IOLib.h>
+#include <IOKit/IOMessage.h>
+
+#include <IOKit/firewire/IOFireWireNub.h>
+#include <IOKit/firewire/IOFireWireBus.h>
+#include <IOKit/firewire/IOFWAddressSpace.h>
+
+#include <IOKit/avc/IOFireWirePCRSpace.h>
+#include <IOKit/avc/IOFireWireAVCTargetSpace.h>
+
+class IOFireWireAVCLocalNode : public IOService
+{
+    OSDeclareDefaultStructors(IOFireWireAVCLocalNode)
+
+protected:
+	bool						fStarted;	
+    IOFireWireNub *				fDevice;
+    IOFireWirePCRSpace *		fPCRSpace;
+    IOFireWireAVCTargetSpace *	fAVCTargetSpace;
+	
+public:
+
+	// IOService overrides
+    virtual bool		start(IOService *provider);
+	virtual void		stop(IOService *provider);
+	virtual void		free();
+    virtual bool		finalize(IOOptionBits options);
+    virtual IOReturn	message(UInt32 type, IOService *provider, void *argument);
+};
+	
