@@ -8,6 +8,8 @@
 	<string>IOFireWireFamily</string>
 	<key>CFBundleGetInfoString</key>
 	<string>IOFireWireFamily version 2.0.0, Copyright 2005 Apple Computer, Inc.</string>
+	<key>CFBundleIconFile</key>
+	<string></string>
 	<key>CFBundleIdentifier</key>
 	<string>com.apple.iokit.IOFireWireFamily</string>
 	<key>CFBundleInfoDictionaryVersion</key>
