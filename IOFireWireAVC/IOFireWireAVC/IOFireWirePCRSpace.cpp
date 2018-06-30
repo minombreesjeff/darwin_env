@@ -22,6 +22,7 @@
  
 #include <IOKit/IOLib.h>
 #include <IOKit/firewire/IOFireWireController.h>
+#include <IOKit/firewire/IOFireWireLocalNode.h>
 #include <IOKit/avc/IOFireWireAVCConsts.h>
 #include <IOKit/avc/IOFireWirePCRSpace.h>
 
@@ -30,6 +31,40 @@ OSMetaClassDefineReservedUnused(IOFireWirePCRSpace, 0);
 OSMetaClassDefineReservedUnused(IOFireWirePCRSpace, 1);
 OSMetaClassDefineReservedUnused(IOFireWirePCRSpace, 2);
 OSMetaClassDefineReservedUnused(IOFireWirePCRSpace, 3);
+
+static IOReturn MyServiceInterestHandler( void * target, 
+										void * refCon,
+										UInt32 messageType, 
+										IOService * provider,
+										void * messageArgument, 
+										vm_size_t argSize )
+{
+    IOReturn res = kIOReturnUnsupported;
+	IOFireWirePCRSpace *pPCRSpace = (IOFireWirePCRSpace*) target;
+   
+	//IOLog( "IOFireWirePCRSpace received MyServiceInterestHandler (message = 0x%08X)\n",(int) messageType);
+	
+	switch (messageType)
+	{
+		case kIOMessageServiceIsTerminated:
+		case kIOMessageServiceIsRequestingClose:
+		case kIOMessageServiceIsResumed:
+			res = kIOReturnSuccess;
+			break;
+		
+		// This message is received when a bus-reset start happens!
+		case kIOMessageServiceIsSuspended:
+			res = kIOReturnSuccess;
+			if (pPCRSpace)
+				pPCRSpace->clearAllP2PConnections();
+			break;
+		
+		default:
+			break;
+	}
+	
+    return res;
+}
 
 bool IOFireWirePCRSpace::init(IOFireWireBus *bus)
 {
@@ -65,7 +100,25 @@ bool IOFireWirePCRSpace::init(IOFireWireBus *bus)
                 (31 << kIOFWPCRNumPlugsPhase));
 
 	fAVCTargetSpace = NULL;
+	
+	// Register for messages from IOFireWireLocalNode to detect bus-resets!
+	IOFireWireController *pFireWireController = OSDynamicCast(IOFireWireController, bus);
+	if (pFireWireController)
+	{
+		IOFireWireLocalNode *pFireWireLocalNode = (pFireWireController)->getLocalNode(pFireWireController);
+		if (pFireWireLocalNode)
+		{
+			// Register with the IOFireWireBus for messages
+			fNotifier = pFireWireLocalNode->registerInterest(gIOGeneralInterest,MyServiceInterestHandler,this,this);
+		}
+	}
 
+	// Get the pointert to the IOFireWireAVCTargetSpace
+	// Note: This will create it, if it doesn't already exist.
+	fAVCTargetSpace = IOFireWireAVCTargetSpace::getAVCTargetSpace((IOFireWireController*)bus);
+	if(fAVCTargetSpace)
+		fAVCTargetSpace->activateWithUserClient((IOFireWireAVCProtocolUserClient*)0xFFFFFFFF);
+	
 	return true;
 }
 
@@ -145,7 +198,14 @@ void IOFireWirePCRSpace::deactivate()
 	//IOLog( "IOFireWirePCRSpace::deactivate (0x%08X)\n",(int) this);
 
     if(!--fActivations)
+	{
         IOFWAddressSpace::deactivate();
+
+		// If we successfully registered for notifications, remove it now!
+		if (fNotifier)
+			fNotifier->remove();
+		fNotifier = NULL;
+	}
 }
 
 IOReturn IOFireWirePCRSpace::allocatePlug(void *refcon, IOFireWirePCRCallback func, UInt32 &plug, Client* head)
@@ -310,7 +370,11 @@ void IOFireWirePCRSpace::setAVCTargetSpacePointer(IOFireWireAVCTargetSpace *pAVC
 {
 	//IOLog( "IOFireWirePCRSpace::setAVCTargetSpacePointer (0x%08X)\n",(int) this);
 
-	fAVCTargetSpace = pAVCTargetSpace;
+	// NOTE: This function no longer does anything, since the relationship
+	// between the IOFireWirePCRSpace, and the IOFireWireAVCTargetSpace
+	// is now established in IOFireWirePCRSpace::init(...).
+
+	// fAVCTargetSpace = pAVCTargetSpace;
 	return;
 }
 

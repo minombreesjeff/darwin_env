@@ -24,7 +24,6 @@
 /* Begin PBXBuildFile section */
 		7DDEC050064B0D6C001B4C4A /* IOFireWireAVCConsts.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8C35357D0180A4C604CE206D /* IOFireWireAVCConsts.h */; };
 		7DDEC051064B0D6C001B4C4A /* IOFireWireAVCCommand.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8C35357B01809B5304CE206D /* IOFireWireAVCCommand.h */; };
-		7DDEC052064B0D6C001B4C4A /* IOFireWireAVCLocalNode.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = F5EE79F7044C6ED201CD2849 /* IOFireWireAVCLocalNode.h */; };
 		7DDEC053064B0D6C001B4C4A /* IOFireWireAVCRequestSpace.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8C2A8E8C0190D8BB04CE206D /* IOFireWireAVCRequestSpace.h */; };
 		7DDEC054064B0D6C001B4C4A /* IOFireWireAVCTargetSpace.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = F5AE806A0418130E01A80366 /* IOFireWireAVCTargetSpace.h */; };
 		7DDEC055064B0D6C001B4C4A /* IOFireWireAVCUnit.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 1A224C3EFF42367911CA2CB7 /* IOFireWireAVCUnit.h */; };
@@ -37,7 +36,6 @@
 		7DDEC05D064B0D6C001B4C4A /* IOFireWireAVCUserClient.h in Headers */ = {isa = PBXBuildFile; fileRef = 8C29B9AC019B181104CE206E /* IOFireWireAVCUserClient.h */; };
 		7DDEC05E064B0D6C001B4C4A /* IOFireWireAVCProtocolUserClient.h in Headers */ = {isa = PBXBuildFile; fileRef = 8C2DA8C8019C864904CE206E /* IOFireWireAVCProtocolUserClient.h */; };
 		7DDEC05F064B0D6C001B4C4A /* IOFireWireAVCTargetSpace.h in Headers */ = {isa = PBXBuildFile; fileRef = F5AE806A0418130E01A80366 /* IOFireWireAVCTargetSpace.h */; };
-		7DDEC060064B0D6C001B4C4A /* IOFireWireAVCLocalNode.h in Headers */ = {isa = PBXBuildFile; fileRef = F5EE79F7044C6ED201CD2849 /* IOFireWireAVCLocalNode.h */; };
 		7DDEC063064B0D6C001B4C4A /* IOFireWireAVCUnit.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1A224C3FFF42367911CA2CB7 /* IOFireWireAVCUnit.cpp */; settings = {ATTRIBUTES = (); }; };
 		7DDEC064064B0D6C001B4C4A /* IOFireWireAVCCommand.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8C35357901809B2B04CE206D /* IOFireWireAVCCommand.cpp */; };
 		7DDEC065064B0D6C001B4C4A /* IOFireWirePCRSpace.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8C274CA0018F448104CE206D /* IOFireWirePCRSpace.cpp */; };
@@ -45,7 +43,6 @@
 		7DDEC067064B0D6C001B4C4A /* IOFireWireAVCUserClient.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8C29B9AA019B17B304CE206E /* IOFireWireAVCUserClient.cpp */; };
 		7DDEC068064B0D6C001B4C4A /* IOFireWireAVCProtocolUserClient.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8C2DA8C7019C864904CE206E /* IOFireWireAVCProtocolUserClient.cpp */; };
 		7DDEC069064B0D6C001B4C4A /* IOFireWireAVCTargetSpace.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F5AE80690418130E01A80366 /* IOFireWireAVCTargetSpace.cpp */; };
-		7DDEC06A064B0D6C001B4C4A /* IOFireWireAVCLocalNode.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F5EE79F6044C6ED201CD2849 /* IOFireWireAVCLocalNode.cpp */; };
 		7DDEC073064B0D6D001B4C4A /* IOFireWireAVCLib.h in Headers */ = {isa = PBXBuildFile; fileRef = 8C7A0D94019B08CD04CE206E /* IOFireWireAVCLib.h */; };
 		7DDEC074064B0D6D001B4C4A /* IOFireWireAVCConsts.h in Headers */ = {isa = PBXBuildFile; fileRef = 8C35357D0180A4C604CE206D /* IOFireWireAVCConsts.h */; };
 		7DDEC075064B0D6D001B4C4A /* IOFireWireAVCUserClientCommon.h in Headers */ = {isa = PBXBuildFile; fileRef = 8C29B9A7019B162504CE206E /* IOFireWireAVCUserClientCommon.h */; };
@@ -53,11 +50,11 @@
 		7DDEC077064B0D6D001B4C4A /* IOFireWireAVCLibConsumer.h in Headers */ = {isa = PBXBuildFile; fileRef = F6F8ECAD023455D501298369 /* IOFireWireAVCLibConsumer.h */; };
 		7DDEC079064B0D6D001B4C4A /* IOFireWireAVCLib.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8C7A0D94019B08CD04CE206E /* IOFireWireAVCLib.h */; };
 		7DDEC07A064B0D6D001B4C4A /* IOFireWireAVCConsts.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 8C35357D0180A4C604CE206D /* IOFireWireAVCConsts.h */; };
-		7DDEC07D064B0D6D001B4C4A /* IOFireWireAVCLibProtocol.c in Sources */ = {isa = PBXBuildFile; fileRef = 8C2D18F7019C8DB604CE206E /* IOFireWireAVCLibProtocol.c */; };
 		7DDEC07E064B0D6D001B4C4A /* IOFireWireAVCLibUnit.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F6F8ECA502342C4001298369 /* IOFireWireAVCLibUnit.cpp */; };
-		7DDEC07F064B0D6D001B4C4A /* IOFireWireAVCLibConsumer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F6F8ECAC023455D501298369 /* IOFireWireAVCLibConsumer.cpp */; };
 		7DDEC081064B0D6D001B4C4A /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C7A0D97019B09B804CE206E /* IOKit.framework */; };
 		7DDEC082064B0D6D001B4C4A /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C7A0D98019B09B804CE206E /* CoreFoundation.framework */; };
+		A1D6EDBE0A95281E00323EE8 /* IOFireWireAVCLibConsumer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F6F8ECAC023455D501298369 /* IOFireWireAVCLibConsumer.cpp */; };
+		A1F1F6530A9BC43A006570D5 /* IOFireWireAVCLibProtocol.c in Sources */ = {isa = PBXBuildFile; fileRef = 8C2D18F7019C8DB604CE206E /* IOFireWireAVCLibProtocol.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,7 +83,6 @@
 			files = (
 				7DDEC050064B0D6C001B4C4A /* IOFireWireAVCConsts.h in CopyFiles */,
 				7DDEC051064B0D6C001B4C4A /* IOFireWireAVCCommand.h in CopyFiles */,
-				7DDEC052064B0D6C001B4C4A /* IOFireWireAVCLocalNode.h in CopyFiles */,
 				7DDEC053064B0D6C001B4C4A /* IOFireWireAVCRequestSpace.h in CopyFiles */,
 				7DDEC054064B0D6C001B4C4A /* IOFireWireAVCTargetSpace.h in CopyFiles */,
 				7DDEC055064B0D6C001B4C4A /* IOFireWireAVCUnit.h in CopyFiles */,
@@ -134,8 +130,6 @@
 		F5AE80690418130E01A80366 /* IOFireWireAVCTargetSpace.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = IOFireWireAVCTargetSpace.cpp; path = IOFireWireAVC/IOFireWireAVCTargetSpace.cpp; sourceTree = "<group>"; };
 		F5AE806A0418130E01A80366 /* IOFireWireAVCTargetSpace.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFireWireAVCTargetSpace.h; path = IOFireWireAVC/IOFireWireAVCTargetSpace.h; sourceTree = "<group>"; };
 		F5B0424304210C9A01A80366 /* Kernel.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Kernel.framework; path = /System/Library/Frameworks/Kernel.framework; sourceTree = "<absolute>"; };
-		F5EE79F6044C6ED201CD2849 /* IOFireWireAVCLocalNode.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = IOFireWireAVCLocalNode.cpp; path = IOFireWireAVC/IOFireWireAVCLocalNode.cpp; sourceTree = "<group>"; };
-		F5EE79F7044C6ED201CD2849 /* IOFireWireAVCLocalNode.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFireWireAVCLocalNode.h; path = IOFireWireAVC/IOFireWireAVCLocalNode.h; sourceTree = "<group>"; };
 		F6F8ECA502342C4001298369 /* IOFireWireAVCLibUnit.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = IOFireWireAVCLibUnit.cpp; path = IOFireWireAVCLib/IOFireWireAVCLibUnit.cpp; sourceTree = "<group>"; };
 		F6F8ECA602342C4001298369 /* IOFireWireAVCLibUnit.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFireWireAVCLibUnit.h; path = IOFireWireAVCLib/IOFireWireAVCLibUnit.h; sourceTree = "<group>"; };
 		F6F8ECAC023455D501298369 /* IOFireWireAVCLibConsumer.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; name = IOFireWireAVCLibConsumer.cpp; path = IOFireWireAVCLib/IOFireWireAVCLibConsumer.cpp; sourceTree = "<group>"; };
@@ -210,8 +204,6 @@
 				8C2DA8C8019C864904CE206E /* IOFireWireAVCProtocolUserClient.h */,
 				F5AE80690418130E01A80366 /* IOFireWireAVCTargetSpace.cpp */,
 				F5AE806A0418130E01A80366 /* IOFireWireAVCTargetSpace.h */,
-				F5EE79F6044C6ED201CD2849 /* IOFireWireAVCLocalNode.cpp */,
-				F5EE79F7044C6ED201CD2849 /* IOFireWireAVCLocalNode.h */,
 			);
 			name = Kernel;
 			sourceTree = "<group>";
@@ -231,8 +223,8 @@
 				8C7A0D94019B08CD04CE206E /* IOFireWireAVCLib.h */,
 				F6F8ECAC023455D501298369 /* IOFireWireAVCLibConsumer.cpp */,
 				F6F8ECAD023455D501298369 /* IOFireWireAVCLibConsumer.h */,
-				F6F8ECA502342C4001298369 /* IOFireWireAVCLibUnit.cpp */,
 				F6F8ECA602342C4001298369 /* IOFireWireAVCLibUnit.h */,
+				F6F8ECA502342C4001298369 /* IOFireWireAVCLibUnit.cpp */,
 				8C2D18F7019C8DB604CE206E /* IOFireWireAVCLibProtocol.c */,
 			);
 			name = Library;
@@ -262,7 +254,6 @@
 				7DDEC05D064B0D6C001B4C4A /* IOFireWireAVCUserClient.h in Headers */,
 				7DDEC05E064B0D6C001B4C4A /* IOFireWireAVCProtocolUserClient.h in Headers */,
 				7DDEC05F064B0D6C001B4C4A /* IOFireWireAVCTargetSpace.h in Headers */,
-				7DDEC060064B0D6C001B4C4A /* IOFireWireAVCLocalNode.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -331,9 +322,11 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 30EC56990895F6B80057E458 /* Build configuration list for PBXProject "IOFireWireAVC" */;
+			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOAVCFamily */;
 			projectDirPath = "";
+			projectRoot = "";
 			targets = (
 				7DDEC04A064B0D6C001B4C4A /* All */,
 				7DDEC04D064B0D6C001B4C4A /* IOFireWireAVC */,
@@ -409,7 +402,6 @@
 				7DDEC067064B0D6C001B4C4A /* IOFireWireAVCUserClient.cpp in Sources */,
 				7DDEC068064B0D6C001B4C4A /* IOFireWireAVCProtocolUserClient.cpp in Sources */,
 				7DDEC069064B0D6C001B4C4A /* IOFireWireAVCTargetSpace.cpp in Sources */,
-				7DDEC06A064B0D6C001B4C4A /* IOFireWireAVCLocalNode.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -417,9 +409,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7DDEC07D064B0D6D001B4C4A /* IOFireWireAVCLibProtocol.c in Sources */,
 				7DDEC07E064B0D6D001B4C4A /* IOFireWireAVCLibUnit.cpp in Sources */,
-				7DDEC07F064B0D6D001B4C4A /* IOFireWireAVCLibConsumer.cpp in Sources */,
+				A1D6EDBE0A95281E00323EE8 /* IOFireWireAVCLibConsumer.cpp in Sources */,
+				A1F1F6530A9BC43A006570D5 /* IOFireWireAVCLibProtocol.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -442,6 +434,12 @@
 		30EC568B0895F6B80057E458 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					ppc64,
+					i386,
+					x86_64,
+				);
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_FIX_AND_CONTINUE = YES;
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
@@ -472,6 +470,12 @@
 		30EC568C0895F6B80057E458 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					ppc64,
+					i386,
+					x86_64,
+				);
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				INFOPLIST_FILE = "Info-IOFireWireAVCLib.plist";
 				INSTALLHDRS_COPY_PHASE = YES;
@@ -498,6 +502,12 @@
 		30EC568D0895F6B80057E458 /* FireLog */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					ppc64,
+					i386,
+					x86_64,
+				);
 				INFOPLIST_FILE = "Info-IOFireWireAVCLib.plist";
 				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/IOFireWireAVC.kext/Contents/PlugIns/";
@@ -523,6 +533,12 @@
 		30EC568E0895F6B80057E458 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					ppc64,
+					i386,
+					x86_64,
+				);
 				INFOPLIST_FILE = "Info-IOFireWireAVCLib.plist";
 				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/IOFireWireAVC.kext/Contents/PlugIns/";
@@ -547,6 +563,10 @@
 		30EC56900895F6B80057E458 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					i386,
+				);
 				FRAMEWORK_SEARCH_PATHS = "";
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_FIX_AND_CONTINUE = YES;
@@ -561,7 +581,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireAVC;
-				MODULE_VERSION = 1.9.7;
+				MODULE_VERSION = 2.2.1;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
@@ -569,6 +589,7 @@
 				PREBINDING = NO;
 				PRODUCT_NAME = IOFireWireAVC;
 				SECTORDER_FLAGS = "";
+				VALID_ARCHS = "ppc7400 ppc970 i386 ppc";
 				WARNING_CFLAGS = (
 					"-Wmost",
 					"-Wno-four-char-constants",
@@ -582,6 +603,10 @@
 		30EC56910895F6B80057E458 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					i386,
+				);
 				FRAMEWORK_SEARCH_PATHS = "";
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = FIREWIREPRIVATE;
@@ -593,13 +618,14 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireAVC;
-				MODULE_VERSION = 1.9.7;
+				MODULE_VERSION = 2.2.1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PREBINDING = NO;
 				PRODUCT_NAME = IOFireWireAVC;
 				SECTORDER_FLAGS = "";
+				VALID_ARCHS = "ppc7400 ppc970 i386 ppc";
 				WARNING_CFLAGS = (
 					"-Wmost",
 					"-Wno-four-char-constants",
@@ -613,6 +639,10 @@
 		30EC56920895F6B80057E458 /* FireLog */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					i386,
+				);
 				FRAMEWORK_SEARCH_PATHS = "";
 				GCC_PREPROCESSOR_DEFINITIONS = FIREWIREPRIVATE;
 				HEADER_SEARCH_PATHS = "";
@@ -623,7 +653,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireAVC;
-				MODULE_VERSION = 1.9.7;
+				MODULE_VERSION = 2.2.1;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "-DFIRELOG=1";
 				OTHER_LDFLAGS = "";
@@ -631,6 +661,7 @@
 				PREBINDING = NO;
 				PRODUCT_NAME = IOFireWireAVC;
 				SECTORDER_FLAGS = "";
+				VALID_ARCHS = "ppc7400 ppc970 i386 ppc";
 				WARNING_CFLAGS = (
 					"-Wmost",
 					"-Wno-four-char-constants",
@@ -643,6 +674,10 @@
 		30EC56930895F6B80057E458 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = (
+					ppc,
+					i386,
+				);
 				FRAMEWORK_SEARCH_PATHS = "";
 				GCC_PREPROCESSOR_DEFINITIONS = FIREWIREPRIVATE;
 				HEADER_SEARCH_PATHS = "";
@@ -653,13 +688,14 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireAVC;
-				MODULE_VERSION = 1.9.7;
+				MODULE_VERSION = 2.2.1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
 				PREBINDING = NO;
 				PRODUCT_NAME = IOFireWireAVC;
 				SECTORDER_FLAGS = "";
+				VALID_ARCHS = "ppc7400 ppc970 i386 ppc";
 				WARNING_CFLAGS = (
 					"-Wmost",
 					"-Wno-four-char-constants",
@@ -745,40 +781,24 @@
 		30EC569A0895F6B80057E458 /* Development */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = (
-					ppc,
-					i386,
-				);
 			};
 			name = Development;
 		};
 		30EC569B0895F6B80057E458 /* Deployment */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = (
-					ppc,
-					i386,
-				);
 			};
 			name = Deployment;
 		};
 		30EC569C0895F6B80057E458 /* FireLog */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = (
-					ppc,
-					i386,
-				);
 			};
 			name = FireLog;
 		};
 		30EC569D0895F6B80057E458 /* Default */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = (
-					ppc,
-					i386,
-				);
 			};
 			name = Default;
 		};

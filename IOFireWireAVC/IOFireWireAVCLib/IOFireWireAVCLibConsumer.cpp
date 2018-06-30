@@ -455,7 +455,7 @@ IOReturn IOFireWireAVCLibConsumer::init( IOFireWireAVCLibUnitInterface ** avcUni
 	if( status == kIOReturnSuccess )
 	{
 		fService = (*fFWUnit)->GetDevice( fFWUnit );
-		if( fService == NULL )
+		if( fService == (io_object_t)NULL )
 			status = kIOReturnError;
 	}
 	
@@ -1598,7 +1598,7 @@ IOFireWireAVCLibConsumer::packetReadHandler(
 	UInt16								nodeID,			// nodeID of requester
 	UInt32								destAddressHi,	// destination on this node
 	UInt32								destAddressLo,
-	UInt32								refcon)
+	void*								refcon)
 {
 
 	IOFireWireAVCLibConsumer * me = (IOFireWireAVCLibConsumer*)refcon;
@@ -1640,7 +1640,7 @@ UInt32 IOFireWireAVCLibConsumer::packetWriteHandler(
 					UInt16								srcNodeID,		// nodeID of sender
 					UInt32								destAddressHi,	// destination on this node
 					UInt32								destAddressLo,
-					UInt32								refcon)
+					void*								refcon)
 {
     IOFireWireAVCLibConsumer * me = (IOFireWireAVCLibConsumer*)refcon;
     IOReturn 	status = kIOReturnSuccess;
