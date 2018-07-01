@@ -65,11 +65,11 @@
 			buildSettings = {
 				BUILD_SETTING = "";
 				INSTALLHDRS_COPY_PHASE = YES;
-				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
+				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/";
 				KERNEL_MODULE = YES;
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireSerialBusProtocolTransport;
-				MODULE_VERSION = 1.2.4;
+				MODULE_VERSION = 1.3.0;
 				OTHER_CFLAGS = "-Wno-format";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -82,7 +82,7 @@
 			);
 			isa = PBXBundleTarget;
 			name = IOFireWireSerialBusProtocolTransport;
-			productInstallPath = "$(SYSTEM_LIBRARY_DIR)/Extensions";
+			productInstallPath = "$(SYSTEM_LIBRARY_DIR)/Extensions/";
 			productName = "IOFireWireSerialBusProtocolTransport (Bundle)";
 			productReference = 075F51DAFFE0D39C11CE15BF;
 			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
@@ -94,7 +94,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOFireWireSerialBusProtocolTransport</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.2.4, Copyright Apple Computer, Inc. 1999-2003</string>
+	<string>1.3.0, Copyright Apple Computer, Inc. 1999-2003</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -106,11 +106,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.4</string>
+	<string>1.3.0</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.2.4</string>
+	<string>1.3.0</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOFireWireSerialBusProtocolTransport</key>
