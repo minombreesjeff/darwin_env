@@ -69,7 +69,7 @@
 				KERNEL_MODULE = YES;
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireSerialBusProtocolTransport;
-				MODULE_VERSION = 1.3.0;
+				MODULE_VERSION = 1.3.1;
 				OTHER_CFLAGS = "-Wno-format";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -94,7 +94,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOFireWireSerialBusProtocolTransport</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.3.0, Copyright Apple Computer, Inc. 1999-2003</string>
+	<string>1.3.1, Copyright Apple Computer, Inc. 1999-2003</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -106,11 +106,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.0</string>
+	<string>1.3.1</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3.0</string>
+	<string>1.3.1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOFireWireSerialBusProtocolTransport</key>
@@ -127,10 +127,13 @@
 			<integer>4096</integer>
 			<key>IOProviderClass</key>
 			<string>IOFireWireSBP2LUN</string>
-			<key>Physical Interconnect</key>
-			<string>FireWire</string>
-			<key>Physical Interconnect Location</key>
-			<string>External</string>
+			<key>Protocol Characteristics</key>
+			<dict>
+				<key>Physical Interconnect</key>
+				<string>FireWire</string>
+				<key>Physical Interconnect Location</key>
+				<string>External</string>
+			</dict>
 		</dict>
 	</dict>
 	<key>OSBundleCompatibleVersion</key>
