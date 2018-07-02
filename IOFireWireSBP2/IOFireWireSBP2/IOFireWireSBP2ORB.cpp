@@ -43,6 +43,11 @@ OSMetaClassDefineReservedUnused(IOFireWireSBP2ORB, 6);
 OSMetaClassDefineReservedUnused(IOFireWireSBP2ORB, 7);
 OSMetaClassDefineReservedUnused(IOFireWireSBP2ORB, 8);
 
+enum
+{
+	kFWSBP2CommandMaxPacketSizeOverride			= (1 << 12)
+};
+	
 // initWithLogin
 //
 // initializer
@@ -322,12 +327,17 @@ void IOFireWireSBP2ORB::prepareORBForExecution( void )
 
     UInt32 transferSizeBytes = 4096; // start at max packet size
 	
-	// clip by ARMDMAMax for performance
-	UInt32 ARDMAMax = fLogin->getARDMMax();
-	if( (fCommandFlags & kFWSBP2CommandTransferDataFromTarget) &&	// if this is a read
-		(ARDMAMax != 0) )											// and we've got an ARDMA clip
+	bool size_override = (fCommandFlags & kFWSBP2CommandMaxPacketSizeOverride);
+	
+	if( !size_override )
 	{
-		transferSizeBytes = ARDMAMax;
+		// clip by ARMDMAMax for performance
+		UInt32 ARDMAMax = fLogin->getARDMMax();
+		if( (fCommandFlags & kFWSBP2CommandTransferDataFromTarget) &&	// if this is a read
+			(ARDMAMax != 0) )											// and we've got an ARDMA clip
+		{
+			transferSizeBytes = ARDMAMax;
+		}
 	}
 	
     // trim by max payload sizes
@@ -346,12 +356,41 @@ void IOFireWireSBP2ORB::prepareORBForExecution( void )
         transferSizeLog++;
     }
 
-    // trim by maxPackLog
-    UInt32 maxPackLog = fUnit->maxPackLog(!(fCommandFlags & kFWSBP2CommandTransferDataFromTarget));
-    maxPackLog -= 2; // convert to quads
-    if( maxPackLog < transferSizeLog )
-        transferSizeLog = maxPackLog;
+	if( !size_override )
+	{
+		// trim by maxPackLog
+		UInt32 maxPackLog = fUnit->maxPackLog(!(fCommandFlags & kFWSBP2CommandTransferDataFromTarget));
+		maxPackLog -= 2; // convert to quads
+		if( maxPackLog < transferSizeLog )
+			transferSizeLog = maxPackLog;
+	}
+	else
+	{
+		UInt32 maxPackLog = 7;
+		
+		IOFWSpeed speed = fUnit->FWSpeed();
+		switch( speed )
+		{
+			case kFWSpeed800MBit:
+				maxPackLog = 10;
+				break;
 
+			case kFWSpeed400MBit:
+				maxPackLog = 9;
+				 break;
+
+			case kFWSpeed200MBit:
+				maxPackLog = 8;
+				break;
+
+			default:
+				break;
+		 }
+		 
+		if( maxPackLog < transferSizeLog )
+			transferSizeLog = maxPackLog;		 
+	}
+	
     // set transfer size, actual max is 2 ^ (size + 2) bytes (or 2 ^ size quads)
     fORBBuffer->options |= OSSwapHostToBigInt16(transferSizeLog << 4);
 }
@@ -1067,6 +1106,46 @@ IOReturn IOFireWireSBP2ORB::setCommandBuffersAsRanges(  IOVirtualRange * ranges,
     return status;
 }
 
+// setCommandBuffersAsRanges64
+//
+//
+
+IOReturn IOFireWireSBP2ORB::setCommandBuffersAsRanges64(	IOAddressRange *	ranges,
+															uint64_t			withCount,
+															IODirection			withDirection,
+															task_t				withTask,
+															uint64_t			offset,
+															uint64_t			length )
+{
+    IOReturn			status = kIOReturnSuccess;
+    IOMemoryDescriptor *	memory = NULL;
+
+    if( status == kIOReturnSuccess )
+    {
+        memory = IOMemoryDescriptor::withAddressRanges( ranges, withCount, withDirection, withTask );
+        if( !memory )
+            status = kIOReturnNoMemory;
+    }
+    
+    if( status == kIOReturnSuccess )
+    {
+        status = memory->prepare( withDirection );
+    }
+
+    if( status == kIOReturnSuccess )
+    {
+        status = setCommandBuffers( memory, offset, length );
+    }
+
+	if( memory )
+	{
+		memory->release();
+	}
+	
+    return status;
+
+}
+
 // releaseCommandBuffers
 //
 // tell SBP2 that the IO is done and command buffers can be released
@@ -1150,7 +1229,7 @@ IOReturn IOFireWireSBP2ORB::setCommandBuffers( IOMemoryDescriptor * memoryDescri
 #if FWLOGGING
         // I occasionally get memory descriptors with bogus lengths
 
-        UInt32 tempLength = fDMACommand->getMemoryDescriptor->getLength();
+        UInt32 tempLength = fDMACommand->getMemoryDescriptor()->getLength();
 
 		if(length != tempLength)
 		{
@@ -1187,8 +1266,8 @@ IOReturn IOFireWireSBP2ORB::setCommandBuffers( IOMemoryDescriptor * memoryDescri
 			
 			while( pos < (length + offset) )
 			{
-	    		UInt64 	phys;
-   				UInt64 	lengthOfSegment;
+	    		UInt64 	phys = 0;
+   				UInt64 	lengthOfSegment = 0;
 
 				// get next segment
 	
@@ -1447,10 +1526,22 @@ UInt32 IOFireWireSBP2ORB::getCommandFlags( void )
 
 void IOFireWireSBP2ORB::setRefCon( void * refCon )
 {
-    fRefCon = refCon;
+    fRefCon = (UInt64)refCon;
 }
 
 void * IOFireWireSBP2ORB::getRefCon( void )
+{
+    return (void*)fRefCon;
+}
+
+// get / set refCon 64
+
+void IOFireWireSBP2ORB::setRefCon64( UInt64 refCon )
+{
+    fRefCon = refCon;
+}
+
+UInt64 IOFireWireSBP2ORB::getRefCon64( void )
 {
     return fRefCon;
 }

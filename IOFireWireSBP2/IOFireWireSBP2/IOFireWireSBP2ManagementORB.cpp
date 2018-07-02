@@ -715,12 +715,12 @@ IOReturn IOFireWireSBP2ManagementORB::complete( IOReturn state )
 
 void IOFireWireSBP2ManagementORB::setAsyncCallbackReference( void * asyncRef )
 {
-     bcopy( asyncRef, fCallbackAsyncRef, sizeof(OSAsyncReference) );
+     bcopy( asyncRef, fCallbackAsyncRef, sizeof(OSAsyncReference64) );
 }
 
 void IOFireWireSBP2ManagementORB::getAsyncCallbackReference( void * asyncRef )
 {
-    bcopy( fCallbackAsyncRef, asyncRef, sizeof(OSAsyncReference) );
+    bcopy( fCallbackAsyncRef, asyncRef, sizeof(OSAsyncReference64) );
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////

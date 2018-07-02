@@ -226,6 +226,9 @@ void IOFireWireSBP2Target::free( void )
 
 	if( fExpansionData )
 	{
+		if( fExpansionData->fPendingMgtAgentCommands )
+			fExpansionData->fPendingMgtAgentCommands->release() ;
+	
 		IOFree( fExpansionData, sizeof(ExpansionData) );
 		fExpansionData = NULL;
 	}
@@ -263,6 +266,7 @@ IOReturn IOFireWireSBP2Target::message( UInt32 type, IOService *nub, void *arg )
 
             case kIOMessageServiceIsSuspended:
                 FWKLOG( ( "IOFireWireSBP2Target<0x%08lx> : kIOMessageServiceIsSuspended\n", (UInt32)this ) );
+                clearMgmtAgentAccess();
                 res = kIOReturnSuccess;
                 break;
 
@@ -527,7 +531,7 @@ void IOFireWireSBP2Target::scanForLUNs( void )
         }
         if(parent) {
             char location[9];
-            sprintf(location, "%lx", info.managementOffset);
+            snprintf( location, sizeof(location), "%lx", info.managementOffset );
             attachToParent(parent, gIODTPlane);
             setLocation(location, gIODTPlane);
             setName("sbp-2", gIODTPlane);
@@ -610,6 +614,7 @@ void IOFireWireSBP2Target::scanForLUNs( void )
                     // force vendors to use real values, (0, 0) is not legal
                     if( (info.cmdSpecID & 0x00ffffff) || (info.cmdSet & 0x00ffffff) )
                     {
+                    	fExpansionData->fNumLUNs++;
                         createLUN( &info );
                     }
                 }
@@ -663,13 +668,16 @@ void IOFireWireSBP2Target::scanForLUNs( void )
                 // force vendors to use real values, (0, 0) is not legal
                 if( (info.cmdSpecID & 0x00ffffff) || (info.cmdSet & 0x00ffffff) )
                 {
-				   createLUN( &info );
+                	fExpansionData->fNumLUNs++;
+					createLUN( &info );
                 }
             }
         }
         
         directoryIterator->release();
     }
+
+	fExpansionData->fPendingMgtAgentCommands = OSArray::withCapacity( fExpansionData->fNumLUNs) ;
 
     //
     // we found all the luns so lets call registerService on ourselves
@@ -1000,5 +1008,110 @@ void IOFireWireSBP2Target::endIOCriticalSection( void )
 		{
 			IOLog( "IOFireWireSBP2Target<0x%08lx>::endIOCriticalSection - fIOCriticalSectionCount == 0!\n", (UInt32)this );
 		}
+	}
+}
+
+// synchMgmtAgentAccess
+//
+//
+
+IOReturn IOFireWireSBP2Target::synchMgmtAgentAccess(
+	IOFWCommand	*				mgmtOrbCommand
+)
+{
+	if( fExpansionData->fNumLUNs > 1 )
+	{	
+		FWKLOG(("IOFireWireSBP2Target::synchMgmtAgentAccess count %x\n",fExpansionData->fNumberPendingMgtAgentOrbs + 1));
+	
+		if( fExpansionData->fNumberPendingMgtAgentOrbs++ )
+		{
+			FWKLOG(("IOFireWireSBP2Target::synchMgmtAgentAccess Mgmt Agent Busy, saving submit command %08x\n",mgmtOrbCommand));
+			fExpansionData->fPendingMgtAgentCommands->setObject( mgmtOrbCommand );
+		}
+		else
+			return( mgmtOrbCommand->submit() );
+	}
+	else
+		return( mgmtOrbCommand->submit() );
+
+	return kIOReturnSuccess;
+	
+}
+
+// completeMgmtAgentAccess
+//
+//
+
+void IOFireWireSBP2Target::completeMgmtAgentAccess( )
+{
+	IOFWAsyncCommand	*		mgmtOrbCommand;
+	IOReturn 					status = kIOReturnSuccess;
+
+	if( fExpansionData->fNumLUNs > 1 )
+	{
+
+		FWKLOG(("IOFireWireSBP2Target::completeMgmtAgentAccess >>  count %x\n",fExpansionData->fNumberPendingMgtAgentOrbs - 1));
+		if( fExpansionData->fNumberPendingMgtAgentOrbs-- )
+		{
+			mgmtOrbCommand = (IOFWAsyncCommand *)fExpansionData->fPendingMgtAgentCommands->getObject( 0 ) ;
+		
+			if( mgmtOrbCommand )
+			{
+				FWKLOG(("IOFireWireSBP2Target::completeMgmtAgentAccess, calling submit command %08x\n",mgmtOrbCommand));
+				fExpansionData->fPendingMgtAgentCommands->removeObject( 0 ) ;
+				
+				status = mgmtOrbCommand->submit() ;
+				
+				if( status )
+				{
+					FWKLOG(("IOFireWireSBP2Target::completeMgmtAgentAccess, submit for command %08x failed with %08x\n",mgmtOrbCommand,status));
+					mgmtOrbCommand->gotPacket( kFWResponseBusResetError, NULL, 0 );
+				}
+			}
+		}
+		FWKLOG(("IOFireWireSBP2Target::completeMgmtAgentAccess << count %x\n",fExpansionData->fNumberPendingMgtAgentOrbs));
+	}
+}
+
+// clearMgmtAgentAccess
+//
+//
+
+void IOFireWireSBP2Target::cancelMgmtAgentAccess( IOFWCommand * mgmtOrbCommand )
+{
+	// should only have one instance of a given command in this list, but I'll use a loop for good measure.
+	
+	int index;
+	while( (index = fExpansionData->fPendingMgtAgentCommands->getNextIndexOfObject( mgmtOrbCommand, 0 )) != -1 )
+	{
+		fExpansionData->fPendingMgtAgentCommands->removeObject( index );		
+	}
+}
+
+// clearMgmtAgentAccess
+//
+//
+
+void IOFireWireSBP2Target::clearMgmtAgentAccess( )
+{
+	if( fExpansionData && fExpansionData->fPendingMgtAgentCommands )
+	{
+		IOFWAsyncCommand *				mgmtOrbCommand;
+		
+		FWKLOG(("IOFireWireSBP2Target::clearMgmtAgentAccess\n",mgmtOrbCommand));
+			
+		while( (mgmtOrbCommand = (IOFWAsyncCommand *)fExpansionData->fPendingMgtAgentCommands->getObject( 0 ))  )
+		{
+			mgmtOrbCommand->retain();
+			
+			fExpansionData->fPendingMgtAgentCommands->removeObject( 0 ) ;
+			
+			FWKLOG(("IOFireWireSBP2Target::clearMgmtAgentAccess, failing command %08x\n",mgmtOrbCommand));
+			mgmtOrbCommand->gotPacket( kFWResponseBusResetError, NULL, 0 );
+		
+			mgmtOrbCommand->release();
+		}
+		
+		fExpansionData->fNumberPendingMgtAgentOrbs = 0;
 	}
 }

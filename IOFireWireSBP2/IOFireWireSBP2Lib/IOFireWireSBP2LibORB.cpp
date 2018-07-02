@@ -133,9 +133,9 @@ IOReturn IOFireWireSBP2LibORB::init( io_connect_t connection, mach_port_t asyncP
 		
 	if( status == kIOReturnSuccess )
 	{
-		mach_msg_type_number_t len = 1;
-		status = io_connect_method_scalarI_scalarO( connection, kIOFWSBP2UserClientCreateORB, 
-													NULL, 0, (int*)&fORBRef, &len );
+		uint32_t len = 1;
+		status = IOConnectCallScalarMethod( connection, kIOFWSBP2UserClientCreateORB, 
+											NULL, 0, &fORBRef, &len );
 		if( status != kIOReturnSuccess )
 			fORBRef = 0; // just to make sure
 													
@@ -156,10 +156,10 @@ IOFireWireSBP2LibORB::~IOFireWireSBP2LibORB()
 	{
 		IOReturn status = kIOReturnSuccess;
 		
-		mach_msg_type_number_t len = 0;
-		status = io_connect_method_scalarI_scalarO( fConnection, 	
-													kIOFWSBP2UserClientReleaseORB, 
-													(int*)&fORBRef, 1, NULL, &len );
+		uint32_t len = 0;
+		status = IOConnectCallScalarMethod( fConnection, 	
+											kIOFWSBP2UserClientReleaseORB, 
+											&fORBRef, 1, NULL, &len );
 		FWLOG(( "IOFireWireSBP2LibORB : release orb status = 0x%08x\n", status ));
 	}
 }
@@ -250,38 +250,38 @@ UInt32 IOFireWireSBP2LibORB::release( void )
 //
 //
 
-void IOFireWireSBP2LibORB::staticSetRefCon( void * self, UInt32 refCon )
+void IOFireWireSBP2LibORB::staticSetRefCon( void * self, void * refCon )
 {
 	getThis(self)->setRefCon( refCon );
 }
 
-void IOFireWireSBP2LibORB::setRefCon( UInt32 refCon )
+void IOFireWireSBP2LibORB::setRefCon( void * refCon )
 {
 	FWLOG(( "IOFireWireSBP2LibORB : setRefCon\n"));
 
 	fRefCon = refCon;
 
-	mach_msg_type_number_t len = 0;
-	UInt32 params[2];
+	uint32_t len = 0;
+	uint64_t params[2];
 	
 	params[0] = fORBRef;
-	params[1] = refCon;
+	params[1] = (uint64_t)refCon;
 	
-	io_connect_method_scalarI_scalarO( fConnection, 	
-									   kIOFWSBP2UserClientSetORBRefCon, 
-									   (int*)params, 2, NULL, &len );	
+	IOConnectCallScalarMethod(	fConnection, 	
+								kIOFWSBP2UserClientSetORBRefCon, 
+								params, 2, NULL, &len );	
 }
 
 // getRefCon
 //
 //
 
-UInt32 IOFireWireSBP2LibORB::staticGetRefCon( void * self )
+void * IOFireWireSBP2LibORB::staticGetRefCon( void * self )
 {
 	return getThis(self)->getRefCon();
 }
 
-UInt32 IOFireWireSBP2LibORB::getRefCon( void )
+void * IOFireWireSBP2LibORB::getRefCon( void )
 {
 	return fRefCon;
 }
@@ -299,15 +299,15 @@ void IOFireWireSBP2LibORB::setCommandFlags( UInt32 flags )
 {
 	FWLOG(( "IOFireWireSBP2LibORB : setCommandFlags = %ld\n", flags ));
 		
-	mach_msg_type_number_t len = 0;
-	UInt32 params[2];
+	uint32_t len = 0;
+	uint64_t params[2];
 	
 	params[0] = fORBRef;
 	params[1] = flags;
 	
-	io_connect_method_scalarI_scalarO( fConnection, 	
-									   kIOFWSBP2UserClientSetCommandFlags, 
-									   (int*)params, 2, NULL, &len );
+	IOConnectCallScalarMethod(	fConnection, 	
+								kIOFWSBP2UserClientSetCommandFlags, 
+								params, 2, NULL, &len );
 }
 
 
@@ -324,15 +324,15 @@ void IOFireWireSBP2LibORB::setMaxORBPayloadSize( UInt32 size )
 {
 	FWLOG(( "IOFireWireSBP2LibORB : setMaxORBPayloadSize = %ld\n", size ));
 		
-	mach_msg_type_number_t len = 0;
-	UInt32 params[2];
+	uint32_t len = 0;
+	uint64_t params[2];
 	
 	params[0] = fORBRef;
 	params[1] = size;
 	
-	io_connect_method_scalarI_scalarO( fConnection, 	
+	IOConnectCallScalarMethod( fConnection, 	
 									   kIOFWSBP2UserClientSetMaxORBPayloadSize, 
-									   (int*)params, 2, NULL, &len );
+									   params, 2, NULL, &len );
 }
 
 // setCommandTimeout
@@ -348,15 +348,15 @@ void IOFireWireSBP2LibORB::setCommandTimeout( UInt32 timeout )
 {
 	FWLOG(( "IOFireWireSBP2LibORB : setCommandTimeout = %ld\n", timeout ));
 		
-	mach_msg_type_number_t len = 0;
-	UInt32 params[2];
+	uint32_t len = 0;
+	uint64_t params[2];
 	
 	params[0] = fORBRef;
 	params[1] = timeout;
 	
-	io_connect_method_scalarI_scalarO( fConnection, 	
-									   kIOFWSBP2UserClientSetCommandTimeout, 
-									   (int*)params, 2, NULL, &len );
+	IOConnectCallScalarMethod(	fConnection, 	
+								kIOFWSBP2UserClientSetCommandTimeout, 
+								params, 2, NULL, &len );
 }
 
 // setCommandGeneration
@@ -372,15 +372,15 @@ void IOFireWireSBP2LibORB::setCommandGeneration( UInt32 generation )
 {
 	FWLOG(( "IOFireWireSBP2LibORB : setCommandGeneration = %ld\n", generation ));
 		
-	mach_msg_type_number_t len = 0;
-	UInt32 params[2];
+	uint32_t len = 0;
+	uint64_t params[2];
 	
 	params[0] = fORBRef;
 	params[1] = generation;
 	
-	io_connect_method_scalarI_scalarO( fConnection, 	
-									   kIOFWSBP2UserClientSetCommandGeneration, 
-									   (int*)params, 2, NULL, &len );
+	IOConnectCallScalarMethod(	fConnection, 	
+								kIOFWSBP2UserClientSetCommandGeneration, 
+								params, 2, NULL, &len );
 }
 
 // setToDummy
@@ -398,10 +398,10 @@ void IOFireWireSBP2LibORB::setToDummy( void )
 	
 	FWLOG(( "IOFireWireSBP2LibORB : setToDummy\n" ));
 		
-	mach_msg_type_number_t len = 0;
-	status = io_connect_method_scalarI_scalarO( fConnection, 	
-												kIOFWSBP2UserClientSetToDummy, 
-												(int*)&fORBRef, 1, NULL, &len );
+	uint32_t len = 0;
+	status = IOConnectCallScalarMethod( fConnection, 	
+										kIOFWSBP2UserClientSetToDummy, 
+										&fORBRef, 1, NULL, &len );
 }
 
 // setCommandBuffersAsRanges
@@ -423,58 +423,66 @@ IOReturn IOFireWireSBP2LibORB::setCommandBuffersAsRanges( FWSBP2VirtualRange * r
 										UInt32 length )
 {
 	IOReturn status = kIOReturnSuccess;
-
-	FWLOG(( "IOFireWireSBP2LibORB : setCommandBuffersAsRanges\n" ));
-		
-	mach_msg_type_number_t len = 0;
-	UInt32 params[6];
-	UInt32 range_buffer = (UInt32)ranges;
 	
-	ROSETTA_ONLY(
-		{
-			UInt32 range_length = withCount * sizeof(FWSBP2VirtualRange);
-			
-			if( fRangeScratchLength < range_length )
-			{
-				if( fRangeScratch != NULL )
-				{
-					// delete it
-					vm_deallocate( mach_task_self(), (vm_address_t)fRangeScratch, fRangeScratchLength );
-					fRangeScratch = NULL;
-					fRangeScratchLength = 0;
-				}
-				
-				// alloc a bigger one
-				vm_allocate( mach_task_self(), (vm_address_t*)&fRangeScratch, range_length, true /*anywhere*/ );
-				if( fRangeScratch != NULL )
-				{
-					fRangeScratchLength = range_length;
-				}
-			}
+	uint32_t len = 0;
+	uint64_t params[6];
+	
+	FWLOG(( "IOFireWireSBP2LibORB : setCommandBuffersAsRanges\n" ));
+//	printf( "IOFireWireSBP2LibORB : setCommandBuffersAsRanges\n" );
 
-			if( fRangeScratch != NULL )
-			{
-				for( UInt32 i = 0; i < withCount; i++ )
-				{
-					fRangeScratch[i].address = (void*)OSSwapInt32( (UInt32)ranges[i].address );
-					fRangeScratch[i].length = OSSwapInt32( ranges[i].length );
-				}
-				
-				range_buffer = (UInt32)fRangeScratch;
-			}
-		}
-	);
+	//
+	// create or grow range scratch
+	//
+	
+	UInt32 range_length = withCount * sizeof(FWSBP2PrivateVirtualRange);
 			
+	if( fRangeScratchLength < range_length )
+	{
+		if( fRangeScratch != NULL )
+		{
+			// delete it
+			vm_deallocate( mach_task_self(), (vm_address_t)fRangeScratch, fRangeScratchLength );
+			fRangeScratch = NULL;
+			fRangeScratchLength = 0;
+		}
+		
+		// alloc a bigger one
+		vm_allocate( mach_task_self(), (vm_address_t*)&fRangeScratch, range_length, true /*anywhere*/ );
+		if( fRangeScratch != NULL )
+		{
+			fRangeScratchLength = range_length;
+		}
+	}
+
+	//
+	// fill range scratch
+	//
+	
+	if( fRangeScratch != NULL )
+	{
+		for( UInt32 i = 0; i < withCount; i++ )
+		{
+			fRangeScratch[i].address = (uint64_t)ranges[i].address;
+			fRangeScratch[i].length = ranges[i].length;
+
+			ROSETTA_ONLY(
+				fRangeScratch[i].address = OSSwapInt64( fRangeScratch[i].address );
+				fRangeScratch[i].length = OSSwapInt64( fRangeScratch[i].length );
+			);
+		}
+	}
+
 	params[0] = fORBRef;
-	params[1] = range_buffer;
+	params[1] = (uint64_t)fRangeScratch;
 	params[2] = withCount;
 	params[3] = withDirection;
 	params[4] = offset;
 	params[5] = length;
 
-	status = io_connect_method_scalarI_scalarO( fConnection, 	
-									   kIOFWSBP2UserClientSetCommandBuffersAsRanges, 
-									   (int*)params, 6, NULL, &len );
+	status = IOConnectCallScalarMethod( fConnection, 	
+										kIOFWSBP2UserClientSetCommandBuffersAsRanges, 
+										params, 6, NULL, &len );
+					
 	return status;
 }
 
@@ -493,10 +501,10 @@ IOReturn IOFireWireSBP2LibORB::releaseCommandBuffers( void )
 	
 	FWLOG(( "IOFireWireSBP2LibORB : releaseCommandBuffers\n" ));
 		
-	mach_msg_type_number_t len = 0;
-	status = io_connect_method_scalarI_scalarO( fConnection, 	
-												kIOFWSBP2UserClientReleaseCommandBuffers, 
-												(int*)&fORBRef, 1, NULL, &len );
+	uint32_t len = 0;
+	status = IOConnectCallScalarMethod( fConnection, 	
+										kIOFWSBP2UserClientReleaseCommandBuffers, 
+										&fORBRef, 1, NULL, &len );
 	return status;
 }
 
@@ -516,8 +524,8 @@ IOReturn IOFireWireSBP2LibORB::setCommandBlock( void * buffer, UInt32 length )
 
 	FWLOG(( "IOFireWireSBP2LibORB : setCommandBlock\n" ));
 		
-	mach_msg_type_number_t len = 0;
-	UInt32 params[3];
+	uint32_t len = 0;
+	uint64_t params[3];
 
 	vm_address_t address = 0;
 
@@ -532,12 +540,12 @@ IOReturn IOFireWireSBP2LibORB::setCommandBlock( void * buffer, UInt32 length )
 		bcopy( buffer, (void*)address, length );
 	
 		params[0] = fORBRef;
-		params[1] = (UInt32)address;
+		params[1] = address;
 		params[2] = length;
 
-		status = io_connect_method_scalarI_scalarO( fConnection, 	
+		status = IOConnectCallScalarMethod( fConnection, 	
 											kIOFWSBP2UserClientSetCommandBlock, 
-											(int*)params, 3, NULL, &len );
+											params, 3, NULL, &len );
 	}
 	
 	if( address )
@@ -565,60 +573,66 @@ IOReturn IOFireWireSBP2LibORB::LSIWorkaroundSetCommandBuffersAsRanges
 									UInt32 withDirection, UInt32 offset, UInt32 length )
 {
 	IOReturn status = kIOReturnSuccess;
-
-	FWLOG(( "IOFireWireSBP2LibORB : LSIWorkaroundSetCommandBuffersAsRanges\n" ));
-		
-	mach_msg_type_number_t len = 0;
-	UInt32 params[6];
-	UInt32 range_buffer = (UInt32)ranges;
 	
-	ROSETTA_ONLY(
-		{
-			UInt32 range_length = withCount * sizeof(FWSBP2VirtualRange);
+	uint32_t len = 0;
+	uint64_t params[6];
+	
+	FWLOG(( "IOFireWireSBP2LibORB : setCommandBuffersAsRanges\n" ));
+
+	//
+	// create or grow range scratch
+	//
+	
+	UInt32 range_length = withCount * sizeof(FWSBP2PrivateVirtualRange);
 			
-			if( fRangeScratchLength < range_length )
-			{
-				if( fRangeScratch != NULL )
-				{
-					// delete it
-					vm_deallocate( mach_task_self(), (vm_address_t)fRangeScratch, fRangeScratchLength );
-					fRangeScratch = NULL;
-					fRangeScratchLength = 0;
-				}
-				
-				// alloc a bigger one
-				vm_allocate( mach_task_self(), (vm_address_t*)&fRangeScratch, range_length, true /*anywhere*/ );
-				if( fRangeScratch != NULL )
-				{
-					fRangeScratchLength = range_length;
-				}
-			}
-
-			if( fRangeScratch != NULL )
-			{
-				for( UInt32 i = 0; i < withCount; i++ )
-				{
-					fRangeScratch[i].address = (void*)OSSwapInt32( (UInt32)ranges[i].address );
-					fRangeScratch[i].length = OSSwapInt32( ranges[i].length );
-				}
-				
-				range_buffer = (UInt32)fRangeScratch;
-			}
+	if( fRangeScratchLength < range_length )
+	{
+		if( fRangeScratch != NULL )
+		{
+			// delete it
+			vm_deallocate( mach_task_self(), (vm_address_t)fRangeScratch, fRangeScratchLength );
+			fRangeScratch = NULL;
+			fRangeScratchLength = 0;
 		}
-	);
+		
+		// alloc a bigger one
+		vm_allocate( mach_task_self(), (vm_address_t*)&fRangeScratch, range_length, true /*anywhere*/ );
+		if( fRangeScratch != NULL )
+		{
+			fRangeScratchLength = range_length;
+		}
+	}
+
+	//
+	// fill range scratch
+	//
 	
+	if( fRangeScratch != NULL )
+	{
+		for( UInt32 i = 0; i < withCount; i++ )
+		{
+			fRangeScratch[i].address = (uint64_t)ranges[i].address;
+			fRangeScratch[i].length = ranges[i].length;
+
+			ROSETTA_ONLY(
+				fRangeScratch[i].address = OSSwapInt64( fRangeScratch[i].address );
+				fRangeScratch[i].length = OSSwapInt64( fRangeScratch[i].length );
+			);
+		}
+	}
+
 	params[0] = fORBRef;
-	params[1] = range_buffer;
+	params[1] = (uint64_t)fRangeScratch;
 	params[2] = withCount;
 	params[3] = withDirection;
 	params[4] = offset;
 	params[5] = length;
 
-	status = io_connect_method_scalarI_scalarO( fConnection, 	
-									   kIOFWSBP2UserClientLSIWorkaroundSetCommandBuffersAsRanges, 
-									   (int*)params, 6, NULL, &len );
+	status = IOConnectCallScalarMethod( fConnection, 	
+										kIOFWSBP2UserClientLSIWorkaroundSetCommandBuffersAsRanges, 
+										params, 6, NULL, &len );
+					
 	return status;
-
 }
 
 // LSIWorkaroundSyncBuffersForOutput
@@ -636,11 +650,10 @@ IOReturn IOFireWireSBP2LibORB::LSIWorkaroundSyncBuffersForOutput( void )
 
 	FWLOG(( "IOFireWireSBP2LibORB : LSIWorkaroundSyncBuffersForOutput\n" ));
 		
-	mach_msg_type_number_t len = 0;
-
-	status = io_connect_method_scalarI_scalarO( fConnection, 	
-									   kIOFWSBP2UserClientMgmtORBLSIWorkaroundSyncBuffersForOutput, 
-									   (int*)&fORBRef, 1, NULL, &len );
+	uint32_t len = 0;
+	status = IOConnectCallScalarMethod( fConnection, 	
+										kIOFWSBP2UserClientMgmtORBLSIWorkaroundSyncBuffersForOutput, 
+										&fORBRef, 1, NULL, &len );
 	return status;
 }
 
@@ -659,11 +672,10 @@ IOReturn IOFireWireSBP2LibORB::LSIWorkaroundSyncBuffersForInput( void )
 
 	FWLOG(( "IOFireWireSBP2LibORB : LSIWorkaroundSyncBuffersForInput\n" ));
 		
-	mach_msg_type_number_t len = 0;
-
-	status = io_connect_method_scalarI_scalarO( fConnection, 	
-									   kIOFWSBP2UserClientMgmtORBLSIWorkaroundSyncBuffersForInput, 
-									   (int*)&fORBRef, 1, NULL, &len );
+	uint32_t len = 0;
+	status = IOConnectCallScalarMethod( fConnection, 	
+										kIOFWSBP2UserClientMgmtORBLSIWorkaroundSyncBuffersForInput, 
+										&fORBRef, 1, NULL, &len );
 	return status;
 }
 

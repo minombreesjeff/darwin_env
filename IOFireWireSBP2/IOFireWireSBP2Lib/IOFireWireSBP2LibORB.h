@@ -44,6 +44,12 @@ public:
 	
 protected:
 
+	typedef struct 
+	{
+		uint64_t address;
+		uint64_t length;
+	} FWSBP2PrivateVirtualRange;
+
 	//////////////////////////////////////
 	// cf plugin interfaces
 
@@ -60,12 +66,12 @@ protected:
 	
 	io_connect_t 	fConnection;	// connection to user client in kernel
 	mach_port_t 	fAsyncPort;		// async port for callback from kernel
-	UInt32 			fORBRef;  		// reference to kernel orb object
+	uint64_t 		fORBRef;  		// reference to kernel orb object
 
-	UInt32			fRefCon;
+	void *			fRefCon;
 
-	FWSBP2VirtualRange	*	fRangeScratch;
-	UInt32					fRangeScratchLength;
+	FWSBP2PrivateVirtualRange	*	fRangeScratch;
+	UInt32							fRangeScratchLength;
 	
 	//////////////////////////////////////	
 	// IUnknown static methods
@@ -82,11 +88,11 @@ protected:
 	//////////////////////////////////////	
 	// IOFireWireSBP2LibORB static methods
 
-	static void staticSetRefCon( void * self, UInt32 refCon );
-	virtual void setRefCon( UInt32 refCon );
+	static void staticSetRefCon( void * self, void * refCon );
+	virtual void setRefCon( void * refCon );
 
-	static UInt32 staticGetRefCon( void * self );
-	virtual UInt32 getRefCon( void );
+	static void * staticGetRefCon( void * self );
+	virtual void * getRefCon( void );
 
 	static void staticSetCommandFlags( void * self, UInt32 flags );
 	virtual void setCommandFlags( UInt32 flags );

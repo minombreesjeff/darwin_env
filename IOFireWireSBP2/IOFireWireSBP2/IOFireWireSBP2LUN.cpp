@@ -172,6 +172,17 @@ bool IOFireWireSBP2LUN::attach(IOService *provider)
     return (status == kIOReturnSuccess);
 }
 
+// finalize
+//
+//
+
+bool IOFireWireSBP2LUN::finalize( IOOptionBits options )
+{
+	FWKLOG( ( "IOFireWireSBP2LUN<0x%08lx> : finalize\n", (UInt32)this ) );
+
+	return IOService::finalize( options );
+}
+
 //
 // free
 //
@@ -179,12 +190,12 @@ bool IOFireWireSBP2LUN::attach(IOService *provider)
 void IOFireWireSBP2LUN::free( void )
 {
 	FWKLOG( ( "IOFireWireSBP2LUN<0x%08lx> : free\n", (UInt32)this ) );
-	
+
 	//
 	// free unreleased orbs
 	//
 	
-	flushAllManagementORBs();
+//	flushAllManagementORBs();
 		
 	if( fORBSetIterator )			
 		fORBSetIterator->release();
@@ -223,11 +234,7 @@ void IOFireWireSBP2LUN::free( void )
 		fProviderTarget->release();
 		fProviderTarget = NULL;
 	}
-		
-	//
-	// free super
-	//
-	
+			
 	IOService::free();
 }
 
@@ -454,8 +461,7 @@ IOReturn IOFireWireSBP2LUN::staticRemoveLoginAction( OSObject *self, void * logi
 
 IOReturn IOFireWireSBP2LUN::removeLoginAction( IOFireWireSBP2Login * login )
 {
-	fLoginSet->removeObject( login );
-	
+	fLoginSet->removeObject( login );	
 	return kIOReturnSuccess;
 }
 

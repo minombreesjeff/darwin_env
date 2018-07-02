@@ -362,8 +362,9 @@ void * IOFireWireSBP2LSIWorkaroundDescriptor::bufferAllocatorNewBuffer(
 	
 	::IOBufferMemoryDescriptor *	bufferDesc = NULL;
 
-	UInt32 page = fAllocatedBytesCount & ~(PAGE_SIZE-1);
-	UInt32 offset = fAllocatedBytesCount - offset;
+	UInt32 aligned_page = fAllocatedBytesCount & ~(PAGE_SIZE-1);
+	UInt32 page = aligned_page / PAGE_SIZE;
+	UInt32 offset = fAllocatedBytesCount - aligned_page;
 	
 	fAllocatedBytesCount += kMinPacketSize*2;   // max possible buffer size
 	
