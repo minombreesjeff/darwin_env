@@ -71,7 +71,6 @@ protected:
     IPRxSegmentPtr				fReceiveSegmentInfo;
 	DCLLabel					*fDCLOverrunLabel;
 	UInt16 						fIsoRxOverrun;
-    IORecursiveLock				*rxCommandLock;
 	
 	enum
 	{
@@ -88,15 +87,15 @@ protected:
     Reserved for future use.  (Internal use only)  */
     ExpansionData *reserved;
     
-    virtual void		free();
+    virtual void free();
     
-	DCLCommandStruct *CreateAsyncStreamRxDCLProgram(DCLCallCommandProc* proc, UInt32 size, void *callbackObject);
+	DCLCommandStruct *CreateAsyncStreamRxDCLProgram( DCLCallCommandProc* proc, UInt32 size, void *callbackObject );
 	
-	IOIPPort *CreateAsyncStreamPort(bool talking, DCLCommandStruct *opcodes, void *info,
+	IOIPPort *CreateAsyncStreamPort( bool talking, DCLCommandStruct *opcodes, void *info,
 									UInt32 startEvent, UInt32 startState, UInt32 startMask,
-									UInt32 channel);
+									UInt32 channel );
 									
-	void FreeAsyncStreamRxDCLProgram(DCLCommandStruct *dclProgram);
+	void FreeAsyncStreamRxDCLProgram( DCLCommandStruct *dclProgram );
 	
 public:
 
@@ -105,21 +104,25 @@ public:
 		Initializes the Asynchronous write command object
         @result true if successfull.
     */
-	bool initAll(UInt32					channel, 
+	bool initAll( UInt32				channel, 
 				DCLCallCommandProc		*proc, 
 				IOFireWireController	*control,
 				UInt32					size,
-				void					*callbackObject);
+				void					*callbackObject );
 											
 	IOReturn start(IOFWSpeed fBroadCastSpeed);	
 	IOReturn stop();
-    static void restart(DCLCommandStruct *callProc);
-    IOReturn modifyDCLJumps(DCLCommandStruct *callProc);
+    void     restart();
+
+    static void overrunNotification( DCLCommandStruct *callProc );
+	static IOReturn forceStopNotification( void* refCon, IOFWIsochChannel* channel, UInt32 stopCondition );
+
+    IOReturn modifyDCLJumps( DCLCommandStruct *callProc );
 	UInt16 getOverrunCounter() {return fIsoRxOverrun;};
 
 	
 private:
-    void fixDCLJumps(bool bRestart);
+    void fixDCLJumps( bool bRestart );
 
     OSMetaClassDeclareReservedUnused(IOFWAsyncStreamRxCommand, 0);
     OSMetaClassDeclareReservedUnused(IOFWAsyncStreamRxCommand, 1);

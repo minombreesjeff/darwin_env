@@ -42,6 +42,7 @@ OSObject * IOFireWireIPDiagnostics::createDiagnostics( IOFireWireIP* obj )
 	obj->fTxUni				= 0;
 	obj->fRxUni				= 0;
 	obj->fRxFragmentPkts	= 0;
+	obj->fRxFragmentPktsDropped = 0;
 	obj->fTxFragmentPkts	= 0;
 	obj->fActiveBcastCmds	= 0;
 	obj->fInActiveBcastCmds	= 0;
@@ -67,7 +68,7 @@ OSObject * IOFireWireIPDiagnostics::createDiagnostics( IOFireWireIP* obj )
 	obj->fRemoteGaspError	= 0;
 	obj->fBusyAcks			= 0;
 	obj->fFastRetryBusyAcks	= 0;
-	
+	obj->fNoRCBCommands		= 0;
 	obj->fEncapsulationHeaderError	= 0;	
 	
 	return diagnostics;
@@ -88,6 +89,7 @@ bool IOFireWireIPDiagnostics::serialize( OSSerialize * s ) const
 	updateNumberEntry( dictionary, fIPObj->fTxUni, "TxU");
 	updateNumberEntry( dictionary, fIPObj->fRxUni, "RxU");
 	updateNumberEntry( dictionary, fIPObj->fRxFragmentPkts, "RxF");
+	updateNumberEntry( dictionary, fIPObj->fRxFragmentPktsDropped, "RxFDropped");
 	updateNumberEntry( dictionary, fIPObj->fTxFragmentPkts, "TxF");
 
     updateNumberEntry( dictionary, fIPObj->transmitQueue->getState(), "tqState");
@@ -124,6 +126,7 @@ bool IOFireWireIPDiagnostics::serialize( OSSerialize * s ) const
 	updateNumberEntry( dictionary, fIPObj->fBusyAcks, "fwBusyAcks");	
 	updateNumberEntry( dictionary, fIPObj->fFastRetryBusyAcks, "fwFastRetryBusyAcks");	
 	updateNumberEntry( dictionary, fIPObj->fDoFastRetry, "fwFastRetryOn");	
+	updateNumberEntry( dictionary, fIPObj->fNoRCBCommands, "fwNoRCBCommands");	
 	
 	
 #ifdef IPFIREWIRE_DIAGNOSTICS

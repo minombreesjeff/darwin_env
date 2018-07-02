@@ -27,7 +27,7 @@ OSDefineMetaClassAndStructors(IOFWIPBusInterface, IOService)
 OSDefineMetaClassAndStructors(MARB, OSObject)
 OSDefineMetaClassAndStructors(ARB, OSObject)
 OSDefineMetaClassAndStructors(DRB, OSObject)
-OSDefineMetaClassAndStructors(RCB, OSObject)
+OSDefineMetaClassAndStructors(RCB, IOCommand)
 OSDefineMetaClassAndStructors(IOFWIPMBufCommand, IOCommand)
 
 
@@ -49,11 +49,13 @@ bool IOFWIPBusInterface::init(IOFireWireIP *primaryInterface)
     fIP1394AddressSpace		= 0;
     fAsyncCmdPool			= 0;
 	fMbufCmdPool			= 0;
+	fRCBCmdPool				= 0;
     fAsyncStreamTxCmdPool	= 0;
 	fAsyncTransitSet		= 0;
 	fAsyncStreamTransitSet	= 0;
 	fCurrentMBufCommands		= 0;
 	fCurrentAsyncIPCommands		= 0;
+	fCurrentRCBCommands			= 0;
 	
 	fLowWaterMark					= kLowWaterMark;
 	fIPLocalNode->fMaxQueueSize		= TRANSMIT_QUEUE_SIZE;
@@ -285,6 +287,21 @@ void IOFWIPBusInterface::detachIOFireWireIP()
 		fCurrentMBufCommands = 0;
 	}
 
+    if(fRCBCmdPool != NULL)
+	{
+		RCB *cmd = NULL;
+		do
+		{
+			cmd = (RCB*)fRCBCmdPool->getCommand(false);
+			if(cmd != NULL)
+				cmd->release();
+		}while(cmd != NULL);
+		
+		fRCBCmdPool->release();
+		fRCBCmdPool = NULL;
+		fCurrentRCBCommands = 0;
+	}
+	
 	if(unicastArb != NULL)
 	{
 		{
@@ -585,7 +602,10 @@ UInt32 IOFWIPBusInterface::initAsyncCmdPool()
 	if( (fMbufCmdPool == NULL) )
 		fMbufCmdPool = IOCommandPool::withWorkLoop(workLoop);
 
-	if( (fMbufCmdPool == NULL) or (fAsyncCmdPool == NULL) )
+	if( (fRCBCmdPool == NULL) )
+		fRCBCmdPool = IOCommandPool::withWorkLoop(workLoop);
+	
+	if( (fMbufCmdPool == NULL) or (fAsyncCmdPool == NULL) or (fRCBCmdPool == NULL) )
 		status = kIOReturnNoMemory;
 		
     return status;
@@ -1601,91 +1621,83 @@ IOReturn IOFWIPBusInterface::rxFragmentedUnicast(UInt16 nodeID, IP1394_FRAG_HDR 
 	
 	UInt8	lf				= htons(fragmentHdr->datagramSize) >> 14;
 	UInt16	datagramSize	= (htons(fragmentHdr->datagramSize) & 0x3FFF) + 1;
+	UInt16	label			= htons(fragmentHdr->dgl);
 	
 	if(datagramSize > FIREWIRE_MTU)
 		return kIOReturnError;
+
+	recursiveScopeLock lock(fIPLock);
 	
-	RCB *rcb = getRcb(nodeID, htons(fragmentHdr->dgl));
+	IOReturn result			= kIOReturnSuccess;
+	UInt16	 fragmentOffset = htons(fragmentHdr->fragmentOffset);
+
+	RCB *rcb = getRcb(nodeID, label);
 
 	if (rcb == NULL) 
 	{
-		if (lf != FIRST_FRAGMENT) 
-			return kIOReturnError;
-	
-	    IORecursiveLockLock(fIPLock);
-
-		mbuf_t rxMBuf = (mbuf_t)allocateMbuf(datagramSize + sizeof(firewire_header));
-
-		IORecursiveLockUnlock(fIPLock);
-
-		if (rxMBuf == NULL)
+		if (lf == FIRST_FRAGMENT) 
 		{
-			fIPLocalNode->fNoMbufs++;
-			return kIOReturnError;
+			mbuf_t rxMBuf = (mbuf_t)allocateMbuf(datagramSize + sizeof(firewire_header));
+
+			if (rxMBuf == NULL)
+			{
+				fIPLocalNode->fNoMbufs++;
+				return kIOReturnError;
+			}
+			
+			if ((rcb = getRCBCommand( nodeID, label, fragmentOffset, datagramSize, rxMBuf )) == NULL) 
+			{
+				fIPLocalNode->fNoRCBCommands++;
+				cleanRCBCache();
+				fIPLocalNode->freePacket((struct mbuf*)rxMBuf, 0);
+				return kIOReturnError;
+			}
+		 
+			// Make space for the firewire header to be helpfull in firewire_demux
+			struct firewire_header *fwh = (struct firewire_header *)mbuf_data(rxMBuf);
+			bzero(fwh, sizeof(struct firewire_header));
+			// when indicating to the top layer
+			// JLIU - fragmentHdr already in network order, do not swap fragmentOffset
+			fwh->fw_type  = fragmentHdr->fragmentOffset;
+			rcb->residual = rcb->datagramSize;
+
+			activeRcb->setObject(rcb);
+			fragmentOffset = 0;
 		}
+		else 
+			result = kIOReturnError;
+	}
+
+	if( result == kIOReturnSuccess )
+	{
+		UInt16 amountToCopy = MIN(fragmentSize, rcb->datagramSize - fragmentOffset);
 		
-		if ((rcb = new RCB) == NULL) 
+		if(amountToCopy > rcb->residual)
 		{
-			cleanRCBCache();
-			fIPLocalNode->freePacket((struct mbuf*)rxMBuf, 0);
-			return kIOReturnError;
-		}
-	 
-		rcb->sourceID = nodeID;
-		rcb->dgl = htons(fragmentHdr->dgl);
-		rcb->mBuf = rxMBuf;
-		rcb->timer = rcbexpirationtime;
-
-		// Make space for the firewire header to be helpfull in firewire_demux
-		struct firewire_header *fwh = (struct firewire_header *)mbuf_data(rxMBuf);
-		bzero(fwh, sizeof(struct firewire_header));
-		rcb->datagram = ((UInt8*)mbuf_data(rxMBuf))  + sizeof(struct firewire_header);
-
-		// when indicating to the top layer
-		// JLIU - fragmentHdr already in network order, do not swap fragmentOffset
-		fwh->fw_type = (lf == FIRST_FRAGMENT) ? fragmentHdr->fragmentOffset: htons(FWTYPE_IP);
-
-		rcb->datagramSize = datagramSize;
-		rcb->residual = rcb->datagramSize;
-
-		IORecursiveLockLock(fIPLock);
-		activeRcb->setObject(rcb);
-		IORecursiveLockUnlock(fIPLock);
-	}
-  
-	if (rcb->mBuf == NULL || rcb->datagram == NULL)
-		return kIOReturnError;
-
-	if (lf == FIRST_FRAGMENT) 
-	{
-		// Actually etherType
-		rcb->etherType = htons(fragmentHdr->fragmentOffset);
-		bufferToMbuf(rcb->mBuf, sizeof(struct firewire_header), 
-					(UInt8*)fragment, MIN(fragmentSize, rcb->datagramSize));
-	}
-	else 
-	{
-		bufferToMbuf(rcb->mBuf, sizeof(struct firewire_header)+htons(fragmentHdr->fragmentOffset), 
-					(UInt8*)fragment, MIN(fragmentSize, rcb->datagramSize - htons(fragmentHdr->fragmentOffset)));
-	}
-  
-	IOReturn result = kIOReturnSuccess;
-  
-	// Don't reduce below zero
-	rcb->residual -= MIN(fragmentSize, rcb->residual); 
-	// Reassembly (probably) complete ?
-	if (rcb->residual == 0) 
-	{           
-		// Legitimate etherType ?
-		if (rcb->etherType == FWTYPE_IP || rcb->etherType == FWTYPE_IPV6) 
-			fIPLocalNode->receivePackets (rcb->mBuf, mbuf_pkthdr_len(rcb->mBuf), false);
-		else
-		{
-			fIPLocalNode->freePacket((struct mbuf*)rcb->mBuf, 0); // All that reassembly work for nothing!
+			fIPLocalNode->fRxFragmentPktsDropped++;
 			result = kIOReturnError;
 		}
+		else
+		{
+			bufferToMbuf(rcb->mBuf, sizeof(struct firewire_header)+fragmentOffset, (UInt8*)fragment, amountToCopy);
+			
+			rcb->residual -= MIN(fragmentSize, rcb->residual); 
 
-		releaseRCB(rcb, false);
+			if ( rcb->residual == 0 ) 
+			{           
+				// Legitimate etherType ? this prevents corrupted etherType 
+				// being presented to the networking layer
+				if (rcb->etherType == FWTYPE_IP || rcb->etherType == FWTYPE_IPV6) 
+					fIPLocalNode->receivePackets (rcb->mBuf, mbuf_pkthdr_len(rcb->mBuf), false);
+				else
+				{
+					fIPLocalNode->freePacket((struct mbuf*)rcb->mBuf, 0); 
+					result = kIOReturnError;
+				}
+
+				releaseRCB(rcb, false);
+			}
+		}
 	}
 	
 	return result;
@@ -2658,7 +2670,7 @@ void IOFWIPBusInterface::releaseRCB(RCB *rcb, bool freeMbuf)
 		rcb->mBuf = NULL;
 	}
 	activeRcb->removeObject(rcb);
-	rcb->release();
+	fRCBCmdPool->returnCommand(rcb);
 
     IORecursiveLockUnlock(fIPLock);
 }   
@@ -2965,8 +2977,43 @@ RCB *IOFWIPBusInterface::getRcb(UInt16 sourceID, UInt16 dgl)
     return(rcb);
 }
 
+RCB *IOFWIPBusInterface::getRCBCommand( UInt16 sourceID, UInt16 dgl, UInt16 etherType, UInt16 datagramSize, mbuf_t m )
+{
+	RCB * cmd = (RCB *)fRCBCmdPool->getCommand(false);
+
+	if( ( cmd == NULL ) and ( fCurrentRCBCommands < kMaxAsyncCommands ) ) 
+	{	
+		if( ( cmd = new RCB ) != NULL ) 
+			fCurrentRCBCommands++;
+	}
+	
+	if( cmd )
+		cmd->reinit( sourceID, dgl, etherType, datagramSize, m );
+	
+	return cmd;
+}
+
 #pragma mark -
-#pragma mark еее mbuf utility routines еее
+#pragma mark еее Control Block Routines еее
+
+void RCB::reinit(UInt16 id, UInt16 label, UInt16 type, UInt16 size, mbuf_t m)
+{
+	sourceID		= id;
+	dgl				= label;
+	mBuf			= m;
+	timer			= kRCBExpirationtime;
+	datagramSize	= size;
+	etherType		= type;
+	residual		= 0;
+}
+
+void RCB::free()
+{
+	OSObject::free();
+}
+
+#pragma mark -
+#pragma mark еее Mbuf Utility Routines еее
 
 bool IOFWIPMBufCommand::init()
 {
@@ -3064,7 +3111,7 @@ static mbuf_t getPacket( UInt32 size,
 		}
 		
 		// mbuf_settype(packet, MBUF_TYPE_PCB);
-				
+		
 		return packet;
 	}
 	else
@@ -3317,34 +3364,39 @@ mbuf_t IOFWIPBusInterface::mbufTobuffer(const mbuf_t m,
 
 #ifdef DEBUG
 
+#pragma mark -
+#pragma mark еее Debug Routines еее
+
+void IOFWIPBusInterface::showMinRcb(RCB *rcb) {
+	if (rcb != NULL) {
+		if(rcb->timer == 1)
+			IOLog("RCB %p dgl %u mBuf %p datagramSize %u residual %u timer %u \n", rcb, rcb->dgl, rcb->mBuf, rcb->datagramSize,  rcb->residual, rcb->timer);
+	}
+}
+
 // Display the reassembly control block
 void IOFWIPBusInterface::showRcb(RCB *rcb) {
 	if (rcb != NULL) {
       IOLog("RCB %p\n\r", rcb);
       IOLog(" sourceID %04X dgl %u etherType %04X mBlk %p\n\r", rcb->sourceID, rcb->dgl, rcb->etherType, rcb->mBuf);
-      IOLog(" datagramSize %u residual %u\n\r", rcb->datagramSize, rcb->residual);
+      IOLog(" datagramSize %u residual %u timer %u \n\r", rcb->datagramSize, rcb->residual, rcb->timer);
 	}
 }
 
-void IOFWIPBusInterface::showArb(ARB *arb) {
-
-//   u_char ipAddress[4];
-
+void IOFWIPBusInterface::showArb(ARB *arb) 
+{
    IOLog("ARB %p\n\r", arb);
-//   memcpy(ipAddress, &arb->ipAddress, sizeof(ipAddress));
-//   IOLog(" IP address %u.%u.%u.%u EUI-64 %08lX %08lX\n\r", ipAddress[0],
-//          ipAddress[1], ipAddress[2], ipAddress[3], arb->eui64.hi,
-//          arb->eui64.lo);
+
    IOLog(" EUI-64 %08lX %08lX\n\r", arb->eui64.hi, arb->eui64.lo);
    
    IOLog(" fwAddr  %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n\r", arb->fwaddr[0],
           arb->fwaddr[1], arb->fwaddr[2], arb->fwaddr[3], arb->fwaddr[4],
           arb->fwaddr[5], arb->fwaddr[6], arb->fwaddr[7]);
+
    IOLog(" Handle: %08lX %02X %02X %04X%08lX\n\r", arb->handle.unicast.deviceID,
           arb->handle.unicast.maxRec, arb->handle.unicast.spd,
           arb->handle.unicast.unicastFifoHi, arb->handle.unicast.unicastFifoLo);
 }
-
 
 void IOFWIPBusInterface::showHandle(TNF_HANDLE *handle) {
 
@@ -3371,17 +3423,18 @@ void IOFWIPBusInterface::showDrb(DRB *drb)
 
 void IOFWIPBusInterface::showLcb()
 {
-//	UNSIGNED cCBlk = 0;
-
-	IOLog(" Node ID %04X maxPayload %u maxSpeed %u busGeneration 0x%08lX\n\r",
+	IOLog(" Node ID %04X maxPayload %u maxSpeed %u busGeneration 0x%08lX\n",
 		  fLcb->ownNodeID, fLcb->ownMaxPayload,
 		  fLcb->ownMaxSpeed, fLcb->busGeneration);
 
 	// Display the arb's
 	IORecursiveLockLock(fIPLock);
 
+	OSCollectionIterator * iterator = 0;
+
 	ARB *arb = 0;
-	OSCollectionIterator * iterator = OSCollectionIterator::withCollection( unicastArb );
+	
+	iterator = OSCollectionIterator::withCollection( unicastArb );
 
 	IOLog(" Unicast ARBs\n\r");
 	while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
@@ -3406,18 +3459,19 @@ void IOFWIPBusInterface::showLcb()
 
 	RCB *rcb = 0;
 	iterator = OSCollectionIterator::withCollection( activeRcb );
-
-	IOLog(" Active RCBs\n\r");
+	UInt32	rcbCount = 0;
+	
 	while( NULL != (rcb = OSDynamicCast(RCB, iterator->getNextObject())) )
 	{
-		 IOLog("  %p\n\r", rcb);
-		 showRcb(rcb);
+		 showMinRcb(rcb);
+		 rcbCount++;
 	}
+	IOLog(" Active RCBs %u \n", rcbCount);
+	
 
 	iterator->release();
 
 	IORecursiveLockUnlock(fIPLock);
-
 }
 
-#endif;
+#endif

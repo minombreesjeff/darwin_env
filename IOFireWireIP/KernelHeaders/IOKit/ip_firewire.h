@@ -404,18 +404,23 @@ public:
  fragment is copied to its correct location; the residual count is decremented.
  This process repeats with successive fragments until residual is zero. */
 
-class RCB : public OSObject
+class RCB : public IOCommand
 {
 	OSDeclareDefaultStructors(RCB);
+
+private:
+    void free();
+	
 public:
 	USHORT sourceID;           /* Saved from LK_DATA.indication */
 	USHORT dgl;                /* Obtained from the fragment header */
 	USHORT etherType;          /* Saved from first fraagment header */
 	USHORT datagramSize;       /* Total size of the reassembled datagram */
-	USHORT residual;           /* Bytes still outstanding */
+	short  residual;           /* Bytes still outstanding */
 	ULONG  timer;			  /* If nonzero, decrement and release upon zero */
-	UInt8  *datagram;
 	mbuf_t mBuf;               /* MBUF eventually passed to OS code */
+
+	void reinit(UInt16 id, UInt16 label, UInt16 etherType, UInt16 size, mbuf_t m);
 };
 
 /* End of the type definitions for the miscellaneous control structures */

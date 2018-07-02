@@ -58,12 +58,6 @@ bool IOFWAsyncStreamRxCommand::initAll(UInt32 channel, DCLCallCommandProc* proc,
 	fChan = channel;
 	fSpeed = kFWSpeedMaximum;
 
-	// Allocate lock
-	rxCommandLock = IORecursiveLockAlloc();
-	
-	if(rxCommandLock == NULL)
-		return false;
-
 	bStarted = false;
     fInitialized = true;
     
@@ -72,8 +66,6 @@ bool IOFWAsyncStreamRxCommand::initAll(UInt32 channel, DCLCallCommandProc* proc,
 
 void IOFWAsyncStreamRxCommand::free()
 {
-    IORecursiveLockLock(rxCommandLock);
-
 	stop();
 	
 	// free dcl program
@@ -85,13 +77,6 @@ void IOFWAsyncStreamRxCommand::free()
 
 	// free the buffer 
 	fBufDesc->release();
-
-    IORecursiveLockUnlock(rxCommandLock);
-	
-    if (rxCommandLock != NULL) 
-        IORecursiveLockFree(rxCommandLock);
-		
-	rxCommandLock = NULL;
 	
 	OSObject::free();
 }
@@ -268,7 +253,7 @@ DCLCommandStruct *IOFWAsyncStreamRxCommand::CreateAsyncStreamRxDCLProgram(DCLCal
     DCLCallProc	*callProc = new DCLCallProc ;
     {
         callProc->opcode = kDCLCallProcOp ;
-        callProc->proc = restart;
+        callProc->proc = overrunNotification;
         callProc->procData = (UInt32)this;
     }
 
@@ -321,8 +306,6 @@ IOIPPort *IOFWAsyncStreamRxCommand::CreateAsyncStreamPort(bool talking, DCLComma
 IOReturn IOFWAsyncStreamRxCommand::start(IOFWSpeed fBroadCastSpeed) {
 
 	IOReturn status	= kIOReturnSuccess;
-
-	recursiveScopeLock lock(rxCommandLock);
 
     if(fInitialized == false)
         return status;
@@ -384,6 +367,9 @@ IOReturn IOFWAsyncStreamRxCommand::start(IOFWSpeed fBroadCastSpeed) {
 		IOLog("    Error: AddAsyncStreamClient %d %x\n", __LINE__, status);
 		return kIOReturnError;
 	}
+
+
+	fIODclProgram->setForceStopProc( forceStopNotification, this, fAsyncStreamChan );
 	
 	bStarted = true;
 
@@ -395,13 +381,28 @@ IOReturn IOFWAsyncStreamRxCommand::start(IOFWSpeed fBroadCastSpeed) {
 	return status;
 }
 
+void IOFWAsyncStreamRxCommand::restart()
+{
+	// Stop the channel
+    fAsyncStreamChan->stop();
+
+	// Start the channel
+    fAsyncStreamChan->start();
+}
+
+IOReturn IOFWAsyncStreamRxCommand::forceStopNotification( void* refCon, IOFWIsochChannel* channel, UInt32 stopCondition )
+{
+    IOFWAsyncStreamRxCommand	*fwRxAsyncStream = OSDynamicCast(IOFWAsyncStreamRxCommand, (OSObject*)refCon);
+
+	if( fwRxAsyncStream )
+		fwRxAsyncStream->restart();
+}
+
 IOReturn IOFWAsyncStreamRxCommand::modifyDCLJumps(DCLCommandStruct *callProc)
 {
 	DCLCallProc 	*ptr = (DCLCallProc*)callProc;
 	RXProcData		*proc = (RXProcData*)ptr->procData;
     IOReturn		status = kIOReturnError;
-
-	recursiveScopeLock lock(rxCommandLock);
 
     if(fInitialized == false)
         return status;
@@ -471,32 +472,25 @@ void IOFWAsyncStreamRxCommand::fixDCLJumps(bool	bRestart)
 	}
 }
 
-void IOFWAsyncStreamRxCommand::restart(DCLCommandStruct *callProc)
+void IOFWAsyncStreamRxCommand::overrunNotification(DCLCommandStruct *callProc)
 {
 	DCLCallProc 				*ptr = (DCLCallProc*)callProc;
-    IOFWAsyncStreamRxCommand	*fwRxAsyncStream = (IOFWAsyncStreamRxCommand*)ptr->procData;
-
-	recursiveScopeLock lock(fwRxAsyncStream->rxCommandLock);
-
-    //
-    // Overrun so restart everything !!
-    //
-	// IOLog("%s:%d  OR\n", __FILE__, __LINE__);
-	fwRxAsyncStream->fIsoRxOverrun++;
-
-	// Stop the channel
-    fwRxAsyncStream->fAsyncStreamChan->stop();
-
-	// Start the channel
-    fwRxAsyncStream->fAsyncStreamChan->start();
 	
+	if( ptr )
+	{
+	    IOFWAsyncStreamRxCommand	*fwRxAsyncStream = OSDynamicCast( IOFWAsyncStreamRxCommand, (OSObject*)ptr->procData );
+
+		if( fwRxAsyncStream )
+		{
+			fwRxAsyncStream->fIsoRxOverrun++;
+			fwRxAsyncStream->restart();
+		}
+	}
 }
 	
 IOReturn IOFWAsyncStreamRxCommand::stop() 
 {
 	IOReturn status	= kIOReturnSuccess;
-
-	recursiveScopeLock lock(rxCommandLock);
 
     if(fInitialized == false)
         return status;

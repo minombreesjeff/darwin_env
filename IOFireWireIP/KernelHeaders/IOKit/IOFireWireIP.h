@@ -134,7 +134,7 @@ enum {
 	kDoNotDeallocate = 0x10000000
 };
 
-const int rcbexpirationtime = 60; // 60 seconds active time for reassembly control blocks, decremented by watchdog
+const int kRCBExpirationtime = 2; // 2 seconds active time for reassembly control blocks, decremented by watchdog
 
 
 // Set this flag to true if you need to copy the payload
@@ -197,12 +197,14 @@ protected:
 	UInt32					fActiveCmds;
 	UInt32					fInActiveCmds;
 	UInt32					fNoCommands;
+	UInt32					fNoRCBCommands;
 	UInt32					fNoBCastCommands;
 	UInt32					fDoubleCompletes;
 	UInt32 					fCallErrs;
 	UInt32					fServiceInOutput;
 	UInt32					fServiceInCallback;
 	UInt32 					fRxFragmentPkts;
+	UInt32 					fRxFragmentPktsDropped;
 	UInt32 					fTxFragmentPkts;
 	UInt16 					fMaxPktSize;
 	UInt16 					fMaxInputCount;

@@ -85,6 +85,7 @@ private:
 	
     IOCommandPool			*fAsyncCmdPool;
     IOCommandPool			*fMbufCmdPool;
+	IOCommandPool			*fRCBCmdPool;
 	OSSet					*fAsyncTransitSet;
     IOCommandPool			*fAsyncStreamTxCmdPool;
 	OSSet					*fAsyncStreamTransitSet;
@@ -107,6 +108,7 @@ private:
 	UInt8					fFastRetryUnsetTimer;
 	int						fCurrentAsyncIPCommands;
 	int						fCurrentMBufCommands;
+	int						fCurrentRCBCommands;
 
 protected:	
 	IOFWAsyncStreamRxCommand *fBroadcastReceiveClient;	
@@ -414,6 +416,7 @@ public:
 	*/
 	RCB *getRcb(UInt16 sourceID, UInt16 dgl);
 
+	RCB *getRCBCommand( UInt16 sourceID, UInt16 dgl, UInt16 etherType, UInt16 datagramSize, mbuf_t m );
 	
 	/*!
 		@function getMulticastArb
@@ -560,6 +563,7 @@ public:
 
 #ifdef DEBUG
 	void showRcb(RCB *rcb);
+	void showMinRcb(RCB *rcb);
 	void showArb(ARB *arb);
 	void showHandle(TNF_HANDLE *handle);
 	void showDrb(DRB *drb);
