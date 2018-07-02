@@ -1,10 +1,9 @@
 #include "../../KernelHeaders/IOKit/IOFWIPBusInterface.h"
 #include <IOKit/firewire/IOFireWireController.h>
 
-
 #define BCOPY(s, d, l) do { bcopy((void *) s, (void *) d, l); } while(0)
 
-struct 
+struct GASPVAL
 {
    UCHAR specifierID[3];      // 24-bit RID
    UCHAR version[3];          // 24-bit version
@@ -14,7 +13,7 @@ extern "C"
 {
 /*!
 	@function watchdog
-	@abstract watchdog timer - cleans the Link control block's stale arb's, drb's and rcb's.
+	@abstract watchdog timer - cleans the Link control block's rcb's.
 	@param timer - IOTimerEventsource.
 	@result void.
 */
@@ -25,9 +24,12 @@ void watchdog(OSObject *, IOTimerEventSource *);
 
 OSDefineMetaClassAndStructors(IOFWIPBusInterface, IOService)
 
+OSDefineMetaClassAndStructors(MARB, OSObject)
 OSDefineMetaClassAndStructors(ARB, OSObject)
 OSDefineMetaClassAndStructors(DRB, OSObject)
 OSDefineMetaClassAndStructors(RCB, OSObject)
+OSDefineMetaClassAndStructors(IOFWIPMBufCommand, IOCommand)
+
 
 bool IOFWIPBusInterface::init(IOFireWireIP *primaryInterface)
 {
@@ -44,12 +46,17 @@ bool IOFWIPBusInterface::init(IOFireWireIP *primaryInterface)
     if ( not super::init() )
         return false;
 
-    fMemoryPool				= 0;
     fIP1394AddressSpace		= 0;
     fAsyncCmdPool			= 0;
+	fMbufCmdPool			= 0;
     fAsyncStreamTxCmdPool	= 0;
 	fAsyncTransitSet		= 0;
 	fAsyncStreamTransitSet	= 0;
+	fCurrentMBufCommands		= 0;
+	fCurrentAsyncIPCommands		= 0;
+	
+	fLowWaterMark					= kLowWaterMark;
+	fIPLocalNode->fMaxQueueSize		= TRANSMIT_QUEUE_SIZE;
 	
 	// set the secondary interface handlers with IOFireWireIP
 	if( not attachIOFireWireIP ( fIPLocalNode ) )
@@ -61,7 +68,7 @@ bool IOFWIPBusInterface::init(IOFireWireIP *primaryInterface)
 	
 	fControl->resetBus();
 
-	fStarted = true;
+	fStarted  = true;
 	
 	return true;
 }
@@ -73,6 +80,27 @@ bool IOFWIPBusInterface::finalize(IOOptionBits options)
 	fStarted = false;
 
 	fIPLocalNode->deRegisterFWIPPrivateHandlers();
+	
+	// Release the Asyncstream receive broadcast client
+	if(fBroadcastReceiveClient != NULL)
+		fBroadcastReceiveClient->release();
+	
+	fBroadcastReceiveClient = NULL;
+
+    if (fIP1394AddressSpace != NULL)
+	{
+        fIP1394AddressSpace->deactivate();
+        fIP1394AddressSpace->release();
+    }
+	fIP1394AddressSpace = NULL;
+
+	if(timerSource != NULL) 
+	{
+		if (workLoop != NULL)
+			workLoop->removeEventSource(timerSource);
+		timerSource->release();
+	}
+	timerSource = NULL;
 
 	IORecursiveLockUnlock(fIPLock);
 
@@ -99,7 +127,7 @@ bool IOFWIPBusInterface::finalize(IOOptionBits options)
 	fAsyncStreamTransitSet->flushCollection();
 	fAsyncStreamTransitSet->free();
 	fAsyncStreamTransitSet = NULL;
-		
+
 	return super::finalize(options);
 }
 
@@ -120,17 +148,13 @@ IOReturn IOFWIPBusInterface::message(UInt32 type, IOService *provider, void *arg
             break;
 
         case kIOMessageServiceIsSuspended:
-            res = kIOReturnSuccess;
             if(fStarted == true)
                 stopReceivingBroadcast();
             break;
 
         case kIOMessageServiceIsResumed:
-            res = kIOReturnSuccess;
             if(fStarted == true)
             {
-				resetARBCache();
-
 				resetRCBCache();
 
 				resetMcapState();
@@ -142,14 +166,13 @@ IOReturn IOFWIPBusInterface::message(UInt32 type, IOService *provider, void *arg
             break;
             
         case kIOMessageServiceIsRequestingClose:
-            res = kIOReturnSuccess;
             break;
             
         default: 
 			res = kIOReturnUnsupported;
             break;
     }
-	
+
     return res;
 }
 
@@ -161,6 +184,9 @@ bool IOFWIPBusInterface::attachIOFireWireIP(IOFireWireIP *provider)
 	fLcb			= fIPLocalNode->getLcb();
 	fIPLock			= fIPLocalNode->getIPLock();
 	workLoop		= fIPLocalNode->getWorkLoop();
+
+	if( initAsyncCmdPool() != kIOReturnSuccess)
+		return false;
 
 	unicastArb		= OSSet::withCapacity(kUnicastArbs);
 	if(unicastArb == 0)
@@ -191,7 +217,7 @@ bool IOFWIPBusInterface::attachIOFireWireIP(IOFireWireIP *provider)
 		return false;
 			
 	// Does calculate the fMaxTxAsyncDoubleBuffer & fAsyncRxIsocPacketSize;
-    isAppleLynx();
+    calculateMaxTransferUnit();
 
 	// Allocate Timer event source
 	timerSource = IOTimerEventSource::timerEventSource ( ( OSObject* ) this,
@@ -216,8 +242,6 @@ bool IOFWIPBusInterface::attachIOFireWireIP(IOFireWireIP *provider)
 	if ( not fBroadcastReceiveClient->initAll(0x1f, rxAsyncStream, fControl, fMaxRxIsocPacketSize, this ) ) 
 		return false;
 	
-	fIPLocalNode->updateMTU(bOnLynx);
-
 	// Create pseudo address space
 	if ( createIPFifoAddress (MAX_FIFO_SIZE) != kIOReturnSuccess)
 		return false;
@@ -235,79 +259,132 @@ bool IOFWIPBusInterface::attachIOFireWireIP(IOFireWireIP *provider)
 	
 	attach(fIPLocalNode);
 	
-	// IOLog("attachIOFireWireIP- \n");
-	
 	return true;
 }
 
 void IOFWIPBusInterface::detachIOFireWireIP()
 {
 	IORecursiveLockLock(fIPLock);
-
-	// Release the Asyncstream receive broadcast client
-	if(fBroadcastReceiveClient != NULL)
-		fBroadcastReceiveClient->release();
 	
-	fBroadcastReceiveClient = NULL;
-
-    if (fIP1394AddressSpace != NULL){
-        fIP1394AddressSpace->deactivate();
-        fIP1394AddressSpace->release();
-		fIP1394AddressSpace = NULL;
-    }
-	
-	if(timerSource != NULL) 
-	{
-		if (workLoop != NULL)
-			workLoop->removeEventSource(timerSource);
-		timerSource->release();
-	}
-
     freeAsyncCmdPool();
 	
 	freeAsyncStreamCmdPool();
 
+    if(fMbufCmdPool != NULL)
+	{
+		IOFWIPMBufCommand *cmd = NULL;
+		do
+		{
+			cmd = (IOFWIPMBufCommand*)fMbufCmdPool->getCommand(false);
+			if(cmd != NULL)
+				cmd->release();
+		}while(cmd != NULL);
+		
+		fMbufCmdPool->release();
+		fMbufCmdPool = NULL;
+		fCurrentMBufCommands = 0;
+	}
+
 	if(unicastArb != NULL)
 	{
+		{
+			ARB *arb = 0;
+			OSCollectionIterator * iterator = OSCollectionIterator::withCollection( unicastArb );
+
+			while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
+			{
+				unicastArb->removeObject(arb);
+				arb->release();
+			}
+			
+			iterator->release();
+		}
 		unicastArb->flushCollection();
 		unicastArb->free();
+		unicastArb = NULL;
 	}
 
 	if(multicastArb != NULL)
 	{
+		{
+			MARB *marb = 0;
+			OSCollectionIterator * iterator = OSCollectionIterator::withCollection( multicastArb );
+
+			while( NULL != (marb = OSDynamicCast(MARB, iterator->getNextObject())) )
+			{
+				multicastArb->removeObject(marb);
+				marb->release();
+			}
+			
+			iterator->release();
+		}
+
 		multicastArb->flushCollection();
 		multicastArb->free();
+		multicastArb = NULL;
 	}
 	
 	if(activeDrb != NULL)
 	{
+		{
+			DRB *drb = 0;
+			OSCollectionIterator * iterator = OSCollectionIterator::withCollection( activeDrb );
+
+			while( NULL != (drb = OSDynamicCast(DRB, iterator->getNextObject())) )
+			{
+				activeDrb->removeObject(drb);
+				drb->release();
+			}
+			
+			iterator->release();
+		}
+	
 		activeDrb->flushCollection();
 		activeDrb->free();
+		activeDrb = NULL;
 	}
 	
 	if(activeRcb != NULL)
 	{
+		{
+			RCB *rcb = 0;
+			OSCollectionIterator * iterator = OSCollectionIterator::withCollection( activeRcb );
+
+			while( NULL != (rcb = OSDynamicCast(RCB, iterator->getNextObject())) )
+			{
+				activeRcb->removeObject(rcb);
+				rcb->release();
+			}
+			
+			iterator->release();
+		}
+	
 		activeRcb->flushCollection();
 		activeRcb->free();
+		activeRcb = NULL;
 	}
 	
 	if(mcapState != NULL)
 	{
 		mcapState->flushCollection();
 		mcapState->free();
+		mcapState = NULL;
 	}
 		
 	if(fControl)
 		fControl->release();
 		
 	fControl = NULL;
+
+	IORecursiveLockUnlock(fIPLock);
 	
 	if(fIPLocalNode)
+	{
+		detach(fIPLocalNode);
 		fIPLocalNode->release();
+	}
 		
 	fIPLocalNode = NULL;
-		
-	IORecursiveLockUnlock(fIPLock);
 }
 
 void IOFWIPBusInterface::decrementUnitCount()
@@ -325,7 +402,7 @@ void IOFWIPBusInterface::incrementUnitCount()
 	fUnitCount++;
 }
 
-UInt16 IOFWIPBusInterface::getUnitCount()
+SInt16 IOFWIPBusInterface::getUnitCount()
 {
 	recursiveScopeLock lock(fIPLock);
 
@@ -342,6 +419,8 @@ void IOFWIPBusInterface::fwIPUnitAttach()
 	incrementUnitCount();
 	
 	updateBroadcastValues(true);
+	
+	fLowWaterMark = kLowWaterMark; // new unit, so lets learn afresh
 }
 
 /*!
@@ -388,10 +467,6 @@ void IOFWIPBusInterface::updateBroadcastValues(bool reset)
 	OSCollectionIterator * iterator = OSCollectionIterator::withCollection( activeDrb );
 	while( NULL != (drb = OSDynamicCast(DRB, iterator->getNextObject())) )
 	{ 
-		// Disappeared device, so lets skip
-		if(drb->timer > 0)
-			continue;
-		
 		remoteDevice = (IOFireWireDevice*)drb->deviceID;
 			
 		if(fLcb->maxBroadcastSpeed > drb->maxSpeed)
@@ -470,30 +545,28 @@ IOReturn IOFWIPBusInterface::createIPFifoAddress(UInt32 fifosize)
 }
 
 /*!
-	@function isAppleLynx
-	@abstract checks whether the FWIM is for isAppleLynx H/W, if not 
+	@function calculateMaxTransferUnit
+	@abstract checks whether the FWIM is for calculateMaxTransferUnit H/W, if not 
 			  sets appropriate performance related params
 	@param none.
 	@result Returns void.
 */
-void IOFWIPBusInterface::isAppleLynx()
+void IOFWIPBusInterface::calculateMaxTransferUnit()
 {
     IORegistryEntry			*parent = fControl->getParentEntry(gIOServicePlane); 
 
 	if(strcmp(parent->getName(gIOServicePlane), "AppleLynx") == 0)
 	{
-		bOnLynx = true;
-		fMaxRxIsocPacketSize = 2048;
+		fMaxRxIsocPacketSize	= 2048;
 		fMaxTxAsyncDoubleBuffer =  1 << 9;
 	} 
 	else
 	{
-		bOnLynx = false;
-		fMaxRxIsocPacketSize = 4096;
+		fMaxRxIsocPacketSize	= 4096;
 		fMaxTxAsyncDoubleBuffer = 1 << ((IOFireWireNub*)(fIPLocalNode->getDevice()))->maxPackLog(true);
 	}
-
-    parent = parent->getParentEntry(gIOServicePlane);
+	
+	fIPLocalNode->updateMTU(fMaxTxAsyncDoubleBuffer);
 }
 
 /*!
@@ -504,62 +577,88 @@ void IOFWIPBusInterface::isAppleLynx()
 */
 UInt32 IOFWIPBusInterface::initAsyncCmdPool()
 {
-    IOFWIPAsyncWriteCommand		*cmd1 = NULL;
     IOReturn status = kIOReturnSuccess;
-    int		i = 0;
 
-	if(fAsyncCmdPool == NULL)
+	if( (fAsyncCmdPool == NULL) )
 		fAsyncCmdPool = IOCommandPool::withWorkLoop(workLoop);
-		
-    for(i=0; i<=kMaxAsyncCommands; i++){
-        
-        FWAddress addr;
-        // setup block write
-        addr.addressHi   = 0xdead;
-        addr.addressLo   = 0xbabeface;
-        
-        // Create a IP Async write command 
-        cmd1 = new IOFWIPAsyncWriteCommand;
-        if(!cmd1) {
-            status = kIOReturnNoMemory;
-            break;
-        }
-
-        // Initialize the write command
-        if(!cmd1->initAll(fIPLocalNode, fMaxTxAsyncDoubleBuffer, addr, txCompleteBlockWrite, this, false)) {
-            status = kIOReturnNoMemory;
-			cmd1->release();
-            break;
-        }
-
-        // Queue the command in the command pool
-        fAsyncCmdPool->returnCommand(cmd1);
-		fAsyncTransitSet->setObject(cmd1);
-    }
 	
+	if( (fMbufCmdPool == NULL) )
+		fMbufCmdPool = IOCommandPool::withWorkLoop(workLoop);
+
+	if( (fMbufCmdPool == NULL) or (fAsyncCmdPool == NULL) )
+		status = kIOReturnNoMemory;
+		
     return status;
 }
 
-IOFWIPAsyncWriteCommand *IOFWIPBusInterface::getAsyncCommand(const mbuf_t m, bool block, bool *deferNotify)
+IOFWIPMBufCommand *IOFWIPBusInterface::getMBufCommand()
 {
-	IOFWIPAsyncWriteCommand * cmd = (IOFWIPAsyncWriteCommand *)fAsyncCmdPool->getCommand(block);
-	
-	if(cmd == NULL) 
-	{
-		fIPLocalNode->freePacket((struct mbuf*)m);
-		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
-		fIPLocalNode->fNoCommands++;
-		return NULL;
+	IOFWIPMBufCommand * mBufCommand = NULL;
+
+	if( fMbufCmdPool )
+		mBufCommand = (IOFWIPMBufCommand *)fMbufCmdPool->getCommand(false);
+
+	if(mBufCommand == NULL) 
+	{	
+		if( fCurrentMBufCommands < kMaxAsyncCommands )
+		{
+			mBufCommand = new IOFWIPMBufCommand;
+			if(not mBufCommand->init()) 
+			{
+				mBufCommand->release();
+				mBufCommand = NULL;
+			}
+			else
+				fCurrentMBufCommands++;
+		}
 	}
 
-	fIPLocalNode->fActiveCmds++;	
-	
-	if((fIPLocalNode->fActiveCmds % fIPLocalNode->fInActiveCmds) >= kLowWaterMark)
+	return mBufCommand;
+}
+
+IOFWIPAsyncWriteCommand *IOFWIPBusInterface::getAsyncCommand(bool block, bool *deferNotify)
+{
+	IOFWIPAsyncWriteCommand * cmd = (IOFWIPAsyncWriteCommand *)fAsyncCmdPool->getCommand(block);
+
+	if(cmd == NULL) 
+	{	
+		if( fCurrentAsyncIPCommands < kMaxAsyncCommands )
+		{
+			cmd = new IOFWIPAsyncWriteCommand;
+
+			FWAddress addr;
+			// setup block write
+			addr.addressHi   = 0xdead;
+			addr.addressLo   = 0xbabeface;
+			
+			if(not cmd->initAll(fIPLocalNode, fMaxTxAsyncDoubleBuffer, addr, txCompleteBlockWrite, this, false)) 
+			{
+				cmd->release();
+				cmd = NULL;
+			}
+			else
+			{
+				fCurrentAsyncIPCommands++;
+				fAsyncTransitSet->setObject(cmd);
+			}
+		}
+	}
+
+	if( cmd )
+	{
+		fIPLocalNode->fActiveCmds++;	
+	}
+	else
+	{
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
+		fIPLocalNode->fNoCommands++;
+	}
+
+	if((fIPLocalNode->fActiveCmds - fIPLocalNode->fInActiveCmds) >= fLowWaterMark)
 		*deferNotify = false;
 	
 	return cmd;
 }
-
 
 void IOFWIPBusInterface::returnAsyncCommand(IOFWIPAsyncWriteCommand *cmd)
 {
@@ -710,12 +809,17 @@ IOTransmitPacket IOFWIPBusInterface::getOutputHandler() const
 */
 DRB *IOFWIPBusInterface::initDRBwithDevice(UWIDE eui64, IOFireWireNub *device, bool itsMac)
 {
+	fIPLocalNode->closeIPGate();
+
 	DRB   *drb = getDrbFromEui64(eui64);   
 
 	if(not drb)
 	{
 		if ((drb = new DRB) == NULL)
+		{
+			fIPLocalNode->openIPGate();
 			return NULL;
+		}
 	}
 	
 	CSRNodeUniqueID fwuid = device->getUniqueID();
@@ -723,9 +827,8 @@ DRB *IOFWIPBusInterface::initDRBwithDevice(UWIDE eui64, IOFireWireNub *device, b
 		fIPLocalNode->makeEthernetAddress(&fwuid, drb->fwaddr, GUID_TYPE);
 	else
 		fIPLocalNode->getBytesFromGUID((void*)(&fwuid), drb->fwaddr, GUID_TYPE);
-	
+		
 	drb->deviceID	= (UInt32)device;
-	drb->timer		= 0;
 	drb->eui64		= eui64;
 	drb->itsMac		= itsMac;
 	drb->maxSpeed	= kFWSpeed100MBit;      
@@ -733,6 +836,8 @@ DRB *IOFWIPBusInterface::initDRBwithDevice(UWIDE eui64, IOFireWireNub *device, b
 	drb->maxPayload	= device->maxPackLog(true);
 	
 	activeDrb->setObject(drb);
+
+	fIPLocalNode->openIPGate();
 
     return drb;
 }
@@ -745,11 +850,7 @@ DRB *IOFWIPBusInterface::initDRBwithDevice(UWIDE eui64, IOFireWireNub *device, b
 */
 UInt32 IOFWIPBusInterface::getMTU()
 {
-    UInt32	mtu = 0;
-    
-	mtu = FIREWIRE_MTU;
-
-    return mtu;
+    return FIREWIRE_MTU;
 }
 
 UInt32 IOFWIPBusInterface::outputPacket(mbuf_t pkt, void * param)
@@ -779,10 +880,21 @@ UInt32 IOFWIPBusInterface::outputPacket(mbuf_t pkt, void * param)
 			break;
 	}
 
-	if(status == kIOFireWireOutOfTLabels || status == kIOReturnNoResources)
+	if(status == kIOFireWireOutOfTLabels)
 	{
-		fTxStatus = kIOReturnOutputStall;
 		status = kIOReturnOutputStall;
+		
+		if((fIPLocalNode->fActiveCmds - fIPLocalNode->fInActiveCmds)  <= 1)
+			fIPLocalNode->fServiceInOutput++;
+		
+		if((fIPLocalNode->transmitQueue->getSize() > fIPLocalNode->fMaxQueueSize)
+			|| ((fIPLocalNode->fActiveCmds - fIPLocalNode->fInActiveCmds)  <= 1))
+		{
+			// So far, too many stalls. Sink the packets, till we have manageable queue
+			fIPLocalNode->freePacket((struct mbuf*)pkt);
+			fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
+			status = kIOReturnOutputDropped;
+		}
 	}
 	else
 		status = kIOReturnOutputSuccess;
@@ -816,14 +928,7 @@ void IOFWIPBusInterface::txCompleteBlockWrite(void *refcon, IOReturn status, IOF
 	if(not cmd)
 		return;
 	
-	fwIPObject->closeIPGate();
-
-	// Make sure that we start the queue again, only after we have stalled, not for every successful completion
-	if(fwIPPriv->fTxStatus == kIOReturnOutputStall)
-	{
-		fwIPObject->fStalls++;
-		fwIPPriv->fTxStatus = kIOReturnOutputSuccess;
-	}
+	// fwIPObject->closeIPGate();
 	
 	// Only in case of kIOFireWireOutOfTLabels, we ignore freeing of Mbuf
 	if(status == kIOReturnSuccess)
@@ -843,13 +948,13 @@ void IOFWIPBusInterface::txCompleteBlockWrite(void *refcon, IOReturn status, IOF
 	
 	fwIPPriv->returnAsyncCommand(cmd);
 	// Fix to over kill servicing the queue 
-	if ((status != kIOFireWireOutOfTLabels) && (status != kIOReturnNoResources)
-		&& ((fwIPObject->fActiveCmds % fwIPObject->fInActiveCmds)  <= (kLowWaterMark+10)))
-			fwIPObject->transmitQueue->service(kTransmitQueueRestart);
-	else
-		fwIPObject->fMissedQRestarts++;
-
-	fwIPObject->openIPGate();
+	if ((fwIPObject->fActiveCmds - fwIPObject->fInActiveCmds)  <= fwIPPriv->fLowWaterMark)
+	{
+		fwIPObject->transmitQueue->service( IOBasicOutputQueue::kServiceAsync );
+		fwIPObject->fServiceInCallback++;
+	}
+	
+	// fwIPObject->openIPGate();
 
     return;
 }
@@ -881,7 +986,7 @@ void IOFWIPBusInterface::txCompleteAsyncStream(void *refcon, IOReturn status,
 	if(not cmd)
 		return;
 			
-	fwIPObject->closeIPGate();
+	// fwIPObject->closeIPGate();
 
 	if(status == kIOReturnSuccess)
 	{
@@ -892,9 +997,12 @@ void IOFWIPBusInterface::txCompleteAsyncStream(void *refcon, IOReturn status,
 		fwIPObject->networkStatAdd(&(fwIPObject->getNetStats())->outputErrors);
 
 	if(fwIPPriv->fAsyncStreamTxCmdPool != NULL) 		// Queue the command back into the command pool
+	{
 		fwIPPriv->fAsyncStreamTxCmdPool->returnCommand(cmd);
+		fwIPObject->fInActiveBcastCmds++;
+	}
 	
-	fwIPObject->openIPGate();
+	// fwIPObject->openIPGate();
 
     return;
 }
@@ -923,6 +1031,8 @@ SInt32 IOFWIPBusInterface::txARP(mbuf_t m, UInt16 nodeID, UInt32 busGeneration, 
 		fIPLocalNode->fNoBCastCommands++;
 		return status;
 	}
+
+	fIPLocalNode->fActiveBcastCmds++;
 
     IORecursiveLockLock(fIPLock);
 
@@ -963,7 +1073,14 @@ SInt32 IOFWIPBusInterface::txARP(mbuf_t m, UInt16 nodeID, UInt32 busGeneration, 
 	if(status == kIOReturnSuccess)
 		status = cmd->submit();
 	else
+	{
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
 		fAsyncStreamTxCmdPool->returnCommand(cmd);
+		fIPLocalNode->fInActiveBcastCmds++;
+	}
+
+	if(status != kIOReturnSuccess)
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
 	
 	fIPLocalNode->freePacket((struct mbuf*)m);
 					
@@ -982,10 +1099,11 @@ SInt32	IOFWIPBusInterface::txBroadcastIP(const mbuf_t m, UInt16 nodeID, UInt32 b
 	
 	UInt16 maxPayload = MIN((UInt16)1 << maxBroadcastPayload, (UInt16)1 << ownMaxPayload);
 
-	SInt32	status = ENOBUFS;
+	IOReturn	status = ENOBUFS;
 	// Asynchronous stream datagrams are never fragmented!
 	if (datagramSize + sizeof(IP1394_UNFRAG_HDR) > maxPayload)
 	{
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
 		fIPLocalNode->freePacket((struct mbuf*)m);
 		return status;
 	}
@@ -1000,10 +1118,13 @@ SInt32	IOFWIPBusInterface::txBroadcastIP(const mbuf_t m, UInt16 nodeID, UInt32 b
 	// Lets not block to get a command, IP may retry soon ..:)
 	if(asyncStreamCmd == NULL)
 	{
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
 		fIPLocalNode->freePacket((struct mbuf*)m);
 		fIPLocalNode->fNoBCastCommands++;
 		return status;
 	}
+
+	fIPLocalNode->fActiveBcastCmds++;
 
     IORecursiveLockLock(fIPLock);
 	
@@ -1038,8 +1159,15 @@ SInt32	IOFWIPBusInterface::txBroadcastIP(const mbuf_t m, UInt16 nodeID, UInt32 b
 	if(status == kIOReturnSuccess)
 		status = asyncStreamCmd->submit();
 	else
+	{
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
 		fAsyncStreamTxCmdPool->returnCommand(asyncStreamCmd);
+		fIPLocalNode->fInActiveBcastCmds++;
+	}
 
+	if(status != kIOReturnSuccess)
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
+	
 	fIPLocalNode->freePacket((struct mbuf*)m);
 
     IORecursiveLockUnlock(fIPLock);
@@ -1049,29 +1177,47 @@ SInt32	IOFWIPBusInterface::txBroadcastIP(const mbuf_t m, UInt16 nodeID, UInt32 b
 
 SInt32 IOFWIPBusInterface::txUnicastUnFragmented(IOFireWireNub *device, const FWAddress addr, const mbuf_t m, const UInt16 pktSize, const UInt16 type)
 {
-	SInt32 status = EHOSTUNREACH;
+	SInt32 status = kIOReturnSuccess;
 
 	bool deferNotify = true;
 
-	IOFWIPAsyncWriteCommand *cmd = getAsyncCommand(m, false, &deferNotify); // Get an async command from the command pool
+	IOFWIPMBufCommand * mBufCommand = getMBufCommand();
 
-	// Lets not block to get a command, IP may retry soon ..:)
-	if(not cmd) 
+	if( not mBufCommand )
+	{
+		fIPLocalNode->freePacket((struct mbuf*)m);
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
 		return status;
+	}
 
-	// All done in one gulp!
-	IP1394_ENCAP_HDR *ip1394Hdr = (IP1394_ENCAP_HDR*)cmd->getDescriptorHeader(m, kCopyBuffers, UNFRAGMENTED, 
-																			 sizeof(IP1394_UNFRAG_HDR), 
-																			 sizeof(struct firewire_header));
-	ip1394Hdr->fragment.datagramSize = htons(UNFRAGMENTED);
-	ip1394Hdr->singleFragment.etherType = htons(type);
-	ip1394Hdr->singleFragment.reserved = 0;
+	mBufCommand->reinit(m, fIPLocalNode, fMbufCmdPool);
+
+	IOFWIPAsyncWriteCommand *cmd = getAsyncCommand(false, &deferNotify); // Get an async command from the command pool
+
+	mBufCommand->retain();
 	
-	status = cmd->transmit (device, pktSize, addr, txCompleteBlockWrite, this, true,
-							deferNotify, kQueueCommands);
-								
+	// Lets not block to get a command, IP may retry soon ..:)
+	if(cmd) 
+	{
+		// All done in one gulp!
+		IP1394_ENCAP_HDR *ip1394Hdr = (IP1394_ENCAP_HDR*)cmd->initPacketHeader(mBufCommand, kCopyBuffers, UNFRAGMENTED, 
+																				 sizeof(IP1394_UNFRAG_HDR), 
+																				 sizeof(struct firewire_header));
+		ip1394Hdr->fragment.datagramSize = htons(UNFRAGMENTED);
+		ip1394Hdr->singleFragment.etherType = htons(type);
+		ip1394Hdr->singleFragment.reserved = 0;
+		
+		status = cmd->transmit (device, pktSize, addr, txCompleteBlockWrite, this, true,
+								deferNotify, kQueueCommands);
+
+	}
+
+	mBufCommand->releaseWithStatus(status);
+
+	if( status != kIOFireWireOutOfTLabels )
+		fIPLocalNode->activeMbufs++;
+
 	return status;
-							
 }
 
 SInt32 IOFWIPBusInterface::txUnicastFragmented(IOFireWireNub *device, const FWAddress addr, const mbuf_t m, 
@@ -1080,15 +1226,27 @@ SInt32 IOFWIPBusInterface::txUnicastFragmented(IOFireWireNub *device, const FWAd
 	UInt32	residual = pktSize;
 	UInt32	fragmentOffset = 0;
 	UInt32	offset = sizeof(struct firewire_header);
-	SInt32	status = EHOSTUNREACH;
+	SInt32	status = kIOReturnSuccess;
 	bool	deferNotify = true;
 
+	IOFWIPMBufCommand * mBufCommand = getMBufCommand();
+
+	if( not mBufCommand )
+	{
+		fIPLocalNode->freePacket((struct mbuf*)m);
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
+		return status;
+	}
+	
+	mBufCommand->reinit(m, fIPLocalNode, fMbufCmdPool);
+	mBufCommand->retain();
+	
 	while (residual) 
 	{
 		deferNotify = true;
-		status = EHOSTUNREACH;
+		status		= kIOReturnSuccess;
 		
-		IOFWIPAsyncWriteCommand *cmd = getAsyncCommand(m, false, &deferNotify); // Get an async command from the command pool
+		IOFWIPAsyncWriteCommand *cmd = getAsyncCommand(false, &deferNotify); // Get an async command from the command pool
 	
 		// Lets not block to get a command, IP may retry soon ..:)
 		if(not cmd) 
@@ -1098,7 +1256,7 @@ SInt32 IOFWIPBusInterface::txUnicastFragmented(IOFireWireNub *device, const FWAd
 		fIPLocalNode->fTxFragmentPkts++;
 		FragmentType fragmentType = FIRST_FRAGMENT;
 
-		IP1394_ENCAP_HDR *ip1394Hdr = (IP1394_ENCAP_HDR*)cmd->getDescriptorHeader(m, kCopyBuffers, fragmentType, 
+		IP1394_ENCAP_HDR *ip1394Hdr = (IP1394_ENCAP_HDR*)cmd->initPacketHeader(mBufCommand, kCopyBuffers, fragmentType, 
 																	sizeof(IP1394_FRAG_HDR), 
 																	offset);
 
@@ -1116,21 +1274,26 @@ SInt32 IOFWIPBusInterface::txUnicastFragmented(IOFireWireNub *device, const FWAd
 		}
 		
 		// Get your datagram labels correct 
-		ip1394Hdr->fragment.datagramSize |= htons(fragmentType << 14);
-		ip1394Hdr->fragment.dgl = htons(dgl);
-		ip1394Hdr->fragment.reserved = 0;
+		ip1394Hdr->fragment.datagramSize	|=	htons(fragmentType << 14);
+		ip1394Hdr->fragment.dgl				=	htons(dgl);
+		ip1394Hdr->fragment.reserved		=	0;
 
 		status = cmd->transmit (device, cmdLen, addr, txCompleteBlockWrite, this, true,
 								deferNotify, kQueueCommands, fragmentType);
 		
 		if(status != kIOReturnSuccess)
 			break;
-
+		
 		fragmentOffset	+= cmdLen;	// Account for the position and...
 		offset			+= cmdLen;
 		residual		-= cmdLen;  // ...size of the fragment just sent
 	}
-	
+
+	mBufCommand->releaseWithStatus(status);
+
+	if( status != kIOFireWireOutOfTLabels )
+		fIPLocalNode->activeMbufs++;
+
 	return status;
 }
 
@@ -1155,7 +1318,7 @@ SInt32 IOFWIPBusInterface::txUnicastIP(mbuf_t m, UInt16 nodeID, UInt32 busGenera
 	TNF_HANDLE *handle = &arb->handle; 
 
 	// Node had disappeared, but entry exists for specified timer value
-	if(arb->timer > 1 or (handle->unicast.deviceID == kInvalidIPDeviceRefID)) 
+	if(handle->unicast.deviceID == kInvalidIPDeviceRefID) 
 	{
 		fIPLocalNode->freePacket((struct mbuf*)m);
 		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
@@ -1179,20 +1342,19 @@ SInt32 IOFWIPBusInterface::txUnicastIP(mbuf_t m, UInt16 nodeID, UInt32 busGenera
 	UInt32 maxPayload = MIN((UInt32)1 << (handle->unicast.maxRec+1), (UInt32)1 << fLcb->ownMaxPayload);
 	maxPayload = MIN(drbMaxPayload, maxPayload);
 
+	fIPLocalNode->fMaxPacketSize = maxPayload;
+
 	UInt16 dgl = 0;
 	bool unfragmented = false;
 	// Only fragments use datagram label
 	if (!(unfragmented = ((datagramSize + sizeof(IP1394_UNFRAG_HDR)) <= maxPayload)))
 		dgl = fLcb->datagramLabel++; 
   
-	if(fAsyncCmdPool == NULL)
-		initAsyncCmdPool(); // Create a command pool on demand
-	
 	if (unfragmented)
 		status = txUnicastUnFragmented(device, addr, m, residual, type);
 	else
 		status = txUnicastFragmented(device, addr, m, residual, type, maxPayload, dgl);
-		
+	
     IORecursiveLockUnlock(fIPLock);
 		
 	return status;
@@ -1241,11 +1403,11 @@ SInt32 IOFWIPBusInterface::txIP(mbuf_t m, UInt16 nodeID, UInt32 busGeneration, U
 	@result void.
 */
 void IOFWIPBusInterface::txMCAP(LCB *lcb, MCB *mcb, UInt32 ipAddress){
-	ARB *arb;
+	MARB *arb;
 	MCAST_DESCR *groupDescriptor;
 	IOFWIPAsyncStreamTxCommand *asyncStreamCmd = NULL;
 	struct mcap_packet *packet;
-	SInt32 status;
+	IOReturn status;
 	UInt32 cmdLen = 0;
 	UInt8 *buf;
 
@@ -1257,7 +1419,12 @@ void IOFWIPBusInterface::txMCAP(LCB *lcb, MCB *mcb, UInt32 ipAddress){
 		
 	// Lets not block to get a command, IP may retry soon ..:)
 	if(asyncStreamCmd == NULL)
+	{
+		fIPLocalNode->fNoBCastCommands++;
 		return;
+	}
+
+	fIPLocalNode->fActiveBcastCmds++;
 			
 	// Get the buffer pointer from the command pool
 	buf = (UInt8*)asyncStreamCmd->getBufferFromDesc();
@@ -1276,7 +1443,7 @@ void IOFWIPBusInterface::txMCAP(LCB *lcb, MCB *mcb, UInt32 ipAddress){
 		packet->mcap.opcode = MCAP_ADVERTISE;
 		
 		OSCollectionIterator * iterator = OSCollectionIterator::withCollection( multicastArb );
-		while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
+		while( NULL != (arb = OSDynamicCast(MARB, iterator->getNextObject())) )
 		{
 			if (arb->handle.multicast.channel == mcb->channel) 
 			{
@@ -1318,7 +1485,14 @@ void IOFWIPBusInterface::txMCAP(LCB *lcb, MCB *mcb, UInt32 ipAddress){
 	if(status == kIOReturnSuccess)
 		status = asyncStreamCmd->submit();
 	else
+	{
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
 		fAsyncStreamTxCmdPool->returnCommand(asyncStreamCmd);
+		fIPLocalNode->fInActiveBcastCmds++;
+	}
+
+	if(status != kIOReturnSuccess)
+		fIPLocalNode->networkStatAdd(&(fIPLocalNode->getNetStats())->outputErrors);
 }
 
 /*!
@@ -1372,20 +1546,21 @@ UInt32 IOFWIPBusInterface::rxUnicast( void		*refcon,
 								const void	*buf,
 								IOFWRequestRefCon requestRefcon)
 {
-
 	IOFWIPBusInterface		*fwIPPriv = (IOFWIPBusInterface*)refcon;
 	IOFireWireIP			*fwIPObject	= OSDynamicCast(IOFireWireIP, fwIPPriv->fIPLocalNode);
 	IP1394_UNFRAG_HDR		*ip1394Hdr	= (IP1394_UNFRAG_HDR *)buf;
 
-	if(not fwIPObject->netifEnabled)
+	if(not fwIPPriv->fStarted)
 		return kIOReturnSuccess;
    
+	UInt8	lf = (htons(ip1394Hdr->reserved) >> 14);
 	// Handle the unfragmented packet
-	if (ip1394Hdr->reserved == htons(UNFRAGMENTED)) 
+	if (lf == UNFRAGMENTED) 
 	{
 		void	*datagram		= (void *) ((ULONG) ip1394Hdr + sizeof(IP1394_UNFRAG_HDR));
 		UInt16	datagramSize	= len - sizeof(IP1394_UNFRAG_HDR);
 		UInt16	type			= ntohs(ip1394Hdr->etherType);
+
 		switch (type) 
 		{
 			case FWTYPE_IPV6:
@@ -1406,9 +1581,9 @@ UInt32 IOFWIPBusInterface::rxUnicast( void		*refcon,
 		}
 	}
 	else
-	{       
+	{     
 		fwIPObject->fRxFragmentPkts++;
-		
+  
 		if(fwIPPriv->rxFragmentedUnicast(nodeID, (IP1394_FRAG_HDR*)ip1394Hdr, len) == kIOReturnError)
 			fwIPObject->networkStatAdd(&(fwIPObject->getNetStats())->inputErrors);
 	}
@@ -1429,25 +1604,30 @@ IOReturn IOFWIPBusInterface::rxFragmentedUnicast(UInt16 nodeID, IP1394_FRAG_HDR 
 	
 	if(datagramSize > FIREWIRE_MTU)
 		return kIOReturnError;
-
-    IORecursiveLockLock(fIPLock);
 	
 	RCB *rcb = getRcb(nodeID, htons(fragmentHdr->dgl));
 
 	if (rcb == NULL) 
 	{
-		mbuf_t rxMBuf = (mbuf_t)fIPLocalNode->allocatePacket(datagramSize + sizeof(firewire_header));
+		if (lf != FIRST_FRAGMENT) 
+			return kIOReturnError;
+	
+	    IORecursiveLockLock(fIPLock);
+
+		mbuf_t rxMBuf = (mbuf_t)allocateMbuf(datagramSize + sizeof(firewire_header));
+
+		IORecursiveLockUnlock(fIPLock);
+
 		if (rxMBuf == NULL)
 		{
-		    IORecursiveLockUnlock(fIPLock);
+			fIPLocalNode->fNoMbufs++;
 			return kIOReturnError;
 		}
-			
+		
 		if ((rcb = new RCB) == NULL) 
 		{
 			cleanRCBCache();
 			fIPLocalNode->freePacket((struct mbuf*)rxMBuf, 0);
-		    IORecursiveLockUnlock(fIPLock);
 			return kIOReturnError;
 		}
 	 
@@ -1462,19 +1642,20 @@ IOReturn IOFWIPBusInterface::rxFragmentedUnicast(UInt16 nodeID, IP1394_FRAG_HDR 
 		rcb->datagram = ((UInt8*)mbuf_data(rxMBuf))  + sizeof(struct firewire_header);
 
 		// when indicating to the top layer
-		fwh->fw_type = (lf == FIRST_FRAGMENT) ? htons(fragmentHdr->fragmentOffset): FWTYPE_IP;
+		// JLIU - fragmentHdr already in network order, do not swap fragmentOffset
+		fwh->fw_type = (lf == FIRST_FRAGMENT) ? fragmentHdr->fragmentOffset: htons(FWTYPE_IP);
 
 		rcb->datagramSize = datagramSize;
 		rcb->residual = rcb->datagramSize;
+
+		IORecursiveLockLock(fIPLock);
 		activeRcb->setObject(rcb);
+		IORecursiveLockUnlock(fIPLock);
 	}
   
 	if (rcb->mBuf == NULL || rcb->datagram == NULL)
-	{
-		IORecursiveLockUnlock(fIPLock);
 		return kIOReturnError;
-	}
-	
+
 	if (lf == FIRST_FRAGMENT) 
 	{
 		// Actually etherType
@@ -1488,7 +1669,7 @@ IOReturn IOFWIPBusInterface::rxFragmentedUnicast(UInt16 nodeID, IP1394_FRAG_HDR 
 					(UInt8*)fragment, MIN(fragmentSize, rcb->datagramSize - htons(fragmentHdr->fragmentOffset)));
 	}
   
-	IOReturn result = kIOReturnError;
+	IOReturn result = kIOReturnSuccess;
   
 	// Don't reduce below zero
 	rcb->residual -= MIN(fragmentSize, rcb->residual); 
@@ -1497,17 +1678,15 @@ IOReturn IOFWIPBusInterface::rxFragmentedUnicast(UInt16 nodeID, IP1394_FRAG_HDR 
 	{           
 		// Legitimate etherType ?
 		if (rcb->etherType == FWTYPE_IP || rcb->etherType == FWTYPE_IPV6) 
-		{  
 			fIPLocalNode->receivePackets (rcb->mBuf, mbuf_pkthdr_len(rcb->mBuf), false);
-			result = kIOReturnSuccess;
-		} 
 		else
+		{
 			fIPLocalNode->freePacket((struct mbuf*)rcb->mBuf, 0); // All that reassembly work for nothing!
+			result = kIOReturnError;
+		}
 
 		releaseRCB(rcb, false);
 	}
-	
-	IORecursiveLockUnlock(fIPLock);
 	
 	return result;
 }
@@ -1545,45 +1724,46 @@ void IOFWIPBusInterface::rxAsyncStream(DCLCommandStruct *callProc){
 	ISOC_DATA_PKT	*pkt = (ISOC_DATA_PKT*)buffer; 
 	UInt16 			type = 0;
 
+	if(not fwIPPriv->fStarted)
+		return;
+
     fwRxAsyncStream = (IOFWAsyncStreamRxCommand*)proc->thisObj;
 
-    fwRxAsyncStream->modifyDCLJumps(callProc);
-    
-	if(not fwIPObject->netifEnabled)
+    if( fwRxAsyncStream->modifyDCLJumps(callProc) == kIOReturnError)
 		return;
     
 	if(pkt->tag != GASP_TAG){
 		// Error, so we touch the error output packets
 		fwIPObject->networkStatAdd(&(fwIPObject->getNetStats())->inputErrors);
-		IOLog("   GASP tag error\n\r");
+		fwIPObject->fGaspTagError++;
 		return;
     }
 	
 	// Minimum size requirement
 	if (gasp->dataLength < sizeof(GASP_HDR) + sizeof(IP1394_UNFRAG_HDR)) {
 		fwIPObject->networkStatAdd(&(fwIPObject->getNetStats())->inputErrors);
-		IOLog("   GASP header error\n\r");
+		fwIPObject->fGaspHeaderError++;
 		return;
     }
 
 	// Ignore GASP if not specified by RFC 2734
 	if (memcmp(&gasp->gaspHdr.gaspID, &gaspVal, sizeof(GASP_ID)) != 0) {
 		fwIPObject->networkStatAdd(&(fwIPObject->getNetStats())->inputErrors);
-		IOLog("   Non-RFC 2734 GASP\n\r");
+		fwIPObject->fNonRFC2734Gasp++;
 		return;
     }
 
 	// Also ignore GASP if not from the local bus
 	if ((htons(gasp->gaspHdr.sourceID) >> 6) != LOCAL_BUS_ID) {
 		fwIPObject->networkStatAdd(&(fwIPObject->getNetStats())->inputErrors);
-		IOLog("   Remote GASP error\n\r");
+		fwIPObject->fRemoteGaspError++;
 		return;
     }
    
 	// Broadcast fragmentation not supported
 	if (gasp->ip1394Hdr.reserved != htons(UNFRAGMENTED)) {
 		fwIPObject->networkStatAdd(&(fwIPObject->getNetStats())->inputErrors);
-		IOLog("   Encapsulation header error\n\r");
+		fwIPObject->fEncapsulationHeaderError++;
 		return;
     }
    
@@ -1635,7 +1815,7 @@ void IOFWIPBusInterface::rxAsyncStream(DCLCommandStruct *callProc){
 */
 void IOFWIPBusInterface::rxMCAP(LCB *lcb, UInt16 mcapSourceID, IP1394_MCAP *mcap, UInt32 dataSize){
 
-	ARB *arb;
+	MARB *arb;
 	UInt32 currentChannel;
 	MCAST_DESCR *groupDescr = mcap->groupDescr;
 	MCB		*mcb,	*priorMcb;
@@ -1818,7 +1998,7 @@ IOReturn IOFWIPBusInterface::rxIP(void *pkt, UInt32 len, UInt32 flags, UInt16 ty
 
     IORecursiveLockLock(fIPLock);
     
-	if ((rxMBuf = (mbuf_t)fIPLocalNode->allocatePacket(len)) != NULL) 
+	if ((rxMBuf = (mbuf_t)allocateMbuf(len)) != NULL) 
 	{
         bufferToMbuf(rxMBuf, 0, (UInt8*)pkt, len); 			
 
@@ -1828,7 +2008,7 @@ IOReturn IOFWIPBusInterface::rxIP(void *pkt, UInt32 len, UInt32 flags, UInt16 ty
         {
 			fwh = (struct firewire_header *)mbuf_data(rxMBuf);
             bzero(fwh, sizeof(struct firewire_header));
-            fwh->fw_type = type;
+            fwh->fw_type = htons(type);
 			
 			queuePkt = (flags == FW_M_UCAST);
 			
@@ -1841,8 +2021,11 @@ IOReturn IOFWIPBusInterface::rxIP(void *pkt, UInt32 len, UInt32 flags, UInt16 ty
                 updateNDPCache(rxMBuf);
         }
         else
+		{
+			fIPLocalNode->fNoMbufs++;
             ret = kIOReturnNoMemory;
-        
+		}
+		
         if(ret == kIOReturnSuccess)
         {
             fIPLocalNode->receivePackets(rxMBuf, mbuf_pkthdr_len(rxMBuf), queuePkt);
@@ -1884,21 +2067,23 @@ IOReturn IOFWIPBusInterface::rxARP(IP1394_ARP *arp, UInt32 flags){
 		return kIOReturnError;
 	}
 
-	if ((rxMBuf = (mbuf_t)fIPLocalNode->allocatePacket(sizeof(*arp) + sizeof(struct firewire_header))) != NULL) 
+    IORecursiveLockLock(fIPLock);
+
+	if ((rxMBuf = (mbuf_t)allocateMbuf(sizeof(*arp) + sizeof(struct firewire_header))) != NULL) 
 	{
-        IORecursiveLockLock(fIPLock);
-    
 		fwh = (struct firewire_header *)mbuf_data(rxMBuf);
 		datagram = ((UInt8*)mbuf_data(rxMBuf)) + sizeof(struct firewire_header);
 		bzero(fwh, sizeof(struct firewire_header));
-		fwh->fw_type = FWTYPE_ARP;
+		fwh->fw_type = htons(FWTYPE_ARP);
 		// Copy the data
 		memcpy(datagram, arp, sizeof(*arp));
 		
-        IORecursiveLockUnlock(fIPLock);
-	
         fIPLocalNode->receivePackets(rxMBuf, mbuf_pkthdr_len(rxMBuf), 0);
 	}
+	else
+		fIPLocalNode->fNoMbufs++;
+	
+    IORecursiveLockUnlock(fIPLock);
    
  	return kIOReturnSuccess;
 }
@@ -1924,14 +2109,35 @@ void IOFWIPBusInterface::processWatchDogTimeout()
 {
 	recursiveScopeLock lock(fIPLock);
 
-	cleanDRBCache();
-
 	updateMcapState();
 	
-	cleanARBCache();
-
 	cleanRCBCache();
+	
+	// Drop packets based on queue size
+	fIPLocalNode->fMaxQueueSize = max(fIPLocalNode->fTxUni - fPrevTransmitCount, TRANSMIT_QUEUE_SIZE);
+	
+	fPrevTransmitCount = fIPLocalNode->fTxUni;
 
+	// Counter to track the activity of IPoFW layer
+	fIPLocalNode->fLastStarted++;
+	
+	// Tuning segment for optimum performance, if too many Busy Acks
+	if( not fIPLocalNode->fDoFastRetry )
+	{
+		fIPLocalNode->fDoFastRetry	= ((fIPLocalNode->fBusyAcks - fPrevBusyAcks) > kMaxBusyXAcksPerSecond);
+		fPrevBusyAcks				= fIPLocalNode->fBusyAcks;
+		fFastRetryUnsetTimer		= fPrevFastRetryBusyAcks = fIPLocalNode->fFastRetryBusyAcks = 0;
+	}
+	else
+	{
+		fFastRetryUnsetTimer = (fIPLocalNode->fFastRetryBusyAcks - fPrevFastRetryBusyAcks) ? 0 : fFastRetryUnsetTimer + 1;
+		
+		// Fast retry BusyX acks absent for last 60 seconds, so turn it off
+		fIPLocalNode->fDoFastRetry	= not (fFastRetryUnsetTimer > kMaxSecondsToTurnOffFastRetry);
+		fPrevBusyAcks				= fIPLocalNode->fBusyAcks;
+		fPrevFastRetryBusyAcks		= fIPLocalNode->fFastRetryBusyAcks;
+	}
+		
 	// Restart the watchdog timer
 	timerSource->setTimeoutMS(WATCHDOG_TIMER_MS);
 }
@@ -2136,22 +2342,17 @@ void IOFWIPBusInterface::updateNDPCache(mbuf_t m)
 	if(modify && fwndp != NULL && fwndp->len > 2)
 	{
 		arb = getArbFromFwAddr(fwndp->lladdr);
-		if(arb == NULL)
-		{
-			if((arb = new ARB) == NULL)
-				return;
-			unicastArb->setObject(arb);  
-		}
 		
 		if(arb != NULL)
 		{
 			bcopy(fwndp->lladdr, &arb->eui64, FIREWIRE_ADDR_LEN);
+			arb->eui64.hi = OSSwapHostToBigInt32(arb->eui64.hi);
+			arb->eui64.lo = OSSwapHostToBigInt32(arb->eui64.lo);            
 			bcopy(fwndp->lladdr, arb->fwaddr, FIREWIRE_ADDR_LEN);
 			arb->handle.unicast.maxRec = fwndp->senderMaxRec;
 			arb->handle.unicast.spd = fwndp->sspd;
 			arb->handle.unicast.unicastFifoHi = htons(fwndp->senderUnicastFifoHi);
 			arb->handle.unicast.unicastFifoLo = htonl(fwndp->senderUnicastFifoLo); 
-			arb->timer = 0;
 			arb->handle.unicast.deviceID = getDeviceID(arb->eui64, &arb->itsMac);
 
 			// Reset the packet
@@ -2231,22 +2432,17 @@ void IOFWIPBusInterface::updateNDPCache(void *buf, UInt16	*len)
 	if(update && fwndp != NULL && fwndp->len > 2)
 	{
 		arb = getArbFromFwAddr(fwndp->lladdr);
-		if(arb == NULL)
-		{
-			if((arb = new ARB) == NULL)
-				return;
-			unicastArb->setObject(arb);  
-		}
 		
 		if(arb != NULL)
 		{
 			bcopy(fwndp->lladdr, &arb->eui64, FIREWIRE_ADDR_LEN);
+			arb->eui64.hi = OSSwapHostToBigInt32(arb->eui64.hi);
+			arb->eui64.lo = OSSwapHostToBigInt32(arb->eui64.lo);            
 			bcopy(fwndp->lladdr, arb->fwaddr, FIREWIRE_ADDR_LEN);
 			arb->handle.unicast.maxRec = fwndp->senderMaxRec;
 			arb->handle.unicast.spd = fwndp->sspd;
 			arb->handle.unicast.unicastFifoHi = htons(fwndp->senderUnicastFifoHi);
 			arb->handle.unicast.unicastFifoLo = htonl(fwndp->senderUnicastFifoLo); 
-			arb->timer = 0;
 			arb->handle.unicast.deviceID = getDeviceID(arb->eui64, &arb->itsMac);
 
 			// Reset the packet
@@ -2270,21 +2466,6 @@ bool IOFWIPBusInterface::staticUpdateARPCache(void *refcon, IP1394_ARP *fwa)
 	return ((IOFWIPBusInterface*)refcon)->updateARPCache(fwa);
 }
 
-ARB *IOFWIPBusInterface::staticGetArbFromFwAddr(void *refcon, u_char *fwaddr)
-{
-	return ((IOFWIPBusInterface*)refcon)->getArbFromFwAddr(fwaddr);
-}
-
-ARB *IOFWIPBusInterface::staticGetARBFromEui64(void *refcon, UWIDE eui64)
-{
-	return ((IOFWIPBusInterface*)refcon)->getARBFromEui64(eui64);
-}
-
-DRB *IOFWIPBusInterface::staticInitDRBwithDevice(void *refcon, UWIDE eui64, IOFireWireNub *fDevObj, bool itsMac)
-{
-	return ((IOFWIPBusInterface*)refcon)->initDRBwithDevice(eui64,fDevObj,itsMac);
-}
-
 UInt32	IOFWIPBusInterface::staticOutputPacket(mbuf_t pkt, void * param)
 {
 	return ((IOFWIPBusInterface*)param)->outputPacket(pkt,param);
@@ -2298,41 +2479,29 @@ UInt32	IOFWIPBusInterface::staticOutputPacket(mbuf_t pkt, void * param)
 */
 bool IOFWIPBusInterface::updateARPCache(IP1394_ARP *fwa)
 {
-    ARB	*fwarb	= NULL;
-
+    ARB		*fwarb	= NULL;
+	UWIDE	eui64;
+	
     IORecursiveLockLock(fIPLock);
 
+	eui64.hi = htonl(fwa->senderUniqueID.hi);	
+	eui64.lo = htonl(fwa->senderUniqueID.lo);
+
 	// Get the arb pointer from sdl->data
-	fwarb = getUnicastArb(fwa->senderIpAddress);
+	fwarb = getARBFromEui64(eui64);
 
-	if(fwarb == NULL)
+	if(fwarb)
 	{
-		// Create a new entry if it does not exist
-		if((fwarb = new ARB) == NULL)
-		{
-			IOLog("arp: arb allocation failed !\n");
-			IORecursiveLockUnlock(fIPLock);
-			return false;
-		}
-		// Fill in the details for the arb cache
-		fwarb->ipAddress = fwa->senderIpAddress; // Initialize some parts
-		unicastArb->setObject(fwarb);  
+		fwarb->handle.unicast.maxRec = fwa->senderMaxRec; // Volatile fields
+		fwarb->handle.unicast.spd = fwa->sspd;
+		fwarb->handle.unicast.unicastFifoHi = htons(fwa->senderUnicastFifoHi);
+		fwarb->handle.unicast.unicastFifoLo = htonl(fwa->senderUnicastFifoLo);
+		fwarb->eui64.hi = eui64.hi;	
+		fwarb->eui64.lo = eui64.lo;
+		fwarb->handle.unicast.deviceID = getDeviceID(fwarb->eui64, &fwarb->itsMac);    
+
+		fIPLocalNode->getBytesFromGUID(&fwarb->eui64, fwarb->fwaddr, 0);
 	}
-
-	// Update the hardware information for the existing arb entry
-	if (ntohs(fwa->opcode) != ARPOP_REQUEST) 
-		fwarb->timer = 0;
-
-	fwarb->handle.unicast.maxRec = fwa->senderMaxRec; // Volatile fields
-	fwarb->handle.unicast.spd = fwa->sspd;
-	fwarb->handle.unicast.unicastFifoHi = htons(fwa->senderUnicastFifoHi);
-	fwarb->handle.unicast.unicastFifoLo = htonl(fwa->senderUnicastFifoLo);
-	fwarb->eui64.hi = htonl(fwa->senderUniqueID.hi);	
-	fwarb->eui64.lo = htonl(fwa->senderUniqueID.lo);
-
-	fwarb->handle.unicast.deviceID = getDeviceID(fwarb->eui64, &fwarb->itsMac);    
-
-	fIPLocalNode->getBytesFromGUID(&fwarb->eui64, fwarb->fwaddr, 0);
 	
 	IORecursiveLockUnlock(fIPLock);
 	
@@ -2341,6 +2510,8 @@ bool IOFWIPBusInterface::updateARPCache(IP1394_ARP *fwa)
 
 ARB *IOFWIPBusInterface::updateARBwithDevice(IOFireWireNub *device, UWIDE eui64)
 {
+    IORecursiveLockLock(fIPLock);
+
 	// Create the arb if we recognise a IP unit.
 	ARB *arb = getARBFromEui64(eui64);
 
@@ -2350,64 +2521,15 @@ ARB *IOFWIPBusInterface::updateARBwithDevice(IOFireWireNub *device, UWIDE eui64)
 		arb->handle.unicast.deviceID	= (UInt32)device;
 		arb->handle.unicast.maxRec		= device->maxPackLog(true); 
 		arb->handle.unicast.spd			= device->FWSpeed();
-		arb->timer	= 0;
 		arb->itsMac = false;
+		arb->eui64.hi = eui64.hi;	
+		arb->eui64.lo = eui64.lo;
+		fIPLocalNode->getBytesFromGUID(&eui64, arb->fwaddr, 0);
 	}
+
+	IORecursiveLockUnlock(fIPLock);
 
 	return arb;
-}
-
-/*!
-	@function cleanARBCache
-	@abstract cleans the Link control block's stale arb's. Invoked from the 
-				ArpTimer to clean up FW specific ARB cleanup. Unresolved ARB's
-				are returned to the free CBLKs
-	@param none.
-	@result void.
-*/
-void IOFWIPBusInterface::cleanARBCache()
-{
-    IORecursiveLockLock(fIPLock);
-
-	ARB *arb = NULL;
-	OSCollectionIterator * iterator = OSCollectionIterator::withCollection( unicastArb );
-	while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
-	{
-		if(arb->timer > 1)
-			arb->timer--; 
-		else if (arb->timer == 1) 
-		{
-			arb->handle.unicast.deviceID = kInvalidIPDeviceRefID;
-			unicastArb->removeObject(arb);
-			arb->release();
-		}
-    }
-   	iterator->release();
-
-    IORecursiveLockUnlock(fIPLock);
-}
-
-void IOFWIPBusInterface::cleanDRBCache()
-{
-    IORecursiveLockLock(fIPLock);
-
-	DRB	*drb = NULL;
-	OSCollectionIterator * iterator = OSCollectionIterator::withCollection( activeDrb );
-	while( NULL != (drb = OSDynamicCast(DRB, iterator->getNextObject())) )
-	{
-		if (drb->timer > 1)						// Still has time remaining?
-			drb->timer--;						// If so, just decrement time
-		else if (drb->timer == 1)				// Expiring on this clock tick?
-		{            
-			releaseARB(drb->deviceID);
-			drb->deviceID = kInvalidIPDeviceRefID;  // Don't notify in future
-            activeDrb->removeObject(drb);			// time to clean up
-			drb->release();
-		}
-	}
-   	iterator->release();
-
-    IORecursiveLockUnlock(fIPLock);
 }
 
 /*!
@@ -2463,22 +2585,64 @@ UInt32 IOFWIPBusInterface::getDeviceID(UWIDE eui64, BOOLEAN *itsMac) {
     }
 }
 
-void IOFWIPBusInterface::releaseARB(ULONG deviceID)
+void IOFWIPBusInterface::releaseDRB(u_char *fwaddr)
+{
+    IORecursiveLockLock(fIPLock);
+
+	DRB *drb = NULL;
+	OSCollectionIterator * iterator = OSCollectionIterator::withCollection( activeDrb );
+	while( NULL != (drb = OSDynamicCast(DRB, iterator->getNextObject())) )
+	{
+		if (bcmp(fwaddr, drb->fwaddr, FIREWIRE_ADDR_LEN) == 0)
+		{
+			drb->deviceID = kInvalidIPDeviceRefID;  // Don't notify in future
+            activeDrb->removeObject(drb);			// time to clean up
+			drb->release();
+		}
+	}
+	iterator->release();
+	
+    IORecursiveLockUnlock(fIPLock);
+}
+
+void IOFWIPBusInterface::releaseDRB(ULONG deviceID)
+{
+    IORecursiveLockLock(fIPLock);
+
+	DRB *drb = NULL;
+	OSCollectionIterator * iterator = OSCollectionIterator::withCollection( activeDrb );
+	while( NULL != (drb = OSDynamicCast(DRB, iterator->getNextObject())) )
+	{
+		if (drb->deviceID == deviceID) 
+		{
+			drb->deviceID = kInvalidIPDeviceRefID;  // Don't notify in future
+            activeDrb->removeObject(drb);			// time to clean up
+			drb->release();
+			break;
+		}
+	}
+	iterator->release();
+	
+    IORecursiveLockUnlock(fIPLock);
+}
+
+void IOFWIPBusInterface::releaseARB(u_char *fwaddr)
 {
     IORecursiveLockLock(fIPLock);
 
 	ARB *arb = NULL;
 	OSCollectionIterator * iterator = OSCollectionIterator::withCollection( unicastArb );
+
 	while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
 	{
-		if (arb->handle.unicast.deviceID == deviceID) 
+		if (bcmp(fwaddr, arb->fwaddr, FIREWIRE_ADDR_LEN) == 0)
 		{
 			arb->handle.unicast.deviceID = kInvalidIPDeviceRefID;
 			unicastArb->removeObject(arb);
 			arb->release();
-			break;                        // Only one ARB will match
 		}
 	}
+					
 	iterator->release();
 	
     IORecursiveLockUnlock(fIPLock);
@@ -2616,6 +2780,40 @@ void IOFWIPBusInterface::resetMcapState()
 }
 
 /*! 
+	@function getARBFromEui64
+	@abstract Locates the corresponding Unicast ARB (Address resolution block) for GUID
+	@param lcb - the firewire link control block for this interface.
+	@param eui64 - global unique id of a device on the bus.
+	@result Returns ARB if successfull else NULL.
+*/
+ARB *IOFWIPBusInterface::getARBFromEui64(UWIDE eui64) 
+{  
+    IORecursiveLockLock(fIPLock);
+
+	ARB *arb = 0;
+	OSCollectionIterator *iterator = OSCollectionIterator::withCollection( unicastArb );
+   
+   	while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
+        if (arb->eui64.hi == eui64.hi && arb->eui64.lo == eui64.lo)
+            break;
+   
+	iterator->release();
+	
+	if(arb == NULL)
+	{
+		// Create a new entry if it does not exist
+		if((arb = new ARB) == NULL)
+			return arb;
+
+		unicastArb->setObject(arb);  
+	}
+   
+    IORecursiveLockUnlock(fIPLock);
+	
+    return(arb);
+}
+
+/*! 
 	@function getArbFromFwAddr
 	@abstract Locates the corresponding Unicast ARB (Address resolution block) for GUID
 	@param lcb - the firewire link control block for this interface.
@@ -2690,30 +2888,6 @@ DRB *IOFWIPBusInterface::getDrbFromFwAddr(u_char *fwaddr)
     return(drb);
 }
 
-/*! 
-	@function getARBFromEui64
-	@abstract Locates the corresponding Unicast ARB (Address resolution block) for GUID
-	@param lcb - the firewire link control block for this interface.
-	@param eui64 - global unique id of a device on the bus.
-	@result Returns ARB if successfull else NULL.
-*/
-ARB *IOFWIPBusInterface::getARBFromEui64(UWIDE eui64) 
-{  
-    IORecursiveLockLock(fIPLock);
-
-	ARB *arb = 0;
-	OSCollectionIterator *iterator = OSCollectionIterator::withCollection( unicastArb );
-   
-   	while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
-        if (arb->eui64.hi == eui64.hi && arb->eui64.lo == eui64.lo)
-            break;
-   
-	iterator->release();
-	
-    IORecursiveLockUnlock(fIPLock);
-   
-    return(arb);
-}
 
 
 /*!
@@ -2742,19 +2916,19 @@ DRB *IOFWIPBusInterface::getDrbFromDeviceID(void *deviceID)
 
 /*!
 	@function getMulticastArb
-	@abstract Locates the corresponding multicast ARB (Address resolution block) for ipaddress
+	@abstract Locates the corresponding multicast MARB (Address resolution block) for ipaddress
 	@param lcb - the firewire link control block for this interface.
 	@param ipAddress - destination ipaddress to send the multicast packet.
-	@result Returns ARB if successfull else NULL.
+	@result Returns MARB if successfull else NULL.
 */
-ARB *IOFWIPBusInterface::getMulticastArb(UInt32 ipAddress)
+MARB *IOFWIPBusInterface::getMulticastArb(UInt32 ipAddress)
 {  
     IORecursiveLockLock(fIPLock);
 
-	ARB *arb = 0;
+	MARB *arb = 0;
 	OSCollectionIterator *iterator = OSCollectionIterator::withCollection( multicastArb );
 	
-   	while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
+   	while( NULL != (arb = OSDynamicCast(MARB, iterator->getNextObject())) )
         if (arb->ipAddress == ipAddress)
             break;
 
@@ -2763,31 +2937,6 @@ ARB *IOFWIPBusInterface::getMulticastArb(UInt32 ipAddress)
     IORecursiveLockUnlock(fIPLock);
          
     return arb;
-}
-
-/*!
-	@function getUnicastArb
-	@abstract Locates the corresponding unicast ARB (Address resolution block) for ipaddress
-	@param lcb - the firewire link control block for this interface.
-    @param ipAddress - destination ipaddress to send the unicast packet.
-	@result Returns ARB if successfull else NULL.
-*/
-ARB *IOFWIPBusInterface::getUnicastArb(UInt32 ipAddress)
-{
-    IORecursiveLockLock(fIPLock);
-
-	ARB *arb = 0;
-	OSCollectionIterator *iterator = OSCollectionIterator::withCollection( unicastArb );
-	
-   	while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
-        if (arb->ipAddress == ipAddress)
-            break;
-
-   	iterator->release();
-
-    IORecursiveLockUnlock(fIPLock);
-    
-    return(arb);
 }
 
 /*!
@@ -2818,6 +2967,114 @@ RCB *IOFWIPBusInterface::getRcb(UInt16 sourceID, UInt16 dgl)
 
 #pragma mark -
 #pragma mark еее mbuf utility routines еее
+
+bool IOFWIPMBufCommand::init()
+{
+	if ( not OSObject::init() )
+		return false;
+
+	fMbuf			= NULL;
+	fIPLocalNode	= NULL;
+	fStatus			= kIOReturnSuccess;
+
+	return true;
+}
+
+void IOFWIPMBufCommand::reinit(mbuf_t pkt, IOFireWireIP *ipNode, IOCommandPool *pool)
+{
+	fIPLocalNode	= ipNode;	
+	fMbuf			= pkt;
+	fStatus			= kIOReturnSuccess;
+	fPool			= pool;
+	fInited			= true;
+}
+
+mbuf_t IOFWIPMBufCommand::getMBuf()
+{
+	return fMbuf;
+}
+
+void IOFWIPMBufCommand::releaseWithStatus(IOReturn status)
+{
+	if (status == kIOFireWireOutOfTLabels)
+		fStatus = status;
+	
+	if(this->getRetainCount() == 2)
+	{
+		if ( fInited )
+		{
+			if( fMbuf && (fStatus != kIOFireWireOutOfTLabels) )
+			{
+				fIPLocalNode->inActiveMbufs++;
+				fIPLocalNode->freePacket((struct mbuf*)fMbuf);
+				fMbuf = NULL;
+			}
+			fIPLocalNode = NULL;
+		}
+
+		fInited = false;
+
+		this->release();
+		
+		fPool->returnCommand(this);
+	}
+	else
+		this->release();
+}
+
+void IOFWIPMBufCommand::free()
+{
+	fMbuf = NULL;
+	fIPLocalNode = NULL;
+	fStatus = kIOReturnSuccess;
+
+	OSObject::free();
+}
+
+static mbuf_t getPacket( UInt32 size,
+                                UInt32 how,
+                                UInt32 smask,
+                                UInt32 lmask )
+{
+    mbuf_t packet;
+	UInt32 reqSize =  size + smask + lmask; 	// we over-request so we can fulfill alignment needs.
+	
+	if(reqSize > MHLEN && reqSize <= MINCLSIZE)	//as protection from drivers that incorrectly assume they always get a single-mbuf packet
+		reqSize = MINCLSIZE + 1;				//we force kernel to give us a cluster instead of chained small mbufs.
+
+	if( 0 == mbuf_allocpacket(how, reqSize, NULL, &packet))
+	{
+		mbuf_t m = packet;
+		mbuf_pkthdr_setlen(packet, size);
+		//run the chain and apply alignment
+		
+		while(size && m)
+		{
+			vm_address_t alignedStart, originalStart;
+			
+			originalStart = (vm_address_t)mbuf_data(m);
+			alignedStart = (originalStart + smask) & ~smask;
+			mbuf_setdata(m,  (caddr_t)alignedStart, (mbuf_maxlen(m) - (alignedStart - originalStart)) & ~lmask);
+			
+			if(mbuf_len(m) > size)
+				mbuf_setlen(m, size); //truncate to remaining portion of packet
+
+			size -= mbuf_len(m);
+			m = mbuf_next(m);
+		}
+		
+		// mbuf_settype(packet, MBUF_TYPE_PCB);
+				
+		return packet;
+	}
+	else
+		return NULL;
+}
+
+mbuf_t IOFWIPBusInterface::allocateMbuf( UInt32 size )
+{
+    return getPacket( size, M_DONTWAIT, kIOPacketBufferAlign1, kIOPacketBufferAlign16 );
+}
 
 void IOFWIPBusInterface::moveMbufWithOffset(SInt32 tempOffset, mbuf_t *srcm, vm_address_t *src, SInt32 *srcLen)
 {
@@ -3057,3 +3314,110 @@ mbuf_t IOFWIPBusInterface::mbufTobuffer(const mbuf_t m,
 
 	return temp;
 }
+
+#ifdef DEBUG
+
+// Display the reassembly control block
+void IOFWIPBusInterface::showRcb(RCB *rcb) {
+	if (rcb != NULL) {
+      IOLog("RCB %p\n\r", rcb);
+      IOLog(" sourceID %04X dgl %u etherType %04X mBlk %p\n\r", rcb->sourceID, rcb->dgl, rcb->etherType, rcb->mBuf);
+      IOLog(" datagramSize %u residual %u\n\r", rcb->datagramSize, rcb->residual);
+	}
+}
+
+void IOFWIPBusInterface::showArb(ARB *arb) {
+
+//   u_char ipAddress[4];
+
+   IOLog("ARB %p\n\r", arb);
+//   memcpy(ipAddress, &arb->ipAddress, sizeof(ipAddress));
+//   IOLog(" IP address %u.%u.%u.%u EUI-64 %08lX %08lX\n\r", ipAddress[0],
+//          ipAddress[1], ipAddress[2], ipAddress[3], arb->eui64.hi,
+//          arb->eui64.lo);
+   IOLog(" EUI-64 %08lX %08lX\n\r", arb->eui64.hi, arb->eui64.lo);
+   
+   IOLog(" fwAddr  %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n\r", arb->fwaddr[0],
+          arb->fwaddr[1], arb->fwaddr[2], arb->fwaddr[3], arb->fwaddr[4],
+          arb->fwaddr[5], arb->fwaddr[6], arb->fwaddr[7]);
+   IOLog(" Handle: %08lX %02X %02X %04X%08lX\n\r", arb->handle.unicast.deviceID,
+          arb->handle.unicast.maxRec, arb->handle.unicast.spd,
+          arb->handle.unicast.unicastFifoHi, arb->handle.unicast.unicastFifoLo);
+}
+
+
+void IOFWIPBusInterface::showHandle(TNF_HANDLE *handle) {
+
+   if (handle->unicast.deviceID != kInvalidIPDeviceRefID)
+      IOLog("   Unicast handle: %08lX %02X %02X %04X%08lX\n\r",
+             handle->unicast.deviceID, handle->unicast.maxRec,
+             handle->unicast.spd, handle->unicast.unicastFifoHi,
+             handle->unicast.unicastFifoLo);
+   else
+      IOLog("   Multicast handle: 00000000 %02X %02X %02X %08lX\n\r",
+             handle->multicast.maxRec, handle->multicast.spd,
+             handle->multicast.channel, htonl(handle->multicast.groupAddress));
+
+}
+
+void IOFWIPBusInterface::showDrb(DRB *drb) 
+{
+   if (drb != NULL) {
+      IOLog("DRB 0x%p \n\r", drb);
+      IOLog(" Device ID %08lX EUI-64 %08lX %08lX\n\r", drb->deviceID, drb->eui64.hi, drb->eui64.lo);
+      IOLog(" maxPayload %d maxSpeed %d\n\r", drb->maxPayload, drb->maxSpeed);
+   }
+}
+
+void IOFWIPBusInterface::showLcb()
+{
+//	UNSIGNED cCBlk = 0;
+
+	IOLog(" Node ID %04X maxPayload %u maxSpeed %u busGeneration 0x%08lX\n\r",
+		  fLcb->ownNodeID, fLcb->ownMaxPayload,
+		  fLcb->ownMaxSpeed, fLcb->busGeneration);
+
+	// Display the arb's
+	IORecursiveLockLock(fIPLock);
+
+	ARB *arb = 0;
+	OSCollectionIterator * iterator = OSCollectionIterator::withCollection( unicastArb );
+
+	IOLog(" Unicast ARBs\n\r");
+	while( NULL != (arb = OSDynamicCast(ARB, iterator->getNextObject())) )
+	{
+		IOLog("  %p\n\r", arb);
+		showArb(arb);
+	}
+					
+	iterator->release();
+
+	IOLog(" Active DRBs\n\r");
+	DRB *drb = 0;
+	iterator = OSCollectionIterator::withCollection( activeDrb );
+
+	while( NULL != (drb = OSDynamicCast(DRB, iterator->getNextObject())) )
+	{
+		 IOLog("  %p\n\r", drb);
+		 showDrb(drb);
+	}
+
+	iterator->release();
+
+	RCB *rcb = 0;
+	iterator = OSCollectionIterator::withCollection( activeRcb );
+
+	IOLog(" Active RCBs\n\r");
+	while( NULL != (rcb = OSDynamicCast(RCB, iterator->getNextObject())) )
+	{
+		 IOLog("  %p\n\r", rcb);
+		 showRcb(rcb);
+	}
+
+	iterator->release();
+
+	IORecursiveLockUnlock(fIPLock);
+
+}
+
+#endif;

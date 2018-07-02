@@ -74,14 +74,9 @@
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
 
-#define INET6 1
-
-#if INET6
 #include <netinet6/in6_var.h>
-#include <netinet6/ip6_var.h>
 #include <netinet6/nd6.h>
 #include <netinet6/in6_ifattach.h>
-#endif
 
 #include <sys/socketvar.h>
 
@@ -219,7 +214,7 @@ firewire_inet6_prmod_ioctl(
 int
 firewire_attach_inet6(
 	ifnet_t ifp,
-	__unused u_long	protocol_family)
+	__unused protocol_family_t	protocol_family)
 {
 	struct ifnet_attach_proto_param	proto;
 	struct ifnet_demux_desc demux[1];
@@ -241,26 +236,9 @@ firewire_attach_inet6(
 	
 	if (error && error != EEXIST) 
 	{
-		printf("WARNING: ether_attach_inet6 can't attach ipv6 to %s%d\n",
-						ifnet_name(ifp), ifnet_unit(ifp));
+		printf("WARNING: firewire_attach_inet6 can't attach ipv6 to %s%d\n",
+												ifnet_name(ifp), ifnet_unit(ifp));
 	}
 	
 	return error;
-}
-
-int
-firewire_detach_inet6(
-	ifnet_t			ifp,
-	u_long			protocol_family)
-{
-    errno_t         error;
-
-	error = ifnet_detach_protocol(ifp, protocol_family);
-	if (error && error != ENOENT) 
-	{
-		printf("WARNING: ether_detach_inet6 can't detach ipv6 from %s%d\n",
-						ifnet_name(ifp), ifnet_unit(ifp));
-	}
-
-    return error;
 }

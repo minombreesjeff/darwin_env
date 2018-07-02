@@ -68,9 +68,10 @@ protected:
     IOFWSpeed					fSpeed;
     
     UInt32						fSeg;
-    IPRxSegmentPtr				receiveSegmentInfo;
+    IPRxSegmentPtr				fReceiveSegmentInfo;
 	DCLLabel					*fDCLOverrunLabel;
 	UInt16 						fIsoRxOverrun;
+    IORecursiveLock				*rxCommandLock;
 	
 	enum
 	{
@@ -113,12 +114,13 @@ public:
 	IOReturn start(IOFWSpeed fBroadCastSpeed);	
 	IOReturn stop();
     static void restart(DCLCommandStruct *callProc);
-    void fixDCLJumps(bool bRestart);
-    void modifyDCLJumps(DCLCommandStruct *callProc);
+    IOReturn modifyDCLJumps(DCLCommandStruct *callProc);
 	UInt16 getOverrunCounter() {return fIsoRxOverrun;};
 
 	
 private:
+    void fixDCLJumps(bool bRestart);
+
     OSMetaClassDeclareReservedUnused(IOFWAsyncStreamRxCommand, 0);
     OSMetaClassDeclareReservedUnused(IOFWAsyncStreamRxCommand, 1);
 

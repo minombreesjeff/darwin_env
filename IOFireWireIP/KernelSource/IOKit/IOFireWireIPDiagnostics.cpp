@@ -35,7 +35,40 @@ OSObject * IOFireWireIPDiagnostics::createDiagnostics( IOFireWireIP* obj )
 		diagnostics = NULL;
 	}
 	
-	diagnostics->fIPObj = obj;
+	diagnostics->fIPObj		= obj;
+	
+	obj->fTxBcast			= 0;
+	obj->fRxBcast			= 0;
+	obj->fTxUni				= 0;
+	obj->fRxUni				= 0;
+	obj->fRxFragmentPkts	= 0;
+	obj->fTxFragmentPkts	= 0;
+	obj->fActiveBcastCmds	= 0;
+	obj->fInActiveBcastCmds	= 0;
+	obj->fActiveCmds		= 0;
+	obj->fInActiveCmds		= 0;
+	obj->fNoCommands		= 0;
+	obj->fNoBCastCommands	= 0;
+	obj->fDoubleCompletes	= 0;
+	obj->fSubmitErrs		= 0;
+	obj->fCallErrs			= 0;
+	obj->fNoResources		= 0;
+	obj->fMaxQueueSize		= 0;
+	obj->fServiceInOutput	= 0;
+	obj->fServiceInCallback	= 0;
+	obj->fLastStarted		= 0;
+	obj->fMaxPacketSize		= 0;
+	obj->inActiveMbufs		= 0;
+	obj->activeMbufs		= 0;	
+	obj->fNoMbufs			= 0;	
+	obj->fGaspTagError		= 0;
+	obj->fGaspHeaderError	= 0;
+	obj->fNonRFC2734Gasp	= 0;
+	obj->fRemoteGaspError	= 0;
+	obj->fBusyAcks			= 0;
+	obj->fFastRetryBusyAcks	= 0;
+	
+	obj->fEncapsulationHeaderError	= 0;	
 	
 	return diagnostics;
 }
@@ -61,17 +94,37 @@ bool IOFireWireIPDiagnostics::serialize( OSSerialize * s ) const
     updateNumberEntry( dictionary, fIPObj->transmitQueue->getStallCount(), "tqStall");
     updateNumberEntry( dictionary, fIPObj->transmitQueue->getRetryCount(), "tqRetries");
     updateNumberEntry( dictionary, fIPObj->transmitQueue->getSize(), "tqSize");
-	updateNumberEntry( dictionary, fIPObj->fMissedQRestarts, "tqMissedRestarts");
 
-	updateNumberEntry( dictionary, fIPObj->fActiveCmds, "activeCmds" );
-	updateNumberEntry( dictionary, fIPObj->fNoCommands, "NoCommands" );
-	updateNumberEntry( dictionary, fIPObj->fNoBCastCommands, "NoBcastCommands" );
-	updateNumberEntry( dictionary, fIPObj->fInActiveCmds, "inActiveCmds" );
-	updateNumberEntry( dictionary, fIPObj->fDoubleCompletes, "attemptedDC" );
-	updateNumberEntry( dictionary, fIPObj->fSubmitErrs, "submitErrs" );
-	updateNumberEntry( dictionary, fIPObj->fCallErrs, "completionErrs" );
-	updateNumberEntry( dictionary, fIPObj->fStalls, "fwStalls");
+	updateNumberEntry( dictionary, fIPObj->fActiveBcastCmds, "fwActiveBCastCmds" );
+	updateNumberEntry( dictionary, fIPObj->fInActiveBcastCmds, "fwInActiveBCastCmds" );
+
+	updateNumberEntry( dictionary, fIPObj->fActiveCmds, "fwActiveCmds" );
+	updateNumberEntry( dictionary, fIPObj->fNoCommands, "fwNoCommands" );
+	updateNumberEntry( dictionary, fIPObj->fNoBCastCommands, "fwNoBcastCommands" );
+	updateNumberEntry( dictionary, fIPObj->fInActiveCmds, "fwInActiveCmds" );
+	updateNumberEntry( dictionary, fIPObj->fDoubleCompletes, "fwAttemptedDC" );
+	updateNumberEntry( dictionary, fIPObj->fSubmitErrs, "fwSubmitErrs" );
+	updateNumberEntry( dictionary, fIPObj->fCallErrs, "fwCompletionErrs" );
 	updateNumberEntry( dictionary, fIPObj->fNoResources, "fwIPNoResources");
+	updateNumberEntry( dictionary, fIPObj->fMaxQueueSize, "fwMaxQueueSize");
+	updateNumberEntry( dictionary, fIPObj->fServiceInOutput, "fwServiceInOP");
+	updateNumberEntry( dictionary, fIPObj->fServiceInCallback, "fwServiceInCB");
+	updateNumberEntry( dictionary, fIPObj->fLastStarted, "fwLastStarted");
+	updateNumberEntry( dictionary, fIPObj->fMaxPacketSize, "fwMaxPacketSize");
+	
+	updateNumberEntry( dictionary, fIPObj->fGaspTagError, "fwGASPTagError");
+	updateNumberEntry( dictionary, fIPObj->fGaspHeaderError, "fwGASPHeaderError");
+	updateNumberEntry( dictionary, fIPObj->fNonRFC2734Gasp, "fwNonRFC2734Error");
+	updateNumberEntry( dictionary, fIPObj->fRemoteGaspError, "fwRemoteGaspError");
+	updateNumberEntry( dictionary, fIPObj->fEncapsulationHeaderError, "fwRxBHeaderError");	
+
+	updateNumberEntry( dictionary, fIPObj->inActiveMbufs, "fwInActiveMbufs");
+	updateNumberEntry( dictionary, fIPObj->activeMbufs, "fwActiveMbufs");	
+	updateNumberEntry( dictionary, fIPObj->fNoMbufs, "fwNoMbufs");	
+	updateNumberEntry( dictionary, fIPObj->fBusyAcks, "fwBusyAcks");	
+	updateNumberEntry( dictionary, fIPObj->fFastRetryBusyAcks, "fwFastRetryBusyAcks");	
+	updateNumberEntry( dictionary, fIPObj->fDoFastRetry, "fwFastRetryOn");	
+	
 	
 #ifdef IPFIREWIRE_DIAGNOSTICS
 	fIPObj->fDumpLog = true;

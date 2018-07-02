@@ -38,8 +38,33 @@ const int kActiveRcbs		=	128;
 const int kMaxChannels		=	64;
 
 
-const int kMaxAsyncCommands		  =  127;
+const int kMaxAsyncCommands		  = 127;
 const int kMaxAsyncStreamCommands = 5;
+
+// BusyX Ack workaround to maximize IPoFW performance
+const UInt32 kMaxBusyXAcksPerSecond				= 10;
+const UInt32 kMaxSecondsToTurnOffFastRetry		= 60;
+
+class IOFWIPMBufCommand : public IOCommand
+{
+	OSDeclareDefaultStructors(IOFWIPMBufCommand);
+	
+private:
+    mbuf_t			fMbuf;
+    IOFireWireIP	*fIPLocalNode;
+	bool			fInited;
+	IOReturn		fStatus;
+	IOCommandPool	*fPool;
+
+protected:
+	void free();
+	
+public:
+	bool init();
+	void reinit(mbuf_t pkt, IOFireWireIP *ipNode, IOCommandPool *pool);
+	void releaseWithStatus(IOReturn status = kIOReturnSuccess);
+	mbuf_t getMBuf();
+};
 
 /*!
 @class IOFWIPBusInterface
@@ -54,22 +79,19 @@ private:
 	IOFireWireController	*fControl;
 	LCB						*fLcb;
 
-    UInt32					*fMemoryPool;
     IOFWPseudoAddressSpace	*fIP1394AddressSpace;
     FWAddress				fIP1394Address;
 	bool					fStarted;
 	
     IOCommandPool			*fAsyncCmdPool;
+    IOCommandPool			*fMbufCmdPool;
 	OSSet					*fAsyncTransitSet;
     IOCommandPool			*fAsyncStreamTxCmdPool;
 	OSSet					*fAsyncStreamTransitSet;
 	UInt32					fMaxRxIsocPacketSize;
 	UInt32					fMaxTxAsyncDoubleBuffer;
-	bool					bOnLynx;
 	IORecursiveLock			*fIPLock;
     IOWorkLoop				*workLoop;
-	IOReturn				fTxStatus;
-	UInt16					fDurationBeforeTerminate;
 	
 	OSSet					*unicastArb;        // Address information from ARP
 	OSSet					*multicastArb;      // Address information from MCAP
@@ -77,7 +99,14 @@ private:
     OSSet					*activeRcb;         // Linked list of datagrams in reassembly
     OSDictionary			*mcapState;			// Per channel MCAP descriptors
 	IOTimerEventSource		*timerSource;
-	volatile UInt16			fUnitCount;
+	volatile SInt16			fUnitCount;
+	UInt32					fLowWaterMark;
+	UInt32					fPrevTransmitCount;
+	UInt32					fPrevBusyAcks;
+	UInt32					fPrevFastRetryBusyAcks;
+	UInt8					fFastRetryUnsetTimer;
+	int						fCurrentAsyncIPCommands;
+	int						fCurrentMBufCommands;
 
 protected:	
 	IOFWAsyncStreamRxCommand *fBroadcastReceiveClient;	
@@ -114,12 +143,12 @@ public:
 	void		detachIOFireWireIP();
 	
 	/*!
-		@function isAppleLynx
+		@function calculateMaxTransferUnit
 		@abstract checks whether the FWIM is for builtin H/W.
 		@param none.
 		@result Returns void.
 	*/
-	void	isAppleLynx();
+	void	calculateMaxTransferUnit();
 
 	/*!
 		@function createIPFifoAddress
@@ -148,8 +177,10 @@ public:
         @result Returns kIOReturnSuccess if it was successful, else kIOReturnNoMemory.
 	*/
 	UInt32 initAsyncCmdPool();
-	
-	IOFWIPAsyncWriteCommand	*getAsyncCommand(const mbuf_t m, bool block, bool *deferNotify);
+		
+	IOFWIPMBufCommand *getMBufCommand();
+		
+	IOFWIPAsyncWriteCommand	*getAsyncCommand(bool block, bool *deferNotify);
 	
 	void	returnAsyncCommand(IOFWIPAsyncWriteCommand *cmd);
 	
@@ -187,7 +218,7 @@ public:
     */	
 	void decrementUnitCount();
 
-	UInt16 getUnitCount();
+	SInt16 getUnitCount();
 
 	/*!
 		@function fwIPUnitAttach
@@ -391,7 +422,7 @@ public:
         @param ipAddress - destination ipaddress to send the multicast packet.
         @result Returns ARB if successfull else NULL.
 	*/
-	ARB *getMulticastArb(UInt32 ipAddress);
+	MARB *getMulticastArb(UInt32 ipAddress);
 	
 	/*!
 		@function getDrbFromDeviceID
@@ -466,14 +497,6 @@ public:
 	ARB *getUnicastArb(UInt32 ipAddress);
 	
 	/*!
-		@function cleanFWArbCache
-		@abstract cleans the Link control block's stale arb's.
-		@param none.
-        @result void.
-	*/
-	void cleanARBCache();
-	
-	/*!
 		@function cleanRCBCache
 		@abstract cleans the Link control block's stale rcb's. UnAssembled RCB's
 					are returned to the free CBLKs
@@ -484,19 +507,23 @@ public:
 
 	void releaseRCB(RCB	*rcb, bool freeMbuf = true);
 
-	void cleanDRBCache();
-
 	void resetARBCache();
 	
 	void resetRCBCache();
 	
 	void resetMcapState();
+	
+	void releaseDRB(u_char *fwaddr);
 
-	void releaseARB(ULONG deviceID);
+	void releaseDRB(ULONG deviceID);
+
+	void releaseARB(u_char *fwaddr);
 
 	void updateMcapState();
 	
 	void releaseMulticastARB(MCB *mcb);
+	
+    mbuf_t allocateMbuf(UInt32 size);
 	
 	/*!
 		@function bufferToMbuf
@@ -530,6 +557,14 @@ public:
 						UInt32 length);
 						
 	void moveMbufWithOffset(SInt32 tempOffset, mbuf_t *srcm, vm_address_t *src, SInt32 *srcLen);	
+
+#ifdef DEBUG
+	void showRcb(RCB *rcb);
+	void showArb(ARB *arb);
+	void showHandle(TNF_HANDLE *handle);
+	void showDrb(DRB *drb);
+	void showLcb(); 
+#endif
 };
 
 class recursiveScopeLock

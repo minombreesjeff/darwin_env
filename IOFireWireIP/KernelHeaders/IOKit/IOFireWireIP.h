@@ -99,9 +99,6 @@ typedef struct IOFireWireIPPrivateHandlers
 const UInt32 kUnicastHi = 0x0001;
 const UInt32 kUnicastLo = 0x00000000;
 
-const UInt32 kTransmitQueueStalled = 0x3;
-const UInt32 kTransmitQueueRestart = 0x1;	
-
 const UInt32 kIOFireWireIPNoResources = 0xe0009001;
 
 // Size of the Pseudo address space
@@ -194,16 +191,17 @@ protected:
 	LCB						*fLcb;
     u_char 					macAddr[FIREWIRE_ADDR_LEN];
     bool					fStarted;	
-	IOService				*fPolicyMaker;
 	bool					fPacketsQueued;
+	UInt32					fActiveBcastCmds;
+	UInt32					fInActiveBcastCmds;
 	UInt32					fActiveCmds;
 	UInt32					fInActiveCmds;
 	UInt32					fNoCommands;
 	UInt32					fNoBCastCommands;
-	UInt32					fMissedQRestarts;
 	UInt32					fDoubleCompletes;
 	UInt32 					fCallErrs;
-	UInt32 					fStalls;
+	UInt32					fServiceInOutput;
+	UInt32					fServiceInCallback;
 	UInt32 					fRxFragmentPkts;
 	UInt32 					fTxFragmentPkts;
 	UInt16 					fMaxPktSize;
@@ -211,7 +209,18 @@ protected:
 	UInt32					fTxBcast;
 	UInt32					fRxBcast;	
 	UInt32					fTxUni;
-	UInt32					fRxUni;;
+	UInt32					fRxUni;
+	UInt32					fMaxQueueSize;
+	UInt32					fLastStarted;
+	UInt32					fMaxPacketSize;
+	
+	UInt32					fGaspTagError;
+	UInt32					fGaspHeaderError;
+	UInt32					fNonRFC2734Gasp;
+	UInt32					fRemoteGaspError; // not from local bus
+	UInt32					fEncapsulationHeaderError;
+	UInt32					fNoMbufs;
+	
         
 	IOFWSpeed				fPrevBroadcastSpeed;
 	bool					fDumpLog;
@@ -240,6 +249,11 @@ public:
 	UInt32 				fSubmitErrs;
 	UInt32 				fNoResources;
 	
+	UInt32				activeMbufs;
+	UInt32				inActiveMbufs;
+	UInt32				fBusyAcks;
+	UInt32				fFastRetryBusyAcks;
+	bool				fDoFastRetry;
 
 	// IOService overrides
     virtual bool		start(IOService *provider);
@@ -304,7 +318,10 @@ public:
 	#pragma mark -
 	#pragma mark еее IOFireWireIP defs еее
 
-	void updateMTU(bool onLynx);
+	UInt32	getMaxARDMAPacketSize();
+	UInt8	getMaxARDMARec(UInt32 size);
+
+	void updateMTU(UInt32 mtu);
 	
     /*!
         @function getDevice
@@ -387,11 +404,7 @@ public:
 	void makeEthernetAddress(CSRNodeUniqueID *fwuid, u_char *bufAddr, UInt32 vendorID);
 
 #ifdef DEBUG	
-	void showRcb(RCB *rcb);
-	void showArb(ARB *arb);
-	void showHandle(TNF_HANDLE *handle);
-	void showDrb(DRB *drb);
-	void showLcb(); 
+	void showIPStatus();
 #endif
 };
 #endif // _IOKIT_IOFIREWIREIP_H

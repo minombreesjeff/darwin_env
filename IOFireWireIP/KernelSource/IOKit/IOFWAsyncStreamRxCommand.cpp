@@ -25,6 +25,7 @@
 #include <IOKit/IOSyncer.h>
  
 #include "IOFWAsyncStreamRxCommand.h"
+#include "../../KernelHeaders/IOKit/IOFWIPBusInterface.h"
 
 
 OSDefineMetaClassAndStructors(IOFWAsyncStreamRxCommand, OSObject);
@@ -57,6 +58,12 @@ bool IOFWAsyncStreamRxCommand::initAll(UInt32 channel, DCLCallCommandProc* proc,
 	fChan = channel;
 	fSpeed = kFWSpeedMaximum;
 
+	// Allocate lock
+	rxCommandLock = IORecursiveLockAlloc();
+	
+	if(rxCommandLock == NULL)
+		return false;
+
 	bStarted = false;
     fInitialized = true;
     
@@ -65,21 +72,33 @@ bool IOFWAsyncStreamRxCommand::initAll(UInt32 channel, DCLCallCommandProc* proc,
 
 void IOFWAsyncStreamRxCommand::free()
 {
-	//IOLog("    AddAsyncStreamClient Release called %d\n", __LINE__);
+    IORecursiveLockLock(rxCommandLock);
+
 	stop();
 	
 	// free dcl program
 	FreeAsyncStreamRxDCLProgram(fdclProgram);
 
+    delete fReceiveSegmentInfo;
+	
+    delete fDCLOverrunLabel;
+
 	// free the buffer 
 	fBufDesc->release();
+
+    IORecursiveLockUnlock(rxCommandLock);
+	
+    if (rxCommandLock != NULL) 
+        IORecursiveLockFree(rxCommandLock);
+		
+	rxCommandLock = NULL;
 	
 	OSObject::free();
 }
 
 void IOFWAsyncStreamRxCommand::FreeAsyncStreamRxDCLProgram(DCLCommandStruct *dclProgram) 
 {
-    UInt32	seg = 0;
+    UInt32				seg = 0;
 	DCLLabel			*startLabel;
 	DCLTransferPacket	*receivePacket;
 	DCLUpdateDCLList	*update;
@@ -91,95 +110,77 @@ void IOFWAsyncStreamRxCommand::FreeAsyncStreamRxDCLProgram(DCLCommandStruct *dcl
     for (seg=0;	seg<MAX_BCAST_BUFFERS-1;	seg++)
 	{
         // free label
-        startLabel = receiveSegmentInfo[seg].pSegmentLabelDCL;
+        startLabel = fReceiveSegmentInfo[seg].pSegmentLabelDCL;
         if(startLabel == NULL)
-            return;
-            
+            break;
+		
         receivePacket = (DCLTransferPacket*)startLabel->pNextDCLCommand;
         if(receivePacket == NULL)
-            return;
+            break;
         
         update = (DCLUpdateDCLList*)receivePacket->pNextDCLCommand;
         if(update == NULL)
-            return;
+            break;
         
         dclCommand = (DCLCommand*)update->dclCommandList[0];
         if(dclCommand == NULL)
-            return;
+            break;
         
         callProc = (DCLCallProc*)update->pNextDCLCommand;
         if(callProc == NULL)
-            return;
+            break;
         
         rxProcData = (RXProcData*)callProc->procData;
         if(rxProcData == NULL)
-            return;
+            break;
 
         jump = (DCLJump *)callProc->pNextDCLCommand;
         if(jump == NULL)
-            return;
+            break;
 
         delete rxProcData;
         delete dclCommand;
+		delete update->dclCommandList;
         delete update;
-        delete receivePacket;
         delete startLabel;
         delete jump;
        	delete callProc;
     }
-    // free overrun label stuff
+	
     receivePacket = (DCLTransferPacket*)fDCLOverrunLabel->pNextDCLCommand;
-    if(receivePacket == NULL)
-        return;
-    
-    update = (DCLUpdateDCLList*)receivePacket->pNextDCLCommand;
-    if(update == NULL)
-        return;
-    
-    dclCommand = (DCLCommand*)update->dclCommandList[0];
-    if(dclCommand == NULL)
-        return;
-    
-    callProc = (DCLCallProc*)update->pNextDCLCommand;
-    if(callProc == NULL)
-        return;
-    
-    rxProcData = (RXProcData*)callProc->procData;
-    if(rxProcData == NULL)
-        return;
+    if(receivePacket != NULL)
+	{
+		update = (DCLUpdateDCLList*)receivePacket->pNextDCLCommand;
+		if(update != NULL)
+		{
+			callProc = (DCLCallProc*)update->pNextDCLCommand;
+			if(callProc != NULL)
+				delete callProc;
 
-    jump = (DCLJump *)callProc->pNextDCLCommand;
-    if(jump == NULL)
-        return;
-
-    delete rxProcData;
-    delete dclCommand;
-    delete update;
-    delete receivePacket;
-    delete fDCLOverrunLabel;
-    delete jump;
-    delete callProc;
-    
-    delete receiveSegmentInfo;
+			delete update;
+			delete update->dclCommandList;
+		}
+		delete receivePacket;
+    }
 }
 
 DCLCommandStruct *IOFWAsyncStreamRxCommand::CreateAsyncStreamRxDCLProgram(DCLCallCommandProc* proc, UInt32 size, void *callbackObject) 
 {
-        
 	// Create a DCL program
-	fBufDesc = new IOBufferMemoryDescriptor;
+	UInt64 mask = fControl->getFireWirePhysicalBufferMask();							// get controller mask
+	mask		&= ~((UInt64)(PAGE_SIZE-1));											// page align	
+	fBufDesc	= IOBufferMemoryDescriptor::inTaskWithPhysicalMask(	
+															kernel_task,				// kernel task
+															0,							// options
+															MAX_BCAST_BUFFERS* size,	// size
+															mask );						// mask for physically addressable memory
+
     if(fBufDesc == NULL)
         return NULL;
 
-	if(!fBufDesc->initWithOptions( 0, MAX_BCAST_BUFFERS* size, PAGE_SIZE))	// get buffer large enough for 2 packets
-	{
-        return NULL;
-	}
-
     UInt8	*currentBuffer = (UInt8*)fBufDesc->getBytesNoCopy() ;
 
-	receiveSegmentInfo = new IPRxSegment[MAX_BCAST_BUFFERS-1];
- 
+	fReceiveSegmentInfo = new IPRxSegment[MAX_BCAST_BUFFERS-1];
  
     // start of new way
    	for (fSeg=0;	fSeg<MAX_BCAST_BUFFERS-1;	fSeg++)
@@ -189,11 +190,11 @@ DCLCommandStruct *IOFWAsyncStreamRxCommand::CreateAsyncStreamRxDCLProgram(DCLCal
             pLastDCL->opcode = kDCLLabelOp ;
         }
 
-        receiveSegmentInfo[fSeg].pSegmentLabelDCL = NULL;
-        receiveSegmentInfo[fSeg].pSegmentJumpDCL = NULL;
+        fReceiveSegmentInfo[fSeg].pSegmentLabelDCL = NULL;
+        fReceiveSegmentInfo[fSeg].pSegmentJumpDCL = NULL;
 
 		// Allocate the label for this segment, and save pointer in seg info
-		receiveSegmentInfo[fSeg].pSegmentLabelDCL = (DCLLabelPtr) pLastDCL;
+		fReceiveSegmentInfo[fSeg].pSegmentLabelDCL = (DCLLabelPtr) pLastDCL;
 
 		if (fSeg == 0)
 		{
@@ -206,7 +207,7 @@ DCLCommandStruct *IOFWAsyncStreamRxCommand::CreateAsyncStreamRxDCLProgram(DCLCal
             receivePacket->buffer = currentBuffer ;
             receivePacket->size = size ;
         }
-        
+
         DCLUpdateDCLList	*update = new DCLUpdateDCLList ;
         {
             update->opcode = kDCLUpdateDCLListOp ;
@@ -232,7 +233,7 @@ DCLCommandStruct *IOFWAsyncStreamRxCommand::CreateAsyncStreamRxDCLProgram(DCLCal
 			jump->opcode = kDCLJumpOp ;
 			jump->pJumpDCLLabel = pLastDCL ;
 		}
-        
+
 		pLastDCL->pNextDCLCommand = (DCLCommand*)receivePacket ;
 		receivePacket->pNextDCLCommand = (DCLCommand*)update ;
 		update->pNextDCLCommand = (DCLCommand*)callProc ;
@@ -241,7 +242,7 @@ DCLCommandStruct *IOFWAsyncStreamRxCommand::CreateAsyncStreamRxDCLProgram(DCLCal
 		currentBuffer += receivePacket->size ;
 
         // Store the jump information.
-		receiveSegmentInfo[fSeg].pSegmentJumpDCL = jump;
+		fReceiveSegmentInfo[fSeg].pSegmentJumpDCL = jump;
     }
     
 	// Allocate Overrun label & callback DCL
@@ -255,6 +256,7 @@ DCLCommandStruct *IOFWAsyncStreamRxCommand::CreateAsyncStreamRxDCLProgram(DCLCal
         receivePacket->buffer = currentBuffer ;
         receivePacket->size = size ;
     }
+
     DCLUpdateDCLList	*update = new DCLUpdateDCLList ;
     {
         update->opcode = kDCLUpdateDCLListOp ;
@@ -262,13 +264,14 @@ DCLCommandStruct *IOFWAsyncStreamRxCommand::CreateAsyncStreamRxDCLProgram(DCLCal
         update->dclCommandList[0] = (DCLCommand*)receivePacket ;
         update->numDCLCommands = 1;		// Number of DCL commands in list.
     }
+
     DCLCallProc	*callProc = new DCLCallProc ;
     {
         callProc->opcode = kDCLCallProcOp ;
         callProc->proc = restart;
         callProc->procData = (UInt32)this;
     }
-	
+
     fDCLOverrunLabel->pNextDCLCommand = (DCLCommand*)receivePacket ;
     receivePacket->pNextDCLCommand = (DCLCommand*)update ;
     update->pNextDCLCommand = (DCLCommand*)callProc ;
@@ -318,6 +321,8 @@ IOIPPort *IOFWAsyncStreamRxCommand::CreateAsyncStreamPort(bool talking, DCLComma
 IOReturn IOFWAsyncStreamRxCommand::start(IOFWSpeed fBroadCastSpeed) {
 
 	IOReturn status	= kIOReturnSuccess;
+
+	recursiveScopeLock lock(rxCommandLock);
 
     if(fInitialized == false)
         return status;
@@ -390,16 +395,24 @@ IOReturn IOFWAsyncStreamRxCommand::start(IOFWSpeed fBroadCastSpeed) {
 	return status;
 }
 
-void IOFWAsyncStreamRxCommand::modifyDCLJumps(DCLCommandStruct *callProc)
+IOReturn IOFWAsyncStreamRxCommand::modifyDCLJumps(DCLCommandStruct *callProc)
 {
 	DCLCallProc 	*ptr = (DCLCallProc*)callProc;
 	RXProcData		*proc = (RXProcData*)ptr->procData;
-    IOReturn	error;
+    IOReturn		status = kIOReturnError;
+
+	recursiveScopeLock lock(rxCommandLock);
+
+    if(fInitialized == false)
+        return status;
+
+	if(!bStarted) 
+		return status;
     
     if(proc == NULL)
     {
         IOLog("%s:%d NULL callproc data\n", __FILE__, __LINE__);
-        return;
+        return status;
     }
 
     //
@@ -409,19 +422,21 @@ void IOFWAsyncStreamRxCommand::modifyDCLJumps(DCLCommandStruct *callProc)
 
 	UInt16 jumpIndex	= (proc->index - 1 + (MAX_BCAST_BUFFERS-1)) % (MAX_BCAST_BUFFERS-1);
 	
-	receiveSegmentInfo[proc->index].pSegmentJumpDCL->pJumpDCLLabel = fDCLOverrunLabel;
-	error = fAsynStreamPort->notify(kFWDCLModifyNotification,
-									(DCLCommand**) & receiveSegmentInfo[proc->index].pSegmentJumpDCL,
+	fReceiveSegmentInfo[proc->index].pSegmentJumpDCL->pJumpDCLLabel = fDCLOverrunLabel;
+	status = fAsynStreamPort->notify(kFWDCLModifyNotification,
+									(DCLCommand**) & fReceiveSegmentInfo[proc->index].pSegmentJumpDCL,
 									1);
-	if(error != kIOReturnSuccess)
-		IOLog("%s:%d %d\n", __FILE__, __LINE__, error);
+	if(status != kIOReturnSuccess)
+		IOLog("%s:%d %d\n", __FILE__, __LINE__, status);
 
-	receiveSegmentInfo[jumpIndex].pSegmentJumpDCL->pJumpDCLLabel = receiveSegmentInfo[proc->index].pSegmentLabelDCL;
-	error = fAsynStreamPort->notify(kFWDCLModifyNotification,
-									(DCLCommand**) & receiveSegmentInfo[jumpIndex].pSegmentJumpDCL,
+	fReceiveSegmentInfo[jumpIndex].pSegmentJumpDCL->pJumpDCLLabel = fReceiveSegmentInfo[proc->index].pSegmentLabelDCL;
+	status = fAsynStreamPort->notify(kFWDCLModifyNotification,
+									(DCLCommand**) & fReceiveSegmentInfo[jumpIndex].pSegmentJumpDCL,
 									1);
-	if(error != kIOReturnSuccess)
-		IOLog("%s:%d %d\n", __FILE__, __LINE__, error);
+	if(status != kIOReturnSuccess)
+		IOLog("%s:%d %d\n", __FILE__, __LINE__, status);
+		
+	return status;
 }
 
 void IOFWAsyncStreamRxCommand::fixDCLJumps(bool	bRestart)
@@ -433,13 +448,13 @@ void IOFWAsyncStreamRxCommand::fixDCLJumps(bool	bRestart)
 	{
 		if (i != (MAX_BCAST_BUFFERS-2))
         {
-            receiveSegmentInfo[i].pSegmentJumpDCL->pJumpDCLLabel = receiveSegmentInfo[i+1].pSegmentLabelDCL;
-            receiveSegmentInfo[i].pSegmentJumpDCL->pNextDCLCommand = (DCLCommand*)receiveSegmentInfo[i+1].pSegmentLabelDCL;
+            fReceiveSegmentInfo[i].pSegmentJumpDCL->pJumpDCLLabel = fReceiveSegmentInfo[i+1].pSegmentLabelDCL;
+            fReceiveSegmentInfo[i].pSegmentJumpDCL->pNextDCLCommand = (DCLCommand*)fReceiveSegmentInfo[i+1].pSegmentLabelDCL;
         }
 		else
         {
-            receiveSegmentInfo[i].pSegmentJumpDCL->pJumpDCLLabel = fDCLOverrunLabel;
-			receiveSegmentInfo[i].pSegmentJumpDCL->pNextDCLCommand = (DCLCommand*)fDCLOverrunLabel;
+            fReceiveSegmentInfo[i].pSegmentJumpDCL->pJumpDCLLabel = fDCLOverrunLabel;
+			fReceiveSegmentInfo[i].pSegmentJumpDCL->pNextDCLCommand = (DCLCommand*)fDCLOverrunLabel;
         }
 
 		//
@@ -448,7 +463,7 @@ void IOFWAsyncStreamRxCommand::fixDCLJumps(bool	bRestart)
 		if(bRestart == true && fAsynStreamPort != NULL)
 		{
 			error = fAsynStreamPort->notify(kFWDCLModifyNotification,
-											(DCLCommand**) & receiveSegmentInfo[i].pSegmentJumpDCL,
+											(DCLCommand**) & fReceiveSegmentInfo[i].pSegmentJumpDCL,
 											1);
 			if(error != kIOReturnSuccess)
 				IOLog("%s:%d %d\n", __FILE__, __LINE__, error);
@@ -461,6 +476,8 @@ void IOFWAsyncStreamRxCommand::restart(DCLCommandStruct *callProc)
 	DCLCallProc 				*ptr = (DCLCallProc*)callProc;
     IOFWAsyncStreamRxCommand	*fwRxAsyncStream = (IOFWAsyncStreamRxCommand*)ptr->procData;
 
+	recursiveScopeLock lock(fwRxAsyncStream->rxCommandLock);
+
     //
     // Overrun so restart everything !!
     //
@@ -472,11 +489,14 @@ void IOFWAsyncStreamRxCommand::restart(DCLCommandStruct *callProc)
 
 	// Start the channel
     fwRxAsyncStream->fAsyncStreamChan->start();
+	
 }
 	
 IOReturn IOFWAsyncStreamRxCommand::stop() 
 {
 	IOReturn status	= kIOReturnSuccess;
+
+	recursiveScopeLock lock(rxCommandLock);
 
     if(fInitialized == false)
         return status;

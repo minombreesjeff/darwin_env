@@ -45,6 +45,7 @@ protected:
 	IOFWIPBusInterface	*fFWBusInterface;
 	DRB					*fDrb;
 	bool				fStarted;
+	IONotifier			*fTerminateNotifier;
 
     
 /*! @struct ExpansionData
@@ -74,6 +75,8 @@ public:
 	bool configureFWBusInterface(IOFireWireController *controller);
 
 	IOFWIPBusInterface *getIPTransmitInterface(IOFireWireIP *fIPLocalNode);
+
+	static bool busInterfaceTerminate(void *target, void *refCon, IOService *newService);
     
 private:
     OSMetaClassDeclareReservedUnused(IOFireWireIPUnit, 0);

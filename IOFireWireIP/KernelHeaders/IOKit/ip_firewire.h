@@ -287,6 +287,7 @@ struct mcap_packet {
 	IP1394_MCAP mcap;
 };
 
+#if defined(__BIG_ENDIAN__)
 typedef struct {
 	USHORT size;
 	UCHAR  tag:2;
@@ -294,6 +295,17 @@ typedef struct {
 	UCHAR  tcode:4;
 	UCHAR  sy:4;
 } ISOC_DATA_PKT;
+#elif defined(__LITTLE_ENDIAN__)
+typedef struct {    
+	UCHAR  sy:4;
+	UCHAR  tcode:4;
+	UCHAR  chan:6;
+	UCHAR  tag:2;
+	USHORT size;
+} ISOC_DATA_PKT;
+#else
+#error host endian unknown
+#endif
 
 #define FW_M_BCAST 0x10
 #define FW_M_MCAST 0x20
@@ -316,6 +328,21 @@ typedef struct {
    VOID *passThru2;
 } ARP_HOLD;
 
+/* Multicast Address resolution block (ARB) contains all of the information necessary to
+ map, in either direction, between an IPv4 address and a link-level "hardware"
+ address */
+
+class MARB : public OSObject		/* Used by both ARP 1394 and MCAP */
+{      
+	OSDeclareDefaultStructors(MARB);
+public:
+	UWIDE		eui64;          /* EUI-64 obtained from ARP response */
+	UCHAR		fwaddr[8];
+	ULONG		ipAddress;      /* IP address */
+	TNF_HANDLE	handle;         /* Pseudo "hardware" address used internally */
+	BOOLEAN		itsMac;   		/* Indicates whether the destination Macintosh or not */
+};
+
 /* Address resolution block (ARB) contains all of the information necessary to
  map, in either direction, between an IPv4 address and a link-level "hardware"
  address */
@@ -326,8 +353,6 @@ class ARB : public OSObject		/* Used by both ARP 1394 and MCAP */
 public:
 	UWIDE		eui64;          /* EUI-64 obtained from ARP response */
 	UCHAR		fwaddr[8];
-	USHORT		timer;          /* Permits the ARB to be "aged" */
-	ULONG		ipAddress;      /* IP address */
 	TNF_HANDLE	handle;         /* Pseudo "hardware" address used internally */
 	BOOLEAN		itsMac;   		/* Indicates whether the destination Macintosh or not */
 };
@@ -348,7 +373,6 @@ class DRB : public OSObject
 public:
 	UWIDE		eui64;			/* EUI-64 of the IP-capable device */
 	UCHAR		fwaddr[8];
-	ULONG		timer;			/* If nonzero, decrement and release upon zero */
 	ULONG		deviceID;		/* Stable "handle" for the IP-capable device */
 	USHORT		maxPayload;		/* Maximum payload and... */
 	IOFWSpeed	maxSpeed;		/* ...speed to device in current topology */

@@ -45,6 +45,7 @@ extern "C" {
 #include <net/if_types.h>
 #include <net/dlil.h>
 #include <net/bpf.h>
+#include <net/kpi_protocol.h>
 
 #include <netinet/in.h>
 #include <netinet/in_var.h>
@@ -277,7 +278,6 @@ void IOFWInterface::free()
     {
         DLOG("%s%d: release ifnet %p\n", getNamePrefix(), getUnitNumber(), interface);
 		firewire_del_if( this );
-        dlil_if_release(interface );
     }
 
     if ( _requiredFilters )
@@ -522,8 +522,7 @@ IOReturn IOFWInterface::enableController(IONetworkController * ctr)
 
         // Disable all Wake-On-LAN filters.
 
-        disableFilter(ctr, gIOEthernetWakeOnLANFilterGroup, ~0,
-                      kFilterOptionNoStateChange);
+        disableFilter(ctr, gIOEthernetWakeOnLANFilterGroup, (UInt32)~0, kFilterOptionNoStateChange);
 
         // Restore current filter selection.
 
@@ -828,8 +827,7 @@ IOFWInterface::enableFilter(IONetworkController * ctr,
 
     	return ctr->executeCommand(
                            this,               /* client */
-                           (IONetworkController::Action)
-                               &IOFWInterface::enableFilter,
+                           OSMemberFunctionCast(IONetworkController::Action, this, &IOFWInterface::enableFilter),
                            this,               /* target */
                            (void *) ctr,       /* param0 */
                            (void *) group,     /* param1 */
@@ -1209,16 +1207,16 @@ IOReturn IOFWInterface::attachToDataLinkLayer(	IOOptionBits options,
 		ivedonethis++;
 					
 		// IPv4 proto register
-		ret = dlil_reg_proto_module(PF_INET, APPLE_IF_FAM_FIREWIRE,
-									firewire_attach_inet, dlil_detach_protocol);
+		ret = proto_register_plumber(PF_INET, APPLE_IF_FAM_FIREWIRE,
+									firewire_attach_inet, NULL);
 		if(ret == EEXIST || ret == 0)
 			ret = kIOReturnSuccess;
 		else
 			DLOG("ERROR: dlil_reg_proto_module for IPv4 over FIREWIRE %x", ret);
 
 		// IPv6 proto register
-		ret = dlil_reg_proto_module(PF_INET6, APPLE_IF_FAM_FIREWIRE,
-									firewire_attach_inet6, dlil_detach_protocol);
+		ret = proto_register_plumber(PF_INET6, APPLE_IF_FAM_FIREWIRE,
+									firewire_attach_inet6, NULL);
 		if(ret == EEXIST || ret == 0)
 			ret = kIOReturnSuccess;
 		else
@@ -1231,31 +1229,15 @@ IOReturn IOFWInterface::attachToDataLinkLayer(	IOOptionBits options,
 void IOFWInterface::detachFromDataLinkLayer( IOOptionBits options,
                                                   void *       parameter )
 {
-	int ret = 0;
-	int *detach_ret = (int*)parameter;
-	
 	if (ivedonethis == 1)
 	{		
-		ret = dlil_dereg_proto_module(PF_INET, APPLE_IF_FAM_FIREWIRE);
-	
-		if(ret == ENOENT)
-			DLOG("no protocol module for IPv4 to deregister for APPLE_IF_FAM_FIREWIRE");
-	
-		ret = dlil_dereg_proto_module(PF_INET6, APPLE_IF_FAM_FIREWIRE);
-	
-		if(ret == ENOENT)
-			DLOG("no protocol module for IPv6 to deregister for APPLE_IF_FAM_FIREWIRE");
-	
-		dlil_dereg_if_modules(APPLE_IF_FAM_FIREWIRE);
+		proto_unregister_plumber(PF_INET, APPLE_IF_FAM_FIREWIRE);
+		proto_unregister_plumber(PF_INET6, APPLE_IF_FAM_FIREWIRE);
 	}
 
 	ivedonethis--;
 
-	ret = dlil_if_detach((struct ifnet*)getIfnet());
-	
-	if(detach_ret) 
-		*detach_ret = ret;
-		
+	super::detachFromDataLinkLayer(options, parameter);
 }
 
 void IOFWInterface::setIfnetMTU(UInt32 mtu)

@@ -36,7 +36,10 @@ OSMetaClassDefineReservedUnused(IOFireWireIPUnit, 3);
 
 bool IOFireWireIPUnit::start(IOService *provider)
 {
-	fIPLocalNode = NULL;
+	fIPLocalNode	= NULL;
+	fFWBusInterface = NULL;
+	fStarted		= false;
+
     fDevice = OSDynamicCast(IOFireWireNub, provider);
     
     if ( not fDevice )
@@ -71,58 +74,92 @@ bool IOFireWireIPUnit::start(IOService *provider)
 	fFWBusInterface->updateARBwithDevice(fDevice, eui64);
 	
 	fFWBusInterface->fwIPUnitAttach();
-	
+
+	fTerminateNotifier = IOService::addNotification(gIOTerminatedNotification, 
+													serviceMatching("IOFWIPBusInterface"), 
+													&busInterfaceTerminate, this, (void*)fFWBusInterface, 0);
+
     registerService();
+
+	fStarted = true;
 
     return true;
 }
 
+bool IOFireWireIPUnit::busInterfaceTerminate(void *target, void *refCon, IOService *newService)
+{
+	if(target == NULL || newService == NULL)
+		return false;
+
+    IOFireWireIPUnit	*unit = OSDynamicCast(IOFireWireIPUnit, (IOService *)target);
+    if ( not unit )
+        return false;
+	
+	if ( unit->fFWBusInterface != refCon)
+		return false;
+	
+	unit->terminate();
+
+	return true;
+}
+
 void IOFireWireIPUnit::free(void)
 {
+	fStarted		= false;
+
     if ( fFWBusInterface )
-		fFWBusInterface->release();
+		fFWBusInterface->fwIPUnitTerminate();
 
 	if ( fDrb )
+	{
+		fFWBusInterface->releaseARB(fDrb->fwaddr);
+
+		fFWBusInterface->releaseDRB(fDrb->fwaddr);
+
 		fDrb->release();
-		
+	}	
+
 	fDrb = NULL;
-	fFWBusInterface = NULL;
+
+    if ( fFWBusInterface )
+		fFWBusInterface->release();
 	
+	fFWBusInterface = NULL;
+
+	fDevice = NULL;
+
+	if(fTerminateNotifier != NULL)
+		fTerminateNotifier->remove();
+	
+	fTerminateNotifier = NULL;
+
     IOService::free();
 }
 
 IOReturn IOFireWireIPUnit::message(UInt32 type, IOService *provider, void *argument)
 {
-    IOReturn res = kIOReturnUnsupported;
+    IOReturn res = kIOReturnSuccess;
 
 	switch (type)
 	{                
 		case kIOMessageServiceIsTerminated:
-			if(fFWBusInterface != NULL)
-			{
-				fDrb->timer = kDeviceHoldSeconds;
-				
-				ARB *arb = fFWBusInterface->getARBFromEui64(fDrb->eui64);
-				if ( arb )
-					arb->timer = kDeviceHoldSeconds;
-
-				fFWBusInterface->fwIPUnitTerminate();
-			}
-			res = kIOReturnSuccess;
-			break;
-
+		case kIOMessageServiceIsRequestingClose:
 		case kIOMessageServiceIsSuspended:
-			res = kIOReturnSuccess;
 			break;
 
 		case kIOMessageServiceIsResumed:
-			if(fFWBusInterface != NULL)
+			if( fStarted )
+			{
+				fIPLocalNode->closeIPGate();
+	
 				updateDrb();
-				
-			res = kIOReturnSuccess;
+
+				fIPLocalNode->openIPGate();
+			}
 			break;
 
 		default: // default the action to return kIOReturnUnsupported
+			res = kIOReturnUnsupported;
 			break;
 	}
 
