@@ -28,6 +28,8 @@
 #include "IOFireWireSBP2LibMgmtORB.h"
 #include "IOFireWireSBP2UserClientCommon.h"
 
+#include <System/libkern/OSCrossEndian.h>
+
 __BEGIN_DECLS
 #include <IOKit/iokitmig.h>
 #include <mach/mach.h>
@@ -685,7 +687,18 @@ void IOFireWireSBP2LibLUN::messageCallback( IOReturn result, void **args, int nu
 	{
 		UInt32 statusBlock[8];
 		bcopy( &args[3], statusBlock, 8 * sizeof(UInt32) );
+
+		ROSETTA_ONLY(
+				{
+					int i;
 		
+					for( i = 0; i < 8; i++ )
+					{
+						statusBlock[i] = OSSwapInt32( statusBlock[i] );
+					}
+				}
+		);
+				
 		params.refCon = (void*)fRefCon;
 		params.generation = (UInt32)args[0];
 		params.status = (IOReturn)args[1];

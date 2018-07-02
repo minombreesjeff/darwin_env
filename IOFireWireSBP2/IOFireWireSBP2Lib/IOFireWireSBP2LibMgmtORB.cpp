@@ -334,7 +334,7 @@ IOReturn IOFireWireSBP2LibMgmtORB::setCommandFunction( UInt32 function )
 {
 	IOReturn status = kIOReturnSuccess;
 
-	if( fMgmtORBRef == NULL ) 
+	if( fMgmtORBRef == 0 ) 
 		status = kIOReturnError;
 		
 	if( status == kIOReturnSuccess )
@@ -370,13 +370,13 @@ IOReturn IOFireWireSBP2LibMgmtORB::setManageeORB( void * orb )
 {
 	IOReturn status = kIOReturnSuccess;
 
-	if( fMgmtORBRef == NULL ) 
+	if( fMgmtORBRef == 0 ) 
 		status = kIOReturnError;
 	
 	UInt32 orbRef;
 
 	if( orb == NULL )
-		orbRef = NULL;
+		orbRef = 0;
 	else
 		orbRef = IOFireWireSBP2LibORB::getThis(orb)->getORBRef();
 		
@@ -410,13 +410,13 @@ IOReturn IOFireWireSBP2LibMgmtORB::setManageeLogin( void * login )
 {
 	IOReturn status = kIOReturnSuccess;
 
-	if( fMgmtORBRef == NULL ) 
+	if( fMgmtORBRef == 0 ) 
 		status = kIOReturnError;
 	
 	UInt32 loginRef;
 
 	if( login == NULL )
-		loginRef = NULL;
+		loginRef = 0;
 	else
 		loginRef = IOFireWireSBP2LibLogin::getThis(login)->getLoginRef();
 
@@ -451,7 +451,7 @@ IOReturn IOFireWireSBP2LibMgmtORB::setResponseBuffer( void * buf, UInt32 len )
 {
 	IOReturn status = kIOReturnSuccess;
 
-	if( fMgmtORBRef == NULL ) 
+	if( fMgmtORBRef == 0 ) 
 		status = kIOReturnError;
 		
 	if( status == kIOReturnSuccess )

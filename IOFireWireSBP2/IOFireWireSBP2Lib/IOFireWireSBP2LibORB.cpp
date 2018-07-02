@@ -25,8 +25,11 @@
 #include "FWDebugging.h"
 #include "IOFireWireSBP2LibORB.h"
 
+#include <System/libkern/OSCrossEndian.h>
+
 __BEGIN_DECLS
 #include <IOKit/iokitmig.h>
+#include <mach/mach.h>
 __END_DECLS
 
 //
@@ -101,6 +104,8 @@ IOFireWireSBP2LibORB::IOFireWireSBP2LibORB( void )
 	fConnection = 0;
 	fORBRef = 0;
 	fRefCon = 0;
+	fRangeScratch = NULL;
+	fRangeScratchLength = 0;
 
 	// create test driver interface map
 	fIOFireWireSBP2LibORBInterface.pseudoVTable 
@@ -224,6 +229,14 @@ UInt32 IOFireWireSBP2LibORB::release( void )
 	
 	if( 1 == fRefCount-- ) 
 	{
+		if( fRangeScratch != NULL )
+		{
+			// delete it
+			vm_deallocate( mach_task_self(), (vm_address_t)fRangeScratch, fRangeScratchLength );
+			fRangeScratch = NULL;
+			fRangeScratchLength = 0;
+		}
+
 		delete this;
     }
 	
@@ -415,9 +428,45 @@ IOReturn IOFireWireSBP2LibORB::setCommandBuffersAsRanges( FWSBP2VirtualRange * r
 		
 	mach_msg_type_number_t len = 0;
 	UInt32 params[6];
+	UInt32 range_buffer = (UInt32)ranges;
 	
+	ROSETTA_ONLY(
+		{
+			UInt32 range_length = withCount * sizeof(FWSBP2VirtualRange);
+			
+			if( fRangeScratchLength < range_length )
+			{
+				if( fRangeScratch != NULL )
+				{
+					// delete it
+					vm_deallocate( mach_task_self(), (vm_address_t)fRangeScratch, fRangeScratchLength );
+					fRangeScratch = NULL;
+					fRangeScratchLength = 0;
+				}
+				
+				// alloc a bigger one
+				vm_allocate( mach_task_self(), (vm_address_t*)&fRangeScratch, range_length, true /*anywhere*/ );
+				if( fRangeScratch != NULL )
+				{
+					fRangeScratchLength = range_length;
+				}
+			}
+
+			if( fRangeScratch != NULL )
+			{
+				for( UInt32 i = 0; i < withCount; i++ )
+				{
+					fRangeScratch[i].address = (void*)OSSwapInt32( (UInt32)ranges[i].address );
+					fRangeScratch[i].length = OSSwapInt32( ranges[i].length );
+				}
+				
+				range_buffer = (UInt32)fRangeScratch;
+			}
+		}
+	);
+			
 	params[0] = fORBRef;
-	params[1] = (UInt32)ranges;
+	params[1] = range_buffer;
 	params[2] = withCount;
 	params[3] = withDirection;
 	params[4] = offset;
@@ -469,14 +518,33 @@ IOReturn IOFireWireSBP2LibORB::setCommandBlock( void * buffer, UInt32 length )
 		
 	mach_msg_type_number_t len = 0;
 	UInt32 params[3];
-	
-	params[0] = fORBRef;
-	params[1] = (UInt32)buffer;
-	params[2] = length;
 
-	status = io_connect_method_scalarI_scalarO( fConnection, 	
-									   kIOFWSBP2UserClientSetCommandBlock, 
-									   (int*)params, 3, NULL, &len );
+	vm_address_t address = 0;
+
+	status = vm_allocate( mach_task_self(), &address, length, true /*anywhere*/ );
+	if( address == 0 )
+	{
+		status = kIOReturnNoMemory;
+	}
+	
+	if( status == kIOReturnSuccess )
+	{
+		bcopy( buffer, (void*)address, length );
+	
+		params[0] = fORBRef;
+		params[1] = (UInt32)address;
+		params[2] = length;
+
+		status = io_connect_method_scalarI_scalarO( fConnection, 	
+											kIOFWSBP2UserClientSetCommandBlock, 
+											(int*)params, 3, NULL, &len );
+	}
+	
+	if( address )
+	{
+		vm_deallocate( mach_task_self(), address, length );
+	}
+	
 	return status;
 }
 
@@ -502,9 +570,45 @@ IOReturn IOFireWireSBP2LibORB::LSIWorkaroundSetCommandBuffersAsRanges
 		
 	mach_msg_type_number_t len = 0;
 	UInt32 params[6];
+	UInt32 range_buffer = (UInt32)ranges;
+	
+	ROSETTA_ONLY(
+		{
+			UInt32 range_length = withCount * sizeof(FWSBP2VirtualRange);
+			
+			if( fRangeScratchLength < range_length )
+			{
+				if( fRangeScratch != NULL )
+				{
+					// delete it
+					vm_deallocate( mach_task_self(), (vm_address_t)fRangeScratch, fRangeScratchLength );
+					fRangeScratch = NULL;
+					fRangeScratchLength = 0;
+				}
+				
+				// alloc a bigger one
+				vm_allocate( mach_task_self(), (vm_address_t*)&fRangeScratch, range_length, true /*anywhere*/ );
+				if( fRangeScratch != NULL )
+				{
+					fRangeScratchLength = range_length;
+				}
+			}
+
+			if( fRangeScratch != NULL )
+			{
+				for( UInt32 i = 0; i < withCount; i++ )
+				{
+					fRangeScratch[i].address = (void*)OSSwapInt32( (UInt32)ranges[i].address );
+					fRangeScratch[i].length = OSSwapInt32( ranges[i].length );
+				}
+				
+				range_buffer = (UInt32)fRangeScratch;
+			}
+		}
+	);
 	
 	params[0] = fORBRef;
-	params[1] = (UInt32)ranges;
+	params[1] = range_buffer;
 	params[2] = withCount;
 	params[3] = withDirection;
 	params[4] = offset;

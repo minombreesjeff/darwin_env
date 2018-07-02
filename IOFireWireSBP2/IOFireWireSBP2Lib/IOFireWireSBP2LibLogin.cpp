@@ -26,6 +26,8 @@
 #include "IOFireWireSBP2LibLogin.h"
 #include "IOFireWireSBP2LibORB.h"
 
+#include <System/libkern/OSCrossEndian.h>
+
 __BEGIN_DECLS
 #include <IOKit/iokitmig.h>
 __END_DECLS
@@ -692,7 +694,7 @@ void IOFireWireSBP2LibLogin::staticLoginCompletion( void *refcon, IOReturn resul
 void IOFireWireSBP2LibLogin::loginCompletion( IOReturn result, void **args, int numArgs )
 {
 	FWLOG(( "IOFireWireSBP2LibLogin : loginCompletion numArgs = %d\n",  numArgs));
-
+	
 	FWSBP2LoginCompleteParams params;
 	
 	UInt32 loginResponse[4];
@@ -700,6 +702,23 @@ void IOFireWireSBP2LibLogin::loginCompletion( IOReturn result, void **args, int 
 	 
 	UInt32 statusBlock[8];
 	bcopy( &args[7], statusBlock, 8 * sizeof(UInt32) );
+
+	ROSETTA_ONLY(
+		{
+			int i;
+			
+			for( i = 0; i < 4; i++ )
+			{
+				loginResponse[i] = OSSwapInt32( loginResponse[i] );
+			}
+
+			for( i = 0; i < 8; i++ )
+			{
+				statusBlock[i] = OSSwapInt32( statusBlock[i] );
+			}
+		}
+	);
+	
 	
 	params.refCon = (void*)fRefCon;
 	params.generation = (UInt32)args[0];
@@ -730,7 +749,18 @@ void IOFireWireSBP2LibLogin::logoutCompletion( IOReturn result, void **args, int
 	
 	UInt32 statusBlock[8];
 	bcopy( &args[3], statusBlock, 8 * sizeof(UInt32) );
-	
+
+	ROSETTA_ONLY(
+		{
+			int i;
+
+			for( i = 0; i < 8; i++ )
+			{
+				statusBlock[i] = OSSwapInt32( statusBlock[i] );
+			}
+		}
+	);
+		
 	params.refCon = (void*)fRefCon;
 	params.generation = (UInt32)args[0];
 	params.status = (IOReturn)args[1];
@@ -760,6 +790,17 @@ void IOFireWireSBP2LibLogin::unsolicitedStatusNotify( IOReturn result, void **ar
 	
 	UInt32 statusBlock[8];
 	bcopy( &args[3], statusBlock, 8 * sizeof(UInt32) );
+
+	ROSETTA_ONLY(
+		{
+			int i;
+
+			for( i = 0; i < 8; i++ )
+			{
+				statusBlock[i] = OSSwapInt32( statusBlock[i] );
+			}
+		}
+	);
 	
 	params.refCon = (void*)fRefCon;
 	params.notificationEvent = (UInt32)args[0];
@@ -789,6 +830,17 @@ void IOFireWireSBP2LibLogin::statusNotify( IOReturn result, void **args, int num
 	
 	UInt32 statusBlock[8];
 	bcopy( &args[4], statusBlock, 8 * sizeof(UInt32) );
+
+	ROSETTA_ONLY(
+		{
+			int i;
+
+			for( i = 0; i < 8; i++ )
+			{
+				statusBlock[i] = OSSwapInt32( statusBlock[i] );
+			}
+		}
+	);
 	
 	params.notificationEvent = (UInt32)args[0];
 	params.generation = (IOReturn)args[1];

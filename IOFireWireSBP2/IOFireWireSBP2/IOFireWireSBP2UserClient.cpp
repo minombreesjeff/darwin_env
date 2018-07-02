@@ -371,31 +371,20 @@ IOExternalAsyncMethod IOFireWireSBP2UserClient::sAsyncMethods[kIOFWSBP2UserClien
 //
 //
 
-IOFireWireSBP2UserClient *IOFireWireSBP2UserClient::withTask(task_t owningTask)
+bool IOFireWireSBP2UserClient::initWithTask(
+                    task_t owningTask, void * securityToken, UInt32 type,
+                    OSDictionary * properties)
 {
-    IOFireWireSBP2UserClient* me = new IOFireWireSBP2UserClient;
+    if( properties )
+		properties->setObject( "IOUserClientCrossEndianCompatible" , kOSBooleanTrue);
 
-    if( me )
-    {
-        if( !me->init() )
-        {
-            me->release();
-            return NULL;
-        }
-        me->fTask = owningTask;
-    }
-
-    return me;
-}
-
-bool IOFireWireSBP2UserClient::init( OSDictionary * dictionary )
-{
-    bool res = IOService::init( dictionary );
-
+    bool res = IOUserClient::initWithTask(owningTask, securityToken, type, properties);
+	
     fOpened = false;
 	fStarted = false;
     fLogin = NULL;
-    
+    fTask = owningTask;
+	
     fMessageCallbackAsyncRef[0] = 0;
     fLoginCallbackAsyncRef[0] = 0;
     fLogoutCallbackAsyncRef[0] = 0;
@@ -1689,7 +1678,7 @@ IOReturn IOFireWireSBP2UserClient::setCommandBlock
     IOReturn 				status = kIOReturnSuccess;
     IOMemoryDescriptor *	memory = NULL;
 
-    FWKLOG(( "IOFireWireSBP2UserClient : setCommandBlock\n" ));
+    FWKLOG(( "IOFireWireSBP2UserClient : setCommandBlock - ORBRef = 0x%08lx buffer = 0x%08lx length = %d\n", ORBRef, buffer, length ));
 
     IOFireWireSBP2ORB * orb = OSDynamicCast( IOFireWireSBP2ORB, ORBRef );
     if( !orb )

@@ -64,6 +64,9 @@ protected:
 
 	UInt32			fRefCon;
 
+	FWSBP2VirtualRange	*	fRangeScratch;
+	UInt32					fRangeScratchLength;
+	
 	//////////////////////////////////////	
 	// IUnknown static methods
 	

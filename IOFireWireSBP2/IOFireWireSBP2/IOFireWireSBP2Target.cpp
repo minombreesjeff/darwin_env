@@ -68,6 +68,8 @@ bool IOFireWireSBP2Target::start( IOService *provider )
     if (fProviderUnit == NULL)
         return false;
 	
+	fProviderUnit->retain();
+	
 	// we want the expansion data member to be zeroed if it's available 
 	// so create and zero in a local then assign to the member when were done
 	
@@ -191,6 +193,18 @@ void IOFireWireSBP2Target::stop( IOService *provider )
     IOService::stop(provider);
 }
 
+// finalize
+//
+//
+
+bool IOFireWireSBP2Target::finalize( IOOptionBits options )
+{
+    // Nuke from device tree
+    detachAll( gIODTPlane );
+	
+	return IOService::finalize( options );
+}
+
 // free
 //
 //
@@ -207,7 +221,7 @@ void IOFireWireSBP2Target::free( void )
 	while( fIOCriticalSectionCount != 0 )
 	{
 		fIOCriticalSectionCount--;
-		fControl->enableSoftwareBusResets();
+		fControl->endIOCriticalSection();
 	}
 
 	if( fExpansionData )
@@ -215,7 +229,13 @@ void IOFireWireSBP2Target::free( void )
 		IOFree( fExpansionData, sizeof(ExpansionData) );
 		fExpansionData = NULL;
 	}
-		
+	
+	if( fProviderUnit )
+	{
+		fProviderUnit->release();
+		fProviderUnit = NULL;
+	}
+	
 	IOService::free();
 }
 
@@ -273,7 +293,7 @@ IOReturn IOFireWireSBP2Target::message( UInt32 type, IOService *nub, void *arg )
 
 IOFireWireUnit * IOFireWireSBP2Target::getFireWireUnit( void )
 {
-    return fProviderUnit;
+	return (IOFireWireUnit*)getProvider();
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -947,13 +967,13 @@ IOReturn IOFireWireSBP2Target::beginIOCriticalSection( void )
 	if( fFlags & kIOFWSBP2FailsOnBusResetsDuringIO )
 	{
 		FWKLOG(( "IOFireWireSBP2Target<0x%08lx>::beginIOCriticalSection fControl->disableSoftwareBusResets()\n", (UInt32)this ));
-		status = fControl->disableSoftwareBusResets();
+		status = fControl->beginIOCriticalSection();
 		if( status == kIOReturnSuccess )
 		{
 			fIOCriticalSectionCount++;
 		}
 	}
-
+	
 	FWKLOG(( "IOFireWireSBP2Target<0x%08lx>::beginIOCriticalSection status = 0x%08lx\n", (UInt32)this, (UInt32)status ));
 	
 	return status;
@@ -974,7 +994,7 @@ void IOFireWireSBP2Target::endIOCriticalSection( void )
 		if( fIOCriticalSectionCount != 0 )
 		{
 			fIOCriticalSectionCount--;
-			fControl->enableSoftwareBusResets();
+			fControl->endIOCriticalSection();
 		}
 		else
 		{

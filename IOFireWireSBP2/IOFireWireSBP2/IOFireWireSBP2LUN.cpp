@@ -78,6 +78,7 @@ bool IOFireWireSBP2LUN::attach(IOService *provider)
 	
 	if( status == kIOReturnSuccess )
 	{
+		fProviderTarget->retain();
 		if( !IOService::attach(provider) )
         	status = kIOReturnError;
 	}
@@ -217,6 +218,12 @@ void IOFireWireSBP2LUN::free( void )
 		fGate = NULL;
 	}
 	
+	if( fProviderTarget )
+	{
+		fProviderTarget->release();
+		fProviderTarget = NULL;
+	}
+		
 	//
 	// free super
 	//
@@ -358,7 +365,15 @@ IOReturn IOFireWireSBP2LUN::message( UInt32 type, IOService *nub, void *arg )
 
 IOFireWireUnit * IOFireWireSBP2LUN::getFireWireUnit( void )
 {
-    return fProviderTarget->getFireWireUnit();
+	IOService * unit = NULL;
+	
+	IOService * provider = getProvider();
+	if( provider )
+	{
+		unit = provider->getProvider();
+	}
+	
+    return (IOFireWireUnit*)unit;
 }
 
 // getLUNumber
@@ -376,7 +391,7 @@ UInt32 IOFireWireSBP2LUN::getLUNumber( void )
 
 IOFireWireSBP2Target * IOFireWireSBP2LUN::getTarget( void )
 {
-    return fProviderTarget;
+	return (IOFireWireSBP2Target*)getProvider();
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -574,34 +589,6 @@ bool IOFireWireSBP2LUN::matchPropertyTable(OSDictionary * table)
                 compareProperty(table, gFireWireModel_ID);
 				
     return res;
-}
-
-// newUserClient
-//
-//
-
-IOReturn IOFireWireSBP2LUN::newUserClient(task_t  owningTask, void * /* security_id */,
-                                          UInt32 type,  IOUserClient **	handler )
-{
-    IOReturn			err = kIOReturnSuccess;
-    IOFireWireSBP2UserClient *	client;
-
-    if( type != kIOFireWireSBP2LibConnection )
-        return( kIOReturnBadArgument);
-
-    client = IOFireWireSBP2UserClient::withTask(owningTask);
-
-    if( !client || (false == client->attach( this )) ||
-        (false == client->start( this )) ) {
-        if(client) {
-            client->detach( this );
-            client->release();
-        }
-        err = kIOReturnNoMemory;
-    }
-
-    *handler = client;
-    return( err );
 }
 
 ////////////////////////////////////////////////////////////////////

@@ -300,11 +300,11 @@ IOReturn IOFireWireSBP2LSIWorkaroundDescriptor::bufferAllocatorInitialize
 			 status == kIOReturnSuccess && i < pageCount; 
 			 i++ )
 		{
-			IOBufferMemoryDescriptor *	bufferDesc = NULL;
+			::IOBufferMemoryDescriptor *	bufferDesc = NULL;
 			
 			if( status == kIOReturnSuccess )
 			{
-                bufferDesc = IOBufferMemoryDescriptor::withOptions( kIODirectionOutIn | kIOMemoryUnshared, PAGE_SIZE, PAGE_SIZE ); 
+                bufferDesc = ::IOBufferMemoryDescriptor::withOptions( kIODirectionOutIn | kIOMemoryUnshared, PAGE_SIZE, PAGE_SIZE ); 
 				if( !bufferDesc )
 					status = kIOReturnNoMemory;
 			}
@@ -360,7 +360,7 @@ void * IOFireWireSBP2LSIWorkaroundDescriptor::bufferAllocatorNewBuffer(
 	IOReturn status = kIOReturnSuccess;
 	void * buffer = NULL;
 	
-	IOBufferMemoryDescriptor *	bufferDesc = NULL;
+	::IOBufferMemoryDescriptor *	bufferDesc = NULL;
 
 	UInt32 page = fAllocatedBytesCount & ~(PAGE_SIZE-1);
 	UInt32 offset = fAllocatedBytesCount - offset;
@@ -371,7 +371,7 @@ void * IOFireWireSBP2LSIWorkaroundDescriptor::bufferAllocatorNewBuffer(
 	
 	if( page < fBufferDescriptors->getCount() )
 	{
-		bufferDesc = (IOBufferMemoryDescriptor *) 
+		bufferDesc = (::IOBufferMemoryDescriptor *) 
 										fBufferDescriptors->getObject( page );
 										
 		FWLSILOGALLOC( ("LSILOG : allocating from permanent pages. new allocByteCount = %ld\n", 
@@ -382,7 +382,7 @@ void * IOFireWireSBP2LSIWorkaroundDescriptor::bufferAllocatorNewBuffer(
 		FWLSILOGALLOC( ("LSILOG : creating new page. new allocByteCount = %ld\n", 
 														fAllocatedBytesCount) );
 														
-		bufferDesc = IOBufferMemoryDescriptor::withOptions( kIODirectionOutIn | kIOMemoryUnshared, PAGE_SIZE, PAGE_SIZE ); 
+		bufferDesc = ::IOBufferMemoryDescriptor::withOptions( kIODirectionOutIn | kIOMemoryUnshared, PAGE_SIZE, PAGE_SIZE ); 
 		if( !bufferDesc )
 			status = kIOReturnNoMemory;
 		
