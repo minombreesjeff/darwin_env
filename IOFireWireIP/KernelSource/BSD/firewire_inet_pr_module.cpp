@@ -103,8 +103,13 @@ inet_firewire_input(
 			mbuf_pullup(&m, sizeof(struct ip));
             if (m == NULL)
                 return EJUSTRETURN;
+			
+			errno_t ret = proto_input(PF_INET, m);
+			
+			if( ret )
+				mbuf_freem(m);
 
-			return proto_input(PF_INET, m);
+			return ret;
 
         case FWTYPE_ARP:
             firewire_arpintr(m);

@@ -32,13 +32,14 @@ extern "C"{
 #include <IOKit/firewire/IOFWCommand.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
 
-#include "ip_firewire.h"
+#include "IOFWIPDefinitions.h"
 #include "IOFireWireIP.h"
 
 #define MAX_ALLOWED_SEGS	7
 
 class IOFireWireIP;
 class IOFWIPMBufCommand;
+class IOFWIPBusInterface;
 
 /*! @class IOFWIPAsyncWriteCommand
 */
@@ -64,6 +65,7 @@ protected:
 	UInt32						fHeaderSize;
 	FragmentType				fLinkFragmentType;
     IOFireWireIP				*fIPLocalNode;
+	IOFWIPBusInterface			*fIPBusIf;
 	UInt32						reInitCount;
 	UInt32						resetCount;
 	
@@ -85,8 +87,8 @@ public:
 		Initializes the Asynchronous write command object
         @result true if successfull.
     */
-	bool initAll(IOFireWireIP *networkObject, UInt32 cmdLen,FWAddress devAddress,
-             FWDeviceCallback completion, void *refcon, bool failOnReset);
+	bool initAll(IOFireWireIP *networkObject, IOFWIPBusInterface *fwIPBusIfObject,
+					UInt32 cmdLen,FWAddress devAddress, FWDeviceCallback completion, void *refcon, bool failOnReset);
 
 	/*!
         @function reinit
@@ -204,6 +206,7 @@ protected:
     // Maximum length for the pre allocated buffer, can be changed dynamically
     UInt32						maxBufLen;
     IOFireWireIP				*fIPLocalNode;
+	IOFWIPBusInterface			*fIPBusIf;
     
 /*! @struct ExpansionData
     @discussion This structure will be used to expand the capablilties of the class in the future.
@@ -225,6 +228,7 @@ public:
     virtual bool	initAll(
 							IOFireWireIP			*networkObject,
   							IOFireWireController 	*control,
+							IOFWIPBusInterface		*fwIPBusIfObject,
                             UInt32 					generation, 
                             UInt32 					channel,
                             UInt32 					sync,

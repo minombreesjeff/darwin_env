@@ -28,7 +28,7 @@
 #include <IOKit/firewire/IOFWRegs.h>
 #include <IOKit/firewire/IOFWAddressSpace.h>
 #include "IOFireWireIP.h"
-#include "ip_firewire.h"
+#include "IOFWIPDefinitions.h"
 
 class IOFireWireNub;
 /*!
@@ -62,6 +62,7 @@ protected:
 public:
     // IOService overrides
     virtual bool start(IOService *provider);
+	bool finalize(IOOptionBits options);
     virtual IOReturn message(UInt32 type, IOService *provider, void *argument);
 
 /*!

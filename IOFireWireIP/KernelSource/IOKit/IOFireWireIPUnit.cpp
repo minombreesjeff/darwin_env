@@ -25,7 +25,7 @@
 #include <IOKit/firewire/IOFireWireBus.h>
 #include <IOKit/firewire/IOFWAddressSpace.h>
 #include <IOKit/firewire/IOConfigDirectory.h>
-#include "ip_firewire.h"
+#include "IOFWIPDefinitions.h"
 
 OSDefineMetaClassAndStructors(IOFireWireIPUnit, IOService)
 OSMetaClassDefineReservedUnused(IOFireWireIPUnit, 0);
@@ -39,7 +39,7 @@ bool IOFireWireIPUnit::start(IOService *provider)
 	fIPLocalNode	= NULL;
 	fFWBusInterface = NULL;
 	fStarted		= false;
-
+	
     fDevice = OSDynamicCast(IOFireWireNub, provider);
     
     if ( not fDevice )
@@ -55,7 +55,10 @@ bool IOFireWireIPUnit::start(IOService *provider)
         return (false);
 	
 	if ( not configureFWBusInterface(control) )
+	{
+		IOLog("IOFireWireIPUnit - configureFWBusInterface failed \n");
         return (false);
+	}
 
 	UWIDE	eui64;
 	
@@ -67,7 +70,10 @@ bool IOFireWireIPUnit::start(IOService *provider)
 	fDrb = fFWBusInterface->initDRBwithDevice(eui64, fDevice, false);
 
     if ( not fDrb )
+	{
+		IOLog("IOFireWireIPUnit - initDRBwithDevice failed \n");
         return (false);
+	}
 
 	fDrb->retain();
 
@@ -82,7 +88,7 @@ bool IOFireWireIPUnit::start(IOService *provider)
     registerService();
 
 	fStarted = true;
-
+	
     return true;
 }
 
@@ -91,48 +97,64 @@ bool IOFireWireIPUnit::busInterfaceTerminate(void *target, void *refCon, IOServi
 	if(target == NULL || newService == NULL)
 		return false;
 
-    IOFireWireIPUnit	*unit = OSDynamicCast(IOFireWireIPUnit, (IOService *)target);
-    if ( not unit )
-        return false;
+	IOFireWireIPUnit	*unit = OSDynamicCast(IOFireWireIPUnit, (IOService *)target);
 	
-	if ( unit->fFWBusInterface != refCon)
+	if ( not unit )
 		return false;
-	
-	unit->terminate();
+
+	if ( unit->fStarted )
+	{
+		if ( unit->fFWBusInterface != refCon)
+			return false;
+		
+		unit->terminate();
+	}
 
 	return true;
 }
 
+bool IOFireWireIPUnit::finalize(IOOptionBits options)
+{
+	if ( fStarted )
+	{
+		if ( fTerminateNotifier != NULL )
+			fTerminateNotifier->remove();
+		
+		fTerminateNotifier = NULL;
+
+		if ( fFWBusInterface )
+			fFWBusInterface->fwIPUnitTerminate();
+
+		if ( fDrb )
+		{
+			fFWBusInterface->releaseARB(fDrb->fwaddr);
+
+			fFWBusInterface->releaseDRB(fDrb->fwaddr);
+
+			fDrb->release();
+		}	
+
+		fDrb = NULL;
+
+		if ( fFWBusInterface )
+		{
+			fFWBusInterface->release();
+
+			if ( fFWBusInterface->getUnitCount() == 0 )
+				fFWBusInterface->terminate();
+		}
+		
+		fFWBusInterface = NULL;
+
+		fDevice = NULL;
+	}
+	fStarted = false;
+
+	return IOService::finalize(options);
+}
+
 void IOFireWireIPUnit::free(void)
 {
-	fStarted		= false;
-
-    if ( fFWBusInterface )
-		fFWBusInterface->fwIPUnitTerminate();
-
-	if ( fDrb )
-	{
-		fFWBusInterface->releaseARB(fDrb->fwaddr);
-
-		fFWBusInterface->releaseDRB(fDrb->fwaddr);
-
-		fDrb->release();
-	}	
-
-	fDrb = NULL;
-
-    if ( fFWBusInterface )
-		fFWBusInterface->release();
-	
-	fFWBusInterface = NULL;
-
-	fDevice = NULL;
-
-	if(fTerminateNotifier != NULL)
-		fTerminateNotifier->remove();
-	
-	fTerminateNotifier = NULL;
-
     IOService::free();
 }
 
@@ -150,11 +172,11 @@ IOReturn IOFireWireIPUnit::message(UInt32 type, IOService *provider, void *argum
 		case kIOMessageServiceIsResumed:
 			if( fStarted )
 			{
-				fIPLocalNode->closeIPGate();
+				fIPLocalNode->closeIPoFWGate();
 	
 				updateDrb();
 
-				fIPLocalNode->openIPGate();
+				fIPLocalNode->openIPoFWGate();
 			}
 			break;
 
@@ -182,33 +204,37 @@ void IOFireWireIPUnit::updateDrb()
 
 bool IOFireWireIPUnit::configureFWBusInterface(IOFireWireController *controller)
 {
+	bool status = false; 
+	
 	fIPLocalNode = getIPNode(controller);
 
-	if( not fIPLocalNode )
-		return false;
-
-	fIPLocalNode->closeIPGate();
-
-	fFWBusInterface = getIPTransmitInterface(fIPLocalNode) ;
-	
-	if( fFWBusInterface == NULL )
+	if( fIPLocalNode )
 	{
-		fFWBusInterface = new IOFWIPBusInterface;
+		fIPLocalNode->retain();
+		fIPLocalNode->closeIPoFWGate();
 
-		if( fFWBusInterface && ( fFWBusInterface->init(fIPLocalNode) == false ) )
+		fFWBusInterface = getIPTransmitInterface(fIPLocalNode) ;
+
+		status = true;
+		if( fFWBusInterface == NULL )
+			fFWBusInterface = new IOFWIPBusInterface;
+		
+		status = fFWBusInterface->init(fIPLocalNode);
+		if( status )
+		{
+			fFWBusInterface->retain();
+		}
+		else
 		{
 			fFWBusInterface->release();
 			fFWBusInterface = 0;
-			fIPLocalNode->openIPGate();
-			return false;
 		}
+
+		fIPLocalNode->openIPoFWGate();
+		fIPLocalNode->release();
 	}
-	else
-		fFWBusInterface->retain();
 
-	fIPLocalNode->openIPGate();
-
-	return true;
+	return status;
 }
 
 IOFWIPBusInterface *IOFireWireIPUnit::getIPTransmitInterface(IOFireWireIP *fIPLocalNode)
@@ -221,7 +247,7 @@ IOFWIPBusInterface *IOFireWireIPUnit::getIPTransmitInterface(IOFireWireIP *fIPLo
 	{
 		while((child = (IORegistryEntry*)childIterator->getNextObject())) 
 		{
-			if(strcmp(child->getName(gIOServicePlane), "IOFWIPBusInterface") == 0)
+			if(strncmp(child->getName(gIOServicePlane), "IOFWIPBusInterface", strlen("IOFWIPBusInterface")) == 0)
 				break; 
 		}	
 		childIterator->release();
@@ -238,51 +264,46 @@ IOFWIPBusInterface *IOFireWireIPUnit::getIPTransmitInterface(IOFireWireIP *fIPLo
 
 IOFireWireIP *IOFireWireIPUnit::getIPNode(IOFireWireController *control) 
 {
-	waitForService( serviceMatching( "IOFWInterface" ) );
-
 	OSIterator	*iterator = getMatchingServices( serviceMatching("IOFireWireLocalNode") ); 
 
-	IOFireWireIP *fwIP = NULL;
-
+	IOFireWireNub *localNode = NULL;
+	
 	if( iterator ) 
 	{
 		IOService * obj = NULL; 
 		while((obj = (IOService*)iterator->getNextObject())) 
 		{ 
-			OSIterator	*childIterator = obj->getClientIterator();
-			
-			if(childIterator)
+			localNode = OSDynamicCast(IOFireWireNub, obj); 
+			if(localNode)
 			{
-				IORegistryEntry *child = NULL; 
-				
-				childIterator->reset();
-				
-				while((child = (IORegistryEntry*)childIterator->getNextObject())) 
-				{
-					if(strcmp(child->getName(gIOServicePlane), "IOFireWireIP") == 0)
-					{
-						fwIP = OSDynamicCast(IOFireWireIP, child); 
-						if(fwIP)
-						{
-							if(fwIP->getController() == control)
-								break;
-							else
-								fwIP = NULL;
-						} 
-					}	
-				}	
-				
-				childIterator->release();
-				childIterator = NULL;
-
-				if(fwIP != NULL) // We found an IP node in this localnode, so break here !
+				if(localNode->getController() == control)
 					break;
-			}
+				else
+					localNode = NULL;
+			} 
 		} 
 		iterator->release(); 
 		iterator = NULL; 
 	}
 
-	return fwIP; 
+	IOFireWireIP *fwIP = NULL;
+	
+	if( localNode )
+	{
+		OSDictionary *matchingTable;
+		
+		matchingTable = serviceMatching("IOFireWireIP");
+		
+		if ( matchingTable )
+		{	
+			OSObject *prop = localNode->getProperty(gFireWire_GUID);
+			if( prop )
+				matchingTable->setObject(gFireWire_GUID, prop);
+		}
+
+		fwIP = OSDynamicCast(IOFireWireIP, waitForService( matchingTable ));
+	}
+	
+	return fwIP;
 }
 

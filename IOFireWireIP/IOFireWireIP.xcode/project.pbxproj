@@ -27,9 +27,7 @@
 		3003864B094E4EA100762E56 /* IOFireWireIP.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E929FB040ED80200CD2883 /* IOFireWireIP.h */; };
 		3003864C094E4EA100762E56 /* IOFireWireIPCommand.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E929FC040ED80200CD2883 /* IOFireWireIPCommand.h */; };
 		3003864D094E4EA100762E56 /* IOFireWireIPUnit.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E929FD040ED80200CD2883 /* IOFireWireIPUnit.h */; };
-		3003864E094E4EA100762E56 /* IOFWAsyncStreamRxCommand.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E929FF040ED80200CD2883 /* IOFWAsyncStreamRxCommand.h */; };
-		3003864F094E4EA100762E56 /* IOIPPort.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A02040ED80200CD2883 /* IOIPPort.h */; };
-		30038650094E4EA100762E56 /* ip_firewire.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A03040ED80200CD2883 /* ip_firewire.h */; };
+		30038650094E4EA100762E56 /* IOFWIPDefinitions.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A03040ED80200CD2883 /* IOFWIPDefinitions.h */; };
 		30038651094E4EA100762E56 /* IOFWController.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A06040ED80200CD2883 /* IOFWController.h */; };
 		30038652094E4EA100762E56 /* IOFWInterface.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A07040ED80200CD2883 /* IOFWInterface.h */; };
 		30038653094E4EA100762E56 /* IOFWStats.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A08040ED80200CD2883 /* IOFWStats.h */; };
@@ -45,17 +43,13 @@
 		3003865F094E4EA100762E56 /* IOFireWireIPDiagnostics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F5DF0B9B043926B601CD2883 /* IOFireWireIPDiagnostics.cpp */; };
 		3003866E094E4EB300762E56 /* IOFireWireIP.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E929FB040ED80200CD2883 /* IOFireWireIP.h */; };
 		3003866F094E4EB300762E56 /* IOFireWireIPCommand.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E929FC040ED80200CD2883 /* IOFireWireIPCommand.h */; };
-		30038670094E4EB300762E56 /* IOFWAsyncStreamRxCommand.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E929FF040ED80200CD2883 /* IOFWAsyncStreamRxCommand.h */; };
-		30038671094E4EB300762E56 /* IOIPPort.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A02040ED80200CD2883 /* IOIPPort.h */; };
-		30038672094E4EB300762E56 /* ip_firewire.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A03040ED80200CD2883 /* ip_firewire.h */; };
+		30038672094E4EB300762E56 /* IOFWIPDefinitions.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A03040ED80200CD2883 /* IOFWIPDefinitions.h */; };
 		30038673094E4EB300762E56 /* IOFWStats.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E92A08040ED80200CD2883 /* IOFWStats.h */; };
 		30038674094E4EB300762E56 /* IOFWIPBusInterface.h in Headers */ = {isa = PBXBuildFile; fileRef = B58DA45F073C579800D97F2A /* IOFWIPBusInterface.h */; settings = {ATTRIBUTES = (); }; };
 		30038675094E4EB300762E56 /* firewire.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E929F7040ED80200CD2883 /* firewire.h */; };
 		30038676094E4EB300762E56 /* IOFireWireIPUnit.h in Headers */ = {isa = PBXBuildFile; fileRef = B1E929FD040ED80200CD2883 /* IOFireWireIPUnit.h */; };
-		30038679094E4EB300762E56 /* IOFWAsyncStreamRxCommand.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B1E92A28040ED80D00CD2883 /* IOFWAsyncStreamRxCommand.cpp */; };
 		3003867A094E4EB300762E56 /* IOFireWireIPUnit.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B1E92A26040ED80D00CD2883 /* IOFireWireIPUnit.cpp */; };
 		3003867B094E4EB300762E56 /* IOFireWireIPCommand.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B1E92A25040ED80D00CD2883 /* IOFireWireIPCommand.cpp */; };
-		3003867C094E4EB300762E56 /* IOIPPort.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B1E92A2B040ED80D00CD2883 /* IOIPPort.cpp */; };
 		3003867D094E4EB300762E56 /* IOFWIPBusInterface.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 14C630660761010D00169D0F /* IOFWIPBusInterface.cpp */; };
 /* End PBXBuildFile section */
 
@@ -87,9 +81,7 @@
 		B1E929FB040ED80200CD2883 /* IOFireWireIP.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOFireWireIP.h; sourceTree = "<group>"; };
 		B1E929FC040ED80200CD2883 /* IOFireWireIPCommand.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOFireWireIPCommand.h; sourceTree = "<group>"; };
 		B1E929FD040ED80200CD2883 /* IOFireWireIPUnit.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOFireWireIPUnit.h; sourceTree = "<group>"; };
-		B1E929FF040ED80200CD2883 /* IOFWAsyncStreamRxCommand.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOFWAsyncStreamRxCommand.h; sourceTree = "<group>"; };
-		B1E92A02040ED80200CD2883 /* IOIPPort.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOIPPort.h; sourceTree = "<group>"; };
-		B1E92A03040ED80200CD2883 /* ip_firewire.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = ip_firewire.h; sourceTree = "<group>"; };
+		B1E92A03040ED80200CD2883 /* IOFWIPDefinitions.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOFWIPDefinitions.h; sourceTree = "<group>"; };
 		B1E92A06040ED80200CD2883 /* IOFWController.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOFWController.h; sourceTree = "<group>"; };
 		B1E92A07040ED80200CD2883 /* IOFWInterface.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOFWInterface.h; sourceTree = "<group>"; };
 		B1E92A08040ED80200CD2883 /* IOFWStats.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOFWStats.h; sourceTree = "<group>"; };
@@ -99,8 +91,6 @@
 		B1E92A24040ED80D00CD2883 /* IOFireWireIP.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = IOFireWireIP.cpp; sourceTree = "<group>"; };
 		B1E92A25040ED80D00CD2883 /* IOFireWireIPCommand.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = IOFireWireIPCommand.cpp; sourceTree = "<group>"; };
 		B1E92A26040ED80D00CD2883 /* IOFireWireIPUnit.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = IOFireWireIPUnit.cpp; sourceTree = "<group>"; };
-		B1E92A28040ED80D00CD2883 /* IOFWAsyncStreamRxCommand.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = IOFWAsyncStreamRxCommand.cpp; sourceTree = "<group>"; };
-		B1E92A2B040ED80D00CD2883 /* IOIPPort.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = IOIPPort.cpp; sourceTree = "<group>"; };
 		B1E92A2E040ED80D00CD2883 /* IOFWController.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = IOFWController.cpp; sourceTree = "<group>"; };
 		B1E92A2F040ED80D00CD2883 /* IOFWInterface.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = IOFWInterface.cpp; sourceTree = "<group>"; };
 		B58DA45F073C579800D97F2A /* IOFWIPBusInterface.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; name = IOFWIPBusInterface.h; path = KernelHeaders/IOKit/IOFWIPBusInterface.h; sourceTree = SOURCE_ROOT; };
@@ -189,10 +179,8 @@
 				B1E929FB040ED80200CD2883 /* IOFireWireIP.h */,
 				B1E929FC040ED80200CD2883 /* IOFireWireIPCommand.h */,
 				B1E929FD040ED80200CD2883 /* IOFireWireIPUnit.h */,
-				B1E929FF040ED80200CD2883 /* IOFWAsyncStreamRxCommand.h */,
-				B1E92A02040ED80200CD2883 /* IOIPPort.h */,
-				B1E92A03040ED80200CD2883 /* ip_firewire.h */,
 				F5DF0B9C043926CC01CD2883 /* IOFireWireIPDiagnostics.h */,
+				B1E92A03040ED80200CD2883 /* IOFWIPDefinitions.h */,
 				B58DA45F073C579800D97F2A /* IOFWIPBusInterface.h */,
 			);
 			path = IOKit;
@@ -233,9 +221,7 @@
 			isa = PBXGroup;
 			children = (
 				B1E92A24040ED80D00CD2883 /* IOFireWireIP.cpp */,
-				B1E92A2B040ED80D00CD2883 /* IOIPPort.cpp */,
 				F5DF0B9B043926B601CD2883 /* IOFireWireIPDiagnostics.cpp */,
-				B1E92A28040ED80D00CD2883 /* IOFWAsyncStreamRxCommand.cpp */,
 				B1E92A25040ED80D00CD2883 /* IOFireWireIPCommand.cpp */,
 				B1E92A26040ED80D00CD2883 /* IOFireWireIPUnit.cpp */,
 				14C630660761010D00169D0F /* IOFWIPBusInterface.cpp */,
@@ -264,9 +250,7 @@
 				3003864B094E4EA100762E56 /* IOFireWireIP.h in Headers */,
 				3003864C094E4EA100762E56 /* IOFireWireIPCommand.h in Headers */,
 				3003864D094E4EA100762E56 /* IOFireWireIPUnit.h in Headers */,
-				3003864E094E4EA100762E56 /* IOFWAsyncStreamRxCommand.h in Headers */,
-				3003864F094E4EA100762E56 /* IOIPPort.h in Headers */,
-				30038650094E4EA100762E56 /* ip_firewire.h in Headers */,
+				30038650094E4EA100762E56 /* IOFWIPDefinitions.h in Headers */,
 				30038651094E4EA100762E56 /* IOFWController.h in Headers */,
 				30038652094E4EA100762E56 /* IOFWInterface.h in Headers */,
 				30038653094E4EA100762E56 /* IOFWStats.h in Headers */,
@@ -281,9 +265,7 @@
 			files = (
 				3003866E094E4EB300762E56 /* IOFireWireIP.h in Headers */,
 				3003866F094E4EB300762E56 /* IOFireWireIPCommand.h in Headers */,
-				30038670094E4EB300762E56 /* IOFWAsyncStreamRxCommand.h in Headers */,
-				30038671094E4EB300762E56 /* IOIPPort.h in Headers */,
-				30038672094E4EB300762E56 /* ip_firewire.h in Headers */,
+				30038672094E4EB300762E56 /* IOFWIPDefinitions.h in Headers */,
 				30038673094E4EB300762E56 /* IOFWStats.h in Headers */,
 				30038674094E4EB300762E56 /* IOFWIPBusInterface.h in Headers */,
 				30038675094E4EB300762E56 /* firewire.h in Headers */,
@@ -344,9 +326,11 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 14220D5208AC38B300347178 /* Build configuration list for PBXProject "IOFireWireIP" */;
+			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOFireWireIP */;
 			projectDirPath = "";
+			projectRoot = "";
 			targets = (
 				F51F429A036DAA9201CD2883 /* All */,
 				30038646094E4EA100762E56 /* IOFireWireIP (Upgraded) */,
@@ -448,10 +432,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				30038679094E4EB300762E56 /* IOFWAsyncStreamRxCommand.cpp in Sources */,
 				3003867A094E4EB300762E56 /* IOFireWireIPUnit.cpp in Sources */,
 				3003867B094E4EB300762E56 /* IOFireWireIPCommand.cpp in Sources */,
-				3003867C094E4EB300762E56 /* IOIPPort.cpp in Sources */,
 				3003867D094E4EB300762E56 /* IOFWIPBusInterface.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -611,19 +593,19 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireIP__Upgraded_.plist";
-				INSTALLHDRS_COPY_PHASE = "\U0001YES";
+				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireIP;
-				MODULE_VERSION = 1.5.4;
-				OTHER_LDFLAGS = "\U0001";
-				OTHER_REZFLAGS = "\U0001";
+				MODULE_VERSION = 1.7.0;
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = IOFireWireIP;
-				SECTORDER_FLAGS = "\U0001";
+				SECTORDER_FLAGS = "";
 				WARNING_CFLAGS = (
-					"\U0001-Wmost",
+					"-Wmost",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
@@ -640,19 +622,19 @@
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireIP__Upgraded_.plist";
-				INSTALLHDRS_COPY_PHASE = "\U0001YES";
+				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireIP;
-				MODULE_VERSION = 1.5.4;
-				OTHER_LDFLAGS = "\U0001";
-				OTHER_REZFLAGS = "\U0001";
+				MODULE_VERSION = 1.7.0;
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = IOFireWireIP;
-				SECTORDER_FLAGS = "\U0001";
+				SECTORDER_FLAGS = "";
 				WARNING_CFLAGS = (
-					"\U0001-Wmost",
+					"-Wmost",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
@@ -669,19 +651,19 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireIP__Upgraded_.plist";
-				INSTALLHDRS_COPY_PHASE = "\U0001YES";
+				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireIP;
-				MODULE_VERSION = 1.5.4;
-				OTHER_LDFLAGS = "\U0001";
-				OTHER_REZFLAGS = "\U0001";
+				MODULE_VERSION = 1.7.0;
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = IOFireWireIP;
-				SECTORDER_FLAGS = "\U0001";
+				SECTORDER_FLAGS = "";
 				WARNING_CFLAGS = (
-					"\U0001-Wmost",
+					"-Wmost",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
@@ -695,19 +677,19 @@
 				FRAMEWORK_SEARCH_PATHS = "";
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireIP__Upgraded_.plist";
-				INSTALLHDRS_COPY_PHASE = "\U0001YES";
+				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireIP;
-				MODULE_VERSION = 1.5.4;
-				OTHER_LDFLAGS = "\U0001";
-				OTHER_REZFLAGS = "\U0001";
+				MODULE_VERSION = 1.7.0;
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = IOFireWireIP;
-				SECTORDER_FLAGS = "\U0001";
+				SECTORDER_FLAGS = "";
 				WARNING_CFLAGS = (
-					"\U0001-Wmost",
+					"-Wmost",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
@@ -726,19 +708,19 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireIPPrivate__Upgraded_.plist";
-				INSTALLHDRS_COPY_PHASE = "\U0001YES";
+				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/IOFireWireIP.kext/Contents/PlugIns/";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireIPPrivate;
-				MODULE_VERSION = 1.5.4;
-				OTHER_LDFLAGS = "\U0001";
-				OTHER_REZFLAGS = "\U0001";
+				MODULE_VERSION = 1.7.0;
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = IOFireWireIPPrivate;
-				SECTORDER_FLAGS = "\U0001";
+				SECTORDER_FLAGS = "";
 				WARNING_CFLAGS = (
-					"\U0001-Wmost",
+					"-Wmost",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
@@ -755,19 +737,19 @@
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireIPPrivate__Upgraded_.plist";
-				INSTALLHDRS_COPY_PHASE = "\U0001YES";
+				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/IOFireWireIP.kext/Contents/PlugIns/";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireIPPrivate;
-				MODULE_VERSION = 1.5.4;
-				OTHER_LDFLAGS = "\U0001";
-				OTHER_REZFLAGS = "\U0001";
+				MODULE_VERSION = 1.7.0;
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = IOFireWireIPPrivate;
-				SECTORDER_FLAGS = "\U0001";
+				SECTORDER_FLAGS = "";
 				WARNING_CFLAGS = (
-					"\U0001-Wmost",
+					"-Wmost",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
@@ -784,19 +766,19 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireIPPrivate__Upgraded_.plist";
-				INSTALLHDRS_COPY_PHASE = "\U0001YES";
+				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/IOFireWireIP.kext/Contents/PlugIns/";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireIPPrivate;
-				MODULE_VERSION = 1.5.4;
-				OTHER_LDFLAGS = "\U0001";
-				OTHER_REZFLAGS = "\U0001";
+				MODULE_VERSION = 1.7.0;
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = IOFireWireIPPrivate;
-				SECTORDER_FLAGS = "\U0001";
+				SECTORDER_FLAGS = "";
 				WARNING_CFLAGS = (
-					"\U0001-Wmost",
+					"-Wmost",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);
@@ -810,19 +792,19 @@
 				FRAMEWORK_SEARCH_PATHS = "";
 				HEADER_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "Info-IOFireWireIPPrivate__Upgraded_.plist";
-				INSTALLHDRS_COPY_PHASE = "\U0001YES";
+				INSTALLHDRS_COPY_PHASE = YES;
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/IOFireWireIP.kext/Contents/PlugIns/";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOFireWireIPPrivate;
-				MODULE_VERSION = 1.5.4;
-				OTHER_LDFLAGS = "\U0001";
-				OTHER_REZFLAGS = "\U0001";
+				MODULE_VERSION = 1.7.0;
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
 				PRODUCT_NAME = IOFireWireIPPrivate;
-				SECTORDER_FLAGS = "\U0001";
+				SECTORDER_FLAGS = "";
 				WARNING_CFLAGS = (
-					"\U0001-Wmost",
+					"-Wmost",
 					"-Wno-four-char-constants",
 					"-Wno-unknown-pragmas",
 				);

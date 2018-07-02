@@ -21,13 +21,12 @@
  */
 #include "IOFireWireIP.h"
 #include "IOFireWireIPCommand.h"
-#include "IOFWAsyncStreamRxCommand.h"
+#include <IOKit/firewire/IOFireWireController.h>
 
 extern "C"
 {
 void _logMbuf(struct mbuf * m);
 void _logPkt(void *pkt, UInt16 len);
-extern int  in6_cksum(struct mbuf *, __uint8_t, __uint32_t, __uint32_t);
 }
 
 #define super IOFWController
@@ -43,80 +42,6 @@ bool IOFireWireIP::start(IOService *provider)
 	
 	if(fStarted)
 		return fStarted;
-		
-	fMaxPktSize = 0;
-	netifEnabled = false;
-	busifEnabled = false;
-	fDoFastRetry = false;
-
-    fDevice = OSDynamicCast(IOFireWireNub, provider);
-
-    if(!fDevice)
-        return false;
-
-    fControl = fDevice->getController(); 
-
-	if(!fControl)
-		return false;
-
-	fControl->retain();
-	
-    // Initialize the LCB
-    fLcb = (LCB*)IOMalloc(sizeof(LCB));
-    if(fLcb == NULL)
-        return false;
-    
-    memset(fLcb, 0, sizeof(LCB));
-
-	fDiagnostics_Symbol = OSSymbol::withCStringNoCopy("Diagnostics");
-	
-	fDiagnostics = IOFireWireIPDiagnostics::createDiagnostics(this);
-	if( fDiagnostics )
-	{
-		if(fDiagnostics_Symbol)
-			setProperty( fDiagnostics_Symbol, fDiagnostics );
-		fDiagnostics->release();
-	}
-
-	if(ioStat == kIOReturnSuccess) {
-	    
-		CSRNodeUniqueID	fwuid = fDevice->getUniqueID();
-		
-		// Construct the ethernet address
-		makeEthernetAddress(&fwuid, macAddr, GUID_TYPE);
-	}
-
-	// IONetworkingFamily attachments
-    if (!super::start(provider))
-        return false;
-	
-    if (getHardwareAddress(&myAddress) != kIOReturnSuccess)
-    {	
-        return false;
-    }
-
-    if(!createMediumState())
-	{
-		IOLog( "IOFireWireIP::start - Couldn't allocate IONetworkMedium\n" );
-		return false;
-	}
-	
-    if (!attachInterface((IONetworkInterface**)&networkInterface, false ))
-    {	
-        return false;
-    }
-
-	fPrivateInterface	= NULL;
-
-	networkInterface->setIfnetMTU( 1 << fDevice->maxPackLog(true) );
-
-	transmitQueue = (IOGatedOutputQueue*)getOutputQueue();
-    if ( !transmitQueue ) 
-    {
-        IOLog( "IOFireWireIP::start - Output queue initialization failed\n" );
-        return false;
-    }
-    transmitQueue->retain();
 
 	// Create the lock
 	if(ioStat == kIOReturnSuccess) 
@@ -127,71 +52,174 @@ bool IOFireWireIP::start(IOService *provider)
 		if(ipLock == NULL)
 			ioStat = kIOReturnNoMemory;
 	}
-	
-	if(ioStat == kIOReturnSuccess) 
-	{
-		// Add unit notification for units disappearing
-		fIPUnitNotifier = IOService::addNotification(gIOPublishNotification, 
-													serviceMatching("IOFireWireIPUnit"), 
-													&fwIPUnitAttach, this, (void*)IP1394_VERSION, 0);
-	}
 
 	if(ioStat == kIOReturnSuccess) 
 	{
-		// Add unit notification for units disappearing
-		fIPv6UnitNotifier = IOService::addNotification(gIOPublishNotification, 
-													serviceMatching("IOFireWireIPUnit"), 
-													&fwIPUnitAttach, this, (void*)IP1394v6_VERSION, 0);
+		recursiveScopeLock lock(ipLock);
+
+		fIPoFWDiagnostics.fMaxPktSize = 0;
+		netifEnabled = false;
+		busifEnabled = false;
+		fIPoFWDiagnostics.fDoFastRetry = false;
+
+		fDevice = OSDynamicCast(IOFireWireNub, provider);
+
+		if(!fDevice)
+			return false;
+
+		fControl = fDevice->getController(); 
+
+		if(!fControl)
+			return false;
+
+		fControl->retain();
+
+		OSObject * prop = fDevice->getProperty(gFireWire_GUID);
+		if( prop )
+		{
+			setProperty( gFireWire_GUID, prop );
+		}
+		
+		// Initialize the LCB
+		fLcb = (LCB*)IOMalloc(sizeof(LCB));
+		if(fLcb == NULL)
+			return false;
+		
+		memset(fLcb, 0, sizeof(LCB));
+
+		fDiagnostics_Symbol = OSSymbol::withCStringNoCopy("Diagnostics");
+		
+		fDiagnostics = IOFireWireIPDiagnostics::createDiagnostics(this);
+		if( fDiagnostics )
+		{
+			if(fDiagnostics_Symbol)
+				setProperty( fDiagnostics_Symbol, fDiagnostics );
+			fDiagnostics->release();
+		}
+
+		if(ioStat == kIOReturnSuccess) {
+			
+			CSRNodeUniqueID	fwuid = fDevice->getUniqueID();
+			
+			// Construct the ethernet address
+			makeEthernetAddress(&fwuid, macAddr, GUID_TYPE);
+		}
+
+		// IONetworkingFamily attachments
+		if (!super::start(provider))
+			return false;
+		
+		if (getHardwareAddress(&myAddress) != kIOReturnSuccess)
+		{	
+			return false;
+		}
+
+		if(!createMediumState())
+		{
+			IOLog( "IOFireWireIP::start - Couldn't allocate IONetworkMedium\n" );
+			return false;
+		}
+
+		
+		if(ioStat == kIOReturnSuccess) 
+		{
+			// Add unit notification for units disappearing
+			fIPUnitNotifier = IOService::addNotification(gIOPublishNotification, 
+														serviceMatching("IOFireWireIPUnit"), 
+														&fwIPUnitAttach, this, (void*)IP1394_VERSION, 0);
+		}
+
+		if(ioStat == kIOReturnSuccess) 
+		{
+			// Add unit notification for units disappearing
+			fIPv6UnitNotifier = IOService::addNotification(gIOPublishNotification, 
+														serviceMatching("IOFireWireIPUnit"), 
+														&fwIPUnitAttach, this, (void*)IP1394v6_VERSION, 0);
+		}
+
+		// Create config rom entry
+		if(ioStat == kIOReturnSuccess)
+			ioStat = createIPConfigRomEntry();
+
+		if(ioStat == kIOReturnSuccess) 
+		{
+			fDevice->getNodeIDGeneration(fLcb->busGeneration, fLcb->ownNodeID); 
+			fLcb->ownMaxSpeed = fDevice->FWSpeed();
+			fLcb->maxBroadcastPayload = fDevice->maxPackLog(true);
+			fLcb->maxBroadcastSpeed = fDevice->FWSpeed();
+			fLcb->ownMaxPayload = fDevice->maxPackLog(true);
+
+			IP1394_HDW_ADDR	hwAddr;
+			
+			CSRNodeUniqueID	fwuid = fDevice->getUniqueID();
+
+			memset(&hwAddr, 0, sizeof(IP1394_HDW_ADDR));
+			hwAddr.eui64.hi = OSSwapHostToBigInt32((UInt32)(fwuid >> 32));
+			hwAddr.eui64.lo = OSSwapHostToBigInt32((UInt32)(fwuid & 0xffffffff));
+			
+			hwAddr.maxRec	= fControl->getMaxRec();              
+			hwAddr.spd		= fDevice->FWSpeed();
+
+			hwAddr.unicastFifoHi = kUnicastHi;      
+			hwAddr.unicastFifoLo = kUnicastLo;
+			
+			memcpy(&fLcb->ownHardwareAddress, &hwAddr, sizeof(IP1394_HDW_ADDR)); 
+			
+			UInt32 size = getMaxARDMAPacketSize();
+			
+			if(size > 0)
+				fLcb->ownHardwareAddress.maxRec = getMaxARDMARec(size);			
+			
+			setProperty(kIOFWHWAddr,  (void *)&fLcb->ownHardwareAddress, sizeof(IP1394_HDW_ADDR));
+		}
+		
+		if(ioStat != kIOReturnSuccess)
+		{
+			IOLog( "IOFireWireIP::start - failed\n" );
+			return false;
+		}
+
+		if (!attachInterface((IONetworkInterface**)&networkInterface, false ))
+		{	
+			return false;
+		}
+
+		fPrivateInterface	= NULL;
+
+		networkInterface->setIfnetMTU( 1 << fDevice->maxPackLog(true) );
+
+		transmitQueue = (IOGatedOutputQueue*)getOutputQueue();
+		if ( !transmitQueue ) 
+		{
+			IOLog( "IOFireWireIP::start - Output queue initialization failed\n" );
+			return false;
+		}
+		transmitQueue->retain();
+
+		networkInterface->registerService();
+
+		registerService();
+
+		fStarted = true;
 	}
 
-	// Create config rom entry
-	if(ioStat == kIOReturnSuccess)
-		ioStat = createIPConfigRomEntry();
-
-	if(ioStat == kIOReturnSuccess) 
-	{
-		fDevice->getNodeIDGeneration(fLcb->busGeneration, fLcb->ownNodeID); 
-		fLcb->ownMaxSpeed = fDevice->FWSpeed();
-		fLcb->maxBroadcastPayload = fDevice->maxPackLog(true);
-		fLcb->maxBroadcastSpeed = fDevice->FWSpeed();
-		fLcb->ownMaxPayload = fDevice->maxPackLog(true);
-
-		IP1394_HDW_ADDR	hwAddr;
-		
-		CSRNodeUniqueID	fwuid = fDevice->getUniqueID();
-
-		memset(&hwAddr, 0, sizeof(IP1394_HDW_ADDR));
-		hwAddr.eui64.hi = OSSwapHostToBigInt32((UInt32)(fwuid >> 32));
-		hwAddr.eui64.lo = OSSwapHostToBigInt32((UInt32)(fwuid & 0xffffffff));
-		
-		hwAddr.maxRec	= fControl->getMaxRec();              
-		hwAddr.spd		= fDevice->FWSpeed();
-
-		hwAddr.unicastFifoHi = kUnicastHi;      
-		hwAddr.unicastFifoLo = kUnicastLo;
-		
-		memcpy(&fLcb->ownHardwareAddress, &hwAddr, sizeof(IP1394_HDW_ADDR)); 
-		
-		UInt32 size = getMaxARDMAPacketSize();
-		
-		if(size > 0)
-			fLcb->ownHardwareAddress.maxRec = getMaxARDMARec(size);			
-		
-		setProperty(kIOFWHWAddr,  (void *)&fLcb->ownHardwareAddress, sizeof(IP1394_HDW_ADDR));
-	}
-	
-	if(ioStat != kIOReturnSuccess)
-	{
-		IOLog( "IOFireWireIP::start - failed\n" );
-		return false;
-	}
-
-    networkInterface->registerService();
-
-	fStarted = true;
-
-    return true;
+    return fStarted;
 } // end start
+
+bool IOFireWireIP::matchPropertyTable(OSDictionary * table)
+{
+    //
+    // If the service object wishes to compare some of its properties in its
+    // property table against the supplied matching dictionary,
+    // it should do so in this method and return truth on success.
+    //
+    if (!IOService::matchPropertyTable(table))  return false;
+
+    // We return success if the following expression is true -- individual
+    // comparisions evaluate to truth if the named property is not present
+    // in the supplied matching dictionary.
+    return  compareProperty(table, gFireWire_GUID);
+}
 
 bool IOFireWireIP::finalize(IOOptionBits options)
 {	
@@ -200,6 +228,8 @@ bool IOFireWireIP::finalize(IOOptionBits options)
 
 void IOFireWireIP::stop(IOService *provider)
 {
+	recursiveScopeLock lock(ipLock);
+
 	if(fDiagnostics_Symbol != NULL)
 		fDiagnostics_Symbol->release();		
 	
@@ -267,9 +297,9 @@ void IOFireWireIP::free(void)
 {
     if (ipLock != NULL) 
         IORecursiveLockFree(ipLock);
-		
-	ipLock = NULL;
 
+	ipLock = NULL;
+		
 	return super::free();
 }
 
@@ -315,7 +345,7 @@ IOReturn IOFireWireIP::getMaxPacketSize(UInt32 * maxSize) const
 
 IOReturn IOFireWireIP::getHardwareAddress(IOFWAddress *ea)
 {
-	memcpy(ea->bytes, macAddr, FIREWIRE_ADDR_LEN);
+	memcpy(ea->bytes, macAddr, kIOFWAddressSize);
 
     return kIOReturnSuccess;
 } // end getHardwareAddress
@@ -328,7 +358,7 @@ bool IOFireWireIP::configureInterface( IONetworkInterface *netif )
     if ( super::configureInterface( netif ) == false )
         return false;
 
-	/* Grab a pointer to the statistics structure in the interface:	*/
+	// Grab a pointer to the statistics structure in the interface:
 	nd = netif->getNetworkData( kIONetworkStatsKey );
     if (!nd || !(fpNetStats = (IONetworkStats *) nd->getBuffer()))
     {
@@ -393,37 +423,55 @@ IOOutputAction IOFireWireIP::getOutputHandler() const
     return (IOOutputAction) &IOFireWireIP::transmitPacket;
 }
 
+bool IOFireWireIP::multicastCacheHandler(IOFWAddress *addrs, UInt32 count)
+{
+	bool ret = false;
+
+	if( busifEnabled )
+	{
+		IORecursiveLockLock(ipLock);
+
+		if( fUpdateMulticastCache )
+			ret = (*fUpdateMulticastCache)(fPrivateInterface, addrs, count);
+
+		IORecursiveLockUnlock(ipLock);
+	}
+	
+	return ret;
+}
+
 bool IOFireWireIP::arpCacheHandler(IP1394_ARP *fwa)
 {
-    IORecursiveLockLock(ipLock);
-
-	if(not busifEnabled)
+	bool ret = false;
+	
+	if( busifEnabled )
 	{
-	    IORecursiveLockUnlock(ipLock);
-		return false;
+		IORecursiveLockLock(ipLock);
+
+		if( fUpdateARPCache )
+			ret = (*fUpdateARPCache)(fPrivateInterface, fwa);
+
+		IORecursiveLockUnlock(ipLock);
 	}
-
-	bool ret = (*fUpdateARPCache)(fPrivateInterface, fwa);
-
-    IORecursiveLockUnlock(ipLock);
 	
 	return ret;
 }
 
 UInt32 IOFireWireIP::transmitPacket(mbuf_t m, void * param)
 {
-    IORecursiveLockLock(ipLock);
+	IOReturn status = kIOReturnOutputDropped;
 
-	if(not busifEnabled)
+	if( busifEnabled )
 	{
-		freePacket((struct mbuf*)m);
-	    IORecursiveLockUnlock(ipLock);
-		return kIOReturnOutputDropped;
+		IORecursiveLockLock(ipLock);
+
+		if( fOutAction )
+			status = (*fOutAction)(m, (void*)fPrivateInterface);
+
+		IORecursiveLockUnlock(ipLock);
 	}
-
-	IOReturn status = (*fOutAction)(m, (void*)fPrivateInterface);
-
-    IORecursiveLockUnlock(ipLock);
+	else
+		freePacket((struct mbuf*)m);
 
 	return status;
 }
@@ -445,7 +493,6 @@ UInt32 IOFireWireIP::outputPacket(mbuf_t pkt, void * param)
  *-------------------------------------------------------------------------*/
 IOReturn IOFireWireIP::enable(IONetworkInterface * netif)
 {
-	// IOLog("IOFireWireIP: enable \n");
     /*
      * If an interface client has previously enabled us,
      * and we know there can only be one interface client
@@ -501,65 +548,48 @@ IOReturn IOFireWireIP::disable(IONetworkInterface * /*netif*/)
 
 IOReturn IOFireWireIP::getPacketFilters( const OSSymbol	*group, UInt32 *filters ) const
 {
-	//IOLog("IOFireWireIP: getPacketFilters \n");
-
 	return super::getPacketFilters( group, filters );
-
 }// end getPacketFilters
 
 
 IOReturn IOFireWireIP::setWakeOnMagicPacket( bool active )
 {
-	//IOLog("IOFireWireIP: setWakeOnMagicPacket \n");
-
 	return kIOReturnSuccess;
-
 }// end setWakeOnMagicPacket
 
 const OSString * IOFireWireIP::newVendorString() const
 {
-	//IOLog("IOFireWireIP: newVendorString \n");
-	
     return OSString::withCString("Apple");
 }
 
 const OSString * IOFireWireIP::newModelString() const
 {
-	//IOLog("IOFireWireIP: newModelString \n");
-
     return OSString::withCString("fw+");
 }
 
 const OSString * IOFireWireIP::newRevisionString() const
 {
-	//IOLog("IOFireWireIP: newRevisionString \n");
-	
     return OSString::withCString("");
-
 }
 
 IOReturn IOFireWireIP::setPromiscuousMode( bool active )
 {
-
-	//IOLog("IOFireWireIP: setPromiscuousMode \n");
-
 	isPromiscuous	= active;
 
 	return kIOReturnSuccess;
-
 } // end setPromiscuousMode
 
 IOReturn IOFireWireIP::setMulticastMode( bool active )
 {
-	//IOLog("IOFireWireIP: setMulticastMode \n");
-	
 	multicastEnabled = active;
 
 	return kIOReturnSuccess;
-}/* end setMulticastMode */
+}// end setMulticastMode
 
 IOReturn IOFireWireIP::setMulticastList(IOFWAddress *addrs, UInt32 count)
 {
+	multicastCacheHandler(addrs, count);
+
     return kIOReturnSuccess;
 }
 
@@ -602,6 +632,23 @@ bool IOFireWireIP::createMediumState()
 	return setLinkStatus( kIONetworkLinkValid, getCurrentMedium(), 0 ); 
 }
 
+/*!
+	@function getFeatures
+	@abstract 
+	@param none.
+	@result Tell family we can handle multipage mbufs. kIONetworkFeatureMultiPages
+*/
+UInt32 IOFireWireIP::getFeatures() const
+{
+    UInt32 result = 0;
+    
+#if VERSION_MAJOR >= 9
+    result |= kIONetworkFeatureMultiPages;
+#endif
+    
+    return result;
+}
+
 #pragma mark -
 #pragma mark еее IOFirewireIP methods еее
 
@@ -613,7 +660,7 @@ bool IOFireWireIP::createMediumState()
 	@param bufAddr - pointer to the buffer.
 	@result void.
 */
-void IOFireWireIP::getBytesFromGUID(void *guid, u_char *bufAddr, UInt8 type)
+void IOFireWireIP::getBytesFromGUID(void *guid, UInt8 *bufAddr, UInt8 type)
 {
 	u_long lo=0, hi=0;
 
@@ -649,7 +696,7 @@ void IOFireWireIP::getBytesFromGUID(void *guid, u_char *bufAddr, UInt8 type)
 	@param vendorID - vendorID.
 	@result void.
 */
-void IOFireWireIP::makeEthernetAddress(CSRNodeUniqueID	*fwuid, u_char *bufAddr, UInt32 vendorID)
+void IOFireWireIP::makeEthernetAddress(CSRNodeUniqueID	*fwuid, UInt8 *bufAddr, UInt32 vendorID)
 {
 	getBytesFromGUID(fwuid, bufAddr, GUID_TYPE);
 }
@@ -694,9 +741,10 @@ void IOFireWireIP::registerFWIPPrivateHandlers(IOFireWireIPPrivateHandlers *priv
 
     IORecursiveLockLock(ipLock);
 
-	fPrivateInterface	= privateSelf->newService;
-	fOutAction			= privateSelf->transmitPacket;
-	fUpdateARPCache		= privateSelf->updateARPCache;
+	fPrivateInterface		= privateSelf->newService;
+	fOutAction				= privateSelf->transmitPacket;
+	fUpdateARPCache			= privateSelf->updateARPCache;
+	fUpdateMulticastCache	= privateSelf->updateMulticastCache;
 
 	busifEnabled		= true;
 	
@@ -794,26 +842,6 @@ IOReturn IOFireWireIP::createIPConfigRomEntry()
 }
 
 #ifdef DEBUG
-
-void IOFireWireIP::showIPStatus()
-{
-	IOLog("	txB %d, rxB %d, txU %d, rxUni %d, rxF %d txF %d qSt %d, qStallCt %d, qRetryCt %d, qGetSize %d, \
-				acCmds %d, noCmds %d, noBCmds %d, inacCmds %d, dc %d, subErr %d, callErr %d, \
-				stall %d, noRes %d, activeMbufs %d inActiveMbufs %d \
-				\n",
-		fTxBcast,
-		fRxBcast,fTxUni,fRxUni, 
-		fRxFragmentPkts,fTxFragmentPkts, transmitQueue->getState(),
-		transmitQueue->getStallCount(), transmitQueue->getRetryCount(), 
-		transmitQueue->getSize(), 
-		fActiveCmds, fNoCommands,fNoBCastCommands, 
-		fInActiveCmds, fDoubleCompletes, 
-		fSubmitErrs, fCallErrs,  
-		fNoResources, activeMbufs, inActiveMbufs
-		);
-}
-
-// Used for debugging only. Log the mbuf fields.
 void _logMbuf(struct mbuf * m)
 {
 	UInt8	*bytePtr;

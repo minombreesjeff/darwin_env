@@ -41,11 +41,6 @@
 #define	FIREWIRE_TYPE_LEN		2
 
 /*
- * The number of bytes in the trailing CRC field.
- */
-#define	FIREWIRE_CRC_LEN		4
-
-/*
  * The length of the combined header.
  */
 #define	FIREWIRE_HDR_LEN		(FIREWIRE_ADDR_LEN*2+FIREWIRE_TYPE_LEN)

@@ -48,7 +48,7 @@ OSMetaClassDefineReservedUnused(IOFWIPAsyncWriteCommand, 3);
 	Initializes the Asynchronous write command object
 	@result true if successfull.
 */
-bool IOFWIPAsyncWriteCommand::initAll(IOFireWireIP *networkObject, UInt32 cmdLen, FWAddress devAddress, FWDeviceCallback completion, void *refcon, bool failOnReset)
+bool IOFWIPAsyncWriteCommand::initAll(IOFireWireIP *networkObject, IOFWIPBusInterface *fwIPBusIfObject, UInt32 cmdLen, FWAddress devAddress, FWDeviceCallback completion, void *refcon, bool failOnReset)
 {    
 	fIPLocalNode = networkObject;
     
@@ -100,6 +100,12 @@ bool IOFWIPAsyncWriteCommand::initAll(IOFireWireIP *networkObject, UInt32 cmdLen
     fSpeed = fControl->FWSpeed(fNodeID);
     fFailOnReset = failOnReset;
 	
+	if(fwIPBusIfObject)
+	{
+		fIPBusIf = fwIPBusIfObject;
+		fIPBusIf->retain();
+	}
+	
     return true;
 }
 
@@ -111,6 +117,12 @@ bool IOFWIPAsyncWriteCommand::initAll(IOFireWireIP *networkObject, UInt32 cmdLen
 */
 void IOFWIPAsyncWriteCommand::free()
 {
+	if(fIPBusIf)
+	{
+		fIPBusIf->release();
+		fIPBusIf = NULL;
+	}
+
     // Release the buffer descriptor
     if(fBuffer){
         fBuffer->release();
@@ -167,7 +179,7 @@ IOReturn IOFWIPAsyncWriteCommand::reinit(IOFireWireNub *device, UInt32 cmdLen,
     
 	setDeferredNotify(deferNotify);
 
-	IOFWWriteCommand::setFastRetryOnBusy(fIPLocalNode->fDoFastRetry);
+	IOFWWriteCommand::setFastRetryOnBusy(fIPLocalNode->fIPoFWDiagnostics.fDoFastRetry);
 	
     return kIOReturnSuccess;
 }
@@ -176,8 +188,7 @@ IOReturn IOFWIPAsyncWriteCommand::transmit(IOFireWireNub *device, UInt32 cmdLen,
 											FWAddress devAddress, FWDeviceCallback completion, void *refcon, 
 											bool failOnReset, bool deferNotify, bool doQueue, FragmentType fragmentType)
 {
-	fLinkFragmentType	= fragmentType;
-	
+	fLinkFragmentType = fragmentType;
 	return transmit(device, cmdLen, devAddress, completion, refcon, failOnReset, deferNotify, doQueue);
 }
  
@@ -205,13 +216,13 @@ IOReturn IOFWIPAsyncWriteCommand::transmit(IOFireWireNub *device, UInt32 cmdLen,
 	switch (status)
 	{
 		case kIOFireWireOutOfTLabels:
-			fIPLocalNode->fSubmitErrs++;
+			fIPLocalNode->fIPoFWDiagnostics.fSubmitErrs++;
 			break;
 
 		case kIOFireWireIPNoResources:
 			resetDescriptor(status);
 			((IOFWIPBusInterface*)refcon)->returnAsyncCommand(this);
-			fIPLocalNode->fNoResources++;
+			fIPLocalNode->fIPoFWDiagnostics.fNoResources++;
 			status = kIOReturnSuccess;
 			break;
 
@@ -226,7 +237,7 @@ IOReturn IOFWIPAsyncWriteCommand::transmit(IOFireWireNub *device, UInt32 cmdLen,
 /*!
 	@function createFragmentedDescriptors
 	@abstract creates IOVirtual ranges for fragmented Mbuf packets.
-	@param none
+	@param none.
 	@result 0 if copied successfully else non-negative value
 */
 IOReturn IOFWIPAsyncWriteCommand::createFragmentedDescriptors()
@@ -589,7 +600,7 @@ void IOFWIPAsyncWriteCommand::resetDescriptor(IOReturn status)
 	fCursorBuf	= (UInt8*)getBufferFromDescriptor();
 
 	if( status == kIOReturnSuccess || status == kIOReturnBusy)
-			fIPLocalNode->fFastRetryBusyAcks += getFastRetryCount();
+			fIPLocalNode->fIPoFWDiagnostics.fFastRetryBusyAcks += getFastRetryCount();
 
 	fMBufCommand->releaseWithStatus(status);
 
@@ -640,7 +651,7 @@ void* IOFWIPAsyncWriteCommand::initPacketHeader(IOFWIPMBufCommand *mBufCommand, 
 void IOFWIPAsyncWriteCommand::gotAck(int ackCode)
 {
 	if ( (ackCode == kFWAckBusyX) || (ackCode == kFWAckBusyA) || (ackCode == kFWAckBusyB) )
-		fIPLocalNode->fBusyAcks++;
+		fIPLocalNode->fIPoFWDiagnostics.fBusyAcks++;
 	
 	IOFWWriteCommand::gotAck(ackCode);
 }
@@ -703,6 +714,7 @@ OSMetaClassDefineReservedUnused(IOFWIPAsyncStreamTxCommand, 3);
 bool IOFWIPAsyncStreamTxCommand::initAll(
 										IOFireWireIP			*networkObject,
 										IOFireWireController 	*control,
+										IOFWIPBusInterface		*fwIPBusIfObject,
 										UInt32					generation, 
 										UInt32					channel,
 										UInt32					sync,
@@ -720,7 +732,7 @@ bool IOFWIPAsyncStreamTxCommand::initAll(
     
 	if(!fIPLocalNode)
 		return false;
-		
+
     // Create a buffer descriptor that will hold something more than MTU
     fBuffer = new IOBufferMemoryDescriptor;
     if(fBuffer == NULL)
@@ -755,7 +767,13 @@ bool IOFWIPAsyncStreamTxCommand::initAll(
     fSyncBits = sync;
     fTag = tag;
     fSpeed = speed;
-    fFailOnReset = false;
+    fFailOnReset = true;
+
+	if(fwIPBusIfObject)
+	{
+		fIPBusIf = fwIPBusIfObject;
+		fIPBusIf->retain();
+	}
 	
     return true;
 }
@@ -767,6 +785,12 @@ void IOFWIPAsyncStreamTxCommand::wait()
 
 void IOFWIPAsyncStreamTxCommand::free()
 {
+	if(fIPBusIf)
+	{
+		fIPBusIf->release();
+		fIPBusIf = NULL;
+	}
+
     // Release the buffer descriptor
     if(fBuffer){
         fBuffer->release();

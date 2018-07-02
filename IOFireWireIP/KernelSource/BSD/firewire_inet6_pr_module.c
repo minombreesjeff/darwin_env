@@ -118,7 +118,12 @@ inet6_firewire_input(
 		mbuf_setflags(m, mbuf_flags(m) | flags);	
     }
 	
-	return proto_input(PF_INET6, (struct __mbuf*)m);
+	errno_t ret = proto_input(PF_INET6, (struct __mbuf*)m);
+	
+	if( ret )
+		mbuf_freem(m);
+	
+	return ret;
 }
 
 
@@ -178,6 +183,7 @@ firewire_inet6_resolve_multi(
 	out_ll->sdl_nlen = 0;
 	out_ll->sdl_alen = FIREWIRE_ADDR_LEN;
 	out_ll->sdl_slen = 0;
+ 	
 	FIREWIRE_MAP_IPV6_MULTICAST(&sin6->sin6_addr, LLADDR(out_ll));
 	
 	return 0;

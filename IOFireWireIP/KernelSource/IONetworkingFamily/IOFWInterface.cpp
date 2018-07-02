@@ -55,7 +55,6 @@ extern "C" {
 #include <sys/sockio.h>
 #include <sys/malloc.h>
 }
-#include "firewire.h"
 #include "if_firewire.h"
 
 #ifndef DLT_APPLE_IP_OVER_IEEE1394
@@ -168,7 +167,7 @@ bool IOFWInterface::init(IONetworkController *controller)
 	// initialize firewire specific fields.
     setInterfaceType( IFT_IEEE1394 ); 
 	setMaxTransferUnit( FIREWIREMTU );
-    setMediaAddressLength( FIREWIRE_ADDR_LEN );
+    setMediaAddressLength( kIOFWAddressSize );
     setMediaHeaderLength( FIREWIRE_HDR_LEN );
     setFlags( IFF_BROADCAST | IFF_SIMPLEX | IFF_NOTRAILERS,
               IFF_RUNNING   | IFF_MULTICAST );
@@ -246,7 +245,7 @@ bool IOFWInterface::initIfnetParams(struct ifnet_init_params *params)
 	super::initIfnetParams( params );
 	
     _uniqueID = OSDynamicCast(OSData, getProvider()->getProperty(kIOMACAddress));
-    if ( (_uniqueID == 0) || (_uniqueID->getLength() != FIREWIRE_ADDR_LEN) )
+    if ( (_uniqueID == 0) || (_uniqueID->getLength() != kIOFWAddressSize) )
     {
         DLOG("%s: kIOMACAddress property access error (len %d)\n",
              getName(), _uniqueID ? _uniqueID->getLength() : 0);
@@ -358,7 +357,7 @@ bool IOFWInterface::controllerDidOpen(IONetworkController * ctr)
         // Get the controller's MAC/FireWire address.
 
         addrData = OSDynamicCast(OSData, ctr->getProperty(kIOMACAddress));
-        if ((addrData == 0) || (addrData->getLength() != FIREWIRE_ADDR_LEN))
+        if ((addrData == 0) || (addrData->getLength() != kIOFWAddressSize))
         {
             DLOG("%s: kIOMACAddress property access error (len %d)\n",
                  getName(), addrData ? addrData->getLength() : 0);
@@ -538,7 +537,7 @@ IOReturn IOFWInterface::enableController(IONetworkController * ctr)
         // Re-apply the user supplied link-level address.
 
         OSData * lladdr = OSDynamicCast(OSData, getProperty(kIOMACAddress));
-        if ( lladdr && lladdr->getLength() == FIREWIRE_ADDR_LEN )
+        if ( lladdr && lladdr->getLength() == kIOFWAddressSize )
         {
             ctr->setHardwareAddress( lladdr->getBytesNoCopy(),
                                      lladdr->getLength() );
@@ -635,9 +634,9 @@ int IOFWInterface::syncSIOCSIFFLAGS(IONetworkController * ctr)
 
 SInt IOFWInterface::syncSIOCSIFADDR(IONetworkController * ctr)
 {
-	ifnet_t ifp	= getIfnet();
-    IOReturn ret		= kIOReturnSuccess;
-	char	lladdr[8];
+	ifnet_t		ifp		= getIfnet();
+    IOReturn	ret		= kIOReturnSuccess;
+	char		lladdr[kIOFWAddressSize];
 	
 	if(ifp == NULL)
 		return (EINVAL);
@@ -965,7 +964,7 @@ IOFWInterface::setupMulticastFilter(IONetworkController * ctr)
     {
         char * addrp;
             
-        mcData = OSData::withCapacity(mcount * FIREWIRE_ADDR_LEN);
+        mcData = OSData::withCapacity(mcount * kIOFWAddressSize);
         if (!mcData)
         {
             DLOG("%s: no memory for multicast address list\n", getName());
@@ -987,7 +986,7 @@ IOFWInterface::setupMulticastFilter(IONetworkController * ctr)
             else
                 continue;
 
-            ok = mcData->appendBytes((const void *) addrp, FIREWIRE_ADDR_LEN);
+            ok = mcData->appendBytes((const void *) addrp, kIOFWAddressSize);
             assert(ok);
         }
 
