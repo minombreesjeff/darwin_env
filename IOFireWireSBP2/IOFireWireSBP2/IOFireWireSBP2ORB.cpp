@@ -324,8 +324,8 @@ void IOFireWireSBP2ORB::prepareORBForExecution( void )
 	
 	// clip by ARMDMAMax for performance
 	UInt32 ARDMAMax = fLogin->getARDMMax();
-	bool physical_unit_on = fLogin->isPhysicalAccessEnabled();
-	if( !physical_unit_on && (ARDMAMax != 0) )
+	if( (fCommandFlags & kFWSBP2CommandTransferDataFromTarget) &&	// if this is a read
+		(ARDMAMax != 0) )											// and we've got an ARDMA clip
 	{
 		transferSizeBytes = ARDMAMax;
 	}
