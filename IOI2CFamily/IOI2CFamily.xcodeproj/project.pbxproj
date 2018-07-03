@@ -12,6 +12,18 @@
 			buildConfigurationList = 3D6752D708E877F40053AF1E /* Build configuration list for PBXAggregateTarget "all" */;
 			buildPhases = (
 			);
+			buildSettings = {
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = all;
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = (
+					"-Wmost",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
+			};
 			dependencies = (
 				A636AC8C0649E3FA00991F6B /* PBXTargetDependency */,
 				A6169E8406D14B9400857C4B /* PBXTargetDependency */,
@@ -51,6 +63,31 @@
 		A6C4321B064995D700C38057 /* IOI2CControllerPPC.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A6FB3FFC0634BBC2001D2C05 /* IOI2CControllerPPC.cpp */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXBuildStyle section */
+		06AA1265FFB2107B11CA28AA /* Development */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_FIX_AND_CONTINUE = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				OPTIMIZATION_CFLAGS = "-O0";
+				ZERO_LINK = YES;
+			};
+			name = Development;
+		};
+		06AA1266FFB2107B11CA28AA /* Deployment */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				ZERO_LINK = NO;
+			};
+			name = Deployment;
+		};
+/* End PBXBuildStyle section */
+
 /* Begin PBXBundleTarget section */
 		A6169E7806D14A7A00857C4B /* IOI2CControllerPMU */ = {
 			isa = PBXBundleTarget;
@@ -63,6 +100,28 @@
 				A6169E7F06D14A7A00857C4B /* Frameworks */,
 				A6169E8006D14A7A00857C4B /* ShellScript */,
 			);
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = "$(APPLE_INTERNAL_LIBRARY_DIR)/Frameworks";
+				HEADER_SEARCH_PATHS = "";
+				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
+				KERNEL_MODULE = YES;
+				LIBRARY_SEARCH_PATHS = "";
+				MODULE_IOKIT = YES;
+				MODULE_NAME = com.apple.driver.IOI2CControllerPMU;
+				MODULE_VERSION = 1.0.8b1;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = IOI2CControllerPMU;
+				SECTORDER_FLAGS = "";
+				VALID_ARCHS = ppc;
+				WARNING_CFLAGS = (
+					"-Wmost",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
+				WRAPPER_EXTENSION = kext;
+			};
 			dependencies = (
 				A67EFE61073AC08600953A5C /* PBXTargetDependency */,
 			);
@@ -79,7 +138,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOI2CControllerPMU</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IOI2CControllerPMU version 1.1.1, Copyright 2004-2007 Apple Computer, Inc.</string>
+	<string>IOI2CControllerPMU version 1.0.11, Copyright 2004-2005 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -91,11 +150,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1.1</string>
+	<string>1.0.11</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.1.1d2</string>
+	<string>1.0.11f1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOI2CControllerPMU</key>
@@ -142,6 +201,28 @@
 				A661084F06261FCF001A2AE6 /* Frameworks */,
 				A661085006261FCF001A2AE6 /* ShellScript */,
 			);
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = "$(APPLE_INTERNAL_LIBRARY_DIR)/Frameworks";
+				HEADER_SEARCH_PATHS = "";
+				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
+				KERNEL_MODULE = YES;
+				LIBRARY_SEARCH_PATHS = "";
+				MODULE_IOKIT = YES;
+				MODULE_NAME = com.apple.driver.IOI2CFamily;
+				MODULE_VERSION = 1.0.8b1;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = IOI2CFamily;
+				SECTORDER_FLAGS = "";
+				VALID_ARCHS = ppc;
+				WARNING_CFLAGS = (
+					"-Wmost",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
+				WRAPPER_EXTENSION = kext;
+			};
 			dependencies = (
 				A67EFE62073AC08E00953A5C /* PBXTargetDependency */,
 			);
@@ -158,7 +239,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOI2CFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IOI2CFamily version 1.1.1, Copyright 2004-2007 Apple Computer, Inc.</string>
+	<string>IOI2CFamily version 1.0.11, Copyright 2004-2006 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -170,11 +251,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1.1</string>
+	<string>1.0.11</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.1.1d2</string>
+	<string>1.0.11f1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>I2CBus</key>
@@ -221,6 +302,28 @@
 				A6C43207064992EC00C38057 /* Frameworks */,
 				A6C43208064992EC00C38057 /* ShellScript */,
 			);
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = "$(APPLE_INTERNAL_LIBRARY_DIR)/Frameworks";
+				HEADER_SEARCH_PATHS = "";
+				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
+				KERNEL_MODULE = YES;
+				LIBRARY_SEARCH_PATHS = "";
+				MODULE_IOKIT = YES;
+				MODULE_NAME = com.apple.driver.IOI2CControllerSMU;
+				MODULE_VERSION = 1.0.8b1;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = IOI2CControllerSMU;
+				SECTORDER_FLAGS = "";
+				VALID_ARCHS = ppc;
+				WARNING_CFLAGS = (
+					"-Wmost",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
+				WRAPPER_EXTENSION = kext;
+			};
 			dependencies = (
 				A67EFE5F073AC08100953A5C /* PBXTargetDependency */,
 			);
@@ -237,7 +340,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOI2CControllerSMU</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IOI2CControllerSMU version 1.1.1, Copyright 2004-2007 Apple Computer, Inc.</string>
+	<string>IOI2CControllerSMU version 1.0.11, Copyright 2004-2005 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -249,11 +352,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1.1</string>
+	<string>1.0.11</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.1.1d2</string>
+	<string>1.0.11f1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>IOI2CControllerSMU</key>
@@ -300,6 +403,29 @@
 				A6C432130649952E00C38057 /* Frameworks */,
 				A6C432140649952E00C38057 /* ShellScript */,
 			);
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = "$(APPLE_INTERNAL_LIBRARY_DIR)/Frameworks";
+				GCC_VERSION = 3.3;
+				HEADER_SEARCH_PATHS = "";
+				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
+				KERNEL_MODULE = YES;
+				LIBRARY_SEARCH_PATHS = "";
+				MODULE_IOKIT = YES;
+				MODULE_NAME = com.apple.driver.IOI2CControllerPPC;
+				MODULE_VERSION = 1.0.8b1;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = IOI2CControllerPPC;
+				SECTORDER_FLAGS = "";
+				VALID_ARCHS = ppc;
+				WARNING_CFLAGS = (
+					"-Wmost",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
+				WRAPPER_EXTENSION = kext;
+			};
 			dependencies = (
 				A67EFE60073AC08400953A5C /* PBXTargetDependency */,
 			);
@@ -316,7 +442,7 @@
 	<key>CFBundleExecutable</key>
 	<string>IOI2CControllerPPC</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IOI2CControllerPPC version 1.1.1, Copyright 2004-2007 Apple Computer, Inc.</string>
+	<string>IOI2CControllerPPC version 1.0.11, Copyright 2004-2006 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -328,11 +454,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1.1</string>
+	<string>1.0.11</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.1.1d2</string>
+	<string>1.0.11f1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>K2</key>
@@ -497,6 +623,30 @@
 				A6FB3FF306348439001D2C05 /* Frameworks */,
 				A6FB3FF406348439001D2C05 /* Rez */,
 			);
+			buildSettings = {
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				FRAMEWORK_SEARCH_PATHS = "$(SYSTEM_LIBRARY_DIR)/Frameworks";
+				FRAMEWORK_VERSION = A;
+				INSTALL_PATH = "$(APPLE_INTERNAL_LIBRARY_DIR)/Frameworks";
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = (
+					"-seg1addr",
+					0x76000000,
+				);
+				OTHER_LIBTOOL_FLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRINCIPAL_CLASS = "";
+				PRODUCT_NAME = IOI2C;
+				SECTORDER_FLAGS = "";
+				VALID_ARCHS = ppc;
+				WARNING_CFLAGS = (
+					"-Wmost",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
+				WRAPPER_EXTENSION = framework;
+			};
 			dependencies = (
 			);
 			name = IOI2C.framework;
@@ -724,6 +874,25 @@
 				A6C068F606480BF2003BFF8E /* Frameworks */,
 				A6C068F706480BF2003BFF8E /* Rez */,
 			);
+			buildSettings = {
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				INSTALL_PATH = /usr/local/lib/;
+				LIBRARY_STYLE = STATIC;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_LIBTOOL_FLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = IOI2CUserLib.a;
+				REZ_EXECUTABLE = YES;
+				SECTORDER_FLAGS = "";
+				VALID_ARCHS = ppc;
+				WARNING_CFLAGS = (
+					"-Wmost",
+					"-Wno-four-char-constants",
+					"-Wno-unknown-pragmas",
+				);
+			};
 			dependencies = (
 				A67EFE5E073AC07C00953A5C /* PBXTargetDependency */,
 			);
@@ -738,12 +907,15 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 3D6752DB08E877F40053AF1E /* Build configuration list for PBXProject "IOI2CFamily" */;
-			compatibilityVersion = "Xcode 2.4";
+			buildSettings = {
+			};
+			buildStyles = (
+				06AA1265FFB2107B11CA28AA /* Development */,
+				06AA1266FFB2107B11CA28AA /* Deployment */,
+			);
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* AppleI2C */;
 			projectDirPath = "";
-			projectRoot = "";
-			shouldCheckCompatibility = 1;
 			targets = (
 				A636AC8B0649E3F400991F6B /* all */,
 				A6FB3FF506348439001D2C05 /* IOI2C.framework */,
@@ -1104,7 +1276,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CFamily;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
@@ -1134,7 +1306,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CFamily;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1161,7 +1333,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CFamily;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1192,7 +1364,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CControllerPMU;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
@@ -1222,7 +1394,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CControllerPMU;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1249,7 +1421,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CControllerPMU;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1280,7 +1452,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CControllerSMU;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
@@ -1310,7 +1482,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CControllerSMU;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1337,7 +1509,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CControllerSMU;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1362,14 +1534,14 @@
 				GCC_ENABLE_FIX_AND_CONTINUE = YES;
 				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_VERSION = 4.0;
+				GCC_VERSION = 3.3;
 				HEADER_SEARCH_PATHS = "";
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CControllerPPC;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OPTIMIZATION_CFLAGS = "-O0";
 				OTHER_CFLAGS = "-DDEBUG";
 				OTHER_LDFLAGS = "";
@@ -1393,13 +1565,14 @@
 				COPY_PHASE_STRIP = YES;
 				FRAMEWORK_SEARCH_PATHS = "$(APPLE_INTERNAL_LIBRARY_DIR)/Frameworks";
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				GCC_VERSION = 3.3;
 				HEADER_SEARCH_PATHS = "";
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CControllerPPC;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1420,14 +1593,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "$(APPLE_INTERNAL_LIBRARY_DIR)/Frameworks";
-				GCC_VERSION = 4.0;
+				GCC_VERSION = 3.3;
 				HEADER_SEARCH_PATHS = "";
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.IOI2CControllerPPC;
-				MODULE_VERSION = 1.1.1d2;
+				MODULE_VERSION = 1.0.11f1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
