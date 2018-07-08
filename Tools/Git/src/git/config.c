@@ -84,8 +84,12 @@ static int handle_path_include(const char *path, struct config_include_data *inc
 {
 	int ret = 0;
 	struct strbuf buf = STRBUF_INIT;
-	char *expanded = expand_user_path(path);
+	char *expanded;
 
+	if (!path)
+		return config_error_nonbool("include.path");
+
+	expanded = expand_user_path(path);
 	if (!expanded)
 		return error("Could not expand include path '%s'", path);
 	path = expanded;
@@ -969,25 +973,25 @@ static int git_default_mailmap_config(const char *var, const char *value)
 
 int git_default_config(const char *var, const char *value, void *dummy)
 {
-	if (!prefixcmp(var, "core."))
+	if (starts_with(var, "core."))
 		return git_default_core_config(var, value);
 
-	if (!prefixcmp(var, "user."))
+	if (starts_with(var, "user."))
 		return git_ident_config(var, value, dummy);
 
-	if (!prefixcmp(var, "i18n."))
+	if (starts_with(var, "i18n."))
 		return git_default_i18n_config(var, value);
 
-	if (!prefixcmp(var, "branch."))
+	if (starts_with(var, "branch."))
 		return git_default_branch_config(var, value);
 
-	if (!prefixcmp(var, "push."))
+	if (starts_with(var, "push."))
 		return git_default_push_config(var, value);
 
-	if (!prefixcmp(var, "mailmap."))
+	if (starts_with(var, "mailmap."))
 		return git_default_mailmap_config(var, value);
 
-	if (!prefixcmp(var, "advice."))
+	if (starts_with(var, "advice."))
 		return git_default_advice_config(var, value);
 
 	if (!strcmp(var, "pager.color") || !strcmp(var, "color.pager")) {
@@ -1210,15 +1214,14 @@ int git_config(config_fn_t fn, void *data)
  * Find all the stuff for git_config_set() below.
  */
 
-#define MAX_MATCHES 512
-
 static struct {
 	int baselen;
 	char *key;
 	int do_not_match;
 	regex_t *value_regex;
 	int multi_replace;
-	size_t offset[MAX_MATCHES];
+	size_t *offset;
+	unsigned int offset_alloc;
 	enum { START, SECTION_SEEN, SECTION_END_SEEN, KEY_SEEN } state;
 	int seen;
 } store;
@@ -1241,10 +1244,10 @@ static int store_aux(const char *key, const char *value, void *cb)
 		if (matches(key, value)) {
 			if (store.seen == 1 && store.multi_replace == 0) {
 				warning("%s has multiple values", key);
-			} else if (store.seen >= MAX_MATCHES) {
-				error("too many matches for %s", key);
-				return 1;
 			}
+
+			ALLOC_GROW(store.offset, store.seen + 1,
+				   store.offset_alloc);
 
 			store.offset[store.seen] = cf->do_ftell(cf);
 			store.seen++;
@@ -1273,11 +1276,15 @@ static int store_aux(const char *key, const char *value, void *cb)
 		 * Do not increment matches: this is no match, but we
 		 * just made sure we are in the desired section.
 		 */
+		ALLOC_GROW(store.offset, store.seen + 1,
+			   store.offset_alloc);
 		store.offset[store.seen] = cf->do_ftell(cf);
 		/* fallthru */
 	case SECTION_END_SEEN:
 	case START:
 		if (matches(key, value)) {
+			ALLOC_GROW(store.offset, store.seen + 1,
+				   store.offset_alloc);
 			store.offset[store.seen] = cf->do_ftell(cf);
 			store.state = KEY_SEEN;
 			store.seen++;
@@ -1285,6 +1292,9 @@ static int store_aux(const char *key, const char *value, void *cb)
 			if (strrchr(key, '.') - key == store.baselen &&
 			      !strncmp(key, store.key, store.baselen)) {
 					store.state = SECTION_SEEN;
+					ALLOC_GROW(store.offset,
+						   store.seen + 1,
+						   store.offset_alloc);
 					store.offset[store.seen] = cf->do_ftell(cf);
 			}
 		}
@@ -1583,6 +1593,7 @@ int git_config_set_multivar_in_file(const char *config_filename,
 			}
 		}
 
+		ALLOC_GROW(store.offset, 1, store.offset_alloc);
 		store.offset[0] = 0;
 		store.state = START;
 		store.seen = 0;
@@ -1872,7 +1883,7 @@ int parse_config_key(const char *var,
 	const char *dot;
 
 	/* Does it start with "section." ? */
-	if (prefixcmp(var, section) || var[section_len] != '.')
+	if (!starts_with(var, section) || var[section_len] != '.')
 		return -1;
 
 	/*

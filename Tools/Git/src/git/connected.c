@@ -19,17 +19,17 @@ int check_everything_connected(sha1_iterate_fn fn, int quiet, void *cb_data)
  *
  * Returns 0 if everything is connected, non-zero otherwise.
  */
-int check_everything_connected_with_transport(sha1_iterate_fn fn,
-					      int quiet,
-					      void *cb_data,
-					      struct transport *transport)
+static int check_everything_connected_real(sha1_iterate_fn fn,
+					   int quiet,
+					   void *cb_data,
+					   struct transport *transport,
+					   const char *shallow_file)
 {
 	struct child_process rev_list;
-	const char *argv[] = {"rev-list", "--objects",
-			      "--stdin", "--not", "--all", NULL, NULL};
+	const char *argv[9];
 	char commit[41];
 	unsigned char sha1[20];
-	int err = 0;
+	int err = 0, ac = 0;
 	struct packed_git *new_pack = NULL;
 
 	if (fn(cb_data, sha1))
@@ -38,7 +38,7 @@ int check_everything_connected_with_transport(sha1_iterate_fn fn,
 	if (transport && transport->smart_options &&
 	    transport->smart_options->self_contained_and_connected &&
 	    transport->pack_lockfile &&
-	    !suffixcmp(transport->pack_lockfile, ".keep")) {
+	    ends_with(transport->pack_lockfile, ".keep")) {
 		struct strbuf idx_file = STRBUF_INIT;
 		strbuf_addstr(&idx_file, transport->pack_lockfile);
 		strbuf_setlen(&idx_file, idx_file.len - 5); /* ".keep" */
@@ -47,8 +47,18 @@ int check_everything_connected_with_transport(sha1_iterate_fn fn,
 		strbuf_release(&idx_file);
 	}
 
+	if (shallow_file) {
+		argv[ac++] = "--shallow-file";
+		argv[ac++] = shallow_file;
+	}
+	argv[ac++] = "rev-list";
+	argv[ac++] = "--objects";
+	argv[ac++] = "--stdin";
+	argv[ac++] = "--not";
+	argv[ac++] = "--all";
 	if (quiet)
-		argv[5] = "--quiet";
+		argv[ac++] = "--quiet";
+	argv[ac] = NULL;
 
 	memset(&rev_list, 0, sizeof(rev_list));
 	rev_list.argv = argv;
@@ -91,4 +101,20 @@ int check_everything_connected_with_transport(sha1_iterate_fn fn,
 
 	sigchain_pop(SIGPIPE);
 	return finish_command(&rev_list) || err;
+}
+
+int check_everything_connected_with_transport(sha1_iterate_fn fn,
+					      int quiet,
+					      void *cb_data,
+					      struct transport *transport)
+{
+	return check_everything_connected_real(fn, quiet, cb_data,
+					       transport, NULL);
+}
+
+int check_shallow_connected(sha1_iterate_fn fn, int quiet, void *cb_data,
+			    const char *shallow_file)
+{
+	return check_everything_connected_real(fn, quiet, cb_data,
+					       NULL, shallow_file);
 }

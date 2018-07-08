@@ -78,7 +78,7 @@ static void get_non_kept_pack_filenames(struct string_list *fname_list)
 		return;
 
 	while ((e = readdir(dir)) != NULL) {
-		if (suffixcmp(e->d_name, ".pack"))
+		if (!ends_with(e->d_name, ".pack"))
 			continue;
 
 		len = strlen(e->d_name) - strlen(".pack");
@@ -129,10 +129,10 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 	/* variables to be filled by option parsing */
 	int pack_everything = 0;
 	int delete_redundant = 0;
-	char *unpack_unreachable = NULL;
-	int window = 0, window_memory = 0;
-	int depth = 0;
-	int max_pack_size = 0;
+	const char *unpack_unreachable = NULL;
+	const char *window = NULL, *window_memory = NULL;
+	const char *depth = NULL;
+	const char *max_pack_size = NULL;
 	int no_reuse_delta = 0, no_reuse_object = 0;
 	int no_update_server_info = 0;
 	int quiet = 0;
@@ -157,13 +157,13 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 				N_("pass --local to git-pack-objects")),
 		OPT_STRING(0, "unpack-unreachable", &unpack_unreachable, N_("approxidate"),
 				N_("with -A, do not loosen objects older than this")),
-		OPT_INTEGER(0, "window", &window,
+		OPT_STRING(0, "window", &window, N_("n"),
 				N_("size of the window used for delta compression")),
-		OPT_INTEGER(0, "window-memory", &window_memory,
+		OPT_STRING(0, "window-memory", &window_memory, N_("bytes"),
 				N_("same as the above, but limit memory size instead of entries count")),
-		OPT_INTEGER(0, "depth", &depth,
+		OPT_STRING(0, "depth", &depth, N_("n"),
 				N_("limits the maximum delta depth")),
-		OPT_INTEGER(0, "max-pack-size", &max_pack_size,
+		OPT_STRING(0, "max-pack-size", &max_pack_size, N_("bytes"),
 				N_("maximum size of each packfile")),
 		OPT_END()
 	};
@@ -185,13 +185,13 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 	argv_array_push(&cmd_args, "--all");
 	argv_array_push(&cmd_args, "--reflog");
 	if (window)
-		argv_array_pushf(&cmd_args, "--window=%u", window);
+		argv_array_pushf(&cmd_args, "--window=%s", window);
 	if (window_memory)
-		argv_array_pushf(&cmd_args, "--window-memory=%u", window_memory);
+		argv_array_pushf(&cmd_args, "--window-memory=%s", window_memory);
 	if (depth)
-		argv_array_pushf(&cmd_args, "--depth=%u", depth);
+		argv_array_pushf(&cmd_args, "--depth=%s", depth);
 	if (max_pack_size)
-		argv_array_pushf(&cmd_args, "--max_pack_size=%u", max_pack_size);
+		argv_array_pushf(&cmd_args, "--max-pack-size=%s", max_pack_size);
 	if (no_reuse_delta)
 		argv_array_pushf(&cmd_args, "--no-reuse-delta");
 	if (no_reuse_object)
@@ -258,7 +258,7 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 	for_each_string_list_item(item, &names) {
 		for (ext = 0; ext < 2; ext++) {
 			char *fname, *fname_old;
-			fname = mkpathdup("%s/%s%s", packdir,
+			fname = mkpathdup("%s/pack-%s%s", packdir,
 						item->string, exts[ext]);
 			if (!file_exists(fname)) {
 				free(fname);
@@ -335,7 +335,7 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 	for_each_string_list_item(item, &names) {
 		for (ext = 0; ext < 2; ext++) {
 			char *fname;
-			fname = mkpath("%s/old-pack-%s%s",
+			fname = mkpath("%s/old-%s%s",
 					packdir,
 					item->string,
 					exts[ext]);

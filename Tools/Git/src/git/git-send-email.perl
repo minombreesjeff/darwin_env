@@ -291,7 +291,7 @@ my $rc = GetOptions("h" => \$help,
 		    "smtp-pass:s" => \$smtp_authpass,
 		    "smtp-ssl" => sub { $smtp_encryption = 'ssl' },
 		    "smtp-encryption=s" => \$smtp_encryption,
-		    "smtp-ssl-cert-path" => \$smtp_ssl_cert_path,
+		    "smtp-ssl-cert-path=s" => \$smtp_ssl_cert_path,
 		    "smtp-debug:i" => \$debug_net_smtp,
 		    "smtp-domain:s" => \$smtp_domain,
 		    "identity=s" => \$identity,
@@ -1095,7 +1095,8 @@ sub ssl_verify_params {
 	}
 
 	if (!defined $smtp_ssl_cert_path) {
-		$smtp_ssl_cert_path = "/etc/ssl/certs";
+		# use the OpenSSL defaults
+		return (SSL_verify_mode => SSL_VERIFY_PEER());
 	}
 
 	if ($smtp_ssl_cert_path eq "") {
@@ -1214,10 +1215,14 @@ X-Mailer: git-send-email $gitversion
 			$smtp_server_port ||= 465; # ssmtp
 			require Net::SMTP::SSL;
 			$smtp_domain ||= maildomain();
+			require IO::Socket::SSL;
+			# Net::SMTP::SSL->new() does not forward any SSL options
+			IO::Socket::SSL::set_client_defaults(
+				ssl_verify_params());
 			$smtp ||= Net::SMTP::SSL->new($smtp_server,
 						      Hello => $smtp_domain,
 						      Port => $smtp_server_port,
-						      ssl_verify_params());
+						      Debug => $debug_net_smtp);
 		}
 		else {
 			require Net::SMTP;

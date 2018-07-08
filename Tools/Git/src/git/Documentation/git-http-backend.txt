@@ -191,7 +191,7 @@ ScriptAlias /git/ /var/www/cgi-bin/gitweb.cgi/
 ----------------------------------------------------------------
 
 Lighttpd::
-	Ensure that `mod_cgi`, `mod_alias, `mod_auth`, `mod_setenv` are
+	Ensure that `mod_cgi`, `mod_alias`, `mod_auth`, `mod_setenv` are
 	loaded, then set `GIT_PROJECT_ROOT` appropriately and redirect
 	all requests to the CGI:
 +
@@ -262,14 +262,6 @@ identifying information of the remote user who performed the push.
 
 All CGI environment variables are available to each of the hooks
 invoked by the 'git-receive-pack'.
-
-Author
-------
-Written by Shawn O. Pearce <spearce@spearce.org>.
-
-Documentation
---------------
-Documentation by Shawn O. Pearce <spearce@spearce.org>.
 
 GIT
 ---

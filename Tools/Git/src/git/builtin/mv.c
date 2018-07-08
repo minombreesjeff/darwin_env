@@ -16,9 +16,12 @@ static const char * const builtin_mv_usage[] = {
 	NULL
 };
 
+#define DUP_BASENAME 1
+#define KEEP_TRAILING_SLASH 2
+
 static const char **internal_copy_pathspec(const char *prefix,
 					   const char **pathspec,
-					   int count, int base_name)
+					   int count, unsigned flags)
 {
 	int i;
 	const char **result = xmalloc((count + 1) * sizeof(const char *));
@@ -27,11 +30,12 @@ static const char **internal_copy_pathspec(const char *prefix,
 	for (i = 0; i < count; i++) {
 		int length = strlen(result[i]);
 		int to_copy = length;
-		while (to_copy > 0 && is_dir_sep(result[i][to_copy - 1]))
+		while (!(flags & KEEP_TRAILING_SLASH) &&
+		       to_copy > 0 && is_dir_sep(result[i][to_copy - 1]))
 			to_copy--;
-		if (to_copy != length || base_name) {
+		if (to_copy != length || flags & DUP_BASENAME) {
 			char *it = xmemdupz(result[i], to_copy);
-			if (base_name) {
+			if (flags & DUP_BASENAME) {
 				result[i] = xstrdup(basename(it));
 				free(it);
 			} else
@@ -87,16 +91,21 @@ int cmd_mv(int argc, const char **argv, const char *prefix)
 
 	source = internal_copy_pathspec(prefix, argv, argc, 0);
 	modes = xcalloc(argc, sizeof(enum update_mode));
-	dest_path = internal_copy_pathspec(prefix, argv + argc, 1, 0);
+	/*
+	 * Keep trailing slash, needed to let
+	 * "git mv file no-such-dir/" error out.
+	 */
+	dest_path = internal_copy_pathspec(prefix, argv + argc, 1,
+					   KEEP_TRAILING_SLASH);
 	submodule_gitfile = xcalloc(argc, sizeof(char *));
 
 	if (dest_path[0][0] == '\0')
 		/* special case: "." was normalized to "" */
-		destination = internal_copy_pathspec(dest_path[0], argv, argc, 1);
+		destination = internal_copy_pathspec(dest_path[0], argv, argc, DUP_BASENAME);
 	else if (!lstat(dest_path[0], &st) &&
 			S_ISDIR(st.st_mode)) {
 		dest_path[0] = add_slash(dest_path[0]);
-		destination = internal_copy_pathspec(dest_path[0], argv, argc, 1);
+		destination = internal_copy_pathspec(dest_path[0], argv, argc, DUP_BASENAME);
 	} else {
 		if (argc != 1)
 			die("destination '%s' is not a directory", dest_path[0]);
@@ -170,6 +179,9 @@ int cmd_mv(int argc, const char **argv, const char *prefix)
 						modes = xrealloc(modes,
 								(argc + last - first)
 								* sizeof(enum update_mode));
+						submodule_gitfile = xrealloc(submodule_gitfile,
+								(argc + last - first)
+								* sizeof(char *));
 					}
 
 					dst = add_slash(dst);
@@ -183,6 +195,7 @@ int cmd_mv(int argc, const char **argv, const char *prefix)
 							prefix_path(dst, dst_len,
 								path + length + 1);
 						modes[argc + j] = INDEX;
+						submodule_gitfile[argc + j] = NULL;
 					}
 					argc += last - first;
 				}
@@ -205,6 +218,8 @@ int cmd_mv(int argc, const char **argv, const char *prefix)
 			}
 		} else if (string_list_has_string(&src_for_dst, dst))
 			bad = _("multiple sources for the same target");
+		else if (is_dir_sep(dst[strlen(dst) - 1]))
+			bad = _("destination directory does not exist");
 		else
 			string_list_insert(&src_for_dst, dst);
 
@@ -215,6 +230,11 @@ int cmd_mv(int argc, const char **argv, const char *prefix)
 						(argc - i) * sizeof(char *));
 					memmove(destination + i,
 						destination + i + 1,
+						(argc - i) * sizeof(char *));
+					memmove(modes + i, modes + i + 1,
+						(argc - i) * sizeof(enum update_mode));
+					memmove(submodule_gitfile + i,
+						submodule_gitfile + i + 1,
 						(argc - i) * sizeof(char *));
 					i--;
 				}

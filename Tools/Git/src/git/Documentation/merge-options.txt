@@ -14,9 +14,12 @@ inspect and further tweak the merge result before committing.
 	further edit the auto-generated merge message, so that the user
 	can explain and justify the merge. The `--no-edit` option can be
 	used to accept the auto-generated message (this is generally
-	discouraged). The `--edit` (or `-e`) option is still useful if you are
-	giving a draft message with the `-m` option from the command line
-	and want to edit it in the editor.
+	discouraged).
+ifndef::git-pull[]
+The `--edit` (or `-e`) option is still useful if you are
+giving a draft message with the `-m` option from the command line
+and want to edit it in the editor.
+endif::git-pull[]
 +
 Older scripts may depend on the historical behaviour of not allowing the
 user to edit the merge log message. They will see an editor opened when
@@ -60,14 +63,13 @@ merge.
 
 --squash::
 --no-squash::
-	Produce the working tree and index state as if a real
-	merge happened (except for the merge information),
-	but do not actually make a commit or
-	move the `HEAD`, nor record `$GIT_DIR/MERGE_HEAD` to
-	cause the next `git commit` command to create a merge
-	commit.  This allows you to create a single commit on
-	top of the current branch whose effect is the same as
-	merging another branch (or more in case of an octopus).
+	Produce the working tree and index state as if a real merge
+	happened (except for the merge information), but do not actually
+	make a commit, move the `HEAD`, or record `$GIT_DIR/MERGE_HEAD`
+	(to cause the next `git commit` command to create a merge
+	commit).  This allows you to create a single commit on top of
+	the current branch whose effect is the same as merging another
+	branch (or more in case of an octopus).
 +
 With --no-squash perform the merge and commit the result. This
 option can be used to override --squash.

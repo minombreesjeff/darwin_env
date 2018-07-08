@@ -1,11 +1,8 @@
-#!/bin/sh
+# This shell script fragment is sourced by git-rebase to implement
+# its interactive mode.  "git rebase --interactive" makes it easy
+# to fix up commits in the middle of a series and rearrange commits.
 #
 # Copyright (c) 2006 Johannes E. Schindelin
-
-# SHORT DESCRIPTION
-#
-# This script makes it easy to fix up commits in the middle of a series,
-# and rearrange commits.
 #
 # The original idea comes from Eric W. Biederman, in
 # http://article.gmane.org/gmane.comp.version-control.git/22407
@@ -742,7 +739,7 @@ rearrange_squash () {
 					;;
 				esac
 			done
-			echo "$sha1 $action $prefix $rest"
+			printf '%s %s %s %s\n' "$sha1" "$action" "$prefix" "$rest"
 			# if it's a single word, try to resolve to a full sha1 and
 			# emit a second copy. This allows us to match on both message
 			# and on sha1 prefix
@@ -812,6 +809,17 @@ add_exec_commands () {
 	} <"$1" >"$1.new" &&
 	mv "$1.new" "$1"
 }
+
+# The whole contents of this file is run by dot-sourcing it from
+# inside a shell function.  It used to be that "return"s we see
+# below were not inside any function, and expected to return
+# to the function that dot-sourced us.
+#
+# However, FreeBSD /bin/sh misbehaves on such a construct and
+# continues to run the statements that follow such a "return".
+# As a work-around, we introduce an extra layer of a function
+# here, and immediately call it after defining it.
+git_rebase__interactive () {
 
 case "$action" in
 continue)
@@ -1045,3 +1053,7 @@ GIT_REFLOG_ACTION="$GIT_REFLOG_ACTION: checkout $onto_name"
 output git checkout $onto || die_abort "could not detach HEAD"
 git update-ref ORIG_HEAD $orig_head
 do_rest
+
+}
+# ... and then we call the whole thing.
+git_rebase__interactive

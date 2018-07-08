@@ -3,7 +3,7 @@
 # Copyright (C) 2005 Rene Scharfe
 #
 
-test_description='git tar-tree and git get-tar-commit-id test
+test_description='git archive and git get-tar-commit-id test
 
 This test covers the topics of file contents, commit date handling and
 commit id embedding:
@@ -13,11 +13,11 @@ commit id embedding:
   binary file (/bin/sh).  Only paths shorter than 99 characters are
   used.
 
-  git tar-tree applies the commit date to every file in the archive it
+  git archive applies the commit date to every file in the archive it
   creates.  The test sets the commit date to a specific value and checks
   if the tar archive contains that value.
 
-  When giving git tar-tree a commit id (in contrast to a tree id) it
+  When giving git archive a commit id (in contrast to a tree id) it
   embeds this commit id into the tar archive as a comment.  The test
   checks the ability of git get-tar-commit-id to figure it out from the
   tar file.
@@ -25,8 +25,6 @@ commit id embedding:
 '
 
 . ./test-lib.sh
-GZIP=${GZIP:-gzip}
-GUNZIP=${GUNZIP:-gzip -d}
 
 SUBSTFORMAT=%H%n
 
@@ -38,6 +36,8 @@ test_lazy_prereq TAR_NEEDS_PAX_FALLBACK '
 		test -f PaxHeaders.1791/file
 	)
 '
+
+test_lazy_prereq GZIP 'gzip --version'
 
 get_pax_header() {
 	file=$1
@@ -196,16 +196,6 @@ test_expect_success \
     'git get-tar-commit-id <b.tar >b.commitid &&
      test_cmp .git/$(git symbolic-ref HEAD) b.commitid'
 
-test_expect_success 'git tar-tree' '
-	git tar-tree HEAD >tar-tree.tar &&
-	test_cmp b.tar tar-tree.tar
-'
-
-test_expect_success 'git tar-tree with prefix' '
-	git tar-tree HEAD prefix >tar-tree_with_prefix.tar &&
-	test_cmp with_prefix.tar tar-tree_with_prefix.tar
-'
-
 test_expect_success 'git archive with --output, override inferred format' '
 	git archive --format=tar --output=d4.zip HEAD &&
 	test_cmp b.tar d4.zip
@@ -275,12 +265,6 @@ test_expect_success 'only enabled filters are available remotely' '
 	test_cmp remote.bar config.bar
 '
 
-if $GZIP --version >/dev/null 2>&1; then
-	test_set_prereq GZIP
-else
-	say "Skipping some tar.gz tests because gzip not found"
-fi
-
 test_expect_success GZIP 'git archive --format=tgz' '
 	git archive --format=tgz HEAD >j.tgz
 '
@@ -300,14 +284,8 @@ test_expect_success GZIP 'infer tgz from .tar.gz filename' '
 	test_cmp j.tgz j3.tar.gz
 '
 
-if $GUNZIP --version >/dev/null 2>&1; then
-	test_set_prereq GUNZIP
-else
-	say "Skipping some tar.gz tests because gunzip was not found"
-fi
-
-test_expect_success GZIP,GUNZIP 'extract tgz file' '
-	$GUNZIP -c <j.tgz >j.tar &&
+test_expect_success GZIP 'extract tgz file' '
+	gzip -d -c <j.tgz >j.tar &&
 	test_cmp b.tar j.tar
 '
 

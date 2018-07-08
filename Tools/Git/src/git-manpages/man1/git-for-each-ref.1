@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-for-each-ref
-.\"    Author: [see the "Author" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 11/27/2013
+.\"      Date: 02/24/2014
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.5
+.\"    Source: Git 1.9.0
 .\"  Language: English
 .\"
-.TH "GIT\-FOR\-EACH\-REF" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
+.TH "GIT\-FOR\-EACH\-REF" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -136,7 +136,25 @@ The name of a local ref which can be considered \(lqupstream\(rq from the displa
 :short
 in the same way as
 refname
-above\&.
+above\&. Additionally respects
+:track
+to show "[ahead N, behind M]" and
+:trackshort
+to show the terse version: ">" (ahead), "<" (behind), "<>" (ahead and behind), or "=" (in sync)\&. Has no effect if the ref does not have tracking information associated with it\&.
+.RE
+.PP
+HEAD
+.RS 4
+
+\fI*\fR
+if HEAD matches current ref (the checked out branch), \(aq \(aq otherwise\&.
+.RE
+.PP
+color
+.RS 4
+Change output color\&. Followed by
+:<colorname>, where names are described in
+color\&.branch\&.*\&.
 .RE
 .sp
 In addition to the above, for commit and tag objects, the header field names (tree, parent, object, type, and tag) can be used to specify the value in the header field\&.
@@ -252,23 +270,9 @@ eval "$eval"
 .RE
 .\}
 .sp
-.SH "AUTHOR"
+.SH "SEE ALSO"
 .sp
-Written by Junio C Hamano <\m[blue]\fBgitster@pobox\&.com\fR\m[]\&\s-2\u[1]\d\s+2>\&.
-.SH "DOCUMENTATION"
-.sp
-Documentation by Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>\&.
+\fBgit-show-ref\fR(1)
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite
-.SH "NOTES"
-.IP " 1." 4
-gitster@pobox.com
-.RS 4
-\%mailto:gitster@pobox.com
-.RE
-.IP " 2." 4
-git@vger.kernel.org
-.RS 4
-\%mailto:git@vger.kernel.org
-.RE

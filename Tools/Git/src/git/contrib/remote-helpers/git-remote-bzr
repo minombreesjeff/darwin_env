@@ -44,8 +44,8 @@ import StringIO
 import atexit, shutil, hashlib, urlparse, subprocess
 
 NAME_RE = re.compile('^([^<>]+)')
-AUTHOR_RE = re.compile('^([^<>]+?)? ?<([^<>]*)>$')
-EMAIL_RE = re.compile('^([^<>]+[^ \\\t<>])?\\b(?:[ \\t<>]*?)\\b([^ \\t<>]+@[^ \\t<>]+)')
+AUTHOR_RE = re.compile('^([^<>]+?)? ?[<>]([^<>]*)(?:$|>)')
+EMAIL_RE = re.compile(r'([^ \t<>]+@[^ \t<>]+)')
 RAW_AUTHOR_RE = re.compile('^(\w+) (.+)? <(.*)> (\d+) ([+-]\d+)')
 
 def die(msg, *args):
@@ -193,8 +193,7 @@ def fixup_user(user):
     else:
         m = EMAIL_RE.match(user)
         if m:
-            name = m.group(1)
-            mail = m.group(2)
+            mail = m.group(1)
         else:
             m = NAME_RE.match(user)
             if m:
@@ -884,6 +883,16 @@ def main(args):
     global branches, peers
     global transports
 
+    marks = None
+    is_tmp = False
+    gitdir = os.environ.get('GIT_DIR', None)
+
+    if len(args) < 3:
+        die('Not enough arguments.')
+
+    if not gitdir:
+        die('GIT_DIR not set')
+
     alias = args[1]
     url = args[2]
 
@@ -892,7 +901,6 @@ def main(args):
     blob_marks = {}
     parsed_refs = {}
     files_cache = {}
-    marks = None
     branches = {}
     peers = {}
     transports = []
@@ -900,11 +908,8 @@ def main(args):
     if alias[5:] == url:
         is_tmp = True
         alias = hashlib.sha1(alias).hexdigest()
-    else:
-        is_tmp = False
 
     prefix = 'refs/bzr/%s' % alias
-    gitdir = os.environ['GIT_DIR']
     dirname = os.path.join(gitdir, 'bzr', alias)
 
     if not is_tmp:

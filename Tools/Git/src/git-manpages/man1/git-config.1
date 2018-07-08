@@ -2,12 +2,12 @@
 .\"     Title: git-config
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 11/27/2013
+.\"      Date: 02/24/2014
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.5
+.\"    Source: Git 1.9.0
 .\"  Language: English
 .\"
-.TH "GIT\-CONFIG" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
+.TH "GIT\-CONFIG" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -1276,6 +1276,16 @@ less \-+S\&. This will be passed to the shell by Git, which will translate the f
 LESS=FRSX less \-+S\&. The environment tells the command to set the
 S
 option to chop long lines but the command line resets it to the default to fold long lines\&.
+.sp
+Likewise, when the
+LV
+environment variable is unset, Git sets it to
+\-c\&. You can override this setting by exporting
+LV
+with another value or setting
+core\&.pager
+to
+lv +c\&.
 .RE
 .PP
 core\&.whitespace
@@ -2227,6 +2237,14 @@ diff\&.noprefix
 If set,
 \fIgit diff\fR
 does not show any source or destination prefix\&.
+.RE
+.PP
+diff\&.orderfile
+.RS 4
+File indicating how to order files within a diff, using one shell glob pattern per line\&. Can be overridden by the
+\fI\-O\fR
+option to
+\fBgit-diff\fR(1)\&.
 .RE
 .PP
 diff\&.renameLimit
@@ -4181,6 +4199,11 @@ receive\&.updateserverinfo
 If set to true, git\-receive\-pack will run git\-update\-server\-info after receiving data from git\-push and updating refs\&.
 .RE
 .PP
+receive\&.shallowupdate
+.RS 4
+If set to true, \&.git/shallow can be updated when new refs require new shallow roots\&. Otherwise those refs are rejected\&.
+.RE
+.PP
 remote\&.pushdefault
 .RS 4
 The remote to push to by default\&. Overrides
@@ -4277,9 +4300,9 @@ Setting this to a value <vcs> will cause Git to interact with the remote with th
 .PP
 remote\&.<name>\&.prune
 .RS 4
-When set to true, fetching from this remote by default will also remove any remote\-tracking branches which no longer exist on the remote (as if the
+When set to true, fetching from this remote by default will also remove any remote\-tracking references that no longer exist on the remote (as if the
 \-\-prune
-option was give on the command line)\&. Overrides
+option was given on the command line)\&. Overrides
 fetch\&.prune
 settings, if any\&.
 .RE

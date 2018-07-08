@@ -81,10 +81,10 @@ static void create_pack_file(void)
 	const char *argv[12];
 	int i, arg = 0;
 	FILE *pipe_fd;
-	char *shallow_file = NULL;
+	const char *shallow_file = NULL;
 
 	if (shallow_nr) {
-		shallow_file = setup_temporary_shallow();
+		shallow_file = setup_temporary_shallow(NULL);
 		argv[arg++] = "--shallow-file";
 		argv[arg++] = shallow_file;
 	}
@@ -242,11 +242,6 @@ static void create_pack_file(void)
 		error("git upload-pack: git-pack-objects died with error.");
 		goto fail;
 	}
-	if (shallow_file) {
-		if (*shallow_file)
-			unlink(shallow_file);
-		free(shallow_file);
-	}
 
 	/* flush the data */
 	if (0 <= buffered) {
@@ -394,7 +389,7 @@ static int get_common_commits(void)
 			got_other = 0;
 			continue;
 		}
-		if (!prefixcmp(line, "have ")) {
+		if (starts_with(line, "have ")) {
 			switch (got_sha1(line+5, sha1)) {
 			case -1: /* they have what we do not */
 				got_other = 1;
@@ -540,7 +535,7 @@ static void receive_needs(void)
 		if (!line)
 			break;
 
-		if (!prefixcmp(line, "shallow ")) {
+		if (starts_with(line, "shallow ")) {
 			unsigned char sha1[20];
 			struct object *object;
 			if (get_sha1_hex(line + 8, sha1))
@@ -556,14 +551,14 @@ static void receive_needs(void)
 			}
 			continue;
 		}
-		if (!prefixcmp(line, "deepen ")) {
+		if (starts_with(line, "deepen ")) {
 			char *end;
 			depth = strtol(line + 7, &end, 0);
 			if (end == line + 7 || depth <= 0)
 				die("Invalid deepen: %s", line);
 			continue;
 		}
-		if (prefixcmp(line, "want ") ||
+		if (!starts_with(line, "want ") ||
 		    get_sha1_hex(line+5, sha1_buf))
 			die("git upload-pack: protocol error, "
 			    "expected to get sha, not '%s'", line);
@@ -619,7 +614,7 @@ static void receive_needs(void)
 	if (depth > 0) {
 		struct commit_list *result = NULL, *backup = NULL;
 		int i;
-		if (depth == INFINITE_DEPTH)
+		if (depth == INFINITE_DEPTH && !is_repository_shallow())
 			for (i = 0; i < shallows.nr; i++) {
 				struct object *object = shallows.objects[i].item;
 				object->flags |= NOT_SHALLOW;
@@ -649,8 +644,7 @@ static void receive_needs(void)
 				/* make sure the real parents are parsed */
 				unregister_shallow(object->sha1);
 				object->parsed = 0;
-				if (parse_commit((struct commit *)object))
-					die("invalid commit");
+				parse_commit_or_die((struct commit *)object);
 				parents = ((struct commit *)object)->parents;
 				while (parents) {
 					add_object_array(&parents->item->object,
@@ -758,6 +752,7 @@ static void upload_pack(void)
 		reset_timeout();
 		head_ref_namespaced(send_ref, &symref);
 		for_each_namespaced_ref(send_ref, &symref);
+		advertise_shallow_grafts(1);
 		packet_flush(1);
 	} else {
 		head_ref_namespaced(mark_our_ref, NULL);
@@ -815,7 +810,7 @@ int main(int argc, char **argv)
 			strict = 1;
 			continue;
 		}
-		if (!prefixcmp(arg, "--timeout=")) {
+		if (starts_with(arg, "--timeout=")) {
 			timeout = atoi(arg+10);
 			daemon_mode = 1;
 			continue;
@@ -835,8 +830,7 @@ int main(int argc, char **argv)
 
 	if (!enter_repo(dir, strict))
 		die("'%s' does not appear to be a git repository", dir);
-	if (is_repository_shallow())
-		die("attempt to fetch/clone from a shallow repository");
+
 	git_config(upload_pack_config, NULL);
 	upload_pack();
 	return 0;

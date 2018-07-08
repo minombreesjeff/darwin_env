@@ -10,6 +10,7 @@
 #include "quote.h"
 #include "transport.h"
 #include "version.h"
+#include "sha1-array.h"
 
 static const char send_pack_usage[] =
 "git send-pack [--all | --mirror] [--dry-run] [--force] [--receive-pack=<git-receive-pack>] [--verbose] [--thin] [<host>:]<directory> [<ref>...]\n"
@@ -99,7 +100,8 @@ int cmd_send_pack(int argc, const char **argv, const char *prefix)
 	const char *dest = NULL;
 	int fd[2];
 	struct child_process *conn;
-	struct extra_have_objects extra_have;
+	struct sha1_array extra_have = SHA1_ARRAY_INIT;
+	struct sha1_array shallow = SHA1_ARRAY_INIT;
 	struct ref *remote_refs, *local_refs;
 	int ret;
 	int helper_status = 0;
@@ -115,15 +117,15 @@ int cmd_send_pack(int argc, const char **argv, const char *prefix)
 		const char *arg = *argv;
 
 		if (*arg == '-') {
-			if (!prefixcmp(arg, "--receive-pack=")) {
+			if (starts_with(arg, "--receive-pack=")) {
 				receivepack = arg + 15;
 				continue;
 			}
-			if (!prefixcmp(arg, "--exec=")) {
+			if (starts_with(arg, "--exec=")) {
 				receivepack = arg + 7;
 				continue;
 			}
-			if (!prefixcmp(arg, "--remote=")) {
+			if (starts_with(arg, "--remote=")) {
 				remote_name = arg + 9;
 				continue;
 			}
@@ -181,7 +183,7 @@ int cmd_send_pack(int argc, const char **argv, const char *prefix)
 					exit(1);
 				continue;
 			}
-			if (!prefixcmp(arg, "--" CAS_OPT_NAME "=")) {
+			if (starts_with(arg, "--" CAS_OPT_NAME "=")) {
 				if (parse_push_cas_option(&cas,
 							  strchr(arg, '=') + 1, 0) < 0)
 					exit(1);
@@ -228,9 +230,8 @@ int cmd_send_pack(int argc, const char **argv, const char *prefix)
 			args.verbose ? CONNECT_VERBOSE : 0);
 	}
 
-	memset(&extra_have, 0, sizeof(extra_have));
-
-	get_remote_heads(fd[0], NULL, 0, &remote_refs, REF_NORMAL, &extra_have);
+	get_remote_heads(fd[0], NULL, 0, &remote_refs, REF_NORMAL,
+			 &extra_have, &shallow);
 
 	transport_verify_remote_names(nr_refspecs, refspecs);
 

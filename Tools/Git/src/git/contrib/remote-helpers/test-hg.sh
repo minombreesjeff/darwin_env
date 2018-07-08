@@ -8,7 +8,8 @@
 
 test_description='Test remote-hg'
 
-. ./test-lib.sh
+test -n "$TEST_DIRECTORY" || TEST_DIRECTORY=${0%/*}/../../t
+. "$TEST_DIRECTORY"/test-lib.sh
 
 if ! test_have_prereq PYTHON
 then
@@ -53,14 +54,14 @@ check_bookmark () {
 }
 
 check_push () {
-	local expected_ret=$1 ret=0 ref_ret=0 IFS=':'
+	expected_ret=$1 ret=0 ref_ret=0
 
 	shift
 	git push origin "$@" 2>error
 	ret=$?
 	cat error
 
-	while read branch kind
+	while IFS=':' read branch kind
 	do
 		case "$kind" in
 		'new')
@@ -82,7 +83,7 @@ check_push () {
 		test $ref_ret -ne 0 && echo "match for '$branch' failed" && break
 	done
 
-	if test $expected_ret -ne $ret -o $ref_ret -ne 0
+	if test $expected_ret -ne $ret || test $ref_ret -ne 0
 	then
 		return 1
 	fi
@@ -205,16 +206,17 @@ test_expect_success 'authors' '
 
 	>../expected &&
 	author_test alpha "" "H G Wells <wells@example.com>" &&
-	author_test beta "test" "test <unknown>" &&
-	author_test beta "test <test@example.com> (comment)" "test <test@example.com>" &&
-	author_test gamma "<test@example.com>" "Unknown <test@example.com>" &&
-	author_test delta "name<test@example.com>" "name <test@example.com>" &&
-	author_test epsilon "name <test@example.com" "name <test@example.com>" &&
-	author_test zeta " test " "test <unknown>" &&
-	author_test eta "test < test@example.com >" "test <test@example.com>" &&
-	author_test theta "test >test@example.com>" "test <test@example.com>" &&
-	author_test iota "test < test <at> example <dot> com>" "test <unknown>" &&
-	author_test kappa "test@example.com" "Unknown <test@example.com>"
+	author_test beta "beta" "beta <unknown>" &&
+	author_test gamma "gamma <test@example.com> (comment)" "gamma <test@example.com>" &&
+	author_test delta "<delta@example.com>" "Unknown <delta@example.com>" &&
+	author_test epsilon "epsilon<test@example.com>" "epsilon <test@example.com>" &&
+	author_test zeta "zeta <test@example.com" "zeta <test@example.com>" &&
+	author_test eta " eta " "eta <unknown>" &&
+	author_test theta "theta < test@example.com >" "theta <test@example.com>" &&
+	author_test iota "iota >test@example.com>" "iota <test@example.com>" &&
+	author_test kappa "kappa < test <at> example <dot> com>" "kappa <unknown>" &&
+	author_test lambda "lambda@example.com" "Unknown <lambda@example.com>" &&
+	author_test mu "mu.mu@example.com" "Unknown <mu.mu@example.com>"
 	) &&
 
 	git clone "hg::hgrepo" gitrepo &&
@@ -335,6 +337,17 @@ test_expect_success 'remote cloning' '
 	check gitrepo HEAD zero
 '
 
+test_expect_success 'moving remote clone' '
+	test_when_finished "rm -rf gitrepo*" &&
+
+	(
+	git clone "hg::hgrepo" gitrepo &&
+	mv gitrepo gitrepo2 &&
+	cd gitrepo2 &&
+	git fetch
+	)
+'
+
 test_expect_success 'remote update bookmark' '
 	test_when_finished "rm -rf gitrepo*" &&
 
@@ -441,6 +454,74 @@ test_expect_success 'remote new bookmark multiple branch head' '
 
 # cleanup previous stuff
 rm -rf hgrepo
+
+test_expect_success 'fetch special filenames' '
+	test_when_finished "rm -rf hgrepo gitrepo && LC_ALL=C" &&
+
+	LC_ALL=en_US.UTF-8
+	export LC_ALL
+
+	(
+	hg init hgrepo &&
+	cd hgrepo &&
+
+	echo test >> "æ rø" &&
+	hg add "æ rø" &&
+	echo test >> "ø~?" &&
+	hg add "ø~?" &&
+	hg commit -m add-utf-8 &&
+	echo test >> "æ rø" &&
+	hg commit -m test-utf-8 &&
+	hg rm "ø~?" &&
+	hg mv "æ rø" "ø~?" &&
+	hg commit -m hg-mv-utf-8
+	) &&
+
+	(
+	git clone "hg::hgrepo" gitrepo &&
+	cd gitrepo &&
+	git -c core.quotepath=false ls-files > ../actual
+	) &&
+	echo "ø~?" > expected &&
+	test_cmp expected actual
+'
+
+test_expect_success 'push special filenames' '
+	test_when_finished "rm -rf hgrepo gitrepo && LC_ALL=C" &&
+
+	mkdir -p tmp && cd tmp &&
+
+	LC_ALL=en_US.UTF-8
+	export LC_ALL
+
+	(
+	hg init hgrepo &&
+	cd hgrepo &&
+
+	echo one >> content &&
+	hg add content &&
+	hg commit -m one
+	) &&
+
+	(
+	git clone "hg::hgrepo" gitrepo &&
+	cd gitrepo &&
+
+	echo test >> "æ rø" &&
+	git add "æ rø" &&
+	git commit -m utf-8 &&
+
+	git push
+	) &&
+
+	(cd hgrepo &&
+	hg update &&
+	hg manifest > ../actual
+	) &&
+
+	printf "content\næ rø\n" > expected &&
+	test_cmp expected actual
+'
 
 setup_big_push () {
 	(

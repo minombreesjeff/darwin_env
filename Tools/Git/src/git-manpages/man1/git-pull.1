@@ -2,12 +2,12 @@
 .\"     Title: git-pull
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 11/27/2013
+.\"      Date: 02/24/2014
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.5
+.\"    Source: Git 1.9.0
 .\"  Language: English
 .\"
-.TH "GIT\-PULL" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
+.TH "GIT\-PULL" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -116,12 +116,7 @@ With \-\-no\-commit perform the merge but pretend the merge failed and do not au
 .RS 4
 Invoke an editor before committing successful mechanical merge to further edit the auto\-generated merge message, so that the user can explain and justify the merge\&. The
 \-\-no\-edit
-option can be used to accept the auto\-generated message (this is generally discouraged)\&. The
-\-\-edit
-(or
-\-e) option is still useful if you are giving a draft message with the
-\-m
-option from the command line and want to edit it in the editor\&.
+option can be used to accept the auto\-generated message (this is generally discouraged)\&.
 .sp
 Older scripts may depend on the historical behaviour of not allowing the user to edit the merge log message\&. They will see an editor opened when they run
 git merge\&. To make it easier to adjust such scripts to the updated behaviour, the environment variable
@@ -198,21 +193,6 @@ Verify that the commits being merged have good and trusted GPG signatures and ab
 \-\-summary, \-\-no\-summary
 .RS 4
 Synonyms to \-\-stat and \-\-no\-stat; these are deprecated and will be removed in the future\&.
-.RE
-.PP
-\-q, \-\-quiet
-.RS 4
-Operate quietly\&. Implies \-\-no\-progress\&.
-.RE
-.PP
-\-v, \-\-verbose
-.RS 4
-Be verbose\&.
-.RE
-.PP
-\-\-progress, \-\-no\-progress
-.RS 4
-Turn progress on/off explicitly\&. If neither is specified, progress is shown if standard error is connected to a terminal\&. Note that not all merge strategies may support progress reporting\&.
 .RE
 .PP
 \-r, \-\-rebase[=false|true|preserve]
@@ -295,7 +275,16 @@ option (see
 .PP
 \-\-unshallow
 .RS 4
-Convert a shallow repository to a complete one, removing all the limitations imposed by shallow repositories\&.
+If the source repository is complete, convert a shallow repository to a complete one, removing all the limitations imposed by shallow repositories\&.
+.sp
+If the source repository is shallow, fetch as much as possible so that the current repository has the same history as the source repository\&.
+.RE
+.PP
+\-\-update\-shallow
+.RS 4
+By default when fetching from a shallow repository,
+git fetch
+refuses refs that require updating \&.git/shallow\&. This option updates \&.git/shallow and accept such refs\&.
 .RE
 .PP
 \-f, \-\-force
@@ -959,6 +948,8 @@ subtree
 .RS 4
 This is a modified recursive strategy\&. When merging trees A and B, if B corresponds to a subtree of A, B is first adjusted to match the tree structure of A, instead of reading the trees at the same level\&. This adjustment is also done to the common ancestor tree\&.
 .RE
+.sp
+With the strategies that use 3\-way merge (including the default, \fIrecursive\fR), if a change is made on both branches, but later reverted on one of the branches, that change will be present in the merged result; some people find this behavior confusing\&. It occurs because only the heads and the merge base are considered when performing a merge, not the individual commits\&. The merge algorithm therefore considers the reverted change as no change at all, and substitutes the changed version instead\&.
 .SH "DEFAULT BEHAVIOUR"
 .sp
 Often people use git pull without giving any parameter\&. Traditionally, this has been equivalent to saying git pull origin\&. However, when configuration branch\&.<name>\&.remote is present while on branch <name>, that value is used instead of origin\&.

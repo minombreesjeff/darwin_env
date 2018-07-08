@@ -44,7 +44,7 @@ two blob objects, or changes between two files on disk.
 	commit relative to the named <commit>.  Typically you
 	would want comparison with the latest commit, so if you
 	do not give <commit>, it defaults to HEAD.
-	If HEAD does not exist (e.g. unborned branches) and
+	If HEAD does not exist (e.g. unborn branches) and
 	<commit> is not given, it shows all staged changes.
 	--staged is a synonym of --cached.
 
@@ -158,8 +158,8 @@ $ git diff --name-status                <2>
 $ git diff arch/i386 include/asm-i386   <3>
 ------------
 +
-<1> Show only modification, rename and copy, but not addition
-nor deletion.
+<1> Show only modification, rename, and copy, but not addition
+or deletion.
 <2> Show only names and the nature of change, but not actual
 diff output.
 <3> Limit diff output to named subtrees.

@@ -213,12 +213,22 @@ test_expect_success 'garbage report in count-objects -v' '
 warning: garbage found: .git/objects/pack/fake.bar
 warning: garbage found: .git/objects/pack/foo
 warning: garbage found: .git/objects/pack/foo.bar
-warning: no corresponding .idx nor .pack: .git/objects/pack/fake2.keep
+warning: no corresponding .idx or .pack: .git/objects/pack/fake2.keep
 warning: no corresponding .idx: .git/objects/pack/foo.keep
 warning: no corresponding .idx: .git/objects/pack/foo.pack
 warning: no corresponding .pack: .git/objects/pack/fake3.idx
 EOF
 	test_cmp expected actual
+'
+
+test_expect_success 'prune .git/shallow' '
+	SHA1=`echo hi|git commit-tree HEAD^{tree}` &&
+	echo $SHA1 >.git/shallow &&
+	git prune --dry-run >out &&
+	grep $SHA1 .git/shallow &&
+	grep $SHA1 out &&
+	git prune &&
+	! test -f .git/shallow
 '
 
 test_done

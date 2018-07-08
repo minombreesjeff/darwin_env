@@ -1,5 +1,5 @@
 Git User Manual
-_______________
+===============
 
 Git is a fast distributed revision control system.
 
@@ -3795,7 +3795,7 @@ like so:
 $ git update-index filename
 -------------------------------------------------
 
-but to avoid common mistakes with filename globbing etc, the command
+but to avoid common mistakes with filename globbing etc., the command
 will not normally add totally new entries or remove old entries,
 i.e. it will normally just update existing cache entries.
 
@@ -4074,7 +4074,7 @@ the `HEAD` tree, and stage 3 to the `$target` tree.
 
 Earlier we said that trivial merges are done inside
 `git read-tree -m`.  For example, if the file did not change
-from `$orig` to `HEAD` nor `$target`, or if the file changed
+from `$orig` to `HEAD` or `$target`, or if the file changed
 from `$orig` to `HEAD` and `$orig` to `$target` the same way,
 obviously the final outcome is what is in `HEAD`.  What the
 above example shows is that file `hello.c` was changed from

@@ -147,6 +147,7 @@ static void parse_cmd_create(const char *next)
 	struct ref_update *update;
 
 	update = update_alloc();
+	update->have_old = 1;
 
 	if ((next = parse_first_arg(next, &ref)) != NULL && ref.buf[0])
 		update_store_ref_name(update, ref.buf);
@@ -229,15 +230,15 @@ static void update_refs_stdin(void)
 			die("empty command in input");
 		else if (isspace(*cmd.buf))
 			die("whitespace before command: %s", cmd.buf);
-		else if (!prefixcmp(cmd.buf, "update "))
+		else if (starts_with(cmd.buf, "update "))
 			parse_cmd_update(cmd.buf + 7);
-		else if (!prefixcmp(cmd.buf, "create "))
+		else if (starts_with(cmd.buf, "create "))
 			parse_cmd_create(cmd.buf + 7);
-		else if (!prefixcmp(cmd.buf, "delete "))
+		else if (starts_with(cmd.buf, "delete "))
 			parse_cmd_delete(cmd.buf + 7);
-		else if (!prefixcmp(cmd.buf, "verify "))
+		else if (starts_with(cmd.buf, "verify "))
 			parse_cmd_verify(cmd.buf + 7);
-		else if (!prefixcmp(cmd.buf, "option "))
+		else if (starts_with(cmd.buf, "option "))
 			parse_cmd_option(cmd.buf + 7);
 		else
 			die("unknown command: %s", cmd.buf);

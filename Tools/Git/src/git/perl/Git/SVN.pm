@@ -6,7 +6,7 @@ use constant rev_map_fmt => 'NH40';
 use vars qw/$_no_metadata
             $_repack $_repack_flags $_use_svm_props $_head
             $_use_svnsync_props $no_reuse_existing
-	    $_use_log_author $_add_author_from $_localtime $_skip_merge_info/;
+	    $_use_log_author $_add_author_from $_localtime/;
 use Carp qw/croak/;
 use File::Path qw/mkpath/;
 use File::Copy qw/copy/;
@@ -480,8 +480,8 @@ sub refname {
 	# It cannot end with a slash /, we'll throw up on this because
 	# SVN can't have directories with a slash in their name, either:
 	if ($refname =~ m{/$}) {
-		die "ref: '$refname' ends with a trailing slash, this is ",
-		    "not permitted by git nor Subversion\n";
+		die "ref: '$refname' ends with a trailing slash; this is ",
+		    "not permitted by git or Subversion\n";
 	}
 
 	# It cannot have ASCII control character space, tilde ~, caret ^,
@@ -1178,7 +1178,7 @@ sub find_parent_branch {
 			  or die "SVN connection failed somewhere...\n";
 		}
 		print STDERR "Successfully followed parent\n" unless $::_q > 1;
-		return $self->make_log_entry($rev, [$parent], $ed);
+		return $self->make_log_entry($rev, [$parent], $ed, $r0, $branch_from);
 	}
 	return undef;
 }
@@ -1191,7 +1191,7 @@ sub do_fetch {
 		# we can have a branch that was deleted, then re-added
 		# under the same name but copied from another path, in
 		# which case we'll have multiple parents (we don't
-		# want to break the original ref, nor lose copypath info):
+		# want to break the original ref or lose copypath info):
 		if (my $log_entry = $self->find_parent_branch($paths, $rev)) {
 			push @{$log_entry->{parents}}, $lc;
 			return $log_entry;
@@ -1210,7 +1210,7 @@ sub do_fetch {
 	unless ($self->ra->gs_do_update($last_rev, $rev, $self, $ed)) {
 		die "SVN connection failed somewhere...\n";
 	}
-	$self->make_log_entry($rev, \@parents, $ed);
+	$self->make_log_entry($rev, \@parents, $ed, $last_rev, $self->path);
 }
 
 sub mkemptydirs {
@@ -1478,9 +1478,9 @@ sub find_extra_svk_parents {
 sub lookup_svn_merge {
 	my $uuid = shift;
 	my $url = shift;
-	my $merge = shift;
+	my $source = shift;
+	my $revs = shift;
 
-	my ($source, $revs) = split ":", $merge;
 	my $path = $source;
 	$path =~ s{^/}{};
 	my $gs = Git::SVN->find_by_url($url.$source, $url, $path);
@@ -1599,6 +1599,7 @@ sub tie_for_persistent_memoization {
 		my %lookup_svn_merge_cache;
 		my %check_cherry_pick_cache;
 		my %has_no_changes_cache;
+		my %_rev_list_cache;
 
 		tie_for_persistent_memoization(\%lookup_svn_merge_cache,
 		    "$cache_path/lookup_svn_merge");
@@ -1620,6 +1621,14 @@ sub tie_for_persistent_memoization {
 			SCALAR_CACHE => ['HASH' => \%has_no_changes_cache],
 			LIST_CACHE => 'FAULT',
 		;
+
+		tie_for_persistent_memoization(\%_rev_list_cache,
+		    "$cache_path/_rev_list");
+		memoize '_rev_list',
+			SCALAR_CACHE => 'FAULT',
+			LIST_CACHE => ['HASH' => \%_rev_list_cache],
+		;
+
 	}
 
 	sub unmemoize_svn_mergeinfo_functions {
@@ -1629,6 +1638,7 @@ sub tie_for_persistent_memoization {
 		Memoize::unmemoize 'lookup_svn_merge';
 		Memoize::unmemoize 'check_cherry_pick';
 		Memoize::unmemoize 'has_no_changes';
+		Memoize::unmemoize '_rev_list';
 	}
 
 	sub clear_memoized_mergeinfo_caches {
@@ -1692,6 +1702,62 @@ sub parents_exclude {
 	return @excluded;
 }
 
+# Compute what's new in svn:mergeinfo.
+sub mergeinfo_changes {
+	my ($self, $old_path, $old_rev, $path, $rev, $mergeinfo_prop) = @_;
+	my %minfo = map {split ":", $_ } split "\n", $mergeinfo_prop;
+	my $old_minfo = {};
+
+	# Initialize cache on the first call.
+	unless (defined $self->{cached_mergeinfo_rev}) {
+		$self->{cached_mergeinfo_rev} = {};
+		$self->{cached_mergeinfo} = {};
+	}
+
+	my $cached_rev = $self->{cached_mergeinfo_rev}{$old_path};
+	if (defined $cached_rev && $cached_rev == $old_rev) {
+		$old_minfo = $self->{cached_mergeinfo}{$old_path};
+	} else {
+		my $ra = $self->ra;
+		# Give up if $old_path isn't in the repo.
+		# This is probably a merge on a subtree.
+		if ($ra->check_path($old_path, $old_rev) != $SVN::Node::dir) {
+			warn "W: ignoring svn:mergeinfo on $old_path, ",
+				"directory didn't exist in r$old_rev\n";
+			return {};
+		}
+		my (undef, undef, $props) =
+			$self->ra->get_dir($old_path, $old_rev);
+		if (defined $props->{"svn:mergeinfo"}) {
+			my %omi = map {split ":", $_ } split "\n",
+				$props->{"svn:mergeinfo"};
+			$old_minfo = \%omi;
+		}
+		$self->{cached_mergeinfo}{$old_path} = $old_minfo;
+		$self->{cached_mergeinfo_rev}{$old_path} = $old_rev;
+	}
+
+	# Cache the new mergeinfo.
+	$self->{cached_mergeinfo}{$path} = \%minfo;
+	$self->{cached_mergeinfo_rev}{$path} = $rev;
+
+	my %changes = ();
+	foreach my $p (keys %minfo) {
+		my $a = $old_minfo->{$p} || "";
+		my $b = $minfo{$p};
+		# Omit merged branches whose ranges lists are unchanged.
+		next if $a eq $b;
+		# Remove any common range list prefix.
+		($a ^ $b) =~ /^[\0]*/;
+		my $common_prefix = rindex $b, ",", $+[0] - 1;
+		$changes{$p} = substr $b, $common_prefix + 1;
+	}
+	print STDERR "Checking svn:mergeinfo changes since r$old_rev: ",
+		scalar(keys %minfo), " sources, ",
+		scalar(keys %changes), " changed\n";
+
+	return \%changes;
+}
 
 # note: this function should only be called if the various dirprops
 # have actually changed
@@ -1705,14 +1771,15 @@ sub find_extra_svn_parents {
 	# history.  Then, we figure out which git revisions are in
 	# that tip, but not this revision.  If all of those revisions
 	# are now marked as merge, we can add the tip as a parent.
-	my @merges = split "\n", $mergeinfo;
+	my @merges = sort keys %$mergeinfo;
 	my @merge_tips;
 	my $url = $self->url;
 	my $uuid = $self->ra_uuid;
 	my @all_ranges;
 	for my $merge ( @merges ) {
 		my ($tip_commit, @ranges) =
-			lookup_svn_merge( $uuid, $url, $merge );
+			lookup_svn_merge( $uuid, $url,
+					  $merge, $mergeinfo->{$merge} );
 		unless (!$tip_commit or
 				grep { $_ eq $tip_commit } @$parents ) {
 			push @merge_tips, $tip_commit;
@@ -1728,8 +1795,9 @@ sub find_extra_svn_parents {
 	# check merge tips for new parents
 	my @new_parents;
 	for my $merge_tip ( @merge_tips ) {
-		my $spec = shift @merges;
+		my $merge = shift @merges;
 		next unless $merge_tip and $excluded{$merge_tip};
+		my $spec = "$merge:$mergeinfo->{$merge}";
 
 		# check out 'new' tips
 		my $merge_base;
@@ -1760,7 +1828,7 @@ sub find_extra_svn_parents {
 				.@incomplete." commit(s) (eg $incomplete[0])\n";
 		} else {
 			warn
-				"Found merge parent (svn:mergeinfo prop): ",
+				"Found merge parent ($spec): ",
 					$merge_tip, "\n";
 			push @new_parents, $merge_tip;
 		}
@@ -1787,23 +1855,22 @@ sub find_extra_svn_parents {
 }
 
 sub make_log_entry {
-	my ($self, $rev, $parents, $ed) = @_;
+	my ($self, $rev, $parents, $ed, $parent_rev, $parent_path) = @_;
 	my $untracked = $self->get_untracked($ed);
 
 	my @parents = @$parents;
-	my $ps = $ed->{path_strip} || "";
-	for my $path ( grep { m/$ps/ } %{$ed->{dir_prop}} ) {
-		my $props = $ed->{dir_prop}{$path};
-		if ( $props->{"svk:merge"} ) {
-			$self->find_extra_svk_parents
-				($ed, $props->{"svk:merge"}, \@parents);
-		}
-		if ( !$Git::SVN::_skip_merge_info && $props->{"svn:mergeinfo"} ) {
-			$self->find_extra_svn_parents
-				($ed,
-				 $props->{"svn:mergeinfo"},
-				 \@parents);
-		}
+	my $props = $ed->{dir_prop}{$self->path};
+	if ( $props->{"svk:merge"} ) {
+		$self->find_extra_svk_parents
+			($ed, $props->{"svk:merge"}, \@parents);
+	}
+	if ( $props->{"svn:mergeinfo"} ) {
+		my $mi_changes = $self->mergeinfo_changes
+			($parent_path, $parent_rev,
+			 $self->path, $rev,
+			 $props->{"svn:mergeinfo"});
+		$self->find_extra_svn_parents
+			($ed, $mi_changes, \@parents);
 	}
 
 	open my $un, '>>', "$self->{dir}/unhandled.log" or croak $!;
@@ -1959,11 +2026,25 @@ sub rebuild_from_rev_db {
 	unlink $path or croak "unlink: $!";
 }
 
+#define a global associate map to record rebuild status
+my %rebuild_status;
+#define a global associate map to record rebuild verify status
+my %rebuild_verify_status;
+
 sub rebuild {
 	my ($self) = @_;
 	my $map_path = $self->map_path;
 	my $partial = (-e $map_path && ! -z $map_path);
-	return unless ::verify_ref($self->refname.'^0');
+	my $verify_key = $self->refname.'^0';
+	if (!$rebuild_verify_status{$verify_key}) {
+		my $verify_result = ::verify_ref($verify_key);
+		if ($verify_result) {
+			$rebuild_verify_status{$verify_key} = 1;
+		}
+	}
+	if (!$rebuild_verify_status{$verify_key}) {
+		return;
+	}
 	if (!$partial && ($self->use_svm_props || $self->no_metadata)) {
 		my $rev_db = $self->rev_db_path;
 		$self->rebuild_from_rev_db($rev_db);
@@ -1977,10 +2058,21 @@ sub rebuild {
 	print "Rebuilding $map_path ...\n" if (!$partial);
 	my ($base_rev, $head) = ($partial ? $self->rev_map_max_norebuild(1) :
 		(undef, undef));
+	my $key_value = ($head ? "$head.." : "") . $self->refname;
+	if (exists $rebuild_status{$key_value}) {
+		print "Done rebuilding $map_path\n" if (!$partial || !$head);
+		my $rev_db_path = $self->rev_db_path;
+		if (-f $self->rev_db_path) {
+			unlink $self->rev_db_path or croak "unlink: $!";
+		}
+		$self->unlink_rev_db_symlink;
+		return;
+	}
 	my ($log, $ctx) =
-	    command_output_pipe(qw/rev-list --pretty=raw --reverse/,
-				($head ? "$head.." : "") . $self->refname,
+		command_output_pipe(qw/rev-list --pretty=raw --reverse/,
+				$key_value,
 				'--');
+	$rebuild_status{$key_value} = 1;
 	my $metadata_url = $self->metadata_url;
 	remove_username($metadata_url);
 	my $svn_uuid = $self->rewrite_uuid || $self->ra_uuid;

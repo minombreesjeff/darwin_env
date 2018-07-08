@@ -79,7 +79,7 @@ struct commit *lookup_commit_reference_by_name(const char *name)
 	if (get_sha1_committish(name, sha1))
 		return NULL;
 	commit = lookup_commit_reference(sha1);
-	if (!commit || parse_commit(commit))
+	if (parse_commit(commit))
 		return NULL;
 	return commit;
 }
@@ -196,19 +196,19 @@ bad_graft_data:
 static int read_graft_file(const char *graft_file)
 {
 	FILE *fp = fopen(graft_file, "r");
-	char buf[1024];
+	struct strbuf buf = STRBUF_INIT;
 	if (!fp)
 		return -1;
-	while (fgets(buf, sizeof(buf), fp)) {
+	while (!strbuf_getwholeline(&buf, fp, '\n')) {
 		/* The format is just "Commit Parent1 Parent2 ...\n" */
-		int len = strlen(buf);
-		struct commit_graft *graft = read_graft_line(buf, len);
+		struct commit_graft *graft = read_graft_line(buf.buf, buf.len);
 		if (!graft)
 			continue;
 		if (register_commit_graft(graft, 1))
-			error("duplicate graft data: %s", buf);
+			error("duplicate graft data: %s", buf.buf);
 	}
 	fclose(fp);
+	strbuf_release(&buf);
 	return 0;
 }
 
@@ -339,6 +339,13 @@ int parse_commit(struct commit *item)
 	}
 	free(buffer);
 	return ret;
+}
+
+void parse_commit_or_die(struct commit *item)
+{
+	if (parse_commit(item))
+		die("unable to parse commit %s",
+		    item ? sha1_to_hex(item->object.sha1) : "(null)");
 }
 
 int find_commit_subject(const char *commit_buffer, const char **subject)
@@ -559,7 +566,7 @@ static void record_author_date(struct author_date_slab *author_date,
 	     buf;
 	     buf = line_end + 1) {
 		line_end = strchrnul(buf, '\n');
-		if (prefixcmp(buf, "author ")) {
+		if (!starts_with(buf, "author ")) {
 			if (!line_end[0] || line_end[1] == '\n')
 				return; /* end of header */
 			continue;
@@ -834,26 +841,26 @@ static struct commit_list *merge_bases_many(struct commit *one, int n, struct co
 struct commit_list *get_octopus_merge_bases(struct commit_list *in)
 {
 	struct commit_list *i, *j, *k, *ret = NULL;
-	struct commit_list **pptr = &ret;
 
-	for (i = in; i; i = i->next) {
-		if (!ret)
-			pptr = &commit_list_insert(i->item, pptr)->next;
-		else {
-			struct commit_list *new = NULL, *end = NULL;
+	if (!in)
+		return ret;
 
-			for (j = ret; j; j = j->next) {
-				struct commit_list *bases;
-				bases = get_merge_bases(i->item, j->item, 1);
-				if (!new)
-					new = bases;
-				else
-					end->next = bases;
-				for (k = bases; k; k = k->next)
-					end = k;
-			}
-			ret = new;
+	commit_list_insert(in->item, &ret);
+
+	for (i = in->next; i; i = i->next) {
+		struct commit_list *new = NULL, *end = NULL;
+
+		for (j = ret; j; j = j->next) {
+			struct commit_list *bases;
+			bases = get_merge_bases(i->item, j->item, 1);
+			if (!new)
+				new = bases;
+			else
+				end->next = bases;
+			for (k = bases; k; k = k->next)
+				end = k;
 		}
+		ret = new;
 	}
 	return ret;
 }
@@ -1106,7 +1113,7 @@ int parse_signed_commit(const unsigned char *sha1,
 		next = next ? next + 1 : tail;
 		if (in_signature && line[0] == ' ')
 			sig = line + 1;
-		else if (!prefixcmp(line, gpg_sig_header) &&
+		else if (starts_with(line, gpg_sig_header) &&
 			 line[gpg_sig_header_len] == ' ')
 			sig = line + gpg_sig_header_len + 1;
 		if (sig) {
@@ -1186,7 +1193,7 @@ static void parse_gpg_output(struct signature_check *sigc)
 	for (i = 0; i < ARRAY_SIZE(sigcheck_gpg_status); i++) {
 		const char *found, *next;
 
-		if (!prefixcmp(buf, sigcheck_gpg_status[i].check + 1)) {
+		if (starts_with(buf, sigcheck_gpg_status[i].check + 1)) {
 			/* At the very beginning of the buffer */
 			found = buf + strlen(sigcheck_gpg_status[i].check + 1);
 		} else {
@@ -1349,7 +1356,7 @@ void free_commit_extra_headers(struct commit_extra_header *extra)
 	}
 }
 
-int commit_tree(const struct strbuf *msg, unsigned char *tree,
+int commit_tree(const struct strbuf *msg, const unsigned char *tree,
 		struct commit_list *parents, unsigned char *ret,
 		const char *author, const char *sign_commit)
 {
@@ -1478,7 +1485,7 @@ static const char commit_utf8_warn[] =
 "You may want to amend it after fixing the message, or set the config\n"
 "variable i18n.commitencoding to the encoding your project uses.\n";
 
-int commit_tree_extended(const struct strbuf *msg, unsigned char *tree,
+int commit_tree_extended(const struct strbuf *msg, const unsigned char *tree,
 			 struct commit_list *parents, unsigned char *ret,
 			 const char *author, const char *sign_commit,
 			 struct commit_extra_header *extra)

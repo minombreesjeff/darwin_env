@@ -70,6 +70,35 @@ test_expect_success \
 rm -f idontexist untracked1 untracked2 \
      path0/idontexist path0/untracked1 path0/untracked2 \
      .git/index.lock
+rmdir path1
+
+test_expect_success \
+    'moving to absent target with trailing slash' \
+    'test_must_fail git mv path0/COPYING no-such-dir/ &&
+     test_must_fail git mv path0/COPYING no-such-dir// &&
+     git mv path0/ no-such-dir/ &&
+     test_path_is_dir no-such-dir'
+
+test_expect_success \
+    'clean up' \
+    'git reset --hard'
+
+test_expect_success \
+    'moving to existing untracked target with trailing slash' \
+    'mkdir path1 &&
+     git mv path0/ path1/ &&
+     test_path_is_dir path1/path0/'
+
+test_expect_success \
+    'moving to existing tracked target with trailing slash' \
+    'mkdir path2 &&
+     >path2/file && git add path2/file &&
+     git mv path1/path0/ path2/ &&
+     test_path_is_dir path2/path0/'
+
+test_expect_success \
+    'clean up' \
+    'git reset --hard'
 
 test_expect_success \
     'adding another file' \
@@ -265,7 +294,8 @@ test_expect_success 'setup submodule' '
 	git submodule add ./. sub &&
 	echo content >file &&
 	git add file &&
-	git commit -m "added sub and file"
+	git commit -m "added sub and file" &&
+	git branch submodule
 '
 
 test_expect_success 'git mv cannot move a submodule in a file' '
@@ -278,7 +308,7 @@ test_expect_success 'git mv moves a submodule with a .git directory and no .gitm
 	(
 		cd sub &&
 		rm -f .git &&
-		cp -a ../.git/modules/sub .git &&
+		cp -R -P -p ../.git/modules/sub .git &&
 		GIT_WORK_TREE=. git config --unset core.worktree
 	) &&
 	mkdir mod &&
@@ -301,7 +331,7 @@ test_expect_success 'git mv moves a submodule with a .git directory and .gitmodu
 	(
 		cd sub &&
 		rm -f .git &&
-		cp -a ../.git/modules/sub .git &&
+		cp -R -P -p ../.git/modules/sub .git &&
 		GIT_WORK_TREE=. git config --unset core.worktree
 	) &&
 	mkdir mod &&
@@ -411,6 +441,37 @@ test_expect_success 'mv --dry-run does not touch the submodule or .gitmodules' '
 	git diff-index --exit-code HEAD &&
 	git update-index --refresh &&
 	git diff-files --quiet -- sub .gitmodules
+'
+
+test_expect_success 'checking out a commit before submodule moved needs manual updates' '
+	git mv sub sub2 &&
+	git commit -m "moved sub to sub2" &&
+	git checkout -q HEAD^ 2>actual &&
+	echo "warning: unable to rmdir sub2: Directory not empty" >expected &&
+	test_i18ncmp expected actual &&
+	git status -s sub2 >actual &&
+	echo "?? sub2/" >expected &&
+	test_cmp expected actual &&
+	! test -f sub/.git &&
+	test -f sub2/.git &&
+	git submodule update &&
+	test -f sub/.git &&
+	rm -rf sub2 &&
+	git diff-index --exit-code HEAD &&
+	git update-index --refresh &&
+	git diff-files --quiet -- sub .gitmodules &&
+	git status -s sub2 >actual &&
+	! test -s actual
+'
+
+test_expect_success 'mv -k does not accidentally destroy submodules' '
+	git checkout submodule &&
+	mkdir dummy dest &&
+	git mv -k dummy sub dest &&
+	git status --porcelain >actual &&
+	grep "^R  sub -> dest/sub" actual &&
+	git reset --hard &&
+	git checkout .
 '
 
 test_done

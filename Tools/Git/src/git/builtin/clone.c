@@ -252,6 +252,12 @@ static int add_one_reference(struct string_list_item *item, void *cb_data)
 		die(_("reference repository '%s' is not a local repository."),
 		    item->string);
 
+	if (!access(mkpath("%s/shallow", ref_git), F_OK))
+		die(_("reference repository '%s' is shallow"), item->string);
+
+	if (!access(mkpath("%s/info/grafts", ref_git), F_OK))
+		die(_("reference repository '%s' is grafted"), item->string);
+
 	strbuf_addf(&alternate, "%s/objects", ref_git);
 	add_to_alternates_file(alternate.buf);
 	strbuf_release(&alternate);
@@ -508,9 +514,9 @@ static void write_followtags(const struct ref *refs, const char *msg)
 {
 	const struct ref *ref;
 	for (ref = refs; ref; ref = ref->next) {
-		if (prefixcmp(ref->name, "refs/tags/"))
+		if (!starts_with(ref->name, "refs/tags/"))
 			continue;
-		if (!suffixcmp(ref->name, "^{}"))
+		if (ends_with(ref->name, "^{}"))
 			continue;
 		if (!has_sha1_file(ref->old_sha1))
 			continue;
@@ -578,7 +584,7 @@ static void update_remote_refs(const struct ref *refs,
 static void update_head(const struct ref *our, const struct ref *remote,
 			const char *msg)
 {
-	if (our && !prefixcmp(our->name, "refs/heads/")) {
+	if (our && starts_with(our->name, "refs/heads/")) {
 		/* Local default branch link */
 		create_symref("HEAD", our->name, NULL);
 		if (!option_bare) {
@@ -625,7 +631,7 @@ static int checkout(void)
 		if (advice_detached_head)
 			detach_advice(sha1_to_hex(sha1));
 	} else {
-		if (prefixcmp(head, "refs/heads/"))
+		if (!starts_with(head, "refs/heads/"))
 			die(_("HEAD not found below refs/heads!"));
 	}
 	free(head);
@@ -654,8 +660,8 @@ static int checkout(void)
 	    commit_locked_index(lock_file))
 		die(_("unable to write new index file"));
 
-	err |= run_hook(NULL, "post-checkout", sha1_to_hex(null_sha1),
-			sha1_to_hex(sha1), "1", NULL);
+	err |= run_hook_le(NULL, "post-checkout", sha1_to_hex(null_sha1),
+			   sha1_to_hex(sha1), "1", NULL);
 
 	if (!err && option_recursive)
 		err = run_command_v_opt(argv_submodule, RUN_GIT_CMD);
@@ -791,10 +797,21 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	else
 		repo = repo_name;
 	is_local = option_local != 0 && path && !is_bundle;
-	if (is_local && option_depth)
-		warning(_("--depth is ignored in local clones; use file:// instead."));
+	if (is_local) {
+		if (option_depth)
+			warning(_("--depth is ignored in local clones; use file:// instead."));
+		if (!access(mkpath("%s/shallow", path), F_OK)) {
+			if (option_local > 0)
+				warning(_("source repository is shallow, ignoring --local"));
+			is_local = 0;
+		}
+	}
 	if (option_local > 0 && !is_local)
 		warning(_("--local is ignored"));
+
+	/* no need to be strict, transport_set_option() will validate it again */
+	if (option_depth && atoi(option_depth) < 1)
+		die(_("depth %s is not a positive number"), option_depth);
 
 	if (argc == 2)
 		dir = xstrdup(argv[1]);
@@ -883,6 +900,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 
 	remote = remote_get(option_origin);
 	transport = transport_get(remote, remote->url[0]);
+	transport->cloning = 1;
 
 	if (!transport->get_refs_list || (!is_local && !transport->fetch))
 		die(_("Don't know how to clone %s"), transport->url);

@@ -10,6 +10,7 @@
 #include "quote.h"
 #include "transport.h"
 #include "version.h"
+#include "sha1-array.h"
 
 static int feed_object(const unsigned char *sha1, int fd, int negative)
 {
@@ -28,7 +29,7 @@ static int feed_object(const unsigned char *sha1, int fd, int negative)
 /*
  * Make a pack stream and spit it out into file descriptor fd
  */
-static int pack_objects(int fd, struct ref *refs, struct extra_have_objects *extra, struct send_pack_args *args)
+static int pack_objects(int fd, struct ref *refs, struct sha1_array *extra, struct send_pack_args *args)
 {
 	/*
 	 * The child becomes pack-objects --revs; we feed
@@ -71,7 +72,7 @@ static int pack_objects(int fd, struct ref *refs, struct extra_have_objects *ext
 	 * parameters by writing to the pipe.
 	 */
 	for (i = 0; i < extra->nr; i++)
-		if (!feed_object(extra->array[i], po.in, 1))
+		if (!feed_object(extra->sha1[i], po.in, 1))
 			break;
 
 	while (refs) {
@@ -109,7 +110,7 @@ static int receive_status(int in, struct ref *refs)
 	struct ref *hint;
 	int ret = 0;
 	char *line = packet_read_line(in, NULL);
-	if (prefixcmp(line, "unpack "))
+	if (!starts_with(line, "unpack "))
 		return error("did not receive remote status");
 	if (strcmp(line, "unpack ok")) {
 		error("unpack failed: %s", line + 7);
@@ -122,7 +123,7 @@ static int receive_status(int in, struct ref *refs)
 		line = packet_read_line(in, NULL);
 		if (!line)
 			break;
-		if (prefixcmp(line, "ok ") && prefixcmp(line, "ng ")) {
+		if (!starts_with(line, "ok ") && !starts_with(line, "ng ")) {
 			error("invalid ref status from remote: %s", line);
 			ret = -1;
 			break;
@@ -174,10 +175,25 @@ static int sideband_demux(int in, int out, void *data)
 	return ret;
 }
 
+static int advertise_shallow_grafts_cb(const struct commit_graft *graft, void *cb)
+{
+	struct strbuf *sb = cb;
+	if (graft->nr_parent == -1)
+		packet_buf_write(sb, "shallow %s\n", sha1_to_hex(graft->sha1));
+	return 0;
+}
+
+static void advertise_shallow_grafts_buf(struct strbuf *sb)
+{
+	if (!is_repository_shallow())
+		return;
+	for_each_commit_graft(advertise_shallow_grafts_cb, sb);
+}
+
 int send_pack(struct send_pack_args *args,
 	      int fd[], struct child_process *conn,
 	      struct ref *remote_refs,
-	      struct extra_have_objects *extra_have)
+	      struct sha1_array *extra_have)
 {
 	int in = fd[0];
 	int out = fd[1];
@@ -206,12 +222,17 @@ int send_pack(struct send_pack_args *args,
 		quiet_supported = 1;
 	if (server_supports("agent"))
 		agent_supported = 1;
+	if (server_supports("no-thin"))
+		args->use_thin_pack = 0;
 
 	if (!remote_refs) {
 		fprintf(stderr, "No refs in common and none specified; doing nothing.\n"
 			"Perhaps you should specify a branch such as 'master'.\n");
 		return 0;
 	}
+
+	if (!args->dry_run)
+		advertise_shallow_grafts_buf(&req_buf);
 
 	/*
 	 * Finally, tell the other end!
@@ -272,7 +293,7 @@ int send_pack(struct send_pack_args *args,
 	}
 
 	if (args->stateless_rpc) {
-		if (!args->dry_run && cmds_sent) {
+		if (!args->dry_run && (cmds_sent || is_repository_shallow())) {
 			packet_buf_flush(&req_buf);
 			send_sideband(out, -1, req_buf.buf, req_buf.len, LARGE_PACKET_MAX);
 		}

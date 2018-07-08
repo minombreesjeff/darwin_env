@@ -2,6 +2,9 @@
 MAN1_TXT =
 MAN5_TXT =
 MAN7_TXT =
+TECH_DOCS =
+ARTICLES =
+SP_ARTICLES =
 
 MAN1_TXT += $(filter-out \
 		$(addsuffix .txt, $(ARTICLES) $(SP_ARTICLES)), \
@@ -37,12 +40,12 @@ MAN_HTML = $(patsubst %.txt,%.html,$(MAN_TXT))
 OBSOLETE_HTML = git-remote-helpers.html
 DOC_HTML = $(MAN_HTML) $(OBSOLETE_HTML)
 
-ARTICLES = howto-index
+ARTICLES += howto-index
 ARTICLES += everyday
 ARTICLES += git-tools
 ARTICLES += git-bisect-lk2009
 # with their own formatting rules.
-SP_ARTICLES = user-manual
+SP_ARTICLES += user-manual
 SP_ARTICLES += howto/new-command
 SP_ARTICLES += howto/revert-branch-rebase
 SP_ARTICLES += howto/using-merge-subtree
@@ -60,7 +63,8 @@ SP_ARTICLES += howto/maintain-git
 API_DOCS = $(patsubst %.txt,%,$(filter-out technical/api-index-skel.txt technical/api-index.txt, $(wildcard technical/api-*.txt)))
 SP_ARTICLES += $(API_DOCS)
 
-TECH_DOCS = technical/index-format
+TECH_DOCS += technical/http-protocol
+TECH_DOCS += technical/index-format
 TECH_DOCS += technical/pack-format
 TECH_DOCS += technical/pack-heuristics
 TECH_DOCS += technical/pack-protocol
@@ -324,7 +328,7 @@ manpage-base-url.xsl: manpage-base-url.xsl.in
 
 user-manual.xml: user-manual.txt user-manual.conf
 	$(QUIET_ASCIIDOC)$(RM) $@+ $@ && \
-	$(ASCIIDOC) $(ASCIIDOC_EXTRA) -b docbook -d book -o $@+ $< && \
+	$(ASCIIDOC) $(ASCIIDOC_EXTRA) -b docbook -d article -o $@+ $< && \
 	mv $@+ $@
 
 technical/api-index.txt: technical/api-index-skel.txt \

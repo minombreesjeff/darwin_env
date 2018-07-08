@@ -430,7 +430,7 @@ static inline int upstream_mark(const char *string, int len)
 }
 
 static int get_sha1_1(const char *name, int len, unsigned char *sha1, unsigned lookup_flags);
-static int interpret_nth_prior_checkout(const char *name, struct strbuf *buf);
+static int interpret_nth_prior_checkout(const char *name, int namelen, struct strbuf *buf);
 
 static int get_sha1_basic(const char *str, int len, unsigned char *sha1)
 {
@@ -451,9 +451,9 @@ static int get_sha1_basic(const char *str, int len, unsigned char *sha1)
 	int at, reflog_len, nth_prior = 0;
 
 	if (len == 40 && !get_sha1_hex(str, sha1)) {
-		if (warn_on_object_refname_ambiguity) {
+		if (warn_ambiguous_refs && warn_on_object_refname_ambiguity) {
 			refs_found = dwim_ref(str, len, tmp_sha1, &real_ref);
-			if (refs_found > 0 && warn_ambiguous_refs) {
+			if (refs_found > 0) {
 				warning(warn_msg, len, str);
 				if (advice_object_name_warning)
 					fprintf(stderr, "%s\n", _(object_name_msg));
@@ -492,7 +492,7 @@ static int get_sha1_basic(const char *str, int len, unsigned char *sha1)
 		struct strbuf buf = STRBUF_INIT;
 		int detached;
 
-		if (interpret_nth_prior_checkout(str, &buf) > 0) {
+		if (interpret_nth_prior_checkout(str, len, &buf) > 0) {
 			detached = (buf.len == 40 && !get_sha1_hex(buf.buf, sha1));
 			strbuf_release(&buf);
 			if (detached)
@@ -546,7 +546,7 @@ static int get_sha1_basic(const char *str, int len, unsigned char *sha1)
 		if (read_ref_at(real_ref, at_time, nth, sha1, NULL,
 				&co_time, &co_tz, &co_cnt)) {
 			if (!len) {
-				if (!prefixcmp(real_ref, "refs/heads/")) {
+				if (starts_with(real_ref, "refs/heads/")) {
 					str = real_ref + 11;
 					len = strlen(real_ref + 11);
 				} else {
@@ -581,8 +581,6 @@ static int get_parent(const char *name, int len,
 	if (ret)
 		return ret;
 	commit = lookup_commit_reference(sha1);
-	if (!commit)
-		return -1;
 	if (parse_commit(commit))
 		return -1;
 	if (!idx) {
@@ -676,15 +674,15 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 		return -1;
 
 	sp++; /* beginning of type name, or closing brace for empty */
-	if (!prefixcmp(sp, "commit}"))
+	if (starts_with(sp, "commit}"))
 		expected_type = OBJ_COMMIT;
-	else if (!prefixcmp(sp, "tag}"))
+	else if (starts_with(sp, "tag}"))
 		expected_type = OBJ_TAG;
-	else if (!prefixcmp(sp, "tree}"))
+	else if (starts_with(sp, "tree}"))
 		expected_type = OBJ_TREE;
-	else if (!prefixcmp(sp, "blob}"))
+	else if (starts_with(sp, "blob}"))
 		expected_type = OBJ_BLOB;
-	else if (!prefixcmp(sp, "object}"))
+	else if (starts_with(sp, "object}"))
 		expected_type = OBJ_ANY;
 	else if (sp[0] == '}')
 		expected_type = OBJ_NONE;
@@ -911,7 +909,7 @@ static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
 	const char *match = NULL, *target = NULL;
 	size_t len;
 
-	if (!prefixcmp(message, "checkout: moving from ")) {
+	if (starts_with(message, "checkout: moving from ")) {
 		match = message + strlen("checkout: moving from ");
 		target = strstr(match, " to ");
 	}
@@ -931,7 +929,8 @@ static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
  * Parse @{-N} syntax, return the number of characters parsed
  * if successful; otherwise signal an error with negative value.
  */
-static int interpret_nth_prior_checkout(const char *name, struct strbuf *buf)
+static int interpret_nth_prior_checkout(const char *name, int namelen,
+					struct strbuf *buf)
 {
 	long nth;
 	int retval;
@@ -939,9 +938,11 @@ static int interpret_nth_prior_checkout(const char *name, struct strbuf *buf)
 	const char *brace;
 	char *num_end;
 
+	if (namelen < 4)
+		return -1;
 	if (name[0] != '@' || name[1] != '{' || name[2] != '-')
 		return -1;
-	brace = strchr(name, '}');
+	brace = memchr(name, '}', namelen);
 	if (!brace)
 		return -1;
 	nth = strtol(name + 3, &num_end, 10);
@@ -1014,7 +1015,7 @@ static int interpret_empty_at(const char *name, int namelen, int len, struct str
 		return -1;
 
 	/* make sure it's a single @, or @@{.*}, not @foo */
-	next = strchr(name + len + 1, '@');
+	next = memchr(name + len + 1, '@', namelen - len - 1);
 	if (next && next[1] != '{')
 		return -1;
 	if (!next)
@@ -1048,6 +1049,57 @@ static int reinterpret(const char *name, int namelen, int len, struct strbuf *bu
 	return ret - used + len;
 }
 
+static void set_shortened_ref(struct strbuf *buf, const char *ref)
+{
+	char *s = shorten_unambiguous_ref(ref, 0);
+	strbuf_reset(buf);
+	strbuf_addstr(buf, s);
+	free(s);
+}
+
+static const char *get_upstream_branch(const char *branch_buf, int len)
+{
+	char *branch = xstrndup(branch_buf, len);
+	struct branch *upstream = branch_get(*branch ? branch : NULL);
+
+	/*
+	 * Upstream can be NULL only if branch refers to HEAD and HEAD
+	 * points to something different than a branch.
+	 */
+	if (!upstream)
+		die(_("HEAD does not point to a branch"));
+	if (!upstream->merge || !upstream->merge[0]->dst) {
+		if (!ref_exists(upstream->refname))
+			die(_("No such branch: '%s'"), branch);
+		if (!upstream->merge) {
+			die(_("No upstream configured for branch '%s'"),
+				upstream->name);
+		}
+		die(
+			_("Upstream branch '%s' not stored as a remote-tracking branch"),
+			upstream->merge[0]->src);
+	}
+	free(branch);
+
+	return upstream->merge[0]->dst;
+}
+
+static int interpret_upstream_mark(const char *name, int namelen,
+				   int at, struct strbuf *buf)
+{
+	int len;
+
+	len = upstream_mark(name + at, namelen - at);
+	if (!len)
+		return -1;
+
+	if (memchr(name, ':', at))
+		return -1;
+
+	set_shortened_ref(buf, get_upstream_branch(name, at));
+	return len + at;
+}
+
 /*
  * This reads short-hand syntax that not only evaluates to a commit
  * object name, but also can act as if the end user spelled the name
@@ -1071,10 +1123,9 @@ static int reinterpret(const char *name, int namelen, int len, struct strbuf *bu
  */
 int interpret_branch_name(const char *name, int namelen, struct strbuf *buf)
 {
-	char *cp;
-	struct branch *upstream;
-	int len = interpret_nth_prior_checkout(name, buf);
-	int tmp_len;
+	char *at;
+	const char *start;
+	int len = interpret_nth_prior_checkout(name, namelen, buf);
 
 	if (!namelen)
 		namelen = strlen(name);
@@ -1088,44 +1139,20 @@ int interpret_branch_name(const char *name, int namelen, struct strbuf *buf)
 			return reinterpret(name, namelen, len, buf);
 	}
 
-	cp = strchr(name, '@');
-	if (!cp)
-		return -1;
+	for (start = name;
+	     (at = memchr(start, '@', namelen - (start - name)));
+	     start = at + 1) {
 
-	len = interpret_empty_at(name, namelen, cp - name, buf);
-	if (len > 0)
-		return reinterpret(name, namelen, len, buf);
+		len = interpret_empty_at(name, namelen, at - name, buf);
+		if (len > 0)
+			return reinterpret(name, namelen, len, buf);
 
-	tmp_len = upstream_mark(cp, namelen - (cp - name));
-	if (!tmp_len)
-		return -1;
-
-	len = cp + tmp_len - name;
-	cp = xstrndup(name, cp - name);
-	upstream = branch_get(*cp ? cp : NULL);
-	/*
-	 * Upstream can be NULL only if cp refers to HEAD and HEAD
-	 * points to something different than a branch.
-	 */
-	if (!upstream)
-		die(_("HEAD does not point to a branch"));
-	if (!upstream->merge || !upstream->merge[0]->dst) {
-		if (!ref_exists(upstream->refname))
-			die(_("No such branch: '%s'"), cp);
-		if (!upstream->merge) {
-			die(_("No upstream configured for branch '%s'"),
-				upstream->name);
-		}
-		die(
-			_("Upstream branch '%s' not stored as a remote-tracking branch"),
-			upstream->merge[0]->src);
+		len = interpret_upstream_mark(name, namelen, at - name, buf);
+		if (len > 0)
+			return len;
 	}
-	free(cp);
-	cp = shorten_unambiguous_ref(upstream->merge[0]->dst, 0);
-	strbuf_reset(buf);
-	strbuf_addstr(buf, cp);
-	free(cp);
-	return len;
+
+	return -1;
 }
 
 int strbuf_branchname(struct strbuf *sb, const char *name)
@@ -1304,7 +1331,7 @@ static void diagnose_invalid_index_path(int stage,
 
 static char *resolve_relative_path(const char *rel)
 {
-	if (prefixcmp(rel, "./") && prefixcmp(rel, "../"))
+	if (!starts_with(rel, "./") && !starts_with(rel, "../"))
 		return NULL;
 
 	if (!startup_info)

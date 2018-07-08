@@ -78,8 +78,8 @@ be escaped: use `\"` for `"` and `\\` for `\`.
 
 The following escape sequences (beside `\"` and `\\`) are recognized:
 `\n` for newline character (NL), `\t` for horizontal tabulation (HT, TAB)
-and `\b` for backspace (BS).  No other char escape sequence, nor octal
-char sequences are valid.
+and `\b` for backspace (BS).  Other char escape sequences (including octal
+escape sequences) are invalid.
 
 Variable values ending in a `\` are continued on the next line in the
 customary UNIX fashion.
@@ -567,6 +567,10 @@ be passed to the shell by Git, which will translate the final
 command to `LESS=FRSX less -+S`. The environment tells the command
 to set the `S` option to chop long lines but the command line
 resets it to the default to fold long lines.
++
+Likewise, when the `LV` environment variable is unset, Git sets it
+to `-c`.  You can override this setting by exporting `LV` with
+another value or setting `core.pager` to `lv +c`.
 
 core.whitespace::
 	A comma separated list of common whitespace problems to
@@ -823,7 +827,7 @@ color.diff::
 	commands will only use color when output is to the terminal.
 	Defaults to false.
 +
-This does not affect linkgit:git-format-patch[1] nor the
+This does not affect linkgit:git-format-patch[1] or the
 'git-diff-{asterisk}' plumbing commands.  Can be overridden on the
 command line with the `--color[=<when>]` option.
 
@@ -2026,6 +2030,10 @@ receive.updateserverinfo::
 	If set to true, git-receive-pack will run git-update-server-info
 	after receiving data from git-push and updating refs.
 
+receive.shallowupdate::
+	If set to true, .git/shallow can be updated when new refs
+	require new shallow roots. Otherwise those refs are rejected.
+
 remote.pushdefault::
 	The remote to push to by default.  Overrides
 	`branch.<name>.remote` for all branches, and is overridden by
@@ -2087,8 +2095,8 @@ remote.<name>.vcs::
 
 remote.<name>.prune::
 	When set to true, fetching from this remote by default will also
-	remove any remote-tracking branches which no longer exist on the
-	remote (as if the `--prune` option was give on the command line).
+	remove any remote-tracking references that no longer exist on the
+	remote (as if the `--prune` option was given on the command line).
 	Overrides `fetch.prune` settings, if any.
 
 remotes.<group>::

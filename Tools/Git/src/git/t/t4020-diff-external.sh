@@ -193,6 +193,19 @@ test_expect_success 'GIT_EXTERNAL_DIFF with more than one changed files' '
 	GIT_EXTERNAL_DIFF=echo git diff
 '
 
+test_expect_success 'GIT_EXTERNAL_DIFF path counter/total' '
+	write_script external-diff.sh <<-\EOF &&
+	echo $GIT_DIFF_PATH_COUNTER of $GIT_DIFF_PATH_TOTAL >>counter.txt
+	EOF
+	>counter.txt &&
+	cat >expect <<-\EOF &&
+	1 of 2
+	2 of 2
+	EOF
+	GIT_EXTERNAL_DIFF=./external-diff.sh git diff &&
+	test_cmp expect counter.txt
+'
+
 test_expect_success 'GIT_EXTERNAL_DIFF generates pretty paths' '
 	touch file.ext &&
 	git add file.ext &&
@@ -213,17 +226,45 @@ keep_only_cr () {
 }
 
 test_expect_success 'external diff with autocrlf = true' '
-	git config core.autocrlf true &&
+	test_config core.autocrlf true &&
 	GIT_EXTERNAL_DIFF=./fake-diff.sh git diff &&
 	test $(wc -l < crlfed.txt) = $(cat crlfed.txt | keep_only_cr | wc -c)
 '
 
 test_expect_success 'diff --cached' '
+	test_config core.autocrlf true &&
 	git add file &&
 	git update-index --assume-unchanged file &&
 	echo second >file &&
 	git diff --cached >actual &&
 	test_cmp "$TEST_DIRECTORY"/t4020/diff.NUL actual
+'
+
+test_expect_success 'clean up crlf leftovers' '
+	git update-index --no-assume-unchanged file &&
+	rm -f file* &&
+	git reset --hard
+'
+
+test_expect_success 'submodule diff' '
+	git init sub &&
+	( cd sub && test_commit sub1 ) &&
+	git add sub &&
+	test_tick &&
+	git commit -m "add submodule" &&
+	( cd sub && test_commit sub2 ) &&
+	write_script gather_pre_post.sh <<-\EOF &&
+	echo "$1 $4" # path, mode
+	cat "$2" # old file
+	cat "$5" # new file
+	EOF
+	GIT_EXTERNAL_DIFF=./gather_pre_post.sh git diff >actual &&
+	cat >expected <<-EOF &&
+	sub 160000
+	Subproject commit $(git rev-parse HEAD:sub)
+	Subproject commit $(cd sub && git rev-parse HEAD)
+	EOF
+	test_cmp expected actual
 '
 
 test_done

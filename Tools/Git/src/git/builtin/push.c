@@ -35,35 +35,75 @@ static void add_refspec(const char *ref)
 	refspec[refspec_nr-1] = ref;
 }
 
-static void set_refspecs(const char **refs, int nr)
+static const char *map_refspec(const char *ref,
+			       struct remote *remote, struct ref *local_refs)
 {
+	struct ref *matched = NULL;
+
+	/* Does "ref" uniquely name our ref? */
+	if (count_refspec_match(ref, local_refs, &matched) != 1)
+		return ref;
+
+	if (remote->push) {
+		struct refspec query;
+		memset(&query, 0, sizeof(struct refspec));
+		query.src = matched->name;
+		if (!query_refspecs(remote->push, remote->push_refspec_nr, &query) &&
+		    query.dst) {
+			struct strbuf buf = STRBUF_INIT;
+			strbuf_addf(&buf, "%s%s:%s",
+				    query.force ? "+" : "",
+				    query.src, query.dst);
+			return strbuf_detach(&buf, NULL);
+		}
+	}
+
+	if (push_default == PUSH_DEFAULT_UPSTREAM &&
+	    !prefixcmp(matched->name, "refs/heads/")) {
+		struct branch *branch = branch_get(matched->name + 11);
+		if (branch->merge_nr == 1 && branch->merge[0]->src) {
+			struct strbuf buf = STRBUF_INIT;
+			strbuf_addf(&buf, "%s:%s",
+				    ref, branch->merge[0]->src);
+			return strbuf_detach(&buf, NULL);
+		}
+	}
+
+	return ref;
+}
+
+static void set_refspecs(const char **refs, int nr, const char *repo)
+{
+	struct remote *remote = NULL;
+	struct ref *local_refs = NULL;
 	int i;
+
 	for (i = 0; i < nr; i++) {
 		const char *ref = refs[i];
 		if (!strcmp("tag", ref)) {
-			char *tag;
-			int len;
+			struct strbuf tagref = STRBUF_INIT;
 			if (nr <= ++i)
 				die(_("tag shorthand without <tag>"));
-			len = strlen(refs[i]) + 11;
-			if (deleterefs) {
-				tag = xmalloc(len+1);
-				strcpy(tag, ":refs/tags/");
-			} else {
-				tag = xmalloc(len);
-				strcpy(tag, "refs/tags/");
+			ref = refs[i];
+			if (deleterefs)
+				strbuf_addf(&tagref, ":refs/tags/%s", ref);
+			else
+				strbuf_addf(&tagref, "refs/tags/%s", ref);
+			ref = strbuf_detach(&tagref, NULL);
+		} else if (deleterefs) {
+			struct strbuf delref = STRBUF_INIT;
+			if (strchr(ref, ':'))
+				die(_("--delete only accepts plain target ref names"));
+			strbuf_addf(&delref, ":%s", ref);
+			ref = strbuf_detach(&delref, NULL);
+		} else if (!strchr(ref, ':')) {
+			if (!remote) {
+				/* lazily grab remote and local_refs */
+				remote = remote_get(repo);
+				local_refs = get_local_heads();
 			}
-			strcat(tag, refs[i]);
-			ref = tag;
-		} else if (deleterefs && !strchr(ref, ':')) {
-			char *delref;
-			int len = strlen(ref)+1;
-			delref = xmalloc(len+1);
-			strcpy(delref, ":");
-			strcat(delref, ref);
-			ref = delref;
-		} else if (deleterefs)
-			die(_("--delete only accepts plain target ref names"));
+			ref = map_refspec(ref, remote, local_refs);
+		}
 		add_refspec(ref);
 	}
 }
@@ -173,6 +213,13 @@ N_("push.default is unset; its implicit value is changing in\n"
    "To squelch this message and adopt the new behavior now, use:\n"
    "\n"
    "  git config --global push.default simple\n"
+   "\n"
+   "When push.default is set to 'matching', git will push local branches\n"
+   "to the remote branches that already exist with the same name.\n"
+   "\n"
+   "In Git 2.0, Git will default to the more conservative 'simple'\n"
+   "behavior, which only pushes the current branch to the corresponding\n"
+   "remote branch that 'git pull' uses to update the current branch.\n"
    "\n"
    "See 'git help config' and search for 'push.default' for further information.\n"
    "(the 'simple' mode was introduced in Git 1.7.11. Use the similar mode\n"
@@ -494,7 +541,7 @@ int cmd_push(int argc, const char **argv, const char *prefix)
 
 	if (argc > 0) {
 		repo = argv[0];
-		set_refspecs(argv + 1, argc - 1);
+		set_refspecs(argv + 1, argc - 1, repo);
 	}
 
 	rc = do_push(repo, flags);

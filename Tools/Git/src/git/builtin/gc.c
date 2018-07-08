@@ -16,6 +16,7 @@
 #include "run-command.h"
 #include "sigchain.h"
 #include "argv-array.h"
+#include "commit.h"
 
 #define FAILED_RUN "failed to run %s"
 
@@ -178,7 +179,7 @@ static int need_to_gc(void)
 	else if (!too_many_loose_objects())
 		return 0;
 
-	if (run_hook(NULL, "pre-auto-gc", NULL))
+	if (run_hook_le(NULL, "pre-auto-gc", NULL))
 		return 0;
 	return 1;
 }
@@ -222,7 +223,7 @@ static const char *lock_repo_for_gc(int force, pid_t* ret_pid)
 			time(NULL) - st.st_mtime <= 12 * 3600 &&
 			fscanf(fp, "%"PRIuMAX" %127c", &pid, locking_host) == 2 &&
 			/* be gentle to concurrent "gc" on remote hosts */
-			(strcmp(locking_host, my_host) || !kill(pid, 0));
+			(strcmp(locking_host, my_host) || !kill(pid, 0) || errno == EPERM);
 		if (fp != NULL)
 			fclose(fp);
 		if (should_exit) {

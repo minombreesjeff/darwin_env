@@ -28,7 +28,7 @@ arguments.  Here are the rules:
    they can be disambiguated by placing `--` between them.
    E.g. `git diff -- HEAD` is, "I have a file called HEAD in my work
    tree.  Please show changes between the version I staged in the index
-   and what I have in the work tree for that file". not "show difference
+   and what I have in the work tree for that file", not "show difference
    between the HEAD commit and the work tree as a whole".  You can say
    `git diff HEAD --` to ask for the latter.
 
@@ -72,23 +72,23 @@ scripting Git:
  * splitting short options to separate words (prefer `git foo -a -b`
    to `git foo -ab`, the latter may not even work).
 
- * when a command line option takes an argument, use the 'sticked' form.  In
+ * when a command line option takes an argument, use the 'stuck' form.  In
    other words, write `git foo -oArg` instead of `git foo -o Arg` for short
    options, and `git foo --long-opt=Arg` instead of `git foo --long-opt Arg`
    for long options.  An option that takes optional option-argument must be
-   written in the 'sticked' form.
+   written in the 'stuck' form.
 
  * when you give a revision parameter to a command, make sure the parameter is
    not ambiguous with a name of a file in the work tree.  E.g. do not write
    `git log -1 HEAD` but write `git log -1 HEAD --`; the former will not work
    if you happen to have a file called `HEAD` in the work tree.
 
- * many commands allow a long option "--option" to be abbreviated
+ * many commands allow a long option `--option` to be abbreviated
    only to their unique prefix (e.g. if there is no other option
-   whose name begins with "opt", you may be able to spell "--opt" to
-   invoke the "--option" flag), but you should fully spell them out
+   whose name begins with `opt`, you may be able to spell `--opt` to
+   invoke the `--option` flag), but you should fully spell them out
    when writing your scripts; later versions of Git may introduce a
-   new option whose name shares the same prefix, e.g. "--optimize",
+   new option whose name shares the same prefix, e.g. `--optimize`,
    to make a short prefix that used to be unique no longer unique.
 
 
@@ -149,7 +149,7 @@ prefix of a long option as if it is fully spelled out, but use this
 with a caution.  For example, `git commit --amen` behaves as if you
 typed `git commit --amend`, but that is true only until a later version
 of Git introduces another option that shares the same prefix,
-e.g `git commit --amenity" option.
+e.g. `git commit --amenity` option.
 
 
 Separating argument from the option
@@ -165,7 +165,7 @@ $ git foo -o Arg
 ----------------------------
 
 However, this is *NOT* allowed for switches with an optional value, where the
-'sticked' form must be used:
+'stuck' form must be used:
 ----------------------------
 $ git describe --abbrev HEAD     # correct
 $ git describe --abbrev=10 HEAD  # correct

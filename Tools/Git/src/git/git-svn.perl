@@ -143,7 +143,6 @@ my %fc_opts = ( 'follow-parent|follow!' => \$Git::SVN::_follow_parent,
 		'use-log-author' => \$Git::SVN::_use_log_author,
 		'add-author-from' => \$Git::SVN::_add_author_from,
 		'localtime' => \$Git::SVN::_localtime,
-		'skip-merge-info' => \$Git::SVN::_skip_merge_info,
 		%remote_opts );
 
 my ($_trunk, @_tags, @_branches, $_stdlayout);

@@ -88,7 +88,7 @@ test_expect_success 'fetch --prune on its own works as expected' '
 	cd "$D" &&
 	git clone . prune &&
 	cd prune &&
-	git fetch origin refs/heads/master:refs/remotes/origin/extrabranch &&
+	git update-ref refs/remotes/origin/extrabranch master &&
 
 	git fetch --prune origin &&
 	test_must_fail git rev-parse origin/extrabranch
@@ -98,7 +98,7 @@ test_expect_success 'fetch --prune with a branch name keeps branches' '
 	cd "$D" &&
 	git clone . prune-branch &&
 	cd prune-branch &&
-	git fetch origin refs/heads/master:refs/remotes/origin/extrabranch &&
+	git update-ref refs/remotes/origin/extrabranch master &&
 
 	git fetch --prune origin master &&
 	git rev-parse origin/extrabranch
@@ -113,25 +113,65 @@ test_expect_success 'fetch --prune with a namespace keeps other namespaces' '
 	git rev-parse origin/master
 '
 
-test_expect_success 'fetch --prune --tags does not delete the remote-tracking branches' '
+test_expect_success 'fetch --prune handles overlapping refspecs' '
+	cd "$D" &&
+	git update-ref refs/pull/42/head master &&
+	git clone . prune-overlapping &&
+	cd prune-overlapping &&
+	git config --add remote.origin.fetch refs/pull/*/head:refs/remotes/origin/pr/* &&
+
+	git fetch --prune origin &&
+	git rev-parse origin/master &&
+	git rev-parse origin/pr/42 &&
+
+	git config --unset-all remote.origin.fetch
+	git config remote.origin.fetch refs/pull/*/head:refs/remotes/origin/pr/* &&
+	git config --add remote.origin.fetch refs/heads/*:refs/remotes/origin/* &&
+
+	git fetch --prune origin &&
+	git rev-parse origin/master &&
+	git rev-parse origin/pr/42
+'
+
+test_expect_success 'fetch --prune --tags prunes branches but not tags' '
 	cd "$D" &&
 	git clone . prune-tags &&
 	cd prune-tags &&
-	git fetch origin refs/heads/master:refs/tags/sometag &&
+	git tag sometag master &&
+	# Create what looks like a remote-tracking branch from an earlier
+	# fetch that has since been deleted from the remote:
+	git update-ref refs/remotes/origin/fake-remote master &&
 
 	git fetch --prune --tags origin &&
 	git rev-parse origin/master &&
-	test_must_fail git rev-parse somebranch
+	test_must_fail git rev-parse origin/fake-remote &&
+	git rev-parse sometag
 '
 
-test_expect_success 'fetch --prune --tags with branch does not delete other remote-tracking branches' '
+test_expect_success 'fetch --prune --tags with branch does not prune other things' '
 	cd "$D" &&
 	git clone . prune-tags-branch &&
 	cd prune-tags-branch &&
-	git fetch origin refs/heads/master:refs/remotes/origin/extrabranch &&
+	git tag sometag master &&
+	git update-ref refs/remotes/origin/extrabranch master &&
 
 	git fetch --prune --tags origin master &&
-	git rev-parse origin/extrabranch
+	git rev-parse origin/extrabranch &&
+	git rev-parse sometag
+'
+
+test_expect_success 'fetch --prune --tags with refspec prunes based on refspec' '
+	cd "$D" &&
+	git clone . prune-tags-refspec &&
+	cd prune-tags-refspec &&
+	git tag sometag master &&
+	git update-ref refs/remotes/origin/foo/otherbranch master &&
+	git update-ref refs/remotes/origin/extrabranch master &&
+
+	git fetch --prune --tags origin refs/heads/foo/*:refs/remotes/origin/foo/* &&
+	test_must_fail git rev-parse refs/remotes/origin/foo/otherbranch &&
+	git rev-parse origin/extrabranch &&
+	git rev-parse sometag
 '
 
 test_expect_success 'fetch tags when there is no tags' '
@@ -592,6 +632,43 @@ test_expect_success 'all boundary commits are excluded' '
 	convert_bundle_to_pack <twoside-boundary.bdl >twoside-boundary.pack &&
 	pack=$(git index-pack --fix-thin --stdin <twoside-boundary.pack) &&
 	test_bundle_object_count .git/objects/pack/pack-${pack##pack	}.pack 3
+'
+
+test_expect_success 'fetch --prune prints the remotes url' '
+	git branch goodbye &&
+	git clone . only-prunes &&
+	git branch -D goodbye &&
+	(
+		cd only-prunes &&
+		git fetch --prune origin 2>&1 | head -n1 >../actual
+	) &&
+	echo "From ${D}/." >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'branchname D/F conflict resolved by --prune' '
+	git branch dir/file &&
+	git clone . prune-df-conflict &&
+	git branch -D dir/file &&
+	git branch dir &&
+	(
+		cd prune-df-conflict &&
+		git fetch --prune &&
+		git rev-parse origin/dir >../actual
+	) &&
+	git rev-parse dir >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'fetching a one-level ref works' '
+	test_commit extra &&
+	git reset --hard HEAD^ &&
+	git update-ref refs/foo extra &&
+	git init one-level &&
+	(
+		cd one-level &&
+		git fetch .. HEAD refs/foo
+	)
 '
 
 test_done

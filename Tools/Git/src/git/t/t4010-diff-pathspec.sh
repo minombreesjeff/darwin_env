@@ -110,4 +110,40 @@ test_expect_success 'diff-tree -r with wildcard' '
 	test_cmp expected result
 '
 
+test_expect_success 'setup submodules' '
+	test_tick &&
+	git init submod &&
+	( cd submod && test_commit first; ) &&
+	git add submod &&
+	git commit -m first &&
+	( cd submod && test_commit second; ) &&
+	git add submod &&
+	git commit -m second
+'
+
+test_expect_success 'diff-tree ignores trailing slash on submodule path' '
+	git diff --name-only HEAD^ HEAD submod >expect &&
+	git diff --name-only HEAD^ HEAD submod/ >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'diff multiple wildcard pathspecs' '
+	mkdir path2 &&
+	echo rezrov >path2/file1 &&
+	git update-index --add path2/file1 &&
+	tree3=`git write-tree` &&
+	git diff --name-only $tree $tree3 -- "path2*1" "path1*1" >actual &&
+	cat <<-\EOF >expect &&
+	path1/file1
+	path2/file1
+	EOF
+	test_cmp expect actual
+'
+
+test_expect_success 'diff-cache ignores trailing slash on submodule path' '
+	git diff --name-only HEAD^ submod >expect &&
+	git diff --name-only HEAD^ submod/ >actual &&
+	test_cmp expect actual
+'
+
 test_done

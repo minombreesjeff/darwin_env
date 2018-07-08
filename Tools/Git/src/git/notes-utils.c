@@ -18,7 +18,7 @@ void create_notes_commit(struct notes_tree *t, struct commit_list *parents,
 		unsigned char parent_sha1[20];
 		if (!read_ref(t->ref, parent_sha1)) {
 			struct commit *parent = lookup_commit(parent_sha1);
-			if (!parent || parse_commit(parent))
+			if (parse_commit(parent))
 				die("Failed to find/parse commit %s", t->ref);
 			commit_list_insert(parent, &parents);
 		}
@@ -70,7 +70,7 @@ static combine_notes_fn parse_combine_notes_fn(const char *v)
 static int notes_rewrite_config(const char *k, const char *v, void *cb)
 {
 	struct notes_rewrite_cfg *c = cb;
-	if (!prefixcmp(k, "notes.rewrite.") && !strcmp(k+14, c->cmd)) {
+	if (starts_with(k, "notes.rewrite.") && !strcmp(k+14, c->cmd)) {
 		c->enabled = git_config_bool(k, v);
 		return 0;
 	} else if (!c->mode_from_env && !strcmp(k, "notes.rewritemode")) {
@@ -85,7 +85,7 @@ static int notes_rewrite_config(const char *k, const char *v, void *cb)
 	} else if (!c->refs_from_env && !strcmp(k, "notes.rewriteref")) {
 		/* note that a refs/ prefix is implied in the
 		 * underlying for_each_glob_ref */
-		if (!prefixcmp(v, "refs/notes/"))
+		if (starts_with(v, "refs/notes/"))
 			string_list_add_refs_by_glob(c->refs, v);
 		else
 			warning(_("Refusing to rewrite notes in %s"

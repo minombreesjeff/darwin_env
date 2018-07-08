@@ -80,8 +80,15 @@ void setup_pager(void)
 	pager_process.use_shell = 1;
 	pager_process.argv = pager_argv;
 	pager_process.in = -1;
-	if (!getenv("LESS")) {
-		static const char *env[] = { "LESS=FRSX", NULL };
+	if (!getenv("LESS") || !getenv("LV")) {
+		static const char *env[3];
+		int i = 0;
+
+		if (!getenv("LESS"))
+			env[i++] = "LESS=FRSX";
+		if (!getenv("LV"))
+			env[i++] = "LV=-c";
+		env[i] = NULL;
 		pager_process.env = env;
 	}
 	if (start_command(&pager_process))
@@ -151,7 +158,7 @@ int decimal_width(int number)
 static int pager_command_config(const char *var, const char *value, void *data)
 {
 	struct pager_config *c = data;
-	if (!prefixcmp(var, "pager.") && !strcmp(var + 6, c->cmd)) {
+	if (starts_with(var, "pager.") && !strcmp(var + 6, c->cmd)) {
 		int b = git_config_maybe_bool(var, value);
 		if (b >= 0)
 			c->want = b;

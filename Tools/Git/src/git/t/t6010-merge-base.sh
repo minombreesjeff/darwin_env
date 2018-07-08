@@ -230,4 +230,71 @@ test_expect_success 'criss-cross merge-base for octopus-step' '
 	test_cmp expected.sorted actual.sorted
 '
 
+test_expect_success 'using reflog to find the fork point' '
+	git reset --hard &&
+	git checkout -b base $E &&
+
+	(
+		for count in 1 2 3
+		do
+			git commit --allow-empty -m "Base commit #$count" &&
+			git rev-parse HEAD >expect$count &&
+			git checkout -B derived &&
+			git commit --allow-empty -m "Derived #$count" &&
+			git rev-parse HEAD >derived$count &&
+			git checkout -B base $E || exit 1
+		done
+
+		for count in 1 2 3
+		do
+			git merge-base --fork-point base $(cat derived$count) >actual &&
+			test_cmp expect$count actual || exit 1
+		done
+
+	) &&
+	# check that we correctly default to HEAD
+	git checkout derived &&
+	git merge-base --fork-point base >actual &&
+	test_cmp expect3 actual
+'
+
+test_expect_success 'merge-base --octopus --all for complex tree' '
+	# Best common ancestor for JE, JAA and JDD is JC
+	#             JE
+	#            / |
+	#           /  |
+	#          /   |
+	#  JAA    /    |
+	#   |\   /     |
+	#   | \  | JDD |
+	#   |  \ |/ |  |
+	#   |   JC JD  |
+	#   |    | /|  |
+	#   |    |/ |  |
+	#  JA    |  |  |
+	#   |\  /|  |  |
+	#   X JB |  X  X
+	#   \  \ | /   /
+	#    \__\|/___/
+	#        J
+	test_commit J &&
+	test_commit JB &&
+	git reset --hard J &&
+	test_commit JC &&
+	git reset --hard J &&
+	test_commit JTEMP1 &&
+	test_merge JA JB &&
+	test_merge JAA JC &&
+	git reset --hard J &&
+	test_commit JTEMP2 &&
+	test_merge JD JB &&
+	test_merge JDD JC &&
+	git reset --hard J &&
+	test_commit JTEMP3 &&
+	test_merge JE JC &&
+	git rev-parse JC >expected &&
+	git merge-base --all --octopus JAA JDD JE >actual &&
+	test_cmp expected actual
+'
+
 test_done
