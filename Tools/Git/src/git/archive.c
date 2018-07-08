@@ -5,6 +5,7 @@
 #include "archive.h"
 #include "parse-options.h"
 #include "unpack-trees.h"
+#include "dir.h"
 
 static char const * const archive_usage[] = {
 	N_("git archive [options] <tree-ish> [<path>...]"),
@@ -17,6 +18,7 @@ static char const * const archive_usage[] = {
 static const struct archiver **archivers;
 static int nr_archivers;
 static int alloc_archivers;
+static int remote_allow_unreachable;
 
 void register_archiver(struct archiver *ar)
 {
@@ -97,9 +99,19 @@ static void setup_archive_check(struct git_attr_check *check)
 	check[1].attr = attr_export_subst;
 }
 
+struct directory {
+	struct directory *up;
+	unsigned char sha1[20];
+	int baselen, len;
+	unsigned mode;
+	int stage;
+	char path[FLEX_ARRAY];
+};
+
 struct archiver_context {
 	struct archiver_args *args;
 	write_archive_entry_fn_t write_entry;
+	struct directory *bottom;
 };
 
 static int write_archive_entry(const unsigned char *sha1, const char *base,
@@ -145,6 +157,73 @@ static int write_archive_entry(const unsigned char *sha1, const char *base,
 	return write_entry(args, sha1, path.buf, path.len, mode);
 }
 
+static int write_archive_entry_buf(const unsigned char *sha1, struct strbuf *base,
+		const char *filename, unsigned mode, int stage,
+		void *context)
+{
+	return write_archive_entry(sha1, base->buf, base->len,
+				     filename, mode, stage, context);
+}
+
+static void queue_directory(const unsigned char *sha1,
+		struct strbuf *base, const char *filename,
+		unsigned mode, int stage, struct archiver_context *c)
+{
+	struct directory *d;
+	d = xmallocz(sizeof(*d) + base->len + 1 + strlen(filename));
+	d->up	   = c->bottom;
+	d->baselen = base->len;
+	d->mode	   = mode;
+	d->stage   = stage;
+	c->bottom  = d;
+	d->len = sprintf(d->path, "%.*s%s/", (int)base->len, base->buf, filename);
+	hashcpy(d->sha1, sha1);
+}
+
+static int write_directory(struct archiver_context *c)
+{
+	struct directory *d = c->bottom;
+	int ret;
+
+	if (!d)
+		return 0;
+	c->bottom = d->up;
+	d->path[d->len - 1] = '\0'; /* no trailing slash */
+	ret =
+		write_directory(c) ||
+		write_archive_entry(d->sha1, d->path, d->baselen,
+				    d->path + d->baselen, d->mode,
+				    d->stage, c) != READ_TREE_RECURSIVE;
+	free(d);
+	return ret ? -1 : 0;
+}
+
+static int queue_or_write_archive_entry(const unsigned char *sha1,
+		struct strbuf *base, const char *filename,
+		unsigned mode, int stage, void *context)
+{
+	struct archiver_context *c = context;
+
+	while (c->bottom &&
+	       !(base->len >= c->bottom->len &&
+		 !strncmp(base->buf, c->bottom->path, c->bottom->len))) {
+		struct directory *next = c->bottom->up;
+		free(c->bottom);
+		c->bottom = next;
+	}
+
+	if (S_ISDIR(mode)) {
+		queue_directory(sha1, base, filename,
+				mode, stage, c);
+		return READ_TREE_RECURSIVE;
+	}
+
+	if (write_directory(c))
+		return -1;
+	return write_archive_entry(sha1, base->buf, base->len, filename, mode,
+				   stage, context);
+}
+
 int write_archive_entries(struct archiver_args *args,
 		write_archive_entry_fn_t write_entry)
 {
@@ -166,6 +245,7 @@ int write_archive_entries(struct archiver_args *args,
 			return err;
 	}
 
+	memset(&context, 0, sizeof(context));
 	context.args = args;
 	context.write_entry = write_entry;
 
@@ -186,9 +266,17 @@ int write_archive_entries(struct archiver_args *args,
 	}
 
 	err = read_tree_recursive(args->tree, "", 0, 0, &args->pathspec,
-				  write_archive_entry, &context);
+				  args->pathspec.has_wildcard ?
+				  queue_or_write_archive_entry :
+				  write_archive_entry_buf,
+				  &context);
 	if (err == READ_TREE_RECURSIVE)
 		err = 0;
+	while (context.bottom) {
+		struct directory *next = context.bottom->up;
+		free(context.bottom);
+		context.bottom = next;
+	}
 	return err;
 }
 
@@ -206,11 +294,20 @@ static const struct archiver *lookup_archiver(const char *name)
 	return NULL;
 }
 
-static int reject_entry(const unsigned char *sha1, const char *base,
-			int baselen, const char *filename, unsigned mode,
+static int reject_entry(const unsigned char *sha1, struct strbuf *base,
+			const char *filename, unsigned mode,
 			int stage, void *context)
 {
-	return -1;
+	int ret = -1;
+	if (S_ISDIR(mode)) {
+		struct strbuf sb = STRBUF_INIT;
+		strbuf_addbuf(&sb, base);
+		strbuf_addstr(&sb, filename);
+		if (!match_pathspec(context, sb.buf, sb.len, 0, NULL, 1))
+			ret = READ_TREE_RECURSIVE;
+		strbuf_release(&sb);
+	}
+	return ret;
 }
 
 static int path_exists(struct tree *tree, const char *path)
@@ -220,7 +317,9 @@ static int path_exists(struct tree *tree, const char *path)
 	int ret;
 
 	parse_pathspec(&pathspec, 0, 0, "", paths);
-	ret = read_tree_recursive(tree, "", 0, 0, &pathspec, reject_entry, NULL);
+	pathspec.recursive = 1;
+	ret = read_tree_recursive(tree, "", 0, 0, &pathspec,
+				  reject_entry, &pathspec);
 	free_pathspec(&pathspec);
 	return ret != 0;
 }
@@ -236,6 +335,7 @@ static void parse_pathspec_arg(const char **pathspec,
 	parse_pathspec(&ar_args->pathspec, 0,
 		       PATHSPEC_PREFER_FULL,
 		       "", pathspec);
+	ar_args->pathspec.recursive = 1;
 	if (pathspec) {
 		while (*pathspec) {
 			if (**pathspec && !path_exists(ar_args->tree, *pathspec))
@@ -257,10 +357,10 @@ static void parse_treeish_arg(const char **argv,
 	unsigned char sha1[20];
 
 	/* Remotes are only allowed to fetch actual refs */
-	if (remote) {
+	if (remote && !remote_allow_unreachable) {
 		char *ref = NULL;
-		const char *colon = strchr(name, ':');
-		int refnamelen = colon ? colon - name : strlen(name);
+		const char *colon = strchrnul(name, ':');
+		int refnamelen = colon - name;
 
 		if (!dwim_ref(name, refnamelen, sha1, &ref))
 			die("no such ref: %.*s", refnamelen, name);
@@ -411,7 +511,9 @@ int write_archive(int argc, const char **argv, const char *prefix,
 	if (setup_prefix && prefix == NULL)
 		prefix = setup_git_directory_gently(&nongit);
 
+	git_config_get_bool("uploadarchive.allowunreachable", &remote_allow_unreachable);
 	git_config(git_default_config, NULL);
+
 	init_tar_archiver();
 	init_zip_archiver();
 

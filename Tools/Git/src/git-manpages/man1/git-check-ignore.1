@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-check-ignore
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-CHECK\-IGNORE" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-CHECK\-IGNORE" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -39,6 +39,8 @@ git-check-ignore \- Debug gitignore / exclude files
 .SH "DESCRIPTION"
 .sp
 For each pathname given via the command\-line or from a file via \-\-stdin, show the pattern from \&.gitignore (or other input files to the exclude mechanism) that decides if the pathname is excluded or included\&. Later patterns within a file take precedence over earlier ones\&.
+.sp
+By default, tracked files are not shown at all since they are not subject to exclude rules; but see \(oq\-\-no\-index\(cq\&.
 .SH "OPTIONS"
 .PP
 \-q, \-\-quiet

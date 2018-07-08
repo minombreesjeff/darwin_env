@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: gitremote-helpers
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GITREMOTE\-HELPERS" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GITREMOTE\-HELPERS" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -452,6 +452,12 @@ Sets service path (\-\-upload\-pack, \-\-receive\-pack etc\&.) for next connect\
 Request the helper to check connectivity of a clone\&.
 .RE
 .PP
+\fIoption force\fR {\fItrue\fR|\fIfalse\fR}
+.RS 4
+Request the helper to perform a force update\&. Defaults to
+\fIfalse\fR\&.
+.RE
+.PP
 \fIoption cloning {\(aqtrue\fR|\fIfalse\fR}
 .RS 4
 Notify the helper this is a clone request (i\&.e\&. the current repository is guaranteed empty)\&.
@@ -465,7 +471,13 @@ Allow to extend \&.git/shallow if the new refs require it\&.
 .sp
 \fBgit-remote\fR(1)
 .sp
+\fBgit-remote-ext\fR(1)
+.sp
+\fBgit-remote-fd\fR(1)
+.sp
 \fBgit-remote-testgit\fR(1)
+.sp
+\fBgit-fast-import\fR(1)
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite

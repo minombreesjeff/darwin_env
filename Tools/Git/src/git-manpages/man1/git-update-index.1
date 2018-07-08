@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-update-index
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-UPDATE\-INDEX" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-UPDATE\-INDEX" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -35,7 +35,7 @@ git-update-index \- Register file contents in the working tree to the index
 \fIgit update\-index\fR
              [\-\-add] [\-\-remove | \-\-force\-remove] [\-\-replace]
              [\-\-refresh] [\-q] [\-\-unmerged] [\-\-ignore\-missing]
-             [(\-\-cacheinfo <mode> <object> <file>)\&...]
+             [(\-\-cacheinfo <mode>,<object>,<file>)\&...]
              [\-\-chmod=(+|\-)x]
              [\-\-[no\-]assume\-unchanged]
              [\-\-[no\-]skip\-worktree]
@@ -95,9 +95,9 @@ continue anyway\&.
 Ignores missing files during a \-\-refresh
 .RE
 .PP
-\-\-cacheinfo <mode> <object> <path>
+\-\-cacheinfo <mode>,<object>,<path>, \-\-cacheinfo <mode> <object> <path>
 .RS 4
-Directly insert the specified info into the index\&.
+Directly insert the specified info into the index\&. For backward compatibility, you can also give these three arguments as three separate parameters, but new users are encouraged to use a single\-parameter form\&.
 .RE
 .PP
 \-\-index\-info
@@ -112,11 +112,9 @@ Set the execute permissions on the updated files\&.
 .PP
 \-\-[no\-]assume\-unchanged
 .RS 4
-When these flags are specified, the object names recorded for the paths are not updated\&. Instead, these options set and unset the "assume unchanged" bit for the paths\&. When the "assume unchanged" bit is on, Git stops checking the working tree files for possible modifications, so you need to manually unset the bit to tell Git when you change the working tree file\&. This is sometimes helpful when working with a big project on a filesystem that has very slow lstat(2) system call (e\&.g\&. cifs)\&.
+When this flag is specified, the object names recorded for the paths are not updated\&. Instead, this option sets/unsets the "assume unchanged" bit for the paths\&. When the "assume unchanged" bit is on, the user promises not to change the file and allows Git to assume that the working tree file matches what is recorded in the index\&. If you want to change the working tree file, you need to unset the bit to tell Git\&. This is sometimes helpful when working with a big project on a filesystem that has very slow lstat(2) system call (e\&.g\&. cifs)\&.
 .sp
-This option can be also used as a coarse file\-level mechanism to ignore uncommitted changes in tracked files (akin to what
-\&.gitignore
-does for untracked files)\&. Git will fail (gracefully) in case it needs to modify this file in the index e\&.g\&. when merging in a commit; thus, in case the assumed\-untracked file is changed upstream, you will need to handle the situation manually\&.
+Git will fail (gracefully) in case it needs to modify this file in the index e\&.g\&. when merging in a commit; thus, in case the assumed\-untracked file is changed upstream, you will need to handle the situation manually\&.
 .RE
 .PP
 \-\-really\-refresh
@@ -198,6 +196,13 @@ or
 \-\-index\-info; paths are separated with NUL character instead of LF\&.
 .RE
 .PP
+\-\-split\-index, \-\-no\-split\-index
+.RS 4
+Enable or disable split index mode\&. If enabled, the index is split into two files, $GIT_DIR/index and $GIT_DIR/sharedindex\&.<SHA\-1>\&. Changes are accumulated in $GIT_DIR/index while the shared index file contains all index entries stays unchanged\&. If split\-index mode is already enabled and
+\-\-split\-index
+is given again, all changes in $GIT_DIR/index are pushed back to the shared index file\&. This mode is designed for very large indexes that take a significant amount of time to read or write\&.
+.RE
+.PP
 \-\-
 .RS 4
 Do not interpret any more arguments as options\&.
@@ -230,7 +235,7 @@ To pretend you have a file with mode and sha1 at path, say:
 .RS 4
 .\}
 .nf
-$ git update\-index \-\-cacheinfo mode sha1 path
+$ git update\-index \-\-cacheinfo <mode>,<sha1>,<path>
 .fi
 .if n \{\
 .RE
@@ -354,6 +359,7 @@ $ git checkout\-index \-n \-f \-a && git update\-index \-\-ignore\-missing \-\-r
 .RE
 .\}
 .sp
+
 .PP
 On an inefficient filesystem with core\&.ignorestat set
 .RS 4

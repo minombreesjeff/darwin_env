@@ -212,9 +212,18 @@ test_expect_success '__gitdir - non-existing $GIT_DIR' '
 	)
 '
 
+function pwd_P_W () {
+	if test_have_prereq MINGW
+	then
+		pwd -W
+	else
+		pwd -P
+	fi
+}
+
 test_expect_success '__gitdir - gitfile in cwd' '
-	echo "$(pwd -P)/otherrepo/.git" >expected &&
-	echo "gitdir: $TRASH_DIRECTORY/otherrepo/.git" >subdir/.git &&
+	echo "$(pwd_P_W)/otherrepo/.git" >expected &&
+	echo "gitdir: $(pwd_P_W)/otherrepo/.git" >subdir/.git &&
 	test_when_finished "rm -f subdir/.git" &&
 	(
 		cd subdir &&
@@ -224,8 +233,8 @@ test_expect_success '__gitdir - gitfile in cwd' '
 '
 
 test_expect_success '__gitdir - gitfile in parent' '
-	echo "$(pwd -P)/otherrepo/.git" >expected &&
-	echo "gitdir: $TRASH_DIRECTORY/otherrepo/.git" >subdir/.git &&
+	echo "$(pwd_P_W)/otherrepo/.git" >expected &&
+	echo "gitdir: $(pwd_P_W)/otherrepo/.git" >subdir/.git &&
 	test_when_finished "rm -f subdir/.git" &&
 	(
 		cd subdir/subsubdir &&
@@ -548,6 +557,33 @@ test_expect_success 'complete files' '
 
 	touch momified &&
 	test_completion "git add mom" "momified"
+'
+
+test_expect_success "completion uses <cmd> completion for alias: !sh -c 'git <cmd> ...'" '
+	test_config alias.co "!sh -c '"'"'git checkout ...'"'"'" &&
+	test_completion "git co m" <<-\EOF
+	master Z
+	mybranch Z
+	mytag Z
+	EOF
+'
+
+test_expect_success 'completion uses <cmd> completion for alias: !f () { VAR=val git <cmd> ... }' '
+	test_config alias.co "!f () { VAR=val git checkout ... ; } f" &&
+	test_completion "git co m" <<-\EOF
+	master Z
+	mybranch Z
+	mytag Z
+	EOF
+'
+
+test_expect_success 'completion used <cmd> completion for alias: !f() { : git <cmd> ; ... }' '
+	test_config alias.co "!f() { : git checkout ; if ... } f" &&
+	test_completion "git co m" <<-\EOF
+	master Z
+	mybranch Z
+	mytag Z
+	EOF
 '
 
 test_expect_failure 'complete with tilde expansion' '

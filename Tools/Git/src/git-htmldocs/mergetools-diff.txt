@@ -1,4 +1,5 @@
 * araxis
+* bc
 * bc3
 * codecompare
 * deltawalker
@@ -8,6 +9,7 @@
 * emerge
 * gvimdiff
 * gvimdiff2
+* gvimdiff3
 * kdiff3
 * kompare
 * meld
@@ -16,4 +18,5 @@
 * tkdiff
 * vimdiff
 * vimdiff2
+* vimdiff3
 * xxdiff

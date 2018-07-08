@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-mergetool
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-MERGETOOL" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-MERGETOOL" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -102,12 +102,16 @@ Print a list of merge tools that may be used with
 .PP
 \-y, \-\-no\-prompt
 .RS 4
-Don\(cqt prompt before each invocation of the merge resolution program\&.
+Don\(cqt prompt before each invocation of the merge resolution program\&. This is the default if the merge resolution program is explicitly specified with the
+\-\-tool
+option or with the
+merge\&.tool
+configuration variable\&.
 .RE
 .PP
 \-\-prompt
 .RS 4
-Prompt before each invocation of the merge resolution program\&. This is the default behaviour; the option is provided to override any configuration settings\&.
+Prompt before each invocation of the merge resolution program to give the user a chance to skip the path\&.
 .RE
 .SH "TEMPORARY FILES"
 .sp

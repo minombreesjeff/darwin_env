@@ -461,7 +461,7 @@ test_expect_success 'new variable inserts into proper section' '
 	test_cmp expect .git/config
 '
 
-test_expect_success 'alternative GIT_CONFIG (non-existing file should fail)' '
+test_expect_success 'alternative --file (non-existing file should fail)' '
 	test_must_fail git config --file non-existing-config -l
 '
 
@@ -475,13 +475,26 @@ ein.bahn=strasse
 EOF
 
 test_expect_success 'alternative GIT_CONFIG' '
-	GIT_CONFIG=other-config git config -l >output &&
+	GIT_CONFIG=other-config git config --list >output &&
 	test_cmp expect output
 '
 
 test_expect_success 'alternative GIT_CONFIG (--file)' '
-	git config --file other-config -l > output &&
+	git config --file other-config --list >output &&
 	test_cmp expect output
+'
+
+test_expect_success 'alternative GIT_CONFIG (--file=-)' '
+	git config --file - --list <other-config >output &&
+	test_cmp expect output
+'
+
+test_expect_success 'setting a value in stdin is an error' '
+	test_must_fail git config --file - some.value foo
+'
+
+test_expect_success 'editing stdin is an error' '
+	test_must_fail git config --file - --edit
 '
 
 test_expect_success 'refer config from subdirectory' '
@@ -495,10 +508,10 @@ test_expect_success 'refer config from subdirectory' '
 
 '
 
-test_expect_success 'refer config from subdirectory via GIT_CONFIG' '
+test_expect_success 'refer config from subdirectory via --file' '
 	(
 		cd x &&
-		GIT_CONFIG=../other-config git config --get ein.bahn >actual &&
+		git config --file=../other-config --get ein.bahn >actual &&
 		test_cmp expect actual
 	)
 '
@@ -510,8 +523,8 @@ cat > expect << EOF
 	park = ausweis
 EOF
 
-test_expect_success '--set in alternative GIT_CONFIG' '
-	GIT_CONFIG=other-config git config anwohner.park ausweis &&
+test_expect_success '--set in alternative file' '
+	git config --file=other-config anwohner.park ausweis &&
 	test_cmp expect other-config
 '
 
@@ -811,14 +824,14 @@ cat >expect <<\EOF
 	trailingtilde = foo~
 EOF
 
-test_expect_success NOT_MINGW 'set --path' '
+test_expect_success !MINGW 'set --path' '
 	rm -f .git/config &&
 	git config --path path.home "~/" &&
 	git config --path path.normal "/dev/null" &&
 	git config --path path.trailingtilde "foo~" &&
 	test_cmp expect .git/config'
 
-if test_have_prereq NOT_MINGW && test "${HOME+set}"
+if test_have_prereq !MINGW && test "${HOME+set}"
 then
 	test_set_prereq HOMEVAR
 fi
@@ -841,7 +854,7 @@ cat >expect <<\EOF
 foo~
 EOF
 
-test_expect_success NOT_MINGW 'get --path copes with unset $HOME' '
+test_expect_success !MINGW 'get --path copes with unset $HOME' '
 	(
 		unset HOME;
 		test_must_fail git config --get --path path.home \
@@ -942,11 +955,11 @@ test_expect_success 'inner whitespace kept verbatim' '
 
 test_expect_success SYMLINKS 'symlinked configuration' '
 	ln -s notyet myconfig &&
-	GIT_CONFIG=myconfig git config test.frotz nitfol &&
+	git config --file=myconfig test.frotz nitfol &&
 	test -h myconfig &&
 	test -f notyet &&
-	test "z$(GIT_CONFIG=notyet git config test.frotz)" = znitfol &&
-	GIT_CONFIG=myconfig git config test.xyzzy rezrov &&
+	test "z$(git config --file=notyet test.frotz)" = znitfol &&
+	git config --file=myconfig test.xyzzy rezrov &&
 	test -h myconfig &&
 	test -f notyet &&
 	cat >expect <<-\EOF &&
@@ -954,31 +967,22 @@ test_expect_success SYMLINKS 'symlinked configuration' '
 	rezrov
 	EOF
 	{
-		GIT_CONFIG=notyet git config test.frotz &&
-		GIT_CONFIG=notyet git config test.xyzzy
+		git config --file=notyet test.frotz &&
+		git config --file=notyet test.xyzzy
 	} >actual &&
 	test_cmp expect actual
 '
 
 test_expect_success 'nonexistent configuration' '
-	(
-		GIT_CONFIG=doesnotexist &&
-		export GIT_CONFIG &&
-		test_must_fail git config --list &&
-		test_must_fail git config test.xyzzy
-	)
+	test_must_fail git config --file=doesnotexist --list &&
+	test_must_fail git config --file=doesnotexist test.xyzzy
 '
 
 test_expect_success SYMLINKS 'symlink to nonexistent configuration' '
 	ln -s doesnotexist linktonada &&
 	ln -s linktonada linktolinktonada &&
-	(
-		GIT_CONFIG=linktonada &&
-		export GIT_CONFIG &&
-		test_must_fail git config --list &&
-		GIT_CONFIG=linktolinktonada &&
-		test_must_fail git config --list
-	)
+	test_must_fail git config --file=linktonada --list &&
+	test_must_fail git config --file=linktolinktonada --list
 '
 
 test_expect_success 'check split_cmdline return' "
@@ -1004,6 +1008,17 @@ test_expect_success 'git -c "key=value" support' '
 	} >actual &&
 	test_cmp expect actual &&
 	test_must_fail git -c name=value config core.name
+'
+
+# We just need a type-specifier here that cares about the
+# distinction internally between a NULL boolean and a real
+# string (because most of git's internal parsers do care).
+# Using "--path" works, but we do not otherwise care about
+# its semantics.
+test_expect_success 'git -c can represent empty string' '
+	echo >expect &&
+	git -c foo.empty= config --path foo.empty >actual &&
+	test_cmp expect actual
 '
 
 test_expect_success 'key sanity-checking' '
@@ -1152,6 +1167,16 @@ test_expect_failure 'adding a key into an empty section reuses header' '
 
 	git config section.key value
 	test_cmp expect .git/config
+'
+
+test_expect_success POSIXPERM,PERL 'preserves existing permissions' '
+	chmod 0600 .git/config &&
+	git config imap.pass Hunter2 &&
+	perl -e \
+	  "die q(badset) if ((stat(q(.git/config)))[2] & 07777) != 0600" &&
+	git config --rename-section imap pop &&
+	perl -e \
+	  "die q(badrename) if ((stat(q(.git/config)))[2] & 07777) != 0600"
 '
 
 test_done

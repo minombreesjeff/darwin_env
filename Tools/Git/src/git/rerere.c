@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "lockfile.h"
 #include "string-list.h"
 #include "rerere.h"
 #include "xdiff-interface.h"
@@ -207,11 +208,11 @@ static int handle_path(unsigned char *sha1, struct rerere_io *io, int marker_siz
 			strbuf_reset(&one);
 			strbuf_reset(&two);
 		} else if (hunk == RR_SIDE_1)
-			strbuf_addstr(&one, buf.buf);
+			strbuf_addbuf(&one, &buf);
 		else if (hunk == RR_ORIGINAL)
 			; /* discard */
 		else if (hunk == RR_SIDE_2)
-			strbuf_addstr(&two, buf.buf);
+			strbuf_addbuf(&two, &buf);
 		else
 			rerere_io_putstr(buf.buf, io);
 		continue;
@@ -476,28 +477,23 @@ out:
 
 static struct lock_file index_lock;
 
-static int update_paths(struct string_list *update)
+static void update_paths(struct string_list *update)
 {
 	int i;
-	int fd = hold_locked_index(&index_lock, 0);
-	int status = 0;
 
-	if (fd < 0)
-		return -1;
+	hold_locked_index(&index_lock, 1);
 
 	for (i = 0; i < update->nr; i++) {
 		struct string_list_item *item = &update->items[i];
-		if (add_file_to_cache(item->string, ADD_CACHE_IGNORE_ERRORS))
-			status = -1;
+		if (add_file_to_cache(item->string, 0))
+			exit(128);
 	}
 
-	if (!status && active_cache_changed) {
-		if (write_cache(fd, active_cache, active_nr) ||
-		    commit_locked_index(&index_lock))
+	if (active_cache_changed) {
+		if (write_locked_index(&the_index, &index_lock, COMMIT_LOCK))
 			die("Unable to write new index file");
-	} else if (fd >= 0)
+	} else
 		rollback_lock_file(&index_lock);
-	return status;
 }
 
 static int do_plain_rerere(struct string_list *rr, int fd)
@@ -574,15 +570,11 @@ static int do_plain_rerere(struct string_list *rr, int fd)
 	return write_rr(rr, fd);
 }
 
-static int git_rerere_config(const char *var, const char *value, void *cb)
+static void git_rerere_config(void)
 {
-	if (!strcmp(var, "rerere.enabled"))
-		rerere_enabled = git_config_bool(var, value);
-	else if (!strcmp(var, "rerere.autoupdate"))
-		rerere_autoupdate = git_config_bool(var, value);
-	else
-		return git_default_config(var, value, cb);
-	return 0;
+	git_config_get_bool("rerere.enabled", &rerere_enabled);
+	git_config_get_bool("rerere.autoupdate", &rerere_autoupdate);
+	git_config(git_default_config, NULL);
 }
 
 static int is_rerere_enabled(void)
@@ -607,7 +599,7 @@ int setup_rerere(struct string_list *merge_rr, int flags)
 {
 	int fd;
 
-	git_config(git_rerere_config, NULL);
+	git_rerere_config();
 	if (!is_rerere_enabled())
 		return -1;
 
@@ -700,24 +692,6 @@ static void unlink_rr_item(const char *name)
 	rmdir(git_path("rr-cache/%s", name));
 }
 
-struct rerere_gc_config_cb {
-	int cutoff_noresolve;
-	int cutoff_resolve;
-};
-
-static int git_rerere_gc_config(const char *var, const char *value, void *cb)
-{
-	struct rerere_gc_config_cb *cf = cb;
-
-	if (!strcmp(var, "gc.rerereresolved"))
-		cf->cutoff_resolve = git_config_int(var, value);
-	else if (!strcmp(var, "gc.rerereunresolved"))
-		cf->cutoff_noresolve = git_config_int(var, value);
-	else
-		return git_default_config(var, value, cb);
-	return 0;
-}
-
 void rerere_gc(struct string_list *rr)
 {
 	struct string_list to_remove = STRING_LIST_INIT_DUP;
@@ -725,9 +699,12 @@ void rerere_gc(struct string_list *rr)
 	struct dirent *e;
 	int i, cutoff;
 	time_t now = time(NULL), then;
-	struct rerere_gc_config_cb cf = { 15, 60 };
+	int cutoff_noresolve = 15;
+	int cutoff_resolve = 60;
 
-	git_config(git_rerere_gc_config, &cf);
+	git_config_get_int("gc.rerereresolved", &cutoff_resolve);
+	git_config_get_int("gc.rerereunresolved", &cutoff_noresolve);
+	git_config(git_default_config, NULL);
 	dir = opendir(git_path("rr-cache"));
 	if (!dir)
 		die_errno("unable to open rr-cache directory");
@@ -737,12 +714,12 @@ void rerere_gc(struct string_list *rr)
 
 		then = rerere_last_used_at(e->d_name);
 		if (then) {
-			cutoff = cf.cutoff_resolve;
+			cutoff = cutoff_resolve;
 		} else {
 			then = rerere_created_at(e->d_name);
 			if (!then)
 				continue;
-			cutoff = cf.cutoff_noresolve;
+			cutoff = cutoff_noresolve;
 		}
 		if (then < now - cutoff * 86400)
 			string_list_append(&to_remove, e->d_name);

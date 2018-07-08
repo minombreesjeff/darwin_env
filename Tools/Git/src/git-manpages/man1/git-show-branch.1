@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-show-branch
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-SHOW\-BRANCH" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-SHOW\-BRANCH" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -46,7 +46,7 @@ Shows the commit ancestry graph starting from the commits named with <rev>s or <
 .sp
 It cannot show more than 29 branches and commits at a time\&.
 .sp
-It uses showbranch\&.default multi\-valued configuration items if no <rev> nor <glob> is given on the command line\&.
+It uses showbranch\&.default multi\-valued configuration items if no <rev> or <glob> is given on the command line\&.
 .SH "OPTIONS"
 .PP
 <rev>
@@ -142,10 +142,7 @@ if it is detached)\&.
 \-\-color[=<when>]
 .RS 4
 Color the status sign (one of these:
-*
-!
-+
-\-) of each commit corresponding to the branch it\(cqs in\&. The value must be always (the default), never, or auto\&.
+*!+\-) of each commit corresponding to the branch it\(cqs in\&. The value must be always (the default), never, or auto\&.
 .RE
 .PP
 \-\-no\-color

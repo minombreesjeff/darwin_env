@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-rev-parse
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-REV\-PARSE" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-REV\-PARSE" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -161,7 +161,7 @@ can be used\&.
 .RS 4
 Only meaningful in
 \-\-verify
-mode\&. Do not output an error message if the first argument is not a valid object name; instead exit with non\-zero status silently\&.
+mode\&. Do not output an error message if the first argument is not a valid object name; instead exit with non\-zero status silently\&. SHA\-1s for valid object names are printed to stdout on success\&.
 .RE
 .PP
 \-\-sq
@@ -253,7 +253,7 @@ would otherwise consider\&. Repetitions of this option accumulate exclusion patt
 \-\-tags,
 \-\-remotes, or
 \-\-glob
-option (other options or arguments do not clear accumlated patterns)\&.
+option (other options or arguments do not clear accumulated patterns)\&.
 .sp
 The patterns given should not begin with
 refs/heads,
@@ -327,6 +327,11 @@ When the command is invoked from a subdirectory, show the path of the current di
 \-\-show\-toplevel
 .RS 4
 Show the absolute path of the top\-level directory\&.
+.RE
+.PP
+\-\-shared\-index\-path
+.RS 4
+Show the path to the shared index file in split index mode, or empty if not in split\-index mode\&.
 .RE
 .SS "Other Options"
 .PP
@@ -490,7 +495,6 @@ file\&. While the ref name encoding is unspecified, UTF\-8 is preferred as some 
 .PP
 \fI@\fR
 .RS 4
-
 \fI@\fR
 alone is a shortcut for
 \fIHEAD\fR\&.
@@ -554,7 +558,10 @@ means the <n>th branch/commit checked out before the current one\&.
 The suffix
 \fI@{upstream}\fR
 to a branchname (short form
-\fI<branchname>@{u}\fR) refers to the branch that the branch specified by branchname is set to build on top of\&. A missing branchname defaults to the current one\&.
+\fI<branchname>@{u}\fR) refers to the branch that the branch specified by branchname is set to build on top of (configured with
+branch\&.<name>\&.remote
+and
+branch\&.<name>\&.merge)\&. A missing branchname defaults to the current one\&.
 .RE
 .PP
 \fI<rev>^\fR, e\&.g\&. \fIHEAD^, v1\&.5\&.1^0\fR
@@ -794,7 +801,7 @@ It takes on the standard input the specification of the options to parse and und
 Note: Make sure you quote the result when passing it to eval\&. See below for an example\&.
 .SS "Input Format"
 .sp
-\fIgit rev\-parse \-\-parseopt\fR input format is fully text based\&. It has two parts, separated by a line that contains only \-\-\&. The lines before the separator (should be more than one) are used for the usage\&. The lines after the separator describe the options\&.
+\fIgit rev\-parse \-\-parseopt\fR input format is fully text based\&. It has two parts, separated by a line that contains only \-\-\&. The lines before the separator (should be one or more) are used for the usage\&. The lines after the separator describe the options\&.
 .sp
 Each line of options has this format:
 .sp
@@ -802,14 +809,15 @@ Each line of options has this format:
 .RS 4
 .\}
 .nf
-<opt_spec><flags>* SP+ help LF
+<opt\-spec><flags>*<arg\-hint>? SP+ help LF
 .fi
 .if n \{\
 .RE
 .\}
 .sp
+
 .PP
-<opt_spec>
+<opt\-spec>
 .RS 4
 its format is the short option character, then the long option name separated by a comma\&. Both parts are not required, though at least one is necessary\&.
 h,help,
@@ -817,12 +825,11 @@ dry\-run
 and
 f
 are all three correct
-<opt_spec>\&.
+<opt\-spec>\&.
 .RE
 .PP
 <flags>
 .RS 4
-
 <flags>
 are of
 *,
@@ -890,6 +897,13 @@ Use
 to not make the corresponding negated long option available\&.
 .RE
 .RE
+.PP
+<arg\-hint>
+.RS 4
+<arg\-hint>, if specified, is used as a name of the argument in the help output, for options that take arguments\&.
+<arg\-hint>
+is terminated by the first whitespace\&. It is customary to use a dash to separate words in a multi\-word argument hint\&.
+.RE
 .sp
 The remainder of the line, after stripping the spaces, is used as the help associated to the option\&.
 .sp
@@ -909,11 +923,38 @@ h,help    show the help
 
 foo       some nifty option \-\-foo
 bar=      some cool option \-\-bar with an argument
+baz=arg   another cool option \-\-baz with a named argument
+qux?path  qux may take a path argument but has meaning by itself
 
   An option group Header
 C?        option C with an optional argument"
 
 eval "$(echo "$OPTS_SPEC" | git rev\-parse \-\-parseopt \-\- "$@" || echo exit $?)"
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.SS "Usage text"
+.sp
+When "$@" is \-h or \-\-help in the above example, the following usage text would be shown:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+usage: some\-command [options] <args>\&.\&.\&.
+
+    some\-command does foo and bar!
+
+    \-h, \-\-help            show the help
+    \-\-foo                 some nifty option \-\-foo
+    \-\-bar \&.\&.\&.             some cool option \-\-bar with an argument
+    \-\-baz <arg>           another cool option \-\-baz with a named argument
+    \-\-qux[=<path>]        qux may take a path argument but has meaning by itself
+
+An option group Header
+    \-C[\&.\&.\&.]               option C with an optional argument
 .fi
 .if n \{\
 .RE

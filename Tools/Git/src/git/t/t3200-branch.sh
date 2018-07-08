@@ -97,6 +97,20 @@ test_expect_success 'git branch -m o/o o should fail when o/p exists' '
 	test_must_fail git branch -m o/o o
 '
 
+test_expect_success 'git branch -m o/q o/p should fail when o/p exists' '
+	git branch o/q &&
+	test_must_fail git branch -m o/q o/p
+'
+
+test_expect_success 'git branch -M o/q o/p should work when o/p exists' '
+	git branch -M o/q o/p
+'
+
+test_expect_success 'git branch -m -f o/q o/p should work when o/p exists' '
+	git branch o/q &&
+	git branch -m -f o/q o/p
+'
+
 test_expect_success 'git branch -m q r/q should fail when r exists' '
 	git branch q &&
 	git branch r &&
@@ -282,6 +296,15 @@ test_expect_success 'deleting a dangling symref' '
 	echo "Deleted branch dangling-symref (was nowhere)." >expect &&
 	git branch -d dangling-symref >actual &&
 	test_path_is_missing .git/refs/heads/dangling-symref &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'deleting a self-referential symref' '
+	git symbolic-ref refs/heads/self-reference refs/heads/self-reference &&
+	test_path_is_file .git/refs/heads/self-reference &&
+	echo "Deleted branch self-reference (was refs/heads/self-reference)." >expect &&
+	git branch -d self-reference >actual &&
+	test_path_is_missing .git/refs/heads/self-reference &&
 	test_i18ncmp expect actual
 '
 
@@ -505,6 +528,16 @@ test_expect_success '--set-upstream with one arg only shows the deprecation mess
 The --set-upstream flag is deprecated and will be removed. Consider using --track or --set-upstream-to
 EOF
 	test_cmp expected actual
+'
+
+test_expect_success '--set-upstream-to notices an error to set branch as own upstream' '
+	git branch --set-upstream-to refs/heads/my13 my13 2>actual &&
+	cat >expected <<-\EOF &&
+	warning: Not setting branch my13 as its own upstream.
+	EOF
+	test_expect_code 1 git config branch.my13.remote &&
+	test_expect_code 1 git config branch.my13.merge &&
+	test_i18ncmp expected actual
 '
 
 # Keep this test last, as it changes the current branch
@@ -849,11 +882,7 @@ test_expect_success 'detect typo in branch name when using --edit-description' '
 	write_script editor <<-\EOF &&
 		echo "New contents" >"$1"
 	EOF
-	(
-		EDITOR=./editor &&
-		export EDITOR &&
-		test_must_fail git branch --edit-description no-such-branch
-	)
+	test_must_fail env EDITOR=./editor git branch --edit-description no-such-branch
 '
 
 test_expect_success 'refuse --edit-description on unborn branch for now' '
@@ -861,11 +890,7 @@ test_expect_success 'refuse --edit-description on unborn branch for now' '
 		echo "New contents" >"$1"
 	EOF
 	git checkout --orphan unborn &&
-	(
-		EDITOR=./editor &&
-		export EDITOR &&
-		test_must_fail git branch --edit-description
-	)
+	test_must_fail env EDITOR=./editor git branch --edit-description
 '
 
 test_expect_success '--merged catches invalid object names' '

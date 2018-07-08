@@ -237,15 +237,18 @@ bisect_state() {
 		check_expected_revs "$rev" ;;
 	2,bad|*,good|*,skip)
 		shift
-		eval=''
+		hash_list=''
 		for rev in "$@"
 		do
 			sha=$(git rev-parse --verify "$rev^{commit}") ||
 				die "$(eval_gettext "Bad rev input: \$rev")"
-			eval="$eval bisect_write '$state' '$sha'; "
+			hash_list="$hash_list $sha"
 		done
-		eval "$eval"
-		check_expected_revs "$@" ;;
+		for rev in $hash_list
+		do
+			bisect_write "$state" "$rev"
+		done
+		check_expected_revs $hash_list ;;
 	*,bad)
 		die "$(gettext "'git bisect bad' can take only one argument.")" ;;
 	*)
@@ -286,11 +289,11 @@ bisect_next_check() {
 
 		if test -s "$GIT_DIR/BISECT_START"
 		then
-			gettextln "You need to give me at least one good and one bad revisions.
+			gettextln "You need to give me at least one good and one bad revision.
 (You can use \"git bisect bad\" and \"git bisect good\" for that.)" >&2
 		else
 			gettextln "You need to start by \"git bisect start\".
-You then need to give me at least one good and one bad revisions.
+You then need to give me at least one good and one bad revision.
 (You can use \"git bisect bad\" and \"git bisect good\" for that.)" >&2
 		fi
 		exit 1 ;;
@@ -365,7 +368,7 @@ bisect_reset() {
 	}
 	case "$#" in
 	0) branch=$(cat "$GIT_DIR/BISECT_START") ;;
-	1) git rev-parse --quiet --verify "$1^{commit}" > /dev/null || {
+	1) git rev-parse --quiet --verify "$1^{commit}" >/dev/null || {
 			invalid="$1"
 			die "$(eval_gettext "'\$invalid' is not a valid commit")"
 		}
@@ -408,7 +411,7 @@ bisect_replay () {
 	bisect_reset
 	while read git bisect command rev
 	do
-		test "$git $bisect" = "git bisect" -o "$git" = "git-bisect" || continue
+		test "$git $bisect" = "git bisect" || test "$git" = "git-bisect" || continue
 		if test "$git" = "git-bisect"
 		then
 			rev="$command"
@@ -458,13 +461,13 @@ exit code \$res from '\$command' is < 0 or >= 128" >&2
 		fi
 
 		# We have to use a subshell because "bisect_state" can exit.
-		( bisect_state $state > "$GIT_DIR/BISECT_RUN" )
+		( bisect_state $state >"$GIT_DIR/BISECT_RUN" )
 		res=$?
 
 		cat "$GIT_DIR/BISECT_RUN"
 
 		if sane_grep "first bad commit could be any of" "$GIT_DIR/BISECT_RUN" \
-			> /dev/null
+			>/dev/null
 		then
 			gettextln "bisect run cannot continue any more" >&2
 			exit $res
@@ -477,7 +480,7 @@ exit code \$res from '\$command' is < 0 or >= 128" >&2
 			exit $res
 		fi
 
-		if sane_grep "is the first bad commit" "$GIT_DIR/BISECT_RUN" > /dev/null
+		if sane_grep "is the first bad commit" "$GIT_DIR/BISECT_RUN" >/dev/null
 		then
 			gettextln "bisect run success"
 			exit 0;

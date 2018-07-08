@@ -4,6 +4,7 @@
 
 SUBDIRECTORY_OK=Yes
 OPTIONS_KEEPDASHDASH=
+OPTIONS_STUCKLONG=t
 OPTIONS_SPEC="\
 git am [options] [(<mbox>|<Maildir>)...]
 git am [options] (--continue | --skip | --abort)
@@ -16,6 +17,7 @@ s,signoff       add a Signed-off-by line to the commit message
 u,utf8          recode into utf8 (default)
 k,keep          pass -k flag to git-mailinfo
 keep-non-patch  pass -b flag to git-mailinfo
+m,message-id    pass -m flag to git-mailinfo
 keep-cr         pass --keep-cr flag to git-mailsplit for mbox format
 no-keep-cr      do not pass --keep-cr flag to git-mailsplit independent of am.keepcr
 c,scissors      strip everything before a scissors line
@@ -37,6 +39,7 @@ abort           restore the original branch and abort the patching operation.
 committer-date-is-author-date    lie about committer date
 ignore-date     use current timestamp for author date
 rerere-autoupdate update the index with reused conflict resolution if possible
+S,gpg-sign?     GPG-sign commits
 rebasing*       (internal use for git-rebase)"
 
 . git-sh-setup
@@ -123,7 +126,7 @@ cannot_fallback () {
 }
 
 fall_back_3way () {
-    O_OBJECT=`cd "$GIT_OBJECT_DIRECTORY" && pwd`
+    O_OBJECT=$(cd "$GIT_OBJECT_DIRECTORY" && pwd)
 
     rm -fr "$dotest"/patch-merge-*
     mkdir "$dotest/patch-merge-tmp-dir"
@@ -273,7 +276,7 @@ split_patches () {
 		then
 			clean_abort "$(gettext "Only one StGIT patch series can be applied at once")"
 		fi
-		series_dir=`dirname "$1"`
+		series_dir=$(dirname "$1")
 		series_file="$1"
 		shift
 		{
@@ -296,8 +299,8 @@ split_patches () {
 		this=0
 		for stgit in "$@"
 		do
-			this=`expr "$this" + 1`
-			msgnum=`printf "%0${prec}d" $this`
+			this=$(expr "$this" + 1)
+			msgnum=$(printf "%0${prec}d" $this)
 			# Perl version of StGIT parse_patch. The first nonemptyline
 			# not starting with Author, From or Date is the
 			# subject, and the body starts with the next nonempty
@@ -369,11 +372,17 @@ split_patches () {
 prec=4
 dotest="$GIT_DIR/rebase-apply"
 sign= utf8=t keep= keepcr= skip= interactive= resolved= rebasing= abort=
-resolvemsg= resume= scissors= no_inbody_headers=
+messageid= resolvemsg= resume= scissors= no_inbody_headers=
 git_apply_opt=
 committer_date_is_author_date=
 ignore_date=
 allow_rerere_autoupdate=
+gpg_sign_opt=
+
+if test "$(git config --bool --get am.messageid)" = true
+then
+    messageid=t
+fi
 
 if test "$(git config --bool --get am.keepcr)" = true
 then
@@ -397,6 +406,10 @@ it will be removed. Please do not use it anymore."
 		utf8=t ;; # this is now default
 	--no-utf8)
 		utf8= ;;
+	-m|--message-id)
+		messageid=t ;;
+	--no-message-id)
+		messageid=f ;;
 	-k|--keep)
 		keep=t ;;
 	--keep-non-patch)
@@ -413,14 +426,14 @@ it will be removed. Please do not use it anymore."
 		abort=t ;;
 	--rebasing)
 		rebasing=t threeway=t ;;
-	--resolvemsg)
-		shift; resolvemsg=$1 ;;
-	--whitespace|--directory|--exclude|--include)
-		git_apply_opt="$git_apply_opt $(sq "$1=$2")"; shift ;;
-	-C|-p)
-		git_apply_opt="$git_apply_opt $(sq "$1$2")"; shift ;;
-	--patch-format)
-		shift ; patch_format="$1" ;;
+	--resolvemsg=*)
+		resolvemsg="${1#--resolvemsg=}" ;;
+	--whitespace=*|--directory=*|--exclude=*|--include=*)
+		git_apply_opt="$git_apply_opt $(sq "$1")" ;;
+	-C*|-p*)
+		git_apply_opt="$git_apply_opt $(sq "$1")" ;;
+	--patch-format=*)
+		patch_format="${1#--patch-format=}" ;;
 	--reject|--ignore-whitespace|--ignore-space-change)
 		git_apply_opt="$git_apply_opt $1" ;;
 	--committer-date-is-author-date)
@@ -435,6 +448,10 @@ it will be removed. Please do not use it anymore."
 		keepcr=t ;;
 	--no-keep-cr)
 		keepcr=f ;;
+	--gpg-sign)
+		gpg_sign_opt=-S ;;
+	--gpg-sign=*)
+		gpg_sign_opt="-S${1#--gpg-sign=}" ;;
 	--)
 		shift; break ;;
 	*)
@@ -560,6 +577,7 @@ Use \"git am --abort\" to remove it.")"
 	echo "$sign" >"$dotest/sign"
 	echo "$utf8" >"$dotest/utf8"
 	echo "$keep" >"$dotest/keep"
+	echo "$messageid" >"$dotest/messageid"
 	echo "$scissors" >"$dotest/scissors"
 	echo "$no_inbody_headers" >"$dotest/no_inbody_headers"
 	echo "$GIT_QUIET" >"$dotest/quiet"
@@ -614,6 +632,12 @@ b)
 *)
 	keep= ;;
 esac
+case "$(cat "$dotest/messageid")" in
+t)
+	messageid=-m ;;
+f)
+	messageid= ;;
+esac
 case "$(cat "$dotest/scissors")" in
 t)
 	scissors=--scissors ;;
@@ -637,26 +661,26 @@ fi
 git_apply_opt=$(cat "$dotest/apply-opt")
 if test "$(cat "$dotest/sign")" = t
 then
-	SIGNOFF=`git var GIT_COMMITTER_IDENT | sed -e '
+	SIGNOFF=$(git var GIT_COMMITTER_IDENT | sed -e '
 			s/>.*/>/
 			s/^/Signed-off-by: /'
-		`
+		)
 else
 	SIGNOFF=
 fi
 
-last=`cat "$dotest/last"`
-this=`cat "$dotest/next"`
+last=$(cat "$dotest/last")
+this=$(cat "$dotest/next")
 if test "$skip" = t
 then
-	this=`expr "$this" + 1`
+	this=$(expr "$this" + 1)
 	resume=
 fi
 
 while test "$this" -le "$last"
 do
-	msgnum=`printf "%0${prec}d" $this`
-	next=`expr "$this" + 1`
+	msgnum=$(printf "%0${prec}d" $this)
+	next=$(expr "$this" + 1)
 	test -f "$dotest/$msgnum" || {
 		resume=
 		go_next
@@ -685,7 +709,7 @@ do
 			get_author_ident_from_commit "$commit" >"$dotest/author-script"
 			git diff-tree --root --binary --full-index "$commit" >"$dotest/patch"
 		else
-			git mailinfo $keep $no_inbody_headers $scissors $utf8 "$dotest/msg" "$dotest/patch" \
+			git mailinfo $keep $no_inbody_headers $messageid $scissors $utf8 "$dotest/msg" "$dotest/patch" \
 				<"$dotest/$msgnum" >"$dotest/info" ||
 				stop_here $this
 
@@ -732,16 +756,16 @@ To restore the original branch and stop patching run \"\$cmdline --abort\"."
 	'')
 	    if test '' != "$SIGNOFF"
 	    then
-		LAST_SIGNED_OFF_BY=`
+		LAST_SIGNED_OFF_BY=$(
 		    sed -ne '/^Signed-off-by: /p' \
 		    "$dotest/msg-clean" |
 		    sed -ne '$p'
-		`
-		ADD_SIGNOFF=`
+		)
+		ADD_SIGNOFF=$(
 		    test "$LAST_SIGNED_OFF_BY" = "$SIGNOFF" || {
 		    test '' = "$LAST_SIGNED_OFF_BY" && echo
 		    echo "$SIGNOFF"
-		}`
+		})
 	    else
 		ADD_SIGNOFF=
 	    fi
@@ -899,7 +923,8 @@ did you forget to use 'git add'?"
 			GIT_COMMITTER_DATE="$GIT_AUTHOR_DATE"
 			export GIT_COMMITTER_DATE
 		fi &&
-		git commit-tree $tree ${parent:+-p} $parent <"$dotest/final-commit"
+		git commit-tree ${parent:+-p} $parent ${gpg_sign_opt:+"$gpg_sign_opt"} $tree  \
+			<"$dotest/final-commit"
 	) &&
 	git update-ref -m "$GIT_REFLOG_ACTION: $FIRSTLINE" HEAD $commit $parent ||
 	stop_here $this

@@ -1,10 +1,10 @@
 MERGE STRATEGIES
 ----------------
 
-The merge mechanism ('git-merge' and 'git-pull' commands) allows the
+The merge mechanism (`git merge` and `git pull` commands) allows the
 backend 'merge strategies' to be chosen with `-s` option.  Some strategies
 can also take their own options, which can be passed by giving `-X<option>`
-arguments to 'git-merge' and/or 'git-pull'.
+arguments to `git merge` and/or `git pull`.
 
 resolve::
 	This can only resolve two heads (i.e. the current branch
@@ -20,7 +20,7 @@ recursive::
 	merged tree of the common ancestors and uses that as
 	the reference tree for the 3-way merge.  This has been
 	reported to result in fewer merge conflicts without
-	causing mis-merges by tests done on actual merge commits
+	causing mismerges by tests done on actual merge commits
 	taken from Linux 2.6 kernel development history.
 	Additionally this can detect and handle merges involving
 	renames.  This is the default merge strategy when

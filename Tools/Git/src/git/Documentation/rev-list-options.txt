@@ -160,13 +160,17 @@ parents) and `--max-parents=-1` (negative numbers denote no upper limit).
 	consider. Repetitions of this option accumulate exclusion patterns
 	up to the next `--all`, `--branches`, `--tags`, `--remotes`, or
 	`--glob` option (other options or arguments do not clear
-	accumlated patterns).
+	accumulated patterns).
 +
 The patterns given should not begin with `refs/heads`, `refs/tags`, or
 `refs/remotes` when applied to `--branches`, `--tags`, or `--remotes`,
 respectively, and they must begin with `refs/` when applied to `--glob`
 or `--all`. If a trailing '/{asterisk}' is intended, it must be given
 explicitly.
+
+--reflog::
+	Pretend as if all objects mentioned by reflogs are listed on the
+	command line as `<commit>`.
 
 --ignore-missing::
 	Upon seeing an invalid object name in the input, pretend as if
@@ -256,6 +260,14 @@ See also linkgit:git-reflog[1].
 --boundary::
 	Output excluded boundary commits. Boundary commits are
 	prefixed with `-`.
+
+ifdef::git-rev-list[]
+--use-bitmap-index::
+
+	Try to speed up the traversal using the pack bitmap index (if
+	one is available). Note that when traversing with `--objects`,
+	trees and blobs will not have their associated path printed.
+endif::git-rev-list[]
 
 --
 
@@ -627,6 +639,7 @@ Object Traversal
 
 These options are mostly targeted for packing of Git repositories.
 
+ifdef::git-rev-list[]
 --objects::
 	Print the object IDs of any object referenced by the listed
 	commits.  `--objects foo ^bar` thus means ``send me
@@ -636,13 +649,24 @@ These options are mostly targeted for packing of Git repositories.
 --objects-edge::
 	Similar to `--objects`, but also print the IDs of excluded
 	commits prefixed with a ``-'' character.  This is used by
-	linkgit:git-pack-objects[1] to build ``thin'' pack, which records
+	linkgit:git-pack-objects[1] to build a ``thin'' pack, which records
 	objects in deltified form based on objects contained in these
 	excluded commits to reduce network traffic.
+
+--objects-edge-aggressive::
+	Similar to `--objects-edge`, but it tries harder to find excluded
+	commits at the cost of increased time.  This is used instead of
+	`--objects-edge` to build ``thin'' packs for shallow repositories.
+
+--indexed-objects::
+	Pretend as if all trees and blobs used by the index are listed
+	on the command line.  Note that you probably want to use
+	`--objects`, too.
 
 --unpacked::
 	Only useful with `--objects`; print the object IDs that are not
 	in packs.
+endif::git-rev-list[]
 
 --no-walk[=(sorted|unsorted)]::
 	Only show the given commits, but do not traverse their ancestors.
@@ -669,7 +693,7 @@ include::pretty-options.txt[]
 --relative-date::
 	Synonym for `--date=relative`.
 
---date=(relative|local|default|iso|rfc|short|raw)::
+--date=(relative|local|default|iso|iso-strict|rfc|short|raw)::
 	Only takes effect for dates shown in human-readable format, such
 	as when using `--pretty`. `log.date` config variable sets a default
 	value for the log command's `--date` option.
@@ -679,7 +703,16 @@ e.g. ``2 hours ago''.
 +
 `--date=local` shows timestamps in user's local time zone.
 +
-`--date=iso` (or `--date=iso8601`) shows timestamps in ISO 8601 format.
+`--date=iso` (or `--date=iso8601`) shows timestamps in a ISO 8601-like format.
+The differences to the strict ISO 8601 format are:
+
+	- a space instead of the `T` date/time delimiter
+	- a space between time and time zone
+	- no colon between hours and minutes of the time zone
+
++
+`--date=iso-strict` (or `--date=iso8601-strict`) shows timestamps in strict
+ISO 8601 format.
 +
 `--date=rfc` (or `--date=rfc2822`) shows timestamps in RFC 2822
 format, often found in email messages.
@@ -749,6 +782,13 @@ This enables parent rewriting, see 'History Simplification' below.
 +
 This implies the `--topo-order` option by default, but the
 `--date-order` option may also be specified.
+
+--show-linear-break[=<barrier>]::
+	When --graph is not used, all history branches are flattened
+	which can make it hard to see that the two consecutive commits
+	do not belong to a linear branch. This option puts a barrier
+	in between them in that case. If `<barrier>` is specified, it
+	is the string that will be shown instead of the default one.
 
 ifdef::git-rev-list[]
 --count::

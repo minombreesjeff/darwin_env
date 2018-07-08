@@ -11,7 +11,6 @@
 #include "run-command.h"
 #include "parse-options.h"
 #include "sigchain.h"
-#include "transport.h"
 #include "submodule.h"
 #include "connected.h"
 #include "argv-array.h"
@@ -45,6 +44,8 @@ static struct transport *gsecondary;
 static const char *submodule_prefix = "";
 static const char *recurse_submodules_default;
 static int shown_url = 0;
+static int refmap_alloc, refmap_nr;
+static const char **refmap_array;
 
 static int option_parse_recurse_submodules(const struct option *opt,
 				   const char *arg, int unset)
@@ -66,6 +67,19 @@ static int git_fetch_config(const char *k, const char *v, void *cb)
 		fetch_prune_config = git_config_bool(k, v);
 		return 0;
 	}
+	return git_default_config(k, v, cb);
+}
+
+static int parse_refmap_arg(const struct option *opt, const char *arg, int unset)
+{
+	ALLOC_GROW(refmap_array, refmap_nr + 1, refmap_alloc);
+
+	/*
+	 * "git fetch --refmap='' origin foo"
+	 * can be used to tell the command not to store anywhere
+	 */
+	if (*arg)
+		refmap_array[refmap_nr++] = arg;
 	return 0;
 }
 
@@ -107,6 +121,8 @@ static struct option builtin_fetch_options[] = {
 		   N_("default mode for recursion"), PARSE_OPT_HIDDEN },
 	OPT_BOOL(0, "update-shallow", &update_shallow,
 		 N_("accept refs that update .git/shallow")),
+	{ OPTION_CALLBACK, 0, "refmap", NULL, N_("refmap"),
+	  N_("specify fetch refmap"), PARSE_OPT_NONEG, parse_refmap_arg },
 	OPT_END()
 };
 
@@ -278,6 +294,9 @@ static struct ref *get_ref_map(struct transport *transport,
 	const struct ref *remote_refs = transport_get_remote_refs(transport);
 
 	if (refspec_count) {
+		struct refspec *fetch_refspec;
+		int fetch_refspec_nr;
+
 		for (i = 0; i < refspec_count; i++) {
 			get_fetch_map(remote_refs, &refspecs[i], &tail, 0);
 			if (refspecs[i].dst && refspecs[i].dst[0])
@@ -307,12 +326,21 @@ static struct ref *get_ref_map(struct transport *transport,
 		 * by ref_remove_duplicates() in favor of one of these
 		 * opportunistic entries with FETCH_HEAD_IGNORE.
 		 */
-		for (i = 0; i < transport->remote->fetch_refspec_nr; i++)
-			get_fetch_map(ref_map, &transport->remote->fetch[i],
-				      &oref_tail, 1);
+		if (refmap_array) {
+			fetch_refspec = parse_fetch_refspec(refmap_nr, refmap_array);
+			fetch_refspec_nr = refmap_nr;
+		} else {
+			fetch_refspec = transport->remote->fetch;
+			fetch_refspec_nr = transport->remote->fetch_refspec_nr;
+		}
+
+		for (i = 0; i < fetch_refspec_nr; i++)
+			get_fetch_map(ref_map, &fetch_refspec[i], &oref_tail, 1);
 
 		if (tags == TAGS_SET)
 			get_fetch_map(remote_refs, tag_refspec, &tail, 0);
+	} else if (refmap_array) {
+		die("--refmap option is only meaningful with command-line refspec(s).");
 	} else {
 		/* Use the defaults */
 		struct remote *remote = transport->remote;
@@ -375,23 +403,37 @@ static int s_update_ref(const char *action,
 {
 	char msg[1024];
 	char *rla = getenv("GIT_REFLOG_ACTION");
-	static struct ref_lock *lock;
+	struct ref_transaction *transaction;
+	struct strbuf err = STRBUF_INIT;
+	int ret, df_conflict = 0;
 
 	if (dry_run)
 		return 0;
 	if (!rla)
 		rla = default_rla.buf;
 	snprintf(msg, sizeof(msg), "%s: %s", rla, action);
-	lock = lock_any_ref_for_update(ref->name,
-				       check_old ? ref->old_sha1 : NULL,
-				       0, NULL);
-	if (!lock)
-		return errno == ENOTDIR ? STORE_REF_ERROR_DF_CONFLICT :
-					  STORE_REF_ERROR_OTHER;
-	if (write_ref_sha1(lock, ref->new_sha1, msg) < 0)
-		return errno == ENOTDIR ? STORE_REF_ERROR_DF_CONFLICT :
-					  STORE_REF_ERROR_OTHER;
+
+	transaction = ref_transaction_begin(&err);
+	if (!transaction ||
+	    ref_transaction_update(transaction, ref->name, ref->new_sha1,
+				   ref->old_sha1, 0, check_old, msg, &err))
+		goto fail;
+
+	ret = ref_transaction_commit(transaction, &err);
+	if (ret) {
+		df_conflict = (ret == TRANSACTION_NAME_CONFLICT);
+		goto fail;
+	}
+
+	ref_transaction_free(transaction);
+	strbuf_release(&err);
 	return 0;
+fail:
+	ref_transaction_free(transaction);
+	error("%s", err.buf);
+	strbuf_release(&err);
+	return df_conflict ? STORE_REF_ERROR_DF_CONFLICT
+			   : STORE_REF_ERROR_OTHER;
 }
 
 #define REFCOL_WIDTH  10
@@ -1026,7 +1068,6 @@ static int fetch_multiple(struct string_list *list)
 
 static int fetch_one(struct remote *remote, int argc, const char **argv)
 {
-	int i;
 	static const char **refs = NULL;
 	struct refspec *refspec;
 	int ref_nr = 0;
@@ -1050,19 +1091,15 @@ static int fetch_one(struct remote *remote, int argc, const char **argv)
 
 	if (argc > 0) {
 		int j = 0;
+		int i;
 		refs = xcalloc(argc + 1, sizeof(const char *));
 		for (i = 0; i < argc; i++) {
 			if (!strcmp(argv[i], "tag")) {
-				char *ref;
 				i++;
 				if (i >= argc)
 					die(_("You need to specify a tag name."));
-				ref = xmalloc(strlen(argv[i]) * 2 + 22);
-				strcpy(ref, "refs/tags/");
-				strcat(ref, argv[i]);
-				strcat(ref, ":refs/tags/");
-				strcat(ref, argv[i]);
-				refs[j++] = ref;
+				refs[j++] = xstrfmt("refs/tags/%s:refs/tags/%s",
+						    argv[i], argv[i]);
 			} else
 				refs[j++] = argv[i];
 		}
@@ -1086,9 +1123,7 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 	struct string_list list = STRING_LIST_INIT_NODUP;
 	struct remote *remote;
 	int result = 0;
-	static const char *argv_gc_auto[] = {
-		"gc", "--auto", NULL,
-	};
+	struct argv_array argv_gc_auto = ARGV_ARRAY_INIT;
 
 	packet_trace_identity("fetch");
 
@@ -1174,7 +1209,11 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 	list.strdup_strings = 1;
 	string_list_clear(&list, 0);
 
-	run_command_v_opt(argv_gc_auto, RUN_GIT_CMD);
+	argv_array_pushl(&argv_gc_auto, "gc", "--auto", NULL);
+	if (verbosity < 0)
+		argv_array_push(&argv_gc_auto, "--quiet");
+	run_command_v_opt(argv_gc_auto.argv, RUN_GIT_CMD);
+	argv_array_clear(&argv_gc_auto);
 
 	return result;
 }

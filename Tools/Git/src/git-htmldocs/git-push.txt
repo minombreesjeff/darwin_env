@@ -10,7 +10,8 @@ SYNOPSIS
 --------
 [verse]
 'git push' [--all | --mirror | --tags] [--follow-tags] [-n | --dry-run] [--receive-pack=<git-receive-pack>]
-	   [--repo=<repository>] [-f | --force] [--prune] [-v | --verbose] [-u | --set-upstream]
+	   [--repo=<repository>] [-f | --force] [--prune] [-v | --verbose]
+	   [-u | --set-upstream] [--signed]
 	   [--force-with-lease[=<refname>[:<expect>]]]
 	   [--no-verify] [<repository> [<refspec>...]]
 
@@ -33,7 +34,7 @@ When the command line does not specify what to push with `<refspec>...`
 arguments or `--all`, `--mirror`, `--tags` options, the command finds
 the default `<refspec>` by consulting `remote.*.push` configuration,
 and if it is not found, honors `push.default` configuration to decide
-what to push (See gitlink:git-config[1] for the meaning of `push.default`).
+what to push (See linkgit:git-config[1] for the meaning of `push.default`).
 
 
 OPTIONS[[OPTIONS]]
@@ -83,8 +84,8 @@ the local side, the remote side is updated if a branch of the same name
 already exists on the remote side.
 
 --all::
-	Instead of naming each ref to push, specifies that all
-	refs under `refs/heads/` be pushed.
+	Push all branches (i.e. refs under `refs/heads/`); cannot be
+	used with other <refspec>.
 
 --prune::
 	Remove remote branches that don't have a local counterpart. For example
@@ -128,6 +129,12 @@ already exists on the remote side.
 	and also push annotated tags in `refs/tags` that are missing
 	from the remote but are pointing at commit-ish that are
 	reachable from the refs being pushed.
+
+--signed::
+	GPG-sign the push request to update refs on the receiving
+	side, to allow it to be checked by the hooks and/or be
+	logged.  See linkgit:git-receive-pack[1] for the details
+	on the receiving end.
 
 --receive-pack=<git-receive-pack>::
 --exec=<git-receive-pack>::
@@ -385,7 +392,7 @@ will now start building on top of B.
 The command by default does not allow an update that is not a fast-forward
 to prevent such loss of history.
 
-If you do not want to lose your work (history from X to B) nor the work by
+If you do not want to lose your work (history from X to B) or the work by
 the other person (history from X to A), you would need to first fetch the
 history from the repository, create a history that contains changes done
 by both parties, and push the result back.
@@ -442,8 +449,10 @@ Examples
 	configured for the current branch).
 
 `git push origin`::
-	Without additional configuration, works like
-	`git push origin :`.
+	Without additional configuration, pushes the current branch to
+	the configured upstream (`remote.origin.merge` configuration
+	variable) if it has the same name as the current branch, and
+	errors out without pushing otherwise.
 +
 The default behavior of this command when no <refspec> is given can be
 configured by setting the `push` option of the remote, or the `push.default`

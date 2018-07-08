@@ -13,28 +13,24 @@
 static char *server_capabilities;
 static const char *parse_feature_value(const char *, const char *, int *);
 
-static int check_ref(const char *name, int len, unsigned int flags)
+static int check_ref(const char *name, unsigned int flags)
 {
 	if (!flags)
 		return 1;
 
-	if (len < 5 || memcmp(name, "refs/", 5))
+	if (!skip_prefix(name, "refs/", &name))
 		return 0;
-
-	/* Skip the "refs/" part */
-	name += 5;
-	len -= 5;
 
 	/* REF_NORMAL means that we don't want the magic fake tag refs */
 	if ((flags & REF_NORMAL) && check_refname_format(name, 0))
 		return 0;
 
 	/* REF_HEADS means that we want regular branch heads */
-	if ((flags & REF_HEADS) && !memcmp(name, "heads/", 6))
+	if ((flags & REF_HEADS) && starts_with(name, "heads/"))
 		return 1;
 
 	/* REF_TAGS means that we want tags */
-	if ((flags & REF_TAGS) && !memcmp(name, "tags/", 5))
+	if ((flags & REF_TAGS) && starts_with(name, "tags/"))
 		return 1;
 
 	/* All type bits clear means that we are ok with anything */
@@ -43,7 +39,7 @@ static int check_ref(const char *name, int len, unsigned int flags)
 
 int check_ref_type(const struct ref *ref, int flags)
 {
-	return check_ref(ref->name, strlen(ref->name), flags);
+	return check_ref(ref->name, flags);
 }
 
 static void die_initial_contact(int got_at_least_one_head)
@@ -64,9 +60,7 @@ static void parse_one_symref_info(struct string_list *symref, const char *val, i
 	if (!len)
 		return; /* just "symref" */
 	/* e.g. "symref=HEAD:refs/heads/master" */
-	sym = xmalloc(len + 1);
-	memcpy(sym, val, len);
-	sym[len] = '\0';
+	sym = xmemdupz(val, len);
 	target = strchr(sym, ':');
 	if (!target)
 		/* just "symref=something" */
@@ -99,7 +93,7 @@ static void annotate_refs_with_symref_info(struct ref *ref)
 		parse_one_symref_info(&symref, val, len);
 		feature_list = val + 1;
 	}
-	sort_string_list(&symref);
+	string_list_sort(&symref);
 
 	for (; ref; ref = ref->next) {
 		struct string_list_item *item;
@@ -129,6 +123,7 @@ struct ref **get_remote_heads(int in, char *src_buf, size_t src_len,
 		char *name;
 		int len, name_len;
 		char *buffer = packet_buffer;
+		const char *arg;
 
 		len = packet_read(in, &src_buf, &src_len,
 				  packet_buffer, sizeof(packet_buffer),
@@ -140,12 +135,12 @@ struct ref **get_remote_heads(int in, char *src_buf, size_t src_len,
 		if (!len)
 			break;
 
-		if (len > 4 && starts_with(buffer, "ERR "))
-			die("remote error: %s", buffer + 4);
+		if (len > 4 && skip_prefix(buffer, "ERR ", &arg))
+			die("remote error: %s", arg);
 
-		if (len == 48 && starts_with(buffer, "shallow ")) {
-			if (get_sha1_hex(buffer + 8, old_sha1))
-				die("protocol error: expected shallow sha-1, got '%s'", buffer + 8);
+		if (len == 48 && skip_prefix(buffer, "shallow ", &arg)) {
+			if (get_sha1_hex(arg, old_sha1))
+				die("protocol error: expected shallow sha-1, got '%s'", arg);
 			if (!shallow_points)
 				die("repository on the other end cannot be shallow");
 			sha1_array_append(shallow_points, old_sha1);
@@ -162,13 +157,12 @@ struct ref **get_remote_heads(int in, char *src_buf, size_t src_len,
 			server_capabilities = xstrdup(name + name_len + 1);
 		}
 
-		if (extra_have &&
-		    name_len == 5 && !memcmp(".have", name, 5)) {
+		if (extra_have && !strcmp(name, ".have")) {
 			sha1_array_append(extra_have, old_sha1);
 			continue;
 		}
 
-		if (!check_ref(name, name_len, flags))
+		if (!check_ref(name, flags))
 			continue;
 		ref = alloc_ref(buffer + 41);
 		hashcpy(ref->old_sha1, old_sha1);
@@ -534,22 +528,19 @@ static int git_use_proxy(const char *host)
 static struct child_process *git_proxy_connect(int fd[2], char *host)
 {
 	const char *port = STR(DEFAULT_GIT_PORT);
-	const char **argv;
 	struct child_process *proxy;
 
 	get_host_and_port(&host, &port);
 
-	argv = xmalloc(sizeof(*argv) * 4);
-	argv[0] = git_proxy_command;
-	argv[1] = host;
-	argv[2] = port;
-	argv[3] = NULL;
-	proxy = xcalloc(1, sizeof(*proxy));
-	proxy->argv = argv;
+	proxy = xmalloc(sizeof(*proxy));
+	child_process_init(proxy);
+	argv_array_push(&proxy->args, git_proxy_command);
+	argv_array_push(&proxy->args, host);
+	argv_array_push(&proxy->args, port);
 	proxy->in = -1;
 	proxy->out = -1;
 	if (start_command(proxy))
-		die("cannot start proxy %s", argv[0]);
+		die("cannot start proxy %s", git_proxy_command);
 	fd[0] = proxy->out; /* read from proxy stdout */
 	fd[1] = proxy->in;  /* write to proxy stdin */
 	return proxy;
@@ -644,7 +635,7 @@ static enum protocol parse_connect_url(const char *url_orig, char **ret_host,
 	return protocol;
 }
 
-static struct child_process no_fork;
+static struct child_process no_fork = CHILD_PROCESS_INIT;
 
 /*
  * This returns a dummy child_process if the transport protocol does not
@@ -663,7 +654,6 @@ struct child_process *git_connect(int fd[2], const char *url,
 	char *hostandport, *path;
 	struct child_process *conn = &no_fork;
 	enum protocol protocol;
-	const char **arg;
 	struct strbuf cmd = STRBUF_INIT;
 
 	/* Without this we cannot rely on waitpid() to tell
@@ -700,40 +690,48 @@ struct child_process *git_connect(int fd[2], const char *url,
 			     target_host, 0);
 		free(target_host);
 	} else {
-		conn = xcalloc(1, sizeof(*conn));
+		conn = xmalloc(sizeof(*conn));
+		child_process_init(conn);
 
 		strbuf_addstr(&cmd, prog);
 		strbuf_addch(&cmd, ' ');
 		sq_quote_buf(&cmd, path);
 
 		conn->in = conn->out = -1;
-		conn->argv = arg = xcalloc(7, sizeof(*arg));
 		if (protocol == PROTO_SSH) {
-			const char *ssh = getenv("GIT_SSH");
-			int putty = ssh && strcasestr(ssh, "plink");
+			const char *ssh;
+			int putty;
 			char *ssh_host = hostandport;
 			const char *port = NULL;
 			get_host_and_port(&ssh_host, &port);
 			port = get_port_numeric(port);
 
-			if (!ssh) ssh = "ssh";
+			ssh = getenv("GIT_SSH_COMMAND");
+			if (ssh) {
+				conn->use_shell = 1;
+				putty = 0;
+			} else {
+				ssh = getenv("GIT_SSH");
+				if (!ssh)
+					ssh = "ssh";
+				putty = !!strcasestr(ssh, "plink");
+			}
 
-			*arg++ = ssh;
+			argv_array_push(&conn->args, ssh);
 			if (putty && !strcasestr(ssh, "tortoiseplink"))
-				*arg++ = "-batch";
+				argv_array_push(&conn->args, "-batch");
 			if (port) {
 				/* P is for PuTTY, p is for OpenSSH */
-				*arg++ = putty ? "-P" : "-p";
-				*arg++ = port;
+				argv_array_push(&conn->args, putty ? "-P" : "-p");
+				argv_array_push(&conn->args, port);
 			}
-			*arg++ = ssh_host;
-		}	else {
+			argv_array_push(&conn->args, ssh_host);
+		} else {
 			/* remove repo-local variables from the environment */
 			conn->env = local_repo_env;
 			conn->use_shell = 1;
 		}
-		*arg++ = cmd.buf;
-		*arg = NULL;
+		argv_array_push(&conn->args, cmd.buf);
 
 		if (start_command(conn))
 			die("unable to fork");
@@ -759,7 +757,6 @@ int finish_connect(struct child_process *conn)
 		return 0;
 
 	code = finish_command(conn);
-	free(conn->argv);
 	free(conn);
 	return code;
 }

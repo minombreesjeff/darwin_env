@@ -4,12 +4,8 @@
  * Copyright (C) Linus Torvalds, 2005
  */
 #include "cache.h"
-#include "exec_cmd.h"
-#include "tag.h"
-#include "tree.h"
 #include "builtin.h"
 #include "parse-options.h"
-#include "diff.h"
 #include "userdiff.h"
 #include "streaming.h"
 
@@ -79,11 +75,10 @@ static int cat_one_file(int opt, const char *exp_type, const char *obj_name)
 		if (type_from_string(exp_type) == OBJ_BLOB) {
 			unsigned char blob_sha1[20];
 			if (sha1_object_info(sha1, NULL) == OBJ_TAG) {
-				enum object_type type;
-				unsigned long size;
 				char *buffer = read_sha1_file(sha1, &type, &size);
-				if (memcmp(buffer, "object ", 7) ||
-				    get_sha1_hex(buffer + 7, blob_sha1))
+				const char *target;
+				if (!skip_prefix(buffer, "object ", &target) ||
+				    get_sha1_hex(target, blob_sha1))
 					die("%s not a valid tag", sha1_to_hex(sha1));
 				free(buffer);
 			} else
@@ -269,6 +264,8 @@ static int batch_objects(struct batch_options *opt)
 {
 	struct strbuf buf = STRBUF_INIT;
 	struct expand_data data;
+	int save_warning;
+	int retval = 0;
 
 	if (!opt->format)
 		opt->format = "%(objectname) %(objecttype) %(objectsize)";
@@ -297,11 +294,10 @@ static int batch_objects(struct batch_options *opt)
 	 * warn) ends up dwarfing the actual cost of the object lookups
 	 * themselves. We can work around it by just turning off the warning.
 	 */
+	save_warning = warn_on_object_refname_ambiguity;
 	warn_on_object_refname_ambiguity = 0;
 
 	while (strbuf_getline(&buf, stdin, '\n') != EOF) {
-		int error;
-
 		if (data.split_on_whitespace) {
 			/*
 			 * Split at first whitespace, tying off the beginning
@@ -316,12 +312,14 @@ static int batch_objects(struct batch_options *opt)
 			data.rest = p;
 		}
 
-		error = batch_one_object(buf.buf, opt, &data);
-		if (error)
-			return error;
+		retval = batch_one_object(buf.buf, opt, &data);
+		if (retval)
+			break;
 	}
 
-	return 0;
+	strbuf_release(&buf);
+	warn_on_object_refname_ambiguity = save_warning;
+	return retval;
 }
 
 static const char * const cat_file_usage[] = {

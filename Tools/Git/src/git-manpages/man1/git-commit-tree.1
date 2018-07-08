@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-commit-tree
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-COMMIT\-TREE" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-COMMIT\-TREE" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -74,9 +74,16 @@ Read the commit log message from the given file\&. Use
 to read from the standard input\&.
 .RE
 .PP
-\-S[<keyid>]
+\-S[<keyid>], \-\-gpg\-sign[=<keyid>]
 .RS 4
 GPG\-sign commit\&.
+.RE
+.PP
+\-\-no\-gpg\-sign
+.RS 4
+Countermand
+commit\&.gpgsign
+configuration variable that is set to force each and every commit to be signed\&.
 .RE
 .SH "COMMIT INFORMATION"
 .sp
@@ -231,7 +238,6 @@ Although we encourage that the commit log messages are encoded in UTF\-8, both t
 .sp -1
 .IP "  1." 4.2
 .\}
-
 \fIgit commit\fR
 and
 \fIgit commit\-tree\fR
@@ -265,7 +271,6 @@ header\&. This is to help other people who look at them later\&. Lack of this he
 .sp -1
 .IP "  2." 4.2
 .\}
-
 \fIgit log\fR,
 \fIgit show\fR,
 \fIgit blame\fR

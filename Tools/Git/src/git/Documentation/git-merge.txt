@@ -10,7 +10,7 @@ SYNOPSIS
 --------
 [verse]
 'git merge' [-n] [--stat] [--no-commit] [--squash] [--[no-]edit]
-	[-s <strategy>] [-X <strategy-option>] [-S[<keyid>]]
+	[-s <strategy>] [-X <strategy-option>] [-S[<key-id>]]
 	[--[no-]rerere-autoupdate] [-m <msg>] [<commit>...]
 'git merge' <msg> HEAD <commit>...
 'git merge' --abort
@@ -101,9 +101,8 @@ commit or stash your changes before running 'git merge'.
 	Specifying more than one commit will create a merge with
 	more than two parents (affectionately called an Octopus merge).
 +
-If no commit is given from the command line, and if `merge.defaultToUpstream`
-configuration variable is set, merge the remote-tracking branches
-that the current branch is configured to use as its upstream.
+If no commit is given from the command line, merge the remote-tracking
+branches that the current branch is configured to use as its upstream.
 See also the configuration section of this manual page.
 
 

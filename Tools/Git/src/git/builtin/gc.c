@@ -11,7 +11,7 @@
  */
 
 #include "builtin.h"
-#include "cache.h"
+#include "lockfile.h"
 #include "parse-options.h"
 #include "run-command.h"
 #include "sigchain.h"
@@ -26,9 +26,12 @@ static const char * const builtin_gc_usage[] = {
 };
 
 static int pack_refs = 1;
+static int prune_reflogs = 1;
+static int aggressive_depth = 250;
 static int aggressive_window = 250;
 static int gc_auto_threshold = 6700;
 static int gc_auto_pack_limit = 50;
+static int detach_auto = 1;
 static const char *prune_expire = "2.weeks.ago";
 
 static struct argv_array pack_refs_cmd = ARGV_ARRAY_INIT;
@@ -52,36 +55,33 @@ static void remove_pidfile_on_signal(int signo)
 	raise(signo);
 }
 
-static int gc_config(const char *var, const char *value, void *cb)
+static void gc_config(void)
 {
-	if (!strcmp(var, "gc.packrefs")) {
+	const char *value;
+
+	if (!git_config_get_value("gc.packrefs", &value)) {
 		if (value && !strcmp(value, "notbare"))
 			pack_refs = -1;
 		else
-			pack_refs = git_config_bool(var, value);
-		return 0;
+			pack_refs = git_config_bool("gc.packrefs", value);
 	}
-	if (!strcmp(var, "gc.aggressivewindow")) {
-		aggressive_window = git_config_int(var, value);
-		return 0;
-	}
-	if (!strcmp(var, "gc.auto")) {
-		gc_auto_threshold = git_config_int(var, value);
-		return 0;
-	}
-	if (!strcmp(var, "gc.autopacklimit")) {
-		gc_auto_pack_limit = git_config_int(var, value);
-		return 0;
-	}
-	if (!strcmp(var, "gc.pruneexpire")) {
-		if (value && strcmp(value, "now")) {
+
+	git_config_get_int("gc.aggressivewindow", &aggressive_window);
+	git_config_get_int("gc.aggressivedepth", &aggressive_depth);
+	git_config_get_int("gc.auto", &gc_auto_threshold);
+	git_config_get_int("gc.autopacklimit", &gc_auto_pack_limit);
+	git_config_get_bool("gc.autodetach", &detach_auto);
+
+	if (!git_config_get_string_const("gc.pruneexpire", &prune_expire)) {
+		if (strcmp(prune_expire, "now")) {
 			unsigned long now = approxidate("now");
-			if (approxidate(value) >= now)
-				return error(_("Invalid %s: '%s'"), var, value);
+			if (approxidate(prune_expire) >= now) {
+				git_die_config("gc.pruneexpire", _("Invalid gc.pruneexpire: '%s'"),
+						prune_expire);
+			}
 		}
-		return git_config_string(&prune_expire, var, value);
 	}
-	return git_default_config(var, value, cb);
+	git_config(git_default_config, NULL);
 }
 
 static int too_many_loose_objects(void)
@@ -188,13 +188,12 @@ static int need_to_gc(void)
 static const char *lock_repo_for_gc(int force, pid_t* ret_pid)
 {
 	static struct lock_file lock;
-	static char locking_host[128];
 	char my_host[128];
 	struct strbuf sb = STRBUF_INIT;
 	struct stat st;
 	uintmax_t pid;
 	FILE *fp;
-	int fd, should_exit;
+	int fd;
 
 	if (pidfile)
 		/* already locked */
@@ -206,6 +205,8 @@ static const char *lock_repo_for_gc(int force, pid_t* ret_pid)
 	fd = hold_lock_file_for_update(&lock, git_path("gc.pid"),
 				       LOCK_DIE_ON_ERROR);
 	if (!force) {
+		static char locking_host[128];
+		int should_exit;
 		fp = fopen(git_path("gc.pid"), "r");
 		memset(locking_host, 0, sizeof(locking_host));
 		should_exit =
@@ -247,6 +248,19 @@ static const char *lock_repo_for_gc(int force, pid_t* ret_pid)
 	return NULL;
 }
 
+static int gc_before_repack(void)
+{
+	if (pack_refs && run_command_v_opt(pack_refs_cmd.argv, RUN_GIT_CMD))
+		return error(FAILED_RUN, pack_refs_cmd.argv[0]);
+
+	if (prune_reflogs && run_command_v_opt(reflog.argv, RUN_GIT_CMD))
+		return error(FAILED_RUN, reflog.argv[0]);
+
+	pack_refs = 0;
+	prune_reflogs = 0;
+	return 0;
+}
+
 int cmd_gc(int argc, const char **argv, const char *prefix)
 {
 	int aggressive = 0;
@@ -276,7 +290,7 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 	argv_array_pushl(&prune, "prune", "--expire", NULL );
 	argv_array_pushl(&rerere, "rerere", "gc", NULL);
 
-	git_config(gc_config, NULL);
+	gc_config();
 
 	if (pack_refs < 0)
 		pack_refs = !is_bare_repository();
@@ -288,7 +302,8 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 
 	if (aggressive) {
 		argv_array_push(&repack, "-f");
-		argv_array_push(&repack, "--depth=250");
+		if (aggressive_depth > 0)
+			argv_array_pushf(&repack, "--depth=%d", aggressive_depth);
 		if (aggressive_window > 0)
 			argv_array_pushf(&repack, "--window=%d", aggressive_window);
 	}
@@ -301,11 +316,22 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 		 */
 		if (!need_to_gc())
 			return 0;
-		if (!quiet)
-			fprintf(stderr,
-					_("Auto packing the repository for optimum performance. You may also\n"
-					"run \"git gc\" manually. See "
-					"\"git help gc\" for more information.\n"));
+		if (!quiet) {
+			if (detach_auto)
+				fprintf(stderr, _("Auto packing the repository in background for optimum performance.\n"));
+			else
+				fprintf(stderr, _("Auto packing the repository for optimum performance.\n"));
+			fprintf(stderr, _("See \"git help gc\" for manual housekeeping.\n"));
+		}
+		if (detach_auto) {
+			if (gc_before_repack())
+				return -1;
+			/*
+			 * failure to daemonize is ok, we'll continue
+			 * in foreground
+			 */
+			daemonize();
+		}
 	} else
 		add_repack_all_option();
 
@@ -317,11 +343,8 @@ int cmd_gc(int argc, const char **argv, const char *prefix)
 		    name, (uintmax_t)pid);
 	}
 
-	if (pack_refs && run_command_v_opt(pack_refs_cmd.argv, RUN_GIT_CMD))
-		return error(FAILED_RUN, pack_refs_cmd.argv[0]);
-
-	if (run_command_v_opt(reflog.argv, RUN_GIT_CMD))
-		return error(FAILED_RUN, reflog.argv[0]);
+	if (gc_before_repack())
+		return -1;
 
 	if (run_command_v_opt(repack.argv, RUN_GIT_CMD))
 		return error(FAILED_RUN, repack.argv[0]);

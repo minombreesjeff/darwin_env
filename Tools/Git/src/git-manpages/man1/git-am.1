@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-am
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-AM" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-AM" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -37,7 +37,7 @@ git-am \- Apply a series of patches from a mailbox
          [\-\-ignore\-date] [\-\-ignore\-space\-change | \-\-ignore\-whitespace]
          [\-\-whitespace=<option>] [\-C<n>] [\-p<n>] [\-\-directory=<dir>]
          [\-\-exclude=<path>] [\-\-include=<path>] [\-\-reject] [\-q | \-\-quiet]
-         [\-\-[no\-]scissors]
+         [\-\-[no\-]scissors] [\-S[<keyid>]] [\-\-patch\-format=<format>]
          [(<mbox> | <Maildir>)\&...]
 \fIgit am\fR (\-\-continue | \-\-skip | \-\-abort)
 .fi
@@ -105,6 +105,26 @@ Ignore scissors lines (see
 \fBgit-mailinfo\fR(1))\&.
 .RE
 .PP
+\-m, \-\-message\-id
+.RS 4
+Pass the
+\-m
+flag to
+\fIgit mailinfo\fR
+(see
+\fBgit-mailinfo\fR(1)), so that the Message\-ID header is added to the commit message\&. The
+am\&.messageid
+configuration variable can be used to specify the default behaviour\&.
+.RE
+.PP
+\-\-no\-message\-id
+.RS 4
+Do not add the Message\-ID header to the commit message\&.
+no\-message\-id
+is useful to override
+am\&.messageid\&.
+.RE
+.PP
 \-q, \-\-quiet
 .RS 4
 Be quiet\&. Only print error messages\&.
@@ -141,12 +161,17 @@ flag to
 When the patch does not apply cleanly, fall back on 3\-way merge if the patch records the identity of blobs it is supposed to apply to and we have those blobs available locally\&.
 .RE
 .PP
-\-\-ignore\-date, \-\-ignore\-space\-change, \-\-ignore\-whitespace, \-\-whitespace=<option>, \-C<n>, \-p<n>, \-\-directory=<dir>, \-\-exclude=<path>, \-\-include=<path>, \-\-reject
+\-\-ignore\-space\-change, \-\-ignore\-whitespace, \-\-whitespace=<option>, \-C<n>, \-p<n>, \-\-directory=<dir>, \-\-exclude=<path>, \-\-include=<path>, \-\-reject
 .RS 4
 These flags are passed to the
 \fIgit apply\fR
 (see
 \fBgit-apply\fR(1)) program that applies the patch\&.
+.RE
+.PP
+\-\-patch\-format
+.RS 4
+By default the command will try to detect the patch format automatically\&. This option allows the user to bypass the automatic detection and specify the patch format that the patch(es) should be interpreted as\&. Valid formats are mbox, stgit, stgit\-series and hg\&.
 .RE
 .PP
 \-i, \-\-interactive
@@ -167,6 +192,11 @@ By default the command records the date from the e\-mail message as the commit a
 \-\-skip
 .RS 4
 Skip the current patch\&. This is only meaningful when restarting an aborted patch\&.
+.RE
+.PP
+\-S[<keyid>], \-\-gpg\-sign[=<keyid>]
+.RS 4
+GPG\-sign commits\&.
 .RE
 .PP
 \-\-continue, \-r, \-\-resolved
@@ -266,6 +296,9 @@ option\&.
 The command refuses to process new mailboxes until the current operation is finished, so if you decide to start over from scratch, run git am \-\-abort before running the command with mailbox names\&.
 .sp
 Before any patches are applied, ORIG_HEAD is set to the tip of the current branch\&. This is useful if you have problems with multiple commits, like running \fIgit am\fR on the wrong branch or an error in the commits that is more easily fixed by changing the mailbox (e\&.g\&. errors in the "From:" lines)\&.
+.SH "HOOKS"
+.sp
+This command can run applypatch\-msg, pre\-applypatch, and post\-applypatch hooks\&. See \fBgithooks\fR(5) for more information\&.
 .SH "SEE ALSO"
 .sp
 \fBgit-apply\fR(1)\&.

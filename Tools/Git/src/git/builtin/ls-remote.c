@@ -22,7 +22,7 @@ static int tail_match(const char **pattern, const char *path)
 	if (snprintf(pathbuf, sizeof(pathbuf), "/%s", path) > sizeof(pathbuf))
 		return error("insanely long ref %.*s...", 20, path);
 	while ((p = *(pattern++)) != NULL) {
-		if (!fnmatch(p, pathbuf, 0))
+		if (!wildmatch(p, pathbuf, 0, NULL))
 			return 1;
 	}
 	return 0;
@@ -92,7 +92,7 @@ int cmd_ls_remote(int argc, const char **argv, const char *prefix)
 
 	if (argv[i]) {
 		int j;
-		pattern = xcalloc(sizeof(const char *), argc - i + 1);
+		pattern = xcalloc(argc - i + 1, sizeof(const char *));
 		for (j = i; j < argc; j++) {
 			int len = strlen(argv[j]);
 			char *p = xmalloc(len + 3);

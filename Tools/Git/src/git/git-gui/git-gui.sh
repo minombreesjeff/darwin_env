@@ -1285,7 +1285,7 @@ load_config 0
 apply_config
 
 # v1.7.0 introduced --show-toplevel to return the canonical work-tree
-if {[package vsatisfies $_git_version 1.7.0]} {
+if {[package vsatisfies $_git_version 1.7.0-]} {
 	if { [is_Cygwin] } {
 		catch {set _gitworktree [exec cygpath --windows [git rev-parse --show-toplevel]]}
 	} else {
@@ -1541,7 +1541,7 @@ proc rescan_stage2 {fd after} {
 		close $fd
 	}
 
-	if {[package vsatisfies $::_git_version 1.6.3]} {
+	if {[package vsatisfies $::_git_version 1.6.3-]} {
 		set ls_others [list --exclude-standard]
 	} else {
 		set ls_others [list --exclude-per-directory=.gitignore]
@@ -1560,7 +1560,11 @@ proc rescan_stage2 {fd after} {
 
 	set rescan_active 2
 	ui_status [mc "Scanning for modified files ..."]
-	set fd_di [git_read diff-index --cached -z [PARENT]]
+	if {[git-version >= "1.7.2"]} {
+		set fd_di [git_read diff-index --cached --ignore-submodules=dirty -z [PARENT]]
+	} else {
+		set fd_di [git_read diff-index --cached -z [PARENT]]
+	}
 	set fd_df [git_read diff-files -z]
 
 	fconfigure $fd_di -blocking 0 -translation binary -encoding binary

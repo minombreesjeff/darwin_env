@@ -69,7 +69,7 @@ test_expect_success 'object with bad sha1' '
 	git update-ref refs/heads/bogus $cmt &&
 	test_when_finished "git update-ref -d refs/heads/bogus" &&
 
-	test_might_fail git fsck 2>out &&
+	test_must_fail git fsck 2>out &&
 	cat out &&
 	grep "$sha.*corrupt" out
 '
@@ -101,7 +101,7 @@ test_expect_success 'email with embedded > is not okay' '
 	test_when_finished "remove_object $new" &&
 	git update-ref refs/heads/bogus "$new" &&
 	test_when_finished "git update-ref -d refs/heads/bogus" &&
-	git fsck 2>out &&
+	test_must_fail git fsck 2>out &&
 	cat out &&
 	grep "error in commit $new" out
 '
@@ -113,7 +113,7 @@ test_expect_success 'missing < email delimiter is reported nicely' '
 	test_when_finished "remove_object $new" &&
 	git update-ref refs/heads/bogus "$new" &&
 	test_when_finished "git update-ref -d refs/heads/bogus" &&
-	git fsck 2>out &&
+	test_must_fail git fsck 2>out &&
 	cat out &&
 	grep "error in commit $new.* - bad name" out
 '
@@ -125,7 +125,7 @@ test_expect_success 'missing email is reported nicely' '
 	test_when_finished "remove_object $new" &&
 	git update-ref refs/heads/bogus "$new" &&
 	test_when_finished "git update-ref -d refs/heads/bogus" &&
-	git fsck 2>out &&
+	test_must_fail git fsck 2>out &&
 	cat out &&
 	grep "error in commit $new.* - missing email" out
 '
@@ -137,7 +137,7 @@ test_expect_success '> in name is reported' '
 	test_when_finished "remove_object $new" &&
 	git update-ref refs/heads/bogus "$new" &&
 	test_when_finished "git update-ref -d refs/heads/bogus" &&
-	git fsck 2>out &&
+	test_must_fail git fsck 2>out &&
 	cat out &&
 	grep "error in commit $new" out
 '
@@ -151,9 +151,29 @@ test_expect_success 'integer overflow in timestamps is reported' '
 	test_when_finished "remove_object $new" &&
 	git update-ref refs/heads/bogus "$new" &&
 	test_when_finished "git update-ref -d refs/heads/bogus" &&
-	git fsck 2>out &&
+	test_must_fail git fsck 2>out &&
 	cat out &&
 	grep "error in commit $new.*integer overflow" out
+'
+
+test_expect_success 'malformatted tree object' '
+	test_when_finished "git update-ref -d refs/tags/wrong" &&
+	test_when_finished "remove_object \$T" &&
+	T=$(
+		GIT_INDEX_FILE=test-index &&
+		export GIT_INDEX_FILE &&
+		rm -f test-index &&
+		>x &&
+		git add x &&
+		T=$(git write-tree) &&
+		(
+			git cat-file tree $T &&
+			git cat-file tree $T
+		) |
+		git hash-object -w -t tree --stdin
+	) &&
+	test_must_fail git fsck 2>out &&
+	grep "error in tree .*contains duplicate file entries" out
 '
 
 test_expect_success 'tag pointing to nonexistent' '
@@ -192,6 +212,48 @@ test_expect_success 'tag pointing to something else than its type' '
 	echo $tag >.git/refs/tags/wrong &&
 	test_when_finished "git update-ref -d refs/tags/wrong" &&
 	test_must_fail git fsck --tags
+'
+
+test_expect_success 'tag with incorrect tag name & missing tagger' '
+	sha=$(git rev-parse HEAD) &&
+	cat >wrong-tag <<-EOF &&
+	object $sha
+	type commit
+	tag wrong name format
+
+	This is an invalid tag.
+	EOF
+
+	tag=$(git hash-object -t tag -w --stdin <wrong-tag) &&
+	test_when_finished "remove_object $tag" &&
+	echo $tag >.git/refs/tags/wrong &&
+	test_when_finished "git update-ref -d refs/tags/wrong" &&
+	git fsck --tags 2>out &&
+
+	cat >expect <<-EOF &&
+	warning in tag $tag: invalid '\''tag'\'' name: wrong name format
+	warning in tag $tag: invalid format - expected '\''tagger'\'' line
+	EOF
+	test_cmp expect out
+'
+
+test_expect_success 'tag with bad tagger' '
+	sha=$(git rev-parse HEAD) &&
+	cat >wrong-tag <<-EOF &&
+	object $sha
+	type commit
+	tag not-quite-wrong
+	tagger Bad Tagger Name
+
+	This is an invalid tag.
+	EOF
+
+	tag=$(git hash-object --literally -t tag -w --stdin <wrong-tag) &&
+	test_when_finished "remove_object $tag" &&
+	echo $tag >.git/refs/tags/wrong &&
+	test_when_finished "git update-ref -d refs/tags/wrong" &&
+	test_must_fail git fsck --tags 2>out &&
+	grep "error in tag .*: invalid author/committer" out
 '
 
 test_expect_success 'cleaned up' '
@@ -286,5 +348,76 @@ dotgitdot .git.
 dot-backslash-case .\\\\.GIT\\\\foobar
 dotgit-case-backslash .git\\\\foobar
 EOF
+
+test_expect_success 'fsck allows .Ňit' '
+	(
+		git init not-dotgit &&
+		cd not-dotgit &&
+		echo content >file &&
+		git add file &&
+		git commit -m base &&
+		blob=$(git rev-parse :file) &&
+		printf "100644 blob $blob\t.\\305\\207it" >tree &&
+		tree=$(git mktree <tree) &&
+		git fsck 2>err &&
+		test_line_count = 0 err
+	)
+'
+
+# create a static test repo which is broken by omitting
+# one particular object ($1, which is looked up via rev-parse
+# in the new repository).
+create_repo_missing () {
+	rm -rf missing &&
+	git init missing &&
+	(
+		cd missing &&
+		git commit -m one --allow-empty &&
+		mkdir subdir &&
+		echo content >subdir/file &&
+		git add subdir/file &&
+		git commit -m two &&
+		unrelated=$(echo unrelated | git hash-object --stdin -w) &&
+		git tag -m foo tag $unrelated &&
+		sha1=$(git rev-parse --verify "$1") &&
+		path=$(echo $sha1 | sed 's|..|&/|') &&
+		rm .git/objects/$path
+	)
+}
+
+test_expect_success 'fsck notices missing blob' '
+	create_repo_missing HEAD:subdir/file &&
+	test_must_fail git -C missing fsck
+'
+
+test_expect_success 'fsck notices missing subtree' '
+	create_repo_missing HEAD:subdir &&
+	test_must_fail git -C missing fsck
+'
+
+test_expect_success 'fsck notices missing root tree' '
+	create_repo_missing HEAD^{tree} &&
+	test_must_fail git -C missing fsck
+'
+
+test_expect_success 'fsck notices missing parent' '
+	create_repo_missing HEAD^ &&
+	test_must_fail git -C missing fsck
+'
+
+test_expect_success 'fsck notices missing tagged object' '
+	create_repo_missing tag^{blob} &&
+	test_must_fail git -C missing fsck
+'
+
+test_expect_success 'fsck notices ref pointing to missing commit' '
+	create_repo_missing HEAD &&
+	test_must_fail git -C missing fsck
+'
+
+test_expect_success 'fsck notices ref pointing to missing tag' '
+	create_repo_missing tag &&
+	test_must_fail git -C missing fsck
+'
 
 test_done

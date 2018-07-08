@@ -1,3 +1,4 @@
+#include "git-compat-util.h"
 #include "http.h"
 #include "pack.h"
 #include "sideband.h"
@@ -61,6 +62,9 @@ static const char *user_agent;
 
 static struct credential cert_auth = CREDENTIAL_INIT;
 static int ssl_cert_password_required;
+#ifdef LIBCURL_CAN_HANDLE_AUTH_ANY
+static unsigned long http_auth_methods = CURLAUTH_ANY;
+#endif
 
 static struct curl_slist *pragma_header;
 static struct curl_slist *no_pragma_header;
@@ -300,6 +304,9 @@ static CURL *get_curl_handle(void)
 {
 	CURL *result = curl_easy_init();
 
+	if (!result)
+		die("curl_easy_init failed");
+
 	if (!curl_ssl_verify) {
 		curl_easy_setopt(result, CURLOPT_SSL_VERIFYPEER, 0);
 		curl_easy_setopt(result, CURLOPT_SSL_VERIFYHOST, 0);
@@ -399,7 +406,8 @@ void http_init(struct remote *remote, const char *url, int proactive_auth)
 	git_config(urlmatch_config_entry, &config);
 	free(normalized_url);
 
-	curl_global_init(CURL_GLOBAL_ALL);
+	if (curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK)
+		die("curl_global_init failed");
 
 	http_proactive_auth = proactive_auth;
 
@@ -417,10 +425,8 @@ void http_init(struct remote *remote, const char *url, int proactive_auth)
 	}
 
 	curlm = curl_multi_init();
-	if (curlm == NULL) {
-		fprintf(stderr, "Error creating curl multi handle.\n");
-		exit(1);
-	}
+	if (!curlm)
+		die("curl_multi_init failed");
 #endif
 
 	if (getenv("GIT_SSL_NO_VERIFY"))
@@ -577,6 +583,9 @@ struct active_request_slot *get_active_slot(void)
 	curl_easy_setopt(slot->curl, CURLOPT_UPLOAD, 0);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
 	curl_easy_setopt(slot->curl, CURLOPT_FAILONERROR, 1);
+#ifdef LIBCURL_CAN_HANDLE_AUTH_ANY
+	curl_easy_setopt(slot->curl, CURLOPT_HTTPAUTH, http_auth_methods);
+#endif
 	if (http_auth.password)
 		init_curl_http_auth(slot->curl);
 
@@ -867,6 +876,9 @@ int handle_curl_result(struct slot_results *results)
 			credential_reject(&http_auth);
 			return HTTP_NOAUTH;
 		} else {
+#ifdef LIBCURL_CAN_HANDLE_AUTH_ANY
+			http_auth_methods &= ~CURLAUTH_GSSNEGOTIATE;
+#endif
 			return HTTP_REAUTH;
 		}
 	} else {
@@ -880,6 +892,20 @@ int handle_curl_result(struct slot_results *results)
 	}
 }
 
+int run_one_slot(struct active_request_slot *slot,
+		 struct slot_results *results)
+{
+	slot->results = results;
+	if (!start_active_slot(slot)) {
+		snprintf(curl_errorstr, sizeof(curl_errorstr),
+			 "failed to start HTTP request");
+		return HTTP_START_FAILED;
+	}
+
+	run_active_slot(slot);
+	return handle_curl_result(results);
+}
+
 static CURLcode curlinfo_strbuf(CURL *curl, CURLINFO info, struct strbuf *buf)
 {
 	char *ptr;
@@ -891,6 +917,84 @@ static CURLcode curlinfo_strbuf(CURL *curl, CURLINFO info, struct strbuf *buf)
 		strbuf_addstr(buf, ptr);
 	return ret;
 }
+
+/*
+ * Check for and extract a content-type parameter. "raw"
+ * should be positioned at the start of the potential
+ * parameter, with any whitespace already removed.
+ *
+ * "name" is the name of the parameter. The value is appended
+ * to "out".
+ */
+static int extract_param(const char *raw, const char *name,
+			 struct strbuf *out)
+{
+	size_t len = strlen(name);
+
+	if (strncasecmp(raw, name, len))
+		return -1;
+	raw += len;
+
+	if (*raw != '=')
+		return -1;
+	raw++;
+
+	while (*raw && !isspace(*raw) && *raw != ';')
+		strbuf_addch(out, *raw++);
+	return 0;
+}
+
+/*
+ * Extract a normalized version of the content type, with any
+ * spaces suppressed, all letters lowercased, and no trailing ";"
+ * or parameters.
+ *
+ * Note that we will silently remove even invalid whitespace. For
+ * example, "text / plain" is specifically forbidden by RFC 2616,
+ * but "text/plain" is the only reasonable output, and this keeps
+ * our code simple.
+ *
+ * If the "charset" argument is not NULL, store the value of any
+ * charset parameter there.
+ *
+ * Example:
+ *   "TEXT/PLAIN; charset=utf-8" -> "text/plain", "utf-8"
+ *   "text / plain" -> "text/plain"
+ */
+static void extract_content_type(struct strbuf *raw, struct strbuf *type,
+				 struct strbuf *charset)
+{
+	const char *p;
+
+	strbuf_reset(type);
+	strbuf_grow(type, raw->len);
+	for (p = raw->buf; *p; p++) {
+		if (isspace(*p))
+			continue;
+		if (*p == ';') {
+			p++;
+			break;
+		}
+		strbuf_addch(type, tolower(*p));
+	}
+
+	if (!charset)
+		return;
+
+	strbuf_reset(charset);
+	while (*p) {
+		while (isspace(*p) || *p == ';')
+			p++;
+		if (!extract_param(p, "charset", charset))
+			return;
+		while (*p && !isspace(*p))
+			p++;
+	}
+
+	if (!charset->len && starts_with(type->buf, "text/"))
+		strbuf_addstr(charset, "ISO-8859-1");
+}
+
 
 /* http_request() targets */
 #define HTTP_REQUEST_STRBUF	0
@@ -907,7 +1011,6 @@ static int http_request(const char *url,
 	int ret;
 
 	slot = get_active_slot();
-	slot->results = &results;
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
 
 	if (result == NULL) {
@@ -942,18 +1045,15 @@ static int http_request(const char *url,
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(slot->curl, CURLOPT_ENCODING, "gzip");
 
-	if (start_active_slot(slot)) {
-		run_active_slot(slot);
-		ret = handle_curl_result(&results);
-	} else {
-		snprintf(curl_errorstr, sizeof(curl_errorstr),
-			 "failed to start HTTP request");
-		ret = HTTP_START_FAILED;
-	}
+	ret = run_one_slot(slot, &results);
 
-	if (options && options->content_type)
-		curlinfo_strbuf(slot->curl, CURLINFO_CONTENT_TYPE,
-				options->content_type);
+	if (options && options->content_type) {
+		struct strbuf raw = STRBUF_INIT;
+		curlinfo_strbuf(slot->curl, CURLINFO_CONTENT_TYPE, &raw);
+		extract_content_type(&raw, options->content_type,
+				     options->charset);
+		strbuf_release(&raw);
+	}
 
 	if (options && options->effective_url)
 		curlinfo_strbuf(slot->curl, CURLINFO_EFFECTIVE_URL,
@@ -1000,11 +1100,10 @@ static int update_url_from_redirect(struct strbuf *base,
 	if (!strcmp(asked, got->buf))
 		return 0;
 
-	if (!starts_with(asked, base->buf))
+	if (!skip_prefix(asked, base->buf, &tail))
 		die("BUG: update_url_from_redirect: %s is not a superset of %s",
 		    asked, base->buf);
 
-	tail = asked + base->len;
 	tail_len = strlen(tail);
 
 	if (got->len < tail_len ||
@@ -1151,7 +1250,7 @@ static int fetch_and_setup_pack_index(struct packed_git **packs_head,
 	int ret;
 
 	if (has_pack_index(sha1)) {
-		new_pack = parse_pack_index(sha1, NULL);
+		new_pack = parse_pack_index(sha1, sha1_pack_index_name(sha1));
 		if (!new_pack)
 			return -1; /* parse_pack_index() already issued error message */
 		goto add_pack;
@@ -1246,7 +1345,7 @@ int finish_http_pack_request(struct http_pack_request *preq)
 	struct packed_git **lst;
 	struct packed_git *p = preq->target;
 	char *tmp_idx;
-	struct child_process ip;
+	struct child_process ip = CHILD_PROCESS_INIT;
 	const char *ip_argv[8];
 
 	close_pack_index(p);
@@ -1269,7 +1368,6 @@ int finish_http_pack_request(struct http_pack_request *preq)
 	ip_argv[3] = preq->tmpfile;
 	ip_argv[4] = NULL;
 
-	memset(&ip, 0, sizeof(ip));
 	ip.argv = ip_argv;
 	ip.git_cmd = 1;
 	ip.no_stdin = 1;
@@ -1384,7 +1482,7 @@ struct http_object_request *new_http_object_request(const char *base_url,
 	unsigned char *sha1)
 {
 	char *hex = sha1_to_hex(sha1);
-	char *filename;
+	const char *filename;
 	char prevfile[PATH_MAX];
 	int prevlocal;
 	char prev_buf[PREV_BUF_SIZE];

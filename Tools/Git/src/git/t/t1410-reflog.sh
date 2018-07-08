@@ -245,4 +245,76 @@ test_expect_success 'gc.reflogexpire=false' '
 
 '
 
+test_expect_success 'checkout should not delete log for packed ref' '
+	test $(git reflog master | wc -l) = 4 &&
+	git branch foo &&
+	git pack-refs --all &&
+	git checkout foo &&
+	test $(git reflog master | wc -l) = 4
+'
+
+test_expect_success 'stale dirs do not cause d/f conflicts (reflogs on)' '
+	test_when_finished "git branch -d one || git branch -d one/two" &&
+
+	git branch one/two master &&
+	echo "one/two@{0} branch: Created from master" >expect &&
+	git log -g --format="%gd %gs" one/two >actual &&
+	test_cmp expect actual &&
+	git branch -d one/two &&
+
+	# now logs/refs/heads/one is a stale directory, but
+	# we should move it out of the way to create "one" reflog
+	git branch one master &&
+	echo "one@{0} branch: Created from master" >expect &&
+	git log -g --format="%gd %gs" one >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'stale dirs do not cause d/f conflicts (reflogs off)' '
+	test_when_finished "git branch -d one || git branch -d one/two" &&
+
+	git branch one/two master &&
+	echo "one/two@{0} branch: Created from master" >expect &&
+	git log -g --format="%gd %gs" one/two >actual &&
+	test_cmp expect actual &&
+	git branch -d one/two &&
+
+	# same as before, but we only create a reflog for "one" if
+	# it already exists, which it does not
+	git -c core.logallrefupdates=false branch one master &&
+	: >expect &&
+	git log -g --format="%gd %gs" one >actual &&
+	test_cmp expect actual
+'
+
+# Triggering the bug detected by this test requires a newline to fall
+# exactly BUFSIZ-1 bytes from the end of the file. We don't know
+# what that value is, since it's platform dependent. However, if
+# we choose some value N, we also catch any D which divides N evenly
+# (since we will read backwards in chunks of D). So we choose 8K,
+# which catches glibc (with an 8K BUFSIZ) and *BSD (1K).
+#
+# Each line is 114 characters, so we need 75 to still have a few before the
+# last 8K. The 89-character padding on the final entry lines up our
+# newline exactly.
+test_expect_success 'parsing reverse reflogs at BUFSIZ boundaries' '
+	git checkout -b reflogskip &&
+	z38=00000000000000000000000000000000000000 &&
+	ident="abc <xyz> 0000000001 +0000" &&
+	for i in $(test_seq 1 75); do
+		printf "$z38%02d $z38%02d %s\t" $i $(($i+1)) "$ident" &&
+		if test $i = 75; then
+			for j in $(test_seq 1 89); do
+				printf X
+			done
+		else
+			printf X
+		fi &&
+		printf "\n"
+	done >.git/logs/refs/heads/reflogskip &&
+	git rev-parse reflogskip@{73} >actual &&
+	echo ${z38}03 >expect &&
+	test_cmp expect actual
+'
+
 test_done

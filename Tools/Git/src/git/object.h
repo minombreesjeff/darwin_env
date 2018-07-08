@@ -18,14 +18,27 @@ struct object_array {
 		 * empty string.
 		 */
 		char *name;
+		char *path;
 		unsigned mode;
-		struct object_context *context;
 	} *objects;
 };
 
 #define OBJECT_ARRAY_INIT { 0, 0, NULL }
 
 #define TYPE_BITS   3
+/*
+ * object flag allocation:
+ * revision.h:      0---------10                                26
+ * fetch-pack.c:    0---4
+ * walker.c:        0-2
+ * upload-pack.c:               11----------------19
+ * builtin/blame.c:               12-13
+ * bisect.c:                               16
+ * bundle.c:                               16
+ * http-push.c:                            16-----19
+ * commit.c:                               16-----19
+ * sha1_name.c:                                     20
+ */
 #define FLAG_BITS  27
 
 /*
@@ -40,9 +53,17 @@ struct object {
 };
 
 extern const char *typename(unsigned int type);
-extern int type_from_string(const char *str);
+extern int type_from_string_gently(const char *str, ssize_t, int gentle);
+#define type_from_string(str) type_from_string_gently(str, -1, 0)
 
+/*
+ * Return the current number of buckets in the object hashmap.
+ */
 extern unsigned int get_max_object_index(void);
+
+/*
+ * Return the object from the specified bucket in the object hashmap.
+ */
 extern struct object *get_indexed_object(unsigned int);
 
 /*
@@ -59,7 +80,9 @@ extern struct object *get_indexed_object(unsigned int);
  */
 struct object *lookup_object(const unsigned char *sha1);
 
-extern void *create_object(const unsigned char *sha1, int type, void *obj);
+extern void *create_object(const unsigned char *sha1, void *obj);
+
+void *object_as_type(struct object *obj, enum object_type type, int quiet);
 
 /*
  * Returns the object, having parsed it to find out what it is.
@@ -91,8 +114,7 @@ int object_list_contains(struct object_list *list, struct object *obj);
 
 /* Object array handling .. */
 void add_object_array(struct object *obj, const char *name, struct object_array *array);
-void add_object_array_with_mode(struct object *obj, const char *name, struct object_array *array, unsigned mode);
-void add_object_array_with_context(struct object *obj, const char *name, struct object_array *array, struct object_context *context);
+void add_object_array_with_path(struct object *obj, const char *name, struct object_array *array, unsigned mode, const char *path);
 
 typedef int (*object_array_each_func_t)(struct object_array_entry *, void *);
 
@@ -109,6 +131,12 @@ void object_array_filter(struct object_array *array,
  * Warning: this function uses an O(N^2) algorithm.
  */
 void object_array_remove_duplicates(struct object_array *array);
+
+/*
+ * Remove any objects from the array, freeing all used memory; afterwards
+ * the array is ready to store more objects with add_object_array().
+ */
+void object_array_clear(struct object_array *array);
 
 void clear_object_flags(unsigned flags);
 

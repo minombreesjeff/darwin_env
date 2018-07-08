@@ -35,7 +35,8 @@ void init_grep_defaults(void)
 	strcpy(opt->color_filename, "");
 	strcpy(opt->color_function, "");
 	strcpy(opt->color_lineno, "");
-	strcpy(opt->color_match, GIT_COLOR_BOLD_RED);
+	strcpy(opt->color_match_context, GIT_COLOR_BOLD_RED);
+	strcpy(opt->color_match_selected, GIT_COLOR_BOLD_RED);
 	strcpy(opt->color_selected, "");
 	strcpy(opt->color_sep, GIT_COLOR_CYAN);
 	opt->color = -1;
@@ -86,6 +87,11 @@ int grep_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
+	if (!strcmp(var, "grep.fullname")) {
+		opt->relative = !git_config_bool(var, value);
+		return 0;
+	}
+
 	if (!strcmp(var, "color.grep"))
 		opt->color = git_config_colorbool(var, value);
 	else if (!strcmp(var, "color.grep.context"))
@@ -96,17 +102,27 @@ int grep_config(const char *var, const char *value, void *cb)
 		color = opt->color_function;
 	else if (!strcmp(var, "color.grep.linenumber"))
 		color = opt->color_lineno;
-	else if (!strcmp(var, "color.grep.match"))
-		color = opt->color_match;
+	else if (!strcmp(var, "color.grep.matchcontext"))
+		color = opt->color_match_context;
+	else if (!strcmp(var, "color.grep.matchselected"))
+		color = opt->color_match_selected;
 	else if (!strcmp(var, "color.grep.selected"))
 		color = opt->color_selected;
 	else if (!strcmp(var, "color.grep.separator"))
 		color = opt->color_sep;
+	else if (!strcmp(var, "color.grep.match")) {
+		int rc = 0;
+		if (!value)
+			return config_error_nonbool(var);
+		rc |= color_parse(value, opt->color_match_context);
+		rc |= color_parse(value, opt->color_match_selected);
+		return rc;
+	}
 
 	if (color) {
 		if (!value)
 			return config_error_nonbool(var);
-		color_parse(value, var, color);
+		return color_parse(value, color);
 	}
 	return 0;
 }
@@ -139,7 +155,8 @@ void grep_init(struct grep_opt *opt, const char *prefix)
 	strcpy(opt->color_filename, def->color_filename);
 	strcpy(opt->color_function, def->color_function);
 	strcpy(opt->color_lineno, def->color_lineno);
-	strcpy(opt->color_match, def->color_match);
+	strcpy(opt->color_match_context, def->color_match_context);
+	strcpy(opt->color_match_selected, def->color_match_selected);
 	strcpy(opt->color_selected, def->color_selected);
 	strcpy(opt->color_sep, def->color_sep);
 }
@@ -1079,7 +1096,7 @@ static void show_line(struct grep_opt *opt, char *bol, char *eol,
 		      const char *name, unsigned lno, char sign)
 {
 	int rest = eol - bol;
-	char *line_color = NULL;
+	const char *match_color, *line_color = NULL;
 
 	if (opt->file_break && opt->last_shown == 0) {
 		if (opt->show_hunk_mark)
@@ -1118,6 +1135,10 @@ static void show_line(struct grep_opt *opt, char *bol, char *eol,
 		int eflags = 0;
 
 		if (sign == ':')
+			match_color = opt->color_match_selected;
+		else
+			match_color = opt->color_match_context;
+		if (sign == ':')
 			line_color = opt->color_selected;
 		else if (sign == '-')
 			line_color = opt->color_context;
@@ -1130,8 +1151,7 @@ static void show_line(struct grep_opt *opt, char *bol, char *eol,
 
 			output_color(opt, bol, match.rm_so, line_color);
 			output_color(opt, bol + match.rm_so,
-				     match.rm_eo - match.rm_so,
-				     opt->color_match);
+				     match.rm_eo - match.rm_so, match_color);
 			bol += match.rm_eo;
 			rest -= match.rm_eo;
 			eflags = REG_NOTBOL;
@@ -1562,8 +1582,11 @@ static int grep_source_1(struct grep_opt *opt, struct grep_source *gs, int colle
 	 */
 	if (opt->count && count) {
 		char buf[32];
-		output_color(opt, gs->name, strlen(gs->name), opt->color_filename);
-		output_sep(opt, ':');
+		if (opt->pathname) {
+			output_color(opt, gs->name, strlen(gs->name),
+				     opt->color_filename);
+			output_sep(opt, ':');
+		}
 		snprintf(buf, sizeof(buf), "%u\n", count);
 		opt->output(opt, buf, strlen(buf));
 		return 1;
@@ -1638,8 +1661,8 @@ void grep_source_init(struct grep_source *gs, enum grep_source_type type,
 		      const void *identifier)
 {
 	gs->type = type;
-	gs->name = name ? xstrdup(name) : NULL;
-	gs->path = path ? xstrdup(path) : NULL;
+	gs->name = xstrdup_or_null(name);
+	gs->path = xstrdup_or_null(path);
 	gs->buf = NULL;
 	gs->size = 0;
 	gs->driver = NULL;
@@ -1650,7 +1673,7 @@ void grep_source_init(struct grep_source *gs, enum grep_source_type type,
 		break;
 	case GREP_SOURCE_SHA1:
 		gs->identifier = xmalloc(20);
-		memcpy(gs->identifier, identifier, 20);
+		hashcpy(gs->identifier, identifier);
 		break;
 	case GREP_SOURCE_BUF:
 		gs->identifier = NULL;

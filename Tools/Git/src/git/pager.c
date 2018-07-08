@@ -6,19 +6,13 @@
 #define DEFAULT_PAGER "less"
 #endif
 
-struct pager_config {
-	const char *cmd;
-	int want;
-	char *value;
-};
-
 /*
  * This is split up from the rest of git so that we can do
  * something different on Windows.
  */
 
 static const char *pager_argv[] = { NULL, NULL };
-static struct child_process pager_process;
+static struct child_process pager_process = CHILD_PROCESS_INIT;
 
 static void wait_for_pager(void)
 {
@@ -64,7 +58,7 @@ void setup_pager(void)
 {
 	const char *pager = git_pager(isatty(1));
 
-	if (!pager || pager_in_use())
+	if (!pager)
 		return;
 
 	/*
@@ -80,17 +74,10 @@ void setup_pager(void)
 	pager_process.use_shell = 1;
 	pager_process.argv = pager_argv;
 	pager_process.in = -1;
-	if (!getenv("LESS") || !getenv("LV")) {
-		static const char *env[3];
-		int i = 0;
-
-		if (!getenv("LESS"))
-			env[i++] = "LESS=FRSX";
-		if (!getenv("LV"))
-			env[i++] = "LV=-c";
-		env[i] = NULL;
-		pager_process.env = env;
-	}
+	if (!getenv("LESS"))
+		argv_array_push(&pager_process.env_array, "LESS=FRX");
+	if (!getenv("LV"))
+		argv_array_push(&pager_process.env_array, "LV=-c");
 	if (start_command(&pager_process))
 		return;
 
@@ -146,39 +133,31 @@ int term_columns(void)
 /*
  * How many columns do we need to show this number in decimal?
  */
-int decimal_width(int number)
+int decimal_width(uintmax_t number)
 {
-	int i, width;
+	int width;
 
-	for (width = 1, i = 10; i <= number; width++)
-		i *= 10;
+	for (width = 1; number >= 10; width++)
+		number /= 10;
 	return width;
-}
-
-static int pager_command_config(const char *var, const char *value, void *data)
-{
-	struct pager_config *c = data;
-	if (starts_with(var, "pager.") && !strcmp(var + 6, c->cmd)) {
-		int b = git_config_maybe_bool(var, value);
-		if (b >= 0)
-			c->want = b;
-		else {
-			c->want = 1;
-			c->value = xstrdup(value);
-		}
-	}
-	return 0;
 }
 
 /* returns 0 for "no pager", 1 for "use pager", and -1 for "not specified" */
 int check_pager_config(const char *cmd)
 {
-	struct pager_config c;
-	c.cmd = cmd;
-	c.want = -1;
-	c.value = NULL;
-	git_config(pager_command_config, &c);
-	if (c.value)
-		pager_program = c.value;
-	return c.want;
+	int want = -1;
+	struct strbuf key = STRBUF_INIT;
+	const char *value = NULL;
+	strbuf_addf(&key, "pager.%s", cmd);
+	if (!git_config_get_value(key.buf, &value)) {
+		int b = git_config_maybe_bool(key.buf, value);
+		if (b >= 0)
+			want = b;
+		else {
+			want = 1;
+			pager_program = xstrdup(value);
+		}
+	}
+	strbuf_release(&key);
+	return want;
 }

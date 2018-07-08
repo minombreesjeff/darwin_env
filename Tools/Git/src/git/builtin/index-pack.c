@@ -40,17 +40,13 @@ struct base_data {
 	int ofs_first, ofs_last;
 };
 
-#if !defined(NO_PTHREADS) && defined(NO_THREAD_SAFE_PREAD)
-/* pread() emulation is not thread-safe. Disable threading. */
-#define NO_PTHREADS
-#endif
-
 struct thread_local {
 #ifndef NO_PTHREADS
 	pthread_t thread;
 #endif
 	struct base_data *base_cache;
 	size_t base_cache_used;
+	int pack_fd;
 };
 
 /*
@@ -91,7 +87,8 @@ static off_t consumed_bytes;
 static unsigned deepest_delta;
 static git_SHA_CTX input_ctx;
 static uint32_t input_crc32;
-static int input_fd, output_fd, pack_fd;
+static int input_fd, output_fd;
+static const char *curr_pack;
 
 #ifndef NO_PTHREADS
 
@@ -115,6 +112,10 @@ static pthread_mutex_t deepest_delta_mutex;
 #define deepest_delta_lock()	lock_mutex(&deepest_delta_mutex)
 #define deepest_delta_unlock()	unlock_mutex(&deepest_delta_mutex)
 
+static pthread_mutex_t type_cas_mutex;
+#define type_cas_lock()		lock_mutex(&type_cas_mutex)
+#define type_cas_unlock()	unlock_mutex(&type_cas_mutex)
+
 static pthread_key_t key;
 
 static inline void lock_mutex(pthread_mutex_t *mutex)
@@ -134,26 +135,38 @@ static inline void unlock_mutex(pthread_mutex_t *mutex)
  */
 static void init_thread(void)
 {
+	int i;
 	init_recursive_mutex(&read_mutex);
 	pthread_mutex_init(&counter_mutex, NULL);
 	pthread_mutex_init(&work_mutex, NULL);
+	pthread_mutex_init(&type_cas_mutex, NULL);
 	if (show_stat)
 		pthread_mutex_init(&deepest_delta_mutex, NULL);
 	pthread_key_create(&key, NULL);
 	thread_data = xcalloc(nr_threads, sizeof(*thread_data));
+	for (i = 0; i < nr_threads; i++) {
+		thread_data[i].pack_fd = open(curr_pack, O_RDONLY);
+		if (thread_data[i].pack_fd == -1)
+			die_errno(_("unable to open %s"), curr_pack);
+	}
+
 	threads_active = 1;
 }
 
 static void cleanup_thread(void)
 {
+	int i;
 	if (!threads_active)
 		return;
 	threads_active = 0;
 	pthread_mutex_destroy(&read_mutex);
 	pthread_mutex_destroy(&counter_mutex);
 	pthread_mutex_destroy(&work_mutex);
+	pthread_mutex_destroy(&type_cas_mutex);
 	if (show_stat)
 		pthread_mutex_destroy(&deepest_delta_mutex);
+	for (i = 0; i < nr_threads; i++)
+		close(thread_data[i].pack_fd);
 	pthread_key_delete(key);
 	free(thread_data);
 }
@@ -171,6 +184,9 @@ static void cleanup_thread(void)
 
 #define deepest_delta_lock()
 #define deepest_delta_unlock()
+
+#define type_cas_lock()
+#define type_cas_unlock()
 
 #endif
 
@@ -200,8 +216,13 @@ static unsigned check_object(struct object *obj)
 	if (!(obj->flags & FLAG_CHECKED)) {
 		unsigned long size;
 		int type = sha1_object_info(obj->sha1, &size);
-		if (type != obj->type || type <= 0)
-			die(_("object of unexpected type"));
+		if (type <= 0)
+			die(_("did not receive expected object %s"),
+			      sha1_to_hex(obj->sha1));
+		if (type != obj->type)
+			die(_("object %s: expected type %s, found %s"),
+			    sha1_to_hex(obj->sha1),
+			    typename(obj->type), typename(type));
 		obj->flags |= FLAG_CHECKED;
 		return 1;
 	}
@@ -288,13 +309,13 @@ static const char *open_pack_file(const char *pack_name)
 			output_fd = open(pack_name, O_CREAT|O_EXCL|O_RDWR, 0600);
 		if (output_fd < 0)
 			die_errno(_("unable to create '%s'"), pack_name);
-		pack_fd = output_fd;
+		nothread_data.pack_fd = output_fd;
 	} else {
 		input_fd = open(pack_name, O_RDONLY);
 		if (input_fd < 0)
 			die_errno(_("cannot open packfile '%s'"), pack_name);
 		output_fd = -1;
-		pack_fd = input_fd;
+		nothread_data.pack_fd = input_fd;
 	}
 	git_SHA1_Init(&input_ctx);
 	return pack_name;
@@ -350,8 +371,7 @@ static void set_thread_data(struct thread_local *data)
 
 static struct base_data *alloc_base_data(void)
 {
-	struct base_data *base = xmalloc(sizeof(struct base_data));
-	memset(base, 0, sizeof(*base));
+	struct base_data *base = xcalloc(1, sizeof(struct base_data));
 	base->ref_last = -1;
 	base->ofs_last = -1;
 	return base;
@@ -427,7 +447,7 @@ static void *unpack_entry_data(unsigned long offset, unsigned long size,
 	if (type == OBJ_BLOB && size > big_file_threshold)
 		buf = fixed_buf;
 	else
-		buf = xmalloc(size);
+		buf = xmallocz(size);
 
 	memset(&stream, 0, sizeof(stream));
 	git_inflate_init(&stream);
@@ -532,7 +552,7 @@ static void *unpack_data(struct object_entry *obj,
 	git_zstream stream;
 	int status;
 
-	data = xmalloc(consume ? 64*1024 : obj->size);
+	data = xmallocz(consume ? 64*1024 : obj->size);
 	inbuf = xmalloc((len < 64*1024) ? len : 64*1024);
 
 	memset(&stream, 0, sizeof(stream));
@@ -542,7 +562,7 @@ static void *unpack_data(struct object_entry *obj,
 
 	do {
 		ssize_t n = (len < 64*1024) ? len : 64*1024;
-		n = pread(pack_fd, inbuf, n, from);
+		n = xpread(get_thread_data()->pack_fd, inbuf, n, from);
 		if (n < 0)
 			die_errno(_("cannot pread pack file"));
 		if (!n)
@@ -762,7 +782,8 @@ static void sha1_object(const void *data, struct object_entry *obj_entry,
 			if (!obj)
 				die(_("invalid %s"), typename(type));
 			if (do_fsck_object &&
-			    fsck_object(obj, 1, fsck_error_function))
+			    fsck_object(obj, buf, size, 1,
+				    fsck_error_function))
 				die(_("Error in object"));
 			if (fsck_walk(obj, mark_link, NULL))
 				die(_("Not all child objects of %s are reachable"), sha1_to_hex(obj->sha1));
@@ -774,7 +795,8 @@ static void sha1_object(const void *data, struct object_entry *obj_entry,
 			}
 			if (obj->type == OBJ_COMMIT) {
 				struct commit *commit = (struct commit *) obj;
-				commit->buffer = NULL;
+				if (detach_commit_buffer(commit, NULL) != data)
+					die("BUG: parse_object_buffer transmogrified our buffer");
 			}
 			obj->flags |= FLAG_CHECKED;
 		}
@@ -850,7 +872,6 @@ static void resolve_delta(struct object_entry *delta_obj,
 {
 	void *base_data, *delta_data;
 
-	delta_obj->real_type = base->obj->real_type;
 	if (show_stat) {
 		delta_obj->delta_depth = base->obj->delta_depth + 1;
 		deepest_delta_lock();
@@ -874,6 +895,26 @@ static void resolve_delta(struct object_entry *delta_obj,
 	counter_lock();
 	nr_resolved_deltas++;
 	counter_unlock();
+}
+
+/*
+ * Standard boolean compare-and-swap: atomically check whether "*type" is
+ * "want"; if so, swap in "set" and return true. Otherwise, leave it untouched
+ * and return false.
+ */
+static int compare_and_swap_type(enum object_type *type,
+				 enum object_type want,
+				 enum object_type set)
+{
+	enum object_type old;
+
+	type_cas_lock();
+	old = *type;
+	if (old == want)
+		*type = set;
+	type_cas_unlock();
+
+	return old == want;
 }
 
 static struct base_data *find_unresolved_deltas_1(struct base_data *base,
@@ -903,7 +944,10 @@ static struct base_data *find_unresolved_deltas_1(struct base_data *base,
 		struct object_entry *child = objects + deltas[base->ref_first].obj_no;
 		struct base_data *result = alloc_base_data();
 
-		assert(child->real_type == OBJ_REF_DELTA);
+		if (!compare_and_swap_type(&child->real_type, OBJ_REF_DELTA,
+					   base->obj->real_type))
+			die("BUG: child->real_type != OBJ_REF_DELTA");
+
 		resolve_delta(child, base, result);
 		if (base->ref_first == base->ref_last && base->ofs_last == -1)
 			free_base_data(base);
@@ -917,6 +961,7 @@ static struct base_data *find_unresolved_deltas_1(struct base_data *base,
 		struct base_data *result = alloc_base_data();
 
 		assert(child->real_type == OBJ_OFS_DELTA);
+		child->real_type = base->obj->real_type;
 		resolve_delta(child, base, result);
 		if (base->ofs_first == base->ofs_last)
 			free_base_data(base);
@@ -1128,9 +1173,7 @@ static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned cha
 		int nr_objects_initial = nr_objects;
 		if (nr_unresolved <= 0)
 			die(_("confusion beyond insanity"));
-		objects = xrealloc(objects,
-				   (nr_objects + nr_unresolved + 1)
-				   * sizeof(*objects));
+		REALLOC_ARRAY(objects, nr_objects + nr_unresolved + 1);
 		memset(objects + nr_objects + 1, 0,
 		       nr_unresolved * sizeof(*objects));
 		f = sha1fd(output_fd, curr_pack);
@@ -1490,10 +1533,11 @@ static void show_pack_info(int stat_only)
 int cmd_index_pack(int argc, const char **argv, const char *prefix)
 {
 	int i, fix_thin_pack = 0, verify = 0, stat_only = 0;
-	const char *curr_pack, *curr_index;
+	const char *curr_index;
 	const char *index_name = NULL, *pack_name = NULL;
 	const char *keep_name = NULL, *keep_msg = NULL;
-	char *index_name_buf = NULL, *keep_name_buf = NULL;
+	struct strbuf index_name_buf = STRBUF_INIT,
+		      keep_name_buf = STRBUF_INIT;
 	struct pack_idx_entry **idx_objects;
 	struct pack_idx_option opts;
 	unsigned char pack_sha1[20];
@@ -1502,7 +1546,7 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage(index_pack_usage);
 
-	read_replace_refs = 0;
+	check_replace_refs = 0;
 
 	reset_pack_idx_option(&opts);
 	git_config(git_index_pack_config, &opts);
@@ -1590,24 +1634,22 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 	if (fix_thin_pack && !from_stdin)
 		die(_("--fix-thin cannot be used without --stdin"));
 	if (!index_name && pack_name) {
-		int len = strlen(pack_name);
-		if (!has_extension(pack_name, ".pack"))
+		size_t len;
+		if (!strip_suffix(pack_name, ".pack", &len))
 			die(_("packfile name '%s' does not end with '.pack'"),
 			    pack_name);
-		index_name_buf = xmalloc(len);
-		memcpy(index_name_buf, pack_name, len - 5);
-		strcpy(index_name_buf + len - 5, ".idx");
-		index_name = index_name_buf;
+		strbuf_add(&index_name_buf, pack_name, len);
+		strbuf_addstr(&index_name_buf, ".idx");
+		index_name = index_name_buf.buf;
 	}
 	if (keep_msg && !keep_name && pack_name) {
-		int len = strlen(pack_name);
-		if (!has_extension(pack_name, ".pack"))
+		size_t len;
+		if (!strip_suffix(pack_name, ".pack", &len))
 			die(_("packfile name '%s' does not end with '.pack'"),
 			    pack_name);
-		keep_name_buf = xmalloc(len);
-		memcpy(keep_name_buf, pack_name, len - 5);
-		strcpy(keep_name_buf + len - 5, ".keep");
-		keep_name = keep_name_buf;
+		strbuf_add(&keep_name_buf, pack_name, len);
+		strbuf_addstr(&keep_name_buf, ".idx");
+		keep_name = keep_name_buf.buf;
 	}
 	if (verify) {
 		if (!index_name)
@@ -1655,8 +1697,8 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 	else
 		close(input_fd);
 	free(objects);
-	free(index_name_buf);
-	free(keep_name_buf);
+	strbuf_release(&index_name_buf);
+	strbuf_release(&keep_name_buf);
 	if (pack_name == NULL)
 		free((void *) curr_pack);
 	if (index_name == NULL)

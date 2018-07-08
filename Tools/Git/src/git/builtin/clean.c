@@ -67,7 +67,7 @@ struct menu_item {
 	char hotkey;
 	const char *title;
 	int selected;
-	int (*fn)();
+	int (*fn)(void);
 };
 
 enum menu_stuff_type {
@@ -100,6 +100,8 @@ static int parse_clean_color_slot(const char *var)
 
 static int git_clean_config(const char *var, const char *value, void *cb)
 {
+	const char *slot_name;
+
 	if (starts_with(var, "column."))
 		return git_column_config(var, value, "clean", &colopts);
 
@@ -109,15 +111,13 @@ static int git_clean_config(const char *var, const char *value, void *cb)
 		clean_use_color = git_config_colorbool(var, value);
 		return 0;
 	}
-	if (starts_with(var, "color.interactive.")) {
-		int slot = parse_clean_color_slot(var +
-						  strlen("color.interactive."));
+	if (skip_prefix(var, "color.interactive.", &slot_name)) {
+		int slot = parse_clean_color_slot(slot_name);
 		if (slot < 0)
 			return 0;
 		if (!value)
 			return config_error_nonbool(var);
-		color_parse(value, var, clean_colors[slot]);
-		return 0;
+		return color_parse(value, clean_colors[slot]);
 	}
 
 	if (!strcmp(var, "clean.requireforce")) {
@@ -154,7 +154,7 @@ static int remove_dirs(struct strbuf *path, const char *prefix, int force_flag,
 	DIR *dir;
 	struct strbuf quoted = STRBUF_INIT;
 	struct dirent *e;
-	int res = 0, ret = 0, gone = 1, original_len = path->len, len, i;
+	int res = 0, ret = 0, gone = 1, original_len = path->len, len;
 	unsigned char submodule_head[20];
 	struct string_list dels = STRING_LIST_INIT_DUP;
 
@@ -242,6 +242,7 @@ static int remove_dirs(struct strbuf *path, const char *prefix, int force_flag,
 	}
 
 	if (!*dir_gone && !quiet) {
+		int i;
 		for (i = 0; i < dels.nr; i++)
 			printf(dry_run ?  _(msg_would_remove) : _(msg_remove), dels.items[i].string);
 	}
@@ -320,7 +321,7 @@ static void print_highlight_menu_stuff(struct menu_stuff *stuff, int **chosen)
 
 	switch (stuff->type) {
 	default:
-		die("Bad type of menu_staff when print menu");
+		die("Bad type of menu_stuff when print menu");
 	case MENU_STUFF_TYPE_MENU_ITEM:
 		menu_item = (struct menu_item *)stuff->stuff;
 		for (i = 0; i < stuff->nr; i++, menu_item++) {
@@ -620,8 +621,7 @@ static int *list_and_choose(struct menu_opts *opts, struct menu_stuff *stuff)
 				nr += chosen[i];
 		}
 
-		result = xmalloc(sizeof(int) * (nr + 1));
-		memset(result, 0, sizeof(int) * (nr + 1));
+		result = xcalloc(nr + 1, sizeof(int));
 		for (i = 0; i < stuff->nr && j < nr; i++) {
 			if (chosen[i])
 				result[j++] = i;

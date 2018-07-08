@@ -47,13 +47,9 @@ sub find_worktree
 
 sub print_tool_help
 {
-	my $cmd = 'TOOL_MODE=diff';
-	$cmd .= ' && . "$(git --exec-path)/git-mergetool--lib"';
-	$cmd .= ' && show_tool_help';
-
 	# See the comment at the bottom of file_diff() for the reason behind
 	# using system() followed by exit() instead of exec().
-	my $rc = system('sh', '-c', $cmd);
+	my $rc = system(qw(git mergetool --tool-help=diff));
 	exit($rc | ($rc >> 8));
 }
 
@@ -346,6 +342,7 @@ sub main
 		symlinks => $^O ne 'cygwin' &&
 				$^O ne 'MSWin32' && $^O ne 'msys',
 		tool_help => undef,
+		trust_exit_code => undef,
 	);
 	GetOptions('g|gui!' => \$opts{gui},
 		'd|dir-diff' => \$opts{dirdiff},
@@ -356,6 +353,8 @@ sub main
 		'no-symlinks' => sub { $opts{symlinks} = 0; },
 		't|tool:s' => \$opts{difftool_cmd},
 		'tool-help' => \$opts{tool_help},
+		'trust-exit-code' => \$opts{trust_exit_code},
+		'no-trust-exit-code' => sub { $opts{trust_exit_code} = 0; },
 		'x|extcmd:s' => \$opts{extcmd});
 
 	if (defined($opts{help})) {
@@ -385,6 +384,15 @@ sub main
 		if (defined($guitool) && length($guitool) > 0) {
 			$ENV{GIT_DIFF_TOOL} = $guitool;
 		}
+	}
+
+	if (!defined $opts{trust_exit_code}) {
+		$opts{trust_exit_code} = Git::config_bool('difftool.trustExitCode');
+	}
+	if ($opts{trust_exit_code}) {
+		$ENV{GIT_DIFFTOOL_TRUST_EXIT_CODE} = 'true';
+	} else {
+		$ENV{GIT_DIFFTOOL_TRUST_EXIT_CODE} = 'false';
 	}
 
 	# In directory diff mode, 'git-difftool--helper' is called once

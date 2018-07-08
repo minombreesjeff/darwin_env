@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-format-patch
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-FORMAT\-PATCH" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-FORMAT\-PATCH" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -37,6 +37,7 @@ git-format-patch \- Prepare patches for e\-mail submission
                    [(\-\-attach|\-\-inline)[=<boundary>] | \-\-no\-attach]
                    [\-s | \-\-signoff]
                    [\-\-signature=<signature> | \-\-no\-signature]
+                   [\-\-signature\-file=<file>]
                    [\-n | \-\-numbered | \-N | \-\-no\-numbered]
                    [\-\-start\-number <n>] [\-\-numbered\-files]
                    [\-\-in\-reply\-to=Message\-Id] [\-\-suffix=\&.<sfx>]
@@ -329,7 +330,7 @@ option has the same effect\&.
 Omit the preimage for deletes, i\&.e\&. print only the header but not the diff between the preimage and
 /dev/null\&. The resulting patch is not meant to be applied with
 patch
-nor
+or
 git apply; this is solely for people who want to just concentrate on reviewing the text after the change\&. In addition, the output obviously lack enough information to apply such a patch in reverse, even manually, hence the name of the option\&.
 .sp
 When used together with
@@ -660,6 +661,11 @@ to use this workflow)\&.
 \-\-[no]\-signature=<signature>
 .RS 4
 Add a signature to each message produced\&. Per RFC 3676 the signature is separated from the body by a line with \(aq\-\- \(aq on it\&. If the signature option is omitted the signature defaults to the Git version number\&.
+.RE
+.PP
+\-\-signature\-file=<file>
+.RS 4
+Works just like \-\-signature except the signature is read from a file\&.
 .RE
 .PP
 \-\-suffix=\&.<sfx>

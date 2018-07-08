@@ -119,15 +119,18 @@ static void copy_templates(const char *template_dir)
 	DIR *dir;
 	const char *git_dir = get_git_dir();
 	int len = strlen(git_dir);
+	char *to_free = NULL;
 
 	if (!template_dir)
 		template_dir = getenv(TEMPLATE_DIR_ENVIRONMENT);
 	if (!template_dir)
 		template_dir = init_db_template_dir;
 	if (!template_dir)
-		template_dir = system_path(DEFAULT_GIT_TEMPLATE_DIR);
-	if (!template_dir[0])
+		template_dir = to_free = system_path(DEFAULT_GIT_TEMPLATE_DIR);
+	if (!template_dir[0]) {
+		free(to_free);
 		return;
+	}
 	template_len = strlen(template_dir);
 	if (PATH_MAX <= (template_len+strlen("/config")))
 		die(_("insanely long template path %s"), template_dir);
@@ -139,7 +142,7 @@ static void copy_templates(const char *template_dir)
 	dir = opendir(template_path);
 	if (!dir) {
 		warning(_("templates not found %s"), template_dir);
-		return;
+		goto free_return;
 	}
 
 	/* Make sure that template is from the correct vintage */
@@ -155,8 +158,7 @@ static void copy_templates(const char *template_dir)
 			"a wrong format version %d from '%s'"),
 			repository_format_version,
 			template_dir);
-		closedir(dir);
-		return;
+		goto close_free_return;
 	}
 
 	memcpy(path, git_dir, len);
@@ -166,7 +168,10 @@ static void copy_templates(const char *template_dir)
 	copy_templates_1(path, len,
 			 template_path, template_len,
 			 dir);
+close_free_return:
 	closedir(dir);
+free_return:
+	free(to_free);
 }
 
 static int git_init_db_config(const char *k, const char *v, void *cb)
@@ -254,7 +259,10 @@ static int create_default_files(const char *template_path)
 		struct stat st2;
 		filemode = (!chmod(path, st1.st_mode ^ S_IXUSR) &&
 				!lstat(path, &st2) &&
-				st1.st_mode != st2.st_mode);
+				st1.st_mode != st2.st_mode &&
+				!chmod(path, st1.st_mode));
+		if (filemode && !reinit && (st1.st_mode & S_IXUSR))
+			filemode = 0;
 	}
 	git_config_set("core.filemode", filemode ? "true" : "false");
 
@@ -330,12 +338,12 @@ int set_git_dir_init(const char *git_dir, const char *real_git_dir,
 		 * moving the target repo later on in separate_git_dir()
 		 */
 		git_link = xstrdup(real_path(git_dir));
+		set_git_dir(real_path(real_git_dir));
 	}
 	else {
-		real_git_dir = real_path(git_dir);
+		set_git_dir(real_path(git_dir));
 		git_link = NULL;
 	}
-	set_git_dir(real_path(real_git_dir));
 	return 0;
 }
 
@@ -412,11 +420,9 @@ int init_db(const char *template_dir, unsigned int flags)
 	if (!(flags & INIT_DB_QUIET)) {
 		int len = strlen(git_dir);
 
-		/*
-		 * TRANSLATORS: The first '%s' is either "Reinitialized
-		 * existing" or "Initialized empty", the second " shared" or
-		 * "", and the last '%s%s' is the verbatim directory name.
-		 */
+		/* TRANSLATORS: The first '%s' is either "Reinitialized
+		   existing" or "Initialized empty", the second " shared" or
+		   "", and the last '%s%s' is the verbatim directory name. */
 		printf(_("%s%s Git repository in %s%s\n"),
 		       reinit ? _("Reinitialized existing") : _("Initialized empty"),
 		       shared_repository ? _(" shared") : "",
@@ -428,8 +434,9 @@ int init_db(const char *template_dir, unsigned int flags)
 
 static int guess_repository_type(const char *git_dir)
 {
-	char cwd[PATH_MAX];
 	const char *slash;
+	char *cwd;
+	int cwd_is_git_dir;
 
 	/*
 	 * "GIT_DIR=. git init" is always bare.
@@ -437,9 +444,10 @@ static int guess_repository_type(const char *git_dir)
 	 */
 	if (!strcmp(".", git_dir))
 		return 1;
-	if (!getcwd(cwd, sizeof(cwd)))
-		die_errno(_("cannot tell cwd"));
-	if (!strcmp(git_dir, cwd))
+	cwd = xgetcwd();
+	cwd_is_git_dir = !strcmp(git_dir, cwd);
+	free(cwd);
+	if (cwd_is_git_dir)
 		return 1;
 	/*
 	 * "GIT_DIR=.git or GIT_DIR=something/.git is usually not.
@@ -537,10 +545,9 @@ int cmd_init_db(int argc, const char **argv, const char *prefix)
 		usage(init_db_usage[0]);
 	}
 	if (is_bare_repository_cfg == 1) {
-		static char git_dir[PATH_MAX+1];
-
-		setenv(GIT_DIR_ENVIRONMENT,
-			getcwd(git_dir, sizeof(git_dir)), argc > 0);
+		char *cwd = xgetcwd();
+		setenv(GIT_DIR_ENVIRONMENT, cwd, argc > 0);
+		free(cwd);
 	}
 
 	if (init_shared_repository != -1)
@@ -574,13 +581,10 @@ int cmd_init_db(int argc, const char **argv, const char *prefix)
 			git_work_tree_cfg = xstrdup(real_path(rel));
 			free(rel);
 		}
-		if (!git_work_tree_cfg) {
-			git_work_tree_cfg = xcalloc(PATH_MAX, 1);
-			if (!getcwd(git_work_tree_cfg, PATH_MAX))
-				die_errno (_("Cannot access current working directory"));
-		}
+		if (!git_work_tree_cfg)
+			git_work_tree_cfg = xgetcwd();
 		if (work_tree)
-			set_git_work_tree(real_path(work_tree));
+			set_git_work_tree(work_tree);
 		else
 			set_git_work_tree(git_work_tree_cfg);
 		if (access(get_git_work_tree(), X_OK))
@@ -589,7 +593,7 @@ int cmd_init_db(int argc, const char **argv, const char *prefix)
 	}
 	else {
 		if (work_tree)
-			set_git_work_tree(real_path(work_tree));
+			set_git_work_tree(work_tree);
 	}
 
 	set_git_dir_init(git_dir, real_git_dir, 1);

@@ -33,10 +33,7 @@ static void name_rev(struct commit *commit,
 		return;
 
 	if (deref) {
-		char *new_name = xmalloc(strlen(tip_name)+3);
-		strcpy(new_name, tip_name);
-		strcat(new_name, "^0");
-		tip_name = new_name;
+		tip_name = xstrfmt("%s^0", tip_name);
 
 		if (generation)
 			die("generation: %d, but deref?", generation);
@@ -87,7 +84,7 @@ static int subpath_matches(const char *path, const char *filter)
 	const char *subpath = path;
 
 	while (subpath) {
-		if (!fnmatch(filter, subpath, 0))
+		if (!wildmatch(filter, subpath, 0, NULL))
 			return subpath - path;
 		subpath = strchr(subpath, '/');
 		if (subpath)

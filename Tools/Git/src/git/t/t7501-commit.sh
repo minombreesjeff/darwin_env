@@ -61,9 +61,45 @@ test_expect_success 'nothing to commit' '
 	test_must_fail git commit -m initial
 '
 
+test_expect_success '--dry-run fails with nothing to commit' '
+	test_must_fail git commit -m initial --dry-run
+'
+
+test_expect_success '--short fails with nothing to commit' '
+	test_must_fail git commit -m initial --short
+'
+
+test_expect_success '--porcelain fails with nothing to commit' '
+	test_must_fail git commit -m initial --porcelain
+'
+
+test_expect_success '--long fails with nothing to commit' '
+	test_must_fail git commit -m initial --long
+'
+
 test_expect_success 'setup: non-initial commit' '
 	echo bongo bongo bongo >file &&
 	git commit -m next -a
+'
+
+test_expect_success '--dry-run with stuff to commit returns ok' '
+	echo bongo bongo bongo >>file &&
+	git commit -m next -a --dry-run
+'
+
+test_expect_failure '--short with stuff to commit returns ok' '
+	echo bongo bongo bongo >>file &&
+	git commit -m next -a --short
+'
+
+test_expect_failure '--porcelain with stuff to commit returns ok' '
+	echo bongo bongo bongo >>file &&
+	git commit -m next -a --porcelain
+'
+
+test_expect_success '--long with stuff to commit returns ok' '
+	echo bongo bongo bongo >>file &&
+	git commit -m next -a --long
 '
 
 test_expect_success 'commit message from non-existing file' '
@@ -310,8 +346,21 @@ test_expect_success 'amend commit to fix date' '
 
 '
 
-test_expect_success 'commit complains about bogus date' '
-	test_must_fail git commit --amend --date=10.11.2010
+test_expect_success 'commit mentions forced date in output' '
+	git commit --amend --date=2010-01-02T03:04:05 >output &&
+	grep "Date: *Sat Jan 2 03:04:05 2010" output
+'
+
+test_expect_success 'commit complains about completely bogus dates' '
+	test_must_fail git commit --amend --date=seventeen
+'
+
+test_expect_success 'commit --date allows approxidate' '
+	git commit --amend \
+		--date="midnight the 12th of october, anno domini 1979" &&
+	echo "Fri Oct 12 00:00:00 1979 +0000" >expect &&
+	git log -1 --format=%ad >actual &&
+	test_cmp expect actual
 '
 
 test_expect_success 'sign off (1)' '

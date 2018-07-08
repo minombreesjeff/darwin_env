@@ -2,6 +2,7 @@
 #include "credential.h"
 #include "unix-socket.h"
 #include "sigchain.h"
+#include "parse-options.h"
 
 static const char *socket_path;
 
@@ -109,14 +110,12 @@ static int read_request(FILE *fh, struct credential *c,
 	const char *p;
 
 	strbuf_getline(&item, fh, '\n');
-	p = skip_prefix(item.buf, "action=");
-	if (!p)
+	if (!skip_prefix(item.buf, "action=", &p))
 		return error("client sent bogus action line: %s", item.buf);
 	strbuf_addstr(action, p);
 
 	strbuf_getline(&item, fh, '\n');
-	p = skip_prefix(item.buf, "timeout=");
-	if (!p)
+	if (!skip_prefix(item.buf, "timeout=", &p))
 		return error("client sent bogus timeout line: %s", item.buf);
 	*timeout = atoi(p);
 
@@ -203,7 +202,7 @@ static int serve_cache_loop(int fd)
 	return 1;
 }
 
-static void serve_cache(const char *socket_path)
+static void serve_cache(const char *socket_path, int debug)
 {
 	int fd;
 
@@ -213,6 +212,10 @@ static void serve_cache(const char *socket_path)
 
 	printf("ok\n");
 	fclose(stdout);
+	if (!debug) {
+		if (!freopen("/dev/null", "w", stderr))
+			die_errno("unable to point stderr to /dev/null");
+	}
 
 	while (serve_cache_loop(fd))
 		; /* nothing */
@@ -254,16 +257,28 @@ static void check_socket_directory(const char *path)
 
 int main(int argc, const char **argv)
 {
-	socket_path = argv[1];
+	static const char *usage[] = {
+		"git-credential-cache--daemon [opts] <socket_path>",
+		NULL
+	};
+	int debug = 0;
+	const struct option options[] = {
+		OPT_BOOL(0, "debug", &debug,
+			 N_("print debugging messages to stderr")),
+		OPT_END()
+	};
+
+	argc = parse_options(argc, argv, NULL, options, usage, 0);
+	socket_path = argv[0];
 
 	if (!socket_path)
-		die("usage: git-credential-cache--daemon <socket_path>");
+		usage_with_options(usage, options);
 	check_socket_directory(socket_path);
 
 	atexit(cleanup_socket);
 	sigchain_push_common(cleanup_socket_on_signal);
 
-	serve_cache(socket_path);
+	serve_cache(socket_path, debug);
 
 	return 0;
 }

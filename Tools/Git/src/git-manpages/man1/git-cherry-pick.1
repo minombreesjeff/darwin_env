@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-cherry-pick
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-CHERRY\-PICK" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-CHERRY\-PICK" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -32,7 +32,8 @@ git-cherry-pick \- Apply the changes introduced by some existing commits
 .SH "SYNOPSIS"
 .sp
 .nf
-\fIgit cherry\-pick\fR [\-\-edit] [\-n] [\-m parent\-number] [\-s] [\-x] [\-\-ff] <commit>\&...
+\fIgit cherry\-pick\fR [\-\-edit] [\-n] [\-m parent\-number] [\-s] [\-x] [\-\-ff]
+                  [\-S[<key\-id>]] <commit>\&...
 \fIgit cherry\-pick\fR \-\-continue
 \fIgit cherry\-pick\fR \-\-quit
 \fIgit cherry\-pick\fR \-\-abort
@@ -158,6 +159,11 @@ This is useful when cherry\-picking more than one commits\(aq effect to your ind
 \-s, \-\-signoff
 .RS 4
 Add Signed\-off\-by line at the end of the commit message\&.
+.RE
+.PP
+\-S[<key\-id>], \-\-gpg\-sign[=<key\-id>]
+.RS 4
+GPG\-sign commits\&.
 .RE
 .PP
 \-\-ff

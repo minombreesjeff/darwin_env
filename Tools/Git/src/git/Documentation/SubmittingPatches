@@ -57,7 +57,8 @@ change, the approach taken by the change, and if relevant how this
 differs substantially from the prior version, are all good things
 to have.
 
-Make sure that you have tests for the bug you are fixing.
+Make sure that you have tests for the bug you are fixing.  See
+t/README for guidance.
 
 When adding a new feature, make sure that you have new tests to show
 the feature triggers the new behaviour when it should, and to show the
@@ -175,8 +176,11 @@ message starts, you can put a "From: " line to name that person.
 
 You often want to add additional explanation about the patch,
 other than the commit message itself.  Place such "cover letter"
-material between the three dash lines and the diffstat. Git-notes
-can also be inserted using the `--notes` option.
+material between the three-dash line and the diffstat.  For
+patches requiring multiple iterations of review and discussion,
+an explanation of changes between each iteration can be kept in
+Git-notes and inserted automatically following the three-dash
+line via `git format-patch --notes`.
 
 Do not attach the patch as a MIME attachment, compressed or not.
 Do not let your e-mail client send quoted-printable.  Do not let
@@ -254,15 +258,15 @@ pretty simple: if you can certify the below:
             person who certified (a), (b) or (c) and I have not modified
             it.
 
-	(d) I understand and agree that this project and the contribution
-	    are public and that a record of the contribution (including all
-	    personal information I submit with it, including my sign-off) is
-	    maintained indefinitely and may be redistributed consistent with
-	    this project or the open source license(s) involved.
+        (d) I understand and agree that this project and the contribution
+            are public and that a record of the contribution (including all
+            personal information I submit with it, including my sign-off) is
+            maintained indefinitely and may be redistributed consistent with
+            this project or the open source license(s) involved.
 
 then you just add a line saying
 
-	Signed-off-by: Random J Developer <random@developer.example.org>
+        Signed-off-by: Random J Developer <random@developer.example.org>
 
 This line can be automatically added by Git if you run the git-commit
 command with the -s option.
@@ -337,7 +341,7 @@ suggests to the contributors:
      spend their time to improve your patch.  Go back to step (2).
 
  (4) The list forms consensus that the last round of your patch is
-     good.  Send it to the list and cc the maintainer.
+     good.  Send it to the maintainer and cc the list.
 
  (5) A topic branch is created with the patch and is merged to 'next',
      and cooked further and eventually graduates to 'master'.

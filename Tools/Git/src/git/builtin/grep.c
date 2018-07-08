@@ -361,9 +361,7 @@ static void run_pager(struct grep_opt *opt, const char *prefix)
 		argv[i] = path_list->items[i].string;
 	argv[path_list->nr] = NULL;
 
-	if (prefix && chdir(prefix))
-		die(_("Failed to chdir: %s"), prefix);
-	status = run_command_v_opt(argv, RUN_USING_SHELL);
+	status = run_command_v_opt_cd_env(argv, RUN_USING_SHELL, prefix, NULL);
 	if (status)
 		exit(status);
 	free(argv);
@@ -458,10 +456,10 @@ static int grep_tree(struct grep_opt *opt, const struct pathspec *pathspec,
 }
 
 static int grep_object(struct grep_opt *opt, const struct pathspec *pathspec,
-		       struct object *obj, const char *name, struct object_context *oc)
+		       struct object *obj, const char *name, const char *path)
 {
 	if (obj->type == OBJ_BLOB)
-		return grep_sha1(opt, obj->sha1, name, 0, oc ? oc->path : NULL);
+		return grep_sha1(opt, obj->sha1, name, 0, path);
 	if (obj->type == OBJ_COMMIT || obj->type == OBJ_TREE) {
 		struct tree_desc tree;
 		void *data;
@@ -503,7 +501,7 @@ static int grep_objects(struct grep_opt *opt, const struct pathspec *pathspec,
 	for (i = 0; i < nr; i++) {
 		struct object *real_obj;
 		real_obj = deref_tag(list->objects[i].item, NULL, 0);
-		if (grep_object(opt, pathspec, real_obj, list->objects[i].name, list->objects[i].context)) {
+		if (grep_object(opt, pathspec, real_obj, list->objects[i].name, list->objects[i].path)) {
 			hit = 1;
 			if (opt->status_only)
 				break;
@@ -823,7 +821,7 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 			struct object *object = parse_object_or_die(sha1, arg);
 			if (!seen_dashdash)
 				verify_non_filename(prefix, arg);
-			add_object_array_with_context(object, arg, &list, xmemdupz(&oc, sizeof(struct object_context)));
+			add_object_array_with_path(object, arg, &list, oc.mode, oc.path);
 			continue;
 		}
 		if (!strcmp(arg, "--")) {
@@ -873,6 +871,9 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 
 		if (len > 4 && is_dir_sep(pager[len - 5]))
 			pager += len - 4;
+
+		if (opt.ignore_case && !strcmp("less", pager))
+			string_list_append(&path_list, "-I");
 
 		if (!strcmp("less", pager) || !strcmp("vi", pager)) {
 			struct strbuf buf = STRBUF_INIT;

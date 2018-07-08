@@ -8,15 +8,15 @@ struct strbuf;
 /*
  * The maximum length of ANSI color sequence we would generate:
  * - leading ESC '['            2
- * - attr + ';'                 2 * 8 (e.g. "1;")
- * - fg color + ';'             9 (e.g. "38;5;2xx;")
- * - fg color + ';'             9 (e.g. "48;5;2xx;")
+ * - attr + ';'                 3 * 10 (e.g. "1;")
+ * - fg color + ';'             17 (e.g. "38;2;255;255;255;")
+ * - bg color + ';'             17 (e.g. "48;2;255;255;255;")
  * - terminating 'm' NUL        2
  *
  * The above overcounts attr (we only use 5 not 8) and one semicolon
  * but it is close enough.
  */
-#define COLOR_MAXLEN 40
+#define COLOR_MAXLEN 70
 
 /*
  * IMPORTANT: Due to the way these color codes are emulated on Windows,
@@ -77,8 +77,8 @@ int git_color_default_config(const char *var, const char *value, void *cb);
 
 int git_config_colorbool(const char *var, const char *value);
 int want_color(int var);
-void color_parse(const char *value, const char *var, char *dst);
-void color_parse_mem(const char *value, int len, const char *var, char *dst);
+int color_parse(const char *value, char *dst);
+int color_parse_mem(const char *value, int len, char *dst);
 __attribute__((format (printf, 3, 4)))
 int color_fprintf(FILE *fp, const char *color, const char *fmt, ...);
 __attribute__((format (printf, 3, 4)))

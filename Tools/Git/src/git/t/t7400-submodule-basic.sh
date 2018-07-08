@@ -171,6 +171,23 @@ test_expect_success 'submodule add with ./ in path' '
 	test_cmp empty untracked
 '
 
+test_expect_success 'submodule add with /././ in path' '
+	echo "refs/heads/master" >expect &&
+	>empty &&
+
+	(
+		cd addtest &&
+		git submodule add "$submodurl" dotslashdotsubmod/././frotz/./ &&
+		git submodule init
+	) &&
+
+	rm -f heads head untracked &&
+	inspect addtest/dotslashdotsubmod/frotz ../../.. &&
+	test_cmp expect heads &&
+	test_cmp expect head &&
+	test_cmp empty untracked
+'
+
 test_expect_success 'submodule add with // in path' '
 	echo "refs/heads/master" >expect &&
 	>empty &&
@@ -249,8 +266,7 @@ test_expect_success 'submodule add in subdirectory with relative path should fai
 '
 
 test_expect_success 'setup - add an example entry to .gitmodules' '
-	GIT_CONFIG=.gitmodules \
-	git config submodule.example.url git://example.com/init.git
+	git config --file=.gitmodules submodule.example.url git://example.com/init.git
 '
 
 test_expect_success 'status should fail for unmapped paths' '
@@ -264,7 +280,7 @@ test_expect_success 'setup - map path in .gitmodules' '
 	path = init
 EOF
 
-	GIT_CONFIG=.gitmodules git config submodule.example.path init &&
+	git config --file=.gitmodules submodule.example.path init &&
 
 	test_cmp expect .gitmodules
 '

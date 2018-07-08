@@ -3,7 +3,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
 <head>
 <meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8" />
-<meta name="generator" content="AsciiDoc 8.6.6" />
+<meta name="generator" content="AsciiDoc 8.6.9" />
 <title>git-init(1)</title>
 <style type="text/css">
 /* Shared CSS for AsciiDoc xhtml11 and html5 backends */
@@ -87,9 +87,15 @@ ul, ol, li > p {
 ul > li     { color: #aaa; }
 ul > li > * { color: black; }
 
-pre {
+.monospaced, code, pre {
+  font-family: "Courier New", Courier, monospace;
+  font-size: inherit;
+  color: navy;
   padding: 0;
   margin: 0;
+}
+pre {
+  white-space: pre-wrap;
 }
 
 #author {
@@ -219,7 +225,7 @@ div.exampleblock > div.content {
 }
 
 div.imageblock div.content { padding-left: 0; }
-span.image img { border-style: none; }
+span.image img { border-style: none; vertical-align: text-bottom; }
 a.image:visited { color: white; }
 
 dl {
@@ -349,7 +355,7 @@ div.colist td img {
   margin-bottom: 0.1em;
 }
 
-div.toclevel1, div.toclevel2, div.toclevel3, div.toclevel4 {
+div.toclevel0, div.toclevel1, div.toclevel2, div.toclevel3, div.toclevel4 {
   margin-top: 0;
   margin-bottom: 0;
 }
@@ -407,17 +413,13 @@ span.underline { text-decoration: underline; }
 span.overline { text-decoration: overline; }
 span.line-through { text-decoration: line-through; }
 
+div.unbreakable { page-break-inside: avoid; }
+
 
 /*
  * xhtml11 specific
  *
  * */
-
-tt {
-  font-family: monospace;
-  font-size: inherit;
-  color: navy;
-}
 
 div.tableblock {
   margin-top: 1.0em;
@@ -451,12 +453,6 @@ div.tableblock > table[frame="vsides"] {
  * html5 specific
  *
  * */
-
-.monospaced {
-  font-family: monospace;
-  font-size: inherit;
-  color: navy;
-}
 
 table.tableblock {
   margin-top: 1.0em;
@@ -537,6 +533,8 @@ body.manpage div.sectionbody {
 @media print {
   body.manpage div#toc { display: none; }
 }
+
+
 </style>
 <script type="text/javascript">
 /*<![CDATA[*/
@@ -581,7 +579,7 @@ toc: function (toclevels) {
 
   function tocEntries(el, toclevels) {
     var result = new Array;
-    var re = new RegExp('[hH]([2-'+(toclevels+1)+'])');
+    var re = new RegExp('[hH]([1-'+(toclevels+1)+'])');
     // Function that scans the DOM tree for header elements (the DOM2
     // nodeIterator API would be a better technique but not supported by all
     // browsers).
@@ -610,7 +608,7 @@ toc: function (toclevels) {
   var i;
   for (i = 0; i < toc.childNodes.length; i++) {
     var entry = toc.childNodes[i];
-    if (entry.nodeName == 'div'
+    if (entry.nodeName.toLowerCase() == 'div'
      && entry.getAttribute("class")
      && entry.getAttribute("class").match(/^toclevel/))
       tocEntriesToRemove.push(entry);
@@ -656,7 +654,7 @@ footnotes: function () {
   var entriesToRemove = [];
   for (i = 0; i < noteholder.childNodes.length; i++) {
     var entry = noteholder.childNodes[i];
-    if (entry.nodeName == 'div' && entry.getAttribute("class") == "footnote")
+    if (entry.nodeName.toLowerCase() == 'div' && entry.getAttribute("class") == "footnote")
       entriesToRemove.push(entry);
   }
   for (i = 0; i < entriesToRemove.length; i++) {
@@ -760,15 +758,15 @@ git-init(1) Manual Page
 <div class="sect1">
 <h2 id="_description">DESCRIPTION</h2>
 <div class="sectionbody">
-<div class="paragraph"><p>This command creates an empty Git repository - basically a <tt>.git</tt>
-directory with subdirectories for <tt>objects</tt>, <tt>refs/heads</tt>,
-<tt>refs/tags</tt>, and template files.  An initial <tt>HEAD</tt> file that
+<div class="paragraph"><p>This command creates an empty Git repository - basically a <code>.git</code>
+directory with subdirectories for <code>objects</code>, <code>refs/heads</code>,
+<code>refs/tags</code>, and template files.  An initial <code>HEAD</code> file that
 references the HEAD of the master branch is also created.</p></div>
-<div class="paragraph"><p>If the <tt>$GIT_DIR</tt> environment variable is set then it specifies a path
-to use instead of <tt>./.git</tt> for the base of the repository.</p></div>
+<div class="paragraph"><p>If the <code>$GIT_DIR</code> environment variable is set then it specifies a path
+to use instead of <code>./.git</code> for the base of the repository.</p></div>
 <div class="paragraph"><p>If the object storage directory is specified via the
-<tt>$GIT_OBJECT_DIRECTORY</tt> environment variable then the sha1 directories
-are created underneath - otherwise the default <tt>$GIT_DIR/objects</tt>
+<code>$GIT_OBJECT_DIRECTORY</code> environment variable then the sha1 directories
+are created underneath - otherwise the default <code>$GIT_DIR/objects</code>
 directory is used.</p></div>
 <div class="paragraph"><p>Running <em>git init</em> in an existing repository is safe. It will not
 overwrite things that are already there. The primary reason for
@@ -790,7 +788,7 @@ the repository to another place if --separate-git-dir is given).</p></div>
 </dt>
 <dd>
 <p>
-Only print error and warning messages, all other output will be suppressed.
+Only print error and warning messages; all other output will be suppressed.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -816,13 +814,12 @@ DIRECTORY" section below.)
 </dt>
 <dd>
 <p>
-Instead of initializing the repository where it is supposed to be,
-place a filesytem-agnostic Git symbolic link there, pointing to the
-specified path, and initialize a Git repository at the path. The
-result is Git repository can be separated from working tree. If this
-is reinitialization, the repository will be moved to the specified
-path.
+Instead of initializing the repository as a directory to either <code>$GIT_DIR</code> or
+<code>./.git/</code>, create a text file there containing the path to the actual
+repository.  This file acts as filesystem-agnostic Git symbolic link to the
+repository.
 </p>
+<div class="paragraph"><p>If this is reinitialization, the repository will be moved to the specified path.</p></div>
 </dd>
 <dt class="hdlist1">
 --shared[=(false|true|umask|group|all|world|everybody|0xxx)]
@@ -832,54 +829,66 @@ path.
 Specify that the Git repository is to be shared amongst several users.  This
 allows users belonging to the same group to push into that
 repository.  When specified, the config variable "core.sharedRepository" is
-set so that files and directories under <tt>$GIT_DIR</tt> are created with the
+set so that files and directories under <code>$GIT_DIR</code> are created with the
 requested permissions.  When not specified, Git will use permissions reported
 by umask(2).
 </p>
-</dd>
-</dl></div>
 <div class="paragraph"><p>The option can have the following values, defaulting to <em>group</em> if no value
 is given:</p></div>
-<div class="ulist"><ul>
-<li>
+<div class="openblock">
+<div class="content">
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<em>umask</em> (or <em>false</em>)
+</dt>
+<dd>
 <p>
-<em>umask</em> (or <em>false</em>): Use permissions reported by umask(2). The default,
-   when <tt>--shared</tt> is not specified.
+Use permissions reported by umask(2). The default, when <code>--shared</code> is not
+specified.
 </p>
-</li>
-<li>
+</dd>
+<dt class="hdlist1">
+<em>group</em> (or <em>true</em>)
+</dt>
+<dd>
 <p>
-<em>group</em> (or <em>true</em>): Make the repository group-writable, (and g+sx, since
-   the git group may be not the primary group of all users).
-   This is used to loosen the permissions of an otherwise safe umask(2) value.
-   Note that the umask still applies to the other permission bits (e.g. if
-   umask is <em>0022</em>, using <em>group</em> will not remove read privileges from other
-   (non-group) users). See <em>0xxx</em> for how to exactly specify the repository
-   permissions.
+Make the repository group-writable, (and g+sx, since the git group may be not
+the primary group of all users). This is used to loosen the permissions of an
+otherwise safe umask(2) value. Note that the umask still applies to the other
+permission bits (e.g. if umask is <em>0022</em>, using <em>group</em> will not remove read
+privileges from other (non-group) users). See <em>0xxx</em> for how to exactly specify
+the repository permissions.
 </p>
-</li>
-<li>
+</dd>
+<dt class="hdlist1">
+<em>all</em> (or <em>world</em> or <em>everybody</em>)
+</dt>
+<dd>
 <p>
-<em>all</em> (or <em>world</em> or <em>everybody</em>): Same as <em>group</em>, but make the repository
-   readable by all users.
+Same as <em>group</em>, but make the repository readable by all users.
 </p>
-</li>
-<li>
+</dd>
+<dt class="hdlist1">
+<em>0xxx</em>
+</dt>
+<dd>
 <p>
-<em>0xxx</em>: <em>0xxx</em> is an octal number and each file will have mode <em>0xxx</em>.
-   <em>0xxx</em> will override users' umask(2) value (and not only loosen permissions
-   as <em>group</em> and <em>all</em> does). <em>0640</em> will create a repository which is
-   group-readable, but not group-writable or accessible to others. <em>0660</em> will
-   create a repo that is readable and writable to the current user and group,
-   but inaccessible to others.
+<em>0xxx</em> is an octal number and each file will have mode <em>0xxx</em>. <em>0xxx</em> will
+override users' umask(2) value (and not only loosen permissions as <em>group</em> and
+<em>all</em> does). <em>0640</em> will create a repository which is group-readable, but not
+group-writable or accessible to others. <em>0660</em> will create a repo that is
+readable and writable to the current user and group, but inaccessible to others.
 </p>
-</li>
-</ul></div>
-<div class="paragraph"><p>By default, the configuration flag receive.denyNonFastForwards is enabled
+</dd>
+</dl></div>
+</div></div>
+</dd>
+</dl></div>
+<div class="paragraph"><p>By default, the configuration flag <code>receive.denyNonFastForwards</code> is enabled
 in shared repositories, so that you cannot force a non fast-forwarding push
 into it.</p></div>
-<div class="paragraph"><p>If you name a (possibly non-existent) directory at the end of the command
-line, the command is run inside the directory (possibly after creating it).</p></div>
+<div class="paragraph"><p>If you provide a <em>directory</em>, the command is run inside it. If this directory
+does not exist, it will be created.</p></div>
 </div></div>
 </div>
 </div>
@@ -887,33 +896,32 @@ line, the command is run inside the directory (possibly after creating it).</p><
 <h2 id="_template_directory">TEMPLATE DIRECTORY</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>The template directory contains files and directories that will be copied to
-the <tt>$GIT_DIR</tt> after it is created.</p></div>
-<div class="paragraph"><p>The template directory used will (in order):</p></div>
+the <code>$GIT_DIR</code> after it is created.</p></div>
+<div class="paragraph"><p>The template directory will be one of the following (in order):</p></div>
 <div class="ulist"><ul>
 <li>
 <p>
-The argument given with the <tt>--template</tt> option.
+the argument given with the <code>--template</code> option;
 </p>
 </li>
 <li>
 <p>
-The contents of the <tt>$GIT_TEMPLATE_DIR</tt> environment variable.
+the contents of the <code>$GIT_TEMPLATE_DIR</code> environment variable;
 </p>
 </li>
 <li>
 <p>
-The <tt>init.templatedir</tt> configuration variable.
+the <code>init.templatedir</code> configuration variable; or
 </p>
 </li>
 <li>
 <p>
-The default template directory: <tt>/usr/share/git-core/templates</tt>.
+the default template directory: <code>/usr/share/git-core/templates</code>.
 </p>
 </li>
 </ul></div>
-<div class="paragraph"><p>The default template directory includes some directory structure, some
-suggested "exclude patterns", and copies of sample "hook" files.
-The suggested patterns and hook files are all modifiable and extensible.</p></div>
+<div class="paragraph"><p>The default template directory includes some directory structure, suggested
+"exclude patterns" (see <a href="gitignore.html">gitignore(5)</a>), and sample hook files (see <a href="githooks.html">githooks(5)</a>).</p></div>
 </div>
 </div>
 <div class="sect1">
@@ -926,19 +934,25 @@ Start a new Git repository for an existing code base
 <dd>
 <div class="listingblock">
 <div class="content">
-<pre><tt>$ cd /path/to/my/codebase
+<pre><code>$ cd /path/to/my/codebase
 $ git init      <b>&lt;1&gt;</b>
-$ git add .     <b>&lt;2&gt;</b></tt></pre>
+$ git add .     <b>&lt;2&gt;</b>
+$ git commit    <b>&lt;3&gt;</b></code></pre>
 </div></div>
 <div class="colist arabic"><ol>
 <li>
 <p>
-prepare /path/to/my/codebase/.git directory
+Create a /path/to/my/codebase/.git directory.
 </p>
 </li>
 <li>
 <p>
-add all existing file to the index
+Add all existing files to the index.
+</p>
+</li>
+<li>
+<p>
+Record the pristine state as the first commit in the history.
 </p>
 </li>
 </ol></div>
@@ -956,7 +970,7 @@ add all existing file to the index
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-08-20 08:40:27 PDT
+Last updated 2014-09-09 14:15:21 PDT
 </div>
 </div>
 </body>

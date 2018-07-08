@@ -84,6 +84,11 @@
 # GIT_PS1_SHOWCOLORHINTS to a nonempty value. The colors are based on
 # the colored output of "git status -sb" and are available only when
 # using __git_ps1 for PROMPT_COMMAND or precmd.
+#
+# If you would like __git_ps1 to do nothing in the case when the current
+# directory is set up to be ignored by git, then set
+# GIT_PS1_HIDE_IF_PWD_IGNORED to a nonempty value. Override this on the
+# repository level by setting bash.hideIfPwdIgnored to "false".
 
 # check whether printf supports -v
 __git_printf_supports_v=
@@ -268,6 +273,13 @@ __git_ps1_colorize_gitstring ()
 	r="$c_clear$r"
 }
 
+__git_eread ()
+{
+	local f="$1"
+	shift
+	test -r "$f" && read "$@" <"$f"
+}
+
 # __git_ps1 accepts 0 or 1 arguments (i.e., format string)
 # when called from PS1 using command substitution
 # in this mode it prints text to add to bash PS1 prompt (includes branch name)
@@ -281,6 +293,8 @@ __git_ps1_colorize_gitstring ()
 # In this mode you can request colored hints using GIT_PS1_SHOWCOLORHINTS=true
 __git_ps1 ()
 {
+	# preserve exit status
+	local exit=$?
 	local pcmode=no
 	local detached=no
 	local ps1pc_start='\u@\h:\w '
@@ -292,10 +306,14 @@ __git_ps1 ()
 			ps1pc_start="$1"
 			ps1pc_end="$2"
 			printf_format="${3:-$printf_format}"
+			# set PS1 to a plain prompt so that we can
+			# simply return early if the prompt should not
+			# be decorated
+			PS1="$ps1pc_start$ps1pc_end"
 		;;
 		0|1)	printf_format="${1:-$printf_format}"
 		;;
-		*)	return
+		*)	return $exit
 		;;
 	esac
 
@@ -343,11 +361,7 @@ __git_ps1 ()
 	rev_parse_exit_code="$?"
 
 	if [ -z "$repo_info" ]; then
-		if [ $pcmode = yes ]; then
-			#In PC mode PS1 always needs to be set
-			PS1="$ps1pc_start$ps1pc_end"
-		fi
-		return
+		return $exit
 	fi
 
 	local short_sha
@@ -362,14 +376,22 @@ __git_ps1 ()
 	local inside_gitdir="${repo_info##*$'\n'}"
 	local g="${repo_info%$'\n'*}"
 
+	if [ "true" = "$inside_worktree" ] &&
+	   [ -n "${GIT_PS1_HIDE_IF_PWD_IGNORED-}" ] &&
+	   [ "$(git config --bool bash.hideIfPwdIgnored)" != "false" ] &&
+	   git check-ignore -q .
+	then
+		return $exit
+	fi
+
 	local r=""
 	local b=""
 	local step=""
 	local total=""
 	if [ -d "$g/rebase-merge" ]; then
-		read b 2>/dev/null <"$g/rebase-merge/head-name"
-		read step 2>/dev/null <"$g/rebase-merge/msgnum"
-		read total 2>/dev/null <"$g/rebase-merge/end"
+		__git_eread "$g/rebase-merge/head-name" b
+		__git_eread "$g/rebase-merge/msgnum" step
+		__git_eread "$g/rebase-merge/end" total
 		if [ -f "$g/rebase-merge/interactive" ]; then
 			r="|REBASE-i"
 		else
@@ -377,10 +399,10 @@ __git_ps1 ()
 		fi
 	else
 		if [ -d "$g/rebase-apply" ]; then
-			read step 2>/dev/null <"$g/rebase-apply/next"
-			read total 2>/dev/null <"$g/rebase-apply/last"
+			__git_eread "$g/rebase-apply/next" step
+			__git_eread "$g/rebase-apply/last" total
 			if [ -f "$g/rebase-apply/rebasing" ]; then
-				read b 2>/dev/null <"$g/rebase-apply/head-name"
+				__git_eread "$g/rebase-apply/head-name" b
 				r="|REBASE"
 			elif [ -f "$g/rebase-apply/applying" ]; then
 				r="|AM"
@@ -404,11 +426,8 @@ __git_ps1 ()
 			b="$(git symbolic-ref HEAD 2>/dev/null)"
 		else
 			local head=""
-			if ! read head 2>/dev/null <"$g/HEAD"; then
-				if [ $pcmode = yes ]; then
-					PS1="$ps1pc_start$ps1pc_end"
-				fi
-				return
+			if ! __git_eread "$g/HEAD" head; then
+				return $exit
 			fi
 			# is it a symbolic ref?
 			b="${head#ref: }"
@@ -461,7 +480,8 @@ __git_ps1 ()
 			fi
 		fi
 		if [ -n "${GIT_PS1_SHOWSTASHSTATE-}" ] &&
-		   [ -r "$g/refs/stash" ]; then
+		   git rev-parse --verify --quiet refs/stash >/dev/null
+		then
 			s="$"
 		fi
 
@@ -503,4 +523,6 @@ __git_ps1 ()
 	else
 		printf -- "$printf_format" "$gitstring"
 	fi
+
+	return $exit
 }

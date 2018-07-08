@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-pack-objects
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-PACK\-OBJECTS" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-PACK\-OBJECTS" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -36,7 +36,7 @@ git-pack-objects \- Create a packed archive of objects
         [\-\-no\-reuse\-delta] [\-\-delta\-base\-offset] [\-\-non\-empty]
         [\-\-local] [\-\-incremental] [\-\-window=<n>] [\-\-depth=<n>]
         [\-\-revs [\-\-unpacked | \-\-all]] [\-\-stdout | base\-name]
-        [\-\-keep\-true\-parents] < object\-list
+        [\-\-shallow] [\-\-keep\-true\-parents] < object\-list
 .fi
 .sp
 .SH "DESCRIPTION"
@@ -70,7 +70,11 @@ with the
 \-\-objects
 flag uses its
 commit
-arguments to build the list of objects it outputs\&. The objects on the resulting list are packed\&.
+arguments to build the list of objects it outputs\&. The objects on the resulting list are packed\&. Besides revisions,
+\-\-not
+or
+\-\-shallow <SHA\-1>
+lines are also accepted\&.
 .RE
 .PP
 \-\-unpacked
@@ -177,6 +181,11 @@ Note: A thin pack violates the packed archive format by omitting required object
 git index\-pack \-\-fix\-thin
 (see
 \fBgit-index-pack\fR(1)) to restore the self\-contained property\&.
+.RE
+.PP
+\-\-shallow
+.RS 4
+Optimize a pack that will be provided to a client with a shallow repository\&. This option, combined with \-\-thin, can result in a smaller pack at the cost of speed\&.
 .RE
 .PP
 \-\-delta\-base\-offset

@@ -49,7 +49,7 @@ do
 	shift
 done
 
-case "`git config --bool repack.usedeltabaseoffset || echo true`" in
+case "$(git config --bool repack.usedeltabaseoffset || echo true)" in
 true)
 	extra="$extra --delta-base-offset" ;;
 esac
@@ -76,8 +76,8 @@ case ",$all_into_one," in
 				existing="$existing $e"
 			fi
 		done
-		if test -n "$existing" -a -n "$unpack_unreachable" -a \
-			-n "$remove_redundant"
+		if test -n "$existing" && test -n "$unpack_unreachable" && \
+			test -n "$remove_redundant"
 		then
 			# This may have arbitrary user arguments, so we
 			# have to protect it against whitespace splitting

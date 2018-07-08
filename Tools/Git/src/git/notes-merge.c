@@ -549,7 +549,7 @@ int notes_merge(struct notes_merge_options *o,
 	       o->local_ref, o->remote_ref);
 
 	/* Dereference o->local_ref into local_sha1 */
-	if (read_ref_full(o->local_ref, local_sha1, 0, NULL))
+	if (read_ref_full(o->local_ref, 0, local_sha1, NULL))
 		die("Failed to resolve local notes ref '%s'", o->local_ref);
 	else if (!check_refname_format(o->local_ref, 0) &&
 		is_null_sha1(local_sha1))
@@ -594,7 +594,7 @@ int notes_merge(struct notes_merge_options *o,
 	assert(local && remote);
 
 	/* Find merge bases */
-	bases = get_merge_bases(local, remote, 1);
+	bases = get_merge_bases(local, remote);
 	if (!bases) {
 		base_sha1 = null_sha1;
 		base_tree_sha1 = EMPTY_TREE_SHA1_BIN;
@@ -644,7 +644,8 @@ int notes_merge(struct notes_merge_options *o,
 		struct commit_list *parents = NULL;
 		commit_list_insert(remote, &parents); /* LIFO order */
 		commit_list_insert(local, &parents);
-		create_notes_commit(local_tree, parents, &o->commit_msg,
+		create_notes_commit(local_tree, parents,
+				    o->commit_msg.buf, o->commit_msg.len,
 				    result_sha1);
 	}
 
@@ -671,8 +672,8 @@ int notes_merge_commit(struct notes_merge_options *o,
 	DIR *dir;
 	struct dirent *e;
 	struct strbuf path = STRBUF_INIT;
-	char *msg = strstr(partial_commit->buffer, "\n\n");
-	struct strbuf sb_msg = STRBUF_INIT;
+	const char *buffer = get_commit_buffer(partial_commit, NULL);
+	const char *msg = strstr(buffer, "\n\n");
 	int baselen;
 
 	strbuf_addstr(&path, git_path(NOTES_MERGE_WORKTREE));
@@ -719,9 +720,9 @@ int notes_merge_commit(struct notes_merge_options *o,
 		strbuf_setlen(&path, baselen);
 	}
 
-	strbuf_attach(&sb_msg, msg, strlen(msg), strlen(msg) + 1);
-	create_notes_commit(partial_tree, partial_commit->parents, &sb_msg,
-			    result_sha1);
+	create_notes_commit(partial_tree, partial_commit->parents,
+			    msg, strlen(msg), result_sha1);
+	unuse_commit_buffer(partial_commit, buffer);
 	if (o->verbosity >= 4)
 		printf("Finalized notes merge commit: %s\n",
 			sha1_to_hex(result_sha1));

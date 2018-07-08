@@ -14,7 +14,7 @@
 static const char *argv_exec_path;
 static const char *argv0_path;
 
-const char *system_path(const char *path)
+char *system_path(const char *path)
 {
 #ifdef RUNTIME_PREFIX
 	static const char *prefix;
@@ -24,7 +24,7 @@ const char *system_path(const char *path)
 	struct strbuf d = STRBUF_INIT;
 
 	if (is_absolute_path(path))
-		return path;
+		return xstrdup(path);
 
 #ifdef RUNTIME_PREFIX
 	assert(argv0_path);
@@ -42,8 +42,7 @@ const char *system_path(const char *path)
 #endif
 
 	strbuf_addf(&d, "%s/%s", prefix, path);
-	path = strbuf_detach(&d, NULL);
-	return path;
+	return strbuf_detach(&d, NULL);
 }
 
 const char *git_extract_argv0_path(const char *argv0)
@@ -136,11 +135,7 @@ const char *git_exec_path(void)
 static void add_path(struct strbuf *out, const char *path)
 {
 	if (path && *path) {
-		if (is_absolute_path(path))
-			strbuf_addstr(out, path);
-		else
-			strbuf_addstr(out, absolute_path(path));
-
+		strbuf_add_absolute_path(out, path);
 		strbuf_addch(out, PATH_SEP);
 	}
 }

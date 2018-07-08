@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-send-email
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-SEND\-EMAIL" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-SEND\-EMAIL" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -39,7 +39,7 @@ git-send-email \- Send a collection of patches as emails
 .sp
 Takes the patches given on the command line and emails them out\&. Patches can be specified as files, directories (which will send all files in the directory), or directly as a revision list\&. In the last case, any format accepted by \fBgit-format-patch\fR(1) can be passed to git send\-email\&.
 .sp
-The header of the email is configurable by command line options\&. If not specified on the command line, the user will be prompted with a ReadLine enabled interface to provide the necessary information\&.
+The header of the email is configurable via command\-line options\&. If not specified on the command line, the user will be prompted with a ReadLine enabled interface to provide the necessary information\&.
 .sp
 There are two formats accepted for patch files:
 .sp
@@ -105,7 +105,7 @@ Invoke a text editor (see GIT_EDITOR in
 .sp
 When
 \fI\-\-compose\fR
-is used, git send\-email will use the From, Subject, and In\-Reply\-To headers specified in the message\&. If the body of the message (what you type after the headers and a blank line) only contains blank (or Git: prefixed) lines the summary won\(cqt be sent, but From, Subject, and In\-Reply\-To headers will be used unless they are removed\&.
+is used, git send\-email will use the From, Subject, and In\-Reply\-To headers specified in the message\&. If the body of the message (what you type after the headers and a blank line) only contains blank (or Git: prefixed) lines, the summary won\(cqt be sent, but From, Subject, and In\-Reply\-To headers will be used unless they are removed\&.
 .sp
 Missing From or In\-Reply\-To headers will be prompted for\&.
 .sp
@@ -117,7 +117,7 @@ See the CONFIGURATION section for
 .RS 4
 Specify the sender of the emails\&. If not specified on the command line, the value of the
 \fIsendemail\&.from\fR
-configuration option is used\&. If neither the command line option nor
+configuration option is used\&. If neither the command\-line option nor
 \fIsendemail\&.from\fR
 are set, then the user will be prompted for the value\&. The default for the prompt will be the value of GIT_AUTHOR_IDENT, or GIT_COMMITTER_IDENT if that is not set, as returned by "git var \-l"\&.
 .RE
@@ -183,6 +183,21 @@ Note that no attempts whatsoever are made to validate the encoding\&.
 .RS 4
 Specify encoding of compose message\&. Default is the value of the
 \fIsendemail\&.composeencoding\fR; if that is unspecified, UTF\-8 is assumed\&.
+.RE
+.PP
+\-\-transfer\-encoding=(7bit|8bit|quoted\-printable|base64)
+.RS 4
+Specify the transfer encoding to be used to send the message over SMTP\&. 7bit will fail upon encountering a non\-ASCII message\&. quoted\-printable can be useful when the repository contains files that contain carriage returns, but makes the raw patch email file (as saved from a MUA) much harder to inspect manually\&. base64 is even more fool proof, but also even more opaque\&. Default is the value of the
+\fIsendemail\&.transferEncoding\fR
+configuration value; if that is unspecified, git will use 8bit and not add a Content\-Transfer\-Encoding header\&.
+.RE
+.PP
+\-\-xmailer, \-\-no\-xmailer
+.RS 4
+Add (or prevent adding) the "X\-Mailer:" header\&. By default, the header is added, but it can be turned off by setting the
+sendemail\&.xmailer
+configuration variable to
+false\&.
 .RE
 .SS "Sending"
 .PP
@@ -268,11 +283,10 @@ Legacy alias for
 .PP
 \-\-smtp\-ssl\-cert\-path
 .RS 4
-Path to ca\-certificates (either a directory or a single file)\&. Set it to an empty string to disable certificate verification\&. Defaults to the value set to the
+Path to a store of trusted CA certificates for SMTP SSL/TLS certificate validation (either a directory that has been processed by
+\fIc_rehash\fR, or a single file containing one or more PEM format certificates concatenated together: see verify(1) \-CAfile and \-CApath for more information on these)\&. Set it to an empty string to disable certificate verification\&. Defaults to the value of the
 \fIsendemail\&.smtpsslcertpath\fR
-configuration variable, if set, or
-/etc/ssl/certs
-otherwise\&.
+configuration variable, if set, or the backing SSL library\(cqs compiled\-in default otherwise (which should be the best choice on most platforms)\&.
 .RE
 .PP
 \-\-smtp\-user=<user>
@@ -328,6 +342,20 @@ If this is set, add emails found in Signed\-off\-by: or Cc: lines to the cc list
 configuration value; if that is unspecified, default to \-\-signed\-off\-by\-cc\&.
 .RE
 .PP
+\-\-[no\-]cc\-cover
+.RS 4
+If this is set, emails found in Cc: headers in the first patch of the series (typically the cover letter) are added to the cc list for each email set\&. Default is the value of
+\fIsendemail\&.cccover\fR
+configuration value; if that is unspecified, default to \-\-no\-cc\-cover\&.
+.RE
+.PP
+\-\-[no\-]to\-cover
+.RS 4
+If this is set, emails found in To: headers in the first patch of the series (typically the cover letter) are added to the to list for each email set\&. Default is the value of
+\fIsendemail\&.tocover\fR
+configuration value; if that is unspecified, default to \-\-no\-to\-cover\&.
+.RE
+.PP
 \-\-suppress\-cc=<category>
 .RS 4
 Specify an additional category of recipients to suppress the auto\-cc of:
@@ -340,7 +368,6 @@ Specify an additional category of recipients to suppress the auto\-cc of:
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIauthor\fR
 will avoid including the patch author
 .RE
@@ -353,7 +380,6 @@ will avoid including the patch author
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIself\fR
 will avoid including the sender
 .RE
@@ -366,7 +392,6 @@ will avoid including the sender
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIcc\fR
 will avoid including anyone mentioned in Cc lines in the patch header except for self (use
 \fIself\fR
@@ -381,7 +406,6 @@ for that)\&.
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIbodycc\fR
 will avoid including anyone mentioned in Cc lines in the patch body (commit message) except for self (use
 \fIself\fR
@@ -396,7 +420,6 @@ for that)\&.
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIsob\fR
 will avoid including anyone mentioned in Signed\-off\-by lines except for self (use
 \fIself\fR
@@ -411,7 +434,6 @@ for that)\&.
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIcccmd\fR
 will avoid running the \-\-cc\-cmd\&.
 .RE
@@ -424,7 +446,6 @@ will avoid running the \-\-cc\-cmd\&.
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIbody\fR
 is equivalent to
 \fIsob\fR
@@ -440,7 +461,6 @@ is equivalent to
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIall\fR
 will suppress all auto cc values\&.
 .RE
@@ -493,7 +513,6 @@ Confirm just before sending:
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIalways\fR
 will always confirm before sending
 .RE
@@ -506,7 +525,6 @@ will always confirm before sending
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fInever\fR
 will never confirm before sending
 .RE
@@ -519,7 +537,6 @@ will never confirm before sending
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIcc\fR
 will confirm before sending when send\-email has automatically added addresses from the patch to the Cc list
 .RE
@@ -532,7 +549,6 @@ will confirm before sending when send\-email has automatically added addresses f
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIcompose\fR
 will confirm before sending the first message when using \-\-compose\&.
 .RE
@@ -545,7 +561,6 @@ will confirm before sending the first message when using \-\-compose\&.
 .sp -1
 .IP \(bu 2.3
 .\}
-
 \fIauto\fR
 is equivalent to
 \fIcc\fR

@@ -54,10 +54,12 @@ git send-email [options] <file | directory | rev-list options >
     --[no-]bcc              <str>  * Email Bcc:
     --subject               <str>  * Email "Subject:"
     --in-reply-to           <str>  * Email "In-Reply-To:"
+    --[no-]xmailer                 * Add "X-Mailer:" header (default).
     --[no-]annotate                * Review each patch that will be sent in an editor.
     --compose                      * Open an editor for introduction.
     --compose-encoding      <str>  * Encoding to assume for introduction.
     --8bit-encoding         <str>  * Encoding to assume 8bit mails if undeclared
+    --transfer-encoding     <str>  * Transfer encoding to use (quoted-printable, 8bit, base64)
 
   Sending:
     --envelope-sender       <str>  * Email envelope sender.
@@ -80,6 +82,8 @@ git send-email [options] <file | directory | rev-list options >
     --to-cmd                <str>  * Email To: via `<str> \$patch_path`
     --cc-cmd                <str>  * Email Cc: via `<str> \$patch_path`
     --suppress-cc           <str>  * author, self, sob, cc, cccmd, body, bodycc, all.
+    --[no-]cc-cover                * Email Cc: addresses in the cover letter.
+    --[no-]to-cover                * Email To: addresses in the cover letter.
     --[no-]signed-off-by-cc        * Send to Signed-off-by: addresses. Default on.
     --[no-]suppress-from           * Send to self. Default off.
     --[no-]chain-reply-to          * Chain In-Reply-To: fields. Default off.
@@ -143,10 +147,15 @@ my $have_mail_address = eval { require Mail::Address; 1 };
 my $smtp;
 my $auth;
 
+# Regexes for RFC 2047 productions.
+my $re_token = qr/[^][()<>@,;:\\"\/?.= \000-\037\177-\377]+/;
+my $re_encoded_text = qr/[^? \000-\037\177-\377]+/;
+my $re_encoded_word = qr/=\?($re_token)\?($re_token)\?($re_encoded_text)\?=/;
+
 # Variables we fill in automatically, or via prompting:
 my (@to,$no_to,@initial_to,@cc,$no_cc,@initial_cc,@bcclist,$no_bcc,@xh,
 	$initial_reply_to,$initial_subject,@files,
-	$author,$sender,$smtp_authpass,$annotate,$compose,$time);
+	$author,$sender,$smtp_authpass,$annotate,$use_xmailer,$compose,$time);
 
 my $envelope_sender;
 
@@ -195,6 +204,7 @@ sub do_edit {
 
 # Variables with corresponding config settings
 my ($thread, $chain_reply_to, $suppress_from, $signed_off_by_cc);
+my ($cover_cc, $cover_to);
 my ($to_cmd, $cc_cmd);
 my ($smtp_server, $smtp_server_port, @smtp_server_options);
 my ($smtp_authuser, $smtp_encryption, $smtp_ssl_cert_path);
@@ -203,6 +213,7 @@ my ($validate, $confirm);
 my (@suppress_cc);
 my ($auto_8bit_encoding);
 my ($compose_encoding);
+my ($target_xfer_encoding);
 
 my ($debug_net_smtp) = 0;		# Net::SMTP, see send_message()
 
@@ -211,10 +222,13 @@ my %config_bool_settings = (
     "chainreplyto" => [\$chain_reply_to, 0],
     "suppressfrom" => [\$suppress_from, undef],
     "signedoffbycc" => [\$signed_off_by_cc, undef],
+    "cccover" => [\$cover_cc, undef],
+    "tocover" => [\$cover_to, undef],
     "signedoffcc" => [\$signed_off_by_cc, undef],      # Deprecated
     "validate" => [\$validate, 1],
     "multiedit" => [\$multiedit, undef],
-    "annotate" => [\$annotate, undef]
+    "annotate" => [\$annotate, undef],
+    "xmailer" => [\$use_xmailer, 1]
 );
 
 my %config_settings = (
@@ -237,6 +251,7 @@ my %config_settings = (
     "from" => \$sender,
     "assume8bitencoding" => \$auto_8bit_encoding,
     "composeencoding" => \$compose_encoding,
+    "transferencoding" => \$target_xfer_encoding,
 );
 
 my %config_path_settings = (
@@ -284,6 +299,7 @@ my $rc = GetOptions("h" => \$help,
 		    "bcc=s" => \@bcclist,
 		    "no-bcc" => \$no_bcc,
 		    "chain-reply-to!" => \$chain_reply_to,
+		    "no-chain-reply-to" => sub {$chain_reply_to = 0},
 		    "smtp-server=s" => \$smtp_server,
 		    "smtp-server-option=s" => \@smtp_server_options,
 		    "smtp-server-port=s" => \$smtp_server_port,
@@ -296,21 +312,34 @@ my $rc = GetOptions("h" => \$help,
 		    "smtp-domain:s" => \$smtp_domain,
 		    "identity=s" => \$identity,
 		    "annotate!" => \$annotate,
+		    "no-annotate" => sub {$annotate = 0},
 		    "compose" => \$compose,
 		    "quiet" => \$quiet,
 		    "cc-cmd=s" => \$cc_cmd,
 		    "suppress-from!" => \$suppress_from,
+		    "no-suppress-from" => sub {$suppress_from = 0},
 		    "suppress-cc=s" => \@suppress_cc,
 		    "signed-off-cc|signed-off-by-cc!" => \$signed_off_by_cc,
+		    "no-signed-off-cc|no-signed-off-by-cc" => sub {$signed_off_by_cc = 0},
+		    "cc-cover|cc-cover!" => \$cover_cc,
+		    "no-cc-cover" => sub {$cover_cc = 0},
+		    "to-cover|to-cover!" => \$cover_to,
+		    "no-to-cover" => sub {$cover_to = 0},
 		    "confirm=s" => \$confirm,
 		    "dry-run" => \$dry_run,
 		    "envelope-sender=s" => \$envelope_sender,
 		    "thread!" => \$thread,
+		    "no-thread" => sub {$thread = 0},
 		    "validate!" => \$validate,
+		    "no-validate" => sub {$validate = 0},
+		    "transfer-encoding=s" => \$target_xfer_encoding,
 		    "format-patch!" => \$format_patch,
+		    "no-format-patch" => sub {$format_patch = 0},
 		    "8bit-encoding=s" => \$auto_8bit_encoding,
 		    "compose-encoding=s" => \$compose_encoding,
 		    "force" => \$force,
+		    "xmailer!" => \$use_xmailer,
+		    "no-xmailer" => sub {$use_xmailer = 0},
 	 );
 
 usage() if $help;
@@ -906,15 +935,26 @@ $time = time - scalar $#files;
 
 sub unquote_rfc2047 {
 	local ($_) = @_;
-	my $encoding;
-	s{=\?([^?]+)\?q\?(.*?)\?=}{
-		$encoding = $1;
-		my $e = $2;
-		$e =~ s/_/ /g;
-		$e =~ s/=([0-9A-F]{2})/chr(hex($1))/eg;
-		$e;
+	my $charset;
+	my $sep = qr/[ \t]+/;
+	s{$re_encoded_word(?:$sep$re_encoded_word)*}{
+		my @words = split $sep, $&;
+		foreach (@words) {
+			m/$re_encoded_word/;
+			$charset = $1;
+			my $encoding = $2;
+			my $text = $3;
+			if ($encoding eq 'q' || $encoding eq 'Q') {
+				$_ = $text;
+				s/_/ /g;
+				s/=([0-9A-F]{2})/chr(hex($1))/egi;
+			} else {
+				# other encodings not supported yet
+			}
+		}
+		join '', @words;
 	}eg;
-	return wantarray ? ($_, $encoding) : $_;
+	return wantarray ? ($_, $charset) : $_;
 }
 
 sub quote_rfc2047 {
@@ -927,10 +967,8 @@ sub quote_rfc2047 {
 
 sub is_rfc2047_quoted {
 	my $s = shift;
-	my $token = qr/[^][()<>@,;:"\/?.= \000-\037\177-\377]+/;
-	my $encoded_text = qr/[!->@-~]+/;
 	length($s) <= 75 &&
-	$s =~ m/^(?:"[[:ascii:]]*"|=\?$token\?$token\?$encoded_text\?=)$/o;
+	$s =~ m/^(?:"[[:ascii:]]*"|$re_encoded_word)$/o;
 }
 
 sub subject_needs_rfc2047_quoting {
@@ -1113,6 +1151,18 @@ sub ssl_verify_params {
 	}
 }
 
+sub file_name_is_absolute {
+	my ($path) = @_;
+
+	# msys does not grok DOS drive-prefixes
+	if ($^O eq 'msys') {
+		return ($path =~ m#^/# || $path =~ m#^[a-zA-Z]\:#)
+	}
+
+	require File::Spec::Functions;
+	return File::Spec::Functions::file_name_is_absolute($path);
+}
+
 # Returns 1 if the message was sent, and 0 otherwise.
 # In actuality, the whole program dies when there
 # is an error sending a message.
@@ -1144,8 +1194,10 @@ To: $to${ccline}
 Subject: $subject
 Date: $date
 Message-Id: $message_id
-X-Mailer: git-send-email $gitversion
 ";
+	if ($use_xmailer) {
+		$header .= "X-Mailer: git-send-email $gitversion\n";
+	}
 	if ($reply_to) {
 
 		$header .= "In-Reply-To: $reply_to\n";
@@ -1197,7 +1249,7 @@ X-Mailer: git-send-email $gitversion
 
 	if ($dry_run) {
 		# We don't want to send the email.
-	} elsif ($smtp_server =~ m#^/#) {
+	} elsif (file_name_is_absolute($smtp_server)) {
 		my $pid = open my $sm, '|-';
 		defined $pid or die $!;
 		if (!$pid) {
@@ -1271,7 +1323,7 @@ X-Mailer: git-send-email $gitversion
 		printf (($dry_run ? "Dry-" : "")."Sent %s\n", $subject);
 	} else {
 		print (($dry_run ? "Dry-" : "")."OK. Log says:\n");
-		if ($smtp_server !~ m#^/#) {
+		if (!file_name_is_absolute($smtp_server)) {
 			print "Server: $smtp_server\n";
 			print "MAIL FROM:<$raw_from>\n";
 			foreach my $entry (@recipients) {
@@ -1305,6 +1357,8 @@ foreach my $t (@files) {
 	my $author_encoding;
 	my $has_content_type;
 	my $body_encoding;
+	my $xfer_encoding;
+	my $has_mime_version;
 	@to = ();
 	@cc = ();
 	@xh = ();
@@ -1375,8 +1429,15 @@ foreach my $t (@files) {
 				}
 				push @xh, $_;
 			}
+			elsif (/^MIME-Version/i) {
+				$has_mime_version = 1;
+				push @xh, $_;
+			}
 			elsif (/^Message-Id: (.*)/i) {
 				$message_id = $1;
+			}
+			elsif (/^Content-Transfer-Encoding: (.*)/i) {
+				$xfer_encoding = $1 if not defined $xfer_encoding;
 			}
 			elsif (!/^Date:\s/i && /^[-A-Za-z]+:\s+\S/) {
 				push @xh, $_;
@@ -1425,10 +1486,9 @@ foreach my $t (@files) {
 		if defined $cc_cmd && !$suppress_cc{'cccmd'};
 
 	if ($broken_encoding{$t} && !$has_content_type) {
+		$xfer_encoding = '8bit' if not defined $xfer_encoding;
 		$has_content_type = 1;
-		push @xh, "MIME-Version: 1.0",
-			"Content-Type: text/plain; charset=$auto_8bit_encoding",
-			"Content-Transfer-Encoding: 8bit";
+		push @xh, "Content-Type: text/plain; charset=$auto_8bit_encoding";
 		$body_encoding = $auto_8bit_encoding;
 	}
 
@@ -1448,13 +1508,24 @@ foreach my $t (@files) {
 				}
 			}
 			else {
+				$xfer_encoding = '8bit' if not defined $xfer_encoding;
 				$has_content_type = 1;
 				push @xh,
-				  'MIME-Version: 1.0',
-				  "Content-Type: text/plain; charset=$author_encoding",
-				  'Content-Transfer-Encoding: 8bit';
+				  "Content-Type: text/plain; charset=$author_encoding";
 			}
 		}
+	}
+	if (defined $target_xfer_encoding) {
+		$xfer_encoding = '8bit' if not defined $xfer_encoding;
+		$message = apply_transfer_encoding(
+			$message, $xfer_encoding, $target_xfer_encoding);
+		$xfer_encoding = $target_xfer_encoding;
+	}
+	if (defined $xfer_encoding) {
+		push @xh, "Content-Transfer-Encoding: $xfer_encoding";
+	}
+	if (defined $xfer_encoding or $has_content_type) {
+		unshift @xh, 'MIME-Version: 1.0' unless $has_mime_version;
 	}
 
 	$needs_confirm = (
@@ -1468,6 +1539,15 @@ foreach my $t (@files) {
 
 	@to = (@initial_to, @to);
 	@cc = (@initial_cc, @cc);
+
+	if ($message_num == 1) {
+		if (defined $cover_cc and $cover_cc) {
+			@initial_cc = @cc;
+		}
+		if (defined $cover_to and $cover_to) {
+			@initial_to = @to;
+		}
+	}
 
 	my $message_was_sent = send_message();
 
@@ -1514,6 +1594,32 @@ sub cleanup_compose_files {
 }
 
 $smtp->quit if $smtp;
+
+sub apply_transfer_encoding {
+	my $message = shift;
+	my $from = shift;
+	my $to = shift;
+
+	return $message if ($from eq $to and $from ne '7bit');
+
+	require MIME::QuotedPrint;
+	require MIME::Base64;
+
+	$message = MIME::QuotedPrint::decode($message)
+		if ($from eq 'quoted-printable');
+	$message = MIME::Base64::decode($message)
+		if ($from eq 'base64');
+
+	die "cannot send message as 7bit"
+		if ($to eq '7bit' and $message =~ /[^[:ascii:]]/);
+	return $message
+		if ($to eq '7bit' or $to eq '8bit');
+	return MIME::QuotedPrint::encode($message, "\n", 0)
+		if ($to eq 'quoted-printable');
+	return MIME::Base64::encode($message, "\n")
+		if ($to eq 'base64');
+	die "invalid transfer encoding";
+}
 
 sub unique_email_list {
 	my %seen;

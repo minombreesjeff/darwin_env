@@ -10,11 +10,11 @@
 
 USAGE='[--tool=tool] [--tool-help] [-y|--no-prompt|--prompt] [file to merge] ...'
 SUBDIRECTORY_OK=Yes
+NONGIT_OK=Yes
 OPTIONS_SPEC=
 TOOL_MODE=merge
 . git-sh-setup
 . git-mergetool--lib
-require_work_tree
 
 # Returns true if the mode reflects a symlink
 is_symlink () {
@@ -37,6 +37,19 @@ base_present () {
 	test -n "$base_mode"
 }
 
+mergetool_tmpdir_init () {
+	if test "$(git config --bool mergetool.writeToTemp)" != true
+	then
+		MERGETOOL_TMPDIR=.
+		return 0
+	fi
+	if MERGETOOL_TMPDIR=$(mktemp -d -t "git-mergetool-XXXXXX" 2>/dev/null)
+	then
+		return 0
+	fi
+	die "error: mktemp is needed when 'mergetool.writeToTemp' is true"
+}
+
 cleanup_temp_files () {
 	if test "$1" = --save-backup
 	then
@@ -45,6 +58,10 @@ cleanup_temp_files () {
 		rm -f -- "$LOCAL" "$REMOTE" "$BASE"
 	else
 		rm -f -- "$LOCAL" "$REMOTE" "$BASE" "$BACKUP"
+	fi
+	if test "$MERGETOOL_TMPDIR" != "."
+	then
+		rmdir "$MERGETOOL_TMPDIR"
 	fi
 }
 
@@ -205,7 +222,7 @@ checkout_staged_file () {
 		"$(git checkout-index --temp --stage="$1" "$2" 2>/dev/null)" \
 		: '\([^	]*\)	')
 
-	if test $? -eq 0 -a -n "$tmpfile"
+	if test $? -eq 0 && test -n "$tmpfile"
 	then
 		mv -- "$(git rev-parse --show-cdup)$tmpfile" "$3"
 	else
@@ -228,11 +245,27 @@ merge_file () {
 		return 1
 	fi
 
-	ext="$$$(expr "$MERGED" : '.*\(\.[^/]*\)$')"
-	BACKUP="./$MERGED.BACKUP.$ext"
-	LOCAL="./$MERGED.LOCAL.$ext"
-	REMOTE="./$MERGED.REMOTE.$ext"
-	BASE="./$MERGED.BASE.$ext"
+	if BASE=$(expr "$MERGED" : '\(.*\)\.[^/]*$')
+	then
+		ext=$(expr "$MERGED" : '.*\(\.[^/]*\)$')
+	else
+		BASE=$MERGED
+		ext=
+	fi
+
+	mergetool_tmpdir_init
+
+	if test "$MERGETOOL_TMPDIR" != "."
+	then
+		# If we're using a temporary directory then write to the
+		# top-level of that directory.
+		BASE=${BASE##*/}
+	fi
+
+	BACKUP="$MERGETOOL_TMPDIR/${BASE}_BACKUP_$$$ext"
+	LOCAL="$MERGETOOL_TMPDIR/${BASE}_LOCAL_$$$ext"
+	REMOTE="$MERGETOOL_TMPDIR/${BASE}_REMOTE_$$$ext"
+	BASE="$MERGETOOL_TMPDIR/${BASE}_BASE_$$$ext"
 
 	base_mode=$(git ls-files -u -- "$MERGED" | awk '{if ($3==1) print $1;}')
 	local_mode=$(git ls-files -u -- "$MERGED" | awk '{if ($3==2) print $1;}')
@@ -256,7 +289,7 @@ merge_file () {
 	checkout_staged_file 2 "$MERGED" "$LOCAL"
 	checkout_staged_file 3 "$MERGED" "$REMOTE"
 
-	if test -z "$local_mode" -o -z "$remote_mode"
+	if test -z "$local_mode" || test -z "$remote_mode"
 	then
 		echo "Deleted merge conflict for '$MERGED':"
 		describe_file "$local_mode" "local" "$LOCAL"
@@ -277,7 +310,7 @@ merge_file () {
 	echo "Normal merge conflict for '$MERGED':"
 	describe_file "$local_mode" "local" "$LOCAL"
 	describe_file "$remote_mode" "remote" "$REMOTE"
-	if "$prompt" = true
+	if test "$guessed_merge_tool" = true || test "$prompt" = true
 	then
 		printf "Hit return to start merge resolution tool (%s): " "$merge_tool"
 		read ans || return 1
@@ -315,11 +348,16 @@ merge_file () {
 	return 0
 }
 
-prompt=$(git config --bool mergetool.prompt || echo true)
+prompt=$(git config --bool mergetool.prompt)
+guessed_merge_tool=false
 
 while test $# != 0
 do
 	case "$1" in
+	--tool-help=*)
+		TOOL_MODE=${1#--tool-help=}
+		show_tool_help
+		;;
 	--tool-help)
 		show_tool_help
 		;;
@@ -371,15 +409,23 @@ prompt_after_failed_merge () {
 	done
 }
 
+git_dir_init
+require_work_tree
+
 if test -z "$merge_tool"
 then
-	merge_tool=$(get_merge_tool "$merge_tool") || exit
+	# Check if a merge tool has been configured
+	merge_tool=$(get_configured_merge_tool)
+	# Try to guess an appropriate merge tool if no tool has been set.
+	if test -z "$merge_tool"
+	then
+		merge_tool=$(guess_merge_tool) || exit
+		guessed_merge_tool=true
+	fi
 fi
 merge_keep_backup="$(git config --bool mergetool.keepBackup || echo true)"
 merge_keep_temporaries="$(git config --bool mergetool.keepTemporaries || echo false)"
 
-last_status=0
-rollup_status=0
 files=
 
 if test $# -eq 0
@@ -407,19 +453,15 @@ printf "%s\n" "$files"
 
 IFS='
 '
+rc=0
 for i in $files
 do
-	if test $last_status -ne 0
-	then
-		prompt_after_failed_merge || exit 1
-	fi
 	printf "\n"
-	merge_file "$i"
-	last_status=$?
-	if test $last_status -ne 0
+	if ! merge_file "$i"
 	then
-		rollup_status=1
+		rc=1
+		prompt_after_failed_merge || exit 1
 	fi
 done
 
-exit $rollup_status
+exit $rc

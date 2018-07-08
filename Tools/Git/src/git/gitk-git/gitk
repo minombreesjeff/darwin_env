@@ -294,6 +294,8 @@ proc parseviewrevs {view revs} {
 
     if {$revs eq {}} {
 	set revs HEAD
+    } elseif {[lsearch -exact $revs --all] >= 0} {
+	lappend revs HEAD
     }
     if {[catch {set ids [eval exec git rev-parse $revs]} err]} {
 	# we get stdout followed by stderr in $err
@@ -445,7 +447,7 @@ proc stop_instance {inst} {
 	set pid [pid $fd]
 
 	if {$::tcl_platform(platform) eq {windows}} {
-	    exec kill -f $pid
+	    exec taskkill /pid $pid
 	} else {
 	    exec kill $pid
 	}
@@ -2585,6 +2587,7 @@ proc makewindow {} {
     bind $fstring <Key-Return> {dofind 1 1}
     bind $sha1entry <Key-Return> {gotocommit; break}
     bind $sha1entry <<PasteSelection>> clearsha1
+    bind $sha1entry <<Paste>> clearsha1
     bind $cflist <1> {sel_flist %W %x %y; break}
     bind $cflist <B1-Motion> {sel_flist %W %x %y; break}
     bind $cflist <ButtonRelease-1> {treeclick %W %x %y}
@@ -2593,6 +2596,9 @@ proc makewindow {} {
     bind $ctext $ctxbut {pop_diff_menu %W %X %Y %x %y}
     bind $ctext <Button-1> {focus %W}
     bind $ctext <<Selection>> rehighlight_search_results
+    for {set i 1} {$i < 10} {incr i} {
+	bind . <$M1B-Key-$i> [list go_to_parent $i]
+    }
 
     set maincursor [. cget -cursor]
     set textcursor [$ctext cget -cursor]
@@ -2771,23 +2777,11 @@ proc doprogupdate {} {
 }
 
 proc savestuff {w} {
-    global canv canv2 canv3 mainfont textfont uifont tabstop
-    global stuffsaved findmergefiles maxgraphpct
-    global maxwidth showneartags showlocalchanges
     global viewname viewfiles viewargs viewargscmd viewperm nextviewnum
-    global cmitmode wrapcomment datetimeformat limitdiffs
-    global colors uicolor bgcolor fgcolor diffcolors diffcontext selectbgcolor
-    global uifgcolor uifgdisabledcolor
-    global headbgcolor headfgcolor headoutlinecolor remotebgcolor
-    global tagbgcolor tagfgcolor tagoutlinecolor
-    global reflinecolor filesepbgcolor filesepfgcolor
-    global mergecolors foundbgcolor currentsearchhitbgcolor
-    global linehoverbgcolor linehoverfgcolor linehoveroutlinecolor circlecolors
-    global mainheadcirclecolor workingfilescirclecolor indexcirclecolor
-    global linkfgcolor circleoutlinecolor
-    global autoselect autosellen extdifftool perfile_attrs markbgcolor use_ttk
-    global hideremotes want_ttk maxrefs
+    global use_ttk
+    global stuffsaved
     global config_file config_file_tmp
+    global config_variables
 
     if {$stuffsaved} return
     if {![winfo viewable .]} return
@@ -2799,58 +2793,10 @@ proc savestuff {w} {
 	if {$::tcl_platform(platform) eq {windows}} {
 	    file attributes $config_file_tmp -hidden true
 	}
-	puts $f [list set mainfont $mainfont]
-	puts $f [list set textfont $textfont]
-	puts $f [list set uifont $uifont]
-	puts $f [list set tabstop $tabstop]
-	puts $f [list set findmergefiles $findmergefiles]
-	puts $f [list set maxgraphpct $maxgraphpct]
-	puts $f [list set maxwidth $maxwidth]
-	puts $f [list set cmitmode $cmitmode]
-	puts $f [list set wrapcomment $wrapcomment]
-	puts $f [list set autoselect $autoselect]
-	puts $f [list set autosellen $autosellen]
-	puts $f [list set showneartags $showneartags]
-	puts $f [list set maxrefs $maxrefs]
-	puts $f [list set hideremotes $hideremotes]
-	puts $f [list set showlocalchanges $showlocalchanges]
-	puts $f [list set datetimeformat $datetimeformat]
-	puts $f [list set limitdiffs $limitdiffs]
-	puts $f [list set uicolor $uicolor]
-	puts $f [list set want_ttk $want_ttk]
-	puts $f [list set bgcolor $bgcolor]
-	puts $f [list set fgcolor $fgcolor]
-	puts $f [list set uifgcolor $uifgcolor]
-	puts $f [list set uifgdisabledcolor $uifgdisabledcolor]
-	puts $f [list set colors $colors]
-	puts $f [list set diffcolors $diffcolors]
-	puts $f [list set mergecolors $mergecolors]
-	puts $f [list set markbgcolor $markbgcolor]
-	puts $f [list set diffcontext $diffcontext]
-	puts $f [list set selectbgcolor $selectbgcolor]
-	puts $f [list set foundbgcolor $foundbgcolor]
-	puts $f [list set currentsearchhitbgcolor $currentsearchhitbgcolor]
-	puts $f [list set extdifftool $extdifftool]
-	puts $f [list set perfile_attrs $perfile_attrs]
-	puts $f [list set headbgcolor $headbgcolor]
-	puts $f [list set headfgcolor $headfgcolor]
-	puts $f [list set headoutlinecolor $headoutlinecolor]
-	puts $f [list set remotebgcolor $remotebgcolor]
-	puts $f [list set tagbgcolor $tagbgcolor]
-	puts $f [list set tagfgcolor $tagfgcolor]
-	puts $f [list set tagoutlinecolor $tagoutlinecolor]
-	puts $f [list set reflinecolor $reflinecolor]
-	puts $f [list set filesepbgcolor $filesepbgcolor]
-	puts $f [list set filesepfgcolor $filesepfgcolor]
-	puts $f [list set linehoverbgcolor $linehoverbgcolor]
-	puts $f [list set linehoverfgcolor $linehoverfgcolor]
-	puts $f [list set linehoveroutlinecolor $linehoveroutlinecolor]
-	puts $f [list set mainheadcirclecolor $mainheadcirclecolor]
-	puts $f [list set workingfilescirclecolor $workingfilescirclecolor]
-	puts $f [list set indexcirclecolor $indexcirclecolor]
-	puts $f [list set circlecolors $circlecolors]
-	puts $f [list set linkfgcolor $linkfgcolor]
-	puts $f [list set circleoutlinecolor $circleoutlinecolor]
+	foreach var_name $config_variables {
+	    upvar #0 $var_name var
+	    puts $f [list set $var_name $var]
+	}
 
 	puts $f "set geometry(main) [wm geometry .]"
 	puts $f "set geometry(state) [wm state .]"
@@ -3015,6 +2961,7 @@ proc keys {} {
 [mc "<Down>, n, j	Move down one commit"]
 [mc "<Left>, z, h	Go back in history list"]
 [mc "<Right>, x, l	Go forward in history list"]
+[mc "<%s-n>	Go to n-th parent of current commit in history list" $M1T]
 [mc "<PageUp>	Move up one page in commit list"]
 [mc "<PageDown>	Move down one page in commit list"]
 [mc "<%s-Home>	Scroll to top of commit list" $M1T]
@@ -3492,10 +3439,20 @@ proc flist_hl {only} {
 }
 
 proc gitknewtmpdir {} {
-    global diffnum gitktmpdir gitdir
+    global diffnum gitktmpdir gitdir env
 
     if {![info exists gitktmpdir]} {
-	set gitktmpdir [file join $gitdir [format ".gitk-tmp.%s" [pid]]]
+	if {[info exists env(GITK_TMPDIR)]} {
+	    set tmpdir $env(GITK_TMPDIR)
+	} elseif {[info exists env(TMPDIR)]} {
+	    set tmpdir $env(TMPDIR)
+	} else {
+	    set tmpdir $gitdir
+	}
+	set gitktmpformat [file join $tmpdir ".gitk-tmp.XXXXXX"]
+	if {[catch {set gitktmpdir [exec mktemp -d $gitktmpformat]}]} {
+	    set gitktmpdir [file join $gitdir [format ".gitk-tmp.%s" [pid]]]
+	}
 	if {[catch {file mkdir $gitktmpdir} err]} {
 	    error_popup "[mc "Error creating temporary directory %s:" $gitktmpdir] $err"
 	    unset gitktmpdir
@@ -3870,7 +3827,7 @@ proc read_line_source {fd inst} {
 	    set id $nullid2
 	}
 	if {[commitinview $id $curview]} {
-	    selectline [rowofcommit $id] 1 [list $fname $lnum]
+	    selectline [rowofcommit $id] 1 [list $fname $lnum] 1
 	} else {
 	    error_popup [mc "That line comes from commit %s, \
 			     which is not in this view" [shortids $id]]
@@ -5205,11 +5162,15 @@ proc dohidelocalchanges {} {
 # spawn off a process to do git diff-index --cached HEAD
 proc dodiffindex {} {
     global lserial showlocalchanges vfilelimit curview
-    global hasworktree
+    global hasworktree git_version
 
     if {!$showlocalchanges || !$hasworktree} return
     incr lserial
-    set cmd "|git diff-index --cached HEAD"
+    if {[package vcompare $git_version "1.7.2"] >= 0} {
+	set cmd "|git diff-index --cached --ignore-submodules=dirty HEAD"
+    } else {
+	set cmd "|git diff-index --cached HEAD"
+    }
     if {$vfilelimit($curview) ne {}} {
 	set cmd [concat $cmd -- $vfilelimit($curview)]
     }
@@ -7020,7 +6981,7 @@ proc viewnextline {dir} {
 # add a list of tag or branch names at position pos
 # returns the number of names inserted
 proc appendrefs {pos ids var} {
-    global ctext linknum curview $var maxrefs mainheadid
+    global ctext linknum curview $var maxrefs visiblerefs mainheadid
 
     if {[catch {$ctext index $pos}]} {
 	return 0
@@ -7041,14 +7002,14 @@ proc appendrefs {pos ids var} {
     if {[llength $tags] > $maxrefs} {
 	# If we are displaying heads, and there are too many,
 	# see if there are some important heads to display.
-	# Currently this means "master" and the current head.
+	# Currently that are the current head and heads listed in $visiblerefs option
 	set itags {}
 	if {$var eq "idheads"} {
 	    set utags {}
 	    foreach ti $tags {
 		set hname [lindex $ti 0]
 		set id [lindex $ti 1]
-		if {($hname eq "master" || $id eq $mainheadid) &&
+		if {([lsearch -exact $visiblerefs $hname] != -1 || $id eq $mainheadid) &&
 		    [llength $itags] < $maxrefs} {
 		    lappend itags $ti
 		} else {
@@ -7161,7 +7122,7 @@ proc make_idmark {id} {
     $canv raise $t
 }
 
-proc selectline {l isnew {desired_loc {}}} {
+proc selectline {l isnew {desired_loc {}} {switch_to_patch 0}} {
     global canv ctext commitinfo selectedline
     global canvy0 linespc parents children curview
     global currentid sha1entry
@@ -7185,6 +7146,10 @@ proc selectline {l isnew {desired_loc {}}} {
     set currentid $id
     if {$lastscrollrows < $numcommits} {
 	setcanvscroll
+    }
+
+    if {$cmitmode ne "patch" && $switch_to_patch} {
+        set cmitmode "patch"
     }
 
     set y [expr {$canvy0 + $l * $linespc}]
@@ -7477,6 +7442,14 @@ proc goforw {} {
     }
 }
 
+proc go_to_parent {i} {
+    global parents curview targetid
+    set ps $parents($curview,$targetid)
+    if {[llength $ps] >= $i} {
+	selbyid [lindex $ps [expr $i - 1]]
+    }
+}
+
 proc gettree {id} {
     global treefilelist treeidlist diffids diffmergeid treepending
     global nullid nullid2
@@ -7705,7 +7678,7 @@ proc addtocflist {ids} {
 }
 
 proc diffcmd {ids flags} {
-    global log_showroot nullid nullid2
+    global log_showroot nullid nullid2 git_version
 
     set i [lsearch -exact $ids $nullid]
     set j [lsearch -exact $ids $nullid2]
@@ -7726,6 +7699,9 @@ proc diffcmd {ids flags} {
 	    }
 	}
     } elseif {$j >= 0} {
+	if {[package vcompare $git_version "1.7.2"] >= 0} {
+	    set flags "$flags --ignore-submodules=dirty"
+	}
 	set cmd [concat | git diff-index --cached $flags]
 	if {[llength $ids] > 1} {
 	    # comparing index with specific revision
@@ -11575,7 +11551,29 @@ proc prefsok {} {
 proc formatdate {d} {
     global datetimeformat
     if {$d ne {}} {
-	set d [clock format [lindex $d 0] -format $datetimeformat]
+	# If $datetimeformat includes a timezone, display in the
+	# timezone of the argument.  Otherwise, display in local time.
+	if {[string match {*%[zZ]*} $datetimeformat]} {
+	    if {[catch {set d [clock format [lindex $d 0] -timezone [lindex $d 1] -format $datetimeformat]}]} {
+		# Tcl < 8.5 does not support -timezone.  Emulate it by
+		# setting TZ (e.g. TZ=<-0430>+04:30).
+		global env
+		if {[info exists env(TZ)]} {
+		    set savedTZ $env(TZ)
+		}
+		set zone [lindex $d 1]
+		set sign [string map {+ - - +} [string index $zone 0]]
+		set env(TZ) <$zone>$sign[string range $zone 1 2]:[string range $zone 3 4]
+		set d [clock format [lindex $d 0] -format $datetimeformat]
+		if {[info exists savedTZ]} {
+		    set env(TZ) $savedTZ
+		} else {
+		    unset env(TZ)
+		}
+	    }
+	} else {
+	    set d [clock format [lindex $d 0] -format $datetimeformat]
+	}
     }
     return $d
 }
@@ -12001,6 +11999,7 @@ set wrapcomment "none"
 set showneartags 1
 set hideremotes 0
 set maxrefs 20
+set visiblerefs {"master"}
 set maxlinelen 200
 set showlocalchanges 1
 set limitdiffs 1
@@ -12109,6 +12108,19 @@ catch {
 	}
     }
     source $config_file
+}
+
+set config_variables {
+    mainfont textfont uifont tabstop findmergefiles maxgraphpct maxwidth
+    cmitmode wrapcomment autoselect autosellen showneartags maxrefs visiblerefs
+    hideremotes showlocalchanges datetimeformat limitdiffs uicolor want_ttk
+    bgcolor fgcolor uifgcolor uifgdisabledcolor colors diffcolors mergecolors
+    markbgcolor diffcontext selectbgcolor foundbgcolor currentsearchhitbgcolor
+    extdifftool perfile_attrs headbgcolor headfgcolor headoutlinecolor
+    remotebgcolor tagbgcolor tagfgcolor tagoutlinecolor reflinecolor
+    filesepbgcolor filesepfgcolor linehoverbgcolor linehoverfgcolor
+    linehoveroutlinecolor mainheadcirclecolor workingfilescirclecolor
+    indexcirclecolor circlecolors linkfgcolor circleoutlinecolor
 }
 
 parsefont mainfont $mainfont

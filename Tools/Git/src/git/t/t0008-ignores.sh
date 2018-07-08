@@ -775,4 +775,60 @@ test_expect_success PIPE 'streaming support for --stdin' '
 	echo "$response" | grep "^::	two"
 '
 
+############################################################################
+#
+# test whitespace handling
+
+test_expect_success 'trailing whitespace is ignored' '
+	mkdir whitespace &&
+	>whitespace/trailing &&
+	>whitespace/untracked &&
+	echo "whitespace/trailing   " >ignore &&
+	cat >expect <<EOF &&
+whitespace/untracked
+EOF
+	: >err.expect &&
+	git ls-files -o -X ignore whitespace >actual 2>err &&
+	test_cmp expect actual &&
+	test_cmp err.expect err
+'
+
+test_expect_success !MINGW 'quoting allows trailing whitespace' '
+	rm -rf whitespace &&
+	mkdir whitespace &&
+	>"whitespace/trailing  " &&
+	>whitespace/untracked &&
+	echo "whitespace/trailing\\ \\ " >ignore &&
+	echo whitespace/untracked >expect &&
+	: >err.expect &&
+	git ls-files -o -X ignore whitespace >actual 2>err &&
+	test_cmp expect actual &&
+	test_cmp err.expect err
+'
+
+test_expect_success !MINGW,!CYGWIN 'correct handling of backslashes' '
+	rm -rf whitespace &&
+	mkdir whitespace &&
+	>"whitespace/trailing 1  " &&
+	>"whitespace/trailing 2 \\\\" &&
+	>"whitespace/trailing 3 \\\\" &&
+	>"whitespace/trailing 4   \\ " &&
+	>"whitespace/trailing 5 \\ \\ " &&
+	>"whitespace/trailing 6 \\a\\" &&
+	>whitespace/untracked &&
+	sed -e "s/Z$//" >ignore <<-\EOF &&
+	whitespace/trailing 1 \    Z
+	whitespace/trailing 2 \\\\Z
+	whitespace/trailing 3 \\\\ Z
+	whitespace/trailing 4   \\\    Z
+	whitespace/trailing 5 \\ \\\   Z
+	whitespace/trailing 6 \\a\\Z
+	EOF
+	echo whitespace/untracked >expect &&
+	>err.expect &&
+	git ls-files -o -X ignore whitespace >actual 2>err &&
+	test_cmp expect actual &&
+	test_cmp err.expect err
+'
+
 test_done

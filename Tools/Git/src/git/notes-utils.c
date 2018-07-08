@@ -4,7 +4,8 @@
 #include "notes-utils.h"
 
 void create_notes_commit(struct notes_tree *t, struct commit_list *parents,
-			 const struct strbuf *msg, unsigned char *result_sha1)
+			 const char *msg, size_t msg_len,
+			 unsigned char *result_sha1)
 {
 	unsigned char tree_sha1[20];
 
@@ -25,7 +26,7 @@ void create_notes_commit(struct notes_tree *t, struct commit_list *parents,
 		/* else: t->ref points to nothing, assume root/orphan commit */
 	}
 
-	if (commit_tree(msg, tree_sha1, parents, result_sha1, NULL, NULL))
+	if (commit_tree(msg, msg_len, tree_sha1, parents, result_sha1, NULL, NULL))
 		die("Failed to commit notes tree to database");
 }
 
@@ -43,12 +44,12 @@ void commit_notes(struct notes_tree *t, const char *msg)
 
 	/* Prepare commit message and reflog message */
 	strbuf_addstr(&buf, msg);
-	if (buf.buf[buf.len - 1] != '\n')
-		strbuf_addch(&buf, '\n'); /* Make sure msg ends with newline */
+	strbuf_complete_line(&buf);
 
-	create_notes_commit(t, NULL, &buf, commit_sha1);
+	create_notes_commit(t, NULL, buf.buf, buf.len, commit_sha1);
 	strbuf_insert(&buf, 0, "notes: ", 7); /* commit message starts at index 7 */
-	update_ref(buf.buf, t->ref, commit_sha1, NULL, 0, DIE_ON_ERR);
+	update_ref(buf.buf, t->ref, commit_sha1, NULL, 0,
+		   UPDATE_REFS_DIE_ON_ERR);
 
 	strbuf_release(&buf);
 }
@@ -75,7 +76,7 @@ static int notes_rewrite_config(const char *k, const char *v, void *cb)
 		return 0;
 	} else if (!c->mode_from_env && !strcmp(k, "notes.rewritemode")) {
 		if (!v)
-			config_error_nonbool(k);
+			return config_error_nonbool(k);
 		c->combine = parse_combine_notes_fn(v);
 		if (!c->combine) {
 			error(_("Bad notes.rewriteMode value: '%s'"), v);

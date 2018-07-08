@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-read-tree
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-READ\-TREE" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-READ\-TREE" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -69,7 +69,7 @@ Usually a merge requires the index file as well as the files in the working tree
 .PP
 \-n, \-\-dry\-run
 .RS 4
-Check if the command would error out, without updating the index nor the files in the working tree for real\&.
+Check if the command would error out, without updating the index or the files in the working tree for real\&.
 .RE
 .PP
 \-v
@@ -360,7 +360,7 @@ The \fIgit write\-tree\fR command refuses to write a nonsensical tree, and it wi
 .sp
 OK, this all sounds like a collection of totally nonsensical rules, but it\(cqs actually exactly what you want in order to do a fast merge\&. The different stages represent the "result tree" (stage 0, aka "merged"), the original tree (stage 1, aka "orig"), and the two trees you are trying to merge (stage 2 and 3 respectively)\&.
 .sp
-The order of stages 1, 2 and 3 (hence the order of three <tree\-ish> command line arguments) are significant when you start a 3\-way merge with an index file that is already populated\&. Here is an outline of how the algorithm works:
+The order of stages 1, 2 and 3 (hence the order of three <tree\-ish> command\-line arguments) are significant when you start a 3\-way merge with an index file that is already populated\&. Here is an outline of how the algorithm works:
 .sp
 .RS 4
 .ie n \{\

@@ -46,7 +46,7 @@ struct diff_filespec {
 	unsigned is_stdin : 1;
 	unsigned has_more_entries : 1; /* only appear in combined diff */
 	/* data should be considered "binary"; -1 means "don't know yet" */
-	int is_binary : 2;
+	signed int is_binary : 2;
 	struct userdiff_driver *driver;
 };
 
@@ -55,7 +55,9 @@ extern void free_filespec(struct diff_filespec *);
 extern void fill_filespec(struct diff_filespec *, const unsigned char *,
 			  int, unsigned short);
 
-extern int diff_populate_filespec(struct diff_filespec *, int);
+#define CHECK_SIZE_ONLY 1
+#define CHECK_BINARY    2
+extern int diff_populate_filespec(struct diff_filespec *, unsigned int);
 extern void diff_free_filespec_data(struct diff_filespec *);
 extern void diff_free_filespec_blob(struct diff_filespec *);
 extern int diff_filespec_is_binary(struct diff_filespec *);
@@ -110,6 +112,20 @@ extern void diffcore_rename(struct diff_options *);
 extern void diffcore_merge_broken(void);
 extern void diffcore_pickaxe(struct diff_options *);
 extern void diffcore_order(const char *orderfile);
+
+/* low-level interface to diffcore_order */
+struct obj_order {
+	void *obj;	/* setup by caller */
+
+	/* setup/used by order_objects() */
+	int orig_order;
+	int order;
+};
+
+typedef const char *(*obj_path_fn_t)(void *obj);
+
+void order_objects(const char *orderfile, obj_path_fn_t obj_path,
+		   struct obj_order *objs, int nr);
 
 #define DIFF_DEBUG 0
 #if DIFF_DEBUG

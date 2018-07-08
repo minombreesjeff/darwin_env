@@ -321,7 +321,7 @@ test_expect_success 'fetch via rsync' '
 	mkdir rsynced &&
 	(cd rsynced &&
 	 git init --bare &&
-	 git fetch "rsync:$(pwd)/../.git" master:refs/heads/master &&
+	 git fetch "rsync:../.git" master:refs/heads/master &&
 	 git gc --prune &&
 	 test $(git rev-parse master) = $(cd .. && git rev-parse master) &&
 	 git fsck --full)
@@ -332,7 +332,7 @@ test_expect_success 'push via rsync' '
 	(cd rsynced2 &&
 	 git init) &&
 	(cd rsynced &&
-	 git push "rsync:$(pwd)/../rsynced2/.git" master) &&
+	 git push "rsync:../rsynced2/.git" master) &&
 	(cd rsynced2 &&
 	 git gc --prune &&
 	 test $(git rev-parse master) = $(cd .. && git rev-parse master) &&
@@ -343,7 +343,7 @@ test_expect_success 'push via rsync' '
 	mkdir rsynced3 &&
 	(cd rsynced3 &&
 	 git init) &&
-	git push --all "rsync:$(pwd)/rsynced3/.git" &&
+	git push --all "rsync:rsynced3/.git" &&
 	(cd rsynced3 &&
 	 test $(git rev-parse master) = $(cd .. && git rev-parse master) &&
 	 git fsck --full)
@@ -443,6 +443,43 @@ test_expect_success 'explicit pull should update tracking' '
 		git pull origin master &&
 		n=$(git rev-parse --verify refs/remotes/origin/master) &&
 		test "$o" != "$n" &&
+		test_must_fail git rev-parse --verify refs/remotes/origin/side
+	)
+'
+
+test_expect_success 'explicit --refmap is allowed only with command-line refspec' '
+	cd "$D" &&
+	(
+		cd three &&
+		test_must_fail git fetch --refmap="*:refs/remotes/none/*"
+	)
+'
+
+test_expect_success 'explicit --refmap option overrides remote.*.fetch' '
+	cd "$D" &&
+	git branch -f side &&
+	(
+		cd three &&
+		git update-ref refs/remotes/origin/master base-origin-master &&
+		o=$(git rev-parse --verify refs/remotes/origin/master) &&
+		git fetch --refmap="refs/heads/*:refs/remotes/other/*" origin master &&
+		n=$(git rev-parse --verify refs/remotes/origin/master) &&
+		test "$o" = "$n" &&
+		test_must_fail git rev-parse --verify refs/remotes/origin/side &&
+		git rev-parse --verify refs/remotes/other/master
+	)
+'
+
+test_expect_success 'explicitly empty --refmap option disables remote.*.fetch' '
+	cd "$D" &&
+	git branch -f side &&
+	(
+		cd three &&
+		git update-ref refs/remotes/origin/master base-origin-master &&
+		o=$(git rev-parse --verify refs/remotes/origin/master) &&
+		git fetch --refmap="" origin master &&
+		n=$(git rev-parse --verify refs/remotes/origin/master) &&
+		test "$o" = "$n" &&
 		test_must_fail git rev-parse --verify refs/remotes/origin/side
 	)
 '

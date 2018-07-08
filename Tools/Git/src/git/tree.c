@@ -30,9 +30,12 @@ static int read_one_entry_opt(const unsigned char *sha1, const char *base, int b
 	return add_cache_entry(ce, opt);
 }
 
-static int read_one_entry(const unsigned char *sha1, const char *base, int baselen, const char *pathname, unsigned mode, int stage, void *context)
+static int read_one_entry(const unsigned char *sha1, struct strbuf *base,
+			  const char *pathname, unsigned mode, int stage,
+			  void *context)
 {
-	return read_one_entry_opt(sha1, base, baselen, pathname, mode, stage,
+	return read_one_entry_opt(sha1, base->buf, base->len, pathname,
+				  mode, stage,
 				  ADD_CACHE_OK_TO_ADD|ADD_CACHE_SKIP_DFCHECK);
 }
 
@@ -40,9 +43,12 @@ static int read_one_entry(const unsigned char *sha1, const char *base, int basel
  * This is used when the caller knows there is no existing entries at
  * the stage that will conflict with the entry being added.
  */
-static int read_one_entry_quick(const unsigned char *sha1, const char *base, int baselen, const char *pathname, unsigned mode, int stage, void *context)
+static int read_one_entry_quick(const unsigned char *sha1, struct strbuf *base,
+				const char *pathname, unsigned mode, int stage,
+				void *context)
 {
-	return read_one_entry_opt(sha1, base, baselen, pathname, mode, stage,
+	return read_one_entry_opt(sha1, base->buf, base->len, pathname,
+				  mode, stage,
 				  ADD_CACHE_JUST_APPEND);
 }
 
@@ -70,7 +76,7 @@ static int read_tree_1(struct tree *tree, struct strbuf *base,
 				continue;
 		}
 
-		switch (fn(entry.sha1, base->buf, base->len,
+		switch (fn(entry.sha1, base,
 			   entry.path, entry.mode, stage, context)) {
 		case 0:
 			continue;
@@ -183,15 +189,8 @@ struct tree *lookup_tree(const unsigned char *sha1)
 {
 	struct object *obj = lookup_object(sha1);
 	if (!obj)
-		return create_object(sha1, OBJ_TREE, alloc_tree_node());
-	if (!obj->type)
-		obj->type = OBJ_TREE;
-	if (obj->type != OBJ_TREE) {
-		error("Object %s is a %s, not a tree",
-		      sha1_to_hex(sha1), typename(obj->type));
-		return NULL;
-	}
-	return (struct tree *) obj;
+		return create_object(sha1, alloc_tree_node());
+	return object_as_type(obj, OBJ_TREE, 0);
 }
 
 int parse_tree_buffer(struct tree *item, void *buffer, unsigned long size)

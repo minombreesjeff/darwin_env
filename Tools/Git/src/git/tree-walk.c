@@ -37,7 +37,7 @@ static void decode_tree_entry(struct tree_desc *desc, const char *buf, unsigned 
 
 	/* Initialize the descriptor entry */
 	desc->entry.path = path;
-	desc->entry.mode = mode;
+	desc->entry.mode = canon_mode(mode);
 	desc->entry.sha1 = (const unsigned char *)(path + len);
 }
 
@@ -143,16 +143,6 @@ struct tree_desc_x {
 	struct tree_desc d;
 	struct tree_desc_skip *skip;
 };
-
-static int name_compare(const char *a, int a_len,
-			const char *b, int b_len)
-{
-	int len = (a_len < b_len) ? a_len : b_len;
-	int cmp = memcmp(a, b, len);
-	if (cmp)
-		return cmp;
-	return (a_len - b_len);
-}
 
 static int check_entry_match(const char *a, int a_len, const char *b, int b_len)
 {

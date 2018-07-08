@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-reset
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-RESET" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-RESET" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -34,7 +34,7 @@ git-reset \- Reset current HEAD to the specified state
 .nf
 \fIgit reset\fR [\-q] [<tree\-ish>] [\-\-] <paths>\&...
 \fIgit reset\fR (\-\-patch | \-p) [<tree\-ish>] [\-\-] [<paths>\&...]
-\fIgit reset\fR [\-\-soft | \-\-mixed | \-\-hard | \-\-merge | \-\-keep] [\-q] [<commit>]
+\fIgit reset\fR [\-\-soft | \-\-mixed [\-N] | \-\-hard | \-\-merge | \-\-keep] [\-q] [<commit>]
 .fi
 .sp
 .SH "DESCRIPTION"
@@ -43,7 +43,7 @@ In the first and second form, copy entries from <tree\-ish> to the index\&. In t
 .PP
 \fIgit reset\fR [\-q] [<tree\-ish>] [\-\-] <paths>\&...
 .RS 4
-This form resets the index entries for all <paths> to their state at <tree\-ish>\&. (It does not affect the working tree, nor the current branch\&.)
+This form resets the index entries for all <paths> to their state at <tree\-ish>\&. (It does not affect the working tree or the current branch\&.)
 .sp
 This means that
 git reset <paths>
@@ -79,7 +79,7 @@ This form resets the current branch head to <commit> and possibly updates the in
 .PP
 \-\-soft
 .RS 4
-Does not touch the index file nor the working tree at all (but resets the head to <commit>, just like all modes do)\&. This leaves all your changed files "Changes to be committed", as
+Does not touch the index file or the working tree at all (but resets the head to <commit>, just like all modes do)\&. This leaves all your changed files "Changes to be committed", as
 \fIgit status\fR
 would put it\&.
 .RE
@@ -87,6 +87,11 @@ would put it\&.
 \-\-mixed
 .RS 4
 Resets the index but not the working tree (i\&.e\&., the changed files are preserved but not marked for commit) and reports what has not been updated\&. This is the default action\&.
+.sp
+If
+\-N
+is specified, removed paths are marked as intent\-to\-add (see
+\fBgit-add\fR(1))\&.
 .RE
 .PP
 \-\-hard
@@ -138,7 +143,7 @@ $ git pull git://info\&.example\&.com/ nitfol  \fB(4)\fR
 .br
 \fB2. \fRSomebody asks you to pull, and the changes sounds worthy of merging\&.
 .br
-\fB3. \fRHowever, you already dirtied the index (i\&.e\&. your index does not match the HEAD commit)\&. But you know the pull you are going to make does not affect frotz\&.c nor filfre\&.c, so you revert the index changes for these two files\&. Your changes in working tree remain there\&.
+\fB3. \fRHowever, you already dirtied the index (i\&.e\&. your index does not match the HEAD commit)\&. But you know the pull you are going to make does not affect frotz\&.c or filfre\&.c, so you revert the index changes for these two files\&. Your changes in working tree remain there\&.
 .br
 \fB4. \fRThen you can pull and merge, leaving frotz\&.c and filfre\&.c changes still in the working tree\&.
 .br

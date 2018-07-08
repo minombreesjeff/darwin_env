@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "lockfile.h"
 #include "sequencer.h"
 #include "dir.h"
 #include "object.h"
@@ -116,39 +117,23 @@ static const char *action_name(const struct replay_opts *opts)
 	return opts->action == REPLAY_REVERT ? "revert" : "cherry-pick";
 }
 
-static char *get_encoding(const char *message);
-
 struct commit_message {
 	char *parent_label;
 	const char *label;
 	const char *subject;
-	char *reencoded_message;
 	const char *message;
 };
 
 static int get_message(struct commit *commit, struct commit_message *out)
 {
-	const char *encoding;
 	const char *abbrev, *subject;
 	int abbrev_len, subject_len;
 	char *q;
 
-	if (!commit->buffer)
-		return -1;
-	encoding = get_encoding(commit->buffer);
-	if (!encoding)
-		encoding = "UTF-8";
 	if (!git_commit_encoding)
 		git_commit_encoding = "UTF-8";
 
-	out->reencoded_message = NULL;
-	out->message = commit->buffer;
-	if (same_encoding(encoding, git_commit_encoding))
-		out->reencoded_message = reencode_string(commit->buffer,
-					git_commit_encoding, encoding);
-	if (out->reencoded_message)
-		out->message = out->reencoded_message;
-
+	out->message = logmsg_reencode(commit, NULL, git_commit_encoding);
 	abbrev = find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV);
 	abbrev_len = strlen(abbrev);
 
@@ -167,29 +152,10 @@ static int get_message(struct commit *commit, struct commit_message *out)
 	return 0;
 }
 
-static void free_message(struct commit_message *msg)
+static void free_message(struct commit *commit, struct commit_message *msg)
 {
 	free(msg->parent_label);
-	free(msg->reencoded_message);
-}
-
-static char *get_encoding(const char *message)
-{
-	const char *p = message, *eol;
-
-	while (*p && *p != '\n') {
-		for (eol = p + 1; *eol && *eol != '\n'; eol++)
-			; /* do nothing */
-		if (starts_with(p, "encoding ")) {
-			char *result = xmalloc(eol - 8 - p);
-			strlcpy(result, p + 9, eol - 8 - p);
-			return result;
-		}
-		p = eol;
-		if (*p == '\n')
-			p++;
-	}
-	return NULL;
+	unuse_commit_buffer(commit, msg->message);
 }
 
 static void write_cherry_pick_head(struct commit *commit, const char *pseudoref)
@@ -272,19 +238,50 @@ static int error_dirty_index(struct replay_opts *opts)
 static int fast_forward_to(const unsigned char *to, const unsigned char *from,
 			int unborn, struct replay_opts *opts)
 {
-	struct ref_lock *ref_lock;
+	struct ref_transaction *transaction;
 	struct strbuf sb = STRBUF_INIT;
-	int ret;
+	struct strbuf err = STRBUF_INIT;
 
 	read_cache();
 	if (checkout_fast_forward(from, to, 1))
-		exit(1); /* the callee should have complained already */
-	ref_lock = lock_any_ref_for_update("HEAD", unborn ? null_sha1 : from,
-					   0, NULL);
+		exit(128); /* the callee should have complained already */
+
 	strbuf_addf(&sb, "%s: fast-forward", action_name(opts));
-	ret = write_ref_sha1(ref_lock, to, sb.buf);
+
+	transaction = ref_transaction_begin(&err);
+	if (!transaction ||
+	    ref_transaction_update(transaction, "HEAD",
+				   to, unborn ? null_sha1 : from,
+				   0, 1, sb.buf, &err) ||
+	    ref_transaction_commit(transaction, &err)) {
+		ref_transaction_free(transaction);
+		error("%s", err.buf);
+		strbuf_release(&sb);
+		strbuf_release(&err);
+		return -1;
+	}
+
 	strbuf_release(&sb);
-	return ret;
+	strbuf_release(&err);
+	ref_transaction_free(transaction);
+	return 0;
+}
+
+void append_conflicts_hint(struct strbuf *msgbuf)
+{
+	int i;
+
+	strbuf_addch(msgbuf, '\n');
+	strbuf_commented_addf(msgbuf, "Conflicts:\n");
+	for (i = 0; i < active_nr;) {
+		const struct cache_entry *ce = active_cache[i++];
+		if (ce_stage(ce)) {
+			strbuf_commented_addf(msgbuf, "\t%s\n", ce->name);
+			while (i < active_nr && !strcmp(ce->name,
+							active_cache[i]->name))
+				i++;
+		}
+	}
 }
 
 static int do_recursive_merge(struct commit *base, struct commit *next,
@@ -294,11 +291,11 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 {
 	struct merge_options o;
 	struct tree *result, *next_tree, *base_tree, *head_tree;
-	int clean, index_fd;
+	int clean;
 	const char **xopt;
 	static struct lock_file index_lock;
 
-	index_fd = hold_locked_index(&index_lock, 1);
+	hold_locked_index(&index_lock, 1);
 
 	read_cache();
 
@@ -319,8 +316,7 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 			    next_tree, base_tree, &result);
 
 	if (active_cache_changed &&
-	    (write_cache(index_fd, active_cache, active_nr) ||
-	     commit_locked_index(&index_lock)))
+	    write_locked_index(&the_index, &index_lock, COMMIT_LOCK))
 		/* TRANSLATORS: %s will be "revert" or "cherry-pick" */
 		die(_("%s: Unable to write new index file"), action_name(opts));
 	rollback_lock_file(&index_lock);
@@ -328,21 +324,8 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 	if (opts->signoff)
 		append_signoff(msgbuf, 0, 0);
 
-	if (!clean) {
-		int i;
-		strbuf_addstr(msgbuf, "\nConflicts:\n");
-		for (i = 0; i < active_nr;) {
-			const struct cache_entry *ce = active_cache[i++];
-			if (ce_stage(ce)) {
-				strbuf_addch(msgbuf, '\t');
-				strbuf_addstr(msgbuf, ce->name);
-				strbuf_addch(msgbuf, '\n');
-				while (i < active_nr && !strcmp(ce->name,
-						active_cache[i]->name))
-					i++;
-			}
-		}
-	}
+	if (!clean)
+		append_conflicts_hint(msgbuf);
 
 	return !clean;
 }
@@ -352,7 +335,7 @@ static int is_index_unchanged(void)
 	unsigned char head_sha1[20];
 	struct commit *head_commit;
 
-	if (!resolve_ref_unsafe("HEAD", head_sha1, 1, NULL))
+	if (!resolve_ref_unsafe("HEAD", RESOLVE_REF_READING, head_sha1, NULL))
 		return error(_("Could not resolve HEAD commit\n"));
 
 	head_commit = lookup_commit(head_sha1);
@@ -372,9 +355,7 @@ static int is_index_unchanged(void)
 		active_cache_tree = cache_tree();
 
 	if (!cache_tree_fully_valid(active_cache_tree))
-		if (cache_tree_update(active_cache_tree,
-				      (const struct cache_entry * const *)active_cache,
-				      active_nr, 0))
+		if (cache_tree_update(&the_index, 0))
 			return error(_("Unable to update cache tree\n"));
 
 	return !hashcmp(active_cache_tree->sha1, head_commit->tree->object.sha1);
@@ -397,6 +378,8 @@ static int run_git_commit(const char *defmsg, struct replay_opts *opts,
 	argv_array_push(&array, "commit");
 	argv_array_push(&array, "-n");
 
+	if (opts->gpg_sign)
+		argv_array_pushf(&array, "-S%s", opts->gpg_sign);
 	if (opts->signoff)
 		argv_array_push(&array, "-s");
 	if (!opts->edit) {
@@ -478,7 +461,7 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 	unsigned char head[20];
 	struct commit *base, *next, *parent;
 	const char *base_label, *next_label;
-	struct commit_message msg = { NULL, NULL, NULL, NULL, NULL };
+	struct commit_message msg = { NULL, NULL, NULL, NULL };
 	char *defmsg = NULL;
 	struct strbuf msgbuf = STRBUF_INIT;
 	int res, unborn = 0, allow;
@@ -643,7 +626,7 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 		res = run_git_commit(defmsg, opts, allow);
 
 leave:
-	free_message(&msg);
+	free_message(commit, &msg);
 	free(defmsg);
 
 	return res;
@@ -672,9 +655,8 @@ static void read_and_refresh_cache(struct replay_opts *opts)
 	if (read_index_preload(&the_index, NULL) < 0)
 		die(_("git %s: failed to read the index"), action_name(opts));
 	refresh_index(&the_index, REFRESH_QUIET|REFRESH_UNMERGED, NULL, NULL, NULL);
-	if (the_index.cache_changed) {
-		if (write_index(&the_index, index_fd) ||
-		    commit_locked_index(&index_lock))
+	if (the_index.cache_changed && index_fd >= 0) {
+		if (write_locked_index(&the_index, &index_lock, COMMIT_LOCK))
 			die(_("git %s: failed to refresh the index"), action_name(opts));
 	}
 	rollback_lock_file(&index_lock);
@@ -690,10 +672,12 @@ static int format_todo(struct strbuf *buf, struct commit_list *todo_list,
 	int subject_len;
 
 	for (cur = todo_list; cur; cur = cur->next) {
+		const char *commit_buffer = get_commit_buffer(cur->item, NULL);
 		sha1_abbrev = find_unique_abbrev(cur->item->object.sha1, DEFAULT_ABBREV);
-		subject_len = find_commit_subject(cur->item->buffer, &subject);
+		subject_len = find_commit_subject(commit_buffer, &subject);
 		strbuf_addf(buf, "%s %s %.*s\n", action_str, sha1_abbrev,
 			subject_len, subject);
+		unuse_commit_buffer(cur->item, commit_buffer);
 	}
 	return 0;
 }
@@ -808,6 +792,8 @@ static int populate_opts_cb(const char *key, const char *value, void *data)
 		opts->mainline = git_config_int(key, value);
 	else if (!strcmp(key, "options.strategy"))
 		git_config_string(&opts->strategy, key, value);
+	else if (!strcmp(key, "options.gpg-sign"))
+		git_config_string(&opts->gpg_sign, key, value);
 	else if (!strcmp(key, "options.strategy-option")) {
 		ALLOC_GROW(opts->xopts, opts->xopts_nr + 1, opts->xopts_alloc);
 		opts->xopts[opts->xopts_nr++] = xstrdup(value);
@@ -889,7 +875,7 @@ static int rollback_single_pick(void)
 	if (!file_exists(git_path("CHERRY_PICK_HEAD")) &&
 	    !file_exists(git_path("REVERT_HEAD")))
 		return error(_("no cherry-pick or revert in progress"));
-	if (read_ref_full("HEAD", head_sha1, 0, NULL))
+	if (read_ref_full("HEAD", 0, head_sha1, NULL))
 		return error(_("cannot resolve HEAD"));
 	if (is_null_sha1(head_sha1))
 		return error(_("cannot abort from a branch yet to be born"));
@@ -981,6 +967,8 @@ static void save_opts(struct replay_opts *opts)
 	}
 	if (opts->strategy)
 		git_config_set_in_file(opts_file, "options.strategy", opts->strategy);
+	if (opts->gpg_sign)
+		git_config_set_in_file(opts_file, "options.gpg-sign", opts->gpg_sign);
 	if (opts->xopts) {
 		int i;
 		for (i = 0; i < opts->xopts_nr; i++)

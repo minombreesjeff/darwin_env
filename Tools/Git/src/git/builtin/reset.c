@@ -8,6 +8,7 @@
  * Copyright (c) 2005, 2006 Linus Torvalds and Junio C Hamano
  */
 #include "builtin.h"
+#include "lockfile.h"
 #include "tag.h"
 #include "object.h"
 #include "commit.h"
@@ -84,7 +85,7 @@ static int reset_index(const unsigned char *sha1, int reset_type, int quiet)
 
 	if (reset_type == MIXED || reset_type == HARD) {
 		tree = parse_tree_indirect(sha1);
-		prime_cache_tree(&active_cache_tree, tree);
+		prime_cache_tree(&the_index, tree);
 	}
 
 	return 0;
@@ -93,7 +94,7 @@ static int reset_index(const unsigned char *sha1, int reset_type, int quiet)
 static void print_new_head_line(struct commit *commit)
 {
 	const char *hex, *body;
-	char *msg;
+	const char *msg;
 
 	hex = find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV);
 	printf(_("HEAD is now at %s"), hex);
@@ -109,32 +110,41 @@ static void print_new_head_line(struct commit *commit)
 	}
 	else
 		printf("\n");
-	logmsg_free(msg, commit);
+	unuse_commit_buffer(commit, msg);
 }
 
 static void update_index_from_diff(struct diff_queue_struct *q,
 		struct diff_options *opt, void *data)
 {
 	int i;
+	int intent_to_add = *(int *)data;
 
 	for (i = 0; i < q->nr; i++) {
 		struct diff_filespec *one = q->queue[i]->one;
-		if (one->mode && !is_null_sha1(one->sha1)) {
-			struct cache_entry *ce;
-			ce = make_cache_entry(one->mode, one->sha1, one->path,
-				0, 0);
-			if (!ce)
-				die(_("make_cache_entry failed for path '%s'"),
-				    one->path);
-			add_cache_entry(ce, ADD_CACHE_OK_TO_ADD |
-				ADD_CACHE_OK_TO_REPLACE);
-		} else
+		int is_missing = !(one->mode && !is_null_sha1(one->sha1));
+		struct cache_entry *ce;
+
+		if (is_missing && !intent_to_add) {
 			remove_file_from_cache(one->path);
+			continue;
+		}
+
+		ce = make_cache_entry(one->mode, one->sha1, one->path,
+				      0, 0);
+		if (!ce)
+			die(_("make_cache_entry failed for path '%s'"),
+			    one->path);
+		if (is_missing) {
+			ce->ce_flags |= CE_INTENT_TO_ADD;
+			set_object_name_for_intent_to_add_entry(ce);
+		}
+		add_cache_entry(ce, ADD_CACHE_OK_TO_ADD | ADD_CACHE_OK_TO_REPLACE);
 	}
 }
 
 static int read_from_tree(const struct pathspec *pathspec,
-			  unsigned char *tree_sha1)
+			  unsigned char *tree_sha1,
+			  int intent_to_add)
 {
 	struct diff_options opt;
 
@@ -142,6 +152,7 @@ static int read_from_tree(const struct pathspec *pathspec,
 	copy_pathspec(&opt.pathspec, pathspec);
 	opt.output_format = DIFF_FORMAT_CALLBACK;
 	opt.format_callback = update_index_from_diff;
+	opt.format_callback_data = &intent_to_add;
 
 	if (do_diff_cache(tree_sha1, &opt))
 		return 1;
@@ -242,11 +253,13 @@ static int reset_refs(const char *rev, const unsigned char *sha1)
 	if (!get_sha1("HEAD", sha1_orig)) {
 		orig = sha1_orig;
 		set_reflog_message(&msg, "updating ORIG_HEAD", NULL);
-		update_ref(msg.buf, "ORIG_HEAD", orig, old_orig, 0, MSG_ON_ERR);
+		update_ref(msg.buf, "ORIG_HEAD", orig, old_orig, 0,
+			   UPDATE_REFS_MSG_ON_ERR);
 	} else if (old_orig)
 		delete_ref("ORIG_HEAD", old_orig, 0);
 	set_reflog_message(&msg, "updating HEAD", rev);
-	update_ref_status = update_ref(msg.buf, "HEAD", sha1, orig, 0, MSG_ON_ERR);
+	update_ref_status = update_ref(msg.buf, "HEAD", sha1, orig, 0,
+				       UPDATE_REFS_MSG_ON_ERR);
 	strbuf_release(&msg);
 	return update_ref_status;
 }
@@ -258,6 +271,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 	const char *rev;
 	unsigned char sha1[20];
 	struct pathspec pathspec;
+	int intent_to_add = 0;
 	const struct option options[] = {
 		OPT__QUIET(&quiet, N_("be quiet, only report errors")),
 		OPT_SET_INT(0, "mixed", &reset_type,
@@ -270,6 +284,8 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		OPT_SET_INT(0, "keep", &reset_type,
 				N_("reset HEAD but keep local changes"), KEEP),
 		OPT_BOOL('p', "patch", &patch_mode, N_("select hunks interactively")),
+		OPT_BOOL('N', "intent-to-add", &intent_to_add,
+				N_("record only the fact that removed paths will be added later")),
 		OPT_END()
 	};
 
@@ -327,6 +343,9 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		die(_("%s reset is not allowed in a bare repository"),
 		    _(reset_type_names[reset_type]));
 
+	if (intent_to_add && reset_type != MIXED)
+		die(_("-N can only be used with --mixed"));
+
 	/* Soft reset does not touch the index file nor the working tree
 	 * at all, but requires them in a good order.  Other resets reset
 	 * the index file to the tree object we are switching to. */
@@ -335,10 +354,10 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 
 	if (reset_type != SOFT) {
 		struct lock_file *lock = xcalloc(1, sizeof(*lock));
-		int newfd = hold_locked_index(lock, 1);
+		hold_locked_index(lock, 1);
 		if (reset_type == MIXED) {
 			int flags = quiet ? REFRESH_QUIET : REFRESH_IN_PORCELAIN;
-			if (read_from_tree(&pathspec, sha1))
+			if (read_from_tree(&pathspec, sha1, intent_to_add))
 				return 1;
 			if (get_git_work_tree())
 				refresh_index(&the_index, flags, NULL, NULL,
@@ -351,8 +370,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 				die(_("Could not reset index file to revision '%s'."), rev);
 		}
 
-		if (write_cache(newfd, active_cache, active_nr) ||
-		    commit_locked_index(lock))
+		if (write_locked_index(&the_index, lock, COMMIT_LOCK))
 			die(_("Could not write new index file."));
 	}
 

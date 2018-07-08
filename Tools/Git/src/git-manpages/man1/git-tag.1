@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-tag
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-TAG" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-TAG" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -55,7 +55,7 @@ Otherwise just a tag reference for the SHA\-1 object name of the commit object i
 .sp
 A GnuPG signed tag object will be created when \-s or \-u <key\-id> is used\&. When \-u <key\-id> is not used, the committer identity for the current user is used to find the GnuPG key for signing\&. The configuration variable gpg\&.program is used to specify custom GnuPG binary\&.
 .sp
-Tag objects (created with \-a, s, or \-u) are called "annotated" tags; they contain a creation date, the tagger name and e\-mail, a tagging message, and an optional GnuPG signature\&. Whereas a "lightweight" tag is simply a name for an object (usually a commit object)\&.
+Tag objects (created with \-a, \-s, or \-u) are called "annotated" tags; they contain a creation date, the tagger name and e\-mail, a tagging message, and an optional GnuPG signature\&. Whereas a "lightweight" tag is simply a name for an object (usually a commit object)\&.
 .sp
 Annotated tags are meant for release while lightweight tags are meant for private or temporary object labels\&. For this reason, some git commands for naming objects (like git describe) will ignore lightweight tags by default\&.
 .SH "OPTIONS"
@@ -99,6 +99,14 @@ Verify the gpg signature of the given tag names\&.
 \-l <pattern>, \-\-list <pattern>
 .RS 4
 List tags with names that match the given pattern (or all if no pattern is given)\&. Running "git tag" without arguments also lists all tags\&. The pattern is a shell wildcard (i\&.e\&., matched using fnmatch(3))\&. Multiple patterns may be given; if any of them matches, the tag is shown\&.
+.RE
+.PP
+\-\-sort=<type>
+.RS 4
+Sort in a specific order\&. Supported type is "refname" (lexicographic order), "version:refname" or "v:refname" (tag names are treated as versions)\&. Prepend "\-" to reverse sort order\&. When this option is not given, the sort order defaults to the value configured for the
+\fItag\&.sort\fR
+variable if it exists, or lexicographic order otherwise\&. See
+\fBgit-config\fR(1)\&.
 .RE
 .PP
 \-\-column[=<options>], \-\-no\-column
@@ -375,7 +383,7 @@ DD\&.MM\&.YYYY\&.
 .RE
 .SH "SEE ALSO"
 .sp
-\fBgit-check-ref-format\fR(1)\&.
+\fBgit-check-ref-format\fR(1)\&. \fBgit-config\fR(1)\&.
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite

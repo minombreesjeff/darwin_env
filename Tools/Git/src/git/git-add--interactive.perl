@@ -58,6 +58,9 @@ if ($repo->config_bool("interactive.singlekey")) {
 		Term::ReadKey->import;
 		$use_readkey = 1;
 	};
+	if (!$use_readkey) {
+		print STDERR "missing Term::ReadKey, disabling interactive.singlekey\n";
+	}
 	eval {
 		require Term::Cap;
 		my $termcap = Term::Cap->Tgetent;
@@ -512,6 +515,9 @@ sub error_msg {
 sub list_and_choose {
 	my ($opts, @stuff) = @_;
 	my (@chosen, @return);
+	if (!@stuff) {
+	    return @return;
+	}
 	my $i;
 	my @prefixes = find_unique_prefixes(@stuff) unless $opts->{LIST_ONLY};
 
@@ -722,6 +728,8 @@ sub add_untracked_cmd {
 	if (@add) {
 		system(qw(git update-index --add --), @add);
 		say_n_paths('added', @add);
+	} else {
+		print "No untracked files.\n";
 	}
 	print "\n";
 }
@@ -1353,6 +1361,7 @@ sub patch_update_file {
 		  $patch_mode_flavour{TARGET},
 		  " [y,n,q,a,d,/$other,?]? ";
 		my $line = prompt_single_character;
+		last unless defined $line;
 		if ($line) {
 			if ($line =~ /^y/i) {
 				$hunk[$ix]{USE} = 1;

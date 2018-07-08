@@ -42,7 +42,7 @@ committer identity for the current user is used to find the
 GnuPG key for signing. 	The configuration variable `gpg.program`
 is used to specify custom GnuPG binary.
 
-Tag objects (created with `-a`, `s`, or `-u`) are called "annotated"
+Tag objects (created with `-a`, `-s`, or `-u`) are called "annotated"
 tags; they contain a creation date, the tagger name and e-mail, a
 tagging message, and an optional GnuPG signature. Whereas a
 "lightweight" tag is simply a name for an object (usually a commit
@@ -94,6 +94,14 @@ OPTIONS
 	lists all tags. The pattern is a shell wildcard (i.e., matched
 	using fnmatch(3)).  Multiple patterns may be given; if any of
 	them matches, the tag is shown.
+
+--sort=<type>::
+	Sort in a specific order. Supported type is "refname"
+	(lexicographic order), "version:refname" or "v:refname" (tag
+	names are treated as versions). Prepend "-" to reverse sort
+	order. When this option is not given, the sort order defaults to the
+	value configured for the 'tag.sort' variable if it exists, or
+	lexicographic order otherwise. See linkgit:git-config[1].
 
 --column[=<options>]::
 --no-column::
@@ -311,6 +319,7 @@ include::date-formats.txt[]
 SEE ALSO
 --------
 linkgit:git-check-ref-format[1].
+linkgit:git-config[1].
 
 GIT
 ---

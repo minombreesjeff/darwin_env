@@ -7,6 +7,7 @@
 #include "commit.h"
 #include "diff.h"
 
+/* Remember to update object flag allocation in object.h */
 #define SEEN		(1u<<0)
 #define UNINTERESTING   (1u<<1)
 #define TREESAME	(1u<<2)
@@ -18,7 +19,8 @@
 #define SYMMETRIC_LEFT	(1u<<8)
 #define PATCHSAME	(1u<<9)
 #define BOTTOM		(1u<<10)
-#define ALL_REV_FLAGS	((1u<<11)-1)
+#define TRACK_LINEAR	(1u<<26)
+#define ALL_REV_FLAGS	(((1u<<11)-1) | TRACK_LINEAR)
 
 #define DECORATE_SHORT_REFS	1
 #define DECORATE_FULL_REFS	2
@@ -73,7 +75,8 @@ struct rev_info {
 	enum rev_sort_order sort_order;
 
 	unsigned int	early_output:1,
-			ignore_missing:1;
+			ignore_missing:1,
+			ignore_missing_links:1;
 
 	/* Traversal flags */
 	unsigned int	dense:1,
@@ -90,6 +93,7 @@ struct rev_info {
 			blob_objects:1,
 			verify_objects:1,
 			edge_hint:1,
+			edge_hint_aggressive:1,
 			limited:1,
 			unpacked:1,
 			boundary:2,
@@ -137,6 +141,10 @@ struct rev_info {
 			preserve_subject:1;
 	unsigned int	disable_stdin:1;
 	unsigned int	leak_pending:1;
+	/* --show-linear-break */
+	unsigned int	track_linear:1,
+			track_first_time:1,
+			linear:1;
 
 	enum date_mode date_mode;
 
@@ -172,6 +180,8 @@ struct rev_info {
 	unsigned long min_age;
 	int min_parents;
 	int max_parents;
+	int (*include_check)(struct commit *, void *);
+	void *include_check_data;
 
 	/* diff info for patches and for paths limiting */
 	struct diff_options diffopt;
@@ -195,6 +205,9 @@ struct rev_info {
 
 	/* copies of the parent lists, for --full-diff display */
 	struct saved_parents *saved_parents_slab;
+
+	struct commit_list *previous_parents;
+	const char *break_bar;
 };
 
 extern int ref_excluded(struct string_list *, const char *path);
@@ -252,11 +265,6 @@ char *path_name(const struct name_path *path, const char *name);
 extern void show_object_with_name(FILE *, struct object *,
 				  const struct name_path *, const char *);
 
-extern void add_object(struct object *obj,
-		       struct object_array *p,
-		       struct name_path *path,
-		       const char *name);
-
 extern void add_pending_object(struct rev_info *revs,
 			       struct object *obj, const char *name);
 extern void add_pending_sha1(struct rev_info *revs,
@@ -264,6 +272,8 @@ extern void add_pending_sha1(struct rev_info *revs,
 			     unsigned int flags);
 
 extern void add_head_to_pending(struct rev_info *);
+extern void add_reflogs_to_pending(struct rev_info *, unsigned int flags);
+extern void add_index_objects_to_pending(struct rev_info *, unsigned int flags);
 
 enum commit_action {
 	commit_ignore,

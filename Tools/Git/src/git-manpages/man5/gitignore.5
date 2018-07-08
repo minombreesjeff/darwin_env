@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: gitignore
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GITIGNORE" "5" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GITIGNORE" "5" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -165,6 +165,17 @@ A line starting with # serves as a comment\&. Put a backslash ("\e") in front of
 .sp -1
 .IP \(bu 2.3
 .\}
+Trailing spaces are ignored unless they are quoted with backslash ("\e")\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 An optional prefix "!" which negates the pattern; any matching file excluded by a previous pattern will become included again\&. It is not possible to re\-include a file if a parent directory of that file is excluded\&. Git doesn\(cqt list excluded directories for performance reasons, so any patterns on contained files have no effect, no matter where they are defined\&. Put a backslash ("\e") in front of the first "!" for patterns that begin with a literal "!", for example, "\e!important!\&.txt"\&.
 .RE
 .sp
@@ -274,8 +285,6 @@ Other consecutive asterisks are considered invalid\&.
 .sp
 The purpose of gitignore files is to ensure that certain files not tracked by Git remain untracked\&.
 .sp
-To ignore uncommitted changes in a file that is already tracked, use \fIgit update\-index \-\-assume\-unchanged\fR\&.
-.sp
 To stop tracking a file that is currently tracked, use \fIgit rm \-\-cached\fR\&.
 .SH "EXAMPLES"
 .sp
@@ -351,7 +360,7 @@ Example to exclude everything except a specific directory foo/bar (note the /* \
 .sp
 .SH "SEE ALSO"
 .sp
-\fBgit-rm\fR(1), \fBgit-update-index\fR(1), \fBgitrepository-layout\fR(5), \fBgit-check-ignore\fR(1)
+\fBgit-rm\fR(1), \fBgitrepository-layout\fR(5), \fBgit-check-ignore\fR(1)
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite

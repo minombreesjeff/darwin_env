@@ -267,16 +267,10 @@ static void graph_ensure_capacity(struct git_graph *graph, int num_columns)
 		graph->column_capacity *= 2;
 	} while (graph->column_capacity < num_columns);
 
-	graph->columns = xrealloc(graph->columns,
-				  sizeof(struct column) *
-				  graph->column_capacity);
-	graph->new_columns = xrealloc(graph->new_columns,
-				      sizeof(struct column) *
-				      graph->column_capacity);
-	graph->mapping = xrealloc(graph->mapping,
-				  sizeof(int) * 2 * graph->column_capacity);
-	graph->new_mapping = xrealloc(graph->new_mapping,
-				      sizeof(int) * 2 * graph->column_capacity);
+	REALLOC_ARRAY(graph->columns, graph->column_capacity);
+	REALLOC_ARRAY(graph->new_columns, graph->column_capacity);
+	REALLOC_ARRAY(graph->mapping, graph->column_capacity * 2);
+	REALLOC_ARRAY(graph->new_mapping, graph->column_capacity * 2);
 }
 
 /*
@@ -1145,7 +1139,7 @@ int graph_next_line(struct git_graph *graph, struct strbuf *sb)
 
 static void graph_padding_line(struct git_graph *graph, struct strbuf *sb)
 {
-	int i, j;
+	int i;
 
 	if (graph->state != GRAPH_COMMIT) {
 		graph_next_line(graph, sb);
@@ -1161,21 +1155,11 @@ static void graph_padding_line(struct git_graph *graph, struct strbuf *sb)
 	 */
 	for (i = 0; i < graph->num_columns; i++) {
 		struct column *col = &graph->columns[i];
-		struct commit *col_commit = col->commit;
-		if (col_commit == graph->commit) {
-			strbuf_write_column(sb, col, '|');
-
-			if (graph->num_parents < 3)
-				strbuf_addch(sb, ' ');
-			else {
-				int num_spaces = ((graph->num_parents - 2) * 2);
-				for (j = 0; j < num_spaces; j++)
-					strbuf_addch(sb, ' ');
-			}
-		} else {
-			strbuf_write_column(sb, col, '|');
+		strbuf_write_column(sb, col, '|');
+		if (col->commit == graph->commit && graph->num_parents > 2)
+			strbuf_addchars(sb, ' ', (graph->num_parents - 2) * 2);
+		else
 			strbuf_addch(sb, ' ');
-		}
 	}
 
 	graph_pad_horizontally(graph, sb, graph->num_columns);

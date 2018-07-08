@@ -43,11 +43,11 @@ static int append_normalized_escapes(struct strbuf *buf,
 		from_len--;
 		if (ch == '%') {
 			if (from_len < 2 ||
-			    !isxdigit((unsigned char)from[0]) ||
-			    !isxdigit((unsigned char)from[1]))
+			    !isxdigit(from[0]) ||
+			    !isxdigit(from[1]))
 				return 0;
-			ch = hexval_table[(unsigned char)*from++] << 4;
-			ch |= hexval_table[(unsigned char)*from++];
+			ch = hexval(*from++) << 4;
+			ch |= hexval(*from++);
 			from_len -= 2;
 			was_esc = 1;
 		}
@@ -483,8 +483,7 @@ int urlmatch_config_entry(const char *var, const char *value, void *cb)
 	int user_matched = 0;
 	int retval;
 
-	key = skip_prefix(var, collect->section);
-	if (!key || *(key++) != '.') {
+	if (!skip_prefix(var, collect->section, &key) || *(key++) != '.') {
 		if (collect->cascade_fn)
 			return collect->cascade_fn(var, value, cb);
 		return 0; /* not interested */

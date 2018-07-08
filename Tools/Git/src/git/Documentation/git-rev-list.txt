@@ -45,8 +45,9 @@ SYNOPSIS
 	     [ \--regexp-ignore-case | -i ]
 	     [ \--extended-regexp | -E ]
 	     [ \--fixed-strings | -F ]
-	     [ \--date=(local|relative|default|iso|rfc|short) ]
-	     [ [\--objects | \--objects-edge] [ \--unpacked ] ]
+	     [ \--date=(local|relative|default|iso|iso-strict|rfc|short) ]
+	     [ [ \--objects | \--objects-edge | \--objects-edge-aggressive ]
+	       [ \--unpacked ] ]
 	     [ \--pretty | \--header ]
 	     [ \--bisect ]
 	     [ \--bisect-vars ]
@@ -55,6 +56,7 @@ SYNOPSIS
 	     [ \--reverse ]
 	     [ \--walk-reflogs ]
 	     [ \--no-walk ] [ \--do-walk ]
+	     [ \--use-bitmap-index ]
 	     <commit>... [ \-- <paths>... ]
 
 DESCRIPTION

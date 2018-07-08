@@ -9,11 +9,11 @@ test_expect_success setup '
 	# clone does not allow us to pass core.bigfilethreshold to
 	# new repos, so set core.bigfilethreshold globally
 	git config --global core.bigfilethreshold 200k &&
-	echo X | dd of=large1 bs=1k seek=2000 &&
-	echo X | dd of=large2 bs=1k seek=2000 &&
-	echo X | dd of=large3 bs=1k seek=2000 &&
-	echo Y | dd of=huge bs=1k seek=2500 &&
-	GIT_ALLOC_LIMIT=1500 &&
+	printf "%2000000s" X >large1 &&
+	cp large1 large2 &&
+	cp large1 large3 &&
+	printf "%2500000s" Y >huge &&
+	GIT_ALLOC_LIMIT=1500k &&
 	export GIT_ALLOC_LIMIT
 '
 
@@ -61,7 +61,7 @@ test_expect_success 'checkout a large file' '
 	large1=$(git rev-parse :large1) &&
 	git update-index --add --cacheinfo 100644 $large1 another &&
 	git checkout another &&
-	cmp large1 another ;# this must not be test_cmp
+	test_cmp large1 another
 '
 
 test_expect_success 'packsize limit' '
@@ -112,6 +112,20 @@ test_expect_success 'diff --raw' '
 	git diff --raw HEAD^
 '
 
+test_expect_success 'diff --stat' '
+	git diff --stat HEAD^ HEAD
+'
+
+test_expect_success 'diff' '
+	git diff HEAD^ HEAD >actual &&
+	grep "Binary files.*differ" actual
+'
+
+test_expect_success 'diff --cached' '
+	git diff --cached HEAD^ >actual &&
+	grep "Binary files.*differ" actual
+'
+
 test_expect_success 'hash-object' '
 	git hash-object large1
 '
@@ -131,7 +145,7 @@ test_expect_success 'git-show a large file' '
 '
 
 test_expect_success 'index-pack' '
-	git clone file://"`pwd`"/.git foo &&
+	git clone file://"$(pwd)"/.git foo &&
 	GIT_DIR=non-existent git index-pack --strict --verify foo/.git/objects/pack/*.pack
 '
 
@@ -140,7 +154,7 @@ test_expect_success 'repack' '
 '
 
 test_expect_success 'pack-objects with large loose object' '
-	SHA1=`git hash-object huge` &&
+	SHA1=$(git hash-object huge) &&
 	test_create_repo loose &&
 	echo $SHA1 | git pack-objects --stdout |
 		GIT_ALLOC_LIMIT=0 GIT_DIR=loose/.git git unpack-objects &&
@@ -148,7 +162,7 @@ test_expect_success 'pack-objects with large loose object' '
 	test_create_repo packed &&
 	mv pack-* packed/.git/objects/pack &&
 	GIT_DIR=packed/.git git cat-file blob $SHA1 >actual &&
-	cmp huge actual
+	test_cmp huge actual
 '
 
 test_expect_success 'tar achiving' '
@@ -161,6 +175,12 @@ test_expect_success 'zip achiving, store only' '
 
 test_expect_success 'zip achiving, deflate' '
 	git archive --format=zip HEAD >/dev/null
+'
+
+test_expect_success 'fsck' '
+	test_must_fail git fsck 2>err &&
+	n=$(grep "error: attempting to allocate .* over limit" err | wc -l) &&
+	test "$n" -gt 1
 '
 
 test_done

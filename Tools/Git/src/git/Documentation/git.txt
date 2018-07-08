@@ -22,14 +22,14 @@ unusually rich command set that provides both high-level operations
 and full access to internals.
 
 See linkgit:gittutorial[7] to get started, then see
-link:everyday.html[Everyday Git] for a useful minimum set of
+linkgit:giteveryday[7] for a useful minimum set of
 commands.  The link:user-manual.html[Git User's Manual] has a more
 in-depth introduction.
 
 After you mastered the basic concepts, you can come back to this
 page to learn what commands Git offers.  You can learn more about
 individual Git commands with "git help command".  linkgit:gitcli[7]
-manual page gives you an overview of the command line command syntax.
+manual page gives you an overview of the command-line command syntax.
 
 Formatted and hyperlinked version of the latest Git documentation
 can be viewed at `http://git-htmldocs.googlecode.com/git/git.html`.
@@ -39,9 +39,42 @@ ifdef::stalenotes[]
 ============
 
 You are reading the documentation for the latest (possibly
-unreleased) version of Git, that is available from 'master'
+unreleased) version of Git, that is available from the 'master'
 branch of the `git.git` repository.
 Documentation for older releases are available here:
+
+* link:v2.3.2/git.html[documentation for release 2.3.2]
+
+* release notes for
+  link:RelNotes/2.3.2.txt[2.3.2],
+  link:RelNotes/2.3.1.txt[2.3.1],
+  link:RelNotes/2.3.0.txt[2.3].
+
+* link:v2.2.2/git.html[documentation for release 2.2.2]
+
+* release notes for
+  link:RelNotes/2.2.2.txt[2.2.2],
+  link:RelNotes/2.2.1.txt[2.2.1],
+  link:RelNotes/2.2.0.txt[2.2].
+
+* link:v2.1.4/git.html[documentation for release 2.1.4]
+
+* release notes for
+  link:RelNotes/2.1.4.txt[2.1.4],
+  link:RelNotes/2.1.3.txt[2.1.3],
+  link:RelNotes/2.1.2.txt[2.1.2],
+  link:RelNotes/2.1.1.txt[2.1.1],
+  link:RelNotes/2.1.0.txt[2.1].
+
+* link:v2.0.5/git.html[documentation for release 2.0.5]
+
+* release notes for
+  link:RelNotes/2.0.5.txt[2.0.5],
+  link:RelNotes/2.0.4.txt[2.0.4],
+  link:RelNotes/2.0.3.txt[2.0.3],
+  link:RelNotes/2.0.2.txt[2.0.2],
+  link:RelNotes/2.0.1.txt[2.0.1],
+  link:RelNotes/2.0.0.txt[2.0.0].
 
 * link:v1.9.5/git.html[documentation for release 1.9.5]
 
@@ -440,6 +473,11 @@ example the following invocations are equivalent:
 	given will override values from configuration files.
 	The <name> is expected in the same format as listed by
 	'git config' (subkeys separated by dots).
++
+Note that omitting the `=` in `git -c foo.bar ...` is allowed and sets
+`foo.bar` to the boolean true value (just like `[foo]bar` would in a
+config file). Including the equals but with an empty value (like `git -c
+foo.bar= ...`) sets `foo.bar` to the empty string.
 
 --exec-path[=<path>]::
 	Path to wherever your core Git programs are installed.
@@ -726,6 +764,11 @@ Git so take care if using Cogito etc.
 	index file. If not specified, the default of `$GIT_DIR/index`
 	is used.
 
+'GIT_INDEX_VERSION'::
+	This environment variable allows the specification of an index
+	version for new repositories.  It won't affect existing index
+	files.  By default index file version [23] is used.
+
 'GIT_OBJECT_DIRECTORY'::
 	If the object storage directory is specified via this
 	environment variable then the sha1 directories are created
@@ -747,7 +790,7 @@ Git so take care if using Cogito etc.
 
 'GIT_WORK_TREE'::
 	Set the path to the root of the working tree.
-	This can also be controlled by the '--work-tree' command line
+	This can also be controlled by the '--work-tree' command-line
 	option and the core.worktree configuration variable.
 
 'GIT_NAMESPACE'::
@@ -851,19 +894,21 @@ other
 	and the `core.editor` option in linkgit:git-config[1].
 
 'GIT_SSH'::
-	If this environment variable is set then 'git fetch'
-	and 'git push' will use this command instead
-	of 'ssh' when they need to connect to a remote system.
-	The '$GIT_SSH' command will be given exactly two or
-	four arguments: the 'username@host' (or just 'host')
-	from the URL and the shell command to execute on that
-	remote system, optionally preceded by '-p' (literally) and
-	the 'port' from the URL when it specifies something other
-	than the default SSH port.
+'GIT_SSH_COMMAND'::
+	If either of these environment variables is set then 'git fetch'
+	and 'git push' will use the specified command instead of 'ssh'
+	when they need to connect to a remote system.
+	The command will be given exactly two or four arguments: the
+	'username@host' (or just 'host') from the URL and the shell
+	command to execute on that remote system, optionally preceded by
+	'-p' (literally) and the 'port' from the URL when it specifies
+	something other than the default SSH port.
 +
-To pass options to the program that you want to list in GIT_SSH
-you will need to wrap the program and options into a shell script,
-then set GIT_SSH to refer to the shell script.
+`$GIT_SSH_COMMAND` takes precedence over `$GIT_SSH`, and is interpreted
+by the shell, which allows additional arguments to be included.
+`$GIT_SSH` on the other hand must be just the path to a program
+(which can be a wrapper shell script, if additional arguments are
+needed).
 +
 Usually it is easier to configure any desired options through your
 personal `.ssh/config` file.  Please consult your ssh documentation
@@ -872,9 +917,13 @@ for further details.
 'GIT_ASKPASS'::
 	If this environment variable is set, then Git commands which need to
 	acquire passwords or passphrases (e.g. for HTTP or IMAP authentication)
-	will call this program with a suitable prompt as command line argument
+	will call this program with a suitable prompt as command-line argument
 	and read the password from its STDOUT. See also the 'core.askpass'
 	option in linkgit:git-config[1].
+
+'GIT_TERMINAL_PROMPT'::
+	If this environment variable is set to `0`, git will not prompt
+	on the terminal (e.g., when asking for HTTP authentication).
 
 'GIT_CONFIG_NOSYSTEM'::
 	Whether to skip reading settings from the system-wide
@@ -896,31 +945,54 @@ for further details.
 	based on whether stdout appears to be redirected to a file or not.
 
 'GIT_TRACE'::
-	If this variable is set to "1", "2" or "true" (comparison
-	is case insensitive), Git will print `trace:` messages on
-	stderr telling about alias expansion, built-in command
-	execution and external command execution.
-	If this variable is set to an integer value greater than 1
-	and lower than 10 (strictly) then Git will interpret this
-	value as an open file descriptor and will try to write the
-	trace messages into this file descriptor.
-	Alternatively, if this variable is set to an absolute path
-	(starting with a '/' character), Git will interpret this
-	as a file path and will try to write the trace messages
-	into it.
+	Enables general trace messages, e.g. alias expansion, built-in
+	command execution and external command execution.
++
+If this variable is set to "1", "2" or "true" (comparison
+is case insensitive), trace messages will be printed to
+stderr.
++
+If the variable is set to an integer value greater than 2
+and lower than 10 (strictly) then Git will interpret this
+value as an open file descriptor and will try to write the
+trace messages into this file descriptor.
++
+Alternatively, if the variable is set to an absolute path
+(starting with a '/' character), Git will interpret this
+as a file path and will try to write the trace messages
+into it.
++
+Unsetting the variable, or setting it to empty, "0" or
+"false" (case insensitive) disables trace messages.
 
 'GIT_TRACE_PACK_ACCESS'::
-	If this variable is set to a path, a file will be created at
-	the given path logging all accesses to any packs. For each
+	Enables trace messages for all accesses to any packs. For each
 	access, the pack file name and an offset in the pack is
 	recorded. This may be helpful for troubleshooting some
 	pack-related performance problems.
+	See 'GIT_TRACE' for available trace output options.
 
 'GIT_TRACE_PACKET'::
-	If this variable is set, it shows a trace of all packets
-	coming in or out of a given program. This can help with
-	debugging object negotiation or other protocol issues. Tracing
-	is turned off at a packet starting with "PACK".
+	Enables trace messages for all packets coming in or out of a
+	given program. This can help with debugging object negotiation
+	or other protocol issues. Tracing is turned off at a packet
+	starting with "PACK".
+	See 'GIT_TRACE' for available trace output options.
+
+'GIT_TRACE_PERFORMANCE'::
+	Enables performance related trace messages, e.g. total execution
+	time of each Git command.
+	See 'GIT_TRACE' for available trace output options.
+
+'GIT_TRACE_SETUP'::
+	Enables trace messages printing the .git, working tree and current
+	working directory after Git has completed its setup phase.
+	See 'GIT_TRACE' for available trace output options.
+
+'GIT_TRACE_SHALLOW'::
+	Enables trace messages that can help debugging fetching /
+	cloning of shallow repositories.
+	See 'GIT_TRACE' for available trace output options.
 
 GIT_LITERAL_PATHSPECS::
 	Setting this variable to `1` will cause Git to treat all
@@ -1034,7 +1106,7 @@ Authors
 -------
 Git was started by Linus Torvalds, and is currently maintained by Junio
 C Hamano. Numerous contributions have come from the Git mailing list
-<git@vger.kernel.org>.  http://www.ohloh.net/p/git/contributors/summary
+<git@vger.kernel.org>.  http://www.openhub.net/p/git/contributors/summary
 gives you a more complete list of contributors.
 
 If you have a clone of git.git itself, the
@@ -1051,7 +1123,7 @@ subscribed to the list to send a message there.
 SEE ALSO
 --------
 linkgit:gittutorial[7], linkgit:gittutorial-2[7],
-link:everyday.html[Everyday Git], linkgit:gitcvs-migration[7],
+linkgit:giteveryday[7], linkgit:gitcvs-migration[7],
 linkgit:gitglossary[7], linkgit:gitcore-tutorial[7],
 linkgit:gitcli[7], link:user-manual.html[The Git User's Manual],
 linkgit:gitworkflows[7]

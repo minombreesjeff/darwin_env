@@ -97,8 +97,7 @@ static struct git_attr *git_attr_internal(const char *name, int len)
 	a->attr_nr = attr_nr++;
 	git_attr_hash[pos] = a;
 
-	check_all_attr = xrealloc(check_all_attr,
-				  sizeof(*check_all_attr) * attr_nr);
+	REALLOC_ARRAY(check_all_attr, attr_nr);
 	check_all_attr[a->attr_nr].attr = a;
 	check_all_attr[a->attr_nr].value = ATTR__UNKNOWN;
 	return a;
@@ -338,12 +337,7 @@ static void handle_attr_line(struct attr_stack *res,
 	a = parse_attr_line(line, src, lineno, macro_ok);
 	if (!a)
 		return;
-	if (res->alloc <= res->num_matches) {
-		res->alloc = alloc_nr(res->num_matches);
-		res->attrs = xrealloc(res->attrs,
-				      sizeof(struct match_attr *) *
-				      res->alloc);
-	}
+	ALLOC_GROW(res->attrs, res->num_matches + 1, res->alloc);
 	res->attrs[res->num_matches++] = a;
 }
 

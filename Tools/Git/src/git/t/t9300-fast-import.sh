@@ -347,36 +347,6 @@ test_expect_success 'B: fail on invalid blob sha1' '
 rm -f .git/objects/pack_* .git/objects/index_*
 
 cat >input <<INPUT_END
-commit .badbranchname
-committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
-data <<COMMIT
-corrupt
-COMMIT
-
-from refs/heads/master
-
-INPUT_END
-test_expect_success 'B: fail on invalid branch name ".badbranchname"' '
-    test_must_fail git fast-import <input
-'
-rm -f .git/objects/pack_* .git/objects/index_*
-
-cat >input <<INPUT_END
-commit bad[branch]name
-committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
-data <<COMMIT
-corrupt
-COMMIT
-
-from refs/heads/master
-
-INPUT_END
-test_expect_success 'B: fail on invalid branch name "bad[branch]name"' '
-    test_must_fail git fast-import <input
-'
-rm -f .git/objects/pack_* .git/objects/index_*
-
-cat >input <<INPUT_END
 commit TEMP_TAG
 committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
 data <<COMMIT
@@ -2336,7 +2306,7 @@ test_expect_success 'R: cat-blob-fd must be a nonnegative integer' '
 	test_must_fail git fast-import --cat-blob-fd=-1 </dev/null
 '
 
-test_expect_success NOT_MINGW 'R: print old blob' '
+test_expect_success !MINGW 'R: print old blob' '
 	blob=$(echo "yes it can" | git hash-object -w --stdin) &&
 	cat >expect <<-EOF &&
 	${blob} blob 11
@@ -2348,7 +2318,7 @@ test_expect_success NOT_MINGW 'R: print old blob' '
 	test_cmp expect actual
 '
 
-test_expect_success NOT_MINGW 'R: in-stream cat-blob-fd not respected' '
+test_expect_success !MINGW 'R: in-stream cat-blob-fd not respected' '
 	echo hello >greeting &&
 	blob=$(git hash-object -w greeting) &&
 	cat >expect <<-EOF &&
@@ -2369,7 +2339,7 @@ test_expect_success NOT_MINGW 'R: in-stream cat-blob-fd not respected' '
 	test_cmp expect actual.1
 '
 
-test_expect_success NOT_MINGW 'R: print new blob' '
+test_expect_success !MINGW 'R: print new blob' '
 	blob=$(echo "yep yep yep" | git hash-object --stdin) &&
 	cat >expect <<-EOF &&
 	${blob} blob 12
@@ -2387,7 +2357,7 @@ test_expect_success NOT_MINGW 'R: print new blob' '
 	test_cmp expect actual
 '
 
-test_expect_success NOT_MINGW 'R: print new blob by sha1' '
+test_expect_success !MINGW 'R: print new blob by sha1' '
 	blob=$(echo "a new blob named by sha1" | git hash-object --stdin) &&
 	cat >expect <<-EOF &&
 	${blob} blob 25
@@ -2687,7 +2657,7 @@ test_expect_success 'R: verify created pack' '
 test_expect_success \
 	'R: verify written objects' \
 	'git --git-dir=R/.git cat-file blob big-file:big1 >actual &&
-	 test_cmp expect actual &&
+	 test_cmp_bin expect actual &&
 	 a=$(git --git-dir=R/.git rev-parse big-file:big1) &&
 	 b=$(git --git-dir=R/.git rev-parse big-file:big2) &&
 	 test $a = $b'
@@ -2866,7 +2836,7 @@ test_expect_success 'S: notemodify with garbage after sha1 dataref must fail' '
 #
 # notemodify, mark in commit-ish
 #
-test_expect_success 'S: notemodify with garbarge after mark commit-ish must fail' '
+test_expect_success 'S: notemodify with garbage after mark commit-ish must fail' '
 	test_must_fail git fast-import --import-marks=marks <<-EOF 2>err &&
 	commit refs/heads/Snotes
 	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
@@ -2997,6 +2967,128 @@ test_expect_success 'T: ls root tree' '
 	ls $sha1 ""
 	EOF
 	test_cmp expect actual
+'
+
+test_expect_success 'T: delete branch' '
+	git branch to-delete &&
+	git fast-import <<-EOF &&
+	reset refs/heads/to-delete
+	from 0000000000000000000000000000000000000000
+	EOF
+	test_must_fail git rev-parse --verify refs/heads/to-delete
+'
+
+test_expect_success 'T: empty reset doesnt delete branch' '
+	git branch not-to-delete &&
+	git fast-import <<-EOF &&
+	reset refs/heads/not-to-delete
+	EOF
+	git show-ref &&
+	git rev-parse --verify refs/heads/not-to-delete
+'
+
+###
+### series U (filedelete)
+###
+
+cat >input <<INPUT_END
+commit refs/heads/U
+committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+data <<COMMIT
+test setup
+COMMIT
+M 100644 inline hello.c
+data <<BLOB
+blob 1
+BLOB
+M 100644 inline good/night.txt
+data <<BLOB
+sleep well
+BLOB
+M 100644 inline good/bye.txt
+data <<BLOB
+au revoir
+BLOB
+
+INPUT_END
+
+test_expect_success 'U: initialize for U tests' '
+	git fast-import <input
+'
+
+cat >input <<INPUT_END
+commit refs/heads/U
+committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+data <<COMMIT
+delete good/night.txt
+COMMIT
+from refs/heads/U^0
+D good/night.txt
+
+INPUT_END
+
+test_expect_success 'U: filedelete file succeeds' '
+	git fast-import <input
+'
+
+cat >expect <<EOF
+:100644 000000 2907ebb4bf85d91bf0716bb3bd8a68ef48d6da76 0000000000000000000000000000000000000000 D	good/night.txt
+EOF
+
+git diff-tree -M -r U^1 U >actual
+
+test_expect_success 'U: validate file delete result' '
+	compare_diff_raw expect actual
+'
+
+cat >input <<INPUT_END
+commit refs/heads/U
+committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+data <<COMMIT
+delete good dir
+COMMIT
+from refs/heads/U^0
+D good
+
+INPUT_END
+
+test_expect_success 'U: filedelete directory succeeds' '
+	git fast-import <input
+'
+
+cat >expect <<EOF
+:100644 000000 69cb75792f55123d8389c156b0b41c2ff00ed507 0000000000000000000000000000000000000000 D	good/bye.txt
+EOF
+
+git diff-tree -M -r U^1 U >actual
+
+test_expect_success 'U: validate directory delete result' '
+	compare_diff_raw expect actual
+'
+
+cat >input <<INPUT_END
+commit refs/heads/U
+committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+data <<COMMIT
+must succeed
+COMMIT
+from refs/heads/U^0
+D ""
+
+INPUT_END
+
+test_expect_success 'U: filedelete root succeeds' '
+    git fast-import <input
+'
+
+cat >expect <<EOF
+:100644 000000 c18147dc648481eeb65dc5e66628429a64843327 0000000000000000000000000000000000000000 D	hello.c
+EOF
+
+git diff-tree -M -r U^1 U >actual
+
+test_expect_success 'U: validate root delete result' '
+	compare_diff_raw expect actual
 '
 
 test_done

@@ -77,6 +77,9 @@ PATTERN FORMAT
    Put a backslash ("`\`") in front of the first hash for patterns
    that begin with a hash.
 
+ - Trailing spaces are ignored unless they are quoted with backslash
+   ("`\`").
+
  - An optional prefix "`!`" which negates the pattern; any
    matching file excluded by a previous pattern will become
    included again. It is not possible to re-include a file if a parent
@@ -134,9 +137,6 @@ NOTES
 
 The purpose of gitignore files is to ensure that certain files
 not tracked by Git remain untracked.
-
-To ignore uncommitted changes in a file that is already tracked,
-use 'git update-index {litdd}assume-unchanged'.
 
 To stop tracking a file that is currently tracked, use
 'git rm --cached'.
@@ -200,7 +200,6 @@ everything within `foo/bar`):
 SEE ALSO
 --------
 linkgit:git-rm[1],
-linkgit:git-update-index[1],
 linkgit:gitrepository-layout[5],
 linkgit:git-check-ignore[1]
 

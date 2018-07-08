@@ -153,6 +153,7 @@ Format of STDIN stream:
 
 #include "builtin.h"
 #include "cache.h"
+#include "lockfile.h"
 #include "object.h"
 #include "blob.h"
 #include "tree.h"
@@ -248,6 +249,7 @@ struct branch {
 	uintmax_t last_commit;
 	uintmax_t num_notes;
 	unsigned active : 1;
+	unsigned delete : 1;
 	unsigned pack_id : PACK_ID_BITS;
 	unsigned char sha1[20];
 };
@@ -370,8 +372,8 @@ static volatile sig_atomic_t checkpoint_requested;
 static int cat_blob_fd = STDOUT_FILENO;
 
 static void parse_argv(void);
-static void parse_cat_blob(void);
-static void parse_ls(struct branch *b);
+static void parse_cat_blob(const char *p);
+static void parse_ls(const char *p, struct branch *b);
 
 static void write_branch_report(FILE *rpt, struct branch *b)
 {
@@ -877,7 +879,7 @@ static void start_packfile(void)
 	pack_size = sizeof(hdr);
 	object_count = 0;
 
-	all_packs = xrealloc(all_packs, sizeof(*all_packs) * (pack_id + 1));
+	REALLOC_ARRAY(all_packs, pack_id + 1);
 	all_packs[pack_id] = p;
 }
 
@@ -945,10 +947,15 @@ static void unkeep_all_packs(void)
 
 static void end_packfile(void)
 {
-	struct packed_git *old_p = pack_data, *new_p;
+	static int running;
 
+	if (running || !pack_data)
+		return;
+
+	running = 1;
 	clear_delta_base_cache();
 	if (object_count) {
+		struct packed_git *new_p;
 		unsigned char cur_pack_sha1[20];
 		char *idx_name;
 		int i;
@@ -990,10 +997,12 @@ static void end_packfile(void)
 		pack_id++;
 	}
 	else {
-		close(old_p->pack_fd);
-		unlink_or_warn(old_p->pack_name);
+		close(pack_data->pack_fd);
+		unlink_or_warn(pack_data->pack_name);
 	}
-	free(old_p);
+	free(pack_data);
+	pack_data = NULL;
+	running = 0;
 
 	/* We can't carry a delta across packfiles. */
 	strbuf_release(&last_blob.data);
@@ -1418,13 +1427,17 @@ static void mktree(struct tree_content *t, int v, struct strbuf *b)
 
 static void store_tree(struct tree_entry *root)
 {
-	struct tree_content *t = root->tree;
+	struct tree_content *t;
 	unsigned int i, j, del;
 	struct last_object lo = { STRBUF_INIT, 0, 0, /* no_swap */ 1 };
 	struct object_entry *le = NULL;
 
 	if (!is_null_sha1(root->versions[1].sha1))
 		return;
+
+	if (!root->tree)
+		load_tree(root);
+	t = root->tree;
 
 	for (i = 0; i < t->entry_count; i++) {
 		if (t->entries[i]->tree)
@@ -1485,14 +1498,11 @@ static int tree_content_set(
 	unsigned int i, n;
 	struct tree_entry *e;
 
-	slash1 = strchr(p, '/');
-	if (slash1)
-		n = slash1 - p;
-	else
-		n = strlen(p);
+	slash1 = strchrnul(p, '/');
+	n = slash1 - p;
 	if (!n)
 		die("Empty path component found in input");
-	if (!slash1 && !S_ISDIR(mode) && subtree)
+	if (!*slash1 && !S_ISDIR(mode) && subtree)
 		die("Non-directories cannot have subtrees");
 
 	if (!root->tree)
@@ -1501,7 +1511,7 @@ static int tree_content_set(
 	for (i = 0; i < t->entry_count; i++) {
 		e = t->entries[i];
 		if (e->name->str_len == n && !strncmp_icase(p, e->name->str_dat, n)) {
-			if (!slash1) {
+			if (!*slash1) {
 				if (!S_ISDIR(mode)
 						&& e->versions[1].mode == mode
 						&& !hashcmp(e->versions[1].sha1, sha1))
@@ -1552,7 +1562,7 @@ static int tree_content_set(
 	e->versions[0].mode = 0;
 	hashclr(e->versions[0].sha1);
 	t->entries[t->entry_count++] = e;
-	if (slash1) {
+	if (*slash1) {
 		e->tree = new_tree_content(8);
 		e->versions[1].mode = S_IFDIR;
 		tree_content_set(e, slash1 + 1, sha1, mode, subtree);
@@ -1576,11 +1586,8 @@ static int tree_content_remove(
 	unsigned int i, n;
 	struct tree_entry *e;
 
-	slash1 = strchr(p, '/');
-	if (slash1)
-		n = slash1 - p;
-	else
-		n = strlen(p);
+	slash1 = strchrnul(p, '/');
+	n = slash1 - p;
 
 	if (!root->tree)
 		load_tree(root);
@@ -1594,7 +1601,7 @@ static int tree_content_remove(
 	for (i = 0; i < t->entry_count; i++) {
 		e = t->entries[i];
 		if (e->name->str_len == n && !strncmp_icase(p, e->name->str_dat, n)) {
-			if (slash1 && !S_ISDIR(e->versions[1].mode))
+			if (*slash1 && !S_ISDIR(e->versions[1].mode))
 				/*
 				 * If p names a file in some subdirectory, and a
 				 * file or symlink matching the name of the
@@ -1602,7 +1609,7 @@ static int tree_content_remove(
 				 * exist and need not be deleted.
 				 */
 				return 1;
-			if (!slash1 || !S_ISDIR(e->versions[1].mode))
+			if (!*slash1 || !S_ISDIR(e->versions[1].mode))
 				goto del_entry;
 			if (!e->tree)
 				load_tree(e);
@@ -1644,11 +1651,8 @@ static int tree_content_get(
 	unsigned int i, n;
 	struct tree_entry *e;
 
-	slash1 = strchr(p, '/');
-	if (slash1)
-		n = slash1 - p;
-	else
-		n = strlen(p);
+	slash1 = strchrnul(p, '/');
+	n = slash1 - p;
 	if (!n && !allow_root)
 		die("Empty path component found in input");
 
@@ -1664,7 +1668,7 @@ static int tree_content_get(
 	for (i = 0; i < t->entry_count; i++) {
 		e = t->entries[i];
 		if (e->name->str_len == n && !strncmp_icase(p, e->name->str_dat, n)) {
-			if (!slash1)
+			if (!*slash1)
 				goto found_entry;
 			if (!S_ISDIR(e->versions[1].mode))
 				return 0;
@@ -1687,36 +1691,44 @@ found_entry:
 static int update_branch(struct branch *b)
 {
 	static const char *msg = "fast-import";
-	struct ref_lock *lock;
+	struct ref_transaction *transaction;
 	unsigned char old_sha1[20];
+	struct strbuf err = STRBUF_INIT;
 
-	if (is_null_sha1(b->sha1))
-		return 0;
 	if (read_ref(b->name, old_sha1))
 		hashclr(old_sha1);
-	lock = lock_any_ref_for_update(b->name, old_sha1, 0, NULL);
-	if (!lock)
-		return error("Unable to lock %s", b->name);
+	if (is_null_sha1(b->sha1)) {
+		if (b->delete)
+			delete_ref(b->name, old_sha1, 0);
+		return 0;
+	}
 	if (!force_update && !is_null_sha1(old_sha1)) {
 		struct commit *old_cmit, *new_cmit;
 
 		old_cmit = lookup_commit_reference_gently(old_sha1, 0);
 		new_cmit = lookup_commit_reference_gently(b->sha1, 0);
-		if (!old_cmit || !new_cmit) {
-			unlock_ref(lock);
+		if (!old_cmit || !new_cmit)
 			return error("Branch %s is missing commits.", b->name);
-		}
 
 		if (!in_merge_bases(old_cmit, new_cmit)) {
-			unlock_ref(lock);
 			warning("Not updating %s"
 				" (new tip %s does not contain %s)",
 				b->name, sha1_to_hex(b->sha1), sha1_to_hex(old_sha1));
 			return -1;
 		}
 	}
-	if (write_ref_sha1(lock, b->sha1, msg) < 0)
-		return error("Unable to update %s", b->name);
+	transaction = ref_transaction_begin(&err);
+	if (!transaction ||
+	    ref_transaction_update(transaction, b->name, b->sha1, old_sha1,
+				   0, 1, msg, &err) ||
+	    ref_transaction_commit(transaction, &err)) {
+		ref_transaction_free(transaction);
+		error("%s", err.buf);
+		strbuf_release(&err);
+		return -1;
+	}
+	ref_transaction_free(transaction);
+	strbuf_release(&err);
 	return 0;
 }
 
@@ -1735,15 +1747,32 @@ static void dump_tags(void)
 {
 	static const char *msg = "fast-import";
 	struct tag *t;
-	struct ref_lock *lock;
-	char ref_name[PATH_MAX];
+	struct strbuf ref_name = STRBUF_INIT;
+	struct strbuf err = STRBUF_INIT;
+	struct ref_transaction *transaction;
 
-	for (t = first_tag; t; t = t->next_tag) {
-		sprintf(ref_name, "tags/%s", t->name);
-		lock = lock_ref_sha1(ref_name, NULL);
-		if (!lock || write_ref_sha1(lock, t->sha1, msg) < 0)
-			failure |= error("Unable to update %s", ref_name);
+	transaction = ref_transaction_begin(&err);
+	if (!transaction) {
+		failure |= error("%s", err.buf);
+		goto cleanup;
 	}
+	for (t = first_tag; t; t = t->next_tag) {
+		strbuf_reset(&ref_name);
+		strbuf_addf(&ref_name, "refs/tags/%s", t->name);
+
+		if (ref_transaction_update(transaction, ref_name.buf, t->sha1,
+					   NULL, 0, 0, msg, &err)) {
+			failure |= error("%s", err.buf);
+			goto cleanup;
+		}
+	}
+	if (ref_transaction_commit(transaction, &err))
+		failure |= error("%s", err.buf);
+
+ cleanup:
+	ref_transaction_free(transaction);
+	strbuf_release(&ref_name);
+	strbuf_release(&err);
 }
 
 static void dump_marks_helper(FILE *f,
@@ -1769,20 +1798,18 @@ static void dump_marks_helper(FILE *f,
 static void dump_marks(void)
 {
 	static struct lock_file mark_lock;
-	int mark_fd;
 	FILE *f;
 
 	if (!export_marks_file)
 		return;
 
-	mark_fd = hold_lock_file_for_update(&mark_lock, export_marks_file, 0);
-	if (mark_fd < 0) {
+	if (hold_lock_file_for_update(&mark_lock, export_marks_file, 0) < 0) {
 		failure |= error("Unable to write marks file %s: %s",
 			export_marks_file, strerror(errno));
 		return;
 	}
 
-	f = fdopen(mark_fd, "w");
+	f = fdopen_lock_file(&mark_lock, "w");
 	if (!f) {
 		int saved_errno = errno;
 		rollback_lock_file(&mark_lock);
@@ -1791,27 +1818,10 @@ static void dump_marks(void)
 		return;
 	}
 
-	/*
-	 * Since the lock file was fdopen()'ed, it should not be close()'ed.
-	 * Assign -1 to the lock file descriptor so that commit_lock_file()
-	 * won't try to close() it.
-	 */
-	mark_lock.fd = -1;
-
 	dump_marks_helper(f, 0, marks);
-	if (ferror(f) || fclose(f)) {
-		int saved_errno = errno;
-		rollback_lock_file(&mark_lock);
-		failure |= error("Unable to write marks file %s: %s",
-			export_marks_file, strerror(saved_errno));
-		return;
-	}
-
 	if (commit_lock_file(&mark_lock)) {
-		int saved_errno = errno;
-		rollback_lock_file(&mark_lock);
 		failure |= error("Unable to commit marks file %s: %s",
-			export_marks_file, strerror(saved_errno));
+			export_marks_file, strerror(errno));
 		return;
 	}
 }
@@ -1866,6 +1876,8 @@ static int read_next_command(void)
 	}
 
 	for (;;) {
+		const char *p;
+
 		if (unread_command_buf) {
 			unread_command_buf = 0;
 		} else {
@@ -1898,8 +1910,8 @@ static int read_next_command(void)
 			rc->prev->next = rc;
 			cmd_tail = rc;
 		}
-		if (starts_with(command_buf.buf, "cat-blob ")) {
-			parse_cat_blob();
+		if (skip_prefix(command_buf.buf, "cat-blob ", &p)) {
+			parse_cat_blob(p);
 			continue;
 		}
 		if (command_buf.buf[0] == '#')
@@ -1917,8 +1929,9 @@ static void skip_optional_lf(void)
 
 static void parse_mark(void)
 {
-	if (starts_with(command_buf.buf, "mark :")) {
-		next_mark = strtoumax(command_buf.buf + 6, NULL, 10);
+	const char *v;
+	if (skip_prefix(command_buf.buf, "mark :", &v)) {
+		next_mark = strtoumax(v, NULL, 10);
 		read_next_command();
 	}
 	else
@@ -1927,14 +1940,15 @@ static void parse_mark(void)
 
 static int parse_data(struct strbuf *sb, uintmax_t limit, uintmax_t *len_res)
 {
+	const char *data;
 	strbuf_reset(sb);
 
-	if (!starts_with(command_buf.buf, "data "))
+	if (!skip_prefix(command_buf.buf, "data ", &data))
 		die("Expected 'data n' command, found: %s", command_buf.buf);
 
-	if (starts_with(command_buf.buf + 5, "<<")) {
-		char *term = xstrdup(command_buf.buf + 5 + 2);
-		size_t term_len = command_buf.len - 5 - 2;
+	if (skip_prefix(data, "<<", &data)) {
+		char *term = xstrdup(data);
+		size_t term_len = command_buf.len - (data - command_buf.buf);
 
 		strbuf_detach(&command_buf, NULL);
 		for (;;) {
@@ -1949,7 +1963,7 @@ static int parse_data(struct strbuf *sb, uintmax_t limit, uintmax_t *len_res)
 		free(term);
 	}
 	else {
-		uintmax_t len = strtoumax(command_buf.buf + 5, NULL, 10);
+		uintmax_t len = strtoumax(data, NULL, 10);
 		size_t n = 0, length = (size_t)len;
 
 		if (limit && limit < len) {
@@ -1972,7 +1986,7 @@ static int parse_data(struct strbuf *sb, uintmax_t limit, uintmax_t *len_res)
 	return 1;
 }
 
-static int validate_raw_date(const char *src, char *result, int maxlen)
+static int validate_raw_date(const char *src, struct strbuf *result)
 {
 	const char *orig_src = src;
 	char *endp;
@@ -1990,11 +2004,10 @@ static int validate_raw_date(const char *src, char *result, int maxlen)
 		return -1;
 
 	num = strtoul(src + 1, &endp, 10);
-	if (errno || endp == src + 1 || *endp || (endp - orig_src) >= maxlen ||
-	    1400 < num)
+	if (errno || endp == src + 1 || *endp || 1400 < num)
 		return -1;
 
-	strcpy(result, orig_src);
+	strbuf_addstr(result, orig_src);
 	return 0;
 }
 
@@ -2002,7 +2015,7 @@ static char *parse_ident(const char *buf)
 {
 	const char *ltgt;
 	size_t name_len;
-	char *ident;
+	struct strbuf ident = STRBUF_INIT;
 
 	/* ensure there is a space delimiter even if there is no name */
 	if (*buf == '<')
@@ -2021,26 +2034,25 @@ static char *parse_ident(const char *buf)
 		die("Missing space after > in ident string: %s", buf);
 	ltgt++;
 	name_len = ltgt - buf;
-	ident = xmalloc(name_len + 24);
-	strncpy(ident, buf, name_len);
+	strbuf_add(&ident, buf, name_len);
 
 	switch (whenspec) {
 	case WHENSPEC_RAW:
-		if (validate_raw_date(ltgt, ident + name_len, 24) < 0)
+		if (validate_raw_date(ltgt, &ident) < 0)
 			die("Invalid raw date \"%s\" in ident: %s", ltgt, buf);
 		break;
 	case WHENSPEC_RFC2822:
-		if (parse_date(ltgt, ident + name_len, 24) < 0)
+		if (parse_date(ltgt, &ident) < 0)
 			die("Invalid rfc2822 date \"%s\" in ident: %s", ltgt, buf);
 		break;
 	case WHENSPEC_NOW:
 		if (strcmp("now", ltgt))
 			die("Date in ident must be 'now': %s", buf);
-		datestamp(ident + name_len, 24);
+		datestamp(&ident);
 		break;
 	}
 
-	return ident;
+	return strbuf_detach(&ident, NULL);
 }
 
 static void parse_and_store_blob(
@@ -2270,15 +2282,14 @@ static uintmax_t parse_mark_ref_space(const char **p)
 	char *end;
 
 	mark = parse_mark_ref(*p, &end);
-	if (*end != ' ')
+	if (*end++ != ' ')
 		die("Missing space after mark: %s", command_buf.buf);
 	*p = end;
 	return mark;
 }
 
-static void file_change_m(struct branch *b)
+static void file_change_m(const char *p, struct branch *b)
 {
-	const char *p = command_buf.buf + 2;
 	static struct strbuf uq = STRBUF_INIT;
 	const char *endp;
 	struct object_entry *oe;
@@ -2306,20 +2317,17 @@ static void file_change_m(struct branch *b)
 	if (*p == ':') {
 		oe = find_mark(parse_mark_ref_space(&p));
 		hashcpy(sha1, oe->idx.sha1);
-	} else if (starts_with(p, "inline ")) {
+	} else if (skip_prefix(p, "inline ", &p)) {
 		inline_data = 1;
 		oe = NULL; /* not used with inline_data, but makes gcc happy */
-		p += strlen("inline");  /* advance to space */
 	} else {
 		if (get_sha1_hex(p, sha1))
 			die("Invalid dataref: %s", command_buf.buf);
 		oe = find_object(sha1);
 		p += 40;
-		if (*p != ' ')
+		if (*p++ != ' ')
 			die("Missing space after SHA1: %s", command_buf.buf);
 	}
-	assert(*p == ' ');
-	p++;  /* skip space */
 
 	strbuf_reset(&uq);
 	if (!unquote_c_style(&uq, p, &endp)) {
@@ -2329,7 +2337,7 @@ static void file_change_m(struct branch *b)
 	}
 
 	/* Git does not track empty, non-toplevel directories. */
-	if (S_ISDIR(mode) && !memcmp(sha1, EMPTY_TREE_SHA1_BIN, 20) && *p) {
+	if (S_ISDIR(mode) && !hashcmp(sha1, EMPTY_TREE_SHA1_BIN) && *p) {
 		tree_content_remove(&b->branch_tree, p, NULL, 0);
 		return;
 	}
@@ -2379,9 +2387,8 @@ static void file_change_m(struct branch *b)
 	tree_content_set(&b->branch_tree, p, sha1, mode, NULL);
 }
 
-static void file_change_d(struct branch *b)
+static void file_change_d(const char *p, struct branch *b)
 {
-	const char *p = command_buf.buf + 2;
 	static struct strbuf uq = STRBUF_INIT;
 	const char *endp;
 
@@ -2394,15 +2401,14 @@ static void file_change_d(struct branch *b)
 	tree_content_remove(&b->branch_tree, p, NULL, 1);
 }
 
-static void file_change_cr(struct branch *b, int rename)
+static void file_change_cr(const char *s, struct branch *b, int rename)
 {
-	const char *s, *d;
+	const char *d;
 	static struct strbuf s_uq = STRBUF_INIT;
 	static struct strbuf d_uq = STRBUF_INIT;
 	const char *endp;
 	struct tree_entry leaf;
 
-	s = command_buf.buf + 2;
 	strbuf_reset(&s_uq);
 	if (!unquote_c_style(&s_uq, s, &endp)) {
 		if (*endp != ' ')
@@ -2447,9 +2453,8 @@ static void file_change_cr(struct branch *b, int rename)
 		leaf.tree);
 }
 
-static void note_change_n(struct branch *b, unsigned char *old_fanout)
+static void note_change_n(const char *p, struct branch *b, unsigned char *old_fanout)
 {
-	const char *p = command_buf.buf + 2;
 	static struct strbuf uq = STRBUF_INIT;
 	struct object_entry *oe;
 	struct branch *s;
@@ -2479,20 +2484,17 @@ static void note_change_n(struct branch *b, unsigned char *old_fanout)
 	if (*p == ':') {
 		oe = find_mark(parse_mark_ref_space(&p));
 		hashcpy(sha1, oe->idx.sha1);
-	} else if (starts_with(p, "inline ")) {
+	} else if (skip_prefix(p, "inline ", &p)) {
 		inline_data = 1;
 		oe = NULL; /* not used with inline_data, but makes gcc happy */
-		p += strlen("inline");  /* advance to space */
 	} else {
 		if (get_sha1_hex(p, sha1))
 			die("Invalid dataref: %s", command_buf.buf);
 		oe = find_object(sha1);
 		p += 40;
-		if (*p != ' ')
+		if (*p++ != ' ')
 			die("Missing space after SHA1: %s", command_buf.buf);
 	}
-	assert(*p == ' ');
-	p++;  /* skip space */
 
 	/* <commit-ish> */
 	s = lookup_branch(p);
@@ -2590,7 +2592,7 @@ static int parse_from(struct branch *b)
 	const char *from;
 	struct branch *s;
 
-	if (!starts_with(command_buf.buf, "from "))
+	if (!skip_prefix(command_buf.buf, "from ", &from))
 		return 0;
 
 	if (b->branch_tree.tree) {
@@ -2598,7 +2600,6 @@ static int parse_from(struct branch *b)
 		b->branch_tree.tree = NULL;
 	}
 
-	from = strchr(command_buf.buf, ' ') + 1;
 	s = lookup_branch(from);
 	if (b == s)
 		die("Can't create a branch from itself: %s", b->name);
@@ -2620,8 +2621,11 @@ static int parse_from(struct branch *b)
 			free(buf);
 		} else
 			parse_from_existing(b);
-	} else if (!get_sha1(from, b->sha1))
+	} else if (!get_sha1(from, b->sha1)) {
 		parse_from_existing(b);
+		if (is_null_sha1(b->sha1))
+			b->delete = 1;
+	}
 	else
 		die("Invalid ref name or SHA1 expression: %s", from);
 
@@ -2636,8 +2640,7 @@ static struct hash_list *parse_merge(unsigned int *count)
 	struct branch *s;
 
 	*count = 0;
-	while (starts_with(command_buf.buf, "merge ")) {
-		from = strchr(command_buf.buf, ' ') + 1;
+	while (skip_prefix(command_buf.buf, "merge ", &from)) {
 		n = xmalloc(sizeof(*n));
 		s = lookup_branch(from);
 		if (s)
@@ -2668,31 +2671,29 @@ static struct hash_list *parse_merge(unsigned int *count)
 	return list;
 }
 
-static void parse_new_commit(void)
+static void parse_new_commit(const char *arg)
 {
 	static struct strbuf msg = STRBUF_INIT;
 	struct branch *b;
-	char *sp;
 	char *author = NULL;
 	char *committer = NULL;
 	struct hash_list *merge_list = NULL;
 	unsigned int merge_count;
 	unsigned char prev_fanout, new_fanout;
+	const char *v;
 
-	/* Obtain the branch name from the rest of our command */
-	sp = strchr(command_buf.buf, ' ') + 1;
-	b = lookup_branch(sp);
+	b = lookup_branch(arg);
 	if (!b)
-		b = new_branch(sp);
+		b = new_branch(arg);
 
 	read_next_command();
 	parse_mark();
-	if (starts_with(command_buf.buf, "author ")) {
-		author = parse_ident(command_buf.buf + 7);
+	if (skip_prefix(command_buf.buf, "author ", &v)) {
+		author = parse_ident(v);
 		read_next_command();
 	}
-	if (starts_with(command_buf.buf, "committer ")) {
-		committer = parse_ident(command_buf.buf + 10);
+	if (skip_prefix(command_buf.buf, "committer ", &v)) {
+		committer = parse_ident(v);
 		read_next_command();
 	}
 	if (!committer)
@@ -2712,20 +2713,20 @@ static void parse_new_commit(void)
 
 	/* file_change* */
 	while (command_buf.len > 0) {
-		if (starts_with(command_buf.buf, "M "))
-			file_change_m(b);
-		else if (starts_with(command_buf.buf, "D "))
-			file_change_d(b);
-		else if (starts_with(command_buf.buf, "R "))
-			file_change_cr(b, 1);
-		else if (starts_with(command_buf.buf, "C "))
-			file_change_cr(b, 0);
-		else if (starts_with(command_buf.buf, "N "))
-			note_change_n(b, &prev_fanout);
+		if (skip_prefix(command_buf.buf, "M ", &v))
+			file_change_m(v, b);
+		else if (skip_prefix(command_buf.buf, "D ", &v))
+			file_change_d(v, b);
+		else if (skip_prefix(command_buf.buf, "R ", &v))
+			file_change_cr(v, b, 1);
+		else if (skip_prefix(command_buf.buf, "C ", &v))
+			file_change_cr(v, b, 0);
+		else if (skip_prefix(command_buf.buf, "N ", &v))
+			note_change_n(v, b, &prev_fanout);
 		else if (!strcmp("deleteall", command_buf.buf))
 			file_change_deleteall(b);
-		else if (starts_with(command_buf.buf, "ls "))
-			parse_ls(b);
+		else if (skip_prefix(command_buf.buf, "ls ", &v))
+			parse_ls(v, b);
 		else {
 			unread_command_buf = 1;
 			break;
@@ -2768,10 +2769,9 @@ static void parse_new_commit(void)
 	b->last_commit = object_count_by_type[OBJ_COMMIT];
 }
 
-static void parse_new_tag(void)
+static void parse_new_tag(const char *arg)
 {
 	static struct strbuf msg = STRBUF_INIT;
-	char *sp;
 	const char *from;
 	char *tagger;
 	struct branch *s;
@@ -2779,12 +2779,11 @@ static void parse_new_tag(void)
 	uintmax_t from_mark = 0;
 	unsigned char sha1[20];
 	enum object_type type;
+	const char *v;
 
-	/* Obtain the new tag name from the rest of our command */
-	sp = strchr(command_buf.buf, ' ') + 1;
 	t = pool_alloc(sizeof(struct tag));
 	memset(t, 0, sizeof(struct tag));
-	t->name = pool_strdup(sp);
+	t->name = pool_strdup(arg);
 	if (last_tag)
 		last_tag->next_tag = t;
 	else
@@ -2793,9 +2792,8 @@ static void parse_new_tag(void)
 	read_next_command();
 
 	/* from ... */
-	if (!starts_with(command_buf.buf, "from "))
+	if (!skip_prefix(command_buf.buf, "from ", &from))
 		die("Expected from command, got %s", command_buf.buf);
-	from = strchr(command_buf.buf, ' ') + 1;
 	s = lookup_branch(from);
 	if (s) {
 		if (is_null_sha1(s->sha1))
@@ -2821,8 +2819,8 @@ static void parse_new_tag(void)
 	read_next_command();
 
 	/* tagger ... */
-	if (starts_with(command_buf.buf, "tagger ")) {
-		tagger = parse_ident(command_buf.buf + 7);
+	if (skip_prefix(command_buf.buf, "tagger ", &v)) {
+		tagger = parse_ident(v);
 		read_next_command();
 	} else
 		tagger = NULL;
@@ -2851,14 +2849,11 @@ static void parse_new_tag(void)
 		t->pack_id = pack_id;
 }
 
-static void parse_reset_branch(void)
+static void parse_reset_branch(const char *arg)
 {
 	struct branch *b;
-	char *sp;
 
-	/* Obtain the branch name from the rest of our command */
-	sp = strchr(command_buf.buf, ' ') + 1;
-	b = lookup_branch(sp);
+	b = lookup_branch(arg);
 	if (b) {
 		hashclr(b->sha1);
 		hashclr(b->branch_tree.versions[0].sha1);
@@ -2869,7 +2864,7 @@ static void parse_reset_branch(void)
 		}
 	}
 	else
-		b = new_branch(sp);
+		b = new_branch(arg);
 	read_next_command();
 	parse_from(b);
 	if (command_buf.len > 0)
@@ -2927,14 +2922,12 @@ static void cat_blob(struct object_entry *oe, unsigned char sha1[20])
 		free(buf);
 }
 
-static void parse_cat_blob(void)
+static void parse_cat_blob(const char *p)
 {
-	const char *p;
 	struct object_entry *oe = oe;
 	unsigned char sha1[20];
 
 	/* cat-blob SP <object> LF */
-	p = command_buf.buf + strlen("cat-blob ");
 	if (*p == ':') {
 		oe = find_mark(parse_mark_ref_eol(p));
 		if (!oe)
@@ -3017,6 +3010,8 @@ static struct object_entry *parse_treeish_dataref(const char **p)
 			die("Invalid dataref: %s", command_buf.buf);
 		e = find_object(sha1);
 		*p += 40;
+		if (*(*p)++ != ' ')
+			die("Missing space after tree-ish: %s", command_buf.buf);
 	}
 
 	while (!e || e->type != OBJ_TREE)
@@ -3051,14 +3046,12 @@ static void print_ls(int mode, const unsigned char *sha1, const char *path)
 	cat_blob_write(line.buf, line.len);
 }
 
-static void parse_ls(struct branch *b)
+static void parse_ls(const char *p, struct branch *b)
 {
-	const char *p;
 	struct tree_entry *root = NULL;
 	struct tree_entry leaf = {NULL};
 
 	/* ls SP (<tree-ish> SP)? <path> */
-	p = command_buf.buf + strlen("ls ");
 	if (*p == '"') {
 		if (!b)
 			die("Not in a commit: %s", command_buf.buf);
@@ -3070,8 +3063,6 @@ static void parse_ls(struct branch *b)
 		if (!is_null_sha1(root->versions[1].sha1))
 			root->versions[1].mode = S_IFDIR;
 		load_tree(root);
-		if (*p++ != ' ')
-			die("Missing space after tree-ish: %s", command_buf.buf);
 	}
 	if (*p == '"') {
 		static struct strbuf uq = STRBUF_INIT;
@@ -3209,9 +3200,9 @@ static void option_export_pack_edges(const char *edges)
 
 static int parse_one_option(const char *option)
 {
-	if (starts_with(option, "max-pack-size=")) {
+	if (skip_prefix(option, "max-pack-size=", &option)) {
 		unsigned long v;
-		if (!git_parse_ulong(option + 14, &v))
+		if (!git_parse_ulong(option, &v))
 			return 0;
 		if (v < 8192) {
 			warning("max-pack-size is now in bytes, assuming --max-pack-size=%lum", v);
@@ -3221,17 +3212,17 @@ static int parse_one_option(const char *option)
 			v = 1024 * 1024;
 		}
 		max_packsize = v;
-	} else if (starts_with(option, "big-file-threshold=")) {
+	} else if (skip_prefix(option, "big-file-threshold=", &option)) {
 		unsigned long v;
-		if (!git_parse_ulong(option + 19, &v))
+		if (!git_parse_ulong(option, &v))
 			return 0;
 		big_file_threshold = v;
-	} else if (starts_with(option, "depth=")) {
-		option_depth(option + 6);
-	} else if (starts_with(option, "active-branches=")) {
-		option_active_branches(option + 16);
-	} else if (starts_with(option, "export-pack-edges=")) {
-		option_export_pack_edges(option + 18);
+	} else if (skip_prefix(option, "depth=", &option)) {
+		option_depth(option);
+	} else if (skip_prefix(option, "active-branches=", &option)) {
+		option_active_branches(option);
+	} else if (skip_prefix(option, "export-pack-edges=", &option)) {
+		option_export_pack_edges(option);
 	} else if (starts_with(option, "quiet")) {
 		show_stats = 0;
 	} else if (starts_with(option, "stats")) {
@@ -3245,15 +3236,16 @@ static int parse_one_option(const char *option)
 
 static int parse_one_feature(const char *feature, int from_stream)
 {
-	if (starts_with(feature, "date-format=")) {
-		option_date_format(feature + 12);
-	} else if (starts_with(feature, "import-marks=")) {
-		option_import_marks(feature + 13, from_stream, 0);
-	} else if (starts_with(feature, "import-marks-if-exists=")) {
-		option_import_marks(feature + strlen("import-marks-if-exists="),
-					from_stream, 1);
-	} else if (starts_with(feature, "export-marks=")) {
-		option_export_marks(feature + 13);
+	const char *arg;
+
+	if (skip_prefix(feature, "date-format=", &arg)) {
+		option_date_format(arg);
+	} else if (skip_prefix(feature, "import-marks=", &arg)) {
+		option_import_marks(arg, from_stream, 0);
+	} else if (skip_prefix(feature, "import-marks-if-exists=", &arg)) {
+		option_import_marks(arg, from_stream, 1);
+	} else if (skip_prefix(feature, "export-marks=", &arg)) {
+		option_export_marks(arg);
 	} else if (!strcmp(feature, "cat-blob")) {
 		; /* Don't die - this feature is supported */
 	} else if (!strcmp(feature, "relative-marks")) {
@@ -3273,10 +3265,8 @@ static int parse_one_feature(const char *feature, int from_stream)
 	return 1;
 }
 
-static void parse_feature(void)
+static void parse_feature(const char *feature)
 {
-	char *feature = command_buf.buf + 8;
-
 	if (seen_data_command)
 		die("Got feature command '%s' after data command", feature);
 
@@ -3286,10 +3276,8 @@ static void parse_feature(void)
 	die("This version of fast-import does not support feature %s.", feature);
 }
 
-static void parse_option(void)
+static void parse_option(const char *option)
 {
-	char *option = command_buf.buf + 11;
-
 	if (seen_data_command)
 		die("Got option command '%s' after data command", option);
 
@@ -3299,36 +3287,34 @@ static void parse_option(void)
 	die("This version of fast-import does not support option: %s", option);
 }
 
-static int git_pack_config(const char *k, const char *v, void *cb)
+static void git_pack_config(void)
 {
-	if (!strcmp(k, "pack.depth")) {
-		max_depth = git_config_int(k, v);
+	int indexversion_value;
+	unsigned long packsizelimit_value;
+
+	if (!git_config_get_ulong("pack.depth", &max_depth)) {
 		if (max_depth > MAX_DEPTH)
 			max_depth = MAX_DEPTH;
-		return 0;
 	}
-	if (!strcmp(k, "pack.compression")) {
-		int level = git_config_int(k, v);
-		if (level == -1)
-			level = Z_DEFAULT_COMPRESSION;
-		else if (level < 0 || level > Z_BEST_COMPRESSION)
-			die("bad pack compression level %d", level);
-		pack_compression_level = level;
+	if (!git_config_get_int("pack.compression", &pack_compression_level)) {
+		if (pack_compression_level == -1)
+			pack_compression_level = Z_DEFAULT_COMPRESSION;
+		else if (pack_compression_level < 0 ||
+			 pack_compression_level > Z_BEST_COMPRESSION)
+			git_die_config("pack.compression",
+					"bad pack compression level %d", pack_compression_level);
 		pack_compression_seen = 1;
-		return 0;
 	}
-	if (!strcmp(k, "pack.indexversion")) {
-		pack_idx_opts.version = git_config_int(k, v);
+	if (!git_config_get_int("pack.indexversion", &indexversion_value)) {
+		pack_idx_opts.version = indexversion_value;
 		if (pack_idx_opts.version > 2)
-			die("bad pack.indexversion=%"PRIu32,
-			    pack_idx_opts.version);
-		return 0;
+			git_die_config("pack.indexversion",
+					"bad pack.indexversion=%"PRIu32, pack_idx_opts.version);
 	}
-	if (!strcmp(k, "pack.packsizelimit")) {
-		max_packsize = git_config_ulong(k, v);
-		return 0;
-	}
-	return git_default_config(k, v, cb);
+	if (!git_config_get_ulong("pack.packsizelimit", &packsizelimit_value))
+		max_packsize = packsizelimit_value;
+
+	git_config(git_default_config, NULL);
 }
 
 static const char fast_import_usage[] =
@@ -3344,18 +3330,21 @@ static void parse_argv(void)
 		if (*a != '-' || !strcmp(a, "--"))
 			break;
 
-		if (parse_one_option(a + 2))
+		if (!skip_prefix(a, "--", &a))
+			die("unknown option %s", a);
+
+		if (parse_one_option(a))
 			continue;
 
-		if (parse_one_feature(a + 2, 0))
+		if (parse_one_feature(a, 0))
 			continue;
 
-		if (starts_with(a + 2, "cat-blob-fd=")) {
-			option_cat_blob_fd(a + 2 + strlen("cat-blob-fd="));
+		if (skip_prefix(a, "cat-blob-fd=", &a)) {
+			option_cat_blob_fd(a);
 			continue;
 		}
 
-		die("unknown option %s", a);
+		die("unknown option --%s", a);
 	}
 	if (i != global_argc)
 		usage(fast_import_usage);
@@ -3378,7 +3367,7 @@ int main(int argc, char **argv)
 
 	setup_git_directory();
 	reset_pack_idx_option(&pack_idx_opts);
-	git_config(git_pack_config, NULL);
+	git_pack_config();
 	if (!pack_compression_seen && core_compression_seen)
 		pack_compression_level = core_compression_level;
 
@@ -3402,26 +3391,27 @@ int main(int argc, char **argv)
 	set_die_routine(die_nicely);
 	set_checkpoint_signal();
 	while (read_next_command() != EOF) {
+		const char *v;
 		if (!strcmp("blob", command_buf.buf))
 			parse_new_blob();
-		else if (starts_with(command_buf.buf, "ls "))
-			parse_ls(NULL);
-		else if (starts_with(command_buf.buf, "commit "))
-			parse_new_commit();
-		else if (starts_with(command_buf.buf, "tag "))
-			parse_new_tag();
-		else if (starts_with(command_buf.buf, "reset "))
-			parse_reset_branch();
+		else if (skip_prefix(command_buf.buf, "ls ", &v))
+			parse_ls(v, NULL);
+		else if (skip_prefix(command_buf.buf, "commit ", &v))
+			parse_new_commit(v);
+		else if (skip_prefix(command_buf.buf, "tag ", &v))
+			parse_new_tag(v);
+		else if (skip_prefix(command_buf.buf, "reset ", &v))
+			parse_reset_branch(v);
 		else if (!strcmp("checkpoint", command_buf.buf))
 			parse_checkpoint();
 		else if (!strcmp("done", command_buf.buf))
 			break;
 		else if (starts_with(command_buf.buf, "progress "))
 			parse_progress();
-		else if (starts_with(command_buf.buf, "feature "))
-			parse_feature();
-		else if (starts_with(command_buf.buf, "option git "))
-			parse_option();
+		else if (skip_prefix(command_buf.buf, "feature ", &v))
+			parse_feature(v);
+		else if (skip_prefix(command_buf.buf, "option git ", &v))
+			parse_option(v);
 		else if (starts_with(command_buf.buf, "option "))
 			/* ignore non-git options*/;
 		else

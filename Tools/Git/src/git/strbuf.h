@@ -17,20 +17,23 @@ extern void strbuf_init(struct strbuf *, size_t);
 extern void strbuf_release(struct strbuf *);
 extern char *strbuf_detach(struct strbuf *, size_t *);
 extern void strbuf_attach(struct strbuf *, void *, size_t, size_t);
-static inline void strbuf_swap(struct strbuf *a, struct strbuf *b) {
+static inline void strbuf_swap(struct strbuf *a, struct strbuf *b)
+{
 	struct strbuf tmp = *a;
 	*a = *b;
 	*b = tmp;
 }
 
 /*----- strbuf size related -----*/
-static inline size_t strbuf_avail(const struct strbuf *sb) {
+static inline size_t strbuf_avail(const struct strbuf *sb)
+{
 	return sb->alloc ? sb->alloc - sb->len - 1 : 0;
 }
 
 extern void strbuf_grow(struct strbuf *, size_t);
 
-static inline void strbuf_setlen(struct strbuf *sb, size_t len) {
+static inline void strbuf_setlen(struct strbuf *sb, size_t len)
+{
 	if (len > (sb->alloc ? sb->alloc - 1 : 0))
 		die("BUG: strbuf_setlen() beyond buffer");
 	sb->len = len;
@@ -42,7 +45,18 @@ static inline void strbuf_setlen(struct strbuf *sb, size_t len) {
 extern void strbuf_trim(struct strbuf *);
 extern void strbuf_rtrim(struct strbuf *);
 extern void strbuf_ltrim(struct strbuf *);
+extern int strbuf_reencode(struct strbuf *sb, const char *from, const char *to);
+extern void strbuf_tolower(struct strbuf *sb);
 extern int strbuf_cmp(const struct strbuf *, const struct strbuf *);
+
+static inline int strbuf_strip_suffix(struct strbuf *sb, const char *suffix)
+{
+	if (strip_suffix_mem(sb->buf, &sb->len, suffix)) {
+		strbuf_setlen(sb, sb->len);
+		return 1;
+	} else
+		return 0;
+}
 
 /*
  * Split str (of length slen) at the specified terminator character.
@@ -97,7 +111,8 @@ static inline struct strbuf **strbuf_split(const struct strbuf *sb,
 extern void strbuf_list_free(struct strbuf **);
 
 /*----- add data in your buffer -----*/
-static inline void strbuf_addch(struct strbuf *sb, int c) {
+static inline void strbuf_addch(struct strbuf *sb, int c)
+{
 	strbuf_grow(sb, 1);
 	sb->buf[sb->len++] = c;
 	sb->buf[sb->len] = '\0';
@@ -113,14 +128,17 @@ extern void strbuf_splice(struct strbuf *, size_t pos, size_t len,
 extern void strbuf_add_commented_lines(struct strbuf *out, const char *buf, size_t size);
 
 extern void strbuf_add(struct strbuf *, const void *, size_t);
-static inline void strbuf_addstr(struct strbuf *sb, const char *s) {
+static inline void strbuf_addstr(struct strbuf *sb, const char *s)
+{
 	strbuf_add(sb, s, strlen(s));
 }
-static inline void strbuf_addbuf(struct strbuf *sb, const struct strbuf *sb2) {
+static inline void strbuf_addbuf(struct strbuf *sb, const struct strbuf *sb2)
+{
 	strbuf_grow(sb, sb2->len);
 	strbuf_add(sb, sb2->buf, sb2->len);
 }
 extern void strbuf_adddup(struct strbuf *sb, size_t pos, size_t len);
+extern void strbuf_addchars(struct strbuf *sb, int c, size_t n);
 
 typedef size_t (*expand_fn_t) (struct strbuf *sb, const char *placeholder, void *context);
 extern void strbuf_expand(struct strbuf *sb, const char *format, expand_fn_t fn, void *context);
@@ -157,6 +175,7 @@ extern size_t strbuf_fread(struct strbuf *, size_t, FILE *);
 extern ssize_t strbuf_read(struct strbuf *, int fd, size_t hint);
 extern int strbuf_read_file(struct strbuf *sb, const char *path, size_t hint);
 extern int strbuf_readlink(struct strbuf *sb, const char *path, size_t hint);
+extern int strbuf_getcwd(struct strbuf *sb);
 
 extern int strbuf_getwholeline(struct strbuf *, FILE *, int);
 extern int strbuf_getline(struct strbuf *, FILE *, int);
@@ -172,9 +191,22 @@ extern void strbuf_addstr_urlencode(struct strbuf *, const char *,
 				    int reserved);
 extern void strbuf_humanise_bytes(struct strbuf *buf, off_t bytes);
 
+extern void strbuf_add_absolute_path(struct strbuf *sb, const char *path);
+
 __attribute__((format (printf,1,2)))
 extern int printf_ln(const char *fmt, ...);
 __attribute__((format (printf,2,3)))
 extern int fprintf_ln(FILE *fp, const char *fmt, ...);
+
+char *xstrdup_tolower(const char *);
+
+/*
+ * Create a newly allocated string using printf format. You can do this easily
+ * with a strbuf, but this provides a shortcut to save a few lines.
+ */
+__attribute__((format (printf, 1, 0)))
+char *xstrvfmt(const char *fmt, va_list ap);
+__attribute__((format (printf, 1, 2)))
+char *xstrfmt(const char *fmt, ...);
 
 #endif /* STRBUF_H */

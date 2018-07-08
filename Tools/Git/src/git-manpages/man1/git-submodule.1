@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-submodule
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 02/24/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/05/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 1.9.0
+.\"    Source: Git 2.3.0
 .\"  Language: English
 .\"
-.TH "GIT\-SUBMODULE" "1" "02/24/2014" "Git 1\&.9\&.0" "Git Manual"
+.TH "GIT\-SUBMODULE" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -38,12 +38,12 @@ git-submodule \- Initialize, update or inspect submodules
 \fIgit submodule\fR [\-\-quiet] init [\-\-] [<path>\&...]
 \fIgit submodule\fR [\-\-quiet] deinit [\-f|\-\-force] [\-\-] <path>\&...
 \fIgit submodule\fR [\-\-quiet] update [\-\-init] [\-\-remote] [\-N|\-\-no\-fetch]
-              [\-f|\-\-force] [\-\-rebase] [\-\-reference <repository>] [\-\-depth <depth>]
-              [\-\-merge] [\-\-recursive] [\-\-] [<path>\&...]
+              [\-f|\-\-force] [\-\-rebase|\-\-merge] [\-\-reference <repository>]
+              [\-\-depth <depth>] [\-\-recursive] [\-\-] [<path>\&...]
 \fIgit submodule\fR [\-\-quiet] summary [\-\-cached|\-\-files] [(\-n|\-\-summary\-limit) <n>]
               [commit] [\-\-] [<path>\&...]
 \fIgit submodule\fR [\-\-quiet] foreach [\-\-recursive] <command>
-\fIgit submodule\fR [\-\-quiet] sync [\-\-] [<path>\&...]
+\fIgit submodule\fR [\-\-quiet] sync [\-\-recursive] [\-\-] [<path>\&...]
 .fi
 .sp
 .SH "DESCRIPTION"
@@ -219,7 +219,7 @@ Only print error messages\&.
 \-b, \-\-branch
 .RS 4
 Branch of repository to add as submodule\&. The name of the branch is recorded as
-submodule\&.<path>\&.branch
+submodule\&.<name>\&.branch
 in
 \&.gitmodules
 for
@@ -271,11 +271,39 @@ In order to ensure a current tracking branch state,
 update \-\-remote
 fetches the submodule\(cqs remote repository before calculating the SHA\-1\&. If you don\(cqt want to fetch, you should use
 submodule update \-\-remote \-\-no\-fetch\&.
+.sp
+Use this option to integrate changes from the upstream subproject with your submodule\(cqs current HEAD\&. Alternatively, you can run
+git pull
+from the submodule, which is equivalent except for the remote branch name:
+update \-\-remote
+uses the default upstream repository and
+submodule\&.<name>\&.branch, while
+git pull
+uses the submodule\(cqs
+branch\&.<name>\&.merge\&. Prefer
+submodule\&.<name>\&.branch
+if you want to distribute the default upstream branch with the superproject and
+branch\&.<name>\&.merge
+if you want a more native feel while working in the submodule itself\&.
 .RE
 .PP
 \-N, \-\-no\-fetch
 .RS 4
 This option is only valid for the update command\&. Don\(cqt fetch new objects from the remote site\&.
+.RE
+.PP
+\-\-checkout
+.RS 4
+This option is only valid for the update command\&. Checkout the commit recorded in the superproject on a detached HEAD in the submodule\&. This is the default behavior, the main use of this option is to override
+submodule\&.$name\&.update
+when set to
+merge,
+rebase
+or
+none\&. If the key
+submodule\&.$name\&.update
+is either not explicitly set or set to
+checkout, this option is implicit\&.
 .RE
 .PP
 \-\-merge

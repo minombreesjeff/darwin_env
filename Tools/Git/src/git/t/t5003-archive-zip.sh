@@ -61,14 +61,10 @@ test_expect_success \
     'echo ignore me >a/ignored &&
      echo ignored export-ignore >.git/info/attributes'
 
-test_expect_success \
-    'add files to repository' \
-    'find a -type f | xargs git update-index --add &&
-     find a -type l | xargs git update-index --add &&
-     treeid=`git write-tree` &&
-     echo $treeid >treeid &&
-     git update-ref HEAD $(TZ=GMT GIT_COMMITTER_DATE="2005-05-27 22:00:00" \
-     git commit-tree $treeid </dev/null)'
+test_expect_success 'add files to repository' '
+	git add a &&
+	GIT_COMMITTER_DATE="2005-05-27 22:00" git commit -m initial
+'
 
 test_expect_success 'setup export-subst' '
 	echo "substfile?" export-subst >>.git/info/attributes &&
@@ -97,15 +93,15 @@ test_expect_success \
 
 test_expect_success \
     'git archive --format=zip vs. the same in a bare repo' \
-    'test_cmp d.zip d1.zip'
+    'test_cmp_bin d.zip d1.zip'
 
 test_expect_success 'git archive --format=zip with --output' \
     'git archive --format=zip --output=d2.zip HEAD &&
-    test_cmp d.zip d2.zip'
+    test_cmp_bin d.zip d2.zip'
 
 test_expect_success 'git archive with --output, inferring format' '
 	git archive --output=d3.zip HEAD &&
-	test_cmp d.zip d3.zip
+	test_cmp_bin d.zip d3.zip
 '
 
 test_expect_success \
