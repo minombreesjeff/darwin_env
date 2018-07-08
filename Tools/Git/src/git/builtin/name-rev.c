@@ -4,6 +4,7 @@
 #include "tag.h"
 #include "refs.h"
 #include "parse-options.h"
+#include "sha1-lookup.h"
 
 #define CUTOFF_DATE_SLOP 86400 /* one day */
 
@@ -82,23 +83,88 @@ copy_data:
 	}
 }
 
+static int subpath_matches(const char *path, const char *filter)
+{
+	const char *subpath = path;
+
+	while (subpath) {
+		if (!fnmatch(filter, subpath, 0))
+			return subpath - path;
+		subpath = strchr(subpath, '/');
+		if (subpath)
+			subpath++;
+	}
+	return -1;
+}
+
+static const char *name_ref_abbrev(const char *refname, int shorten_unambiguous)
+{
+	if (shorten_unambiguous)
+		refname = shorten_unambiguous_ref(refname, 0);
+	else if (!prefixcmp(refname, "refs/heads/"))
+		refname = refname + 11;
+	else if (!prefixcmp(refname, "refs/"))
+		refname = refname + 5;
+	return refname;
+}
+
 struct name_ref_data {
 	int tags_only;
 	int name_only;
 	const char *ref_filter;
 };
 
+static struct tip_table {
+	struct tip_table_entry {
+		unsigned char sha1[20];
+		const char *refname;
+	} *table;
+	int nr;
+	int alloc;
+	int sorted;
+} tip_table;
+
+static void add_to_tip_table(const unsigned char *sha1, const char *refname,
+			     int shorten_unambiguous)
+{
+	refname = name_ref_abbrev(refname, shorten_unambiguous);
+
+	ALLOC_GROW(tip_table.table, tip_table.nr + 1, tip_table.alloc);
+	hashcpy(tip_table.table[tip_table.nr].sha1, sha1);
+	tip_table.table[tip_table.nr].refname = xstrdup(refname);
+	tip_table.nr++;
+	tip_table.sorted = 0;
+}
+
+static int tipcmp(const void *a_, const void *b_)
+{
+	const struct tip_table_entry *a = a_, *b = b_;
+	return hashcmp(a->sha1, b->sha1);
+}
+
 static int name_ref(const char *path, const unsigned char *sha1, int flags, void *cb_data)
 {
 	struct object *o = parse_object(sha1);
 	struct name_ref_data *data = cb_data;
+	int can_abbreviate_output = data->tags_only && data->name_only;
 	int deref = 0;
 
 	if (data->tags_only && prefixcmp(path, "refs/tags/"))
 		return 0;
 
-	if (data->ref_filter && fnmatch(data->ref_filter, path, 0))
-		return 0;
+	if (data->ref_filter) {
+		switch (subpath_matches(path, data->ref_filter)) {
+		case -1: /* did not match */
+			return 0;
+		case 0:  /* matched fully */
+			break;
+		default: /* matched subpath */
+			can_abbreviate_output = 1;
+			break;
+		}
+	}
+
+	add_to_tip_table(sha1, path, can_abbreviate_output);
 
 	while (o && o->type == OBJ_TAG) {
 		struct tag *t = (struct tag *) o;
@@ -110,18 +176,36 @@ static int name_ref(const char *path, const unsigned char *sha1, int flags, void
 	if (o && o->type == OBJ_COMMIT) {
 		struct commit *commit = (struct commit *)o;
 
-		if (!prefixcmp(path, "refs/heads/"))
-			path = path + 11;
-		else if (data->tags_only
-		    && data->name_only
-		    && !prefixcmp(path, "refs/tags/"))
-			path = path + 10;
-		else if (!prefixcmp(path, "refs/"))
-			path = path + 5;
-
+		path = name_ref_abbrev(path, can_abbreviate_output);
 		name_rev(commit, xstrdup(path), 0, 0, deref);
 	}
 	return 0;
+}
+
+static const unsigned char *nth_tip_table_ent(size_t ix, void *table_)
+{
+	struct tip_table_entry *table = table_;
+	return table[ix].sha1;
+}
+
+static const char *get_exact_ref_match(const struct object *o)
+{
+	int found;
+
+	if (!tip_table.table || !tip_table.nr)
+		return NULL;
+
+	if (!tip_table.sorted) {
+		qsort(tip_table.table, tip_table.nr, sizeof(*tip_table.table),
+		      tipcmp);
+		tip_table.sorted = 1;
+	}
+
+	found = sha1_pos(o->sha1, tip_table.table, tip_table.nr,
+			 nth_tip_table_ent);
+	if (0 <= found)
+		return tip_table.table[found].refname;
+	return NULL;
 }
 
 /* returns a static buffer */
@@ -132,7 +216,7 @@ static const char *get_rev_name(const struct object *o)
 	struct commit *c;
 
 	if (o->type != OBJ_COMMIT)
-		return NULL;
+		return get_exact_ref_match(o);
 	c = (struct commit *) o;
 	n = c->util;
 	if (!n)
@@ -223,25 +307,31 @@ static void name_rev_line(char *p, struct name_ref_data *data)
 int cmd_name_rev(int argc, const char **argv, const char *prefix)
 {
 	struct object_array revs = OBJECT_ARRAY_INIT;
-	int all = 0, transform_stdin = 0, allow_undefined = 1, always = 0;
+	int all = 0, transform_stdin = 0, allow_undefined = 1, always = 0, peel_tag = 0;
 	struct name_ref_data data = { 0, 0, NULL };
 	struct option opts[] = {
-		OPT_BOOLEAN(0, "name-only", &data.name_only, N_("print only names (no SHA-1)")),
-		OPT_BOOLEAN(0, "tags", &data.tags_only, N_("only use tags to name the commits")),
+		OPT_BOOL(0, "name-only", &data.name_only, N_("print only names (no SHA-1)")),
+		OPT_BOOL(0, "tags", &data.tags_only, N_("only use tags to name the commits")),
 		OPT_STRING(0, "refs", &data.ref_filter, N_("pattern"),
 				   N_("only use refs matching <pattern>")),
 		OPT_GROUP(""),
-		OPT_BOOLEAN(0, "all", &all, N_("list all commits reachable from all refs")),
-		OPT_BOOLEAN(0, "stdin", &transform_stdin, N_("read from stdin")),
-		OPT_BOOLEAN(0, "undefined", &allow_undefined, N_("allow to print `undefined` names")),
-		OPT_BOOLEAN(0, "always",     &always,
+		OPT_BOOL(0, "all", &all, N_("list all commits reachable from all refs")),
+		OPT_BOOL(0, "stdin", &transform_stdin, N_("read from stdin")),
+		OPT_BOOL(0, "undefined", &allow_undefined, N_("allow to print `undefined` names (default)")),
+		OPT_BOOL(0, "always",     &always,
 			   N_("show abbreviated commit object as fallback")),
+		{
+			/* A Hidden OPT_BOOL */
+			OPTION_SET_INT, 0, "peel-tag", &peel_tag, NULL,
+			N_("dereference tags in the input (internal use)"),
+			PARSE_OPT_NOARG | PARSE_OPT_HIDDEN, NULL, 1,
+		},
 		OPT_END(),
 	};
 
 	git_config(git_default_config, NULL);
 	argc = parse_options(argc, argv, prefix, opts, name_rev_usage, 0);
-	if (!!all + !!transform_stdin + !!argc > 1) {
+	if (all + transform_stdin + !!argc > 1) {
 		error("Specify either a list, or --all, not both!");
 		usage_with_options(name_rev_usage, opts);
 	}
@@ -250,7 +340,7 @@ int cmd_name_rev(int argc, const char **argv, const char *prefix)
 
 	for (; argc; argc--, argv++) {
 		unsigned char sha1[20];
-		struct object *o;
+		struct object *object;
 		struct commit *commit;
 
 		if (get_sha1(*argv, sha1)) {
@@ -259,17 +349,34 @@ int cmd_name_rev(int argc, const char **argv, const char *prefix)
 			continue;
 		}
 
-		o = deref_tag(parse_object(sha1), *argv, 0);
-		if (!o || o->type != OBJ_COMMIT) {
-			fprintf(stderr, "Could not get commit for %s. Skipping.\n",
+		commit = NULL;
+		object = parse_object(sha1);
+		if (object) {
+			struct object *peeled = deref_tag(object, *argv, 0);
+			if (peeled && peeled->type == OBJ_COMMIT)
+				commit = (struct commit *)peeled;
+		}
+
+		if (!object) {
+			fprintf(stderr, "Could not get object for %s. Skipping.\n",
 					*argv);
 			continue;
 		}
 
-		commit = (struct commit *)o;
-		if (cutoff > commit->date)
-			cutoff = commit->date;
-		add_object_array((struct object *)commit, *argv, &revs);
+		if (commit) {
+			if (cutoff > commit->date)
+				cutoff = commit->date;
+		}
+
+		if (peel_tag) {
+			if (!commit) {
+				fprintf(stderr, "Could not get commit for %s. Skipping.\n",
+					*argv);
+				continue;
+			}
+			object = (struct object *)commit;
+		}
+		add_object_array(object, *argv, &revs);
 	}
 
 	if (cutoff)

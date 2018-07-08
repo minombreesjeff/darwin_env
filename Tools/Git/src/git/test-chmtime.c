@@ -56,7 +56,7 @@ static int timespec_arg(const char *arg, long int *set_time, int *set_eq)
 	return 1;
 }
 
-int main(int argc, const char *argv[])
+int main(int argc, char *argv[])
 {
 	static int verbose;
 
@@ -87,7 +87,7 @@ int main(int argc, const char *argv[])
 			return 1;
 		}
 
-#ifdef WIN32
+#ifdef GIT_WINDOWS_NATIVE
 		if (!(sb.st_mode & S_IWUSR) &&
 				chmod(argv[i], sb.st_mode | S_IWUSR)) {
 			fprintf(stderr, "Could not make user-writable %s: %s",

@@ -203,8 +203,7 @@ static int check_tracking_branch(struct remote *remote, void *cb_data)
 	struct refspec query;
 	memset(&query, 0, sizeof(struct refspec));
 	query.dst = tracking_branch;
-	return !(remote_find_tracking(remote, &query) ||
-		 prefixcmp(query.src, "refs/heads/"));
+	return !remote_find_tracking(remote, &query);
 }
 
 static int validate_remote_tracking_branch(char *ref)
@@ -291,7 +290,7 @@ void create_branch(const char *head,
 	hashcpy(sha1, commit->object.sha1);
 
 	if (!dont_change_ref) {
-		lock = lock_any_ref_for_update(ref.buf, NULL, 0);
+		lock = lock_any_ref_for_update(ref.buf, NULL, 0, NULL);
 		if (!lock)
 			die_errno(_("Failed to lock ref for update"));
 	}
@@ -307,7 +306,7 @@ void create_branch(const char *head,
 			 start_name);
 
 	if (real_ref && track)
-		setup_tracking(ref.buf+11, real_ref, track, quiet);
+		setup_tracking(ref.buf + 11, real_ref, track, quiet);
 
 	if (!dont_change_ref)
 		if (write_ref_sha1(lock, sha1, msg) < 0)

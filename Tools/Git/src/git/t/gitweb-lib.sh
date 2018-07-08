@@ -36,7 +36,7 @@ EOF
 
 	# You can set the GITWEB_TEST_INSTALLED environment variable to
 	# the gitwebdir (the directory where gitweb is installed / deployed to)
-	# of an existing gitweb instalation to test that installation,
+	# of an existing gitweb installation to test that installation,
 	# or simply to pathname of installed gitweb script.
 	if test -n "$GITWEB_TEST_INSTALLED" ; then
 		if test -d $GITWEB_TEST_INSTALLED; then
@@ -69,7 +69,7 @@ gitweb_run () {
 	# written to web server logs, so we are not interested in that:
 	# we are interested only in properly formatted errors/warnings
 	rm -f gitweb.log &&
-	"$PERL_PATH" -- "$SCRIPT_NAME" \
+	perl -- "$SCRIPT_NAME" \
 		>gitweb.output 2>gitweb.log &&
 	perl -w -e '
 		open O, ">gitweb.headers";

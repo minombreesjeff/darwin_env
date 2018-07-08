@@ -100,13 +100,45 @@ test_expect_success 'revert forbidden on dirty working tree' '
 
 '
 
-test_expect_success 'chery-pick on unborn branch' '
+test_expect_success 'cherry-pick on unborn branch' '
 	git checkout --orphan unborn &&
 	git rm --cached -r . &&
 	rm -rf * &&
 	git cherry-pick initial &&
 	git diff --quiet initial &&
 	! test_cmp_rev initial HEAD
+'
+
+test_expect_success 'cherry-pick "-" to pick from previous branch' '
+	git checkout unborn &&
+	test_commit to-pick actual content &&
+	git checkout master &&
+	git cherry-pick - &&
+	echo content >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'cherry-pick "-" is meaningless without checkout' '
+	test_create_repo afresh &&
+	(
+		cd afresh &&
+		test_commit one &&
+		test_commit two &&
+		test_commit three &&
+		test_must_fail git cherry-pick -
+	)
+'
+
+test_expect_success 'cherry-pick "-" works with arguments' '
+	git checkout -b side-branch &&
+	test_commit change actual change &&
+	git checkout master &&
+	git cherry-pick -s - &&
+	echo "Signed-off-by: C O Mitter <committer@example.com>" >expect &&
+	git cat-file commit HEAD | grep ^Signed-off-by: >signoff &&
+	test_cmp expect signoff &&
+	echo change >expect &&
+	test_cmp expect actual
 '
 
 test_done

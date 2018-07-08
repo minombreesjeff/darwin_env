@@ -60,8 +60,13 @@ test_expect_success 'status (1)' '
 	test_i18ngrep "use \"git rm --cached <file>\.\.\.\" to unstage" output
 '
 
+strip_comments () {
+	tab='	'
+	sed "s/^\# //; s/^\#$//; s/^#$tab/$tab/" <"$1" >"$1".tmp &&
+	rm "$1" && mv "$1".tmp "$1"
+}
+
 test_expect_success 'status --column' '
-	COLUMNS=50 git status --column="column dense" >output &&
 	cat >expect <<\EOF &&
 # On branch master
 # Changes to be committed:
@@ -78,9 +83,17 @@ test_expect_success 'status --column' '
 # Untracked files:
 #   (use "git add <file>..." to include in what will be committed)
 #
-#	dir1/untracked dir2/untracked untracked
-#	dir2/modified  output
+#	dir1/untracked dir2/untracked output
+#	dir2/modified  expect         untracked
+#
 EOF
+	COLUMNS=50 git -c status.displayCommentPrefix=true status --column="column dense" >output &&
+	test_i18ncmp expect output
+'
+
+test_expect_success 'status --column status.displayCommentPrefix=false' '
+	strip_comments expect &&
+	COLUMNS=49 git -c status.displayCommentPrefix=false status --column="column dense" >output &&
 	test_i18ncmp expect output
 '
 
@@ -106,28 +119,58 @@ cat >expect <<\EOF
 #	expect
 #	output
 #	untracked
+#
 EOF
 
-test_expect_success 'status (2)' '
-	git status >output &&
+test_expect_success 'status with status.displayCommentPrefix=true' '
+	git -c status.displayCommentPrefix=true status >output &&
 	test_i18ncmp expect output
 '
 
+test_expect_success 'status with status.displayCommentPrefix=false' '
+	strip_comments expect &&
+	git -c status.displayCommentPrefix=false status >output &&
+	test_i18ncmp expect output
+'
+
+test_expect_success 'setup fake editor' '
+	cat >.git/editor <<-\EOF &&
+	#! /bin/sh
+	cp "$1" output
+EOF
+	chmod 755 .git/editor
+'
+
+commit_template_commented () {
+	(
+		EDITOR=.git/editor &&
+		export EDITOR &&
+		# Fails due to empty message
+		test_must_fail git commit
+	) &&
+	! grep '^[^#]' output
+}
+
+test_expect_success 'commit ignores status.displayCommentPrefix=false in COMMIT_EDITMSG' '
+	commit_template_commented
+'
+
 cat >expect <<\EOF
-# On branch master
-# Changes to be committed:
-#	new file:   dir2/added
-#
-# Changes not staged for commit:
-#	modified:   dir1/modified
-#
-# Untracked files:
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
+On branch master
+Changes to be committed:
+	new file:   dir2/added
+
+Changes not staged for commit:
+	modified:   dir1/modified
+
+Untracked files:
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
 EOF
 
 test_expect_success 'status (advice.statusHints false)' '
@@ -185,33 +228,35 @@ test_expect_success 'status with gitignore' '
 	git status -s --ignored >output &&
 	test_cmp expect output &&
 
-	cat >expect <<-\EOF &&
-	# On branch master
-	# Changes to be committed:
-	#   (use "git reset HEAD <file>..." to unstage)
-	#
-	#	new file:   dir2/added
-	#
-	# Changes not staged for commit:
-	#   (use "git add <file>..." to update what will be committed)
-	#   (use "git checkout -- <file>..." to discard changes in working directory)
-	#
-	#	modified:   dir1/modified
-	#
-	# Untracked files:
-	#   (use "git add <file>..." to include in what will be committed)
-	#
-	#	dir2/modified
-	# Ignored files:
-	#   (use "git add -f <file>..." to include in what will be committed)
-	#
-	#	.gitignore
-	#	dir1/untracked
-	#	dir2/untracked
-	#	expect
-	#	output
-	#	untracked
-	EOF
+	cat >expect <<\EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	new file:   dir2/added
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	dir2/modified
+
+Ignored files:
+  (use "git add -f <file>..." to include in what will be committed)
+
+	.gitignore
+	dir1/untracked
+	dir2/untracked
+	expect
+	output
+	untracked
+
+EOF
 	git status --ignored >output &&
 	test_i18ncmp expect output
 '
@@ -246,30 +291,31 @@ test_expect_success 'status with gitignore (nothing untracked)' '
 	git status -s --ignored >output &&
 	test_cmp expect output &&
 
-	cat >expect <<-\EOF &&
-	# On branch master
-	# Changes to be committed:
-	#   (use "git reset HEAD <file>..." to unstage)
-	#
-	#	new file:   dir2/added
-	#
-	# Changes not staged for commit:
-	#   (use "git add <file>..." to update what will be committed)
-	#   (use "git checkout -- <file>..." to discard changes in working directory)
-	#
-	#	modified:   dir1/modified
-	#
-	# Ignored files:
-	#   (use "git add -f <file>..." to include in what will be committed)
-	#
-	#	.gitignore
-	#	dir1/untracked
-	#	dir2/modified
-	#	dir2/untracked
-	#	expect
-	#	output
-	#	untracked
-	EOF
+	cat >expect <<\EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	new file:   dir2/added
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Ignored files:
+  (use "git add -f <file>..." to include in what will be committed)
+
+	.gitignore
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
+EOF
 	git status --ignored >output &&
 	test_i18ncmp expect output
 '
@@ -310,22 +356,22 @@ test_expect_success 'setup dir3' '
 	: >dir3/untracked2
 '
 
-cat >expect <<EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	new file:   dir2/added
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Untracked files not listed (use -u option to show untracked files)
-EOF
 test_expect_success 'status -uno' '
+	cat >expect <<EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	new file:   dir2/added
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Untracked files not listed (use -u option to show untracked files)
+EOF
 	git status -uno >output &&
 	test_i18ncmp expect output
 '
@@ -336,17 +382,17 @@ test_expect_success 'status (status.showUntrackedFiles no)' '
 	test_i18ncmp expect output
 '
 
-cat >expect <<EOF
-# On branch master
-# Changes to be committed:
-#	new file:   dir2/added
-#
-# Changes not staged for commit:
-#	modified:   dir1/modified
-#
-# Untracked files not listed
-EOF
 test_expect_success 'status -uno (advice.statusHints false)' '
+	cat >expect <<EOF &&
+On branch master
+Changes to be committed:
+	new file:   dir2/added
+
+Changes not staged for commit:
+	modified:   dir1/modified
+
+Untracked files not listed
+EOF
 	test_config advice.statusHints false &&
 	git status -uno >output &&
 	test_i18ncmp expect output
@@ -367,31 +413,32 @@ test_expect_success 'status -s (status.showUntrackedFiles no)' '
 	test_cmp expect output
 '
 
-cat >expect <<EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	new file:   dir2/added
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	dir3/
-#	expect
-#	output
-#	untracked
-EOF
 test_expect_success 'status -unormal' '
+	cat >expect <<EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	new file:   dir2/added
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	dir3/
+	expect
+	output
+	untracked
+
+EOF
 	git status -unormal >output &&
 	test_i18ncmp expect output
 '
@@ -424,32 +471,33 @@ test_expect_success 'status -s (status.showUntrackedFiles normal)' '
 	test_cmp expect output
 '
 
-cat >expect <<EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	new file:   dir2/added
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	dir3/untracked1
-#	dir3/untracked2
-#	expect
-#	output
-#	untracked
-EOF
 test_expect_success 'status -uall' '
+	cat >expect <<EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	new file:   dir2/added
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	dir3/untracked1
+	dir3/untracked2
+	expect
+	output
+	untracked
+
+EOF
 	git status -uall >output &&
 	test_i18ncmp expect output
 '
@@ -486,31 +534,31 @@ test_expect_success 'status -s (status.showUntrackedFiles all)' '
 	test_cmp expect output
 '
 
-cat >expect <<\EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	new file:   ../dir2/added
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   modified
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	untracked
-#	../dir2/modified
-#	../dir2/untracked
-#	../expect
-#	../output
-#	../untracked
-EOF
-
 test_expect_success 'status with relative paths' '
+	cat >expect <<\EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	new file:   ../dir2/added
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   modified
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	untracked
+	../dir2/modified
+	../dir2/untracked
+	../expect
+	../output
+	../untracked
+
+EOF
 	(cd dir1 && git status) >output &&
 	test_i18ncmp expect output
 '
@@ -557,31 +605,31 @@ test_expect_success 'setup unique colors' '
 
 '
 
-cat >expect <<\EOF
-# On branch <GREEN>master<RESET>
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	<GREEN>new file:   dir2/added<RESET>
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	<RED>modified:   dir1/modified<RESET>
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	<BLUE>dir1/untracked<RESET>
-#	<BLUE>dir2/modified<RESET>
-#	<BLUE>dir2/untracked<RESET>
-#	<BLUE>expect<RESET>
-#	<BLUE>output<RESET>
-#	<BLUE>untracked<RESET>
-EOF
-
 test_expect_success 'status with color.ui' '
+	cat >expect <<\EOF &&
+On branch <GREEN>master<RESET>
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	<GREEN>new file:   dir2/added<RESET>
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	<RED>modified:   dir1/modified<RESET>
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	<BLUE>dir1/untracked<RESET>
+	<BLUE>dir2/modified<RESET>
+	<BLUE>dir2/untracked<RESET>
+	<BLUE>expect<RESET>
+	<BLUE>output<RESET>
+	<BLUE>untracked<RESET>
+
+EOF
 	test_config color.ui always &&
 	git status | test_decode_color >output &&
 	test_i18ncmp expect output
@@ -685,33 +733,33 @@ test_expect_success 'status --porcelain respects -b' '
 
 '
 
-cat >expect <<\EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	new file:   dir2/added
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
-EOF
 
 
 test_expect_success 'status without relative paths' '
+	cat >expect <<\EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
 
+	new file:   dir2/added
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
+EOF
 	test_config status.relativePaths false &&
 	(cd dir1 && git status) >output &&
 	test_i18ncmp expect output
@@ -737,23 +785,24 @@ test_expect_success 'status -s without relative paths' '
 
 '
 
-cat <<EOF >expect
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	modified:   dir1/modified
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	dir1/untracked
-#	dir2/
-#	expect
-#	output
-#	untracked
-EOF
 test_expect_success 'dry-run of partial commit excluding new file in index' '
+	cat >expect <<EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	modified:   dir1/modified
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	dir1/untracked
+	dir2/
+	expect
+	output
+	untracked
+
+EOF
 	git commit --dry-run dir1/modified >output &&
 	test_i18ncmp expect output
 '
@@ -778,31 +827,32 @@ test_expect_success 'setup status submodule summary' '
 	git add sm
 '
 
-cat >expect <<EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	new file:   dir2/added
-#	new file:   sm
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
-EOF
 test_expect_success 'status submodule summary is disabled by default' '
+	cat >expect <<EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	new file:   dir2/added
+	new file:   sm
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
+EOF
 	git status >output &&
 	test_i18ncmp expect output
 '
@@ -837,39 +887,50 @@ test_expect_success 'status -s --untracked-files=all does not show submodule' '
 
 head=$(cd sm && git rev-parse --short=7 --verify HEAD)
 
-cat >expect <<EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	new file:   dir2/added
-#	new file:   sm
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Submodule changes to be committed:
-#
-# * sm 0000000...$head (1):
-#   > Add foo
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
-EOF
 test_expect_success 'status submodule summary' '
+	cat >expect <<EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	new file:   dir2/added
+	new file:   sm
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Submodule changes to be committed:
+
+* sm 0000000...$head (1):
+  > Add foo
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
+EOF
 	git config status.submodulesummary 10 &&
 	git status >output &&
 	test_i18ncmp expect output
+'
+
+test_expect_success 'status submodule summary with status.displayCommentPrefix=false' '
+	strip_comments expect &&
+	git -c status.displayCommentPrefix=false status >output &&
+	test_i18ncmp expect output
+'
+
+test_expect_success 'commit with submodule summary ignores status.displayCommentPrefix' '
+	commit_template_commented
 '
 
 cat >expect <<EOF
@@ -888,26 +949,27 @@ test_expect_success 'status -s submodule summary' '
 	test_cmp expect output
 '
 
-cat >expect <<EOF
-# On branch master
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
+test_expect_success 'status submodule summary (clean submodule): commit' '
+	cat >expect <<EOF &&
+On branch master
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
 no changes added to commit (use "git add" and/or "git commit -a")
 EOF
-test_expect_success 'status submodule summary (clean submodule): commit' '
 	git commit -m "commit submodule" &&
 	git config status.submodulesummary 10 &&
 	test_must_fail git commit --dry-run >output &&
@@ -932,41 +994,42 @@ test_expect_success 'status -s submodule summary (clean submodule)' '
 
 test_expect_success 'status -z implies porcelain' '
 	git status --porcelain |
-	"$PERL_PATH" -pe "s/\012/\000/g" >expect &&
+	perl -pe "s/\012/\000/g" >expect &&
 	git status -z >output &&
 	test_cmp expect output
 '
 
-cat >expect <<EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD^1 <file>..." to unstage)
-#
-#	new file:   dir2/added
-#	new file:   sm
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Submodule changes to be committed:
-#
-# * sm 0000000...$head (1):
-#   > Add foo
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
-EOF
 test_expect_success 'commit --dry-run submodule summary (--amend)' '
+	cat >expect <<EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD^1 <file>..." to unstage)
+
+	new file:   dir2/added
+	new file:   sm
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Submodule changes to be committed:
+
+* sm 0000000...$head (1):
+  > Add foo
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
+EOF
 	git config status.submodulesummary 10 &&
 	git commit --dry-run --amend >output &&
 	test_i18ncmp expect output
@@ -991,37 +1054,37 @@ test_expect_success POSIXPERM,SANITY 'status succeeds in a read-only repository'
 new_head=$(cd sm && git rev-parse --short=7 --verify HEAD)
 touch .gitmodules
 
-cat > expect << EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	modified:   sm
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Submodule changes to be committed:
-#
-# * sm $head...$new_head (1):
-#   > Add bar
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	.gitmodules
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
-EOF
-
 test_expect_success '--ignore-submodules=untracked suppresses submodules with untracked content' '
+	cat > expect << EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	modified:   sm
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Submodule changes to be committed:
+
+* sm $head...$new_head (1):
+  > Add bar
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	.gitmodules
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
+EOF
 	echo modified  sm/untracked &&
 	git status --ignore-submodules=untracked >output &&
 	test_i18ncmp expect output
@@ -1101,39 +1164,39 @@ test_expect_success '.git/config ignore=dirty suppresses submodules with modifie
 	git config -f .gitmodules  --remove-section submodule.subname
 '
 
-cat > expect << EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	modified:   sm
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#   (commit or discard the untracked or modified content in submodules)
-#
-#	modified:   dir1/modified
-#	modified:   sm (modified content)
-#
-# Submodule changes to be committed:
-#
-# * sm $head...$new_head (1):
-#   > Add bar
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	.gitmodules
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
-EOF
-
 test_expect_success "--ignore-submodules=untracked doesn't suppress submodules with modified content" '
+	cat > expect << EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	modified:   sm
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+  (commit or discard the untracked or modified content in submodules)
+
+	modified:   dir1/modified
+	modified:   sm (modified content)
+
+Submodule changes to be committed:
+
+* sm $head...$new_head (1):
+  > Add bar
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	.gitmodules
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
+EOF
 	git status --ignore-submodules=untracked > output &&
 	test_i18ncmp expect output
 '
@@ -1159,43 +1222,43 @@ test_expect_success ".git/config ignore=untracked doesn't suppress submodules wi
 
 head2=$(cd sm && git commit -q -m "2nd commit" foo && git rev-parse --short=7 --verify HEAD)
 
-cat > expect << EOF
-# On branch master
-# Changes to be committed:
-#   (use "git reset HEAD <file>..." to unstage)
-#
-#	modified:   sm
-#
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#	modified:   sm (new commits)
-#
-# Submodule changes to be committed:
-#
-# * sm $head...$new_head (1):
-#   > Add bar
-#
-# Submodules changed but not updated:
-#
-# * sm $new_head...$head2 (1):
-#   > 2nd commit
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	.gitmodules
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
-EOF
-
 test_expect_success "--ignore-submodules=untracked doesn't suppress submodule summary" '
+	cat > expect << EOF &&
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+	modified:   sm
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+	modified:   sm (new commits)
+
+Submodule changes to be committed:
+
+* sm $head...$new_head (1):
+  > Add bar
+
+Submodules changed but not updated:
+
+* sm $new_head...$head2 (1):
+  > 2nd commit
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	.gitmodules
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
+EOF
 	git status --ignore-submodules=untracked > output &&
 	test_i18ncmp expect output
 '
@@ -1276,47 +1339,48 @@ cat > expect << EOF
 ;	expect
 ;	output
 ;	untracked
+;
 EOF
 
 test_expect_success "status (core.commentchar with submodule summary)" '
 	test_config core.commentchar ";" &&
-	git status >output &&
+	git -c status.displayCommentPrefix=true status >output &&
 	test_i18ncmp expect output
 '
 
 test_expect_success "status (core.commentchar with two chars with submodule summary)" '
 	test_config core.commentchar ";;" &&
-	git status >output &&
+	git -c status.displayCommentPrefix=true status >output &&
 	test_i18ncmp expect output
 '
 
-cat > expect << EOF
-# On branch master
-# Changes not staged for commit:
-#   (use "git add <file>..." to update what will be committed)
-#   (use "git checkout -- <file>..." to discard changes in working directory)
-#
-#	modified:   dir1/modified
-#
-# Untracked files:
-#   (use "git add <file>..." to include in what will be committed)
-#
-#	.gitmodules
-#	dir1/untracked
-#	dir2/modified
-#	dir2/untracked
-#	expect
-#	output
-#	untracked
+test_expect_success "--ignore-submodules=all suppresses submodule summary" '
+	cat > expect << EOF &&
+On branch master
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   dir1/modified
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+	.gitmodules
+	dir1/untracked
+	dir2/modified
+	dir2/untracked
+	expect
+	output
+	untracked
+
 no changes added to commit (use "git add" and/or "git commit -a")
 EOF
-
-test_expect_success "--ignore-submodules=all suppresses submodule summary" '
 	git status --ignore-submodules=all > output &&
 	test_i18ncmp expect output
 '
 
-test_expect_failure '.gitmodules ignore=all suppresses submodule summary' '
+test_expect_success '.gitmodules ignore=all suppresses submodule summary' '
 	git config --add -f .gitmodules submodule.subname.ignore all &&
 	git config --add -f .gitmodules submodule.subname.path sm &&
 	git status > output &&
@@ -1324,7 +1388,7 @@ test_expect_failure '.gitmodules ignore=all suppresses submodule summary' '
 	git config -f .gitmodules  --remove-section submodule.subname
 '
 
-test_expect_failure '.git/config ignore=all suppresses submodule summary' '
+test_expect_success '.git/config ignore=all suppresses submodule summary' '
 	git config --add -f .gitmodules submodule.subname.ignore none &&
 	git config --add -f .gitmodules submodule.subname.path sm &&
 	git config --add submodule.subname.ignore all &&
@@ -1333,6 +1397,68 @@ test_expect_failure '.git/config ignore=all suppresses submodule summary' '
 	test_cmp expect output &&
 	git config --remove-section submodule.subname &&
 	git config -f .gitmodules  --remove-section submodule.subname
+'
+
+test_expect_success 'setup of test environment' '
+	git config status.showUntrackedFiles no &&
+	git status -s >expected_short &&
+	git status --no-short >expected_noshort
+'
+
+test_expect_success '"status.short=true" same as "-s"' '
+	git -c status.short=true status >actual &&
+	test_cmp expected_short actual
+'
+
+test_expect_success '"status.short=true" weaker than "--no-short"' '
+	git -c status.short=true status --no-short >actual &&
+	test_cmp expected_noshort actual
+'
+
+test_expect_success '"status.short=false" same as "--no-short"' '
+	git -c status.short=false status >actual &&
+	test_cmp expected_noshort actual
+'
+
+test_expect_success '"status.short=false" weaker than "-s"' '
+	git -c status.short=false status -s >actual &&
+	test_cmp expected_short actual
+'
+
+test_expect_success '"status.branch=true" same as "-b"' '
+	git status -sb >expected_branch &&
+	git -c status.branch=true status -s >actual &&
+	test_cmp expected_branch actual
+'
+
+test_expect_success '"status.branch=true" different from "--no-branch"' '
+	git status -s --no-branch  >expected_nobranch &&
+	git -c status.branch=true status -s >actual &&
+	test_must_fail test_cmp expected_nobranch actual
+'
+
+test_expect_success '"status.branch=true" weaker than "--no-branch"' '
+	git -c status.branch=true status -s --no-branch >actual &&
+	test_cmp expected_nobranch actual
+'
+
+test_expect_success '"status.branch=true" weaker than "--porcelain"' '
+       git -c status.branch=true status --porcelain >actual &&
+       test_cmp expected_nobranch actual
+'
+
+test_expect_success '"status.branch=false" same as "--no-branch"' '
+	git -c status.branch=false status -s >actual &&
+	test_cmp expected_nobranch actual
+'
+
+test_expect_success '"status.branch=false" weaker than "-b"' '
+	git -c status.branch=false status -sb >actual &&
+	test_cmp expected_branch actual
+'
+
+test_expect_success 'Restore default test environment' '
+	git config --unset status.showUntrackedFiles
 '
 
 test_done

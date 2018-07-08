@@ -669,7 +669,7 @@ static void emit_rewrite_diff(const char *name_a,
 	memset(&ecbdata, 0, sizeof(ecbdata));
 	ecbdata.color_diff = want_color(o->use_color);
 	ecbdata.found_changesp = &o->found_changes;
-	ecbdata.ws_rule = whitespace_rule(name_b ? name_b : name_a);
+	ecbdata.ws_rule = whitespace_rule(name_b);
 	ecbdata.opt = o;
 	if (ecbdata.ws_rule & WS_BLANK_AT_EOF) {
 		mmfile_t mf1, mf2;
@@ -1683,9 +1683,7 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 		del = deleted;
 
 		if (graph_width <= max_change) {
-			int total = add + del;
-
-			total = scale_linear(add + del, graph_width, max_change);
+			int total = scale_linear(add + del, graph_width, max_change);
 			if (total < 2 && add && del)
 				/* width >= 2 due to the sanity check */
 				total = 2;
@@ -2254,7 +2252,7 @@ static void builtin_diff(const char *name_a,
 			(!two->mode || S_ISGITLINK(two->mode))) {
 		const char *del = diff_get_color_opt(o, DIFF_FILE_OLD);
 		const char *add = diff_get_color_opt(o, DIFF_FILE_NEW);
-		show_submodule_summary(o->file, one ? one->path : two->path,
+		show_submodule_summary(o->file, one->path ? one->path : two->path,
 				line_prefix,
 				one->sha1, two->sha1, two->dirty_submodule,
 				meta, del, add, reset);
@@ -2374,7 +2372,7 @@ static void builtin_diff(const char *name_a,
 		ecbdata.label_path = lbl;
 		ecbdata.color_diff = want_color(o->use_color);
 		ecbdata.found_changesp = &o->found_changes;
-		ecbdata.ws_rule = whitespace_rule(name_b ? name_b : name_a);
+		ecbdata.ws_rule = whitespace_rule(name_b);
 		if (ecbdata.ws_rule & WS_BLANK_AT_EOF)
 			check_blank_at_eof(&mf1, &mf2, &ecbdata);
 		ecbdata.opt = o;
@@ -2586,7 +2584,7 @@ void fill_filespec(struct diff_filespec *spec, const unsigned char *sha1,
  */
 static int reuse_worktree_file(const char *name, const unsigned char *sha1, int want_file)
 {
-	struct cache_entry *ce;
+	const struct cache_entry *ce;
 	struct stat st;
 	int pos, len;
 
@@ -3221,6 +3219,9 @@ void diff_setup_done(struct diff_options *options)
 {
 	int count = 0;
 
+	if (options->set_default)
+		options->set_default(options);
+
 	if (options->output_format & DIFF_FORMAT_NAME)
 		count++;
 	if (options->output_format & DIFF_FORMAT_NAME_STATUS)
@@ -3505,6 +3506,93 @@ static int parse_submodule_opt(struct diff_options *options, const char *value)
 	return 1;
 }
 
+static const char diff_status_letters[] = {
+	DIFF_STATUS_ADDED,
+	DIFF_STATUS_COPIED,
+	DIFF_STATUS_DELETED,
+	DIFF_STATUS_MODIFIED,
+	DIFF_STATUS_RENAMED,
+	DIFF_STATUS_TYPE_CHANGED,
+	DIFF_STATUS_UNKNOWN,
+	DIFF_STATUS_UNMERGED,
+	DIFF_STATUS_FILTER_AON,
+	DIFF_STATUS_FILTER_BROKEN,
+	'\0',
+};
+
+static unsigned int filter_bit['Z' + 1];
+
+static void prepare_filter_bits(void)
+{
+	int i;
+
+	if (!filter_bit[DIFF_STATUS_ADDED]) {
+		for (i = 0; diff_status_letters[i]; i++)
+			filter_bit[(int) diff_status_letters[i]] = (1 << i);
+	}
+}
+
+static unsigned filter_bit_tst(char status, const struct diff_options *opt)
+{
+	return opt->filter & filter_bit[(int) status];
+}
+
+static int parse_diff_filter_opt(const char *optarg, struct diff_options *opt)
+{
+	int i, optch;
+
+	prepare_filter_bits();
+
+	/*
+	 * If there is a negation e.g. 'd' in the input, and we haven't
+	 * initialized the filter field with another --diff-filter, start
+	 * from full set of bits, except for AON.
+	 */
+	if (!opt->filter) {
+		for (i = 0; (optch = optarg[i]) != '\0'; i++) {
+			if (optch < 'a' || 'z' < optch)
+				continue;
+			opt->filter = (1 << (ARRAY_SIZE(diff_status_letters) - 1)) - 1;
+			opt->filter &= ~filter_bit[DIFF_STATUS_FILTER_AON];
+			break;
+		}
+	}
+
+	for (i = 0; (optch = optarg[i]) != '\0'; i++) {
+		unsigned int bit;
+		int negate;
+
+		if ('a' <= optch && optch <= 'z') {
+			negate = 1;
+			optch = toupper(optch);
+		} else {
+			negate = 0;
+		}
+
+		bit = (0 <= optch && optch <= 'Z') ? filter_bit[optch] : 0;
+		if (!bit)
+			return optarg[i];
+		if (negate)
+			opt->filter &= ~bit;
+		else
+			opt->filter |= bit;
+	}
+	return 0;
+}
+
+/* Used only by "diff-files" and "diff --no-index" */
+void handle_deprecated_show_diff_q(struct diff_options *opt)
+{
+	warning("'diff -q' and 'diff-files -q' are deprecated.");
+	warning("Use 'diff --diff-filter=d' instead to ignore deleted filepairs.");
+	parse_diff_filter_opt("d", opt);
+}
+
+static void enable_patch_output(int *fmt) {
+	*fmt &= ~DIFF_FORMAT_NO_OUTPUT;
+	*fmt |= DIFF_FORMAT_PATCH;
+}
+
 int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 {
 	const char *arg = av[0];
@@ -3512,15 +3600,15 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 	int argcount;
 
 	/* Output format options */
-	if (!strcmp(arg, "-p") || !strcmp(arg, "-u") || !strcmp(arg, "--patch"))
-		options->output_format |= DIFF_FORMAT_PATCH;
-	else if (opt_arg(arg, 'U', "unified", &options->context))
-		options->output_format |= DIFF_FORMAT_PATCH;
+	if (!strcmp(arg, "-p") || !strcmp(arg, "-u") || !strcmp(arg, "--patch")
+	    || opt_arg(arg, 'U', "unified", &options->context))
+		enable_patch_output(&options->output_format);
 	else if (!strcmp(arg, "--raw"))
 		options->output_format |= DIFF_FORMAT_RAW;
-	else if (!strcmp(arg, "--patch-with-raw"))
-		options->output_format |= DIFF_FORMAT_PATCH | DIFF_FORMAT_RAW;
-	else if (!strcmp(arg, "--numstat"))
+	else if (!strcmp(arg, "--patch-with-raw")) {
+		enable_patch_output(&options->output_format);
+		options->output_format |= DIFF_FORMAT_RAW;
+	} else if (!strcmp(arg, "--numstat"))
 		options->output_format |= DIFF_FORMAT_NUMSTAT;
 	else if (!strcmp(arg, "--shortstat"))
 		options->output_format |= DIFF_FORMAT_SHORTSTAT;
@@ -3542,13 +3630,14 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		options->output_format |= DIFF_FORMAT_CHECKDIFF;
 	else if (!strcmp(arg, "--summary"))
 		options->output_format |= DIFF_FORMAT_SUMMARY;
-	else if (!strcmp(arg, "--patch-with-stat"))
-		options->output_format |= DIFF_FORMAT_PATCH | DIFF_FORMAT_DIFFSTAT;
-	else if (!strcmp(arg, "--name-only"))
+	else if (!strcmp(arg, "--patch-with-stat")) {
+		enable_patch_output(&options->output_format);
+		options->output_format |= DIFF_FORMAT_DIFFSTAT;
+	} else if (!strcmp(arg, "--name-only"))
 		options->output_format |= DIFF_FORMAT_NAME;
 	else if (!strcmp(arg, "--name-status"))
 		options->output_format |= DIFF_FORMAT_NAME_STATUS;
-	else if (!strcmp(arg, "-s"))
+	else if (!strcmp(arg, "-s") || !strcmp(arg, "--no-patch"))
 		options->output_format |= DIFF_FORMAT_NO_OUTPUT;
 	else if (!prefixcmp(arg, "--stat"))
 		/* --stat, --stat-width, --stat-name-width, or --stat-count */
@@ -3601,6 +3690,8 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		DIFF_XDL_SET(options, IGNORE_WHITESPACE_CHANGE);
 	else if (!strcmp(arg, "--ignore-space-at-eol"))
 		DIFF_XDL_SET(options, IGNORE_WHITESPACE_AT_EOL);
+	else if (!strcmp(arg, "--ignore-blank-lines"))
+		DIFF_XDL_SET(options, IGNORE_BLANK_LINES);
 	else if (!strcmp(arg, "--patience"))
 		options->xdl_opts = DIFF_WITH_ALG(options, PATIENCE_DIFF);
 	else if (!strcmp(arg, "--histogram"))
@@ -3619,7 +3710,7 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 
 	/* flags options */
 	else if (!strcmp(arg, "--binary")) {
-		options->output_format |= DIFF_FORMAT_PATCH;
+		enable_patch_output(&options->output_format);
 		DIFF_OPT_SET(options, BINARY);
 	}
 	else if (!strcmp(arg, "--full-index"))
@@ -3726,7 +3817,10 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		return argcount;
 	}
 	else if ((argcount = parse_long_opt("diff-filter", av, &optarg))) {
-		options->filter = optarg;
+		int offending = parse_diff_filter_opt(optarg, options);
+		if (offending)
+			die("unknown change class '%c' in --diff-filter=%s",
+			    offending, optarg);
 		return argcount;
 	}
 	else if (!strcmp(arg, "--abbrev"))
@@ -4458,7 +4552,7 @@ void diff_flush(struct diff_options *options)
 	    DIFF_OPT_TST(options, DIFF_FROM_CONTENTS)) {
 		/*
 		 * run diff_flush_patch for the exit status. setting
-		 * options->file to /dev/null should be safe, becaue we
+		 * options->file to /dev/null should be safe, because we
 		 * aren't supposed to produce any output anyway.
 		 */
 		if (options->close_file)
@@ -4518,27 +4612,32 @@ free_queue:
 	}
 }
 
-static void diffcore_apply_filter(const char *filter)
+static int match_filter(const struct diff_options *options, const struct diff_filepair *p)
+{
+	return (((p->status == DIFF_STATUS_MODIFIED) &&
+		 ((p->score &&
+		   filter_bit_tst(DIFF_STATUS_FILTER_BROKEN, options)) ||
+		  (!p->score &&
+		   filter_bit_tst(DIFF_STATUS_MODIFIED, options)))) ||
+		((p->status != DIFF_STATUS_MODIFIED) &&
+		 filter_bit_tst(p->status, options)));
+}
+
+static void diffcore_apply_filter(struct diff_options *options)
 {
 	int i;
 	struct diff_queue_struct *q = &diff_queued_diff;
 	struct diff_queue_struct outq;
+
 	DIFF_QUEUE_CLEAR(&outq);
 
-	if (!filter)
+	if (!options->filter)
 		return;
 
-	if (strchr(filter, DIFF_STATUS_FILTER_AON)) {
+	if (filter_bit_tst(DIFF_STATUS_FILTER_AON, options)) {
 		int found;
 		for (i = found = 0; !found && i < q->nr; i++) {
-			struct diff_filepair *p = q->queue[i];
-			if (((p->status == DIFF_STATUS_MODIFIED) &&
-			     ((p->score &&
-			       strchr(filter, DIFF_STATUS_FILTER_BROKEN)) ||
-			      (!p->score &&
-			       strchr(filter, DIFF_STATUS_MODIFIED)))) ||
-			    ((p->status != DIFF_STATUS_MODIFIED) &&
-			     strchr(filter, p->status)))
+			if (match_filter(options, q->queue[i]))
 				found++;
 		}
 		if (found)
@@ -4556,14 +4655,7 @@ static void diffcore_apply_filter(const char *filter)
 		/* Only the matching ones */
 		for (i = 0; i < q->nr; i++) {
 			struct diff_filepair *p = q->queue[i];
-
-			if (((p->status == DIFF_STATUS_MODIFIED) &&
-			     ((p->score &&
-			       strchr(filter, DIFF_STATUS_FILTER_BROKEN)) ||
-			      (!p->score &&
-			       strchr(filter, DIFF_STATUS_MODIFIED)))) ||
-			    ((p->status != DIFF_STATUS_MODIFIED) &&
-			     strchr(filter, p->status)))
+			if (match_filter(options, p))
 				diff_q(&outq, p);
 			else
 				diff_free_filepair(p);
@@ -4670,7 +4762,7 @@ void diffcore_std(struct diff_options *options)
 	if (!options->found_follow)
 		/* See try_to_follow_renames() in tree-diff.c */
 		diff_resolve_rename_copy();
-	diffcore_apply_filter(options->filter);
+	diffcore_apply_filter(options);
 
 	if (diff_queued_diff.nr && !DIFF_OPT_TST(options, DIFF_FROM_CONTENTS))
 		DIFF_OPT_SET(options, HAS_CHANGES);

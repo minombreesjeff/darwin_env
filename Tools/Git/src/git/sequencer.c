@@ -270,15 +270,21 @@ static int error_dirty_index(struct replay_opts *opts)
 }
 
 static int fast_forward_to(const unsigned char *to, const unsigned char *from,
-			   int unborn)
+			int unborn, struct replay_opts *opts)
 {
 	struct ref_lock *ref_lock;
+	struct strbuf sb = STRBUF_INIT;
+	int ret;
 
 	read_cache();
 	if (checkout_fast_forward(from, to, 1))
 		exit(1); /* the callee should have complained already */
-	ref_lock = lock_any_ref_for_update("HEAD", unborn ? null_sha1 : from, 0);
-	return write_ref_sha1(ref_lock, to, "cherry-pick");
+	ref_lock = lock_any_ref_for_update("HEAD", unborn ? null_sha1 : from,
+					   0, NULL);
+	strbuf_addf(&sb, "%s: fast-forward", action_name(opts));
+	ret = write_ref_sha1(ref_lock, to, sb.buf);
+	strbuf_release(&sb);
+	return ret;
 }
 
 static int do_recursive_merge(struct commit *base, struct commit *next,
@@ -326,7 +332,7 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 		int i;
 		strbuf_addstr(msgbuf, "\nConflicts:\n");
 		for (i = 0; i < active_nr;) {
-			struct cache_entry *ce = active_cache[i++];
+			const struct cache_entry *ce = active_cache[i++];
 			if (ce_stage(ce)) {
 				strbuf_addch(msgbuf, '\t');
 				strbuf_addstr(msgbuf, ce->name);
@@ -366,8 +372,9 @@ static int is_index_unchanged(void)
 		active_cache_tree = cache_tree();
 
 	if (!cache_tree_fully_valid(active_cache_tree))
-		if (cache_tree_update(active_cache_tree, active_cache,
-				  active_nr, 0))
+		if (cache_tree_update(active_cache_tree,
+				      (const struct cache_entry * const *)active_cache,
+				      active_nr, 0))
 			return error(_("Unable to update cache tree\n"));
 
 	return !hashcmp(active_cache_tree->sha1, head_commit->tree->object.sha1);
@@ -523,7 +530,7 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 	if (opts->allow_ff &&
 	    ((parent && !hashcmp(parent->object.sha1, head)) ||
 	     (!parent && unborn)))
-	     return fast_forward_to(commit->object.sha1, head, unborn);
+		return fast_forward_to(commit->object.sha1, head, unborn, opts);
 
 	if (parent && parse_commit(parent) < 0)
 		/* TRANSLATORS: The first %s will be "revert" or

@@ -28,7 +28,7 @@ test_expect_success 'p4 client newlines, unix' '
 		test_cmp f-unix-orig f-unix &&
 
 		# make sure stored in repo as unix newlines
-		# use sed to eat python-appened newline
+		# use sed to eat python-appended newline
 		p4 -G print //depot/f-unix | marshal_dump data 2 |\
 		    sed \$d >f-unix-p4-print &&
 		test_cmp f-unix-orig f-unix-p4-print &&
@@ -95,7 +95,7 @@ test_expect_success 'gitattributes setting eol=lf produces lf newlines' '
 		git init &&
 		echo "* eol=lf" >.gitattributes &&
 		git p4 sync //depot@all &&
-		git checkout master &&
+		git checkout -b master p4/master &&
 		test_cmp "$cli"/f-unix-orig f-unix &&
 		test_cmp "$cli"/f-win-as-lf f-win
 	)
@@ -109,7 +109,7 @@ test_expect_success 'gitattributes setting eol=crlf produces crlf newlines' '
 		git init &&
 		echo "* eol=crlf" >.gitattributes &&
 		git p4 sync //depot@all &&
-		git checkout master &&
+		git checkout -b master p4/master &&
 		test_cmp "$cli"/f-unix-as-crlf f-unix &&
 		test_cmp "$cli"/f-win-orig f-win
 	)

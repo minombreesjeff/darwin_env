@@ -3,6 +3,7 @@
 #include "unpack-trees.h"
 #include "dir.h"
 #include "tree.h"
+#include "pathspec.h"
 
 static const char *get_mode(const char *str, unsigned int *modep)
 {
@@ -323,7 +324,6 @@ static inline int prune_traversal(struct name_entry *e,
 
 int traverse_trees(int n, struct tree_desc *t, struct traverse_info *info)
 {
-	int ret = 0;
 	int error = 0;
 	struct name_entry *entry = xmalloc(n*sizeof(*entry));
 	int i;
@@ -341,6 +341,7 @@ int traverse_trees(int n, struct tree_desc *t, struct traverse_info *info)
 		strbuf_setlen(&base, info->pathlen);
 	}
 	for (;;) {
+		int trees_used;
 		unsigned long mask, dirmask;
 		const char *first = NULL;
 		int first_len = 0;
@@ -404,15 +405,14 @@ int traverse_trees(int n, struct tree_desc *t, struct traverse_info *info)
 		if (interesting < 0)
 			break;
 		if (interesting) {
-			ret = info->fn(n, mask, dirmask, entry, info);
-			if (ret < 0) {
-				error = ret;
+			trees_used = info->fn(n, mask, dirmask, entry, info);
+			if (trees_used < 0) {
+				error = trees_used;
 				if (!info->show_all_errors)
 					break;
 			}
-			mask &= ret;
+			mask &= trees_used;
 		}
-		ret = 0;
 		for (i = 0; i < n; i++)
 			if (mask & (1ul << i))
 				update_extended_entry(tx + i, entry + i);
@@ -488,13 +488,25 @@ int get_tree_entry(const unsigned char *tree_sha1, const char *name, unsigned ch
 	return retval;
 }
 
-static int match_entry(const struct name_entry *entry, int pathlen,
+static int match_entry(const struct pathspec_item *item,
+		       const struct name_entry *entry, int pathlen,
 		       const char *match, int matchlen,
 		       enum interesting *never_interesting)
 {
 	int m = -1; /* signals that we haven't called strncmp() */
 
-	if (*never_interesting != entry_not_interesting) {
+	if (item->magic & PATHSPEC_ICASE)
+		/*
+		 * "Never interesting" trick requires exact
+		 * matching. We could do something clever with inexact
+		 * matching, but it's trickier (and not to forget that
+		 * strcasecmp is locale-dependent, at least in
+		 * glibc). Just disable it for now. It can't be worse
+		 * than the wildcard's codepath of '[Tt][Hi][Is][Ss]'
+		 * pattern.
+		 */
+		*never_interesting = entry_not_interesting;
+	else if (*never_interesting != entry_not_interesting) {
 		/*
 		 * We have not seen any match that sorts later
 		 * than the current path.
@@ -540,7 +552,7 @@ static int match_entry(const struct name_entry *entry, int pathlen,
 		 * we cheated and did not do strncmp(), so we do
 		 * that here.
 		 */
-		m = strncmp(match, entry->path, pathlen);
+		m = ps_strncmp(item, match, entry->path, pathlen);
 
 	/*
 	 * If common part matched earlier then it is a hit,
@@ -548,15 +560,39 @@ static int match_entry(const struct name_entry *entry, int pathlen,
 	 * leading directory and is shorter than match.
 	 */
 	if (!m)
+		/*
+		 * match_entry does not check if the prefix part is
+		 * matched case-sensitively. If the entry is a
+		 * directory and part of prefix, it'll be rematched
+		 * eventually by basecmp with special treatment for
+		 * the prefix.
+		 */
 		return 1;
 
 	return 0;
 }
 
-static int match_dir_prefix(const char *base,
+/* :(icase)-aware string compare */
+static int basecmp(const struct pathspec_item *item,
+		   const char *base, const char *match, int len)
+{
+	if (item->magic & PATHSPEC_ICASE) {
+		int ret, n = len > item->prefix ? item->prefix : len;
+		ret = strncmp(base, match, n);
+		if (ret)
+			return ret;
+		base += n;
+		match += n;
+		len -= n;
+	}
+	return ps_strncmp(item, base, match, len);
+}
+
+static int match_dir_prefix(const struct pathspec_item *item,
+			    const char *base,
 			    const char *match, int matchlen)
 {
-	if (strncmp(base, match, matchlen))
+	if (basecmp(item, base, match, matchlen))
 		return 0;
 
 	/*
@@ -593,7 +629,7 @@ static int match_wildcard_base(const struct pathspec_item *item,
 		 */
 		if (baselen >= matchlen) {
 			*matched = matchlen;
-			return !strncmp(base, match, matchlen);
+			return !basecmp(item, base, match, matchlen);
 		}
 
 		dirlen = matchlen;
@@ -606,7 +642,7 @@ static int match_wildcard_base(const struct pathspec_item *item,
 		 * base ends with '/' so we are sure it really matches
 		 * directory
 		 */
-		if (strncmp(base, match, baselen))
+		if (basecmp(item, base, match, baselen))
 			return 0;
 		*matched = baselen;
 	} else
@@ -635,8 +671,17 @@ enum interesting tree_entry_interesting(const struct name_entry *entry,
 	enum interesting never_interesting = ps->has_wildcard ?
 		entry_not_interesting : all_entries_not_interesting;
 
+	GUARD_PATHSPEC(ps,
+		       PATHSPEC_FROMTOP |
+		       PATHSPEC_MAXDEPTH |
+		       PATHSPEC_LITERAL |
+		       PATHSPEC_GLOB |
+		       PATHSPEC_ICASE);
+
 	if (!ps->nr) {
-		if (!ps->recursive || ps->max_depth == -1)
+		if (!ps->recursive ||
+		    !(ps->magic & PATHSPEC_MAXDEPTH) ||
+		    ps->max_depth == -1)
 			return all_entries_interesting;
 		return within_depth(base->buf + base_offset, baselen,
 				    !!S_ISDIR(entry->mode),
@@ -654,10 +699,12 @@ enum interesting tree_entry_interesting(const struct name_entry *entry,
 
 		if (baselen >= matchlen) {
 			/* If it doesn't match, move along... */
-			if (!match_dir_prefix(base_str, match, matchlen))
+			if (!match_dir_prefix(item, base_str, match, matchlen))
 				goto match_wildcards;
 
-			if (!ps->recursive || ps->max_depth == -1)
+			if (!ps->recursive ||
+			    !(ps->magic & PATHSPEC_MAXDEPTH) ||
+			    ps->max_depth == -1)
 				return all_entries_interesting;
 
 			return within_depth(base_str + matchlen + 1,
@@ -668,15 +715,14 @@ enum interesting tree_entry_interesting(const struct name_entry *entry,
 		}
 
 		/* Either there must be no base, or the base must match. */
-		if (baselen == 0 || !strncmp(base_str, match, baselen)) {
-			if (match_entry(entry, pathlen,
+		if (baselen == 0 || !basecmp(item, base_str, match, baselen)) {
+			if (match_entry(item, entry, pathlen,
 					match + baselen, matchlen - baselen,
 					&never_interesting))
 				return entry_interesting;
 
 			if (item->nowildcard_len < item->len) {
-				if (!git_fnmatch(match + baselen, entry->path,
-						 item->flags & PATHSPEC_ONESTAR ? GFNM_ONESTAR : 0,
+				if (!git_fnmatch(item, match + baselen, entry->path,
 						 item->nowildcard_len - baselen))
 					return entry_interesting;
 
@@ -717,8 +763,7 @@ match_wildcards:
 
 		strbuf_add(base, entry->path, pathlen);
 
-		if (!git_fnmatch(match, base->buf + base_offset,
-				 item->flags & PATHSPEC_ONESTAR ? GFNM_ONESTAR : 0,
+		if (!git_fnmatch(item, match, base->buf + base_offset,
 				 item->nowildcard_len)) {
 			strbuf_setlen(base, base_offset + baselen);
 			return entry_interesting;

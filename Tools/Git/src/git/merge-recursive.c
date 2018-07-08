@@ -251,7 +251,7 @@ struct tree *write_tree_from_memory(struct merge_options *o)
 		int i;
 		fprintf(stderr, "BUG: There are unmerged index entries:\n");
 		for (i = 0; i < active_nr; i++) {
-			struct cache_entry *ce = active_cache[i];
+			const struct cache_entry *ce = active_cache[i];
 			if (ce_stage(ce))
 				fprintf(stderr, "BUG: %d %.*s\n", ce_stage(ce),
 					(int)ce_namelen(ce), ce->name);
@@ -264,7 +264,8 @@ struct tree *write_tree_from_memory(struct merge_options *o)
 
 	if (!cache_tree_fully_valid(active_cache_tree) &&
 	    cache_tree_update(active_cache_tree,
-			      active_cache, active_nr, 0) < 0)
+			      (const struct cache_entry * const *)active_cache,
+			      active_nr, 0) < 0)
 		die(_("error building trees"));
 
 	result = lookup_tree(active_cache_tree->sha1);
@@ -297,7 +298,7 @@ static int get_files_dirs(struct merge_options *o, struct tree *tree)
 {
 	int n;
 	struct pathspec match_all;
-	init_pathspec(&match_all, NULL);
+	memset(&match_all, 0, sizeof(match_all));
 	if (read_tree_recursive(tree, "", 0, 0, &match_all, save_files_dirs, o))
 		return 0;
 	n = o->current_file_set.nr + o->current_directory_set.nr;
@@ -339,7 +340,7 @@ static struct string_list *get_unmerged(void)
 	for (i = 0; i < active_nr; i++) {
 		struct string_list_item *item;
 		struct stage_data *e;
-		struct cache_entry *ce = active_cache[i];
+		const struct cache_entry *ce = active_cache[i];
 		if (!ce_stage(ce))
 			continue;
 
@@ -2068,8 +2069,8 @@ int parse_merge_opt(struct merge_options *o, const char *s)
 		o->xdl_opts = DIFF_WITH_ALG(o, PATIENCE_DIFF);
 	else if (!strcmp(s, "histogram"))
 		o->xdl_opts = DIFF_WITH_ALG(o, HISTOGRAM_DIFF);
-	else if (!strcmp(s, "diff-algorithm=")) {
-		long value = parse_algorithm_value(s+15);
+	else if (!prefixcmp(s, "diff-algorithm=")) {
+		long value = parse_algorithm_value(s + strlen("diff-algorithm="));
 		if (value < 0)
 			return -1;
 		/* clear out previous settings */

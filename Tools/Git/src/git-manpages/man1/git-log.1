@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-log
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/24/2013
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 11/27/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.3
+.\"    Source: Git 1.8.5
 .\"  Language: English
 .\"
-.TH "GIT\-LOG" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
+.TH "GIT\-LOG" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -83,6 +83,58 @@ Note that this affects all diff\-based output types, e\&.g\&. those produced by 
 \-\-log\-size
 .RS 4
 Before the log message print out its size in bytes\&. Intended mainly for porcelain tools consumption\&. If Git is unable to produce a valid value size is set to zero\&. Note that only message is considered, if also a diff is shown its size is not included\&.
+.RE
+.PP
+\-L <start>,<end>:<file>, \-L :<regex>:<file>
+.RS 4
+Trace the evolution of the line range given by "<start>,<end>" (or the funcname regex <regex>) within the <file>\&. You may not give any pathspec limiters\&. This is currently limited to a walk starting from a single revision, i\&.e\&., you may only give zero or one positive revision arguments\&. You can specify this option more than once\&.
+.sp
+<start> and <end> can take one of these forms:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+number
+.sp
+If <start> or <end> is a number, it specifies an absolute line number (lines count from 1)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+/regex/
+.sp
+This form will use the first line matching the given POSIX regex\&. If <start> is a regex, it will search from the end of the previous
+\-L
+range, if any, otherwise from the start of file\&. If <start> is \(lq^/regex/\(rq, it will search from the start of file\&. If <end> is a regex, it will search starting at the line given by <start>\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
++offset or \-offset
+.sp
+This is only valid for <end> and will specify a number of lines before or after the line given by <start>\&.
+.RE
+.sp
+If \(lq:<regex>\(rq is given in place of <start> and <end>, it denotes the range from the first funcname line that matches <regex>, up to the next funcname line\&. \(lq:<regex>\(rq searches from the end of the previous
+\-L
+range, if any, otherwise from the start of file\&. \(lq^:<regex>\(rq searches from the start of file\&.
 .RE
 .PP
 <revision range>
@@ -208,7 +260,7 @@ Do not print commits with more than one parent\&. This is exactly the same as
 .PP
 \-\-min\-parents=<number>, \-\-max\-parents=<number>, \-\-no\-min\-parents, \-\-no\-max\-parents
 .RS 4
-Show only commits which have at least (or at most) that many commits\&. In particular,
+Show only commits which have at least (or at most) that many parent commits\&. In particular,
 \-\-max\-parents=1
 is the same as
 \-\-no\-merges,
@@ -419,7 +471,8 @@ After a failed merge, show refs that touch files having a conflict and don\(cqt 
 .PP
 \-\-boundary
 .RS 4
-Output uninteresting commits at the boundary, which are usually not shown\&.
+Output excluded boundary commits\&. Boundary commits are prefixed with
+\-\&.
 .RE
 .SS "History Simplification"
 .sp
@@ -491,18 +544,18 @@ In the following, we will always refer to the same example history to illustrate
 .RS 4
 .\}
 .nf
-          \&.\-A\-\-\-M\-\-\-N\-\-\-O\-\-\-P
-         /     /   /   /   /
-        I     B   C   D   E
-         \e   /   /   /   /
-          `\-\-\-\-\-\-\-\-\-\-\-\-\-\(aq
+          \&.\-A\-\-\-M\-\-\-N\-\-\-O\-\-\-P\-\-\-Q
+         /     /   /   /   /   /
+        I     B   C   D   E   Y
+         \e   /   /   /   /   /
+          `\-\-\-\-\-\-\-\-\-\-\-\-\-\(aq   X
 .fi
 .if n \{\
 .RE
 .\}
 .sp
 .sp
-The horizontal line of history A\-\-\-P is taken to be the first parent of each merge\&. The commits are:
+The horizontal line of history A\-\-\-Q is taken to be the first parent of each merge\&. The commits are:
 .sp
 .RS 4
 .ie n \{\
@@ -604,9 +657,39 @@ changes
 quux
 to "xyzzy", and its merge
 P
-combines the strings to "quux xyzzy"\&. Despite appearing interesting,
+combines the strings to "quux xyzzy"\&.
 P
-is TREESAME to all parents\&.
+is TREESAME to
+O, but not to
+E\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+X
+is an independent root commit that added a new file
+side, and
+Y
+modified it\&.
+Y
+is TREESAME to
+X\&. Its merge
+Q
+added
+side
+to
+P, and
+Q
+is TREESAME to
+P, but not to
+Y\&.
 .RE
 .sp
 \fIrev\-list\fR walks backwards through history, including or excluding commits based on whether \fI\-\-full\-history\fR and/or parent rewriting (via \fI\-\-parents\fR or \fI\-\-children\fR) are used\&. The following settings are available\&.
@@ -651,16 +734,14 @@ This mode differs from the default in one point: always follow all parents of a 
 .RS 4
 .\}
 .nf
-        I  A  B  N  D  O
+        I  A  B  N  D  O  P  Q
 .fi
 .if n \{\
 .RE
 .\}
 .sp
-P
-and
 M
-were excluded because they are TREESAME to a parent\&.
+was excluded because it is TREESAME to both parents\&.
 E,
 C
 and
@@ -684,7 +765,7 @@ Merges are always included\&. However, their parent list is rewritten: Along eac
 .RS 4
 .\}
 .nf
-          \&.\-A\-\-\-M\-\-\-N\-\-\-O\-\-\-P
+          \&.\-A\-\-\-M\-\-\-N\-\-\-O\-\-\-P\-\-\-Q
          /     /   /   /   /
         I     B   /   D   /
          \e   /   /   /   /
@@ -703,9 +784,11 @@ E\(aqs parent
 I\&. The same happened for
 C
 and
-N\&. Note also that
-P
-was included despite being TREESAME\&.
+N, and
+X,
+Y
+and
+Q\&.
 .RE
 .sp
 In addition to the above settings, you can change whether TREESAME affects inclusion:
@@ -762,7 +845,7 @@ P
 of
 C\(aq
 with its simplification
-P\(aq\&. In the process, drop parents that are ancestors of other parents, and remove duplicates\&.
+P\(aq\&. In the process, drop parents that are ancestors of other parents or that are root commits TREESAME to an empty tree, and remove duplicates, but take care to never drop all parents that we are TREESAME to\&.
 .RE
 .sp
 .RS 4
@@ -797,9 +880,10 @@ with parent rewriting\&. The example turns into:
 .\}
 .sp
 Note the major differences in
-N
-and
+N,
 P
+and
+Q
 over
 \fI\-\-full\-history\fR:
 .sp
@@ -833,6 +917,25 @@ P\(aqs parent list similarly had
 I
 removed\&.
 P
+was then removed completely, because it had one parent and is TREESAME\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+Q\(aqs parent list had
+Y
+simplified to
+X\&.
+X
+was then removed, because it was a TREESAME root\&.
+Q
 was then removed completely, because it had one parent and is TREESAME\&.
 .RE
 .RE
@@ -917,6 +1020,11 @@ By default, the commits are shown in reverse chronological order\&.
 \-\-date\-order
 .RS 4
 Show no parents before all of its children are shown, but otherwise show commits in the commit timestamp order\&.
+.RE
+.PP
+\-\-author\-date\-order
+.RS 4
+Show no parents before all of its children are shown, but otherwise show commits in the author timestamp order\&.
 .RE
 .PP
 \-\-topo\-order
@@ -1031,7 +1139,7 @@ variable\&.
 This is a shorthand for "\-\-pretty=oneline \-\-abbrev\-commit" used together\&.
 .RE
 .PP
-\-\-encoding[=<encoding>]
+\-\-encoding=<encoding>
 .RS 4
 The commit objects record the encoding used for the log message in their encoding header; this option can be used to tell the command to re\-code the commit log message in the encoding preferred by the user\&. For non plumbing commands this defaults to UTF\-8\&.
 .RE
@@ -1103,7 +1211,7 @@ config variable sets a default value for log command\(cqs \-\-date option\&.
 shows dates relative to the current time, e\&.g\&. "2 hours ago"\&.
 .sp
 \-\-date=local
-shows timestamps in user\(cqs local timezone\&.
+shows timestamps in user\(cqs local time zone\&.
 .sp
 \-\-date=iso
 (or
@@ -1124,7 +1232,7 @@ shows the date in the internal raw Git format
 format\&.
 .sp
 \-\-date=default
-shows timestamps in the original timezone (either committer\(cqs or author\(cqs)\&.
+shows timestamps in the original time zone (either committer\(cqs or author\(cqs)\&.
 .RE
 .PP
 \-\-parents
@@ -1235,11 +1343,6 @@ Show recursive diffs\&.
 .RS 4
 Show the tree objects in the diff output\&. This implies
 \fI\-r\fR\&.
-.RE
-.PP
-\-s
-.RS 4
-Suppress diff output\&.
 .RE
 .SH "PRETTY FORMATS"
 .sp
@@ -2337,6 +2440,14 @@ $ git log \-2 \-\-pretty=%h 4da45bef
 Generate patch (see section on generating patches)\&.
 .RE
 .PP
+\-s, \-\-no\-patch
+.RS 4
+Suppress diff output\&. Useful for commands like
+git show
+that show the patch by default, or to cancel the effect of
+\-\-patch\&.
+.RE
+.PP
 \-U<n>, \-\-unified=<n>
 .RS 4
 Generate diffs with <n> lines of context instead of the usual three\&. Implies
@@ -2694,7 +2805,7 @@ becomes 0\&.5, and is thus the same as
 \-M05
 is the same as
 \-M5%\&. To limit detection to exact renames, use
-\-M100%\&.
+\-M100%\&. The default similarity index is 50%\&.
 .RE
 .PP
 \-C[<n>], \-\-find\-copies[=<n>]
@@ -2745,16 +2856,44 @@ Select only files that are Added (A), Copied (C), Deleted (D), Modified (M), Ren
 .PP
 \-S<string>
 .RS 4
-Look for differences that introduce or remove an instance of <string>\&. Note that this is different than the string simply appearing in diff output; see the
-\fIpickaxe\fR
-entry in
-\fBgitdiffcore\fR(7)
-for more details\&.
+Look for differences that change the number of occurrences of the specified string (i\&.e\&. addition/deletion) in a file\&. Intended for the scripter\(cqs use\&.
+.sp
+It is useful when you\(cqre looking for an exact block of code (like a struct), and want to know the history of that block since it first came into being: use the feature iteratively to feed the interesting block in the preimage back into
+\-S, and keep going until you get the very first version of the block\&.
 .RE
 .PP
 \-G<regex>
 .RS 4
-Look for differences whose added or removed line matches the given <regex>\&.
+Look for differences whose patch text contains added/removed lines that match <regex>\&.
+.sp
+To illustrate the difference between
+\-S<regex> \-\-pickaxe\-regex
+and
+\-G<regex>, consider a commit with the following diff in the same file:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
++    return !regexec(regexp, two\->ptr, 1, &regmatch, 0);
+\&.\&.\&.
+\-    hit = !regexec(regexp, mf2\&.ptr, 1, &regmatch, 0);
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+While
+git log \-G"regexec\e(regexp"
+will show this commit,
+git log \-S"regexec\e(regexp" \-\-pickaxe\-regex
+will not (because the number of occurrences of that string did not change)\&.
+.sp
+See the
+\fIpickaxe\fR
+entry in
+\fBgitdiffcore\fR(7)
+for more information\&.
 .RE
 .PP
 \-\-pickaxe\-all
@@ -2768,7 +2907,9 @@ finds a change, show all the changes in that changeset, not just the files that 
 .PP
 \-\-pickaxe\-regex
 .RS 4
-Make the <string> not a plain string but an extended POSIX regex to match\&.
+Treat the <string> given to
+\-S
+as an extended POSIX regular expression to match\&.
 .RE
 .PP
 \-O<orderfile>
@@ -2804,6 +2945,11 @@ Ignore changes in amount of whitespace\&. This ignores whitespace at line end, a
 \-w, \-\-ignore\-all\-space
 .RS 4
 Ignore whitespace when comparing lines\&. This ignores differences even if one line has whitespace where the other line has none\&.
+.RE
+.PP
+\-\-ignore\-blank\-lines
+.RS 4
+Ignore changes whose lines are all blank\&.
 .RE
 .PP
 \-\-inter\-hunk\-context=<lines>
@@ -2843,7 +2989,7 @@ or diff plumbing commands\&.
 .PP
 \-\-ignore\-submodules[=<when>]
 .RS 4
-Ignore changes to submodules in the diff generation\&. <when> can be either "none", "untracked", "dirty" or "all", which is the default Using "none" will consider the submodule modified when it either contains untracked or modified files or its HEAD differs from the commit recorded in the superproject and can be used to override any settings of the
+Ignore changes to submodules in the diff generation\&. <when> can be either "none", "untracked", "dirty" or "all", which is the default\&. Using "none" will consider the submodule modified when it either contains untracked or modified files or its HEAD differs from the commit recorded in the superproject and can be used to override any settings of the
 \fIignore\fR
 option in
 \fBgit-config\fR(1)
@@ -3202,9 +3348,9 @@ git log \-\-name\-status release\&.\&.test
 Show the commits that are in the "test" branch but not yet in the "release" branch, along with the list of paths each commit modifies\&.
 .RE
 .PP
-git log \-\-follow builtin\-rev\-list\&.c
+git log \-\-follow builtin/rev\-list\&.c
 .RS 4
-Shows the commits that changed builtin\-rev\-list\&.c, including those commits that occurred before the file was given its present name\&.
+Shows the commits that changed builtin/rev\-list\&.c, including those commits that occurred before the file was given its present name\&.
 .RE
 .PP
 git log \-\-branches \-\-not \-\-remotes=origin
@@ -3222,6 +3368,15 @@ Shows all commits that are in local master but not in any remote repository mast
 git log \-p \-m \-\-first\-parent
 .RS 4
 Shows the history including change diffs, but only from the "main branch" perspective, skipping commits that come from merged branches, and showing full diffs of changes introduced by the merges\&. This makes sense only when following a strict policy of merging all topic branches when staying on a single integration branch\&.
+.RE
+.PP
+git log \-L \(aq/int main/\(aq,/^}/:main\&.c
+.RS 4
+Shows how the function
+main()
+in the file
+\fImain\&.c\fR
+evolved over time\&.
 .RE
 .PP
 git log \-3

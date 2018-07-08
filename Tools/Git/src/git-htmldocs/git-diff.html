@@ -759,8 +759,8 @@ git-diff(1) Manual Page
 <h2 id="_description">DESCRIPTION</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Show changes between the working tree and the index or a tree, changes
-between the index and a tree, changes between two trees, or changes
-between two files on disk.</p></div>
+between the index and a tree, changes between two trees, changes between
+two blob objects, or changes between two files on disk.</p></div>
 <div class="dlist"><dl>
 <dt class="hdlist1">
 <em>git diff</em> [--options] [--] [&lt;path&gt;&#8230;]
@@ -773,9 +773,19 @@ between two files on disk.</p></div>
         further add to the index but you still haven&#8217;t.  You can
         stage these changes by using <a href="git-add.html">git-add(1)</a>.
 </p>
-<div class="paragraph"><p>If exactly two paths are given and at least one points outside
-the current repository, <em>git diff</em> will compare the two files /
-directories. This behavior can be forced by --no-index.</p></div>
+</dd>
+<dt class="hdlist1">
+<em>git diff</em> --no-index [--options] [--] [&lt;path&gt;&#8230;]
+</dt>
+<dd>
+<p>
+        This form is to compare the given two paths on the
+        filesystem.  You can omit the <code>--no-index</code> option when
+        running the command in a working tree controlled by Git and
+        at least one of the paths points outside the working tree,
+        or when running the command outside a working tree
+        controlled by Git.
+</p>
 </dd>
 <dt class="hdlist1">
 <em>git diff</em> [--options] --cached [&lt;commit&gt;] [--] [&lt;path&gt;&#8230;]
@@ -813,15 +823,6 @@ directories. This behavior can be forced by --no-index.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
-<em>git diff</em> [options] &lt;blob&gt; &lt;blob&gt;
-</dt>
-<dd>
-<p>
-        This form is to view the differences between the raw
-        contents of two blob objects.
-</p>
-</dd>
-<dt class="hdlist1">
 <em>git diff</em> [--options] &lt;commit&gt;..&lt;commit&gt; [--] [&lt;path&gt;&#8230;]
 </dt>
 <dd>
@@ -854,6 +855,17 @@ However, "diff" is about comparing two <em>endpoints</em>, not ranges,
 and the range notations ("&lt;commit&gt;..&lt;commit&gt;" and
 "&lt;commit&gt;...&lt;commit&gt;") do not mean a range as defined in the
 "SPECIFYING RANGES" section in <a href="gitrevisions.html">gitrevisions(7)</a>.</p></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<em>git diff</em> [options] &lt;blob&gt; &lt;blob&gt;
+</dt>
+<dd>
+<p>
+        This form is to view the differences between the raw
+        contents of two blob objects.
+</p>
+</dd>
+</dl></div>
 </div>
 </div>
 <div class="sect1">
@@ -873,6 +885,18 @@ and the range notations ("&lt;commit&gt;..&lt;commit&gt;" and
 <p>
         Generate patch (see section on generating patches).
          This is the default.
+</p>
+</dd>
+<dt class="hdlist1">
+-s
+</dt>
+<dt class="hdlist1">
+--no-patch
+</dt>
+<dd>
+<p>
+        Suppress diff output. Useful for commands like <code>git show</code> that
+        show the patch by default, or to cancel the effect of <code>--patch</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1375,7 +1399,7 @@ another file.</p></div>
         a fraction, with a decimal point before it.  I.e., <code>-M5</code> becomes
         0.5, and is thus the same as <code>-M50%</code>.  Similarly, <code>-M05</code> is
         the same as <code>-M5%</code>.  To limit detection to exact renames, use
-        <code>-M100%</code>.
+        <code>-M100%</code>.  The default similarity index is 50%.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1457,20 +1481,38 @@ of a delete/create pair.</p></div>
 </dt>
 <dd>
 <p>
-        Look for differences that introduce or remove an instance of
-        &lt;string&gt;. Note that this is different than the string simply
-        appearing in diff output; see the <em>pickaxe</em> entry in
-        <a href="gitdiffcore.html">gitdiffcore(7)</a> for more details.
+        Look for differences that change the number of occurrences of
+        the specified string (i.e. addition/deletion) in a file.
+        Intended for the scripter&#8217;s use.
 </p>
+<div class="paragraph"><p>It is useful when you&#8217;re looking for an exact block of code (like a
+struct), and want to know the history of that block since it first
+came into being: use the feature iteratively to feed the interesting
+block in the preimage back into <code>-S</code>, and keep going until you get the
+very first version of the block.</p></div>
 </dd>
 <dt class="hdlist1">
 -G&lt;regex&gt;
 </dt>
 <dd>
 <p>
-        Look for differences whose added or removed line matches
-        the given &lt;regex&gt;.
+        Look for differences whose patch text contains added/removed
+        lines that match &lt;regex&gt;.
 </p>
+<div class="paragraph"><p>To illustrate the difference between <code>-S&lt;regex&gt; --pickaxe-regex</code> and
+<code>-G&lt;regex&gt;</code>, consider a commit with the following diff in the same
+file:</p></div>
+<div class="listingblock">
+<div class="content">
+<pre><code>+    return !regexec(regexp, two-&gt;ptr, 1, &amp;regmatch, 0);
+...
+-    hit = !regexec(regexp, mf2.ptr, 1, &amp;regmatch, 0);</code></pre>
+</div></div>
+<div class="paragraph"><p>While <code>git log -G"regexec\(regexp"</code> will show this commit, <code>git log
+-S"regexec\(regexp" --pickaxe-regex</code> will not (because the number of
+occurrences of that string did not change).</p></div>
+<div class="paragraph"><p>See the <em>pickaxe</em> entry in <a href="gitdiffcore.html">gitdiffcore(7)</a> for more
+information.</p></div>
 </dd>
 <dt class="hdlist1">
 --pickaxe-all
@@ -1487,8 +1529,8 @@ of a delete/create pair.</p></div>
 </dt>
 <dd>
 <p>
-        Make the &lt;string&gt; not a plain string but an extended POSIX
-        regex to match.
+        Treat the &lt;string&gt; given to <code>-S</code> as an extended POSIX regular
+        expression to match.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1565,6 +1607,14 @@ of a delete/create pair.</p></div>
         Ignore whitespace when comparing lines.  This ignores
         differences even if one line has whitespace where the other
         line has none.
+</p>
+</dd>
+<dt class="hdlist1">
+--ignore-blank-lines
+</dt>
+<dd>
+<p>
+        Ignore changes whose lines are all blank.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1647,7 +1697,7 @@ of a delete/create pair.</p></div>
 <dd>
 <p>
         Ignore changes to submodules in the diff generation. &lt;when&gt; can be
-        either "none", "untracked", "dirty" or "all", which is the default
+        either "none", "untracked", "dirty" or "all", which is the default.
         Using "none" will consider the submodule modified when it either contains
         untracked or modified files or its HEAD differs from the commit recorded
         in the superproject and can be used to override any settings of the
@@ -2436,7 +2486,7 @@ Output diff in reverse.
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-02-05 21:07:26 PST
+Last updated 2013-09-17 14:33:14 PDT
 </div>
 </div>
 </body>

@@ -115,7 +115,7 @@ void resolve_undo_clear_index(struct index_state *istate)
 
 int unmerge_index_entry_at(struct index_state *istate, int pos)
 {
-	struct cache_entry *ce;
+	const struct cache_entry *ce;
 	struct string_list_item *item;
 	struct resolve_undo_info *ru;
 	int i, err = 0, matched;
@@ -167,13 +167,13 @@ void unmerge_marked_index(struct index_state *istate)
 		return;
 
 	for (i = 0; i < istate->cache_nr; i++) {
-		struct cache_entry *ce = istate->cache[i];
+		const struct cache_entry *ce = istate->cache[i];
 		if (ce->ce_flags & CE_MATCHED)
 			i = unmerge_index_entry_at(istate, i);
 	}
 }
 
-void unmerge_index(struct index_state *istate, const char **pathspec)
+void unmerge_index(struct index_state *istate, const struct pathspec *pathspec)
 {
 	int i;
 
@@ -181,8 +181,8 @@ void unmerge_index(struct index_state *istate, const char **pathspec)
 		return;
 
 	for (i = 0; i < istate->cache_nr; i++) {
-		struct cache_entry *ce = istate->cache[i];
-		if (!match_pathspec(pathspec, ce->name, ce_namelen(ce), 0, NULL))
+		const struct cache_entry *ce = istate->cache[i];
+		if (!match_pathspec_depth(pathspec, ce->name, ce_namelen(ce), 0, NULL))
 			continue;
 		i = unmerge_index_entry_at(istate, i);
 	}

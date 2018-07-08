@@ -10,6 +10,7 @@
 #include "revision.h"
 #include "list-objects.h"
 #include "run-command.h"
+#include "connect.h"
 #include "sigchain.h"
 #include "version.h"
 #include "string-list.h"
@@ -40,6 +41,7 @@ static struct object_array have_obj;
 static struct object_array want_obj;
 static struct object_array extra_edge_obj;
 static unsigned int timeout;
+static int keepalive = 5;
 /* 0 for no sideband,
  * otherwise maximum packet size (up to 65520 bytes).
  */
@@ -68,87 +70,28 @@ static ssize_t send_client_data(int fd, const char *data, ssize_t sz)
 	return sz;
 }
 
-static FILE *pack_pipe = NULL;
-static void show_commit(struct commit *commit, void *data)
-{
-	if (commit->object.flags & BOUNDARY)
-		fputc('-', pack_pipe);
-	if (fputs(sha1_to_hex(commit->object.sha1), pack_pipe) < 0)
-		die("broken output pipe");
-	fputc('\n', pack_pipe);
-	fflush(pack_pipe);
-	free(commit->buffer);
-	commit->buffer = NULL;
-}
-
-static void show_object(struct object *obj,
-			const struct name_path *path, const char *component,
-			void *cb_data)
-{
-	show_object_with_name(pack_pipe, obj, path, component);
-}
-
-static void show_edge(struct commit *commit)
-{
-	fprintf(pack_pipe, "-%s\n", sha1_to_hex(commit->object.sha1));
-}
-
-static int do_rev_list(int in, int out, void *user_data)
-{
-	int i;
-	struct rev_info revs;
-
-	pack_pipe = xfdopen(out, "w");
-	init_revisions(&revs, NULL);
-	revs.tag_objects = 1;
-	revs.tree_objects = 1;
-	revs.blob_objects = 1;
-	if (use_thin_pack)
-		revs.edge_hint = 1;
-
-	for (i = 0; i < want_obj.nr; i++) {
-		struct object *o = want_obj.objects[i].item;
-		/* why??? */
-		o->flags &= ~UNINTERESTING;
-		add_pending_object(&revs, o, NULL);
-	}
-	for (i = 0; i < have_obj.nr; i++) {
-		struct object *o = have_obj.objects[i].item;
-		o->flags |= UNINTERESTING;
-		add_pending_object(&revs, o, NULL);
-	}
-	setup_revisions(0, NULL, &revs, NULL);
-	if (prepare_revision_walk(&revs))
-		die("revision walk setup failed");
-	mark_edges_uninteresting(revs.commits, &revs, show_edge);
-	if (use_thin_pack)
-		for (i = 0; i < extra_edge_obj.nr; i++)
-			fprintf(pack_pipe, "-%s\n", sha1_to_hex(
-					extra_edge_obj.objects[i].item->sha1));
-	traverse_commit_list(&revs, show_commit, show_object, NULL);
-	fflush(pack_pipe);
-	fclose(pack_pipe);
-	return 0;
-}
-
 static void create_pack_file(void)
 {
-	struct async rev_list;
 	struct child_process pack_objects;
 	char data[8193], progress[128];
 	char abort_msg[] = "aborting due to possible repository "
 		"corruption on the remote side.";
 	int buffered = -1;
 	ssize_t sz;
-	const char *argv[10];
-	int arg = 0;
+	const char *argv[12];
+	int i, arg = 0;
+	FILE *pipe_fd;
+	char *shallow_file = NULL;
 
-	argv[arg++] = "pack-objects";
-	if (!shallow_nr) {
-		argv[arg++] = "--revs";
-		if (use_thin_pack)
-			argv[arg++] = "--thin";
+	if (shallow_nr) {
+		shallow_file = setup_temporary_shallow();
+		argv[arg++] = "--shallow-file";
+		argv[arg++] = shallow_file;
 	}
+	argv[arg++] = "pack-objects";
+	argv[arg++] = "--revs";
+	if (use_thin_pack)
+		argv[arg++] = "--thin";
 
 	argv[arg++] = "--stdout";
 	if (!no_progress)
@@ -169,29 +112,21 @@ static void create_pack_file(void)
 	if (start_command(&pack_objects))
 		die("git upload-pack: unable to fork git-pack-objects");
 
-	if (shallow_nr) {
-		memset(&rev_list, 0, sizeof(rev_list));
-		rev_list.proc = do_rev_list;
-		rev_list.out = pack_objects.in;
-		if (start_async(&rev_list))
-			die("git upload-pack: unable to fork git-rev-list");
-	}
-	else {
-		FILE *pipe_fd = xfdopen(pack_objects.in, "w");
-		int i;
+	pipe_fd = xfdopen(pack_objects.in, "w");
 
-		for (i = 0; i < want_obj.nr; i++)
-			fprintf(pipe_fd, "%s\n",
-				sha1_to_hex(want_obj.objects[i].item->sha1));
-		fprintf(pipe_fd, "--not\n");
-		for (i = 0; i < have_obj.nr; i++)
-			fprintf(pipe_fd, "%s\n",
-				sha1_to_hex(have_obj.objects[i].item->sha1));
-		fprintf(pipe_fd, "\n");
-		fflush(pipe_fd);
-		fclose(pipe_fd);
-	}
-
+	for (i = 0; i < want_obj.nr; i++)
+		fprintf(pipe_fd, "%s\n",
+			sha1_to_hex(want_obj.objects[i].item->sha1));
+	fprintf(pipe_fd, "--not\n");
+	for (i = 0; i < have_obj.nr; i++)
+		fprintf(pipe_fd, "%s\n",
+			sha1_to_hex(have_obj.objects[i].item->sha1));
+	for (i = 0; i < extra_edge_obj.nr; i++)
+		fprintf(pipe_fd, "%s\n",
+			sha1_to_hex(extra_edge_obj.objects[i].item->sha1));
+	fprintf(pipe_fd, "\n");
+	fflush(pipe_fd);
+	fclose(pipe_fd);
 
 	/* We read from pack_objects.err to capture stderr output for
 	 * progress bar, and pack_objects.out to capture the pack data.
@@ -200,6 +135,7 @@ static void create_pack_file(void)
 	while (1) {
 		struct pollfd pfd[2];
 		int pe, pu, pollsize;
+		int ret;
 
 		reset_timeout();
 
@@ -222,7 +158,8 @@ static void create_pack_file(void)
 		if (!pollsize)
 			break;
 
-		if (poll(pfd, pollsize, -1) < 0) {
+		ret = poll(pfd, pollsize, 1000 * keepalive);
+		if (ret < 0) {
 			if (errno != EINTR) {
 				error("poll failed, resuming: %s",
 				      strerror(errno));
@@ -284,14 +221,32 @@ static void create_pack_file(void)
 			if (sz < 0)
 				goto fail;
 		}
+
+		/*
+		 * We hit the keepalive timeout without saying anything; send
+		 * an empty message on the data sideband just to let the other
+		 * side know we're still working on it, but don't have any data
+		 * yet.
+		 *
+		 * If we don't have a sideband channel, there's no room in the
+		 * protocol to say anything, so those clients are just out of
+		 * luck.
+		 */
+		if (!ret && use_sideband) {
+			static const char buf[] = "0005\1";
+			write_or_die(1, buf, 5);
+		}
 	}
 
 	if (finish_command(&pack_objects)) {
 		error("git upload-pack: git-pack-objects died with error.");
 		goto fail;
 	}
-	if (shallow_nr && finish_async(&rev_list))
-		goto fail;	/* error was already reported */
+	if (shallow_file) {
+		if (*shallow_file)
+			unlink(shallow_file);
+		free(shallow_file);
+	}
 
 	/* flush the data */
 	if (0 <= buffered) {
@@ -734,6 +689,16 @@ static int mark_our_ref(const char *refname, const unsigned char *sha1, int flag
 	return 0;
 }
 
+static void format_symref_info(struct strbuf *buf, struct string_list *symref)
+{
+	struct string_list_item *item;
+
+	if (!symref->nr)
+		return;
+	for_each_string_list_item(item, symref)
+		strbuf_addf(buf, " symref=%s:%s", item->string, (char *)item->util);
+}
+
 static int send_ref(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
 {
 	static const char *capabilities = "multi_ack thin-pack side-band"
@@ -742,35 +707,63 @@ static int send_ref(const char *refname, const unsigned char *sha1, int flag, vo
 	const char *refname_nons = strip_namespace(refname);
 	unsigned char peeled[20];
 
-	if (mark_our_ref(refname, sha1, flag, cb_data))
+	if (mark_our_ref(refname, sha1, flag, NULL))
 		return 0;
 
-	if (capabilities)
-		packet_write(1, "%s %s%c%s%s%s agent=%s\n",
+	if (capabilities) {
+		struct strbuf symref_info = STRBUF_INIT;
+
+		format_symref_info(&symref_info, cb_data);
+		packet_write(1, "%s %s%c%s%s%s%s agent=%s\n",
 			     sha1_to_hex(sha1), refname_nons,
 			     0, capabilities,
 			     allow_tip_sha1_in_want ? " allow-tip-sha1-in-want" : "",
 			     stateless_rpc ? " no-done" : "",
+			     symref_info.buf,
 			     git_user_agent_sanitized());
-	else
+		strbuf_release(&symref_info);
+	} else {
 		packet_write(1, "%s %s\n", sha1_to_hex(sha1), refname_nons);
+	}
 	capabilities = NULL;
 	if (!peel_ref(refname, peeled))
 		packet_write(1, "%s %s^{}\n", sha1_to_hex(peeled), refname_nons);
 	return 0;
 }
 
+static int find_symref(const char *refname, const unsigned char *sha1, int flag,
+		       void *cb_data)
+{
+	const char *symref_target;
+	struct string_list_item *item;
+	unsigned char unused[20];
+
+	if ((flag & REF_ISSYMREF) == 0)
+		return 0;
+	symref_target = resolve_ref_unsafe(refname, unused, 0, &flag);
+	if (!symref_target || (flag & REF_ISSYMREF) == 0)
+		die("'%s' is a symref but it is not?", refname);
+	item = string_list_append(cb_data, refname);
+	item->util = xstrdup(symref_target);
+	return 0;
+}
+
 static void upload_pack(void)
 {
+	struct string_list symref = STRING_LIST_INIT_DUP;
+
+	head_ref_namespaced(find_symref, &symref);
+
 	if (advertise_refs || !stateless_rpc) {
 		reset_timeout();
-		head_ref_namespaced(send_ref, NULL);
-		for_each_namespaced_ref(send_ref, NULL);
+		head_ref_namespaced(send_ref, &symref);
+		for_each_namespaced_ref(send_ref, &symref);
 		packet_flush(1);
 	} else {
 		head_ref_namespaced(mark_our_ref, NULL);
 		for_each_namespaced_ref(mark_our_ref, NULL);
 	}
+	string_list_clear(&symref, 1);
 	if (advertise_refs)
 		return;
 
@@ -785,6 +778,11 @@ static int upload_pack_config(const char *var, const char *value, void *unused)
 {
 	if (!strcmp("uploadpack.allowtipsha1inwant", var))
 		allow_tip_sha1_in_want = git_config_bool(var, value);
+	else if (!strcmp("uploadpack.keepalive", var)) {
+		keepalive = git_config_int(var, value);
+		if (!keepalive)
+			keepalive = -1;
+	}
 	return parse_hide_refs_config(var, value, "uploadpack");
 }
 

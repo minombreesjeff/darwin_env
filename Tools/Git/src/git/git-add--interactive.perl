@@ -44,6 +44,8 @@ my ($diff_new_color) =
 
 my $normal_color = $repo->get_color("", "reset");
 
+my $diff_algorithm = $repo->config('diff.algorithm');
+
 my $use_readkey = 0;
 my $use_termcap = 0;
 my %term_escapes;
@@ -167,7 +169,7 @@ my %patch_modes = (
 my %patch_mode_flavour = %{$patch_modes{stage}};
 
 sub run_cmd_pipe {
-	if ($^O eq 'MSWin32' || $^O eq 'msys') {
+	if ($^O eq 'MSWin32') {
 		my @invalid = grep {m/[":*]/} @_;
 		die "$^O does not support: @invalid\n" if @invalid;
 		my @args = map { m/ /o ? "\"$_\"": $_ } @_;
@@ -261,6 +263,17 @@ sub get_empty_tree {
 	return '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 }
 
+sub get_diff_reference {
+	my $ref = shift;
+	if (defined $ref and $ref ne 'HEAD') {
+		return $ref;
+	} elsif (is_initial_commit()) {
+		return get_empty_tree();
+	} else {
+		return 'HEAD';
+	}
+}
+
 # Returns list of hashes, contents of each of which are:
 # VALUE:	pathname
 # BINARY:	is a binary path
@@ -284,14 +297,7 @@ sub list_modified {
 		return if (!@tracked);
 	}
 
-	my $reference;
-	if (defined $patch_mode_revision and $patch_mode_revision ne 'HEAD') {
-		$reference = $patch_mode_revision;
-	} elsif (is_initial_commit()) {
-		$reference = get_empty_tree();
-	} else {
-		$reference = 'HEAD';
-	}
+	my $reference = get_diff_reference($patch_mode_revision);
 	for (run_cmd_pipe(qw(git diff-index --cached
 			     --numstat --summary), $reference,
 			     '--', @tracked)) {
@@ -731,8 +737,11 @@ sub run_git_apply {
 sub parse_diff {
 	my ($path) = @_;
 	my @diff_cmd = split(" ", $patch_mode_flavour{DIFF});
+	if (defined $diff_algorithm) {
+		splice @diff_cmd, 1, 0, "--diff-algorithm=${diff_algorithm}";
+	}
 	if (defined $patch_mode_revision) {
-		push @diff_cmd, $patch_mode_revision;
+		push @diff_cmd, get_diff_reference($patch_mode_revision);
 	}
 	my @diff = run_cmd_pipe("git", @diff_cmd, "--", $path);
 	my @colored = ();

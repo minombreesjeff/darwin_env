@@ -233,7 +233,21 @@ int split_ident_line(struct ident_split *split, const char *line, int len)
 	if (!split->mail_end)
 		return status;
 
-	for (cp = split->mail_end + 1; cp < line + len && isspace(*cp); cp++)
+	/*
+	 * Look from the end-of-line to find the trailing ">" of the mail
+	 * address, even though we should already know it as split->mail_end.
+	 * This can help in cases of broken idents with an extra ">" somewhere
+	 * in the email address.  Note that we are assuming the timestamp will
+	 * never have a ">" in it.
+	 *
+	 * Note that we will always find some ">" before going off the front of
+	 * the string, because will always hit the split->mail_end closing
+	 * bracket.
+	 */
+	for (cp = line + len - 1; *cp != '>'; cp--)
+		;
+
+	for (cp = cp + 1; cp < line + len && isspace(*cp); cp++)
 		;
 	if (line + len <= cp)
 		goto person_only;
@@ -401,4 +415,33 @@ int git_ident_config(const char *var, const char *value, void *data)
 	}
 
 	return 0;
+}
+
+static int buf_cmp(const char *a_begin, const char *a_end,
+		   const char *b_begin, const char *b_end)
+{
+	int a_len = a_end - a_begin;
+	int b_len = b_end - b_begin;
+	int min = a_len < b_len ? a_len : b_len;
+	int cmp;
+
+	cmp = memcmp(a_begin, b_begin, min);
+	if (cmp)
+		return cmp;
+
+	return a_len - b_len;
+}
+
+int ident_cmp(const struct ident_split *a,
+	      const struct ident_split *b)
+{
+	int cmp;
+
+	cmp = buf_cmp(a->mail_begin, a->mail_end,
+		      b->mail_begin, b->mail_end);
+	if (cmp)
+		return cmp;
+
+	return buf_cmp(a->name_begin, a->name_end,
+		       b->name_begin, b->name_end);
 }

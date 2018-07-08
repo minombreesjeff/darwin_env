@@ -835,6 +835,55 @@ produced by --stat etc.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+-L &lt;start&gt;,&lt;end&gt;:&lt;file&gt;
+</dt>
+<dt class="hdlist1">
+-L :&lt;regex&gt;:&lt;file&gt;
+</dt>
+<dd>
+<p>
+        Trace the evolution of the line range given by "&lt;start&gt;,&lt;end&gt;"
+        (or the funcname regex &lt;regex&gt;) within the &lt;file&gt;.  You may
+        not give any pathspec limiters.  This is currently limited to
+        a walk starting from a single revision, i.e., you may only
+        give zero or one positive revision arguments.
+        You can specify this option more than once.
+</p>
+<div class="paragraph"><p>&lt;start&gt; and &lt;end&gt; can take one of these forms:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+number
+</p>
+<div class="paragraph"><p>If &lt;start&gt; or &lt;end&gt; is a number, it specifies an
+absolute line number (lines count from 1).</p></div>
+</li>
+<li>
+<p>
+/regex/
+</p>
+<div class="paragraph"><p>This form will use the first line matching the given
+POSIX regex. If &lt;start&gt; is a regex, it will search from the end of
+the previous <code>-L</code> range, if any, otherwise from the start of file.
+If &lt;start&gt; is &#8220;^/regex/&#8221;, it will search from the start of file.
+If &lt;end&gt; is a regex, it will search
+starting at the line given by &lt;start&gt;.</p></div>
+</li>
+<li>
+<p>
++offset or -offset
+</p>
+<div class="paragraph"><p>This is only valid for &lt;end&gt; and will specify a number
+of lines before or after the line given by &lt;start&gt;.</p></div>
+</li>
+</ul></div>
+<div class="paragraph"><p>If &#8220;:&lt;regex&gt;&#8221; is given in place of &lt;start&gt; and &lt;end&gt;, it denotes the range
+from the first funcname line that matches &lt;regex&gt;, up to the next
+funcname line. &#8220;:&lt;regex&gt;&#8221; searches from the end of the previous <code>-L</code> range,
+if any, otherwise from the start of file.
+&#8220;^:&lt;regex&gt;&#8221; searches from the start of file.</p></div>
+</dd>
+<dt class="hdlist1">
 &lt;revision range&gt;
 </dt>
 <dd>
@@ -1062,7 +1111,7 @@ if it is part of the log message.</p></div>
 </dt>
 <dd>
 <p>
-        Show only commits which have at least (or at most) that many
+        Show only commits which have at least (or at most) that many parent
         commits. In particular, <code>--max-parents=1</code> is the same as <code>--no-merges</code>,
         <code>--min-parents=2</code> is the same as <code>--merges</code>.  <code>--max-parents=0</code>
         gives all root commits and <code>--min-parents=3</code> all octopus merges.
@@ -1272,8 +1321,8 @@ See also <a href="git-reflog.html">git-reflog(1)</a>.</p></div>
 </dt>
 <dd>
 <p>
-        Output uninteresting commits at the boundary, which are usually
-        not shown.
+        Output excluded boundary commits. Boundary commits are
+        prefixed with <code>-</code>.
 </p>
 </dd>
 </dl></div>
@@ -1375,13 +1424,13 @@ illustrate the differences between simplification settings.  We assume
 that you are filtering for a file <code>foo</code> in this commit graph:</p></div>
 <div class="listingblock">
 <div class="content">
-<pre><code>          .-A---M---N---O---P
-         /     /   /   /   /
-        I     B   C   D   E
-         \   /   /   /   /
-          `-------------'</code></pre>
+<pre><code>          .-A---M---N---O---P---Q
+         /     /   /   /   /   /
+        I     B   C   D   E   Y
+         \   /   /   /   /   /
+          `-------------'   X</code></pre>
 </div></div>
-<div class="paragraph"><p>The horizontal line of history A---P is taken to be the first parent of
+<div class="paragraph"><p>The horizontal line of history A---Q is taken to be the first parent of
 each merge.  The commits are:</p></div>
 <div class="ulist"><ul>
 <li>
@@ -1417,8 +1466,14 @@ In <code>A</code>, <code>foo</code> contains just "foo".
 <li>
 <p>
 <code>E</code> changes <code>quux</code> to "xyzzy", and its merge <code>P</code> combines the
-  strings to "quux xyzzy".  Despite appearing interesting, <code>P</code> is
-  TREESAME to all parents.
+  strings to "quux xyzzy".  <code>P</code> is TREESAME to <code>O</code>, but not to <code>E</code>.
+</p>
+</li>
+<li>
+<p>
+<code>X</code> is an independent root commit that added a new file <code>side</code>, and <code>Y</code>
+  modified it. <code>Y</code> is TREESAME to <code>X</code>. Its merge <code>Q</code> added <code>side</code> to <code>P</code>, and
+  <code>Q</code> is TREESAME to <code>P</code>, but not to <code>Y</code>.
 </p>
 </li>
 </ul></div>
@@ -1467,9 +1522,9 @@ parent lines.</p></div>
 </p>
 <div class="listingblock">
 <div class="content">
-<pre><code>        I  A  B  N  D  O</code></pre>
+<pre><code>        I  A  B  N  D  O  P  Q</code></pre>
 </div></div>
-<div class="paragraph"><p><code>P</code> and <code>M</code> were excluded because they are TREESAME to a parent.  <code>E</code>,
+<div class="paragraph"><p><code>M</code> was excluded because it is TREESAME to both parents.  <code>E</code>,
 <code>C</code> and <code>B</code> were all walked, but only <code>B</code> was !TREESAME, so the others
 do not appear.</p></div>
 <div class="paragraph"><p>Note that without parent rewriting, it is not really possible to talk
@@ -1489,7 +1544,7 @@ Along each parent, prune away commits that are not included
 themselves.  This results in</p></div>
 <div class="listingblock">
 <div class="content">
-<pre><code>          .-A---M---N---O---P
+<pre><code>          .-A---M---N---O---P---Q
          /     /   /   /   /
         I     B   /   D   /
          \   /   /   /   /
@@ -1498,7 +1553,7 @@ themselves.  This results in</p></div>
 <div class="paragraph"><p>Compare to <em>--full-history</em> without rewriting above.  Note that <code>E</code>
 was pruned away because it is TREESAME, but the parent list of P was
 rewritten to contain <code>E</code>'s parent <code>I</code>.  The same happened for <code>C</code> and
-<code>N</code>.  Note also that <code>P</code> was included despite being TREESAME.</p></div>
+<code>N</code>, and <code>X</code>, <code>Y</code> and <code>Q</code>.</p></div>
 </dd>
 </dl></div>
 <div class="paragraph"><p>In addition to the above settings, you can change whether TREESAME
@@ -1545,8 +1600,9 @@ Set <code>C'</code> to <code>C</code>.
 <li>
 <p>
 Replace each parent <code>P</code> of <code>C'</code> with its simplification <code>P'</code>.  In
-  the process, drop parents that are ancestors of other parents, and
-  remove duplicates.
+  the process, drop parents that are ancestors of other parents or that are
+  root commits TREESAME to an empty tree, and remove duplicates, but take care
+  to never drop all parents that we are TREESAME to.
 </p>
 </li>
 <li>
@@ -1568,7 +1624,7 @@ If after this parent rewriting, <code>C'</code> is a root or merge commit (has
          \   /       /
           `---------'</code></pre>
 </div></div>
-<div class="paragraph"><p>Note the major differences in <code>N</code> and <code>P</code> over <em>--full-history</em>:</p></div>
+<div class="paragraph"><p>Note the major differences in <code>N</code>, <code>P</code> and <code>Q</code> over <em>--full-history</em>:</p></div>
 <div class="openblock">
 <div class="content">
 <div class="ulist"><ul>
@@ -1582,6 +1638,13 @@ If after this parent rewriting, <code>C'</code> is a root or merge commit (has
 <p>
 <code>P</code>'s parent list similarly had <code>I</code> removed.  <code>P</code> was then
   removed completely, because it had one parent and is TREESAME.
+</p>
+</li>
+<li>
+<p>
+<code>Q</code>'s parent list had <code>Y</code> simplified to <code>X</code>. <code>X</code> was then removed, because it
+  was a TREESAME root. <code>Q</code> was then removed completely, because it had one
+  parent and is TREESAME.
 </p>
 </li>
 </ul></div>
@@ -1649,6 +1712,15 @@ commits are marked as TREESAME (subject to be simplified away).</p></div>
 <p>
         Show no parents before all of its children are shown, but
         otherwise show commits in the commit timestamp order.
+</p>
+</dd>
+<dt class="hdlist1">
+--author-date-order
+</dt>
+<dd>
+<p>
+        Show no parents before all of its children are shown, but
+        otherwise show commits in the author timestamp order.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1798,7 +1870,7 @@ people using 80-column terminals.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
---encoding[=&lt;encoding&gt;]
+--encoding=&lt;encoding&gt;
 </dt>
 <dd>
 <p>
@@ -1883,13 +1955,13 @@ being displayed. Examples: "--notes=foo" will show only notes from
 </p>
 <div class="paragraph"><p><code>--date=relative</code> shows dates relative to the current time,
 e.g. "2 hours ago".</p></div>
-<div class="paragraph"><p><code>--date=local</code> shows timestamps in user&#8217;s local timezone.</p></div>
+<div class="paragraph"><p><code>--date=local</code> shows timestamps in user&#8217;s local time zone.</p></div>
 <div class="paragraph"><p><code>--date=iso</code> (or <code>--date=iso8601</code>) shows timestamps in ISO 8601 format.</p></div>
 <div class="paragraph"><p><code>--date=rfc</code> (or <code>--date=rfc2822</code>) shows timestamps in RFC 2822
 format, often found in E-mail messages.</p></div>
 <div class="paragraph"><p><code>--date=short</code> shows only date but not time, in <code>YYYY-MM-DD</code> format.</p></div>
 <div class="paragraph"><p><code>--date=raw</code> shows the date in the internal raw Git format <code>%s %z</code> format.</p></div>
-<div class="paragraph"><p><code>--date=default</code> shows timestamps in the original timezone
+<div class="paragraph"><p><code>--date=default</code> shows timestamps in the original time zone
 (either committer&#8217;s or author&#8217;s).</p></div>
 </dd>
 <dt class="hdlist1">
@@ -2014,14 +2086,6 @@ options may be given. See <a href="git-diff-files.html">git-diff-files(1)</a> fo
 <dd>
 <p>
         Show the tree objects in the diff output. This implies <em>-r</em>.
-</p>
-</dd>
-<dt class="hdlist1">
--s
-</dt>
-<dd>
-<p>
-        Suppress diff output.
 </p>
 </dd>
 </dl></div>
@@ -2542,7 +2606,7 @@ $ git log -2 --pretty=%h 4da45bef</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_common_diff_options">Common diff options</h2>
+<h2 id="_common_diff_options">COMMON DIFF OPTIONS</h2>
 <div class="sectionbody">
 <div class="dlist"><dl>
 <dt class="hdlist1">
@@ -2558,6 +2622,18 @@ $ git log -2 --pretty=%h 4da45bef</code></pre>
 <p>
         Generate patch (see section on generating patches).
         
+</p>
+</dd>
+<dt class="hdlist1">
+-s
+</dt>
+<dt class="hdlist1">
+--no-patch
+</dt>
+<dd>
+<p>
+        Suppress diff output. Useful for commands like <code>git show</code> that
+        show the patch by default, or to cancel the effect of <code>--patch</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -3060,7 +3136,7 @@ another file.</p></div>
         a fraction, with a decimal point before it.  I.e., <code>-M5</code> becomes
         0.5, and is thus the same as <code>-M50%</code>.  Similarly, <code>-M05</code> is
         the same as <code>-M5%</code>.  To limit detection to exact renames, use
-        <code>-M100%</code>.
+        <code>-M100%</code>.  The default similarity index is 50%.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -3142,20 +3218,38 @@ of a delete/create pair.</p></div>
 </dt>
 <dd>
 <p>
-        Look for differences that introduce or remove an instance of
-        &lt;string&gt;. Note that this is different than the string simply
-        appearing in diff output; see the <em>pickaxe</em> entry in
-        <a href="gitdiffcore.html">gitdiffcore(7)</a> for more details.
+        Look for differences that change the number of occurrences of
+        the specified string (i.e. addition/deletion) in a file.
+        Intended for the scripter&#8217;s use.
 </p>
+<div class="paragraph"><p>It is useful when you&#8217;re looking for an exact block of code (like a
+struct), and want to know the history of that block since it first
+came into being: use the feature iteratively to feed the interesting
+block in the preimage back into <code>-S</code>, and keep going until you get the
+very first version of the block.</p></div>
 </dd>
 <dt class="hdlist1">
 -G&lt;regex&gt;
 </dt>
 <dd>
 <p>
-        Look for differences whose added or removed line matches
-        the given &lt;regex&gt;.
+        Look for differences whose patch text contains added/removed
+        lines that match &lt;regex&gt;.
 </p>
+<div class="paragraph"><p>To illustrate the difference between <code>-S&lt;regex&gt; --pickaxe-regex</code> and
+<code>-G&lt;regex&gt;</code>, consider a commit with the following diff in the same
+file:</p></div>
+<div class="listingblock">
+<div class="content">
+<pre><code>+    return !regexec(regexp, two-&gt;ptr, 1, &amp;regmatch, 0);
+...
+-    hit = !regexec(regexp, mf2.ptr, 1, &amp;regmatch, 0);</code></pre>
+</div></div>
+<div class="paragraph"><p>While <code>git log -G"regexec\(regexp"</code> will show this commit, <code>git log
+-S"regexec\(regexp" --pickaxe-regex</code> will not (because the number of
+occurrences of that string did not change).</p></div>
+<div class="paragraph"><p>See the <em>pickaxe</em> entry in <a href="gitdiffcore.html">gitdiffcore(7)</a> for more
+information.</p></div>
 </dd>
 <dt class="hdlist1">
 --pickaxe-all
@@ -3172,8 +3266,8 @@ of a delete/create pair.</p></div>
 </dt>
 <dd>
 <p>
-        Make the &lt;string&gt; not a plain string but an extended POSIX
-        regex to match.
+        Treat the &lt;string&gt; given to <code>-S</code> as an extended POSIX regular
+        expression to match.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -3253,6 +3347,14 @@ of a delete/create pair.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+--ignore-blank-lines
+</dt>
+<dd>
+<p>
+        Ignore changes whose lines are all blank.
+</p>
+</dd>
+<dt class="hdlist1">
 --inter-hunk-context=&lt;lines&gt;
 </dt>
 <dd>
@@ -3314,7 +3416,7 @@ of a delete/create pair.</p></div>
 <dd>
 <p>
         Ignore changes to submodules in the diff generation. &lt;when&gt; can be
-        either "none", "untracked", "dirty" or "all", which is the default
+        either "none", "untracked", "dirty" or "all", which is the default.
         Using "none" will consider the submodule modified when it either contains
         untracked or modified files or its HEAD differs from the commit recorded
         in the superproject and can be used to override any settings of the
@@ -3570,7 +3672,7 @@ two unresolved merge parents with the working tree file
 </div>
 </div>
 <div class="sect1">
-<h2 id="_examples">Examples</h2>
+<h2 id="_examples">EXAMPLES</h2>
 <div class="sectionbody">
 <div class="dlist"><dl>
 <dt class="hdlist1">
@@ -3611,11 +3713,11 @@ two unresolved merge parents with the working tree file
 </p>
 </dd>
 <dt class="hdlist1">
-<code>git log --follow builtin-rev-list.c</code>
+<code>git log --follow builtin/rev-list.c</code>
 </dt>
 <dd>
 <p>
-        Shows the commits that changed builtin-rev-list.c, including
+        Shows the commits that changed builtin/rev-list.c, including
         those commits that occurred before the file was given its
         present name.
 </p>
@@ -3652,6 +3754,15 @@ two unresolved merge parents with the working tree file
 </p>
 </dd>
 <dt class="hdlist1">
+<code>git log -L '/int main/',/^}/:main.c</code>
+</dt>
+<dd>
+<p>
+        Shows how the function <code>main()</code> in the file <em>main.c</em> evolved
+        over time.
+</p>
+</dd>
+<dt class="hdlist1">
 <code>git log -3</code>
 </dt>
 <dd>
@@ -3663,7 +3774,7 @@ two unresolved merge parents with the working tree file
 </div>
 </div>
 <div class="sect1">
-<h2 id="_discussion">Discussion</h2>
+<h2 id="_discussion">DISCUSSION</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>At the core level, Git is character encoding agnostic.</p></div>
 <div class="ulist"><ul>
@@ -3740,7 +3851,7 @@ reversible operation.</p></div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_configuration">Configuration</h2>
+<h2 id="_configuration">CONFIGURATION</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>See <a href="git-config.html">git-config(1)</a> for core variables and <a href="git-diff.html">git-diff(1)</a>
 for settings related to diff generation.</p></div>
@@ -3823,7 +3934,7 @@ and overridden by the <code>--notes=&lt;ref&gt;</code> option.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-04-26 17:05:16 PDT
+Last updated 2013-09-09 15:34:20 PDT
 </div>
 </div>
 </body>

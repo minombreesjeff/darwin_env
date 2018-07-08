@@ -8,9 +8,14 @@ Leader:		Byrial Jensen <byrial@vip.cybercity.dk>
 Language:	de (German)
 Repository:	https://github.com/ralfth/git-po-de
 Leader:		Ralf Thielow <ralf.thielow@googlemail.com>
-Members:	Thomas Rast <trast@student.ethz.ch>
+Members:	Thomas Rast <tr@thomasrast.ch>
 		Jan Krüger <jk@jk.gs>
 		Christian Stimming <stimming@tuhh.de>
+
+Language:	fr (French)
+Repository:	https://github.com/jnavila/git
+Leader:		Jean-Noël Avila <jn.avila@free.fr>
+Members:	Sébastien Helleu <flashcode@flashtux.org>
 
 Language:	is (Icelandic)
 Leader:		Ævar Arnfjörð Bjarmason <avarab@gmail.com>

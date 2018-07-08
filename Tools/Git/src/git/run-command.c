@@ -72,11 +72,14 @@ static inline void close_pair(int fd[2])
 	close(fd[1]);
 }
 
-#ifndef WIN32
+#ifndef GIT_WINDOWS_NATIVE
 static inline void dup_devnull(int to)
 {
 	int fd = open("/dev/null", O_RDWR);
-	dup2(fd, to);
+	if (fd < 0)
+		die_errno(_("open /dev/null failed"));
+	if (dup2(fd, to) < 0)
+		die_errno(_("dup2(%d,%d) failed"), fd, to);
 	close(fd);
 }
 #endif
@@ -159,7 +162,7 @@ static const char **prepare_shell_cmd(const char **argv)
 		die("BUG: shell command is empty");
 
 	if (strcspn(argv[0], "|&;<>()$`\\\"' \t\n*?[#~=%") != strlen(argv[0])) {
-#ifndef WIN32
+#ifndef GIT_WINDOWS_NATIVE
 		nargv[nargc++] = SHELL_PATH;
 #else
 		nargv[nargc++] = "sh";
@@ -182,7 +185,7 @@ static const char **prepare_shell_cmd(const char **argv)
 	return nargv;
 }
 
-#ifndef WIN32
+#ifndef GIT_WINDOWS_NATIVE
 static int execv_shell_cmd(const char **argv)
 {
 	const char **nargv = prepare_shell_cmd(argv);
@@ -193,7 +196,7 @@ static int execv_shell_cmd(const char **argv)
 }
 #endif
 
-#ifndef WIN32
+#ifndef GIT_WINDOWS_NATIVE
 static int child_err = 2;
 static int child_notifier = -1;
 
@@ -334,7 +337,7 @@ fail_pipe:
 	trace_argv_printf(cmd->argv, "trace: run_command:");
 	fflush(NULL);
 
-#ifndef WIN32
+#ifndef GIT_WINDOWS_NATIVE
 {
 	int notify_pipe[2];
 	if (pipe(notify_pipe))
@@ -403,13 +406,12 @@ fail_pipe:
 					unsetenv(*cmd->env);
 			}
 		}
-		if (cmd->git_cmd) {
+		if (cmd->git_cmd)
 			execv_git_cmd(cmd->argv);
-		} else if (cmd->use_shell) {
+		else if (cmd->use_shell)
 			execv_shell_cmd(cmd->argv);
-		} else {
+		else
 			sane_execvp(cmd->argv[0], (char *const*) cmd->argv);
-		}
 		if (errno == ENOENT) {
 			if (!cmd->silent_exec_failure)
 				error("cannot run %s: %s", cmd->argv[0],
@@ -443,7 +445,6 @@ fail_pipe:
 		cmd->pid = -1;
 	}
 	close(notify_pipe[0]);
-
 }
 #else
 {
@@ -477,11 +478,10 @@ fail_pipe:
 	if (cmd->env)
 		env = make_augmented_environ(cmd->env);
 
-	if (cmd->git_cmd) {
+	if (cmd->git_cmd)
 		cmd->argv = prepare_git_cmd(cmd->argv);
-	} else if (cmd->use_shell) {
+	else if (cmd->use_shell)
 		cmd->argv = prepare_shell_cmd(cmd->argv);
-	}
 
 	cmd->pid = mingw_spawnvpe(cmd->argv[0], cmd->argv, env, cmd->dir,
 				  fhin, fhout, fherr);

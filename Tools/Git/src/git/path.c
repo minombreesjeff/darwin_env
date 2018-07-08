@@ -5,13 +5,7 @@
 #include "strbuf.h"
 #include "string-list.h"
 
-#ifndef get_st_mode_bits
-/*
- * The replacement lstat(2) we use on Cygwin is incomplete and
- * may return wrong permission bits. Most of the time we do not care,
- * but the callsites of this wrapper do care.
- */
-int get_st_mode_bits(const char *path, int *mode)
+static int get_st_mode_bits(const char *path, int *mode)
 {
 	struct stat st;
 	if (lstat(path, &st) < 0)
@@ -19,7 +13,6 @@ int get_st_mode_bits(const char *path, int *mode)
 	*mode = st.st_mode;
 	return 0;
 }
-#endif
 
 static char bad_path[] = "/bad-path/";
 
@@ -441,41 +434,164 @@ int adjust_shared_perm(const char *path)
 	return 0;
 }
 
-const char *relative_path(const char *abs, const char *base)
+static int have_same_root(const char *path1, const char *path2)
+{
+	int is_abs1, is_abs2;
+
+	is_abs1 = is_absolute_path(path1);
+	is_abs2 = is_absolute_path(path2);
+	return (is_abs1 && is_abs2 && tolower(path1[0]) == tolower(path2[0])) ||
+	       (!is_abs1 && !is_abs2);
+}
+
+/*
+ * Give path as relative to prefix.
+ *
+ * The strbuf may or may not be used, so do not assume it contains the
+ * returned path.
+ */
+const char *relative_path(const char *in, const char *prefix,
+			  struct strbuf *sb)
+{
+	int in_len = in ? strlen(in) : 0;
+	int prefix_len = prefix ? strlen(prefix) : 0;
+	int in_off = 0;
+	int prefix_off = 0;
+	int i = 0, j = 0;
+
+	if (!in_len)
+		return "./";
+	else if (!prefix_len)
+		return in;
+
+	if (have_same_root(in, prefix)) {
+		/* bypass dos_drive, for "c:" is identical to "C:" */
+		if (has_dos_drive_prefix(in)) {
+			i = 2;
+			j = 2;
+		}
+	} else {
+		return in;
+	}
+
+	while (i < prefix_len && j < in_len && prefix[i] == in[j]) {
+		if (is_dir_sep(prefix[i])) {
+			while (is_dir_sep(prefix[i]))
+				i++;
+			while (is_dir_sep(in[j]))
+				j++;
+			prefix_off = i;
+			in_off = j;
+		} else {
+			i++;
+			j++;
+		}
+	}
+
+	if (
+	    /* "prefix" seems like prefix of "in" */
+	    i >= prefix_len &&
+	    /*
+	     * but "/foo" is not a prefix of "/foobar"
+	     * (i.e. prefix not end with '/')
+	     */
+	    prefix_off < prefix_len) {
+		if (j >= in_len) {
+			/* in="/a/b", prefix="/a/b" */
+			in_off = in_len;
+		} else if (is_dir_sep(in[j])) {
+			/* in="/a/b/c", prefix="/a/b" */
+			while (is_dir_sep(in[j]))
+				j++;
+			in_off = j;
+		} else {
+			/* in="/a/bbb/c", prefix="/a/b" */
+			i = prefix_off;
+		}
+	} else if (
+		   /* "in" is short than "prefix" */
+		   j >= in_len &&
+		   /* "in" not end with '/' */
+		   in_off < in_len) {
+		if (is_dir_sep(prefix[i])) {
+			/* in="/a/b", prefix="/a/b/c/" */
+			while (is_dir_sep(prefix[i]))
+				i++;
+			in_off = in_len;
+		}
+	}
+	in += in_off;
+	in_len -= in_off;
+
+	if (i >= prefix_len) {
+		if (!in_len)
+			return "./";
+		else
+			return in;
+	}
+
+	strbuf_reset(sb);
+	strbuf_grow(sb, in_len);
+
+	while (i < prefix_len) {
+		if (is_dir_sep(prefix[i])) {
+			strbuf_addstr(sb, "../");
+			while (is_dir_sep(prefix[i]))
+				i++;
+			continue;
+		}
+		i++;
+	}
+	if (!is_dir_sep(prefix[prefix_len - 1]))
+		strbuf_addstr(sb, "../");
+
+	strbuf_addstr(sb, in);
+
+	return sb->buf;
+}
+
+/*
+ * A simpler implementation of relative_path
+ *
+ * Get relative path by removing "prefix" from "in". This function
+ * first appears in v1.5.6-1-g044bbbc, and makes git_dir shorter
+ * to increase performance when traversing the path to work_tree.
+ */
+const char *remove_leading_path(const char *in, const char *prefix)
 {
 	static char buf[PATH_MAX + 1];
 	int i = 0, j = 0;
 
-	if (!base || !base[0])
-		return abs;
-	while (base[i]) {
-		if (is_dir_sep(base[i])) {
-			if (!is_dir_sep(abs[j]))
-				return abs;
-			while (is_dir_sep(base[i]))
+	if (!prefix || !prefix[0])
+		return in;
+	while (prefix[i]) {
+		if (is_dir_sep(prefix[i])) {
+			if (!is_dir_sep(in[j]))
+				return in;
+			while (is_dir_sep(prefix[i]))
 				i++;
-			while (is_dir_sep(abs[j]))
+			while (is_dir_sep(in[j]))
 				j++;
 			continue;
-		} else if (abs[j] != base[i]) {
-			return abs;
+		} else if (in[j] != prefix[i]) {
+			return in;
 		}
 		i++;
 		j++;
 	}
 	if (
 	    /* "/foo" is a prefix of "/foo" */
-	    abs[j] &&
+	    in[j] &&
 	    /* "/foo" is not a prefix of "/foobar" */
-	    !is_dir_sep(base[i-1]) && !is_dir_sep(abs[j])
+	    !is_dir_sep(prefix[i-1]) && !is_dir_sep(in[j])
 	   )
-		return abs;
-	while (is_dir_sep(abs[j]))
+		return in;
+	while (is_dir_sep(in[j]))
 		j++;
-	if (!abs[j])
+	if (!in[j])
 		strcpy(buf, ".");
 	else
-		strcpy(buf, abs + j);
+		strcpy(buf, in + j);
 	return buf;
 }
 
@@ -492,8 +608,14 @@ const char *relative_path(const char *abs, const char *base)
  *
  * Note that this function is purely textual.  It does not follow symlinks,
  * verify the existence of the path, or make any system calls.
+ *
+ * prefix_len != NULL is for a specific case of prefix_pathspec():
+ * assume that src == dst and src[0..prefix_len-1] is already
+ * normalized, any time "../" eats up to the prefix_len part,
+ * prefix_len is reduced. In the end prefix_len is the remaining
+ * prefix that has not been overridden by user pathspec.
  */
-int normalize_path_copy(char *dst, const char *src)
+int normalize_path_copy_len(char *dst, const char *src, int *prefix_len)
 {
 	char *dst0;
 
@@ -568,9 +690,16 @@ int normalize_path_copy(char *dst, const char *src)
 		/* Windows: dst[-1] cannot be backslash anymore */
 		while (dst0 < dst && dst[-1] != '/')
 			dst--;
+		if (prefix_len && *prefix_len > dst - dst0)
+			*prefix_len = dst - dst0;
 	}
 	*dst = '\0';
 	return 0;
+}
+
+int normalize_path_copy(char *dst, const char *src)
+{
+	return normalize_path_copy_len(dst, src, NULL);
 }
 
 /*

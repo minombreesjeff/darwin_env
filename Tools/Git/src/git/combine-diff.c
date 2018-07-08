@@ -10,6 +10,7 @@
 #include "refs.h"
 #include "userdiff.h"
 #include "sha1-array.h"
+#include "revision.h"
 
 static struct combine_diff_path *intersect_paths(struct combine_diff_path *curr, int n, int num_parent)
 {
@@ -165,7 +166,7 @@ static struct lline *coalesce_lines(struct lline *base, int *lenbase,
 
 	/*
 	 * Coalesce new lines into base by finding the LCS
-	 * - Create the table to run dynamic programing
+	 * - Create the table to run dynamic programming
 	 * - Compute the LCS
 	 * - Then reverse read the direction structure:
 	 *   - If we have MATCH, assign parent to base flag, and consume
@@ -1305,7 +1306,7 @@ void diff_tree_combined(const unsigned char *sha1,
 	int i, num_paths, needsep, show_log_first, num_parent = parents->nr;
 
 	diffopts = *opt;
-	diff_tree_setup_paths(diffopts.pathspec.raw, &diffopts);
+	copy_pathspec(&diffopts.pathspec, &opt->pathspec);
 	diffopts.output_format = DIFF_FORMAT_NO_OUTPUT;
 	DIFF_OPT_SET(&diffopts, RECURSIVE);
 	DIFF_OPT_CLR(&diffopts, ALLOW_EXTERNAL);
@@ -1377,13 +1378,13 @@ void diff_tree_combined(const unsigned char *sha1,
 		free(tmp);
 	}
 
-	diff_tree_release_paths(&diffopts);
+	free_pathspec(&diffopts.pathspec);
 }
 
 void diff_tree_combined_merge(const struct commit *commit, int dense,
 			      struct rev_info *rev)
 {
-	struct commit_list *parent = commit->parents;
+	struct commit_list *parent = get_saved_parents(rev, commit);
 	struct sha1_array parents = SHA1_ARRAY_INIT;
 
 	while (parent) {

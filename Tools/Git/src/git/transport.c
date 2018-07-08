@@ -3,6 +3,8 @@
 #include "run-command.h"
 #include "pkt-line.h"
 #include "fetch-pack.h"
+#include "remote.h"
+#include "connect.h"
 #include "send-pack.h"
 #include "walker.h"
 #include "bundle.h"
@@ -534,6 +536,8 @@ static int fetch_refs_via_pack(struct transport *transport,
 	args.quiet = (transport->verbose < 0);
 	args.no_progress = !transport->progress;
 	args.depth = data->options.depth;
+	args.check_self_contained_and_connected =
+		data->options.check_self_contained_and_connected;
 
 	if (!data->got_remote_heads) {
 		connect_setup(transport, 0, 0);
@@ -551,6 +555,8 @@ static int fetch_refs_via_pack(struct transport *transport,
 		refs = NULL;
 	data->conn = NULL;
 	data->got_remote_heads = 0;
+	data->options.self_contained_and_connected =
+		args.self_contained_and_connected;
 
 	free_refs(refs_tmp);
 
@@ -702,6 +708,10 @@ static int print_one_push_status(struct ref *ref, const char *dest, int count, i
 	case REF_STATUS_REJECT_NEEDS_FORCE:
 		print_ref_status('!', "[rejected]", ref, ref->peer_ref,
 						 "needs force", porcelain);
+		break;
+	case REF_STATUS_REJECT_STALE:
+		print_ref_status('!', "[rejected]", ref, ref->peer_ref,
+						 "stale info", porcelain);
 		break;
 	case REF_STATUS_REMOTE_REJECT:
 		print_ref_status('!', "[remote rejected]", ref,
@@ -871,6 +881,8 @@ void transport_take_over(struct transport *transport,
 	transport->push_refs = git_transport_push;
 	transport->disconnect = disconnect_git;
 	transport->smart_options = &(data->options);
+
+	transport->cannot_reuse = 1;
 }
 
 static int is_local(const char *url)
@@ -1072,6 +1084,7 @@ static int run_pre_push_hook(struct transport *transport,
 	for (r = remote_refs; r; r = r->next) {
 		if (!r->peer_ref) continue;
 		if (r->status == REF_STATUS_REJECT_NONFASTFORWARD) continue;
+		if (r->status == REF_STATUS_REJECT_STALE) continue;
 		if (r->status == REF_STATUS_UPTODATE) continue;
 
 		strbuf_reset(&buf);
@@ -1135,6 +1148,12 @@ int transport_push(struct transport *transport,
 				    refspec_nr, refspec, match_flags)) {
 			return -1;
 		}
+
+		if (transport->smart_options &&
+		    transport->smart_options->cas &&
+		    !is_empty_cas(transport->smart_options->cas))
+			apply_push_cas(transport->smart_options->cas,
+				       transport->remote, remote_refs);
 
 		set_ref_status_for_push(remote_refs,
 			flags & TRANSPORT_PUSH_MIRROR,

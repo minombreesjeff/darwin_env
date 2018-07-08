@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: gitremote-helpers
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/24/2013
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 11/27/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.3
+.\"    Source: Git 1.8.5
 .\"  Language: English
 .\"
-.TH "GITREMOTE\-HELPERS" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
+.TH "GITREMOTE\-HELPERS" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -100,6 +100,14 @@ Supported commands:
 .RE
 .sp
 If a helper advertises \fIconnect\fR, Git will use it if possible and fall back to another capability if the helper requests so when connecting (see the \fIconnect\fR command under COMMANDS)\&. When choosing between \fIpush\fR and \fIexport\fR, Git prefers \fIpush\fR\&. Other frontends may have some other order of preference\&.
+.PP
+\fIno\-private\-update\fR
+.RS 4
+When using the
+\fIrefspec\fR
+capability, git normally updates the private ref on successful push\&. This update is disabled when the remote\-helper declares the capability
+\fIno\-private\-update\fR\&.
+.RE
 .RE
 .sp
 .it 1 an-trap
@@ -138,6 +146,11 @@ Supported commands:
 \fIlist\fR,
 \fIimport\fR\&.
 .RE
+.PP
+\fIcheck\-connectivity\fR
+.RS 4
+Can guarantee that when a clone is requested, the received pack is self contained and is connected\&.
+.RE
 .sp
 If a helper advertises \fIconnect\fR, Git will use it if possible and fall back to another capability if the helper requests so when connecting (see the \fIconnect\fR command under COMMANDS)\&. When choosing between \fIfetch\fR and \fIimport\fR, Git prefers \fIfetch\fR\&. Other frontends may have some other order of preference\&.
 .RE
@@ -161,11 +174,13 @@ depth
 .PP
 \fIrefspec\fR <refspec>
 .RS 4
-This modifies the
+For remote helpers that implement
 \fIimport\fR
-capability, allowing the produced fast\-import stream to modify refs in a private namespace instead of writing to refs/heads or refs/remotes directly\&. It is recommended that all importers providing the
+or
+\fIexport\fR, this capability allows the refs to be constrained to a private namespace, instead of writing to refs/heads or refs/remotes directly\&. It is recommended that all importers providing the
 \fIimport\fR
-capability use this\&.
+capability use this\&. It\(cqs mandatory for
+\fIexport\fR\&.
 .sp
 A helper advertising the capability
 refspec refs/heads/*:refs/svn/origin/branches/*
@@ -174,10 +189,12 @@ import refs/heads/topic, the stream it outputs will update the
 refs/svn/origin/branches/topic
 ref\&.
 .sp
-This capability can be advertised multiple times\&. The first applicable refspec takes precedence\&. The left\-hand of refspecs advertised with this capability must cover all refs reported by the list command\&. If a helper does not need a specific
+This capability can be advertised multiple times\&. The first applicable refspec takes precedence\&. The left\-hand of refspecs advertised with this capability must cover all refs reported by the list command\&. If no
 \fIrefspec\fR
-capability then it should advertise
+capability is advertised, there is an implied
 refspec *:*\&.
+.sp
+When writing remote\-helpers for decentralized version control systems, it is advised to keep a local copy of the repository to interact with, and to let the private namespace refs point to this local repository, while the refs/remotes namespace is used to track the remote repository\&.
 .RE
 .PP
 \fIbidi\-import\fR
@@ -281,6 +298,12 @@ with a sha1 may be fetched this way\&.
 Optionally may output a
 \fIlock <file>\fR
 line indicating a file under GIT_DIR/objects/pack which is keeping a pack until refs can be suitably updated\&.
+.sp
+If option
+\fIcheck\-connectivity\fR
+is requested, the helper must output
+\fIconnectivity\-ok\fR
+if the clone is self\-contained and connected\&.
 .sp
 Supported if the helper has the "fetch" capability\&.
 .RE
@@ -422,6 +445,11 @@ If enabled the helper should automatically fetch annotated tag objects if the ob
 \fIoption servpath <c\-style\-quoted\-path>\fR
 .RS 4
 Sets service path (\-\-upload\-pack, \-\-receive\-pack etc\&.) for next connect\&. Remote helper may support this option, but must not rely on this option being set before connect request occurs\&.
+.RE
+.PP
+\fIoption check\-connectivity\fR {\fItrue\fR|\fIfalse\fR}
+.RS 4
+Request the helper to check connectivity of a clone\&.
 .RE
 .SH "SEE ALSO"
 .sp

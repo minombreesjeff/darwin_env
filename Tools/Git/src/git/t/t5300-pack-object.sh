@@ -13,9 +13,9 @@ TRASH=`pwd`
 test_expect_success \
     'setup' \
     'rm -f .git/index* &&
-     "$PERL_PATH" -e "print \"a\" x 4096;" > a &&
-     "$PERL_PATH" -e "print \"b\" x 4096;" > b &&
-     "$PERL_PATH" -e "print \"c\" x 4096;" > c &&
+     perl -e "print \"a\" x 4096;" > a &&
+     perl -e "print \"b\" x 4096;" > b &&
+     perl -e "print \"c\" x 4096;" > c &&
      test-genrandom "seed a" 2097152 > a_big &&
      test-genrandom "seed b" 2097152 > b_big &&
      git update-index --add a a_big b b_big c &&
@@ -129,7 +129,7 @@ test_expect_success \
 cd "$TRASH"
 
 test_expect_success 'compare delta flavors' '
-	"$PERL_PATH" -e '\''
+	perl -e '\''
 		defined($_ = -s $_) or die for @ARGV;
 		exit 1 if $ARGV[0] <= $ARGV[1];
 	'\'' test-2-$packname_2.pack test-3-$packname_3.pack
@@ -151,7 +151,7 @@ test_expect_success \
 	    git cat-file $t $object || return 1
 	 done <obj-list
     } >current &&
-    test_cmp expect current'
+    cmp expect current'
 
 test_expect_success \
     'use packed deltified (REF_DELTA) objects' \
@@ -166,7 +166,7 @@ test_expect_success \
 	    git cat-file $t $object || return 1
 	 done <obj-list
     } >current &&
-    test_cmp expect current'
+    cmp expect current'
 
 test_expect_success \
     'use packed deltified (OFS_DELTA) objects' \
@@ -181,7 +181,7 @@ test_expect_success \
 	    git cat-file $t $object || return 1
 	 done <obj-list
     } >current &&
-    test_cmp expect current'
+    cmp expect current'
 
 unset GIT_OBJECT_DIRECTORY
 
@@ -195,9 +195,9 @@ test_expect_success 'survive missing objects/pack directory' '
 		rm -fr $GOP &&
 		git index-pack --stdin --keep=test <../test-3-${packname_3}.pack &&
 		test -f $GOP/pack-${packname_3}.pack &&
-		test_cmp $GOP/pack-${packname_3}.pack ../test-3-${packname_3}.pack &&
+		cmp $GOP/pack-${packname_3}.pack ../test-3-${packname_3}.pack &&
 		test -f $GOP/pack-${packname_3}.idx &&
-		test_cmp $GOP/pack-${packname_3}.idx ../test-3-${packname_3}.idx &&
+		cmp $GOP/pack-${packname_3}.idx ../test-3-${packname_3}.idx &&
 		test -f $GOP/pack-${packname_3}.keep
 	)
 '

@@ -9,7 +9,7 @@ git-gc - Cleanup unnecessary files and optimize the local repository
 SYNOPSIS
 --------
 [verse]
-'git gc' [--aggressive] [--auto] [--quiet] [--prune=<date> | --no-prune]
+'git gc' [--aggressive] [--auto] [--quiet] [--prune=<date> | --no-prune] [--force]
 
 DESCRIPTION
 -----------
@@ -62,14 +62,19 @@ automatic consolidation of packs.
 
 --prune=<date>::
 	Prune loose objects older than date (default is 2 weeks ago,
-	overridable by the config variable `gc.pruneExpire`).  This
-	option is on by default.
+	overridable by the config variable `gc.pruneExpire`).
+	--prune=all prunes loose objects regardless of their age.
+	--prune is on by default.
 
 --no-prune::
 	Do not prune any loose objects.
 
 --quiet::
 	Suppress all progress reports.
+
+--force::
+	Force `git gc` to run even if there may be another `git gc`
+	instance running on this repository.
 
 Configuration
 -------------

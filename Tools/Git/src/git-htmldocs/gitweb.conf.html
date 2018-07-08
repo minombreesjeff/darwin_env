@@ -1132,10 +1132,35 @@ $home_link_str
         used as the first component of gitweb&#8217;s "breadcrumb trail":
         <code>&lt;home link&gt; / &lt;project&gt; / &lt;action&gt;</code>.  Can be set at build time using
         the <code>GITWEB_HOME_LINK_STR</code> variable.  By default it is set to "projects",
-        as this link leads to the list of projects.  Other popular choice it to
-        set it to the name of site.
+        as this link leads to the list of projects.  Another popular choice is to
+        set it to the name of site.  Note that it is treated as raw HTML so it
+        should not be set from untrusted sources.
 </p>
 </dd>
+<dt class="hdlist1">
+@extra_breadcrumbs
+</dt>
+<dd>
+<p>
+        Additional links to be added to the start of the breadcrumb trail before
+        the home link, to pages that are logically "above" the gitweb projects
+        list, such as the organization and department which host the gitweb
+        server. Each element of the list is a reference to an array, in which
+        element 0 is the link text (equivalent to <code>$home_link_str</code>) and element
+        1 is the target URL (equivalent to <code>$home_link</code>).
+</p>
+<div class="paragraph"><p>For example, the following setting produces a breadcrumb trail like
+"home / dev / projects / &#8230;" where "projects" is the home link.</p></div>
+</dd>
+</dl></div>
+<div class="listingblock">
+<div class="content">
+<pre><code>    our @extra_breadcrumbs = (
+      [ 'home' =&gt; 'https://www.example.org/' ],
+      [ 'dev'  =&gt; 'https://dev.example.org/' ],
+    );</code></pre>
+</div></div>
+<div class="dlist"><dl>
 <dt class="hdlist1">
 $logo_url
 </dt>
@@ -1775,17 +1800,17 @@ javascript-timezone
 </dt>
 <dd>
 <p>
-        Enable and configure the ability to change a common timezone for dates
+        Enable and configure the ability to change a common time zone for dates
         in gitweb output via JavaScript.  Dates in gitweb output include
         authordate and committerdate in "commit", "commitdiff" and "log"
         views, and taggerdate in "tag" view.  Enabled by default.
 </p>
-<div class="paragraph"><p>The value is a list of three values: a default timezone (for if the client
-hasn&#8217;t selected some other timezone and saved it in a cookie), a name of cookie
-where to store selected timezone, and a CSS class used to mark up
+<div class="paragraph"><p>The value is a list of three values: a default time zone (for if the client
+hasn&#8217;t selected some other time zone and saved it in a cookie), a name of cookie
+where to store selected time zone, and a CSS class used to mark up
 dates for manipulation.  If you want to turn this feature off, set "default"
 to empty list: <code>[]</code>.</p></div>
-<div class="paragraph"><p>Typical gitweb config files will only change starting (default) timezone,
+<div class="paragraph"><p>Typical gitweb config files will only change starting (default) time zone,
 and leave other elements at their default values:</p></div>
 <div class="listingblock">
 <div class="content">
@@ -1793,9 +1818,9 @@ and leave other elements at their default values:</p></div>
 </div></div>
 <div class="paragraph"><p>The example configuration presented here is guaranteed to be backwards
 and forward compatible.</p></div>
-<div class="paragraph"><p>Timezone values can be "local" (for local timezone that browser uses), "utc"
+<div class="paragraph"><p>Time zone values can be "local" (for local time zone that browser uses), "utc"
 (what gitweb uses when JavaScript or this feature is disabled), or numerical
-timezones in the form of "+/-HHMM", such as "+0200".</p></div>
+time zones in the form of "+/-HHMM", such as "+0200".</p></div>
 <div class="paragraph"><p>Project specific override is not supported.</p></div>
 </dd>
 </dl></div>
@@ -1930,7 +1955,7 @@ gitweb_config.perl
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-04-23 12:18:47 PDT
+Last updated 2013-11-12 15:22:25 PST
 </div>
 </div>
 </body>

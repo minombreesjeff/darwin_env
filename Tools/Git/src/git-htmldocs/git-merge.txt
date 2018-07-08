@@ -10,7 +10,7 @@ SYNOPSIS
 --------
 [verse]
 'git merge' [-n] [--stat] [--no-commit] [--squash] [--[no-]edit]
-	[-s <strategy>] [-X <strategy-option>]
+	[-s <strategy>] [-X <strategy-option>] [-S[<keyid>]]
 	[--[no-]rerere-autoupdate] [-m <msg>] [<commit>...]
 'git merge' <msg> HEAD <commit>...
 'git merge' --abort
@@ -56,14 +56,18 @@ especially if those changes were further modified after the merge
 was started), 'git merge --abort' will in some cases be unable to
 reconstruct the original (pre-merge) changes. Therefore:
 
-*Warning*: Running 'git merge' with uncommitted changes is
-discouraged: while possible, it leaves you in a state that is hard to
+*Warning*: Running 'git merge' with non-trivial uncommitted changes is
+discouraged: while possible, it may leave you in a state that is hard to
 back out of in the case of a conflict.
 
 
 OPTIONS
 -------
 include::merge-options.txt[]
+
+-S[<keyid>]::
+--gpg-sign[=<keyid>]::
+	GPG-sign the resulting merge commit.
 
 -m <msg>::
 	Set the commit message to be used for the merge commit (in
@@ -186,11 +190,11 @@ In such a case, you can "unwrap" the tag yourself before feeding it
 to `git merge`, or pass `--ff-only` when you do not have any work on
 your own. e.g.
 
----
+----
 git fetch origin
 git merge v1.2.3^0
 git merge --ff-only v1.2.3
----
+----
 
 
 HOW CONFLICTS ARE PRESENTED

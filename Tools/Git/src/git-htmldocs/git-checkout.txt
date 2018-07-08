@@ -9,7 +9,8 @@ SYNOPSIS
 --------
 [verse]
 'git checkout' [-q] [-f] [-m] [<branch>]
-'git checkout' [-q] [-f] [-m] [--detach] [<commit>]
+'git checkout' [-q] [-f] [-m] --detach [<branch>]
+'git checkout' [-q] [-f] [-m] [--detach] <commit>
 'git checkout' [-q] [-f] [-m] [[-b|-B|--orphan] <new_branch>] [<start_point>]
 'git checkout' [-f|--ours|--theirs|-m|--conflict=<style>] [<tree-ish>] [--] <paths>...
 'git checkout' [-p|--patch] [<tree-ish>] [--] [<paths>...]
@@ -62,7 +63,7 @@ that is to say, the branch is not reset/created unless "git checkout" is
 successful.
 
 'git checkout' --detach [<branch>]::
-'git checkout' <commit>::
+'git checkout' [--detach] <commit>::
 
 	Prepare to work on top of <commit>, by detaching HEAD at it
 	(see "DETACHED HEAD" section), and updating the index and the
@@ -71,10 +72,11 @@ successful.
 	tree will be the state recorded in the commit plus the local
 	modifications.
 +
-Passing `--detach` forces this behavior in the case of a <branch> (without
-the option, giving a branch name to the command would check out the branch,
-instead of detaching HEAD at it), or the current commit,
-if no <branch> is specified.
+When the <commit> argument is a branch name, the `--detach` option can
+be used to detach HEAD at the tip of the branch (`git checkout
+<branch>` would check out that branch without detaching HEAD).
++
+Omitting <branch> detaches HEAD at the tip of the current branch.
 
 'git checkout' [-p|--patch] [<tree-ish>] [--] <pathspec>...::
 
@@ -131,9 +133,9 @@ entries; instead, unmerged entries are ignored.
 	"--track" in linkgit:git-branch[1] for details.
 +
 If no '-b' option is given, the name of the new branch will be
-derived from the remote-tracking branch.  If "remotes/" or "refs/remotes/"
-is prefixed it is stripped away, and then the part up to the
-next slash (which would be the nickname of the remote) is removed.
+derived from the remote-tracking branch, by looking at the local part of
+the refspec configured for the corresponding remote, and then stripping
+the initial part up to the "*".
 This would tell us to use "hack" as the local branch when branching
 off of "origin/hack" (or "remotes/origin/hack", or even
 "refs/remotes/origin/hack").  If the given name has no slash, or the above

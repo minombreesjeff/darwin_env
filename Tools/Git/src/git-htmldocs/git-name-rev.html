@@ -747,7 +747,7 @@ git-name-rev(1) Manual Page
 <div class="sectionbody">
 <div class="verseblock">
 <pre class="content"><em>git name-rev</em> [--tags] [--refs=&lt;pattern&gt;]
-               ( --all | --stdin | &lt;committish&gt;&#8230; )</pre>
+               ( --all | --stdin | &lt;commit-ish&gt;&#8230; )</pre>
 <div class="attribution">
 </div></div>
 </div>
@@ -776,7 +776,8 @@ format parsable by <em>git rev-parse</em>.</p></div>
 </dt>
 <dd>
 <p>
-        Only use refs whose names match a given shell pattern.
+        Only use refs whose names match a given shell pattern.  The pattern
+        can be one of branch name, tag name or fully qualified ref name.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -792,8 +793,10 @@ format parsable by <em>git rev-parse</em>.</p></div>
 </dt>
 <dd>
 <p>
-        Read from stdin, append "(&lt;rev_name&gt;)" to all sha1&#8217;s of nameable
-        commits, and pass to stdout
+        Transform stdin by substituting all the 40-character SHA-1
+        hexes (say $hex) with "$hex ($rev_name)".  When used with
+        --name-only, substitute with "$rev_name", omitting $hex
+        altogether.  Intended for the scripter&#8217;s use.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -858,7 +861,7 @@ not the context.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-11-15 13:45:02 PST
+Last updated 2013-09-17 14:33:14 PDT
 </div>
 </div>
 </body>

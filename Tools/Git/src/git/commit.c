@@ -8,12 +8,15 @@
 #include "notes.h"
 #include "gpg-interface.h"
 #include "mergesort.h"
+#include "commit-slab.h"
+#include "prio-queue.h"
 
 static struct commit_extra_header *read_commit_extra_header_lines(const char *buf, size_t len, const char **);
 
 int save_commit_buffer = 1;
 
 const char *commit_type = "commit";
+static int commit_count;
 
 static struct commit *check_commit(struct object *obj,
 				   const unsigned char *sha1,
@@ -58,8 +61,11 @@ struct commit *lookup_commit_or_die(const unsigned char *sha1, const char *ref_n
 struct commit *lookup_commit(const unsigned char *sha1)
 {
 	struct object *obj = lookup_object(sha1);
-	if (!obj)
-		return create_object(sha1, OBJ_COMMIT, alloc_commit_node());
+	if (!obj) {
+		struct commit *c = alloc_commit_node();
+		c->index = commit_count++;
+		return create_object(sha1, OBJ_COMMIT, c);
+	}
 	if (!obj->type)
 		obj->type = OBJ_COMMIT;
 	return check_commit(obj, sha1, 0);
@@ -371,6 +377,22 @@ unsigned commit_list_count(const struct commit_list *l)
 	return c;
 }
 
+struct commit_list *copy_commit_list(struct commit_list *list)
+{
+	struct commit_list *head = NULL;
+	struct commit_list **pp = &head;
+	while (list) {
+		struct commit_list *new;
+		new = xmalloc(sizeof(struct commit_list));
+		new->item = list->item;
+		new->next = NULL;
+		*pp = new;
+		pp = &new->next;
+		list = list->next;
+	}
+	return head;
+}
+
 void free_commit_list(struct commit_list *list)
 {
 	while (list) {
@@ -507,32 +529,136 @@ struct commit *pop_commit(struct commit_list **stack)
 }
 
 /*
+ * Topological sort support
+ */
+
+/* count number of children that have not been emitted */
+define_commit_slab(indegree_slab, int);
+
+/* record author-date for each commit object */
+define_commit_slab(author_date_slab, unsigned long);
+
+static void record_author_date(struct author_date_slab *author_date,
+			       struct commit *commit)
+{
+	const char *buf, *line_end;
+	char *buffer = NULL;
+	struct ident_split ident;
+	char *date_end;
+	unsigned long date;
+
+	if (!commit->buffer) {
+		unsigned long size;
+		enum object_type type;
+		buffer = read_sha1_file(commit->object.sha1, &type, &size);
+		if (!buffer)
+			return;
+	}
+
+	for (buf = commit->buffer ? commit->buffer : buffer;
+	     buf;
+	     buf = line_end + 1) {
+		line_end = strchrnul(buf, '\n');
+		if (prefixcmp(buf, "author ")) {
+			if (!line_end[0] || line_end[1] == '\n')
+				return; /* end of header */
+			continue;
+		}
+		if (split_ident_line(&ident,
+				     buf + strlen("author "),
+				     line_end - (buf + strlen("author "))) ||
+		    !ident.date_begin || !ident.date_end)
+			goto fail_exit; /* malformed "author" line */
+		break;
+	}
+
+	date = strtoul(ident.date_begin, &date_end, 10);
+	if (date_end != ident.date_end)
+		goto fail_exit; /* malformed date */
+	*(author_date_slab_at(author_date, commit)) = date;
+
+fail_exit:
+	free(buffer);
+}
+
+static int compare_commits_by_author_date(const void *a_, const void *b_,
+					  void *cb_data)
+{
+	const struct commit *a = a_, *b = b_;
+	struct author_date_slab *author_date = cb_data;
+	unsigned long a_date = *(author_date_slab_at(author_date, a));
+	unsigned long b_date = *(author_date_slab_at(author_date, b));
+
+	/* newer commits with larger date first */
+	if (a_date < b_date)
+		return 1;
+	else if (a_date > b_date)
+		return -1;
+	return 0;
+}
+
+int compare_commits_by_commit_date(const void *a_, const void *b_, void *unused)
+{
+	const struct commit *a = a_, *b = b_;
+	/* newer commits with larger date first */
+	if (a->date < b->date)
+		return 1;
+	else if (a->date > b->date)
+		return -1;
+	return 0;
+}
+
+/*
  * Performs an in-place topological sort on the list supplied.
  */
-void sort_in_topological_order(struct commit_list ** list, int lifo)
+void sort_in_topological_order(struct commit_list **list, enum rev_sort_order sort_order)
 {
 	struct commit_list *next, *orig = *list;
-	struct commit_list *work, **insert;
 	struct commit_list **pptr;
+	struct indegree_slab indegree;
+	struct prio_queue queue;
+	struct commit *commit;
+	struct author_date_slab author_date;
 
 	if (!orig)
 		return;
 	*list = NULL;
 
+	init_indegree_slab(&indegree);
+	memset(&queue, '\0', sizeof(queue));
+
+	switch (sort_order) {
+	default: /* REV_SORT_IN_GRAPH_ORDER */
+		queue.compare = NULL;
+		break;
+	case REV_SORT_BY_COMMIT_DATE:
+		queue.compare = compare_commits_by_commit_date;
+		break;
+	case REV_SORT_BY_AUTHOR_DATE:
+		init_author_date_slab(&author_date);
+		queue.compare = compare_commits_by_author_date;
+		queue.cb_data = &author_date;
+		break;
+	}
+
 	/* Mark them and clear the indegree */
 	for (next = orig; next; next = next->next) {
 		struct commit *commit = next->item;
-		commit->indegree = 1;
+		*(indegree_slab_at(&indegree, commit)) = 1;
+		/* also record the author dates, if needed */
+		if (sort_order == REV_SORT_BY_AUTHOR_DATE)
+			record_author_date(&author_date, commit);
 	}
 
 	/* update the indegree */
 	for (next = orig; next; next = next->next) {
-		struct commit_list * parents = next->item->parents;
+		struct commit_list *parents = next->item->parents;
 		while (parents) {
 			struct commit *parent = parents->item;
+			int *pi = indegree_slab_at(&indegree, parent);
 
-			if (parent->indegree)
-				parent->indegree++;
+			if (*pi)
+				(*pi)++;
 			parents = parents->next;
 		}
 	}
@@ -544,34 +670,33 @@ void sort_in_topological_order(struct commit_list ** list, int lifo)
 	 *
 	 * the tips serve as a starting set for the work queue.
 	 */
-	work = NULL;
-	insert = &work;
 	for (next = orig; next; next = next->next) {
 		struct commit *commit = next->item;
 
-		if (commit->indegree == 1)
-			insert = &commit_list_insert(commit, insert)->next;
+		if (*(indegree_slab_at(&indegree, commit)) == 1)
+			prio_queue_put(&queue, commit);
 	}
 
-	/* process the list in topological order */
-	if (!lifo)
-		commit_list_sort_by_date(&work);
+	/*
+	 * This is unfortunate; the initial tips need to be shown
+	 * in the order given from the revision traversal machinery.
+	 */
+	if (sort_order == REV_SORT_IN_GRAPH_ORDER)
+		prio_queue_reverse(&queue);
+
+	/* We no longer need the commit list */
+	free_commit_list(orig);
 
 	pptr = list;
 	*list = NULL;
-	while (work) {
-		struct commit *commit;
-		struct commit_list *parents, *work_item;
+	while ((commit = prio_queue_get(&queue)) != NULL) {
+		struct commit_list *parents;
 
-		work_item = work;
-		work = work_item->next;
-		work_item->next = NULL;
-
-		commit = work_item->item;
 		for (parents = commit->parents; parents ; parents = parents->next) {
 			struct commit *parent = parents->item;
+			int *pi = indegree_slab_at(&indegree, parent);
 
-			if (!parent->indegree)
+			if (!*pi)
 				continue;
 
 			/*
@@ -579,21 +704,22 @@ void sort_in_topological_order(struct commit_list ** list, int lifo)
 			 * when all their children have been emitted thereby
 			 * guaranteeing topological order.
 			 */
-			if (--parent->indegree == 1) {
-				if (!lifo)
-					commit_list_insert_by_date(parent, &work);
-				else
-					commit_list_insert(parent, &work);
-			}
+			if (--(*pi) == 1)
+				prio_queue_put(&queue, parent);
 		}
 		/*
-		 * work_item is a commit all of whose children
-		 * have already been emitted. we can emit it now.
+		 * all children of commit have already been
+		 * emitted. we can emit it now.
 		 */
-		commit->indegree = 0;
-		*pptr = work_item;
-		pptr = &work_item->next;
+		*(indegree_slab_at(&indegree, commit)) = 0;
+
+		pptr = &commit_list_insert(commit, pptr)->next;
 	}
+
+	clear_indegree_slab(&indegree);
+	clear_prio_queue(&queue);
+	if (sort_order == REV_SORT_BY_AUTHOR_DATE)
+		clear_author_date_slab(&author_date);
 }
 
 /* merge-base stuff */
@@ -1240,10 +1366,15 @@ int commit_tree(const struct strbuf *msg, unsigned char *tree,
 static int find_invalid_utf8(const char *buf, int len)
 {
 	int offset = 0;
+	static const unsigned int max_codepoint[] = {
+		0x7f, 0x7ff, 0xffff, 0x10ffff
+	};
 
 	while (len) {
 		unsigned char c = *buf++;
 		int bytes, bad_offset;
+		unsigned int codepoint;
+		unsigned int min_val, max_val;
 
 		len--;
 		offset++;
@@ -1264,24 +1395,48 @@ static int find_invalid_utf8(const char *buf, int len)
 			bytes++;
 		}
 
-		/* Must be between 1 and 5 more bytes */
-		if (bytes < 1 || bytes > 5)
+		/*
+		 * Must be between 1 and 3 more bytes.  Longer sequences result in
+		 * codepoints beyond U+10FFFF, which are guaranteed never to exist.
+		 */
+		if (bytes < 1 || 3 < bytes)
 			return bad_offset;
 
 		/* Do we *have* that many bytes? */
 		if (len < bytes)
 			return bad_offset;
 
+		/*
+		 * Place the encoded bits at the bottom of the value and compute the
+		 * valid range.
+		 */
+		codepoint = (c & 0x7f) >> bytes;
+		min_val = max_codepoint[bytes-1] + 1;
+		max_val = max_codepoint[bytes];
+
 		offset += bytes;
 		len -= bytes;
 
 		/* And verify that they are good continuation bytes */
 		do {
+			codepoint <<= 6;
+			codepoint |= *buf & 0x3f;
 			if ((*buf++ & 0xc0) != 0x80)
 				return bad_offset;
 		} while (--bytes);
 
-		/* We could/should check the value and length here too */
+		/* Reject codepoints that are out of range for the sequence length. */
+		if (codepoint < min_val || codepoint > max_val)
+			return bad_offset;
+		/* Surrogates are only for UTF-16 and cannot be encoded in UTF-8. */
+		if ((codepoint & 0x1ff800) == 0xd800)
+			return bad_offset;
+		/* U+xxFFFE and U+xxFFFF are guaranteed non-characters. */
+		if ((codepoint & 0xfffe) == 0xfffe)
+			return bad_offset;
+		/* So are anything in the range U+FDD0..U+FDEF. */
+		if (codepoint >= 0xfdd0 && codepoint <= 0xfdef)
+			return bad_offset;
 	}
 	return -1;
 }
@@ -1291,9 +1446,6 @@ static int find_invalid_utf8(const char *buf, int len)
  *
  * If it isn't, it assumes any non-utf8 characters are Latin1,
  * and does the conversion.
- *
- * Fixme: we should probably also disallow overlong forms and
- * invalid characters. But we don't do that currently.
  */
 static int verify_utf8(struct strbuf *buf)
 {

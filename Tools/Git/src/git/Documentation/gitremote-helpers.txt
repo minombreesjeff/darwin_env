@@ -120,6 +120,11 @@ connecting (see the 'connect' command under COMMANDS).
 When choosing between 'push' and 'export', Git prefers 'push'.
 Other frontends may have some other order of preference.
 
+'no-private-update'::
+	When using the 'refspec' capability, git normally updates the
+	private ref on successful push. This update is disabled when
+	the remote-helper declares the capability 'no-private-update'.
+
 
 Capabilities for Fetching
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -143,6 +148,10 @@ Supported commands: 'list', 'fetch'.
 +
 Supported commands: 'list', 'import'.
 
+'check-connectivity'::
+	Can guarantee that when a clone is requested, the received
+	pack is self contained and is connected.
+
 If a helper advertises 'connect', Git will use it if possible and
 fall back to another capability if the helper requests so when
 connecting (see the 'connect' command under COMMANDS).
@@ -159,11 +168,11 @@ Miscellaneous capabilities
 	carried out.
 
 'refspec' <refspec>::
-	This modifies the 'import' capability, allowing the produced
-	fast-import stream to modify refs in a private namespace
-	instead of writing to refs/heads or refs/remotes directly.
+	For remote helpers that implement 'import' or 'export', this capability
+	allows the refs to be constrained to a private namespace, instead of
+	writing to refs/heads or refs/remotes directly.
 	It is recommended that all importers providing the 'import'
-	capability use this.
+	capability use this. It's mandatory for 'export'.
 +
 A helper advertising the capability
 `refspec refs/heads/*:refs/svn/origin/branches/*`
@@ -174,8 +183,14 @@ ref.
 This capability can be advertised multiple times.  The first
 applicable refspec takes precedence.  The left-hand of refspecs
 advertised with this capability must cover all refs reported by
-the list command.  If a helper does not need a specific 'refspec'
-capability then it should advertise `refspec *:*`.
+the list command.  If no 'refspec' capability is advertised,
+there is an implied `refspec *:*`.
++
+When writing remote-helpers for decentralized version control
+systems, it is advised to keep a local copy of the repository to
+interact with, and to let the private namespace refs point to this
+local repository, while the refs/remotes namespace is used to track
+the remote repository.
 
 'bidi-import'::
 	This modifies the 'import' capability.
@@ -269,6 +284,9 @@ Supported if the helper has the "option" capability.
 Optionally may output a 'lock <file>' line indicating a file under
 GIT_DIR/objects/pack which is keeping a pack until refs can be
 suitably updated.
++
+If option 'check-connectivity' is requested, the helper must output
+'connectivity-ok' if the clone is self-contained and connected.
 +
 Supported if the helper has the "fetch" capability.
 
@@ -415,6 +433,9 @@ set by Git if the remote helper has the 'option' capability.
 	next connect. Remote helper may support this option, but
 	must not rely on this option being set before
 	connect request occurs.
+
+'option check-connectivity' \{'true'|'false'\}::
+	Request the helper to check connectivity of a clone.
 
 SEE ALSO
 --------

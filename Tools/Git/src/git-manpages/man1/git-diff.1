@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-diff
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/24/2013
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 11/27/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.3
+.\"    Source: Git 1.8.5
 .\"  Language: English
 .\"
-.TH "GIT\-DIFF" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
+.TH "GIT\-DIFF" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -41,7 +41,7 @@ git-diff \- Show changes between commits, commit and working tree, etc
 .sp
 .SH "DESCRIPTION"
 .sp
-Show changes between the working tree and the index or a tree, changes between the index and a tree, changes between two trees, or changes between two files on disk\&.
+Show changes between the working tree and the index or a tree, changes between the index and a tree, changes between two trees, changes between two blob objects, or changes between two files on disk\&.
 .PP
 \fIgit diff\fR [\-\-options] [\-\-] [<path>\&...]
 .RS 4
@@ -49,10 +49,13 @@ This form is to view the changes you made relative to the index (staging area fo
 \fIcould\fR
 tell Git to further add to the index but you still haven\(cqt\&. You can stage these changes by using
 \fBgit-add\fR(1)\&.
-.sp
-If exactly two paths are given and at least one points outside the current repository,
-\fIgit diff\fR
-will compare the two files / directories\&. This behavior can be forced by \-\-no\-index\&.
+.RE
+.PP
+\fIgit diff\fR \-\-no\-index [\-\-options] [\-\-] [<path>\&...]
+.RS 4
+This form is to compare the given two paths on the filesystem\&. You can omit the
+\-\-no\-index
+option when running the command in a working tree controlled by Git and at least one of the paths points outside the working tree, or when running the command outside a working tree controlled by Git\&.
 .RE
 .PP
 \fIgit diff\fR [\-\-options] \-\-cached [<commit>] [\-\-] [<path>\&...]
@@ -70,11 +73,6 @@ This form is to view the changes you have in your working tree relative to the n
 This is to view the changes between two arbitrary <commit>\&.
 .RE
 .PP
-\fIgit diff\fR [options] <blob> <blob>
-.RS 4
-This form is to view the differences between the raw contents of two blob objects\&.
-.RE
-.PP
 \fIgit diff\fR [\-\-options] <commit>\&.\&.<commit> [\-\-] [<path>\&...]
 .RS 4
 This is synonymous to the previous form\&. If <commit> on one side is omitted, it will have the same effect as using HEAD instead\&.
@@ -88,11 +86,24 @@ This form is to view the changes on the branch containing and up to the second <
 Just in case if you are doing something exotic, it should be noted that all of the <commit> in the above description, except in the last two forms that use "\&.\&." notations, can be any <tree>\&.
 .sp
 For a more complete list of ways to spell <commit>, see "SPECIFYING REVISIONS" section in \fBgitrevisions\fR(7)\&. However, "diff" is about comparing two \fIendpoints\fR, not ranges, and the range notations ("<commit>\&.\&.<commit>" and "<commit>\&.\&.\&.<commit>") do not mean a range as defined in the "SPECIFYING RANGES" section in \fBgitrevisions\fR(7)\&.
+.PP
+\fIgit diff\fR [options] <blob> <blob>
+.RS 4
+This form is to view the differences between the raw contents of two blob objects\&.
+.RE
 .SH "OPTIONS"
 .PP
 \-p, \-u, \-\-patch
 .RS 4
 Generate patch (see section on generating patches)\&. This is the default\&.
+.RE
+.PP
+\-s, \-\-no\-patch
+.RS 4
+Suppress diff output\&. Useful for commands like
+git show
+that show the patch by default, or to cancel the effect of
+\-\-patch\&.
 .RE
 .PP
 \-U<n>, \-\-unified=<n>
@@ -455,7 +466,7 @@ becomes 0\&.5, and is thus the same as
 \-M05
 is the same as
 \-M5%\&. To limit detection to exact renames, use
-\-M100%\&.
+\-M100%\&. The default similarity index is 50%\&.
 .RE
 .PP
 \-C[<n>], \-\-find\-copies[=<n>]
@@ -506,16 +517,44 @@ Select only files that are Added (A), Copied (C), Deleted (D), Modified (M), Ren
 .PP
 \-S<string>
 .RS 4
-Look for differences that introduce or remove an instance of <string>\&. Note that this is different than the string simply appearing in diff output; see the
-\fIpickaxe\fR
-entry in
-\fBgitdiffcore\fR(7)
-for more details\&.
+Look for differences that change the number of occurrences of the specified string (i\&.e\&. addition/deletion) in a file\&. Intended for the scripter\(cqs use\&.
+.sp
+It is useful when you\(cqre looking for an exact block of code (like a struct), and want to know the history of that block since it first came into being: use the feature iteratively to feed the interesting block in the preimage back into
+\-S, and keep going until you get the very first version of the block\&.
 .RE
 .PP
 \-G<regex>
 .RS 4
-Look for differences whose added or removed line matches the given <regex>\&.
+Look for differences whose patch text contains added/removed lines that match <regex>\&.
+.sp
+To illustrate the difference between
+\-S<regex> \-\-pickaxe\-regex
+and
+\-G<regex>, consider a commit with the following diff in the same file:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
++    return !regexec(regexp, two\->ptr, 1, &regmatch, 0);
+\&.\&.\&.
+\-    hit = !regexec(regexp, mf2\&.ptr, 1, &regmatch, 0);
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+While
+git log \-G"regexec\e(regexp"
+will show this commit,
+git log \-S"regexec\e(regexp" \-\-pickaxe\-regex
+will not (because the number of occurrences of that string did not change)\&.
+.sp
+See the
+\fIpickaxe\fR
+entry in
+\fBgitdiffcore\fR(7)
+for more information\&.
 .RE
 .PP
 \-\-pickaxe\-all
@@ -529,7 +568,9 @@ finds a change, show all the changes in that changeset, not just the files that 
 .PP
 \-\-pickaxe\-regex
 .RS 4
-Make the <string> not a plain string but an extended POSIX regex to match\&.
+Treat the <string> given to
+\-S
+as an extended POSIX regular expression to match\&.
 .RE
 .PP
 \-O<orderfile>
@@ -565,6 +606,11 @@ Ignore changes in amount of whitespace\&. This ignores whitespace at line end, a
 \-w, \-\-ignore\-all\-space
 .RS 4
 Ignore whitespace when comparing lines\&. This ignores differences even if one line has whitespace where the other line has none\&.
+.RE
+.PP
+\-\-ignore\-blank\-lines
+.RS 4
+Ignore changes whose lines are all blank\&.
 .RE
 .PP
 \-\-inter\-hunk\-context=<lines>
@@ -615,7 +661,7 @@ or diff plumbing commands\&.
 .PP
 \-\-ignore\-submodules[=<when>]
 .RS 4
-Ignore changes to submodules in the diff generation\&. <when> can be either "none", "untracked", "dirty" or "all", which is the default Using "none" will consider the submodule modified when it either contains untracked or modified files or its HEAD differs from the commit recorded in the superproject and can be used to override any settings of the
+Ignore changes to submodules in the diff generation\&. <when> can be either "none", "untracked", "dirty" or "all", which is the default\&. Using "none" will consider the submodule modified when it either contains untracked or modified files or its HEAD differs from the commit recorded in the superproject and can be used to override any settings of the
 \fIignore\fR
 option in
 \fBgit-config\fR(1)

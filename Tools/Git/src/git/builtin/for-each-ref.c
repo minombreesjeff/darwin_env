@@ -205,6 +205,22 @@ static void *get_obj(const unsigned char *sha1, struct object **obj, unsigned lo
 	return buf;
 }
 
+static int grab_objectname(const char *name, const unsigned char *sha1,
+			    struct atom_value *v)
+{
+	if (!strcmp(name, "objectname")) {
+		char *s = xmalloc(41);
+		strcpy(s, sha1_to_hex(sha1));
+		v->s = s;
+		return 1;
+	}
+	if (!strcmp(name, "objectname:short")) {
+		v->s = xstrdup(find_unique_abbrev(sha1, DEFAULT_ABBREV));
+		return 1;
+	}
+	return 0;
+}
+
 /* See grab_values */
 static void grab_common_values(struct atom_value *val, int deref, struct object *obj, void *buf, unsigned long sz)
 {
@@ -225,15 +241,8 @@ static void grab_common_values(struct atom_value *val, int deref, struct object 
 			v->ul = sz;
 			v->s = s;
 		}
-		else if (!strcmp(name, "objectname")) {
-			char *s = xmalloc(41);
-			strcpy(s, sha1_to_hex(obj->sha1));
-			v->s = s;
-		}
-		else if (!strcmp(name, "objectname:short")) {
-			v->s = xstrdup(find_unique_abbrev(obj->sha1,
-							  DEFAULT_ABBREV));
-		}
+		else if (deref)
+			grab_objectname(name, obj->sha1, v);
 	}
 }
 
@@ -676,6 +685,8 @@ static void populate_value(struct refinfo *ref)
 			}
 			continue;
 		}
+		else if (!deref && grab_objectname(name, ref->objectname, v))
+			continue;
 		else
 			continue;
 
@@ -867,23 +878,28 @@ static void sort_refs(struct ref_sort *sort, struct refinfo **refs, int num_refs
 static void print_value(struct refinfo *ref, int atom, int quote_style)
 {
 	struct atom_value *v;
+	struct strbuf sb = STRBUF_INIT;
 	get_value(ref, atom, &v);
 	switch (quote_style) {
 	case QUOTE_NONE:
 		fputs(v->s, stdout);
 		break;
 	case QUOTE_SHELL:
-		sq_quote_print(stdout, v->s);
+		sq_quote_buf(&sb, v->s);
 		break;
 	case QUOTE_PERL:
-		perl_quote_print(stdout, v->s);
+		perl_quote_buf(&sb, v->s);
 		break;
 	case QUOTE_PYTHON:
-		python_quote_print(stdout, v->s);
+		python_quote_buf(&sb, v->s);
 		break;
 	case QUOTE_TCL:
-		tcl_quote_print(stdout, v->s);
+		tcl_quote_buf(&sb, v->s);
 		break;
+	}
+	if (quote_style != QUOTE_NONE) {
+		fputs(sb.buf, stdout);
+		strbuf_release(&sb);
 	}
 }
 

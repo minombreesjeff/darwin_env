@@ -26,6 +26,11 @@ ifndef::git-format-patch[]
 	{git-diff? This is the default.}
 endif::git-format-patch[]
 
+-s::
+--no-patch::
+	Suppress diff output. Useful for commands like `git show` that
+	show the patch by default, or to cancel the effect of `--patch`.
+
 -U<n>::
 --unified=<n>::
 	Generate diffs with <n> lines of context instead of
@@ -333,7 +338,7 @@ endif::git-log[]
 	a fraction, with a decimal point before it.  I.e., `-M5` becomes
 	0.5, and is thus the same as `-M50%`.  Similarly, `-M05` is
 	the same as `-M5%`.  To limit detection to exact renames, use
-	`-M100%`.
+	`-M100%`.  The default similarity index is 50%.
 
 -C[<n>]::
 --find-copies[=<n>]::
@@ -383,14 +388,36 @@ ifndef::git-format-patch[]
 	that matches other criteria, nothing is selected.
 
 -S<string>::
-	Look for differences that introduce or remove an instance of
-	<string>. Note that this is different than the string simply
-	appearing in diff output; see the 'pickaxe' entry in
-	linkgit:gitdiffcore[7] for more details.
+	Look for differences that change the number of occurrences of
+	the specified string (i.e. addition/deletion) in a file.
+	Intended for the scripter's use.
++
+It is useful when you're looking for an exact block of code (like a
+struct), and want to know the history of that block since it first
+came into being: use the feature iteratively to feed the interesting
+block in the preimage back into `-S`, and keep going until you get the
+very first version of the block.
 
 -G<regex>::
-	Look for differences whose added or removed line matches
-	the given <regex>.
+	Look for differences whose patch text contains added/removed
+	lines that match <regex>.
++
+To illustrate the difference between `-S<regex> --pickaxe-regex` and
+`-G<regex>`, consider a commit with the following diff in the same
+file:
++
+----
++    return !regexec(regexp, two->ptr, 1, &regmatch, 0);
+...
+-    hit = !regexec(regexp, mf2.ptr, 1, &regmatch, 0);
+----
++
+While `git log -G"regexec\(regexp"` will show this commit, `git log
+-S"regexec\(regexp" --pickaxe-regex` will not (because the number of
+occurrences of that string did not change).
++
+See the 'pickaxe' entry in linkgit:gitdiffcore[7] for more
+information.
 
 --pickaxe-all::
 	When `-S` or `-G` finds a change, show all the changes in that
@@ -398,8 +425,8 @@ ifndef::git-format-patch[]
 	in <string>.
 
 --pickaxe-regex::
-	Make the <string> not a plain string but an extended POSIX
-	regex to match.
+	Treat the <string> given to `-S` as an extended POSIX regular
+	expression to match.
 endif::git-format-patch[]
 
 -O<orderfile>::
@@ -438,6 +465,9 @@ endif::git-format-patch[]
 	Ignore whitespace when comparing lines.  This ignores
 	differences even if one line has whitespace where the other
 	line has none.
+
+--ignore-blank-lines::
+	Ignore changes whose lines are all blank.
 
 --inter-hunk-context=<lines>::
 	Show the context between diff hunks, up to the specified number
@@ -480,7 +510,7 @@ endif::git-format-patch[]
 
 --ignore-submodules[=<when>]::
 	Ignore changes to submodules in the diff generation. <when> can be
-	either "none", "untracked", "dirty" or "all", which is the default
+	either "none", "untracked", "dirty" or "all", which is the default.
 	Using "none" will consider the submodule modified when it either contains
 	untracked or modified files or its HEAD differs from the commit recorded
 	in the superproject and can be used to override any settings of the

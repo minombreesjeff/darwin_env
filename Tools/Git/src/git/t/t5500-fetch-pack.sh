@@ -393,6 +393,17 @@ test_expect_success 'fetch in shallow repo unreachable shallow objects' '
 		git fsck --no-dangling
 	)
 '
+test_expect_success 'fetch creating new shallow root' '
+	(
+		git clone "file://$(pwd)/." shallow10 &&
+		git commit --allow-empty -m empty &&
+		cd shallow10 &&
+		git fetch --depth=1 --progress 2>actual &&
+		# This should fetch only the empty commit, no tree or
+		# blob objects
+		grep "remote: Total 1" actual
+	)
+'
 
 test_expect_success 'setup tests for the --stdin parameter' '
 	for head in C D E F
@@ -503,6 +514,22 @@ test_expect_success 'test --all, --depth, and explicit tag' '
 		cd client &&
 		git fetch-pack --no-progress --all --depth=1 .. refs/tags/OLDTAG
 	) >out-adt 2>error-adt
+'
+
+test_expect_success 'shallow fetch with tags does not break the repository' '
+	mkdir repo1 &&
+	(
+		cd repo1 &&
+		git init &&
+		test_commit 1 &&
+		test_commit 2 &&
+		test_commit 3 &&
+		mkdir repo2 &&
+		cd repo2 &&
+		git init &&
+		git fetch --depth=2 ../.git master:branch &&
+		git fsck
+	)
 '
 
 test_done

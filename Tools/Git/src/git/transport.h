@@ -2,15 +2,19 @@
 #define TRANSPORT_H
 
 #include "cache.h"
+#include "run-command.h"
 #include "remote.h"
 
 struct git_transport_options {
 	unsigned thin : 1;
 	unsigned keep : 1;
 	unsigned followtags : 1;
+	unsigned check_self_contained_and_connected : 1;
+	unsigned self_contained_and_connected : 1;
 	int depth;
 	const char *uploadpack;
 	const char *receivepack;
+	struct push_cas_option *cas;
 };
 
 struct transport {
@@ -24,6 +28,12 @@ struct transport {
 	 * transport.c::transport_get_remote_refs().
 	 */
 	unsigned got_remote_refs : 1;
+
+	/*
+	 * Transports that call take-over destroys the data specific to
+	 * the transport type while doing so, and cannot be reused.
+	 */
+	unsigned cannot_reuse : 1;
 
 	/**
 	 * Returns 0 if successful, positive if the option is not
@@ -123,6 +133,9 @@ struct transport *transport_get(struct remote *, const char *);
 
 /* Transfer the data as a thin pack if not null */
 #define TRANS_OPT_THIN "thin"
+
+/* Check the current value of the remote ref */
+#define TRANS_OPT_CAS "cas"
 
 /* Keep the pack that was transferred if not null */
 #define TRANS_OPT_KEEP "keep"

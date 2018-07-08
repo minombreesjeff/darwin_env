@@ -13,6 +13,11 @@ fuzz_blame () {
 }
 
 test_expect_success setup '
+	cat >contacts <<-\EOF &&
+	A U Thor <author@example.com>
+	nick1 <bugs@company.xx>
+	EOF
+
 	echo one >one &&
 	git add one &&
 	test_tick &&
@@ -21,6 +26,44 @@ test_expect_success setup '
 	git add one &&
 	test_tick &&
 	git commit --author "nick1 <bugs@company.xx>" -m second
+'
+
+test_expect_success 'check-mailmap no arguments' '
+	test_must_fail git check-mailmap
+'
+
+test_expect_success 'check-mailmap arguments' '
+	cat >expect <<-\EOF &&
+	A U Thor <author@example.com>
+	nick1 <bugs@company.xx>
+	EOF
+	git check-mailmap \
+		"A U Thor <author@example.com>" \
+		"nick1 <bugs@company.xx>" >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'check-mailmap --stdin' '
+	cat >expect <<-\EOF &&
+	A U Thor <author@example.com>
+	nick1 <bugs@company.xx>
+	EOF
+	git check-mailmap --stdin <contacts >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'check-mailmap --stdin arguments' '
+	cat >expect <<-\EOF &&
+	Internal Guy <bugs@company.xy>
+	EOF
+	cat <contacts >>expect &&
+	git check-mailmap --stdin "Internal Guy <bugs@company.xy>" \
+		<contacts >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'check-mailmap bogus contact' '
+	test_must_fail git check-mailmap bogus
 '
 
 cat >expect <<\EOF
@@ -159,7 +202,8 @@ test_expect_success 'setup mailmap blob tests' '
 	Blob Guy <author@example.com>
 	Blob Guy <bugs@company.xx>
 	EOF
-	git add just-bugs both &&
+	printf "Tricky Guy <author@example.com>" >no-newline &&
+	git add just-bugs both no-newline &&
 	git commit -m "my mailmaps" &&
 	echo "Repo Guy <author@example.com>" >.mailmap &&
 	echo "Internal Guy <author@example.com>" >internal.map
@@ -243,8 +287,39 @@ test_expect_success 'mailmap.blob defaults to HEAD:.mailmap in bare repo' '
 	)
 '
 
+test_expect_success 'mailmap.blob can handle blobs without trailing newline' '
+	cat >expect <<-\EOF &&
+	Tricky Guy (1):
+	      initial
+
+	nick1 (1):
+	      second
+
+	EOF
+	git -c mailmap.blob=map:no-newline shortlog HEAD >actual &&
+	test_cmp expect actual
+'
+
 test_expect_success 'cleanup after mailmap.blob tests' '
 	rm -f .mailmap
+'
+
+test_expect_success 'single-character name' '
+	echo "     1	A <author@example.com>" >expect &&
+	echo "     1	nick1 <bugs@company.xx>" >>expect &&
+	echo "A <author@example.com>" >.mailmap &&
+	test_when_finished "rm .mailmap" &&
+	git shortlog -es HEAD >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'preserve canonical email case' '
+	echo "     1	A U Thor <AUTHOR@example.com>" >expect &&
+	echo "     1	nick1 <bugs@company.xx>" >>expect &&
+	echo "<AUTHOR@example.com> <author@example.com>" >.mailmap &&
+	test_when_finished "rm .mailmap" &&
+	git shortlog -es HEAD >actual &&
+	test_cmp expect actual
 '
 
 # Extended mailmap configurations should give us the following output for shortlog
@@ -407,6 +482,17 @@ test_expect_success 'Blame output (complex mapping)' '
 	git blame one >actual &&
 	fuzz_blame actual >actual.fuzz &&
 	test_cmp expect actual.fuzz
+'
+
+cat >expect <<\EOF
+Some Dude <some@dude.xx>
+EOF
+
+test_expect_success 'commit --author honors mailmap' '
+	test_must_fail git commit --author "nick" --allow-empty -meight &&
+	git commit --author "Some Dude" --allow-empty -meight &&
+	git show --pretty=format:"%an <%ae>%n" >actual &&
+	test_cmp expect actual
 '
 
 test_done

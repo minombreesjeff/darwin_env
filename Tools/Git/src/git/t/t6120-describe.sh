@@ -110,6 +110,9 @@ check_describe tags/e --all HEAD^^^
 check_describe B-0-* --long HEAD^^2^
 check_describe A-3-* --long HEAD^^2
 
+check_describe c-7-* --tags
+check_describe e-3-* --first-parent --tags
+
 : >err.expect
 check_describe A --all A^0
 test_expect_success 'no warning was displayed for A' '
@@ -170,5 +173,29 @@ check_describe "test1-lightweight-*" --tags --match="test1-*"
 check_describe "test2-lightweight-*" --tags --match="test2-*"
 
 check_describe "test2-lightweight-*" --long --tags --match="test2-*" HEAD^
+
+test_expect_success 'name-rev with exact tags' '
+	echo A >expect &&
+	tag_object=$(git rev-parse refs/tags/A) &&
+	git name-rev --tags --name-only $tag_object >actual &&
+	test_cmp expect actual &&
+
+	echo "A^0" >expect &&
+	tagged_commit=$(git rev-parse "refs/tags/A^0") &&
+	git name-rev --tags --name-only $tagged_commit >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'describe --contains with the exact tags' '
+	echo "A^0" >expect &&
+	tag_object=$(git rev-parse refs/tags/A) &&
+	git describe --contains $tag_object >actual &&
+	test_cmp expect actual &&
+
+	echo "A^0" >expect &&
+	tagged_commit=$(git rev-parse "refs/tags/A^0") &&
+	git describe --contains $tagged_commit >actual &&
+	test_cmp expect actual
+'
 
 test_done

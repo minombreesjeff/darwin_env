@@ -777,7 +777,7 @@ git-rev-list(1) Manual Page
              [ --right-only ]
              [ --cherry-mark ]
              [ --cherry-pick ]
-             [ --encoding[=&lt;encoding&gt;] ]
+             [ --encoding=&lt;encoding&gt; ]
              [ --(author|committer|grep)=&lt;pattern&gt; ]
              [ --regexp-ignore-case | -i ]
              [ --extended-regexp | -E ]
@@ -1054,7 +1054,7 @@ if it is part of the log message.</p></div>
 </dt>
 <dd>
 <p>
-        Show only commits which have at least (or at most) that many
+        Show only commits which have at least (or at most) that many parent
         commits. In particular, <code>--max-parents=1</code> is the same as <code>--no-merges</code>,
         <code>--min-parents=2</code> is the same as <code>--merges</code>.  <code>--max-parents=0</code>
         gives all root commits and <code>--min-parents=3</code> all octopus merges.
@@ -1265,8 +1265,8 @@ See also <a href="git-reflog.html">git-reflog(1)</a>.</p></div>
 </dt>
 <dd>
 <p>
-        Output uninteresting commits at the boundary, which are usually
-        not shown.
+        Output excluded boundary commits. Boundary commits are
+        prefixed with <code>-</code>.
 </p>
 </dd>
 </dl></div>
@@ -1368,13 +1368,13 @@ illustrate the differences between simplification settings.  We assume
 that you are filtering for a file <code>foo</code> in this commit graph:</p></div>
 <div class="listingblock">
 <div class="content">
-<pre><code>          .-A---M---N---O---P
-         /     /   /   /   /
-        I     B   C   D   E
-         \   /   /   /   /
-          `-------------'</code></pre>
+<pre><code>          .-A---M---N---O---P---Q
+         /     /   /   /   /   /
+        I     B   C   D   E   Y
+         \   /   /   /   /   /
+          `-------------'   X</code></pre>
 </div></div>
-<div class="paragraph"><p>The horizontal line of history A---P is taken to be the first parent of
+<div class="paragraph"><p>The horizontal line of history A---Q is taken to be the first parent of
 each merge.  The commits are:</p></div>
 <div class="ulist"><ul>
 <li>
@@ -1410,8 +1410,14 @@ In <code>A</code>, <code>foo</code> contains just "foo".
 <li>
 <p>
 <code>E</code> changes <code>quux</code> to "xyzzy", and its merge <code>P</code> combines the
-  strings to "quux xyzzy".  Despite appearing interesting, <code>P</code> is
-  TREESAME to all parents.
+  strings to "quux xyzzy".  <code>P</code> is TREESAME to <code>O</code>, but not to <code>E</code>.
+</p>
+</li>
+<li>
+<p>
+<code>X</code> is an independent root commit that added a new file <code>side</code>, and <code>Y</code>
+  modified it. <code>Y</code> is TREESAME to <code>X</code>. Its merge <code>Q</code> added <code>side</code> to <code>P</code>, and
+  <code>Q</code> is TREESAME to <code>P</code>, but not to <code>Y</code>.
 </p>
 </li>
 </ul></div>
@@ -1460,9 +1466,9 @@ parent lines.</p></div>
 </p>
 <div class="listingblock">
 <div class="content">
-<pre><code>        I  A  B  N  D  O</code></pre>
+<pre><code>        I  A  B  N  D  O  P  Q</code></pre>
 </div></div>
-<div class="paragraph"><p><code>P</code> and <code>M</code> were excluded because they are TREESAME to a parent.  <code>E</code>,
+<div class="paragraph"><p><code>M</code> was excluded because it is TREESAME to both parents.  <code>E</code>,
 <code>C</code> and <code>B</code> were all walked, but only <code>B</code> was !TREESAME, so the others
 do not appear.</p></div>
 <div class="paragraph"><p>Note that without parent rewriting, it is not really possible to talk
@@ -1482,7 +1488,7 @@ Along each parent, prune away commits that are not included
 themselves.  This results in</p></div>
 <div class="listingblock">
 <div class="content">
-<pre><code>          .-A---M---N---O---P
+<pre><code>          .-A---M---N---O---P---Q
          /     /   /   /   /
         I     B   /   D   /
          \   /   /   /   /
@@ -1491,7 +1497,7 @@ themselves.  This results in</p></div>
 <div class="paragraph"><p>Compare to <em>--full-history</em> without rewriting above.  Note that <code>E</code>
 was pruned away because it is TREESAME, but the parent list of P was
 rewritten to contain <code>E</code>'s parent <code>I</code>.  The same happened for <code>C</code> and
-<code>N</code>.  Note also that <code>P</code> was included despite being TREESAME.</p></div>
+<code>N</code>, and <code>X</code>, <code>Y</code> and <code>Q</code>.</p></div>
 </dd>
 </dl></div>
 <div class="paragraph"><p>In addition to the above settings, you can change whether TREESAME
@@ -1538,8 +1544,9 @@ Set <code>C'</code> to <code>C</code>.
 <li>
 <p>
 Replace each parent <code>P</code> of <code>C'</code> with its simplification <code>P'</code>.  In
-  the process, drop parents that are ancestors of other parents, and
-  remove duplicates.
+  the process, drop parents that are ancestors of other parents or that are
+  root commits TREESAME to an empty tree, and remove duplicates, but take care
+  to never drop all parents that we are TREESAME to.
 </p>
 </li>
 <li>
@@ -1561,7 +1568,7 @@ If after this parent rewriting, <code>C'</code> is a root or merge commit (has
          \   /       /
           `---------'</code></pre>
 </div></div>
-<div class="paragraph"><p>Note the major differences in <code>N</code> and <code>P</code> over <em>--full-history</em>:</p></div>
+<div class="paragraph"><p>Note the major differences in <code>N</code>, <code>P</code> and <code>Q</code> over <em>--full-history</em>:</p></div>
 <div class="openblock">
 <div class="content">
 <div class="ulist"><ul>
@@ -1575,6 +1582,13 @@ If after this parent rewriting, <code>C'</code> is a root or merge commit (has
 <p>
 <code>P</code>'s parent list similarly had <code>I</code> removed.  <code>P</code> was then
   removed completely, because it had one parent and is TREESAME.
+</p>
+</li>
+<li>
+<p>
+<code>Q</code>'s parent list had <code>Y</code> simplified to <code>X</code>. <code>X</code> was then removed, because it
+  was a TREESAME root. <code>Q</code> was then removed completely, because it had one
+  parent and is TREESAME.
 </p>
 </li>
 </ul></div>
@@ -1711,6 +1725,15 @@ after all the sorted commit objects, there will be the same text as if
 <p>
         Show no parents before all of its children are shown, but
         otherwise show commits in the commit timestamp order.
+</p>
+</dd>
+<dt class="hdlist1">
+--author-date-order
+</dt>
+<dd>
+<p>
+        Show no parents before all of its children are shown, but
+        otherwise show commits in the author timestamp order.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1863,7 +1886,7 @@ people using 80-column terminals.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
---encoding[=&lt;encoding&gt;]
+--encoding=&lt;encoding&gt;
 </dt>
 <dd>
 <p>
@@ -1948,13 +1971,13 @@ being displayed. Examples: "--notes=foo" will show only notes from
 </p>
 <div class="paragraph"><p><code>--date=relative</code> shows dates relative to the current time,
 e.g. "2 hours ago".</p></div>
-<div class="paragraph"><p><code>--date=local</code> shows timestamps in user&#8217;s local timezone.</p></div>
+<div class="paragraph"><p><code>--date=local</code> shows timestamps in user&#8217;s local time zone.</p></div>
 <div class="paragraph"><p><code>--date=iso</code> (or <code>--date=iso8601</code>) shows timestamps in ISO 8601 format.</p></div>
 <div class="paragraph"><p><code>--date=rfc</code> (or <code>--date=rfc2822</code>) shows timestamps in RFC 2822
 format, often found in E-mail messages.</p></div>
 <div class="paragraph"><p><code>--date=short</code> shows only date but not time, in <code>YYYY-MM-DD</code> format.</p></div>
 <div class="paragraph"><p><code>--date=raw</code> shows the date in the internal raw Git format <code>%s %z</code> format.</p></div>
-<div class="paragraph"><p><code>--date=default</code> shows timestamps in the original timezone
+<div class="paragraph"><p><code>--date=default</code> shows timestamps in the original time zone
 (either committer&#8217;s or author&#8217;s).</p></div>
 </dd>
 <dt class="hdlist1">
@@ -2579,7 +2602,7 @@ $ git log -2 --pretty=%h 4da45bef</code></pre>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-02-05 21:07:26 PST
+Last updated 2013-08-20 08:40:27 PDT
 </div>
 </div>
 </body>

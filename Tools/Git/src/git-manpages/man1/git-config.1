@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-config
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/24/2013
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 11/27/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.3
+.\"    Source: Git 1.8.5
 .\"  Language: English
 .\"
-.TH "GIT\-CONFIG" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
+.TH "GIT\-CONFIG" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -38,6 +38,7 @@ git-config \- Get and set repository or global options
 \fIgit config\fR [<file\-option>] [type] [\-z|\-\-null] \-\-get name [value_regex]
 \fIgit config\fR [<file\-option>] [type] [\-z|\-\-null] \-\-get\-all name [value_regex]
 \fIgit config\fR [<file\-option>] [type] [\-z|\-\-null] \-\-get\-regexp name_regex [value_regex]
+\fIgit config\fR [<file\-option>] [type] [\-z|\-\-null] \-\-get\-urlmatch name URL
 \fIgit config\fR [<file\-option>] \-\-unset name [value_regex]
 \fIgit config\fR [<file\-option>] \-\-unset\-all name [value_regex]
 \fIgit config\fR [<file\-option>] \-\-rename\-section old_name new_name
@@ -157,7 +158,7 @@ as the value_regex in
 .PP
 \-\-get
 .RS 4
-Get the value for a given key (optionally filtered by a regex matching the value)\&. Returns error code 1 if the key was not found and error code 2 if multiple key values were found\&.
+Get the value for a given key (optionally filtered by a regex matching the value)\&. Returns error code 1 if the key was not found and the last value if multiple key values were found\&.
 .RE
 .PP
 \-\-get\-all
@@ -170,12 +171,27 @@ Like get, but does not fail if the number of values for the key is not exactly o
 Like \-\-get\-all, but interprets the name as a regular expression and writes out the key names\&. Regular expression matching is currently case\-sensitive and done against a canonicalized version of the key in which section and variable names are lowercased, but subsection names are not\&.
 .RE
 .PP
+\-\-get\-urlmatch name URL
+.RS 4
+When given a two\-part name section\&.key, the value for section\&.<url>\&.key whose <url> part matches the best to the given URL is returned (if no such key exists, the value for section\&.key is used as a fallback)\&. When given just the section as name, do so for all the keys in the section and list them\&.
+.RE
+.PP
 \-\-global
 .RS 4
 For writing options: write to global
-/\&.gitconfig file rather than the repository \&.git/config, write to $XDG_CONFIG_HOME/git/config file if this file exists and the/\&.gitconfig file doesn\(cqt\&.
+~/\&.gitconfig
+file rather than the repository
+\&.git/config, write to
+$XDG_CONFIG_HOME/git/config
+file if this file exists and the
+~/\&.gitconfig
+file doesn\(cqt\&.
 .sp
-For reading options: read only from global ~/\&.gitconfig and from $XDG_CONFIG_HOME/git/config rather than from all available files\&.
+For reading options: read only from global
+~/\&.gitconfig
+and from
+$XDG_CONFIG_HOME/git/config
+rather than from all available files\&.
 .sp
 See also
 the section called \(lqFILES\(rq\&.
@@ -183,9 +199,28 @@ the section called \(lqFILES\(rq\&.
 .PP
 \-\-system
 .RS 4
-For writing options: write to system\-wide $(prefix)/etc/gitconfig rather than the repository \&.git/config\&.
+For writing options: write to system\-wide
+$(prefix)/etc/gitconfig
+rather than the repository
+\&.git/config\&.
 .sp
-For reading options: read only from system\-wide $(prefix)/etc/gitconfig rather than from all available files\&.
+For reading options: read only from system\-wide
+$(prefix)/etc/gitconfig
+rather than from all available files\&.
+.sp
+See also
+the section called \(lqFILES\(rq\&.
+.RE
+.PP
+\-\-local
+.RS 4
+For writing options: write to the repository
+\&.git/config
+file\&. This is the default behavior\&.
+.sp
+For reading options: read only from the repository
+\&.git/config
+rather than from all available files\&.
 .sp
 See also
 the section called \(lqFILES\(rq\&.
@@ -194,6 +229,19 @@ the section called \(lqFILES\(rq\&.
 \-f config\-file, \-\-file config\-file
 .RS 4
 Use the given config file instead of the one specified by GIT_CONFIG\&.
+.RE
+.PP
+\-\-blob blob
+.RS 4
+Similar to
+\fI\-\-file\fR
+but use the given blob instead of a file\&. E\&.g\&. you can use
+\fImaster:\&.gitmodules\fR
+to read values from the file
+\fI\&.gitmodules\fR
+in the master branch\&. See "SPECIFYING REVISIONS" section in
+\fBgitrevisions\fR(7)
+for a more complete list of ways to spell blob names\&.
 .RE
 .PP
 \-\-remove\-section
@@ -309,9 +357,17 @@ directives in config files when looking up values\&. Defaults to on\&.
 .sp
 If not set explicitly with \fI\-\-file\fR, there are four files where \fIgit config\fR will search for configuration options:
 .PP
-$GIT_DIR/config
+$(prefix)/etc/gitconfig
 .RS 4
-Repository specific configuration file\&.
+System\-wide configuration file\&.
+.RE
+.PP
+$XDG_CONFIG_HOME/git/config
+.RS 4
+Second user\-specific configuration file\&. If $XDG_CONFIG_HOME is not set or empty,
+$HOME/\&.config/git/config
+will be used\&. Any single\-valued variable set in this file will be overwritten by whatever is in
+~/\&.gitconfig\&. It is a good idea not to create this file if you sometimes use older versions of Git, as support for this file was added fairly recently\&.
 .RE
 .PP
 ~/\&.gitconfig
@@ -319,17 +375,14 @@ Repository specific configuration file\&.
 User\-specific configuration file\&. Also called "global" configuration file\&.
 .RE
 .PP
-$XDG_CONFIG_HOME/git/config
+$GIT_DIR/config
 .RS 4
-Second user\-specific configuration file\&. If $XDG_CONFIG_HOME is not set or empty, $HOME/\&.config/git/config will be used\&. Any single\-valued variable set in this file will be overwritten by whatever is in ~/\&.gitconfig\&. It is a good idea not to create this file if you sometimes use older versions of Git, as support for this file was added fairly recently\&.
-.RE
-.PP
-$(prefix)/etc/gitconfig
-.RS 4
-System\-wide configuration file\&.
+Repository specific configuration file\&.
 .RE
 .sp
 If no further options are given, all reading options will read all of these files that are available\&. If the global or the system\-wide configuration file are not available they will be ignored\&. If the repository configuration file is not available or readable, \fIgit config\fR will exit with a non\-zero error code\&. However, in neither case will an error message be issued\&.
+.sp
+The files are read in the order given above, with last value found taking precedence over values read earlier\&. When multiple values are taken then all values of a key from all files will be used\&.
 .sp
 All writing options will per default write to the repository specific configuration file\&. Note that this also affects options like \fI\-\-replace\-all\fR and \fI\-\-unset\fR\&. \fB\fIgit config\fR\fR\fB will only ever change one file at a time\fR\&.
 .sp
@@ -401,6 +454,21 @@ Given a \&.git/config like this:
 [core]
         gitproxy=proxy\-command for kernel\&.org
         gitproxy=default\-proxy ; for all the rest
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+; HTTP
+[http]
+        sslVerify
+[http "https://weak\&.example\&.com"]
+        sslVerify = false
+        cookieFile = /tmp/cookie\&.txt
 .fi
 .if n \{\
 .RE
@@ -563,6 +631,25 @@ An example to use customized color from the configuration in your script:
 WS=$(git config \-\-get\-color color\&.diff\&.whitespace "blue reverse")
 RESET=$(git config \-\-get\-color "" "reset")
 echo "${WS}your whitespace color or blue reverse${RESET}"
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+For URLs in https://weak\&.example\&.com, http\&.sslVerify is set to false, while it is set to true for all others:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+% git config \-\-bool \-\-get\-urlmatch http\&.sslverify https://good\&.example\&.com
+true
+% git config \-\-bool \-\-get\-urlmatch http\&.sslverify https://weak\&.example\&.com
+false
+% git config \-\-get\-urlmatch http https://weak\&.example\&.com
+http\&.cookiefile /tmp/cookie\&.txt
+http\&.sslverify false
 .fi
 .if n \{\
 .RE
@@ -755,7 +842,7 @@ pushNeedsForce
 .RS 4
 Shown when
 \fBgit-push\fR(1)
-rejects an update that tries to overwrite a remote ref that points at an object that is not a committish, or make the remote ref point at an object that is not a committish\&.
+rejects an update that tries to overwrite a remote ref that points at an object that is not a commit\-ish, or make the remote ref point at an object that is not a commit\-ish\&.
 .RE
 .PP
 statusHints
@@ -806,6 +893,12 @@ Advice that shows the location of the patch file when
 \fBgit-am\fR(1)
 fails to apply it\&.
 .RE
+.PP
+rmHints
+.RS 4
+In case of failure in the output of
+\fBgit-rm\fR(1), show directions on how to proceed from the current state\&.
+.RE
 .RE
 .PP
 core\&.fileMode
@@ -818,11 +911,6 @@ The default is true, except
 or
 \fBgit-init\fR(1)
 will probe and set core\&.fileMode false if appropriate when the repository is created\&.
-.RE
-.PP
-core\&.ignoreCygwinFSTricks
-.RS 4
-This option is only used by Cygwin implementation of Git\&. If false, the Cygwin stat() and lstat() functions are used\&. This may be useful if your repository consists of a few separate directories joined in one hierarchy using Cygwin mount\&. If true, Git uses native Win32 API whenever it is possible and falls back to Cygwin functions only to handle symbol links\&. The native mode is more than twice faster than normal Cygwin l/stat() functions\&. True by default, unless core\&.filemode is true, in which case ignoreCygwinFSTricks is ignored as Cygwin\(cqs POSIX emulation is required to support core\&.filemode\&.
 .RE
 .PP
 core\&.ignorecase
@@ -1165,25 +1253,29 @@ environment variable\&. When not configured the default commit message editor is
 .PP
 core\&.pager
 .RS 4
-The command that Git will use to paginate output\&. Can be overridden with the
-GIT_PAGER
-environment variable\&. Note that Git sets the
+Text viewer for use by Git commands (e\&.g\&.,
+\fIless\fR)\&. The value is meant to be interpreted by the shell\&. The order of preference is the
+$GIT_PAGER
+environment variable, then
+core\&.pager
+configuration, then
+$PAGER, and then the default chosen at compile time (usually
+\fIless\fR)\&.
+.sp
+When the
 LESS
-environment variable to
+environment variable is unset, Git sets it to
 FRSX
-if it is unset when it runs the pager\&. One can change these settings by setting the
+(if
 LESS
-variable to some other value\&. Alternately, these settings can be overridden on a project or global basis by setting the
+environment variable is set, Git does not change it at all)\&. If you want to selectively override Git\(cqs default setting for
+LESS, you can set
 core\&.pager
-option\&. Setting
-core\&.pager
-has no effect on the
-LESS
-environment variable behaviour above, so if you want to override Git\(cqs default settings this way, you need to be explicit\&. For example, to disable the S option in a backward compatible manner, set
-core\&.pager
-to
+to e\&.g\&.
 less \-+S\&. This will be passed to the shell by Git, which will translate the final command to
-LESS=FRSX less \-+S\&.
+LESS=FRSX less \-+S\&. The environment tells the command to set the
+S
+option to chop long lines but the command line resets it to the default to fold long lines\&.
 .RE
 .PP
 core\&.whitespace
@@ -1474,7 +1566,10 @@ branch\&.<name>\&.pushremote\&. If no remote is configured, or if you are not on
 origin
 for fetching and
 remote\&.pushdefault
-for pushing\&.
+for pushing\&. Additionally,
+\&.
+(a period) is the current local repository (a dot\-repository), see
+branch\&.<name>\&.merge\(aqs final note below\&.
 .RE
 .PP
 branch\&.<name>\&.pushremote
@@ -1503,7 +1598,7 @@ the default refspec to be marked for merging in FETCH_HEAD\&. The value is handl
 \fIgit pull\fR
 defaults to merge the first refspec fetched\&. Specify multiple values to get an octopus merge\&. If you wish to setup
 \fIgit pull\fR
-so that it merges into <name> from another branch in the local repository, you can point branch\&.<name>\&.merge to the desired branch, and use the special setting
+so that it merges into <name> from another branch in the local repository, you can point branch\&.<name>\&.merge to the desired branch, and use the relative path setting
 \&.
 (a period) for branch\&.<name>\&.remote\&.
 .RE
@@ -1517,6 +1612,18 @@ Sets default options for merging into branch <name>\&. The syntax and supported 
 branch\&.<name>\&.rebase
 .RS 4
 When true, rebase the branch <name> on top of the fetched branch, instead of merging the default branch from the default remote when "git pull" is run\&. See "pull\&.rebase" for doing this in a non branch\-specific manner\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+When preserve, also pass `\-\-preserve\-merges` along to \(aqgit rebase\(aq
+so that locally committed merge commits will not be flattened
+by running \(aqgit pull\(aq\&.
+.fi
+.if n \{\
+.RE
+.\}
 .sp
 \fBNOTE\fR: this is a possibly dangerous operation; do
 \fBnot\fR
@@ -1548,7 +1655,7 @@ option in
 .PP
 clean\&.requireForce
 .RS 4
-A boolean to make git\-clean do nothing unless given \-f or \-n\&. Defaults to true\&.
+A boolean to make git\-clean do nothing unless given \-f, \-i or \-n\&. Defaults to true\&.
 .RE
 .PP
 color\&.branch
@@ -1727,7 +1834,7 @@ The values of these variables may be specified as in color\&.branch\&.<slot>\&.
 color\&.interactive
 .RS 4
 When set to
-always, always use colors for interactive prompts and displays (such as those used by "git\-add \-\-interactive")\&. When false (or
+always, always use colors for interactive prompts and displays (such as those used by "git\-add \-\-interactive" and "git\-clean \-\-interactive")\&. When false (or
 never), never\&. When set to
 true
 or
@@ -1738,6 +1845,8 @@ color\&.interactive\&.<slot>
 .RS 4
 Use customized color for
 \fIgit add \-\-interactive\fR
+and
+\fIgit clean \-\-interactive\fR
 output\&.
 <slot>
 may be
@@ -1811,23 +1920,26 @@ color\&.grep
 that control the use of color per command family\&. Its scope will expand as more commands learn configuration to set a default for the
 \-\-color
 option\&. Set it to
-always
-if you want all output not intended for machine consumption to use color, to
-true
-or
-auto
-if you want such output to use color when written to the terminal, or to
 false
 or
 never
 if you prefer Git commands not to use color unless enabled explicitly with some other configuration or the
 \-\-color
-option\&.
+option\&. Set it to
+always
+if you want all output not intended for machine consumption to use color, to
+true
+or
+auto
+(this is the default since Git 1\&.8\&.4) if you want such output to use color when written to the terminal\&.
 .RE
 .PP
 column\&.ui
 .RS 4
 Specify whether supported commands should output in columns\&. This variable consists of a list of tokens separated by spaces or commas:
+.sp
+These options control when the feature should be enabled (defaults to
+\fInever\fR):
 .PP
 always
 .RS 4
@@ -1843,10 +1955,19 @@ auto
 .RS 4
 show in columns if the output is to the terminal
 .RE
+.sp
+These options control layout (defaults to
+\fIcolumn\fR)\&. Setting any of these implies
+\fIalways\fR
+if none of
+\fIalways\fR,
+\fInever\fR, or
+\fIauto\fR
+are specified\&.
 .PP
 column
 .RS 4
-fill columns before rows (default)
+fill columns before rows
 .RE
 .PP
 row
@@ -1858,6 +1979,9 @@ plain
 .RS 4
 show in one column
 .RE
+.sp
+Finally, these options can be combined with a layout option (defaults to
+\fInodense\fR):
 .PP
 dense
 .RS 4
@@ -1868,9 +1992,6 @@ nodense
 .RS 4
 make equal size columns
 .RE
-.sp
-This option defaults to
-\fInever\fR\&.
 .RE
 .PP
 column\&.branch
@@ -1878,6 +1999,14 @@ column\&.branch
 Specify whether to output branch listing in
 git branch
 in columns\&. See
+column\&.ui
+for details\&.
+.RE
+.PP
+column\&.clean
+.RS 4
+Specify the layout when list items in
+git clean \-i, which always shows files and directories in columns\&. See
 column\&.ui
 for details\&.
 .RE
@@ -2048,7 +2177,17 @@ Porcelain, and not lower level
 commands such as
 \fIgit diff\-files\fR\&.
 \fIgit checkout\fR
-also honors this setting when reporting uncommitted changes\&.
+also honors this setting when reporting uncommitted changes\&. Setting it to
+\fIall\fR
+disables the submodule summary normally shown by
+\fIgit commit\fR
+and
+\fIgit status\fR
+when
+\fIstatus\&.submodulesummary\fR
+is set unless it is overridden by using the \-\-ignore\-submodules command line option\&. The
+\fIgit submodule\fR
+commands are not affected by this setting\&.
 .RE
 .PP
 diff\&.mnemonicprefix
@@ -2213,6 +2352,17 @@ codecompare
 .IP \(bu 2.3
 .\}
 deltawalker
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+diffmerge
 .RE
 .sp
 .RS 4
@@ -2434,6 +2584,14 @@ fetch\&.unpackLimit
 If the number of objects fetched over the Git native transfer is below this limit, then the objects will be unpacked into loose object files\&. However if the number of received objects equals or exceeds this limit then the received pack will be stored as a pack, after adding any missing delta bases\&. Storing the pack from a push can make the push operation complete faster, especially on slow filesystems\&. If not set, the value of
 transfer\&.unpackLimit
 is used instead\&.
+.RE
+.PP
+fetch\&.prune
+.RS 4
+If true, fetch will automatically behave as if the
+\-\-prune
+option was given on the command line\&. See also
+remote\&.<name>\&.prune\&.
 .RE
 .PP
 format\&.attach
@@ -2952,7 +3110,12 @@ curl(1))\&. This can be overridden on a per\-remote basis; see remote\&.<name>\&
 http\&.cookiefile
 .RS 4
 File containing previously stored cookie lines which should be used in the Git http session, if they match the server\&. The file format of the file to read cookies from should be plain HTTP headers or the Netscape/Mozilla cookie file format (see
-\fBcurl\fR(1))\&. NOTE that the file specified with http\&.cookiefile is only used as input\&. No cookies will be stored in the file\&.
+\fBcurl\fR(1))\&. NOTE that the file specified with http\&.cookiefile is only used as input unless http\&.saveCookies is set\&.
+.RE
+.PP
+http\&.savecookies
+.RS 4
+If set, store cookies received during requests to the file specified by http\&.cookiefile\&. Has no effect if http\&.cookiefile is unset\&.
 .RE
 .PP
 http\&.sslVerify
@@ -3044,6 +3207,98 @@ http\&.useragent
 The HTTP USER_AGENT string presented to an HTTP server\&. The default value represents the version of the client Git such as git/1\&.7\&.1\&. This option allows you to override this value to a more common value such as Mozilla/4\&.0\&. This may be necessary, for instance, if connecting through a firewall that restricts HTTP connections to a set of common USER_AGENT strings (but not including those like git/1\&.7\&.1)\&. Can be overridden by the
 \fIGIT_HTTP_USER_AGENT\fR
 environment variable\&.
+.RE
+.PP
+http\&.<url>\&.*
+.RS 4
+Any of the http\&.* options above can be applied selectively to some urls\&. For a config key to match a URL, each element of the config key is compared to that of the URL, in the following order:
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 1.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  1." 4.2
+.\}
+Scheme (e\&.g\&.,
+https
+in
+https://example\&.com/)\&. This field must match exactly between the config key and the URL\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 2.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  2." 4.2
+.\}
+Host/domain name (e\&.g\&.,
+example\&.com
+in
+https://example\&.com/)\&. This field must match exactly between the config key and the URL\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 3.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  3." 4.2
+.\}
+Port number (e\&.g\&.,
+8080
+in
+http://example\&.com:8080/)\&. This field must match exactly between the config key and the URL\&. Omitted port numbers are automatically converted to the correct default for the scheme before matching\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 4.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  4." 4.2
+.\}
+Path (e\&.g\&.,
+repo\&.git
+in
+https://example\&.com/repo\&.git)\&. The path field of the config key must match the path field of the URL either exactly or as a prefix of slash\-delimited path elements\&. This means a config key with path
+foo/
+matches URL path
+foo/bar\&. A prefix can only match on a slash (/) boundary\&. Longer matches take precedence (so a config key with path
+foo/bar
+is a better match to URL path
+foo/bar
+than a config key with just path
+foo/)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 5.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  5." 4.2
+.\}
+User name (e\&.g\&.,
+user
+in
+https://user@example\&.com/repo\&.git)\&. If the config key has a user name it must match the user name in the URL exactly\&. If the config key does not have a user name, that config key will match a URL with any user name (including none), but at a lower precedence than a config key with a user name\&.
+.RE
+.sp
+The list above is ordered by decreasing precedence; a URL that matches a config key\(cqs path is preferred to one that matches its user name\&. For example, if the URL is
+https://user@example\&.com/foo/bar
+a config key match of
+https://example\&.com/foo
+will be preferred over a config key match of
+https://user@example\&.com\&.
+.sp
+All URLs are normalized before attempting any matching (the password part, if embedded in the URL, is always ignored for matching purposes) so that equivalent urls that are simply spelled differently will match properly\&. Environment variable settings always override any matches\&. The urls that are matched against are those given directly to Git commands\&. This means any URLs visited as a result of a redirection do not participate in matching\&.
 .RE
 .PP
 i18n\&.commitEncoding
@@ -3329,6 +3584,17 @@ codecompare
 .IP \(bu 2.3
 .\}
 deltawalker
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+diffmerge
 .RE
 .sp
 .RS 4
@@ -3717,6 +3983,18 @@ pull\&.rebase
 .RS 4
 When true, rebase branches on top of the fetched branch, instead of merging the default branch from the default remote when "git pull" is run\&. See "branch\&.<name>\&.rebase" for setting this on a per\-branch basis\&.
 .sp
+.if n \{\
+.RS 4
+.\}
+.nf
+When preserve, also pass `\-\-preserve\-merges` along to \(aqgit rebase\(aq
+so that locally committed merge commits will not be flattened
+by running \(aqgit pull\(aq\&.
+.fi
+.if n \{\
+.RE
+.\}
+.sp
 \fBNOTE\fR: this is a possibly dangerous operation; do
 \fBnot\fR
 use it unless you understand the implications (see
@@ -3738,7 +4016,9 @@ push\&.default
 .RS 4
 Defines the action
 git push
-should take if no refspec is given on the command line, no refspec is configured in the remote, and no refspec is implied by any of the options given on the command line\&. Possible values are:
+should take if no refspec is explicitly given\&. Different values are well\-suited for specific workflows; for instance, in a purely central workflow (i\&.e\&. the fetch source is equal to the push destination),
+upstream
+is probably what you want\&. Possible values are:
 .sp
 .RS 4
 .ie n \{\
@@ -3750,7 +4030,7 @@ should take if no refspec is given on the command line, no refspec is configured
 .\}
 
 nothing
-\- do not push anything\&.
+\- do not push anything (error out) unless a refspec is explicitly given\&. This is primarily meant for people who want to avoid mistakes by always being explicit\&.
 .RE
 .sp
 .RS 4
@@ -3762,11 +4042,8 @@ nothing
 .IP \(bu 2.3
 .\}
 
-matching
-\- push all branches having the same name in both ends\&. This is for those who prepare all the branches into a publishable shape and then push them out with a single command\&. It is not appropriate for pushing into a repository shared by multiple users, since locally stalled branches will attempt a non\-fast forward push if other users updated the branch\&.
-
-This is currently the default, but Git 2\&.0 will change the default to
-simple\&.
+current
+\- push the current branch to update a branch with the same name on the receiving end\&. Works in both central and non\-central workflows\&.
 .RE
 .sp
 .RS 4
@@ -3779,15 +4056,8 @@ simple\&.
 .\}
 
 upstream
-\- push the current branch to its upstream branch (tracking
-is a deprecated synonym for this)\&. With this,
-git push
-will update the same remote ref as the one which is merged by
-git pull, making
-push
-and
-pull
-symmetrical\&. See "branch\&.<name>\&.merge" for how to configure the upstream branch\&.
+\- push the current branch back to the branch whose changes are usually integrated into the current branch (which is called
+@{upstream})\&. This mode only makes sense if you are pushing to the same repository you would normally pull from (i\&.e\&. central workflow)\&.
 .RE
 .sp
 .RS 4
@@ -3800,8 +4070,14 @@ symmetrical\&. See "branch\&.<name>\&.merge" for how to configure the upstream b
 .\}
 
 simple
-\- like
-upstream, but refuses to push if the upstream branch\(cqs name is different from the local one\&. This is the safest option and is well\-suited for beginners\&. It will become the default in Git 2\&.0\&.
+\- in centralized workflow, work like
+upstream
+with an added safety to refuse to push if the upstream branch\(cqs name is different from the local one\&.
+.sp
+When pushing to a remote that is different from the remote you normally pull from, work as
+current\&. This is the safest option and is suited for beginners\&.
+.sp
+This mode will become the default in Git 2\&.0\&.
 .RE
 .sp
 .RS 4
@@ -3813,16 +4089,25 @@ upstream, but refuses to push if the upstream branch\(cqs name is different from
 .IP \(bu 2.3
 .\}
 
-current
-\- push the current branch to a branch of the same name\&.
-.RE
-.sp
-The
-simple,
-current
+matching
+\- push all branches having the same name on both ends\&. This makes the repository you are pushing to remember the set of branches that will be pushed out (e\&.g\&. if you always push
+\fImaint\fR
 and
-upstream
-modes are for those who want to push out a single branch after finishing work, even when the other branches are not yet ready to be pushed out\&. If you are working with other people to push into the same shared repository, you would want to use one of these\&.
+\fImaster\fR
+there and no other branches, the repository you push to will have these two branches, and your local
+\fImaint\fR
+and
+\fImaster\fR
+will be pushed there)\&.
+.sp
+To use this mode effectively, you have to make sure
+\fIall\fR
+the branches you would push out are ready to be pushed out before running
+\fIgit push\fR, as the whole point of this mode is to allow you to push all of the branches in one go\&. If you usually finish work on only one branch and push out the result, while other branches are unfinished, this mode is not for you\&. Also this mode is not suitable for pushing into a shared central repository, as other people may add new branches there, or update the tip of existing branches outside your control\&.
+.sp
+This is currently the default, but Git 2\&.0 will change the default to
+simple\&.
+.RE
 .RE
 .PP
 rebase\&.stat
@@ -3835,6 +4120,11 @@ rebase\&.autosquash
 If set to true enable
 \fI\-\-autosquash\fR
 option by default\&.
+.RE
+.PP
+rebase\&.autostash
+.RS 4
+When set to true, automatically create a temporary stash before the operation begins, and apply it after the operation ends\&. This means that you can run rebase on a dirty worktree\&. However, use with care: the final stash application after a successful rebase might result in non\-trivial conflicts\&. Defaults to false\&.
 .RE
 .PP
 receive\&.autogc
@@ -3985,6 +4275,15 @@ remote\&.<name>\&.vcs
 Setting this to a value <vcs> will cause Git to interact with the remote with the git\-remote\-<vcs> helper\&.
 .RE
 .PP
+remote\&.<name>\&.prune
+.RS 4
+When set to true, fetching from this remote by default will also remove any remote\-tracking branches which no longer exist on the remote (as if the
+\-\-prune
+option was give on the command line)\&. Overrides
+fetch\&.prune
+settings, if any\&.
+.RE
+.PP
 remotes\&.<group>
 .RS 4
 The list of remotes which are fetched by "git remote update <group>"\&. See
@@ -4040,6 +4339,11 @@ Deprecated alias for
 \fIsendemail\&.smtpencryption = ssl\fR\&.
 .RE
 .PP
+sendemail\&.smtpsslcertpath
+.RS 4
+Path to ca\-certificates (either a directory or a single file)\&. Set it to an empty string to disable certificate verification\&.
+.RE
+.PP
 sendemail\&.<identity>\&.*
 .RS 4
 Identity\-specific versions of the
@@ -4075,6 +4379,30 @@ By default,
 shows paths relative to the current directory\&. Setting this variable to
 false
 shows paths relative to the repository root (this was the default for Git prior to v1\&.5\&.4)\&.
+.RE
+.PP
+status\&.short
+.RS 4
+Set to true to enable \-\-short by default in
+\fBgit-status\fR(1)\&. The option \-\-no\-short takes precedence over this variable\&.
+.RE
+.PP
+status\&.branch
+.RS 4
+Set to true to enable \-\-branch by default in
+\fBgit-status\fR(1)\&. The option \-\-no\-branch takes precedence over this variable\&.
+.RE
+.PP
+status\&.displayCommentPrefix
+.RS 4
+If set to true,
+\fBgit-status\fR(1)
+will insert a comment prefix before each output line (starting with
+core\&.commentChar, i\&.e\&.
+#
+by default)\&. This was the behavior of
+\fBgit-status\fR(1)
+in Git 1\&.8\&.4 and previous\&. Defaults to false\&.
 .RE
 .PP
 status\&.showUntrackedFiles
@@ -4134,7 +4462,14 @@ and
 status\&.submodulesummary
 .RS 4
 Defaults to false\&. If this is set to a non zero number or true (identical to \-1 or an unlimited number), the submodule summary will be enabled and a summary of commits for modified submodules will be shown (see \-\-summary\-limit option of
-\fBgit-submodule\fR(1))\&.
+\fBgit-submodule\fR(1))\&. Please note that the summary output command will be suppressed for all submodules when
+diff\&.ignoreSubmodules
+is set to
+\fIall\fR
+or only for those submodules where
+submodule\&.<name>\&.ignore=all\&. To also view the summary for ignored submodules you can either use the \-\-ignore\-submodules=dirty command line option or the
+\fIgit submodule summary\fR
+command, which shows a similar output but does not honor these settings\&.
 .RE
 .PP
 submodule\&.<name>\&.path, submodule\&.<name>\&.url, submodule\&.<name>\&.update
@@ -4170,7 +4505,9 @@ file\&.
 .PP
 submodule\&.<name>\&.ignore
 .RS 4
-Defines under what circumstances "git status" and the diff family show a submodule as modified\&. When set to "all", it will never be considered modified, "dirty" will ignore all changes to the submodules work tree and takes only differences between the HEAD of the submodule and the commit recorded in the superproject into account\&. "untracked" will additionally let submodules with modified tracked files in their work tree show up\&. Using "none" (the default when this option is not set) also shows submodules that have untracked files in their work tree as changed\&. This setting overrides any setting made in \&.gitmodules for this submodule, both settings can be overridden on the command line by using the "\-\-ignore\-submodules" option\&.
+Defines under what circumstances "git status" and the diff family show a submodule as modified\&. When set to "all", it will never be considered modified, "dirty" will ignore all changes to the submodules work tree and takes only differences between the HEAD of the submodule and the commit recorded in the superproject into account\&. "untracked" will additionally let submodules with modified tracked files in their work tree show up\&. Using "none" (the default when this option is not set) also shows submodules that have untracked files in their work tree as changed\&. This setting overrides any setting made in \&.gitmodules for this submodule, both settings can be overridden on the command line by using the "\-\-ignore\-submodules" option\&. The
+\fIgit submodule\fR
+commands are not affected by this setting\&.
 .RE
 .PP
 tar\&.umask
@@ -4228,6 +4565,24 @@ to accept a fetch request that asks for an object at the tip of a hidden ref (by
 uploadpack\&.hiderefs\&.
 .RE
 .PP
+uploadpack\&.keepalive
+.RS 4
+When
+upload\-pack
+has started
+pack\-objects, there may be a quiet period while
+pack\-objects
+prepares the pack\&. Normally it would output progress information, but if
+\-\-quiet
+was used for the fetch,
+pack\-objects
+will output nothing at all until the pack data begins\&. Some clients and networks may consider the server to be hung and give up\&. Setting this option instructs
+upload\-pack
+to send an empty keepalive packet every
+uploadpack\&.keepalive
+seconds\&. Setting this option to 0 disables keepalive packets entirely\&. The default is 5 seconds\&.
+.RE
+.PP
 url\&.<base>\&.insteadOf
 .RS 4
 Any URL that starts with this value will be rewritten to start, instead, with <base>\&. In cases where some site serves a large number of repositories, and serves them with multiple access methods, and some users need to use different access methods, this feature allows people to specify any of the equivalent URLs and have Git automatically rewrite the URL to the best alternative for the particular user, even for a never\-before\-seen repository on the site\&. When more than one insteadOf strings match a given URL, the longest match is used\&.
@@ -4262,7 +4617,9 @@ user\&.signingkey
 .RS 4
 If
 \fBgit-tag\fR(1)
-is not selecting the key you want it to automatically when creating a signed tag, you can override the default selection with this variable\&. This option is passed unchanged to gpg\(cqs \-\-local\-user parameter, so you may specify a key using any method that gpg supports\&.
+or
+\fBgit-commit\fR(1)
+is not selecting the key you want it to automatically when creating a signed tag or commit, you can override the default selection with this variable\&. This option is passed unchanged to gpg\(cqs \-\-local\-user parameter, so you may specify a key using any method that gpg supports\&.
 .RE
 .PP
 web\&.browser

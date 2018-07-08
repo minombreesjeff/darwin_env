@@ -806,6 +806,13 @@ working tree.  After running <code>git add hello.c; rm hello.c</code>, you will 
 see <code>hello.c</code> in your working tree with the former, but with the latter
 you will.</p></div>
 </li>
+<li>
+<p>
+Just as the filesystem <em>.</em> (period) refers to the current directory,
+   using a <em>.</em> as a repository name in Git (a dot-repository) is a relative
+   path and means your current repository.
+</p>
+</li>
 </ul></div>
 <div class="paragraph"><p>Here are the rules regarding the "flags" that you should follow when you are
 scripting Git:</p></div>
@@ -874,7 +881,7 @@ couple of magic command line options:</p></div>
 <div class="listingblock">
 <div class="content">
 <pre><code>$ git describe -h
-usage: git describe [options] &lt;committish&gt;*
+usage: git describe [options] &lt;commit-ish&gt;*
    or: git describe [options] --dirty
 
     --contains            find the tag that comes after the commit
@@ -994,7 +1001,7 @@ information.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-03-19 16:06:22 PDT
+Last updated 2013-10-23 14:56:14 PDT
 </div>
 </div>
 </body>

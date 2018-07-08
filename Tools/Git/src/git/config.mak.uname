@@ -95,7 +95,6 @@ ifeq ($(uname_S),Darwin)
 	NO_MEMMEM = YesPlease
 	USE_ST_TIMESPEC = YesPlease
 	HAVE_DEV_TTY = YesPlease
-	NEEDS_CLIPPED_WRITE = YesPlease
 	COMPAT_OBJS += compat/precompose_utf8.o
 	BASIC_CFLAGS += -DPRECOMPOSE_UNICODE
 endif
@@ -159,19 +158,18 @@ ifeq ($(uname_O),Cygwin)
 		NO_SYMLINK_HEAD = YesPlease
 		NO_IPV6 = YesPlease
 		OLD_ICONV = UnfortunatelyYes
-		CYGWIN_V15_WIN32API = YesPlease
+		NO_THREAD_SAFE_PREAD = YesPlease
+		# There are conflicting reports about this.
+		# On some boxes NO_MMAP is needed, and not so elsewhere.
+		# Try commenting this out if you suspect MMAP is more efficient
+		NO_MMAP = YesPlease
+	else
+		NO_REGEX = UnfortunatelyYes
 	endif
-	NO_THREAD_SAFE_PREAD = YesPlease
 	NEEDS_LIBICONV = YesPlease
 	NO_FAST_WORKING_DIRECTORY = UnfortunatelyYes
-	NO_TRUSTABLE_FILEMODE = UnfortunatelyYes
 	NO_ST_BLOCKS_IN_STRUCT_STAT = YesPlease
-	# There are conflicting reports about this.
-	# On some boxes NO_MMAP is needed, and not so elsewhere.
-	# Try commenting this out if you suspect MMAP is more efficient
-	NO_MMAP = YesPlease
 	X = .exe
-	COMPAT_OBJS += compat/cygwin.o
 	UNRELIABLE_FSTAT = UnfortunatelyYes
 	SPARSE_FLAGS = -isystem /usr/include/w32api -Wno-one-bit-signed-bitfield
 endif
@@ -341,6 +339,7 @@ ifeq ($(uname_S),Windows)
 	OBJECT_CREATION_USES_RENAMES = UnfortunatelyNeedsTo
 	NO_REGEX = YesPlease
 	NO_CURL = YesPlease
+	NO_GETTEXT = YesPlease
 	NO_PYTHON = YesPlease
 	BLK_SHA1 = YesPlease
 	ETAGS_TARGET = ETAGS
@@ -481,7 +480,6 @@ ifneq (,$(findstring MINGW,$(uname_S)))
 	NO_FNMATCH = YesPlease
 	NO_MEMMEM = YesPlease
 	NEEDS_LIBICONV = YesPlease
-	OLD_ICONV = YesPlease
 	NO_STRTOUMAX = YesPlease
 	NO_MKDTEMP = YesPlease
 	NO_MKSTEMPS = YesPlease
@@ -501,13 +499,17 @@ ifneq (,$(findstring MINGW,$(uname_S)))
 	NO_INET_PTON = YesPlease
 	NO_INET_NTOP = YesPlease
 	NO_POSIX_GOODIES = UnfortunatelyYes
-	COMPAT_CFLAGS += -D__USE_MINGW_ACCESS -DNOGDI -Icompat -Icompat/win32
+	DEFAULT_HELP_FORMAT = html
+	COMPAT_CFLAGS += -D__USE_MINGW_ACCESS -D_USE_32BIT_TIME_T -DNOGDI -Icompat -Icompat/win32
 	COMPAT_CFLAGS += -DSTRIP_EXTENSION=\".exe\"
 	COMPAT_OBJS += compat/mingw.o compat/winansi.o \
 		compat/win32/pthread.o compat/win32/syslog.o \
 		compat/win32/dirent.o
+	BASIC_LDFLAGS += -Wl,--large-address-aware
 	EXTLIBS += -lws2_32
+	GITLIBS += git.res
 	PTHREAD_LIBS =
+	RC = windres -O coff
 	NATIVE_CRLF = YesPlease
 	X = .exe
 	SPARSE_FLAGS = -Wno-one-bit-signed-bitfield
@@ -519,6 +521,7 @@ ifneq (,$(wildcard ../THIS_IS_MSYSGIT))
 	NO_R_TO_GCC_LINKER = YesPlease
 	INTERNAL_QSORT = YesPlease
 	HAVE_LIBCHARSET_H = YesPlease
+	NO_GETTEXT = YesPlease
 else
 	NO_CURL = YesPlease
 endif

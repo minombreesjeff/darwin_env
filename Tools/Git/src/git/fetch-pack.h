@@ -2,6 +2,7 @@
 #define FETCH_PACK_H
 
 #include "string-list.h"
+#include "run-command.h"
 
 struct fetch_pack_args {
 	const char *uploadpack;
@@ -16,7 +17,9 @@ struct fetch_pack_args {
 		verbose:1,
 		no_progress:1,
 		include_tag:1,
-		stateless_rpc:1;
+		stateless_rpc:1,
+		check_self_contained_and_connected:1,
+		self_contained_and_connected:1;
 };
 
 /*

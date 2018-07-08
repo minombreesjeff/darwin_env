@@ -943,6 +943,14 @@ rebase.autosquash
         If set to true enable <em>--autosquash</em> option by default.
 </p>
 </dd>
+<dt class="hdlist1">
+rebase.autostash
+</dt>
+<dd>
+<p>
+        If set to true enable <em>--autostash</em> option by default.
+</p>
+</dd>
 </dl></div>
 </div>
 </div>
@@ -1164,7 +1172,7 @@ which makes little sense.</p></div>
 reverting a topic branch merge, as this option recreates the topic branch with
 fresh commits so it can be remerged successfully without needing to "revert
 the reversion" (see the
-<a href="howto/revert-a-faulty-merge.txt">revert-a-faulty-merge How-To</a> for details).</p></div>
+<a href="howto/revert-a-faulty-merge.html">revert-a-faulty-merge How-To</a> for details).</p></div>
 </dd>
 <dt class="hdlist1">
 --ignore-whitespace
@@ -1276,12 +1284,26 @@ squash/fixup series.</p></div>
         the same &#8230;, automatically modify the todo list of rebase -i
         so that the commit marked for squashing comes right after the
         commit to be modified, and change the action of the moved
-        commit from <code>pick</code> to <code>squash</code> (or <code>fixup</code>).
+        commit from <code>pick</code> to <code>squash</code> (or <code>fixup</code>).  Ignores subsequent
+        "fixup! " or "squash! " after the first, in case you referred to an
+        earlier fixup/squash with <code>git commit --fixup/--squash</code>.
 </p>
 <div class="paragraph"><p>This option is only valid when the <em>--interactive</em> option is used.</p></div>
 <div class="paragraph"><p>If the <em>--autosquash</em> option is enabled by default using the
 configuration variable <code>rebase.autosquash</code>, this option can be
 used to override and disable this setting.</p></div>
+</dd>
+<dt class="hdlist1">
+--[no-]autostash
+</dt>
+<dd>
+<p>
+        Automatically create a temporary stash before the operation
+        begins, and apply it after the operation ends.  This means
+        that you can run rebase on a dirty worktree.  However, use
+        with care: the final stash application after a successful
+        rebase might result in non-trivial conflicts.
+</p>
 </dd>
 <dt class="hdlist1">
 --no-ff
@@ -1296,7 +1318,7 @@ used to override and disable this setting.</p></div>
 <div class="paragraph"><p>You may find this helpful after reverting a topic branch merge, as this option
 recreates the topic branch with fresh commits so it can be remerged
 successfully without needing to "revert the reversion" (see the
-<a href="howto/revert-a-faulty-merge.txt">revert-a-faulty-merge How-To</a> for details).</p></div>
+<a href="howto/revert-a-faulty-merge.html">revert-a-faulty-merge How-To</a> for details).</p></div>
 </dd>
 </dl></div>
 </div>
@@ -1912,7 +1934,7 @@ reorder commits tend to produce counterintuitive results.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-02-05 21:07:26 PST
+Last updated 2013-09-17 14:33:14 PDT
 </div>
 </div>
 </body>

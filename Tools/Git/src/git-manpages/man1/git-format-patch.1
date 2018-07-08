@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-format-patch
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/24/2013
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 11/27/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.3
+.\"    Source: Git 1.8.5
 .\"  Language: English
 .\"
-.TH "GIT\-FORMAT\-PATCH" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
+.TH "GIT\-FORMAT\-PATCH" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -93,6 +93,14 @@ If given \-\-thread, git\-format\-patch will generate In\-Reply\-To and Referenc
 \-p, \-\-no\-stat
 .RS 4
 Generate plain patches without any diffstats\&.
+.RE
+.PP
+\-s, \-\-no\-patch
+.RS 4
+Suppress diff output\&. Useful for commands like
+git show
+that show the patch by default, or to cancel the effect of
+\-\-patch\&.
 .RE
 .PP
 \-U<n>, \-\-unified=<n>
@@ -295,7 +303,7 @@ becomes 0\&.5, and is thus the same as
 \-M05
 is the same as
 \-M5%\&. To limit detection to exact renames, use
-\-M100%\&.
+\-M100%\&. The default similarity index is 50%\&.
 .RE
 .PP
 \-C[<n>], \-\-find\-copies[=<n>]
@@ -362,6 +370,11 @@ Ignore changes in amount of whitespace\&. This ignores whitespace at line end, a
 Ignore whitespace when comparing lines\&. This ignores differences even if one line has whitespace where the other line has none\&.
 .RE
 .PP
+\-\-ignore\-blank\-lines
+.RS 4
+Ignore changes whose lines are all blank\&.
+.RE
+.PP
 \-\-inter\-hunk\-context=<lines>
 .RS 4
 Show the context between diff hunks, up to the specified number of lines, thereby fusing hunks that are close to each other\&.
@@ -399,7 +412,7 @@ or diff plumbing commands\&.
 .PP
 \-\-ignore\-submodules[=<when>]
 .RS 4
-Ignore changes to submodules in the diff generation\&. <when> can be either "none", "untracked", "dirty" or "all", which is the default Using "none" will consider the submodule modified when it either contains untracked or modified files or its HEAD differs from the commit recorded in the superproject and can be used to override any settings of the
+Ignore changes to submodules in the diff generation\&. <when> can be either "none", "untracked", "dirty" or "all", which is the default\&. Using "none" will consider the submodule modified when it either contains untracked or modified files or its HEAD differs from the commit recorded in the superproject and can be used to override any settings of the
 \fIignore\fR
 option in
 \fBgit-config\fR(1)
@@ -588,6 +601,27 @@ Cc:
 headers added so far (from config or command line)\&.
 .RE
 .PP
+\-\-from, \-\-from=<ident>
+.RS 4
+Use
+ident
+in the
+From:
+header of each commit email\&. If the author ident of the commit is not textually identical to the provided
+ident, place a
+From:
+header in the body of the message with the original author\&. If no
+ident
+is given, use the committer ident\&.
+.sp
+Note that this option is only useful if you are actually sending the emails and want to identify yourself as the sender, but retain the original author (and
+git am
+will correctly pick up the in\-body header)\&. Note also that
+git send\-email
+already handles this transformation for you, and this option should not be used if you are feeding the result to
+git send\-email\&.
+.RE
+.PP
 \-\-add\-header=<header>
 .RS 4
 Add an arbitrary header to the email headers\&. This is in addition to any configured headers, and may be used multiple times\&. For example,
@@ -638,7 +672,7 @@ to get
 0001\-description\-of\-my\-change\-patch\&.
 .RE
 .PP
-\-\-quiet
+\-q, \-\-quiet
 .RS 4
 Do not print the names of the generated files to standard output\&.
 .RE
@@ -911,7 +945,7 @@ Configure your general composition window to not wrap\&.
 In Thunderbird 2: Edit\&.\&.Preferences\&.\&.Composition, wrap plain text messages at 0
 .sp
 In Thunderbird 3: Edit\&.\&.Preferences\&.\&.Advanced\&.\&.Config Editor\&. Search for "mail\&.wrap_long_lines"\&. Toggle it to make sure it is set to
-false\&.
+false\&. Also, search for "mailnews\&.wraplength" and set the value to 0\&.
 .RE
 .sp
 .RS 4

@@ -36,7 +36,7 @@ test_expect_success 'clone with excess parameters (2)' '
 
 test_expect_success C_LOCALE_OUTPUT 'output from clone' '
 	rm -fr dst &&
-	git clone -n "file://$(pwd)/src" dst >output &&
+	git clone -n "file://$(pwd)/src" dst >output 2>&1 &&
 	test $(grep Clon output | wc -l) = 1
 '
 
@@ -278,6 +278,66 @@ test_expect_success 'clone checking out a tag' '
 	GIT_DIR=dst.tag/.git git config remote.origin.fetch >fetch.actual &&
 	echo "+refs/heads/*:refs/remotes/origin/*" >fetch.expected &&
 	test_cmp fetch.expected fetch.actual
+'
+
+test_expect_success 'setup ssh wrapper' '
+	write_script "$TRASH_DIRECTORY/ssh-wrapper" <<-\EOF &&
+	echo >>"$TRASH_DIRECTORY/ssh-output" "ssh: $*" &&
+	# throw away all but the last argument, which should be the
+	# command
+	while test $# -gt 1; do shift; done
+	eval "$1"
+	EOF
+
+	GIT_SSH="$TRASH_DIRECTORY/ssh-wrapper" &&
+	export GIT_SSH &&
+	export TRASH_DIRECTORY
+'
+
+clear_ssh () {
+	>"$TRASH_DIRECTORY/ssh-output"
+}
+
+expect_ssh () {
+	{
+		case "$1" in
+		none)
+			;;
+		*)
+			echo "ssh: $1 git-upload-pack '$2'"
+		esac
+	} >"$TRASH_DIRECTORY/ssh-expect" &&
+	(cd "$TRASH_DIRECTORY" && test_cmp ssh-expect ssh-output)
+}
+
+test_expect_success 'cloning myhost:src uses ssh' '
+	clear_ssh &&
+	git clone myhost:src ssh-clone &&
+	expect_ssh myhost src
+'
+
+test_expect_success NOT_MINGW,NOT_CYGWIN 'clone local path foo:bar' '
+	clear_ssh &&
+	cp -R src "foo:bar" &&
+	git clone "./foo:bar" foobar &&
+	expect_ssh none
+'
+
+test_expect_success 'bracketed hostnames are still ssh' '
+	clear_ssh &&
+	git clone "[myhost:123]:src" ssh-bracket-clone &&
+	expect_ssh myhost:123 src
+'
+
+test_expect_success 'clone from a repository with two identical branches' '
+
+	(
+		cd src &&
+		git checkout -b another master
+	) &&
+	git clone src target-11 &&
+	test "z$( cd target-11 && git symbolic-ref HEAD )" = zrefs/heads/another
+
 '
 
 test_done

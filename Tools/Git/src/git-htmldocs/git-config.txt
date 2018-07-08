@@ -15,6 +15,7 @@ SYNOPSIS
 'git config' [<file-option>] [type] [-z|--null] --get name [value_regex]
 'git config' [<file-option>] [type] [-z|--null] --get-all name [value_regex]
 'git config' [<file-option>] [type] [-z|--null] --get-regexp name_regex [value_regex]
+'git config' [<file-option>] [type] [-z|--null] --get-urlmatch name URL
 'git config' [<file-option>] --unset name [value_regex]
 'git config' [<file-option>] --unset-all name [value_regex]
 'git config' [<file-option>] --rename-section old_name new_name
@@ -82,7 +83,7 @@ OPTIONS
 --get::
 	Get the value for a given key (optionally filtered by a regex
 	matching the value). Returns error code 1 if the key was not
-	found and error code 2 if multiple key values were found.
+	found and the last value if multiple key values were found.
 
 --get-all::
 	Like get, but does not fail if the number of values for the key
@@ -95,28 +96,54 @@ OPTIONS
 	in which section and variable names are lowercased, but subsection
 	names are not.
 
+--get-urlmatch name URL::
+	When given a two-part name section.key, the value for
+	section.<url>.key whose <url> part matches the best to the
+	given URL is returned (if no such key exists, the value for
+	section.key is used as a fallback).  When given just the
+	section as name, do so for all the keys in the section and
+	list them.
+
 --global::
-	For writing options: write to global ~/.gitconfig file rather than
-	the repository .git/config, write to $XDG_CONFIG_HOME/git/config file
-	if this file exists and the ~/.gitconfig file doesn't.
+	For writing options: write to global `~/.gitconfig` file
+	rather than the repository `.git/config`, write to
+	`$XDG_CONFIG_HOME/git/config` file if this file exists and the
+	`~/.gitconfig` file doesn't.
 +
-For reading options: read only from global ~/.gitconfig and from
-$XDG_CONFIG_HOME/git/config rather than from all available files.
+For reading options: read only from global `~/.gitconfig` and from
+`$XDG_CONFIG_HOME/git/config` rather than from all available files.
 +
 See also <<FILES>>.
 
 --system::
-	For writing options: write to system-wide $(prefix)/etc/gitconfig
-	rather than the repository .git/config.
+	For writing options: write to system-wide
+	`$(prefix)/etc/gitconfig` rather than the repository
+	`.git/config`.
 +
-For reading options: read only from system-wide $(prefix)/etc/gitconfig
+For reading options: read only from system-wide `$(prefix)/etc/gitconfig`
 rather than from all available files.
++
+See also <<FILES>>.
+
+--local::
+	For writing options: write to the repository `.git/config` file.
+	This is	the default behavior.
++
+For reading options: read only from the repository `.git/config` rather than
+from all available files.
 +
 See also <<FILES>>.
 
 -f config-file::
 --file config-file::
 	Use the given config file instead of the one specified by GIT_CONFIG.
+
+--blob blob::
+	Similar to '--file' but use the given blob instead of a file. E.g.
+	you can use 'master:.gitmodules' to read values from the file
+	'.gitmodules' in the master branch. See "SPECIFYING REVISIONS"
+	section in linkgit:gitrevisions[7] for a more complete list of
+	ways to spell blob names.
 
 --remove-section::
 	Remove the given section from the configuration file.
@@ -197,29 +224,33 @@ FILES
 If not set explicitly with '--file', there are four files where
 'git config' will search for configuration options:
 
-$GIT_DIR/config::
-	Repository specific configuration file.
+$(prefix)/etc/gitconfig::
+	System-wide configuration file.
+
+$XDG_CONFIG_HOME/git/config::
+	Second user-specific configuration file. If $XDG_CONFIG_HOME is not set
+	or empty, `$HOME/.config/git/config` will be used. Any single-valued
+	variable set in this file will be overwritten by whatever is in
+	`~/.gitconfig`.  It is a good idea not to create this file if
+	you sometimes use older versions of Git, as support for this
+	file was added fairly recently.
 
 ~/.gitconfig::
 	User-specific configuration file. Also called "global"
 	configuration file.
 
-$XDG_CONFIG_HOME/git/config::
-	Second user-specific configuration file. If $XDG_CONFIG_HOME is not set
-	or empty, $HOME/.config/git/config will be used. Any single-valued
-	variable set in this file will be overwritten by whatever is in
-	~/.gitconfig.  It is a good idea not to create this file if
-	you sometimes use older versions of Git, as support for this
-	file was added fairly recently.
-
-$(prefix)/etc/gitconfig::
-	System-wide configuration file.
+$GIT_DIR/config::
+	Repository specific configuration file.
 
 If no further options are given, all reading options will read all of these
 files that are available. If the global or the system-wide configuration
 file are not available they will be ignored. If the repository configuration
 file is not available or readable, 'git config' will exit with a non-zero
 error code. However, in neither case will an error message be issued.
+
+The files are read in the order given above, with last value found taking
+precedence over values read earlier.  When multiple values are taken then all
+values of a key from all files will be used.
 
 All writing options will per default write to the repository specific
 configuration file. Note that this also affects options like '--replace-all'
@@ -272,6 +303,13 @@ Given a .git/config like this:
 	[core]
 		gitproxy=proxy-command for kernel.org
 		gitproxy=default-proxy ; for all the rest
+
+	; HTTP
+	[http]
+		sslVerify
+	[http "https://weak.example.com"]
+		sslVerify = false
+		cookieFile = /tmp/cookie.txt
 
 you can set the filemode to true with
 
@@ -356,6 +394,19 @@ script:
 WS=$(git config --get-color color.diff.whitespace "blue reverse")
 RESET=$(git config --get-color "" "reset")
 echo "${WS}your whitespace color or blue reverse${RESET}"
+------------
+
+For URLs in `https://weak.example.com`, `http.sslVerify` is set to
+false, while it is set to `true` for all others:
+
+------------
+% git config --bool --get-urlmatch http.sslverify https://good.example.com
+true
+% git config --bool --get-urlmatch http.sslverify https://weak.example.com
+false
+% git config --get-urlmatch http https://weak.example.com
+http.cookiefile /tmp/cookie.txt
+http.sslverify false
 ------------
 
 include::config.txt[]

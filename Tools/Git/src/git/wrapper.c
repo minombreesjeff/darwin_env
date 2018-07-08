@@ -131,6 +131,14 @@ void *xcalloc(size_t nmemb, size_t size)
 }
 
 /*
+ * Limit size of IO chunks, because huge chunks only cause pain.  OS X
+ * 64-bit is buggy, returning EINVAL if len >= INT_MAX; and even in
+ * the absence of bugs, large chunks can result in bad latencies when
+ * you decide to kill the process.
+ */
+#define MAX_IO_SIZE (8*1024*1024)
+
+/*
  * xread() is the same a read(), but it automatically restarts read()
  * operations with a recoverable error (EAGAIN and EINTR). xread()
  * DOES NOT GUARANTEE that "len" bytes is read even if the data is available.
@@ -138,6 +146,8 @@ void *xcalloc(size_t nmemb, size_t size)
 ssize_t xread(int fd, void *buf, size_t len)
 {
 	ssize_t nr;
+	if (len > MAX_IO_SIZE)
+	    len = MAX_IO_SIZE;
 	while (1) {
 		nr = read(fd, buf, len);
 		if ((nr < 0) && (errno == EAGAIN || errno == EINTR))
@@ -154,6 +164,8 @@ ssize_t xread(int fd, void *buf, size_t len)
 ssize_t xwrite(int fd, const void *buf, size_t len)
 {
 	ssize_t nr;
+	if (len > MAX_IO_SIZE)
+	    len = MAX_IO_SIZE;
 	while (1) {
 		nr = write(fd, buf, len);
 		if ((nr < 0) && (errno == EAGAIN || errno == EINTR))
@@ -322,7 +334,7 @@ int git_mkstemps_mode(char *pattern, int suffix_len, int mode)
 		template[5] = letters[v % num_letters]; v /= num_letters;
 
 		fd = open(pattern, O_CREAT | O_EXCL | O_RDWR, mode);
-		if (fd > 0)
+		if (fd >= 0)
 			return fd;
 		/*
 		 * Fatal error (EPERM, ENOSPC etc).
@@ -348,10 +360,12 @@ int git_mkstemp_mode(char *pattern, int mode)
 	return git_mkstemps_mode(pattern, 0, mode);
 }
 
+#ifdef NO_MKSTEMPS
 int gitmkstemps(char *pattern, int suffix_len)
 {
 	return git_mkstemps_mode(pattern, suffix_len, 0600);
 }
+#endif
 
 int xmkstemp_mode(char *template, int mode)
 {

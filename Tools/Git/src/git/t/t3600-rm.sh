@@ -240,18 +240,15 @@ test_expect_success 'refresh index before checking if it is up-to-date' '
 
 test_expect_success 'choking "git rm" should not let it die with cruft' '
 	git reset -q --hard &&
+	test_when_finished "rm -f .git/index.lock && git reset -q --hard" &&
 	i=0 &&
 	while test $i -lt 12000
 	do
-	    echo "100644 $_z40 0	some-file-$i"
+	    echo "100644 1234567890123456789012345678901234567890 0	some-file-$i"
 	    i=$(( $i + 1 ))
 	done | git update-index --index-info &&
-	git rm -n "some-file-*" | :;
-	test -f .git/index.lock
-	status=$?
-	rm -f .git/index.lock
-	git reset -q --hard
-	test "$status" != 0
+	git rm -n "some-file-*" | : &&
+	test_path_is_missing .git/index.lock
 '
 
 test_expect_success 'rm removes subdirectories recursively' '
@@ -263,11 +260,21 @@ test_expect_success 'rm removes subdirectories recursively' '
 '
 
 cat >expect <<EOF
+M  .gitmodules
 D  submod
 EOF
 
 cat >expect.modified <<EOF
  M submod
+EOF
+
+cat >expect.cached <<EOF
+D  submod
+EOF
+
+cat >expect.both_deleted<<EOF
+D  .gitmodules
+D  submod
 EOF
 
 test_expect_success 'rm removes empty submodules from work tree' '
@@ -281,16 +288,20 @@ test_expect_success 'rm removes empty submodules from work tree' '
 	git rm submod &&
 	test ! -e submod &&
 	git status -s -uno --ignore-submodules=none > actual &&
-	test_cmp expect actual
+	test_cmp expect actual &&
+	test_must_fail git config -f .gitmodules submodule.sub.url &&
+	test_must_fail git config -f .gitmodules submodule.sub.path
 '
 
-test_expect_success 'rm removes removed submodule from index' '
+test_expect_success 'rm removes removed submodule from index and .gitmodules' '
 	git reset --hard &&
 	git submodule update &&
 	rm -rf submod &&
 	git rm submod &&
 	git status -s -uno --ignore-submodules=none > actual &&
-	test_cmp expect actual
+	test_cmp expect actual &&
+	test_must_fail git config -f .gitmodules submodule.sub.url &&
+	test_must_fail git config -f .gitmodules submodule.sub.path
 '
 
 test_expect_success 'rm removes work tree of unmodified submodules' '
@@ -299,7 +310,9 @@ test_expect_success 'rm removes work tree of unmodified submodules' '
 	git rm submod &&
 	test ! -d submod &&
 	git status -s -uno --ignore-submodules=none > actual &&
-	test_cmp expect actual
+	test_cmp expect actual &&
+	test_must_fail git config -f .gitmodules submodule.sub.url &&
+	test_must_fail git config -f .gitmodules submodule.sub.path
 '
 
 test_expect_success 'rm removes a submodule with a trailing /' '
@@ -333,6 +346,72 @@ test_expect_success 'rm of a populated submodule with different HEAD fails unles
 	git rm -f submod &&
 	test ! -d submod &&
 	git status -s -uno --ignore-submodules=none > actual &&
+	test_cmp expect actual &&
+	test_must_fail git config -f .gitmodules submodule.sub.url &&
+	test_must_fail git config -f .gitmodules submodule.sub.path
+'
+
+test_expect_success 'rm --cached leaves work tree of populated submodules and .gitmodules alone' '
+	git reset --hard &&
+	git submodule update &&
+	git rm --cached submod &&
+	test -d submod &&
+	test -f submod/.git &&
+	git status -s -uno >actual &&
+	test_cmp expect.cached actual &&
+	git config -f .gitmodules submodule.sub.url &&
+	git config -f .gitmodules submodule.sub.path
+'
+
+test_expect_success 'rm --dry-run does not touch the submodule or .gitmodules' '
+	git reset --hard &&
+	git submodule update &&
+	git rm -n submod &&
+	test -f submod/.git &&
+	git diff-index --exit-code HEAD
+'
+
+test_expect_success 'rm does not complain when no .gitmodules file is found' '
+	git reset --hard &&
+	git submodule update &&
+	git rm .gitmodules &&
+	git rm submod >actual 2>actual.err &&
+	! test -s actual.err &&
+	! test -d submod &&
+	! test -f submod/.git &&
+	git status -s -uno >actual &&
+	test_cmp expect.both_deleted actual
+'
+
+test_expect_success 'rm will error out on a modified .gitmodules file unless staged' '
+	git reset --hard &&
+	git submodule update &&
+	git config -f .gitmodules foo.bar true &&
+	test_must_fail git rm submod >actual 2>actual.err &&
+	test -s actual.err &&
+	test -d submod &&
+	test -f submod/.git &&
+	git diff-files --quiet -- submod &&
+	git add .gitmodules &&
+	git rm submod >actual 2>actual.err &&
+	! test -s actual.err &&
+	! test -d submod &&
+	! test -f submod/.git &&
+	git status -s -uno >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'rm issues a warning when section is not found in .gitmodules' '
+	git reset --hard &&
+	git submodule update &&
+	git config -f .gitmodules --remove-section submodule.sub &&
+	git add .gitmodules &&
+	echo "warning: Could not find section in .gitmodules where path=submod" >expect.err &&
+	git rm submod >actual 2>actual.err &&
+	test_i18ncmp expect.err actual.err &&
+	! test -d submod &&
+	! test -f submod/.git &&
+	git status -s -uno >actual &&
 	test_cmp expect actual
 '
 
@@ -427,7 +506,9 @@ test_expect_success 'rm of a conflicted populated submodule with different HEAD 
 	git rm -f submod &&
 	test ! -d submod &&
 	git status -s -uno --ignore-submodules=none > actual &&
-	test_cmp expect actual
+	test_cmp expect actual &&
+	test_must_fail git config -f .gitmodules submodule.sub.url &&
+	test_must_fail git config -f .gitmodules submodule.sub.path
 '
 
 test_expect_success 'rm of a conflicted populated submodule with modifications fails unless forced' '
@@ -446,7 +527,9 @@ test_expect_success 'rm of a conflicted populated submodule with modifications f
 	git rm -f submod &&
 	test ! -d submod &&
 	git status -s -uno --ignore-submodules=none > actual &&
-	test_cmp expect actual
+	test_cmp expect actual &&
+	test_must_fail git config -f .gitmodules submodule.sub.url &&
+	test_must_fail git config -f .gitmodules submodule.sub.path
 '
 
 test_expect_success 'rm of a conflicted populated submodule with untracked files fails unless forced' '
@@ -685,6 +768,102 @@ test_expect_failure SYMLINKS 'rm across a symlinked leading path (w/ index)' '
 	git rev-parse --verify :d/f &&
 	test -h d &&
 	test_path_is_file e/f
+'
+
+test_expect_success 'setup for testing rm messages' '
+	>bar.txt &&
+	>foo.txt &&
+	git add bar.txt foo.txt
+'
+
+test_expect_success 'rm files with different staged content' '
+	cat >expect <<-\EOF &&
+	error: the following files have staged content different from both the
+	file and the HEAD:
+	    bar.txt
+	    foo.txt
+	(use -f to force removal)
+	EOF
+	echo content1 >foo.txt &&
+	echo content1 >bar.txt &&
+	test_must_fail git rm foo.txt bar.txt 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'rm files with different staged content without hints' '
+	cat >expect <<-\EOF &&
+	error: the following files have staged content different from both the
+	file and the HEAD:
+	    bar.txt
+	    foo.txt
+	EOF
+	echo content2 >foo.txt &&
+	echo content2 >bar.txt &&
+	test_must_fail git -c advice.rmhints=false rm foo.txt bar.txt 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'rm file with local modification' '
+	cat >expect <<-\EOF &&
+	error: the following file has local modifications:
+	    foo.txt
+	(use --cached to keep the file, or -f to force removal)
+	EOF
+	git commit -m "testing rm 3" &&
+	echo content3 >foo.txt &&
+	test_must_fail git rm foo.txt 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'rm file with local modification without hints' '
+	cat >expect <<-\EOF &&
+	error: the following file has local modifications:
+	    bar.txt
+	EOF
+	echo content4 >bar.txt &&
+	test_must_fail git -c advice.rmhints=false rm bar.txt 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'rm file with changes in the index' '
+	cat >expect <<-\EOF &&
+	error: the following file has changes staged in the index:
+	    foo.txt
+	(use --cached to keep the file, or -f to force removal)
+	EOF
+	git reset --hard &&
+	echo content5 >foo.txt &&
+	git add foo.txt &&
+	test_must_fail git rm foo.txt 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'rm file with changes in the index without hints' '
+	cat >expect <<-\EOF &&
+	error: the following file has changes staged in the index:
+	    foo.txt
+	EOF
+	test_must_fail git -c advice.rmhints=false rm foo.txt 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'rm files with two different errors' '
+	cat >expect <<-\EOF &&
+	error: the following file has staged content different from both the
+	file and the HEAD:
+	    foo1.txt
+	(use -f to force removal)
+	error: the following file has changes staged in the index:
+	    bar1.txt
+	(use --cached to keep the file, or -f to force removal)
+	EOF
+	echo content >foo1.txt &&
+	git add foo1.txt &&
+	echo content6 >foo1.txt &&
+	echo content6 >bar1.txt &&
+	git add bar1.txt &&
+	test_must_fail git rm bar1.txt foo1.txt 2>actual &&
+	test_i18ncmp expect actual
 '
 
 test_done

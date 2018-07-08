@@ -170,8 +170,8 @@ advice.*::
 	pushNeedsForce::
 		Shown when linkgit:git-push[1] rejects an update that
 		tries to overwrite a remote ref that points at an
-		object that is not a committish, or make the remote
-		ref point at an object that is not a committish.
+		object that is not a commit-ish, or make the remote
+		ref point at an object that is not a commit-ish.
 	statusHints::
 		Show directions on how to proceed from the current
 		state in the output of linkgit:git-status[1], in
@@ -199,6 +199,9 @@ advice.*::
 	amWorkDir::
 		Advice that shows the location of the patch file when
 		linkgit:git-am[1] fails to apply it.
+	rmHints::
+		In case of failure in the output of linkgit:git-rm[1],
+		show directions on how to proceed from the current state.
 --
 
 core.fileMode::
@@ -209,17 +212,6 @@ core.fileMode::
 The default is true, except linkgit:git-clone[1] or linkgit:git-init[1]
 will probe and set core.fileMode false if appropriate when the
 repository is created.
-
-core.ignoreCygwinFSTricks::
-	This option is only used by Cygwin implementation of Git. If false,
-	the Cygwin stat() and lstat() functions are used. This may be useful
-	if your repository consists of a few separate directories joined in
-	one hierarchy using Cygwin mount. If true, Git uses native Win32 API
-	whenever it is possible and falls back to Cygwin functions only to
-	handle symbol links. The native mode is more than twice faster than
-	normal Cygwin l/stat() functions. True by default, unless core.filemode
-	is true, in which case ignoreCygwinFSTricks is ignored as Cygwin's
-	POSIX emulation is required to support core.filemode.
 
 core.ignorecase::
 	If true, this option enables various workarounds to enable
@@ -561,22 +553,20 @@ sequence.editor::
 	When not configured the default commit message editor is used instead.
 
 core.pager::
-	The command that Git will use to paginate output.  Can
-	be overridden with the `GIT_PAGER` environment
-	variable.  Note that Git sets the `LESS` environment
-	variable to `FRSX` if it is unset when it runs the
-	pager.  One can change these settings by setting the
-	`LESS` variable to some other value.  Alternately,
-	these settings can be overridden on a project or
-	global basis by setting the `core.pager` option.
-	Setting `core.pager` has no effect on the `LESS`
-	environment variable behaviour above, so if you want
-	to override Git's default settings this way, you need
-	to be explicit.  For example, to disable the S option
-	in a backward compatible manner, set `core.pager`
-	to `less -+S`.  This will be passed to the shell by
-	Git, which will translate the final command to
-	`LESS=FRSX less -+S`.
+	Text viewer for use by Git commands (e.g., 'less').  The value
+	is meant to be interpreted by the shell.  The order of preference
+	is the `$GIT_PAGER` environment variable, then `core.pager`
+	configuration, then `$PAGER`, and then the default chosen at
+	compile time (usually 'less').
++
+When the `LESS` environment variable is unset, Git sets it to `FRSX`
+(if `LESS` environment variable is set, Git does not change it at
+all).  If you want to selectively override Git's default setting
+for `LESS`, you can set `core.pager` to e.g. `less -+S`.  This will
+be passed to the shell by Git, which will translate the final
+command to `LESS=FRSX less -+S`. The environment tells the command
+to set the `S` option to chop long lines but the command line
+resets it to the default to fold long lines.
 
 core.whitespace::
 	A comma separated list of common whitespace problems to
@@ -734,6 +724,8 @@ branch.<name>.remote::
 	overridden by `branch.<name>.pushremote`.  If no remote is
 	configured, or if you are not on any branch, it defaults to
 	`origin` for fetching and `remote.pushdefault` for pushing.
+	Additionally, `.` (a period) is the current local repository
+	(a dot-repository), see `branch.<name>.merge`'s final note below.
 
 branch.<name>.pushremote::
 	When on branch <name>, it overrides `branch.<name>.remote` for
@@ -759,8 +751,8 @@ branch.<name>.merge::
 	Specify multiple values to get an octopus merge.
 	If you wish to setup 'git pull' so that it merges into <name> from
 	another branch in the local repository, you can point
-	branch.<name>.merge to the desired branch, and use the special setting
-	`.` (a period) for branch.<name>.remote.
+	branch.<name>.merge to the desired branch, and use the relative path
+	setting `.` (a period) for branch.<name>.remote.
 
 branch.<name>.mergeoptions::
 	Sets default options for merging into branch <name>. The syntax and
@@ -773,6 +765,10 @@ branch.<name>.rebase::
 	instead of merging the default branch from the default remote when
 	"git pull" is run. See "pull.rebase" for doing this in a non
 	branch-specific manner.
++
+	When preserve, also pass `--preserve-merges` along to 'git rebase'
+	so that locally committed merge commits will not be flattened
+	by running 'git pull'.
 +
 *NOTE*: this is a possibly dangerous operation; do *not* use
 it unless you understand the implications (see linkgit:git-rebase[1]
@@ -795,8 +791,8 @@ browser.<tool>.path::
 	working repository in gitweb (see linkgit:git-instaweb[1]).
 
 clean.requireForce::
-	A boolean to make git-clean do nothing unless given -f
-	or -n.   Defaults to true.
+	A boolean to make git-clean do nothing unless given -f,
+	-i or -n.   Defaults to true.
 
 color.branch::
 	A boolean to enable/disable color in the output of
@@ -876,16 +872,17 @@ The values of these variables may be specified as in color.branch.<slot>.
 
 color.interactive::
 	When set to `always`, always use colors for interactive prompts
-	and displays (such as those used by "git-add --interactive").
-	When false (or `never`), never.  When set to `true` or `auto`, use
-	colors only when the output is to the terminal. Defaults to false.
+	and displays (such as those used by "git-add --interactive" and
+	"git-clean --interactive"). When false (or `never`), never.
+	When set to `true` or `auto`, use colors only when the output is
+	to the terminal. Defaults to false.
 
 color.interactive.<slot>::
-	Use customized color for 'git add --interactive'
-	output. `<slot>` may be `prompt`, `header`, `help` or `error`, for
-	four distinct types of normal output from interactive
-	commands.  The values of these variables may be specified as
-	in color.branch.<slot>.
+	Use customized color for 'git add --interactive' and 'git clean
+	--interactive' output. `<slot>` may be `prompt`, `header`, `help`
+	or `error`, for four distinct types of normal output from
+	interactive commands.  The values of these variables may be
+	specified as in color.branch.<slot>.
 
 color.pager::
 	A boolean to enable/disable colored output when the pager is in
@@ -919,16 +916,20 @@ color.ui::
 	as `color.diff` and `color.grep` that control the use of color
 	per command family. Its scope will expand as more commands learn
 	configuration to set a default for the `--color` option.  Set it
-	to `always` if you want all output not intended for machine
-	consumption to use color, to `true` or `auto` if you want such
-	output to use color when written to the terminal, or to `false` or
-	`never` if you prefer Git commands not to use color unless enabled
-	explicitly with some other configuration or the `--color` option.
+	to `false` or `never` if you prefer Git commands not to use
+	color unless enabled explicitly with some other configuration
+	or the `--color` option. Set it to `always` if you want all
+	output not intended for machine consumption to use color, to
+	`true` or `auto` (this is the default since Git 1.8.4) if you
+	want such output to use color when written to the terminal.
 
 column.ui::
 	Specify whether supported commands should output in columns.
 	This variable consists of a list of tokens separated by spaces
 	or commas:
++
+These options control when the feature should be enabled
+(defaults to 'never'):
 +
 --
 `always`;;
@@ -937,23 +938,38 @@ column.ui::
 	never show in columns
 `auto`;;
 	show in columns if the output is to the terminal
+--
++
+These options control layout (defaults to 'column').  Setting any
+of these implies 'always' if none of 'always', 'never', or 'auto' are
+specified.
++
+--
 `column`;;
-	fill columns before rows (default)
+	fill columns before rows
 `row`;;
 	fill rows before columns
 `plain`;;
 	show in one column
+--
++
+Finally, these options can be combined with a layout option (defaults
+to 'nodense'):
++
+--
 `dense`;;
 	make unequal size columns to utilize more space
 `nodense`;;
 	make equal size columns
 --
-+
-This option defaults to 'never'.
 
 column.branch::
 	Specify whether to output branch listing in `git branch` in columns.
 	See `column.ui` for details.
+
+column.clean::
+	Specify the layout when list items in `git clean -i`, which always
+	shows files and directories in columns. See `column.ui` for details.
 
 column.status::
 	Specify whether to output untracked files in `git status` in columns.
@@ -1048,6 +1064,10 @@ fetch.unpackLimit::
 	pack from a push can make the push operation complete faster,
 	especially on slow filesystems.  If not set, the value of
 	`transfer.unpackLimit` is used instead.
+
+fetch.prune::
+	If true, fetch will automatically behave as if the `--prune`
+	option was given on the command line.  See also `remote.<name>.prune`.
 
 format.attach::
 	Enable multipart/mixed attachments as the default for
@@ -1433,7 +1453,11 @@ http.cookiefile::
 	of the file to read cookies from should be plain HTTP headers or
 	the Netscape/Mozilla cookie file format (see linkgit:curl[1]).
 	NOTE that the file specified with http.cookiefile is only used as
-	input. No cookies will be stored in the file.
+	input unless http.saveCookies is set.
+
+http.savecookies::
+	If set, store cookies received during requests to the file specified by
+	http.cookiefile. Has no effect if http.cookiefile is unset.
 
 http.sslVerify::
 	Whether to verify the SSL certificate when fetching or pushing
@@ -1512,6 +1536,51 @@ http.useragent::
 	connecting through a firewall that restricts HTTP connections to a set
 	of common USER_AGENT strings (but not including those like git/1.7.1).
 	Can be overridden by the 'GIT_HTTP_USER_AGENT' environment variable.
+
+http.<url>.*::
+	Any of the http.* options above can be applied selectively to some urls.
+	For a config key to match a URL, each element of the config key is
+	compared to that of the URL, in the following order:
++
+--
+. Scheme (e.g., `https` in `https://example.com/`). This field
+  must match exactly between the config key and the URL.
+
+. Host/domain name (e.g., `example.com` in `https://example.com/`).
+  This field must match exactly between the config key and the URL.
+
+. Port number (e.g., `8080` in `http://example.com:8080/`).
+  This field must match exactly between the config key and the URL.
+  Omitted port numbers are automatically converted to the correct
+  default for the scheme before matching.
+
+. Path (e.g., `repo.git` in `https://example.com/repo.git`). The
+  path field of the config key must match the path field of the URL
+  either exactly or as a prefix of slash-delimited path elements.  This means
+  a config key with path `foo/` matches URL path `foo/bar`.  A prefix can only
+  match on a slash (`/`) boundary.  Longer matches take precedence (so a config
+  key with path `foo/bar` is a better match to URL path `foo/bar` than a config
+  key with just path `foo/`).
+
+. User name (e.g., `user` in `https://user@example.com/repo.git`). If
+  the config key has a user name it must match the user name in the
+  URL exactly. If the config key does not have a user name, that
+  config key will match a URL with any user name (including none),
+  but at a lower precedence than a config key with a user name.
+--
++
+The list above is ordered by decreasing precedence; a URL that matches
+a config key's path is preferred to one that matches its user name. For example,
+if the URL is `https://user@example.com/foo/bar` a config key match of
+`https://example.com/foo` will be preferred over a config key match of
+`https://user@example.com`.
++
+All URLs are normalized before attempting any matching (the password part,
+if embedded in the URL, is always ignored for matching purposes) so that
+equivalent urls that are simply spelled differently will match properly.
+Environment variable settings always override any matches.  The urls that are
+matched against are those given directly to Git commands.  This means any URLs
+visited as a result of a redirection do not participate in matching.
 
 i18n.commitEncoding::
 	Character encoding the commit messages are stored in; Git itself
@@ -1814,6 +1883,10 @@ pull.rebase::
 	pull" is run. See "branch.<name>.rebase" for setting this on a
 	per-branch basis.
 +
+	When preserve, also pass `--preserve-merges` along to 'git rebase'
+	so that locally committed merge commits will not be flattened
+	by running 'git pull'.
++
 *NOTE*: this is a possibly dangerous operation; do *not* use
 it unless you understand the implications (see linkgit:git-rebase[1]
 for details).
@@ -1826,39 +1899,59 @@ pull.twohead::
 	The default merge strategy to use when pulling a single branch.
 
 push.default::
-	Defines the action `git push` should take if no refspec is given
-	on the command line, no refspec is configured in the remote, and
-	no refspec is implied by any of the options given on the command
-	line. Possible values are:
+	Defines the action `git push` should take if no refspec is
+	explicitly given.  Different values are well-suited for
+	specific workflows; for instance, in a purely central workflow
+	(i.e. the fetch source is equal to the push destination),
+	`upstream` is probably what you want.  Possible values are:
 +
 --
-* `nothing` - do not push anything.
-* `matching` - push all branches having the same name in both ends.
-  This is for those who prepare all the branches into a publishable
-  shape and then push them out with a single command.  It is not
-  appropriate for pushing into a repository shared by multiple users,
-  since locally stalled branches will attempt a non-fast forward push
-  if other users updated the branch.
-  +
-  This is currently the default, but Git 2.0 will change the default
-  to `simple`.
-* `upstream` - push the current branch to its upstream branch
-  (`tracking` is a deprecated synonym for this).
-  With this, `git push` will update the same remote ref as the one which
-  is merged by `git pull`, making `push` and `pull` symmetrical.
-  See "branch.<name>.merge" for how to configure the upstream branch.
-* `simple` - like `upstream`, but refuses to push if the upstream
-  branch's name is different from the local one. This is the safest
-  option and is well-suited for beginners. It will become the default
-  in Git 2.0.
-* `current` - push the current branch to a branch of the same name.
---
+
+* `nothing` - do not push anything (error out) unless a refspec is
+  explicitly given. This is primarily meant for people who want to
+  avoid mistakes by always being explicit.
+
+* `current` - push the current branch to update a branch with the same
+  name on the receiving end.  Works in both central and non-central
+  workflows.
+
+* `upstream` - push the current branch back to the branch whose
+  changes are usually integrated into the current branch (which is
+  called `@{upstream}`).  This mode only makes sense if you are
+  pushing to the same repository you would normally pull from
+  (i.e. central workflow).
+
+* `simple` - in centralized workflow, work like `upstream` with an
+  added safety to refuse to push if the upstream branch's name is
+  different from the local one.
 +
-The `simple`, `current` and `upstream` modes are for those who want to
-push out a single branch after finishing work, even when the other
-branches are not yet ready to be pushed out. If you are working with
-other people to push into the same shared repository, you would want
-to use one of these.
+When pushing to a remote that is different from the remote you normally
+pull from, work as `current`.  This is the safest option and is suited
+for beginners.
++
+This mode will become the default in Git 2.0.
+
+* `matching` - push all branches having the same name on both ends.
+  This makes the repository you are pushing to remember the set of
+  branches that will be pushed out (e.g. if you always push 'maint'
+  and 'master' there and no other branches, the repository you push
+  to will have these two branches, and your local 'maint' and
+  'master' will be pushed there).
++
+To use this mode effectively, you have to make sure _all_ the
+branches you would push out are ready to be pushed out before
+running 'git push', as the whole point of this mode is to allow you
+to push all of the branches in one go.  If you usually finish work
+on only one branch and push out the result, while other branches are
+unfinished, this mode is not for you.  Also this mode is not
+suitable for pushing into a shared central repository, as other
+people may add new branches there, or update the tip of existing
+branches outside your control.
++
+This is currently the default, but Git 2.0 will change the default
+to `simple`.
+
+--
 
 rebase.stat::
 	Whether to show a diffstat of what changed upstream since the last
@@ -1866,6 +1959,14 @@ rebase.stat::
 
 rebase.autosquash::
 	If set to true enable '--autosquash' option by default.
+
+rebase.autostash::
+	When set to true, automatically create a temporary stash
+	before the operation begins, and apply it after the operation
+	ends.  This means that you can run rebase on a dirty worktree.
+	However, use with care: the final stash application after a
+	successful rebase might result in non-trivial conflicts.
+	Defaults to false.
 
 receive.autogc::
 	By default, git-receive-pack will run "git-gc --auto" after
@@ -1984,6 +2085,12 @@ remote.<name>.vcs::
 	Setting this to a value <vcs> will cause Git to interact with
 	the remote with the git-remote-<vcs> helper.
 
+remote.<name>.prune::
+	When set to true, fetching from this remote by default will also
+	remove any remote-tracking branches which no longer exist on the
+	remote (as if the `--prune` option was give on the command line).
+	Overrides `fetch.prune` settings, if any.
+
 remotes.<group>::
 	The list of remotes which are fetched by "git remote update
 	<group>".  See linkgit:git-remote[1].
@@ -2021,6 +2128,10 @@ sendemail.smtpencryption::
 
 sendemail.smtpssl::
 	Deprecated alias for 'sendemail.smtpencryption = ssl'.
+
+sendemail.smtpsslcertpath::
+	Path to ca-certificates (either a directory or a single file).
+	Set it to an empty string to disable certificate verification.
 
 sendemail.<identity>.*::
 	Identity-specific versions of the 'sendemail.*' parameters
@@ -2066,6 +2177,21 @@ status.relativePaths::
 	relative to the repository root (this was the default for Git
 	prior to v1.5.4).
 
+status.short::
+	Set to true to enable --short by default in linkgit:git-status[1].
+	The option --no-short takes precedence over this variable.
+
+status.branch::
+	Set to true to enable --branch by default in linkgit:git-status[1].
+	The option --no-branch takes precedence over this variable.
+
+status.displayCommentPrefix::
+	If set to true, linkgit:git-status[1] will insert a comment
+	prefix before each output line (starting with
+	`core.commentChar`, i.e. `#` by default). This was the
+	behavior of linkgit:git-status[1] in Git 1.8.4 and previous.
+	Defaults to false.
+
 status.showUntrackedFiles::
 	By default, linkgit:git-status[1] and linkgit:git-commit[1] show
 	files which are not currently tracked by Git. Directories which
@@ -2090,7 +2216,14 @@ status.submodulesummary::
 	If this is set to a non zero number or true (identical to -1 or an
 	unlimited number), the submodule summary will be enabled and a
 	summary of commits for modified submodules will be shown (see
-	--summary-limit option of linkgit:git-submodule[1]).
+	--summary-limit option of linkgit:git-submodule[1]). Please note
+	that the summary output command will be suppressed for all
+	submodules when `diff.ignoreSubmodules` is set to 'all' or only
+	for those submodules where `submodule.<name>.ignore=all`. To
+	also view the summary for ignored submodules you can either use
+	the --ignore-submodules=dirty command line option or the 'git
+	submodule summary' command, which shows a similar output but does
+	not honor these settings.
 
 submodule.<name>.path::
 submodule.<name>.url::
@@ -2125,7 +2258,8 @@ submodule.<name>.ignore::
 	submodules that have untracked files in their work tree as changed.
 	This setting overrides any setting made in .gitmodules for this submodule,
 	both settings can be overridden on the command line by using the
-	"--ignore-submodules" option.
+	"--ignore-submodules" option. The 'git submodule' commands are not
+	affected by this setting.
 
 tar.umask::
 	This variable can be used to restrict the permission bits of
@@ -2164,6 +2298,17 @@ uploadpack.allowtipsha1inwant::
 	of a hidden ref (by default, such a request is rejected).
 	see also `uploadpack.hiderefs`.
 
+uploadpack.keepalive::
+	When `upload-pack` has started `pack-objects`, there may be a
+	quiet period while `pack-objects` prepares the pack. Normally
+	it would output progress information, but if `--quiet` was used
+	for the fetch, `pack-objects` will output nothing at all until
+	the pack data begins. Some clients and networks may consider
+	the server to be hung and give up. Setting this option instructs
+	`upload-pack` to send an empty keepalive packet every
+	`uploadpack.keepalive` seconds. Setting this option to 0
+	disables keepalive packets entirely. The default is 5 seconds.
+
 url.<base>.insteadOf::
 	Any URL that starts with this value will be rewritten to
 	start, instead, with <base>. In cases where some site serves a
@@ -2199,11 +2344,11 @@ user.name::
 	environment variables.  See linkgit:git-commit-tree[1].
 
 user.signingkey::
-	If linkgit:git-tag[1] is not selecting the key you want it to
-	automatically when creating a signed tag, you can override the
-	default selection with this variable.  This option is passed
-	unchanged to gpg's --local-user parameter, so you may specify a key
-	using any method that gpg supports.
+	If linkgit:git-tag[1] or linkgit:git-commit[1] is not selecting the
+	key you want it to automatically when creating a signed tag or
+	commit, you can override the default selection with this variable.
+	This option is passed unchanged to gpg's --local-user parameter,
+	so you may specify a key using any method that gpg supports.
 
 web.browser::
 	Specify a web browser that may be used by some commands.

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-remote
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/24/2013
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 11/27/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.3
+.\"    Source: Git 1.8.5
 .\"  Language: English
 .\"
-.TH "GIT\-REMOTE" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
+.TH "GIT\-REMOTE" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -36,7 +36,7 @@ git-remote \- manage set of tracked repositories
 \fIgit remote add\fR [\-t <branch>] [\-m <master>] [\-f] [\-\-[no\-]tags] [\-\-mirror=<fetch|push>] <name> <url>
 \fIgit remote rename\fR <old> <new>
 \fIgit remote remove\fR <name>
-\fIgit remote set\-head\fR <name> (\-a | \-d | <branch>)
+\fIgit remote set\-head\fR <name> (\-a | \-\-auto | \-d | \-\-delete | <branch>)
 \fIgit remote set\-branches\fR [\-\-add] <name> <branch>\&...
 \fIgit remote set\-url\fR [\-\-push] <name> <newurl> [<oldurl>]
 \fIgit remote set\-url \-\-add\fR [\-\-push] <name> <newurl>
@@ -148,12 +148,16 @@ may be specified wherever you would normally specify
 origin/master\&.
 .sp
 With
-\-d, the symbolic ref
+\-d
+or
+\-\-delete, the symbolic ref
 refs/remotes/<name>/HEAD
 is deleted\&.
 .sp
 With
-\-a, the remote is queried to determine its
+\-a
+or
+\-\-auto, the remote is queried to determine its
 HEAD, then the symbolic\-ref
 refs/remotes/<name>/HEAD
 is set to the same branch\&. e\&.g\&., if the remote
@@ -256,18 +260,25 @@ Add a new remote, fetch, and check out a branch from it
 $ git remote
 origin
 $ git branch \-r
-origin/master
-$ git remote add linux\-nfs git://linux\-nfs\&.org/pub/linux/nfs\-2\&.6\&.git
+  origin/HEAD \-> origin/master
+  origin/master
+$ git remote add staging git://git\&.kernel\&.org/\&.\&.\&./gregkh/staging\&.git
 $ git remote
-linux\-nfs
 origin
-$ git fetch
-* refs/remotes/linux\-nfs/master: storing branch \(aqmaster\(aq \&.\&.\&.
-  commit: bf81b46
+staging
+$ git fetch staging
+\&.\&.\&.
+From git://git\&.kernel\&.org/pub/scm/linux/kernel/git/gregkh/staging
+ * [new branch]      master     \-> staging/master
+ * [new branch]      staging\-linus \-> staging/staging\-linus
+ * [new branch]      staging\-next \-> staging/staging\-next
 $ git branch \-r
-origin/master
-linux\-nfs/master
-$ git checkout \-b nfs linux\-nfs/master
+  origin/HEAD \-> origin/master
+  origin/master
+  staging/master
+  staging/staging\-linus
+  staging/staging\-next
+$ git checkout \-b staging staging/master
 \&.\&.\&.
 .fi
 .if n \{\

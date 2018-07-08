@@ -10,24 +10,28 @@ test_description='Test remote-hg output compared to hg-git'
 
 . ./test-lib.sh
 
-if ! test_have_prereq PYTHON; then
+if ! test_have_prereq PYTHON
+then
 	skip_all='skipping remote-hg tests; python not available'
 	test_done
 fi
 
-if ! "$PYTHON_PATH" -c 'import mercurial'; then
+if ! python -c 'import mercurial'
+then
 	skip_all='skipping remote-hg tests; mercurial not available'
 	test_done
 fi
 
-if ! "$PYTHON_PATH" -c 'import hggit'; then
+if ! python -c 'import hggit'
+then
 	skip_all='skipping remote-hg tests; hg-git not available'
 	test_done
 fi
 
 # clone to a git repo with git
 git_clone_git () {
-	git clone -q "hg::$PWD/$1" $2
+	git clone -q "hg::$1" $2 &&
+	(cd $2 && git checkout master && git branch -D default)
 }
 
 # clone to an hg repo with git
@@ -36,7 +40,7 @@ hg_clone_git () {
 	hg init $2 &&
 	hg -R $2 bookmark -i master &&
 	cd $1 &&
-	git push -q "hg::$PWD/../$2" 'refs/tags/*:refs/tags/*' 'refs/heads/*:refs/heads/*'
+	git push -q "hg::../$2" 'refs/tags/*:refs/tags/*' 'refs/heads/*:refs/heads/*'
 	) &&
 
 	(cd $2 && hg -q update)
@@ -61,11 +65,11 @@ hg_clone_hg () {
 hg_push_git () {
 	(
 	cd $2
-	old=$(git symbolic-ref --short HEAD)
 	git checkout -q -b tmp &&
-	git fetch -q "hg::$PWD/../$1" 'refs/tags/*:refs/tags/*' 'refs/heads/*:refs/heads/*' &&
-	git checkout -q $old &&
-	git branch -q -D tmp 2> /dev/null || true
+	git fetch -q "hg::../$1" 'refs/tags/*:refs/tags/*' 'refs/heads/*:refs/heads/*' &&
+	git branch -D default &&
+	git checkout -q @{-1} &&
+	git branch -q -D tmp 2>/dev/null || true
 	)
 }
 
@@ -99,28 +103,28 @@ setup () {
 	echo "hgext.bookmarks ="
 	echo "hggit ="
 	echo "graphlog ="
-	) >> "$HOME"/.hgrc &&
+	) >>"$HOME"/.hgrc &&
 	git config --global receive.denycurrentbranch warn
 	git config --global remote-hg.hg-git-compat true
 	git config --global remote-hg.track-branches false
 
-	HGEDITOR=/usr/bin/true
+	HGEDITOR=true
+	HGMERGE=true
 
 	GIT_AUTHOR_DATE="2007-01-01 00:00:00 +0230"
 	GIT_COMMITTER_DATE="$GIT_AUTHOR_DATE"
-	export HGEDITOR GIT_AUTHOR_DATE GIT_COMMITTER_DATE
+	export HGEDITOR HGMERGE GIT_AUTHOR_DATE GIT_COMMITTER_DATE
 }
 
 setup
 
 test_expect_success 'executable bit' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
 	(
 	git init -q gitrepo &&
 	cd gitrepo &&
-	echo alpha > alpha &&
+	echo alpha >alpha &&
 	chmod 0644 alpha &&
 	git add alpha &&
 	git commit -m "add alpha" &&
@@ -132,17 +136,18 @@ test_expect_success 'executable bit' '
 	git commit -m "clear executable bit"
 	) &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		(
 		hg_clone_$x gitrepo hgrepo-$x &&
 		cd hgrepo-$x &&
 		hg_log . &&
 		hg manifest -r 1 -v &&
 		hg manifest -v
-		) > output-$x &&
+		) >"output-$x" &&
 
 		git_clone_$x hgrepo-$x gitrepo2-$x &&
-		git_log gitrepo2-$x > log-$x
+		git_log gitrepo2-$x >"log-$x"
 	done &&
 
 	test_cmp output-hg output-git &&
@@ -150,13 +155,12 @@ test_expect_success 'executable bit' '
 '
 
 test_expect_success 'symlink' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
 	(
 	git init -q gitrepo &&
 	cd gitrepo &&
-	echo alpha > alpha &&
+	echo alpha >alpha &&
 	git add alpha &&
 	git commit -m "add alpha" &&
 	ln -s alpha beta &&
@@ -164,16 +168,17 @@ test_expect_success 'symlink' '
 	git commit -m "add beta"
 	) &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		(
 		hg_clone_$x gitrepo hgrepo-$x &&
 		cd hgrepo-$x &&
 		hg_log . &&
 		hg manifest -v
-		) > output-$x &&
+		) >"output-$x" &&
 
 		git_clone_$x hgrepo-$x gitrepo2-$x &&
-		git_log gitrepo2-$x > log-$x
+		git_log gitrepo2-$x >"log-$x"
 	done &&
 
 	test_cmp output-hg output-git &&
@@ -181,34 +186,34 @@ test_expect_success 'symlink' '
 '
 
 test_expect_success 'merge conflict 1' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
 	(
 	hg init hgrepo1 &&
 	cd hgrepo1 &&
-	echo A > afile &&
+	echo A >afile &&
 	hg add afile &&
 	hg ci -m "origin" &&
 
-	echo B > afile &&
+	echo B >afile &&
 	hg ci -m "A->B" &&
 
 	hg up -r0 &&
-	echo C > afile &&
+	echo C >afile &&
 	hg ci -m "A->C" &&
 
-	hg merge -r1 || true &&
-	echo C > afile &&
+	hg merge -r1 &&
+	echo C >afile &&
 	hg resolve -m afile &&
 	hg ci -m "merge to C"
 	) &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		git_clone_$x hgrepo1 gitrepo-$x &&
 		hg_clone_$x gitrepo-$x hgrepo2-$x &&
-		hg_log hgrepo2-$x > hg-log-$x &&
-		git_log gitrepo-$x > git-log-$x
+		hg_log hgrepo2-$x >"hg-log-$x" &&
+		git_log gitrepo-$x >"git-log-$x"
 	done &&
 
 	test_cmp hg-log-hg hg-log-git &&
@@ -216,34 +221,34 @@ test_expect_success 'merge conflict 1' '
 '
 
 test_expect_success 'merge conflict 2' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
 	(
 	hg init hgrepo1 &&
 	cd hgrepo1 &&
-	echo A > afile &&
+	echo A >afile &&
 	hg add afile &&
 	hg ci -m "origin" &&
 
-	echo B > afile &&
+	echo B >afile &&
 	hg ci -m "A->B" &&
 
 	hg up -r0 &&
-	echo C > afile &&
+	echo C >afile &&
 	hg ci -m "A->C" &&
 
 	hg merge -r1 || true &&
-	echo B > afile &&
+	echo B >afile &&
 	hg resolve -m afile &&
 	hg ci -m "merge to B"
 	) &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		git_clone_$x hgrepo1 gitrepo-$x &&
 		hg_clone_$x gitrepo-$x hgrepo2-$x &&
-		hg_log hgrepo2-$x > hg-log-$x &&
-		git_log gitrepo-$x > git-log-$x
+		hg_log hgrepo2-$x >"hg-log-$x" &&
+		git_log gitrepo-$x >"git-log-$x"
 	done &&
 
 	test_cmp hg-log-hg hg-log-git &&
@@ -251,35 +256,35 @@ test_expect_success 'merge conflict 2' '
 '
 
 test_expect_success 'converged merge' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
 	(
 	hg init hgrepo1 &&
 	cd hgrepo1 &&
-	echo A > afile &&
+	echo A >afile &&
 	hg add afile &&
 	hg ci -m "origin" &&
 
-	echo B > afile &&
+	echo B >afile &&
 	hg ci -m "A->B" &&
 
-	echo C > afile &&
+	echo C >afile &&
 	hg ci -m "B->C" &&
 
 	hg up -r0 &&
-	echo C > afile &&
+	echo C >afile &&
 	hg ci -m "A->C" &&
 
 	hg merge -r2 || true &&
 	hg ci -m "merge"
 	) &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		git_clone_$x hgrepo1 gitrepo-$x &&
 		hg_clone_$x gitrepo-$x hgrepo2-$x &&
-		hg_log hgrepo2-$x > hg-log-$x &&
-		git_log gitrepo-$x > git-log-$x
+		hg_log hgrepo2-$x >"hg-log-$x" &&
+		git_log gitrepo-$x >"git-log-$x"
 	done &&
 
 	test_cmp hg-log-hg hg-log-git &&
@@ -287,39 +292,39 @@ test_expect_success 'converged merge' '
 '
 
 test_expect_success 'encoding' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
 	(
 	git init -q gitrepo &&
 	cd gitrepo &&
 
-	echo alpha > alpha &&
+	echo alpha >alpha &&
 	git add alpha &&
 	git commit -m "add älphà" &&
 
 	GIT_AUTHOR_NAME="tést èncödîng" &&
 	export GIT_AUTHOR_NAME &&
-	echo beta > beta &&
+	echo beta >beta &&
 	git add beta &&
 	git commit -m "add beta" &&
 
-	echo gamma > gamma &&
+	echo gamma >gamma &&
 	git add gamma &&
 	git commit -m "add gämmâ" &&
 
 	: TODO git config i18n.commitencoding latin-1 &&
-	echo delta > delta &&
+	echo delta >delta &&
 	git add delta &&
 	git commit -m "add déltà"
 	) &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		hg_clone_$x gitrepo hgrepo-$x &&
 		git_clone_$x hgrepo-$x gitrepo2-$x &&
 
-		HGENCODING=utf-8 hg_log hgrepo-$x > hg-log-$x &&
-		git_log gitrepo2-$x > git-log-$x
+		HGENCODING=utf-8 hg_log hgrepo-$x >"hg-log-$x" &&
+		git_log gitrepo2-$x >"git-log-$x"
 	done &&
 
 	test_cmp hg-log-hg hg-log-git &&
@@ -327,20 +332,19 @@ test_expect_success 'encoding' '
 '
 
 test_expect_success 'file removal' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
 	(
 	git init -q gitrepo &&
 	cd gitrepo &&
-	echo alpha > alpha &&
+	echo alpha >alpha &&
 	git add alpha &&
 	git commit -m "add alpha" &&
-	echo beta > beta &&
+	echo beta >beta &&
 	git add beta &&
 	git commit -m "add beta"
 	mkdir foo &&
-	echo blah > foo/bar &&
+	echo blah >foo/bar &&
 	git add foo &&
 	git commit -m "add foo" &&
 	git rm alpha &&
@@ -349,17 +353,18 @@ test_expect_success 'file removal' '
 	git commit -m "remove foo/bar"
 	) &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		(
 		hg_clone_$x gitrepo hgrepo-$x &&
 		cd hgrepo-$x &&
 		hg_log . &&
 		hg manifest -r 3 &&
 		hg manifest
-		) > output-$x &&
+		) >"output-$x" &&
 
 		git_clone_$x hgrepo-$x gitrepo2-$x &&
-		git_log gitrepo2-$x > log-$x
+		git_log gitrepo2-$x >"log-$x"
 	done &&
 
 	test_cmp output-hg output-git &&
@@ -367,42 +372,42 @@ test_expect_success 'file removal' '
 '
 
 test_expect_success 'git tags' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
 	(
 	git init -q gitrepo &&
 	cd gitrepo &&
 	git config receive.denyCurrentBranch ignore &&
-	echo alpha > alpha &&
+	echo alpha >alpha &&
 	git add alpha &&
 	git commit -m "add alpha" &&
 	git tag alpha &&
 
-	echo beta > beta &&
+	echo beta >beta &&
 	git add beta &&
 	git commit -m "add beta" &&
 	git tag -a -m "added tag beta" beta
 	) &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		hg_clone_$x gitrepo hgrepo-$x &&
-		hg_log hgrepo-$x > log-$x
+		hg_log hgrepo-$x >"log-$x"
 	done &&
 
 	test_cmp log-hg log-git
 '
 
 test_expect_success 'hg author' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		(
 		git init -q gitrepo-$x &&
 		cd gitrepo-$x &&
 
-		echo alpha > alpha &&
+		echo alpha >alpha &&
 		git add alpha &&
 		git commit -m "add alpha" &&
 		git checkout -q -b not-master
@@ -413,38 +418,38 @@ test_expect_success 'hg author' '
 		cd hgrepo-$x &&
 
 		hg co master &&
-		echo beta > beta &&
+		echo beta >beta &&
 		hg add beta &&
 		hg commit -u "test" -m "add beta" &&
 
-		echo gamma >> beta &&
+		echo gamma >>beta &&
 		hg commit -u "test <test@example.com> (comment)" -m "modify beta" &&
 
-		echo gamma > gamma &&
+		echo gamma >gamma &&
 		hg add gamma &&
 		hg commit -u "<test@example.com>" -m "add gamma" &&
 
-		echo delta > delta &&
+		echo delta >delta &&
 		hg add delta &&
 		hg commit -u "name<test@example.com>" -m "add delta" &&
 
-		echo epsilon > epsilon &&
+		echo epsilon >epsilon &&
 		hg add epsilon &&
 		hg commit -u "name <test@example.com" -m "add epsilon" &&
 
-		echo zeta > zeta &&
+		echo zeta >zeta &&
 		hg add zeta &&
 		hg commit -u " test " -m "add zeta" &&
 
-		echo eta > eta &&
+		echo eta >eta &&
 		hg add eta &&
 		hg commit -u "test < test@example.com >" -m "add eta" &&
 
-		echo theta > theta &&
+		echo theta >theta &&
 		hg add theta &&
 		hg commit -u "test >test@example.com>" -m "add theta" &&
 
-		echo iota > iota &&
+		echo iota >iota &&
 		hg add iota &&
 		hg commit -u "test <test <at> example <dot> com>" -m "add iota"
 		) &&
@@ -452,8 +457,8 @@ test_expect_success 'hg author' '
 		hg_push_$x hgrepo-$x gitrepo-$x &&
 		hg_clone_$x gitrepo-$x hgrepo2-$x &&
 
-		hg_log hgrepo2-$x > hg-log-$x &&
-		git_log gitrepo-$x > git-log-$x
+		hg_log hgrepo2-$x >"hg-log-$x" &&
+		git_log gitrepo-$x >"git-log-$x"
 	done &&
 
 	test_cmp hg-log-hg hg-log-git &&
@@ -461,15 +466,15 @@ test_expect_success 'hg author' '
 '
 
 test_expect_success 'hg branch' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		(
 		git init -q gitrepo-$x &&
 		cd gitrepo-$x &&
 
-		echo alpha > alpha &&
+		echo alpha >alpha &&
 		git add alpha &&
 		git commit -q -m "add alpha" &&
 		git checkout -q -b not-master
@@ -489,8 +494,8 @@ test_expect_success 'hg branch' '
 		hg_push_$x hgrepo-$x gitrepo-$x &&
 		hg_clone_$x gitrepo-$x hgrepo2-$x &&
 
-		hg_log hgrepo2-$x > hg-log-$x &&
-		git_log gitrepo-$x > git-log-$x
+		hg_log hgrepo2-$x >"hg-log-$x" &&
+		git_log gitrepo-$x >"git-log-$x"
 	done &&
 
 	test_cmp hg-log-hg hg-log-git &&
@@ -498,15 +503,15 @@ test_expect_success 'hg branch' '
 '
 
 test_expect_success 'hg tags' '
-	mkdir -p tmp && cd tmp &&
-	test_when_finished "cd .. && rm -rf tmp" &&
+	test_when_finished "rm -rf gitrepo* hgrepo*" &&
 
-	for x in hg git; do
+	for x in hg git
+	do
 		(
 		git init -q gitrepo-$x &&
 		cd gitrepo-$x &&
 
-		echo alpha > alpha &&
+		echo alpha >alpha &&
 		git add alpha &&
 		git commit -m "add alpha" &&
 		git checkout -q -b not-master
@@ -527,7 +532,7 @@ test_expect_success 'hg tags' '
 		git --git-dir=gitrepo-$x/.git tag -l &&
 		hg_log hgrepo2-$x &&
 		cat hgrepo2-$x/.hgtags
-		) > output-$x
+		) >"output-$x"
 	done &&
 
 	test_cmp output-hg output-git

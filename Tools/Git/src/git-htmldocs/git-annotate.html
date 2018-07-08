@@ -795,11 +795,17 @@ familiar command name for people coming from other SCM systems.</p></div>
 <dt class="hdlist1">
 -L &lt;start&gt;,&lt;end&gt;
 </dt>
+<dt class="hdlist1">
+-L :&lt;regex&gt;
+</dt>
 <dd>
 <p>
-        Annotate only the given line range.  &lt;start&gt; and &lt;end&gt; can take
-        one of these forms:
+        Annotate only the given line range. May be specified multiple times.
+        Overlapping ranges are allowed.
 </p>
+<div class="paragraph"><p>&lt;start&gt; and &lt;end&gt; are optional. &#8220;-L &lt;start&gt;&#8221; or &#8220;-L &lt;start&gt;,&#8221; spans from
+&lt;start&gt; to end of file. &#8220;-L ,&lt;end&gt;&#8221; spans from start of file to &lt;end&gt;.</p></div>
+<div class="paragraph"><p>&lt;start&gt; and &lt;end&gt; can take one of these forms:</p></div>
 <div class="ulist"><ul>
 <li>
 <p>
@@ -813,7 +819,10 @@ absolute line number (lines count from 1).</p></div>
 /regex/
 </p>
 <div class="paragraph"><p>This form will use the first line matching the given
-POSIX regex.  If &lt;end&gt; is a regex, it will search
+POSIX regex. If &lt;start&gt; is a regex, it will search from the end of
+the previous <code>-L</code> range, if any, otherwise from the start of file.
+If &lt;start&gt; is &#8220;^/regex/&#8221;, it will search from the start of file.
+If &lt;end&gt; is a regex, it will search
 starting at the line given by &lt;start&gt;.</p></div>
 </li>
 <li>
@@ -824,6 +833,11 @@ starting at the line given by &lt;start&gt;.</p></div>
 of lines before or after the line given by &lt;start&gt;.</p></div>
 </li>
 </ul></div>
+<div class="paragraph"><p>If &#8220;:&lt;regex&gt;&#8221; is given in place of &lt;start&gt; and &lt;end&gt;, it denotes the range
+from the first funcname line that matches &lt;regex&gt;, up to the next
+funcname line. &#8220;:&lt;regex&gt;&#8221; searches from the end of the previous <code>-L</code> range,
+if any, otherwise from the start of file.
+&#8220;^:&lt;regex&gt;&#8221; searches from the start of file.</p></div>
 </dd>
 <dt class="hdlist1">
 -l
@@ -996,7 +1010,7 @@ take effect.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-11-15 13:45:02 PST
+Last updated 2013-08-20 08:40:27 PDT
 </div>
 </div>
 </body>

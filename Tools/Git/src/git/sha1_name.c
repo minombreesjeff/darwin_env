@@ -52,7 +52,7 @@ static void update_candidates(struct disambiguate_state *ds, const unsigned char
 	}
 
 	if (!ds->candidate_ok) {
-		/* discard the candidate; we know it does not satisify fn */
+		/* discard the candidate; we know it does not satisfy fn */
 		hashcpy(ds->candidate, current);
 		ds->candidate_checked = 0;
 		return;
@@ -343,7 +343,6 @@ static int get_short_sha1(const char *name, int len, unsigned char *sha1,
 	return status;
 }
 
-
 int for_each_abbrev(const char *prefix, each_abbrev_fn fn, void *cb_data)
 {
 	char hex_pfx[40];
@@ -431,22 +430,51 @@ static inline int upstream_mark(const char *string, int len)
 }
 
 static int get_sha1_1(const char *name, int len, unsigned char *sha1, unsigned lookup_flags);
+static int interpret_nth_prior_checkout(const char *name, struct strbuf *buf);
 
 static int get_sha1_basic(const char *str, int len, unsigned char *sha1)
 {
 	static const char *warn_msg = "refname '%.*s' is ambiguous.";
+	static const char *object_name_msg = N_(
+	"Git normally never creates a ref that ends with 40 hex characters\n"
+	"because it will be ignored when you just specify 40-hex. These refs\n"
+	"may be created by mistake. For example,\n"
+	"\n"
+	"  git checkout -b $br $(git rev-parse ...)\n"
+	"\n"
+	"where \"$br\" is somehow empty and a 40-hex ref is created. Please\n"
+	"examine these refs and maybe delete them. Turn this message off by\n"
+	"running \"git config advice.objectNameWarning false\"");
+	unsigned char tmp_sha1[20];
 	char *real_ref = NULL;
 	int refs_found = 0;
-	int at, reflog_len;
+	int at, reflog_len, nth_prior = 0;
 
-	if (len == 40 && !get_sha1_hex(str, sha1))
+	if (len == 40 && !get_sha1_hex(str, sha1)) {
+		if (warn_on_object_refname_ambiguity) {
+			refs_found = dwim_ref(str, len, tmp_sha1, &real_ref);
+			if (refs_found > 0 && warn_ambiguous_refs) {
+				warning(warn_msg, len, str);
+				if (advice_object_name_warning)
+					fprintf(stderr, "%s\n", _(object_name_msg));
+			}
+			free(real_ref);
+		}
 		return 0;
+	}
 
 	/* basic@{time or number or -number} format to query ref-log */
 	reflog_len = at = 0;
 	if (len && str[len-1] == '}') {
-		for (at = len-2; at >= 0; at--) {
+		for (at = len-4; at >= 0; at--) {
 			if (str[at] == '@' && str[at+1] == '{') {
+				if (str[at+2] == '-') {
+					if (at != 0)
+						/* @{-N} not at start */
+						return -1;
+					nth_prior = 1;
+					continue;
+				}
 				if (!upstream_mark(str + at, len - at)) {
 					reflog_len = (len-1) - (at+2);
 					len = at;
@@ -460,20 +488,22 @@ static int get_sha1_basic(const char *str, int len, unsigned char *sha1)
 	if (len && ambiguous_path(str, len))
 		return -1;
 
-	if (!len && reflog_len) {
+	if (nth_prior) {
 		struct strbuf buf = STRBUF_INIT;
-		int ret;
-		/* try the @{-N} syntax for n-th checkout */
-		ret = interpret_branch_name(str+at, &buf);
-		if (ret > 0) {
-			/* substitute this branch name and restart */
-			return get_sha1_1(buf.buf, buf.len, sha1, 0);
-		} else if (ret == 0) {
-			return -1;
+		int detached;
+
+		if (interpret_nth_prior_checkout(str, &buf) > 0) {
+			detached = (buf.len == 40 && !get_sha1_hex(buf.buf, sha1));
+			strbuf_release(&buf);
+			if (detached)
+				return 0;
 		}
+	}
+
+	if (!len && reflog_len)
 		/* allow "@{...}" to mean the current branch reflog */
 		refs_found = dwim_ref("HEAD", 4, sha1, &real_ref);
-	} else if (reflog_len)
+	else if (reflog_len)
 		refs_found = dwim_log(str, len, sha1, &real_ref);
 	else
 		refs_found = dwim_ref(str, len, sha1, &real_ref);
@@ -481,7 +511,9 @@ static int get_sha1_basic(const char *str, int len, unsigned char *sha1)
 	if (!refs_found)
 		return -1;
 
-	if (warn_ambiguous_refs && refs_found > 1)
+	if (warn_ambiguous_refs &&
+	    (refs_found > 1 ||
+	     !get_short_sha1(str, len, tmp_sha1, GET_SHA1_QUIETLY)))
 		warning(warn_msg, len, str);
 
 	if (reflog_len) {
@@ -489,10 +521,6 @@ static int get_sha1_basic(const char *str, int len, unsigned char *sha1)
 		unsigned long at_time;
 		unsigned long co_time;
 		int co_tz, co_cnt;
-
-		/* a @{-N} placed anywhere except the start is an error */
-		if (str[at+2] == '-')
-			return -1;
 
 		/* Is it asking for N-th entry, or approxidate? */
 		for (i = nth = 0; 0 <= nth && i < reflog_len; i++) {
@@ -648,11 +676,13 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 		return -1;
 
 	sp++; /* beginning of type name, or closing brace for empty */
-	if (!strncmp(commit_type, sp, 6) && sp[6] == '}')
+	if (!prefixcmp(sp, "commit}"))
 		expected_type = OBJ_COMMIT;
-	else if (!strncmp(tree_type, sp, 4) && sp[4] == '}')
+	else if (!prefixcmp(sp, "tag}"))
+		expected_type = OBJ_TAG;
+	else if (!prefixcmp(sp, "tree}"))
 		expected_type = OBJ_TREE;
-	else if (!strncmp(blob_type, sp, 4) && sp[4] == '}')
+	else if (!prefixcmp(sp, "blob}"))
 		expected_type = OBJ_BLOB;
 	else if (!prefixcmp(sp, "object}"))
 		expected_type = OBJ_ANY;
@@ -975,6 +1005,49 @@ int get_sha1_mb(const char *name, unsigned char *sha1)
 	return st;
 }
 
+/* parse @something syntax, when 'something' is not {.*} */
+static int interpret_empty_at(const char *name, int namelen, int len, struct strbuf *buf)
+{
+	const char *next;
+
+	if (len || name[1] == '{')
+		return -1;
+
+	/* make sure it's a single @, or @@{.*}, not @foo */
+	next = strchr(name + len + 1, '@');
+	if (next && next[1] != '{')
+		return -1;
+	if (!next)
+		next = name + namelen;
+	if (next != name + 1)
+		return -1;
+
+	strbuf_reset(buf);
+	strbuf_add(buf, "HEAD", 4);
+	return 1;
+}
+
+static int reinterpret(const char *name, int namelen, int len, struct strbuf *buf)
+{
+	/* we have extra data, which might need further processing */
+	struct strbuf tmp = STRBUF_INIT;
+	int used = buf->len;
+	int ret;
+
+	strbuf_add(buf, name + len, namelen - len);
+	ret = interpret_branch_name(buf->buf, buf->len, &tmp);
+	/* that data was not interpreted, remove our cruft */
+	if (ret < 0) {
+		strbuf_setlen(buf, used);
+		return len;
+	}
+	strbuf_reset(buf);
+	strbuf_addbuf(buf, &tmp);
+	strbuf_release(&tmp);
+	/* tweak for size of {-N} versus expanded ref name */
+	return ret - used + len;
+}
+
 /*
  * This reads short-hand syntax that not only evaluates to a commit
  * object name, but also can act as if the end user spelled the name
@@ -996,44 +1069,37 @@ int get_sha1_mb(const char *name, unsigned char *sha1)
  * If the input was ok but there are not N branch switches in the
  * reflog, it returns 0.
  */
-int interpret_branch_name(const char *name, struct strbuf *buf)
+int interpret_branch_name(const char *name, int namelen, struct strbuf *buf)
 {
 	char *cp;
 	struct branch *upstream;
-	int namelen = strlen(name);
 	int len = interpret_nth_prior_checkout(name, buf);
 	int tmp_len;
 
-	if (!len)
-		return len; /* syntax Ok, not enough switches */
-	if (0 < len && len == namelen)
-		return len; /* consumed all */
-	else if (0 < len) {
-		/* we have extra data, which might need further processing */
-		struct strbuf tmp = STRBUF_INIT;
-		int used = buf->len;
-		int ret;
+	if (!namelen)
+		namelen = strlen(name);
 
-		strbuf_add(buf, name + len, namelen - len);
-		ret = interpret_branch_name(buf->buf, &tmp);
-		/* that data was not interpreted, remove our cruft */
-		if (ret < 0) {
-			strbuf_setlen(buf, used);
-			return len;
-		}
-		strbuf_reset(buf);
-		strbuf_addbuf(buf, &tmp);
-		strbuf_release(&tmp);
-		/* tweak for size of {-N} versus expanded ref name */
-		return ret - used + len;
+	if (!len) {
+		return len; /* syntax Ok, not enough switches */
+	} else if (len > 0) {
+		if (len == namelen)
+			return len; /* consumed all */
+		else
+			return reinterpret(name, namelen, len, buf);
 	}
 
 	cp = strchr(name, '@');
 	if (!cp)
 		return -1;
+
+	len = interpret_empty_at(name, namelen, cp - name, buf);
+	if (len > 0)
+		return reinterpret(name, namelen, len, buf);
+
 	tmp_len = upstream_mark(cp, namelen - (cp - name));
 	if (!tmp_len)
 		return -1;
+
 	len = cp + tmp_len - name;
 	cp = xstrndup(name, cp - name);
 	upstream = branch_get(*cp ? cp : NULL);
@@ -1065,7 +1131,7 @@ int interpret_branch_name(const char *name, struct strbuf *buf)
 int strbuf_branchname(struct strbuf *sb, const char *name)
 {
 	int len = strlen(name);
-	int used = interpret_branch_name(name, sb);
+	int used = interpret_branch_name(name, len, sb);
 
 	if (used == len)
 		return 0;
@@ -1095,13 +1161,13 @@ int get_sha1(const char *name, unsigned char *sha1)
 }
 
 /*
- * Many callers know that the user meant to name a committish by
+ * Many callers know that the user meant to name a commit-ish by
  * syntactical positions where the object name appears.  Calling this
  * function allows the machinery to disambiguate shorter-than-unique
- * abbreviated object names between committish and others.
+ * abbreviated object names between commit-ish and others.
  *
  * Note that this does NOT error out when the named object is not a
- * committish. It is merely to give a hint to the disambiguation
+ * commit-ish. It is merely to give a hint to the disambiguation
  * machinery.
  */
 int get_sha1_committish(const char *name, unsigned char *sha1)
@@ -1184,7 +1250,7 @@ static void diagnose_invalid_index_path(int stage,
 					const char *filename)
 {
 	struct stat st;
-	struct cache_entry *ce;
+	const struct cache_entry *ce;
 	int pos;
 	unsigned namelen = strlen(filename);
 	unsigned fullnamelen;
@@ -1278,7 +1344,7 @@ static int get_sha1_with_context_1(const char *name,
 	 */
 	if (name[0] == ':') {
 		int stage = 0;
-		struct cache_entry *ce;
+		const struct cache_entry *ce;
 		char *new_path = NULL;
 		int pos;
 		if (!only_to_die && namelen > 2 && name[1] == '/') {

@@ -410,14 +410,14 @@ static void get_info_refs(char *arg)
 	strbuf_release(&buf);
 }
 
-static int show_head_ref(const char *name, const unsigned char *sha1,
+static int show_head_ref(const char *refname, const unsigned char *sha1,
 	int flag, void *cb_data)
 {
 	struct strbuf *buf = cb_data;
 
 	if (flag & REF_ISSYMREF) {
-		unsigned char sha1[20];
-		const char *target = resolve_ref_unsafe(name, sha1, 1, NULL);
+		unsigned char unused[20];
+		const char *target = resolve_ref_unsafe(refname, unused, 1, NULL);
 		const char *target_nons = strip_namespace(target);
 
 		strbuf_addf(buf, "ref: %s\n", target_nons);
@@ -594,9 +594,11 @@ int main(int argc, char **argv)
 
 			if (strcmp(method, c->method)) {
 				const char *proto = getenv("SERVER_PROTOCOL");
-				if (proto && !strcmp(proto, "HTTP/1.1"))
+				if (proto && !strcmp(proto, "HTTP/1.1")) {
 					http_status(405, "Method Not Allowed");
-				else
+					hdr_str("Allow", !strcmp(c->method, "GET") ?
+						"GET, HEAD" : c->method);
+				} else
 					http_status(400, "Bad Request");
 				hdr_nocache();
 				end_headers();

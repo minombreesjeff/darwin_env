@@ -293,7 +293,7 @@ check_threading () {
 	(git format-patch --stdout "$@"; echo $? > status.out) |
 	# Prints everything between the Message-ID and In-Reply-To,
 	# and replaces all Message-ID-lookalikes by a sequence number
-	"$PERL_PATH" -ne '
+	perl -ne '
 		if (/^(message-id|references|in-reply-to)/i) {
 			$printing = 1;
 		} elsif (/^\S/) {
@@ -970,6 +970,59 @@ test_expect_success 'empty subject prefix does not have extra space' '
 	git format-patch -n -1 --stdout --subject-prefix= >patch &&
 	grep ^Subject: patch >actual &&
 	test_cmp expect actual
+'
+
+test_expect_success '--from=ident notices bogus ident' '
+	test_must_fail git format-patch -1 --stdout --from=foo >patch
+'
+
+test_expect_success '--from=ident replaces author' '
+	git format-patch -1 --stdout --from="Me <me@example.com>" >patch &&
+	cat >expect <<-\EOF &&
+	From: Me <me@example.com>
+
+	From: A U Thor <author@example.com>
+
+	EOF
+	sed -ne "/^From:/p; /^$/p; /^---$/q" <patch >patch.head &&
+	test_cmp expect patch.head
+'
+
+test_expect_success '--from uses committer ident' '
+	git format-patch -1 --stdout --from >patch &&
+	cat >expect <<-\EOF &&
+	From: C O Mitter <committer@example.com>
+
+	From: A U Thor <author@example.com>
+
+	EOF
+	sed -ne "/^From:/p; /^$/p; /^---$/q" <patch >patch.head &&
+	test_cmp expect patch.head
+'
+
+test_expect_success '--from omits redundant in-body header' '
+	git format-patch -1 --stdout --from="A U Thor <author@example.com>" >patch &&
+	cat >expect <<-\EOF &&
+	From: A U Thor <author@example.com>
+
+	EOF
+	sed -ne "/^From:/p; /^$/p; /^---$/q" <patch >patch.head &&
+	test_cmp expect patch.head
+'
+
+test_expect_success 'in-body headers trigger content encoding' '
+	GIT_AUTHOR_NAME="éxötìc" test_commit exotic &&
+	test_when_finished "git reset --hard HEAD^" &&
+	git format-patch -1 --stdout --from >patch &&
+	cat >expect <<-\EOF &&
+	From: C O Mitter <committer@example.com>
+	Content-Type: text/plain; charset=UTF-8
+
+	From: éxötìc <author@example.com>
+
+	EOF
+	sed -ne "/^From:/p; /^$/p; /^Content-Type/p; /^---$/q" <patch >patch.head &&
+	test_cmp expect patch.head
 '
 
 append_signoff()

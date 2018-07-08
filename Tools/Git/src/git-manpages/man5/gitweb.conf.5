@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: gitweb.conf
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/24/2013
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 11/27/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.3
+.\"    Source: Git 1.8.5
 .\"  Language: English
 .\"
-.TH "GITWEB\&.CONF" "5" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
+.TH "GITWEB\&.CONF" "5" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -420,8 +420,31 @@ $home_link
 (usually the main gitweb page, which contains the projects list)\&. It is used as the first component of gitweb\(cqs "breadcrumb trail":
 <home link> / <project> / <action>\&. Can be set at build time using the
 GITWEB_HOME_LINK_STR
-variable\&. By default it is set to "projects", as this link leads to the list of projects\&. Other popular choice it to set it to the name of site\&.
+variable\&. By default it is set to "projects", as this link leads to the list of projects\&. Another popular choice is to set it to the name of site\&. Note that it is treated as raw HTML so it should not be set from untrusted sources\&.
 .RE
+.PP
+@extra_breadcrumbs
+.RS 4
+Additional links to be added to the start of the breadcrumb trail before the home link, to pages that are logically "above" the gitweb projects list, such as the organization and department which host the gitweb server\&. Each element of the list is a reference to an array, in which element 0 is the link text (equivalent to
+$home_link_str) and element 1 is the target URL (equivalent to
+$home_link)\&.
+.sp
+For example, the following setting produces a breadcrumb trail like "home / dev / projects / \&..." where "projects" is the home link\&.
+.RE
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+    our @extra_breadcrumbs = (
+      [ \(aqhome\(aq => \(aqhttps://www\&.example\&.org/\(aq ],
+      [ \(aqdev\(aq  => \(aqhttps://dev\&.example\&.org/\(aq ],
+    );
+.fi
+.if n \{\
+.RE
+.\}
+.sp
 .PP
 $logo_url, $logo_label
 .RS 4
@@ -936,12 +959,12 @@ Project specific override is not supported\&.
 .PP
 javascript\-timezone
 .RS 4
-Enable and configure the ability to change a common timezone for dates in gitweb output via JavaScript\&. Dates in gitweb output include authordate and committerdate in "commit", "commitdiff" and "log" views, and taggerdate in "tag" view\&. Enabled by default\&.
+Enable and configure the ability to change a common time zone for dates in gitweb output via JavaScript\&. Dates in gitweb output include authordate and committerdate in "commit", "commitdiff" and "log" views, and taggerdate in "tag" view\&. Enabled by default\&.
 .sp
-The value is a list of three values: a default timezone (for if the client hasn\(cqt selected some other timezone and saved it in a cookie), a name of cookie where to store selected timezone, and a CSS class used to mark up dates for manipulation\&. If you want to turn this feature off, set "default" to empty list:
+The value is a list of three values: a default time zone (for if the client hasn\(cqt selected some other time zone and saved it in a cookie), a name of cookie where to store selected time zone, and a CSS class used to mark up dates for manipulation\&. If you want to turn this feature off, set "default" to empty list:
 []\&.
 .sp
-Typical gitweb config files will only change starting (default) timezone, and leave other elements at their default values:
+Typical gitweb config files will only change starting (default) time zone, and leave other elements at their default values:
 .sp
 .if n \{\
 .RS 4
@@ -955,7 +978,7 @@ $feature{\(aqjavascript\-timezone\(aq}{\(aqdefault\(aq}[0] = "utc";
 .sp
 The example configuration presented here is guaranteed to be backwards and forward compatible\&.
 .sp
-Timezone values can be "local" (for local timezone that browser uses), "utc" (what gitweb uses when JavaScript or this feature is disabled), or numerical timezones in the form of "+/\-HHMM", such as "+0200"\&.
+Time zone values can be "local" (for local time zone that browser uses), "utc" (what gitweb uses when JavaScript or this feature is disabled), or numerical time zones in the form of "+/\-HHMM", such as "+0200"\&.
 .sp
 Project specific override is not supported\&.
 .RE

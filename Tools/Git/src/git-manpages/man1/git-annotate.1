@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-annotate
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 05/24/2013
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 11/27/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.8.3
+.\"    Source: Git 1.8.5
 .\"  Language: English
 .\"
-.TH "GIT\-ANNOTATE" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
+.TH "GIT\-ANNOTATE" "1" "11/27/2013" "Git 1\&.8\&.5" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -61,9 +61,13 @@ config option\&.
 Include additional statistics at the end of blame output\&.
 .RE
 .PP
-\-L <start>,<end>
+\-L <start>,<end>, \-L :<regex>
 .RS 4
-Annotate only the given line range\&. <start> and <end> can take one of these forms:
+Annotate only the given line range\&. May be specified multiple times\&. Overlapping ranges are allowed\&.
+.sp
+<start> and <end> are optional\&. \(lq\-L <start>\(rq or \(lq\-L <start>,\(rq spans from <start> to end of file\&. \(lq\-L ,<end>\(rq spans from start of file to <end>\&.
+.sp
+<start> and <end> can take one of these forms:
 .sp
 .RS 4
 .ie n \{\
@@ -88,7 +92,9 @@ If <start> or <end> is a number, it specifies an absolute line number (lines cou
 .\}
 /regex/
 .sp
-This form will use the first line matching the given POSIX regex\&. If <end> is a regex, it will search starting at the line given by <start>\&.
+This form will use the first line matching the given POSIX regex\&. If <start> is a regex, it will search from the end of the previous
+\-L
+range, if any, otherwise from the start of file\&. If <start> is \(lq^/regex/\(rq, it will search from the start of file\&. If <end> is a regex, it will search starting at the line given by <start>\&.
 .RE
 .sp
 .RS 4
@@ -103,6 +109,10 @@ This form will use the first line matching the given POSIX regex\&. If <end> is 
 .sp
 This is only valid for <end> and will specify a number of lines before or after the line given by <start>\&.
 .RE
+.sp
+If \(lq:<regex>\(rq is given in place of <start> and <end>, it denotes the range from the first funcname line that matches <regex>, up to the next funcname line\&. \(lq:<regex>\(rq searches from the end of the previous
+\-L
+range, if any, otherwise from the start of file\&. \(lq^:<regex>\(rq searches from the start of file\&.
 .RE
 .PP
 \-l

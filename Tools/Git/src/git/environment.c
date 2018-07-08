@@ -22,6 +22,7 @@ int prefer_symlink_refs;
 int is_bare_repository_cfg = -1; /* unspecified */
 int log_all_ref_updates = -1; /* unspecified */
 int warn_ambiguous_refs = 1;
+int warn_on_object_refname_ambiguity = 1;
 int repository_format_version;
 const char *git_commit_encoding;
 const char *git_log_output_encoding;
@@ -37,7 +38,6 @@ size_t packed_git_window_size = DEFAULT_PACKED_GIT_WINDOW_SIZE;
 size_t packed_git_limit = DEFAULT_PACKED_GIT_LIMIT;
 size_t delta_base_cache_limit = 16 * 1024 * 1024;
 unsigned long big_file_threshold = 512 * 1024 * 1024;
-const char *log_pack_access;
 const char *pager_program;
 int pager_use_color = 1;
 const char *editor_program;
@@ -123,14 +123,13 @@ static char *expand_namespace(const char *raw_namespace)
 
 static void setup_git_env(void)
 {
+	const char *gitfile;
+
 	git_dir = getenv(GIT_DIR_ENVIRONMENT);
-	git_dir = git_dir ? xstrdup(git_dir) : NULL;
-	if (!git_dir) {
-		git_dir = read_gitfile(DEFAULT_GIT_DIR_ENVIRONMENT);
-		git_dir = git_dir ? xstrdup(git_dir) : NULL;
-	}
 	if (!git_dir)
 		git_dir = DEFAULT_GIT_DIR_ENVIRONMENT;
+	gitfile = read_gitfile(git_dir);
+	git_dir = xstrdup(gitfile ? gitfile : git_dir);
 	git_object_dir = getenv(DB_ENVIRONMENT);
 	if (!git_object_dir) {
 		git_object_dir = xmalloc(strlen(git_dir) + 9);
@@ -154,11 +153,6 @@ int is_bare_repository(void)
 {
 	/* if core.bare is not 'false', let's see if there is a work tree */
 	return is_bare_repository_cfg && !get_git_work_tree();
-}
-
-int have_git_dir(void)
-{
-	return !!git_dir;
 }
 
 const char *get_git_dir(void)

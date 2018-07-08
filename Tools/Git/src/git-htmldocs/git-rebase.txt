@@ -208,6 +208,9 @@ rebase.stat::
 rebase.autosquash::
 	If set to true enable '--autosquash' option by default.
 
+rebase.autostash::
+	If set to true enable '--autostash' option by default.
+
 OPTIONS
 -------
 --onto <newbase>::
@@ -319,7 +322,7 @@ You may find this (or --no-ff with an interactive rebase) helpful after
 reverting a topic branch merge, as this option recreates the topic branch with
 fresh commits so it can be remerged successfully without needing to "revert
 the reversion" (see the
-link:howto/revert-a-faulty-merge.txt[revert-a-faulty-merge How-To] for details).
+link:howto/revert-a-faulty-merge.html[revert-a-faulty-merge How-To] for details).
 
 --ignore-whitespace::
 --whitespace=<option>::
@@ -386,13 +389,22 @@ squash/fixup series.
 	the same ..., automatically modify the todo list of rebase -i
 	so that the commit marked for squashing comes right after the
 	commit to be modified, and change the action of the moved
-	commit from `pick` to `squash` (or `fixup`).
+	commit from `pick` to `squash` (or `fixup`).  Ignores subsequent
+	"fixup! " or "squash! " after the first, in case you referred to an
+	earlier fixup/squash with `git commit --fixup/--squash`.
 +
 This option is only valid when the '--interactive' option is used.
 +
 If the '--autosquash' option is enabled by default using the
 configuration variable `rebase.autosquash`, this option can be
 used to override and disable this setting.
+
+--[no-]autostash::
+	Automatically create a temporary stash before the operation
+	begins, and apply it after the operation ends.  This means
+	that you can run rebase on a dirty worktree.  However, use
+	with care: the final stash application after a successful
+	rebase might result in non-trivial conflicts.
 
 --no-ff::
 	With --interactive, cherry-pick all rebased commits instead of
@@ -404,7 +416,7 @@ Without --interactive, this is a synonym for --force-rebase.
 You may find this helpful after reverting a topic branch merge, as this option
 recreates the topic branch with fresh commits so it can be remerged
 successfully without needing to "revert the reversion" (see the
-link:howto/revert-a-faulty-merge.txt[revert-a-faulty-merge How-To] for details).
+link:howto/revert-a-faulty-merge.html[revert-a-faulty-merge How-To] for details).
 
 include::merge-strategies.txt[]
 

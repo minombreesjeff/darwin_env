@@ -132,8 +132,8 @@ int cmd_prune(int argc, const char **argv, const char *prefix)
 		OPT__DRY_RUN(&show_only, N_("do not remove, show only")),
 		OPT__VERBOSE(&verbose, N_("report pruned objects")),
 		OPT_BOOL(0, "progress", &show_progress, N_("show progress")),
-		OPT_DATE(0, "expire", &expire,
-			 N_("expire objects older than <time>")),
+		OPT_EXPIRY_DATE(0, "expire", &expire,
+				N_("expire objects older than <time>")),
 		OPT_END()
 	};
 	char *s;
@@ -165,7 +165,7 @@ int cmd_prune(int argc, const char **argv, const char *prefix)
 	stop_progress(&progress);
 	prune_object_dir(get_object_directory());
 
-	prune_packed_objects(show_only);
+	prune_packed_objects(show_only ? PRUNE_PACKED_DRY_RUN : 0);
 	remove_temporary_files(get_object_directory());
 	s = mkpathdup("%s/pack", get_object_directory());
 	remove_temporary_files(s);

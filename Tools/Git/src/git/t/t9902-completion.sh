@@ -69,7 +69,7 @@ run_completion ()
 	local -a COMPREPLY _words
 	local _cword
 	_words=( $1 )
-	test "${1: -1}" = ' ' && _words+=('')
+	test "${1: -1}" = ' ' && _words[${#_words[@]}+1]=''
 	(( _cword = ${#_words[@]} - 1 ))
 	__git_wrap__git_main && print_comp
 }
@@ -121,6 +121,140 @@ test_gitcomp_nl ()
 }
 
 invalid_variable_name='${foo.bar}'
+
+actual="$TRASH_DIRECTORY/actual"
+
+test_expect_success 'setup for __gitdir tests' '
+	mkdir -p subdir/subsubdir &&
+	git init otherrepo
+'
+
+test_expect_success '__gitdir - from command line (through $__git_dir)' '
+	echo "$TRASH_DIRECTORY/otherrepo/.git" >expected &&
+	(
+		__git_dir="$TRASH_DIRECTORY/otherrepo/.git" &&
+		__gitdir >"$actual"
+	) &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - repo as argument' '
+	echo "otherrepo/.git" >expected &&
+	__gitdir "otherrepo" >"$actual" &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - remote as argument' '
+	echo "remote" >expected &&
+	__gitdir "remote" >"$actual" &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - .git directory in cwd' '
+	echo ".git" >expected &&
+	__gitdir >"$actual" &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - .git directory in parent' '
+	echo "$(pwd -P)/.git" >expected &&
+	(
+		cd subdir/subsubdir &&
+		__gitdir >"$actual"
+	) &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - cwd is a .git directory' '
+	echo "." >expected &&
+	(
+		cd .git &&
+		__gitdir >"$actual"
+	) &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - parent is a .git directory' '
+	echo "$(pwd -P)/.git" >expected &&
+	(
+		cd .git/refs/heads &&
+		__gitdir >"$actual"
+	) &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - $GIT_DIR set while .git directory in cwd' '
+	echo "$TRASH_DIRECTORY/otherrepo/.git" >expected &&
+	(
+		GIT_DIR="$TRASH_DIRECTORY/otherrepo/.git" &&
+		export GIT_DIR &&
+		__gitdir >"$actual"
+	) &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - $GIT_DIR set while .git directory in parent' '
+	echo "$TRASH_DIRECTORY/otherrepo/.git" >expected &&
+	(
+		GIT_DIR="$TRASH_DIRECTORY/otherrepo/.git" &&
+		export GIT_DIR &&
+		cd subdir &&
+		__gitdir >"$actual"
+	) &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - non-existing $GIT_DIR' '
+	(
+		GIT_DIR="$TRASH_DIRECTORY/non-existing" &&
+		export GIT_DIR &&
+		test_must_fail __gitdir
+	)
+'
+
+test_expect_success '__gitdir - gitfile in cwd' '
+	echo "$(pwd -P)/otherrepo/.git" >expected &&
+	echo "gitdir: $TRASH_DIRECTORY/otherrepo/.git" >subdir/.git &&
+	test_when_finished "rm -f subdir/.git" &&
+	(
+		cd subdir &&
+		__gitdir >"$actual"
+	) &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - gitfile in parent' '
+	echo "$(pwd -P)/otherrepo/.git" >expected &&
+	echo "gitdir: $TRASH_DIRECTORY/otherrepo/.git" >subdir/.git &&
+	test_when_finished "rm -f subdir/.git" &&
+	(
+		cd subdir/subsubdir &&
+		__gitdir >"$actual"
+	) &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success SYMLINKS '__gitdir - resulting path avoids symlinks' '
+	echo "$(pwd -P)/otherrepo/.git" >expected &&
+	mkdir otherrepo/dir &&
+	test_when_finished "rm -rf otherrepo/dir" &&
+	ln -s otherrepo/dir link &&
+	test_when_finished "rm -f link" &&
+	(
+		cd link &&
+		__gitdir >"$actual"
+	) &&
+	test_cmp expected "$actual"
+'
+
+test_expect_success '__gitdir - not a git repository' '
+	(
+		cd subdir/subsubdir &&
+		GIT_CEILING_DIRECTORIES="$TRASH_DIRECTORY" &&
+		export GIT_CEILING_DIRECTORIES &&
+		test_must_fail __gitdir
+	)
+'
 
 test_expect_success '__gitcomp - trailing space - options' '
 	test_gitcomp "--re" "--dry-run --reuse-message= --reedit-message=
@@ -231,6 +365,7 @@ test_expect_success 'double dash "git" itself' '
 	--exec-path Z
 	--exec-path=
 	--html-path Z
+	--man-path Z
 	--info-path Z
 	--work-tree=
 	--namespace=
@@ -345,6 +480,83 @@ test_expect_success 'complete tree filename with metacharacters' '
 test_expect_success 'send-email' '
 	test_completion "git send-email --cov" "--cover-letter " &&
 	test_completion "git send-email ma" "master "
+'
+
+test_expect_success 'complete files' '
+	git init tmp && cd tmp &&
+	test_when_finished "cd .. && rm -rf tmp" &&
+
+	echo "expected" > .gitignore &&
+	echo "out" >> .gitignore &&
+
+	git add .gitignore &&
+	test_completion "git commit " ".gitignore" &&
+
+	git commit -m ignore &&
+
+	touch new &&
+	test_completion "git add " "new" &&
+
+	git add new &&
+	git commit -a -m new &&
+	test_completion "git add " "" &&
+
+	git mv new modified &&
+	echo modify > modified &&
+	test_completion "git add " "modified" &&
+
+	touch untracked &&
+
+	: TODO .gitignore should not be here &&
+	test_completion "git rm " <<-\EOF &&
+	.gitignore
+	modified
+	EOF
+
+	test_completion "git clean " "untracked" &&
+
+	: TODO .gitignore should not be here &&
+	test_completion "git mv " <<-\EOF &&
+	.gitignore
+	modified
+	EOF
+
+	mkdir dir &&
+	touch dir/file-in-dir &&
+	git add dir/file-in-dir &&
+	git commit -m dir &&
+
+	mkdir untracked-dir &&
+
+	: TODO .gitignore should not be here &&
+	test_completion "git mv modified " <<-\EOF &&
+	.gitignore
+	dir
+	modified
+	untracked
+	untracked-dir
+	EOF
+
+	test_completion "git commit " "modified" &&
+
+	: TODO .gitignore should not be here &&
+	test_completion "git ls-files " <<-\EOF
+	.gitignore
+	dir
+	modified
+	EOF
+
+	touch momified &&
+	test_completion "git add mom" "momified"
+'
+
+test_expect_failure 'complete with tilde expansion' '
+	git init tmp && cd tmp &&
+	test_when_finished "cd .. && rm -rf tmp" &&
+
+	touch ~/tmp/file &&
+
+	test_completion "git add ~/tmp/" "~/tmp/file"
 '
 
 test_done

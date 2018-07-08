@@ -652,16 +652,23 @@ test_expect_success numbers '
 	test_cmp expect actual
 '
 
+test_expect_success '--int is at least 64 bits' '
+	git config giga.watts 121g &&
+	echo 129922760704 >expect &&
+	git config --int --get giga.watts >actual &&
+	test_cmp expect actual
+'
+
 test_expect_success 'invalid unit' '
 	git config aninvalid.unit "1auto" &&
 	echo 1auto >expect &&
 	git config aninvalid.unit >actual &&
 	test_cmp expect actual &&
-	cat > expect <<-\EOF
-	fatal: bad config value for '\''aninvalid.unit'\'' in .git/config
+	cat >expect <<-\EOF
+	fatal: bad numeric config value '\''1auto'\'' for '\''aninvalid.unit'\'' in .git/config: invalid unit
 	EOF
 	test_must_fail git config --int --get aninvalid.unit 2>actual &&
-	test_cmp actual expect
+	test_i18ncmp expect actual
 '
 
 cat > expect << EOF
@@ -1085,6 +1092,31 @@ test_expect_success 'barf on incomplete string' '
 	EOF
 	test_must_fail git config --get section.key >actual 2>error &&
 	grep " line 3 " error
+'
+
+test_expect_success 'urlmatch' '
+	cat >.git/config <<-\EOF &&
+	[http]
+		sslVerify
+	[http "https://weak.example.com"]
+		sslVerify = false
+		cookieFile = /tmp/cookie.txt
+	EOF
+
+	echo true >expect &&
+	git config --bool --get-urlmatch http.SSLverify https://good.example.com >actual &&
+	test_cmp expect actual &&
+
+	echo false >expect &&
+	git config --bool --get-urlmatch http.sslverify https://weak.example.com >actual &&
+	test_cmp expect actual &&
+
+	{
+		echo http.cookiefile /tmp/cookie.txt &&
+		echo http.sslverify false
+	} >expect &&
+	git config --get-urlmatch HTTP https://weak.example.com >actual &&
+	test_cmp expect actual
 '
 
 # good section hygiene

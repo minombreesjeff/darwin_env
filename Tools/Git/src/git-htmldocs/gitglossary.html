@@ -896,6 +896,23 @@ to point at the new commit.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+<a id="def_commit-ish"></a>commit-ish (also committish)
+</dt>
+<dd>
+<p>
+        A <a href="#def_commit_object">commit object</a> or an
+        <a href="#def_object">object</a> that can be recursively dereferenced to
+        a commit object.
+        The following are all commit-ishes:
+        a commit object,
+        a <a href="#def_tag_object">tag object</a> that points to a commit
+        object,
+        a tag object that points to a tag object that points to a
+        commit object,
+        etc.
+</p>
+</dd>
+<dt class="hdlist1">
 <a id="def_core_git"></a>core Git
 </dt>
 <dd>
@@ -945,7 +962,7 @@ to point at the new commit.</p></div>
 while the HEAD is detached. They update the HEAD to point at the tip
 of the updated history without affecting any branch.  Commands that
 update or inquire information <em>about</em> the current branch (e.g. <code>git
-branch --set-upstream-to</code> that sets what remote tracking branch the
+branch --set-upstream-to</code> that sets what remote-tracking branch the
 current branch integrates with) obviously do not work, as there is no
 (real) current branch to ask about in this state.</p></div>
 </dd>
@@ -1221,7 +1238,7 @@ This commit is referred to as a "merge commit", or sometimes just a
         The default upstream <a href="#def_repository">repository</a>. Most projects have
         at least one upstream project which they track. By default
         <em>origin</em> is used for that purpose. New upstream updates
-        will be fetched into remote <a href="#def_remote_tracking_branch">remote-tracking branches</a> named
+        will be fetched into <a href="#def_remote_tracking_branch">remote-tracking branches</a> named
         origin/name-of-upstream-branch, which you can see using
         <code>git branch -r</code>.
 </p>
@@ -1299,10 +1316,88 @@ parenthesis <code>(</code>, a comma-separated list of zero or more "magic words"
 and a close parentheses <code>)</code>, and the remainder is the pattern to match
 against the path.</p></div>
 <div class="paragraph"><p>The "magic signature" consists of an ASCII symbol that is not
-alphanumeric. Currently only the slash <code>/</code> is recognized as a
-"magic signature": it makes the pattern match from the root of
-the working tree, even when you are running the command from
-inside a subdirectory.</p></div>
+alphanumeric.</p></div>
+<div class="openblock">
+<div class="content">
+<div class="dlist"><dl>
+<dt class="hdlist1">
+top <code>/</code>
+</dt>
+<dd>
+<p>
+        The magic word <code>top</code> (mnemonic: <code>/</code>) makes the pattern match
+        from the root of the working tree, even when you are running
+        the command from inside a subdirectory.
+</p>
+</dd>
+<dt class="hdlist1">
+literal
+</dt>
+<dd>
+<p>
+        Wildcards in the pattern such as <code>*</code> or <code>?</code> are treated
+        as literal characters.
+</p>
+</dd>
+<dt class="hdlist1">
+icase
+</dt>
+<dd>
+<p>
+        Case insensitive match.
+</p>
+</dd>
+<dt class="hdlist1">
+glob
+</dt>
+<dd>
+<p>
+        Git treats the pattern as a shell glob suitable for
+        consumption by fnmatch(3) with the FNM_PATHNAME flag:
+        wildcards in the pattern will not match a / in the pathname.
+        For example, "Documentation/&#42;.html" matches
+        "Documentation/git.html" but not "Documentation/ppc/ppc.html"
+        or "tools/perf/Documentation/perf.html".
+</p>
+<div class="paragraph"><p>Two consecutive asterisks ("<code>**</code>") in patterns matched against
+full pathname may have special meaning:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+A leading "<code>**</code>" followed by a slash means match in all
+   directories. For example, "<code>**/foo</code>" matches file or directory
+   "<code>foo</code>" anywhere, the same as pattern "<code>foo</code>". "**/foo/bar"
+   matches file or directory "<code>bar</code>" anywhere that is directly
+   under directory "<code>foo</code>".
+</p>
+</li>
+<li>
+<p>
+A trailing "/<strong>" matches everything inside. For example,
+   "abc/</strong>" matches all files inside directory "abc", relative
+   to the location of the <code>.gitignore</code> file, with infinite depth.
+</p>
+</li>
+<li>
+<p>
+A slash followed by two consecutive asterisks then a slash
+   matches zero or more directories. For example, "<code>a/**/b</code>"
+   matches "<code>a/b</code>", "<code>a/x/b</code>", "<code>a/x/y/b</code>" and so on.
+</p>
+</li>
+<li>
+<p>
+Other consecutive asterisks are considered invalid.
+</p>
+<div class="paragraph"><p>Glob magic is incompatible with literal magic.</p></div>
+</li>
+</ul></div>
+</dd>
+</dl></div>
+</div></div>
+<div class="paragraph"><p>Currently only the slash <code>/</code> is recognized as the "magic signature",
+but it is envisioned that we will support more types of magic in later
+versions of Git.</p></div>
 <div class="paragraph"><p>A pathspec with only a colon means "there is no pathspec". This form
 should not be combined with other pathspec.</p></div>
 </dd>
@@ -1403,11 +1498,19 @@ should not be combined with other pathspec.</p></div>
 </dt>
 <dd>
 <p>
-        A 40-byte hex representation of a <a href="#def_SHA1">SHA-1</a> or a name that
-        denotes a particular <a href="#def_object">object</a>. They may be stored in
-        a file under <code>$GIT_DIR/refs/</code> directory, or
-        in the <code>$GIT_DIR/packed-refs</code> file.
+        A name that begins with <code>refs/</code> (e.g. <code>refs/heads/master</code>)
+        that points to an <a href="#def_object_name">object name</a> or another
+        ref (the latter is called a <a href="#def_symref">symbolic ref</a>).
+        For convenience, a ref can sometimes be abbreviated when used
+        as an argument to a Git command; see <a href="gitrevisions.html">gitrevisions(7)</a>
+        for details.
+        Refs are stored in the <a href="#def_repository">repository</a>.
 </p>
+<div class="paragraph"><p>The ref namespace is hierarchical.
+Different subhierarchies are used for different purposes (e.g. the
+<code>refs/heads/</code> hierarchy is used to represent local branches).</p></div>
+<div class="paragraph"><p>There are a few special-purpose refs that do not begin with <code>refs/</code>.
+The most notable example is <code>HEAD</code>.</p></div>
 </dd>
 <dt class="hdlist1">
 <a id="def_reflog"></a>reflog
@@ -1435,12 +1538,13 @@ should not be combined with other pathspec.</p></div>
 </dt>
 <dd>
 <p>
-        A regular Git <a href="#def_branch">branch</a> that is used to follow changes from
-        another <a href="#def_repository">repository</a>. A remote-tracking
-        branch should not contain direct modifications or have local commits
-        made to it. A remote-tracking branch can usually be
-        identified as the right-hand-side <a href="#def_ref">ref</a> in a Pull:
-        <a href="#def_refspec">refspec</a>.
+        A <a href="#def_ref">ref</a> that is used to follow changes from another
+        <a href="#def_repository">repository</a>. It typically looks like
+        <em>refs/remotes/foo/bar</em> (indicating that it tracks a branch named
+        <em>bar</em> in a remote named <em>foo</em>), and matches the right-hand-side of
+        a configured fetch <a href="#def_refspec">refspec</a>. A remote-tracking
+        branch should not contain direct modifications or have local
+        commits made to it.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1585,11 +1689,22 @@ should not be combined with other pathspec.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
-<a id="def_tree-ish"></a>tree-ish
+<a id="def_tree-ish"></a>tree-ish (also treeish)
 </dt>
 <dd>
 <p>
-        A <a href="#def_ref">ref</a> pointing to either a <a href="#def_commit_object">commit         object</a>, a <a href="#def_tree_object">tree object</a>, or a <a href="#def_tag_object">tag         object</a> pointing to a tag or commit or tree object.
+        A <a href="#def_tree_object">tree object</a> or an <a href="#def_object">object</a>
+        that can be recursively dereferenced to a tree object.
+        Dereferencing a <a href="#def_commit_object">commit object</a> yields the
+        tree object corresponding to the <a href="#def_revision">revision</a>'s
+        top <a href="#def_directory">directory</a>.
+        The following are all tree-ishes:
+        a <a href="#def_commit-ish">commit-ish</a>,
+        a tree object,
+        a <a href="#def_tag_object">tag object</a> that points to a tree object,
+        a tag object that points to a tag object that points to a tree
+        object,
+        etc.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1654,7 +1769,7 @@ should not be combined with other pathspec.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-02-05 21:07:26 PST
+Last updated 2013-08-20 08:40:27 PDT
 </div>
 </div>
 </body>

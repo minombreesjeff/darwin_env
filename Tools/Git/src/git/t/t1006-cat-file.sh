@@ -36,66 +36,54 @@ $content"
     '
 
     test_expect_success "Type of $type is correct" '
-        test $type = "$(git cat-file -t $sha1)"
+	echo $type >expect &&
+	git cat-file -t $sha1 >actual &&
+	test_cmp expect actual
     '
 
     test_expect_success "Size of $type is correct" '
-        test $size = "$(git cat-file -s $sha1)"
+	echo $size >expect &&
+	git cat-file -s $sha1 >actual &&
+	test_cmp expect actual
     '
 
     test -z "$content" ||
     test_expect_success "Content of $type is correct" '
-	expect="$(maybe_remove_timestamp "$content" $no_ts)"
-	actual="$(maybe_remove_timestamp "$(git cat-file $type $sha1)" $no_ts)"
-
-        if test "z$expect" = "z$actual"
-	then
-		: happy
-	else
-		echo "Oops: expected $expect"
-		echo "but got $actual"
-		false
-        fi
+	maybe_remove_timestamp "$content" $no_ts >expect &&
+	maybe_remove_timestamp "$(git cat-file $type $sha1)" $no_ts >actual &&
+	test_cmp expect actual
     '
 
     test_expect_success "Pretty content of $type is correct" '
-	expect="$(maybe_remove_timestamp "$pretty_content" $no_ts)"
-	actual="$(maybe_remove_timestamp "$(git cat-file -p $sha1)" $no_ts)"
-        if test "z$expect" = "z$actual"
-	then
-		: happy
-	else
-		echo "Oops: expected $expect"
-		echo "but got $actual"
-		false
-        fi
+	maybe_remove_timestamp "$pretty_content" $no_ts >expect &&
+	maybe_remove_timestamp "$(git cat-file -p $sha1)" $no_ts >actual &&
+	test_cmp expect actual
     '
 
     test -z "$content" ||
     test_expect_success "--batch output of $type is correct" '
-	expect="$(maybe_remove_timestamp "$batch_output" $no_ts)"
-	actual="$(maybe_remove_timestamp "$(echo $sha1 | git cat-file --batch)" $no_ts)"
-        if test "z$expect" = "z$actual"
-	then
-		: happy
-	else
-		echo "Oops: expected $expect"
-		echo "but got $actual"
-		false
-        fi
+	maybe_remove_timestamp "$batch_output" $no_ts >expect &&
+	maybe_remove_timestamp "$(echo $sha1 | git cat-file --batch)" $no_ts >actual &&
+	test_cmp expect actual
     '
 
     test_expect_success "--batch-check output of $type is correct" '
-	expect="$sha1 $type $size"
-	actual="$(echo_without_newline $sha1 | git cat-file --batch-check)"
-        if test "z$expect" = "z$actual"
-	then
-		: happy
-	else
-		echo "Oops: expected $expect"
-		echo "but got $actual"
-		false
-        fi
+	echo "$sha1 $type $size" >expect &&
+	echo_without_newline $sha1 | git cat-file --batch-check >actual &&
+	test_cmp expect actual
+    '
+
+    test_expect_success "custom --batch-check format" '
+	echo "$type $sha1" >expect &&
+	echo $sha1 | git cat-file --batch-check="%(objecttype) %(objectname)" >actual &&
+	test_cmp expect actual
+    '
+
+    test_expect_success '--batch-check with %(rest)' '
+	echo "$type this is some extra content" >expect &&
+	echo "$sha1    this is some extra content" |
+		git cat-file --batch-check="%(objecttype) %(rest)" >actual &&
+	test_cmp expect actual
     '
 }
 
@@ -109,6 +97,14 @@ test_expect_success "setup" '
 '
 
 run_tests 'blob' $hello_sha1 $hello_size "$hello_content" "$hello_content"
+
+test_expect_success '--batch-check without %(rest) considers whole line' '
+	echo "$hello_sha1 blob $hello_size" >expect &&
+	git update-index --add --cacheinfo 100644 $hello_sha1 "white space" &&
+	test_when_finished "git update-index --remove \"white space\"" &&
+	echo ":white space" | git cat-file --batch-check >actual &&
+	test_cmp expect actual
+'
 
 tree_sha1=$(git write-tree)
 tree_size=33
@@ -196,6 +192,12 @@ $tag_content
 
 test_expect_success "--batch-check for an emtpy line" '
     test " missing" = "$(echo | git cat-file --batch-check)"
+'
+
+test_expect_success 'empty --batch-check notices missing object' '
+	echo "$_z40 missing" >expect &&
+	echo "$_z40" | git cat-file --batch-check="" >actual &&
+	test_cmp expect actual
 '
 
 batch_input="$hello_sha1

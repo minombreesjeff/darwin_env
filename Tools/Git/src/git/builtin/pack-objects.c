@@ -38,17 +38,18 @@ struct object_entry {
 	void *delta_data;	/* cached delta (uncompressed) */
 	unsigned long delta_size;	/* delta data size (uncompressed) */
 	unsigned long z_delta_size;	/* delta data size (compressed) */
-	unsigned int hash;	/* name hint hash */
 	enum object_type type;
 	enum object_type in_pack_type;	/* could be delta */
+	uint32_t hash;			/* name hint hash */
 	unsigned char in_pack_header_size;
-	unsigned char preferred_base; /* we do not pack this, but is available
-				       * to be used as the base object to delta
-				       * objects against.
-				       */
-	unsigned char no_try_delta;
-	unsigned char tagged; /* near the very tip of refs */
-	unsigned char filled; /* assigned write-order */
+	unsigned preferred_base:1; /*
+				    * we do not pack this, but is available
+				    * to be used as the base object to delta
+				    * objects against.
+				    */
+	unsigned no_try_delta:1;
+	unsigned tagged:1; /* near the very tip of refs */
+	unsigned filled:1; /* assigned write-order */
 };
 
 /*
@@ -859,9 +860,9 @@ static void rehash_objects(void)
 	}
 }
 
-static unsigned name_hash(const char *name)
+static uint32_t name_hash(const char *name)
 {
-	unsigned c, hash = 0;
+	uint32_t c, hash = 0;
 
 	if (!name)
 		return 0;
@@ -908,7 +909,7 @@ static int add_object_entry(const unsigned char *sha1, enum object_type type,
 	struct packed_git *p, *found_pack = NULL;
 	off_t found_offset = 0;
 	int ix;
-	unsigned hash = name_hash(name);
+	uint32_t hash = name_hash(name);
 
 	ix = nr_objects ? locate_object_entry_hash(sha1) : -1;
 	if (ix >= 0) {
@@ -1809,7 +1810,7 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 static void try_to_free_from_threads(size_t size)
 {
 	read_lock();
-	release_pack_memory(size, -1);
+	release_pack_memory(size);
 	read_unlock();
 }
 
@@ -2378,7 +2379,7 @@ static void get_object_list(int ac, const char **av)
 
 	if (prepare_revision_walk(&revs))
 		die("revision walk setup failed");
-	mark_edges_uninteresting(revs.commits, &revs, show_edge);
+	mark_edges_uninteresting(&revs, show_edge);
 	traverse_commit_list(&revs, show_commit, show_object, NULL);
 
 	if (keep_unreachable)

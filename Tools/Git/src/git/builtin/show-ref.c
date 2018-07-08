@@ -31,6 +31,9 @@ static int show_ref(const char *refname, const unsigned char *sha1, int flag, vo
 	const char *hex;
 	unsigned char peeled[20];
 
+	if (show_head && !strcmp(refname, "HEAD"))
+		goto match;
+
 	if (tags_only || heads_only) {
 		int match;
 
@@ -103,7 +106,7 @@ static int add_existing(const char *refname, const unsigned char *sha1, int flag
  */
 static int exclude_existing(const char *match)
 {
-	static struct string_list existing_refs = STRING_LIST_INIT_NODUP;
+	static struct string_list existing_refs = STRING_LIST_INIT_DUP;
 	char buf[1024];
 	int matchlen = match ? strlen(match) : 0;
 
@@ -162,15 +165,15 @@ static int help_callback(const struct option *opt, const char *arg, int unset)
 }
 
 static const struct option show_ref_options[] = {
-	OPT_BOOLEAN(0, "tags", &tags_only, N_("only show tags (can be combined with heads)")),
-	OPT_BOOLEAN(0, "heads", &heads_only, N_("only show heads (can be combined with tags)")),
-	OPT_BOOLEAN(0, "verify", &verify, N_("stricter reference checking, "
+	OPT_BOOL(0, "tags", &tags_only, N_("only show tags (can be combined with heads)")),
+	OPT_BOOL(0, "heads", &heads_only, N_("only show heads (can be combined with tags)")),
+	OPT_BOOL(0, "verify", &verify, N_("stricter reference checking, "
 		    "requires exact ref path")),
-	{ OPTION_BOOLEAN, 'h', NULL, &show_head, NULL,
-	  N_("show the HEAD reference"),
-	  PARSE_OPT_NOARG | PARSE_OPT_HIDDEN },
-	OPT_BOOLEAN(0, "head", &show_head, N_("show the HEAD reference")),
-	OPT_BOOLEAN('d', "dereference", &deref_tags,
+	OPT_HIDDEN_BOOL('h', NULL, &show_head,
+			N_("show the HEAD reference, even if it would be filtered out")),
+	OPT_BOOL(0, "head", &show_head,
+	  N_("show the HEAD reference, even if it would be filtered out")),
+	OPT_BOOL('d', "dereference", &deref_tags,
 		    N_("dereference tags into object IDs")),
 	{ OPTION_CALLBACK, 's', "hash", &abbrev, N_("n"),
 	  N_("only show SHA1 hash using <n> digits"),

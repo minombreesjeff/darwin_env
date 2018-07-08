@@ -761,6 +761,7 @@ git-show-ref(1) Manual Page
 commit IDs. Results can be filtered using a pattern and tags can be
 dereferenced into object IDs. Additionally, it can be used to test whether a
 particular ref exists.</p></div>
+<div class="paragraph"><p>By default, shows the tags, heads, and remote refs.</p></div>
 <div class="paragraph"><p>The --exclude-existing form is a filter that does the inverse, it shows the
 refs from stdin that don&#8217;t exist in the local repository.</p></div>
 <div class="paragraph"><p>Use of this utility is encouraged in favor of directly accessing files under
@@ -776,7 +777,7 @@ the <code>.git</code> directory.</p></div>
 </dt>
 <dd>
 <p>
-        Show the HEAD reference.
+        Show the HEAD reference, even if it would normally be filtered out.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -787,9 +788,9 @@ the <code>.git</code> directory.</p></div>
 </dt>
 <dd>
 <p>
-        Limit to only "refs/heads" and "refs/tags", respectively.  These
-        options are not mutually exclusive; when given both, references stored
-        in "refs/heads" and "refs/tags" are displayed.
+        Limit to "refs/heads" and "refs/tags", respectively.  These options
+        are not mutually exclusive; when given both, references stored in
+        "refs/heads" and "refs/tags" are displayed.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -970,7 +971,7 @@ flag, so you can do</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-04-21 19:25:38 PDT
+Last updated 2013-08-20 08:40:27 PDT
 </div>
 </div>
 </body>

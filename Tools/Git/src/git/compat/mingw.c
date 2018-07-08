@@ -491,7 +491,6 @@ int mingw_stat(const char *file_name, struct stat *buf)
 	return do_stat_internal(1, file_name, buf);
 }
 
-#undef fstat
 int mingw_fstat(int fd, struct stat *buf)
 {
 	HANDLE fh = (HANDLE)_get_osfhandle(fd);
@@ -841,8 +840,8 @@ struct pinfo_t {
 	struct pinfo_t *next;
 	pid_t pid;
 	HANDLE proc;
-} pinfo_t;
-struct pinfo_t *pinfo = NULL;
+};
+static struct pinfo_t *pinfo = NULL;
 CRITICAL_SECTION pinfo_cs;
 
 static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **env,
@@ -1086,6 +1085,12 @@ int mingw_kill(pid_t pid, int sig)
 		errno = err_win_to_posix(GetLastError());
 		CloseHandle(h);
 		return -1;
+	} else if (pid > 0 && sig == 0) {
+		HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+		if (h) {
+			CloseHandle(h);
+			return 0;
+		}
 	}
 
 	errno = EINVAL;
@@ -1253,7 +1258,7 @@ static int WSAAPI getaddrinfo_stub(const char *node, const char *service,
 	else
 		sin->sin_addr.s_addr = INADDR_LOOPBACK;
 	ai->ai_addr = (struct sockaddr *)sin;
-	ai->ai_next = 0;
+	ai->ai_next = NULL;
 	return 0;
 }
 

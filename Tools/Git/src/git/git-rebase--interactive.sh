@@ -80,6 +80,18 @@ amend="$state_dir"/amend
 rewritten_list="$state_dir"/rewritten-list
 rewritten_pending="$state_dir"/rewritten-pending
 
+strategy_args=
+if test -n "$do_merge"
+then
+	strategy_args=${strategy:+--strategy=$strategy}
+	eval '
+		for strategy_opt in '"$strategy_opts"'
+		do
+			strategy_args="$strategy_args -X$(git rev-parse --sq-quote "${strategy_opt#--}")"
+		done
+	'
+fi
+
 GIT_CHERRY_PICK_HELP="$resolvemsg"
 export GIT_CHERRY_PICK_HELP
 
@@ -239,7 +251,7 @@ pick_one () {
 
 	test -d "$rewritten" &&
 		pick_one_preserving_merges "$@" && return
-	output git cherry-pick $empty_args $ff "$@"
+	output eval git cherry-pick "$strategy_args" $empty_args $ff "$@"
 }
 
 pick_one_preserving_merges () {
@@ -340,9 +352,9 @@ pick_one_preserving_merges () {
 			msg_content="$(commit_message $sha1)"
 			# No point in merging the first parent, that's HEAD
 			new_parents=${new_parents# $first_parent}
-			if ! do_with_author output \
-				git merge --no-ff ${strategy:+-s $strategy} -m \
-					"$msg_content" $new_parents
+			merge_args="--no-log --no-ff"
+			if ! do_with_author output eval \
+			'git merge $merge_args $strategy_args -m "$msg_content" $new_parents'
 			then
 				printf "%s\n" "$msg_content" > "$GIT_DIR"/MERGE_MSG
 				die_with_patch $sha1 "Error redoing merge $sha1"
@@ -350,7 +362,7 @@ pick_one_preserving_merges () {
 			echo "$sha1 $(git rev-parse HEAD^0)" >> "$rewritten_list"
 			;;
 		*)
-			output git cherry-pick "$@" ||
+			output eval git cherry-pick "$strategy_args" "$@" ||
 				die_with_patch $sha1 "Could not pick $sha1"
 			;;
 		esac
@@ -628,17 +640,16 @@ do_next () {
 		"$GIT_DIR"/hooks/post-rewrite rebase < "$rewritten_list"
 		true # we don't care if this hook failed
 	fi &&
-	rm -rf "$state_dir" &&
-	git gc --auto &&
 	warn "Successfully rebased and updated $head_name."
 
-	exit
+	return 1 # not failure; just to break the do_rest loop
 }
 
+# can only return 0, when the infinite loop breaks
 do_rest () {
 	while :
 	do
-		do_next
+		do_next || break
 	done
 }
 
@@ -661,7 +672,7 @@ skip_unnecessary_picks () {
 				;;
 			esac
 			;;
-		3,#*|3,)
+		3,"$comment_char"*|3,)
 			# copy comments
 			;;
 		*)
@@ -679,6 +690,32 @@ skip_unnecessary_picks () {
 	die "Could not skip unnecessary pick commands"
 }
 
+transform_todo_ids () {
+	while read -r command rest
+	do
+		case "$command" in
+		"$comment_char"* | exec)
+			# Be careful for oddball commands like 'exec'
+			# that do not have a SHA-1 at the beginning of $rest.
+			;;
+		*)
+			sha1=$(git rev-parse --verify --quiet "$@" ${rest%% *}) &&
+			rest="$sha1 ${rest#* }"
+			;;
+		esac
+		printf '%s\n' "$command${rest:+ }$rest"
+	done <"$todo" >"$todo.new" &&
+	mv -f "$todo.new" "$todo"
+}
+
+expand_todo_ids() {
+	transform_todo_ids
+}
+
+collapse_todo_ids() {
+	transform_todo_ids --short
+}
+
 # Rearrange the todo list that has both "pick sha1 msg" and
 # "pick sha1 fixup!/squash! msg" appears in it so that the latter
 # comes immediately after the former, and change "pick" to
@@ -690,8 +727,22 @@ rearrange_squash () {
 		case "$message" in
 		"squash! "*|"fixup! "*)
 			action="${message%%!*}"
-			rest="${message#*! }"
-			echo "$sha1 $action $rest"
+			rest=$message
+			prefix=
+			# skip all squash! or fixup! (but save for later)
+			while :
+			do
+				case "$rest" in
+				"squash! "*|"fixup! "*)
+					prefix="$prefix${rest%%!*},"
+					rest="${rest#*! }"
+					;;
+				*)
+					break
+					;;
+				esac
+			done
+			echo "$sha1 $action $prefix $rest"
 			# if it's a single word, try to resolve to a full sha1 and
 			# emit a second copy. This allows us to match on both message
 			# and on sha1 prefix
@@ -700,7 +751,7 @@ rearrange_squash () {
 				if test -n "$fullsha"; then
 					# prefix the action to uniquely identify this line as
 					# intended for full sha1 match
-					echo "$sha1 +$action $fullsha"
+					echo "$sha1 +$action $prefix $fullsha"
 				fi
 			fi
 		esac
@@ -715,7 +766,7 @@ rearrange_squash () {
 		esac
 		printf '%s\n' "$pick $sha1 $message"
 		used="$used$sha1 "
-		while read -r squash action msg_content
+		while read -r squash action msg_prefix msg_content
 		do
 			case " $used" in
 			*" $squash "*) continue ;;
@@ -731,7 +782,8 @@ rearrange_squash () {
 				case "$message" in "$msg_content"*) emit=1;; esac ;;
 			esac
 			if test $emit = 1; then
-				printf '%s\n' "$action $squash $action! $msg_content"
+				real_prefix=$(echo "$msg_prefix" | sed "s/,/! /g")
+				printf '%s\n' "$action $squash ${real_prefix}$msg_content"
 				used="$used$squash "
 			fi
 		done <"$1.sq"
@@ -805,15 +857,18 @@ first and then run 'git rebase --continue' again."
 
 	require_clean_work_tree "rebase"
 	do_rest
+	return 0
 	;;
 skip)
 	git rerere clear
 
 	do_rest
+	return 0
 	;;
 edit-todo)
 	git stripspace --strip-comments <"$todo" >"$todo".new
 	mv -f "$todo".new "$todo"
+	collapse_todo_ids
 	append_todo_help
 	git stripspace --comment-lines >>"$todo" <<\EOF
 
@@ -825,6 +880,7 @@ EOF
 
 	git_sequence_editor "$todo" ||
 		die "Could not execute editor"
+	expand_todo_ids
 
 	exit
 	;;
@@ -837,12 +893,15 @@ comment_for_reflog start
 
 if test ! -z "$switch_to"
 then
+	GIT_REFLOG_ACTION="$GIT_REFLOG_ACTION: checkout $switch_to"
 	output git checkout "$switch_to" -- ||
-		die "Could not checkout $switch_to"
+	die "Could not checkout $switch_to"
+
+	comment_for_reflog start
 fi
 
 orig_head=$(git rev-parse --verify HEAD) || die "No HEAD?"
-mkdir "$state_dir" || die "Could not create temporary $state_dir"
+mkdir -p "$state_dir" || die "Could not create temporary $state_dir"
 
 : > "$state_dir"/interactive || die "Could not mark as interactive"
 write_basic_state
@@ -978,8 +1037,11 @@ git_sequence_editor "$todo" ||
 has_action "$todo" ||
 	die_abort "Nothing to do"
 
+expand_todo_ids
+
 test -d "$rewritten" || test -n "$force_rebase" || skip_unnecessary_picks
 
+GIT_REFLOG_ACTION="$GIT_REFLOG_ACTION: checkout $onto_name"
 output git checkout $onto || die_abort "could not detach HEAD"
 git update-ref ORIG_HEAD $orig_head
 do_rest

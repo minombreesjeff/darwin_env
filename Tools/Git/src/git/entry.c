@@ -79,7 +79,7 @@ static int create_file(const char *path, unsigned int mode)
 	return open(path, O_WRONLY | O_CREAT | O_EXCL, mode);
 }
 
-static void *read_blob_entry(struct cache_entry *ce, unsigned long *size)
+static void *read_blob_entry(const struct cache_entry *ce, unsigned long *size)
 {
 	enum object_type type;
 	void *new = read_sha1_file(ce->sha1, &type, size);
@@ -92,7 +92,7 @@ static void *read_blob_entry(struct cache_entry *ce, unsigned long *size)
 	return NULL;
 }
 
-static int open_output_fd(char *path, struct cache_entry *ce, int to_tempfile)
+static int open_output_fd(char *path, const struct cache_entry *ce, int to_tempfile)
 {
 	int symlink = (ce->ce_mode & S_IFMT) != S_IFREG;
 	if (to_tempfile) {
@@ -115,7 +115,7 @@ static int fstat_output(int fd, const struct checkout *state, struct stat *st)
 	return 0;
 }
 
-static int streaming_write_entry(struct cache_entry *ce, char *path,
+static int streaming_write_entry(const struct cache_entry *ce, char *path,
 				 struct stream_filter *filter,
 				 const struct checkout *state, int to_tempfile,
 				 int *fstat_done, struct stat *statbuf)
@@ -136,7 +136,8 @@ static int streaming_write_entry(struct cache_entry *ce, char *path,
 	return result;
 }
 
-static int write_entry(struct cache_entry *ce, char *path, const struct checkout *state, int to_tempfile)
+static int write_entry(struct cache_entry *ce,
+		       char *path, const struct checkout *state, int to_tempfile)
 {
 	unsigned int ce_mode_s_ifmt = ce->ce_mode & S_IFMT;
 	int fd, ret, fstat_done = 0;
@@ -199,9 +200,9 @@ static int write_entry(struct cache_entry *ce, char *path, const struct checkout
 		break;
 	case S_IFGITLINK:
 		if (to_tempfile)
-			return error("cannot create temporary subproject %s", path);
+			return error("cannot create temporary submodule %s", path);
 		if (mkdir(path, 0777) < 0)
-			return error("cannot create subproject directory %s", path);
+			return error("cannot create submodule directory %s", path);
 		break;
 	default:
 		return error("unknown file mode for %s in index", path);
@@ -233,18 +234,30 @@ static int check_path(const char *path, int len, struct stat *st, int skiplen)
 	return lstat(path, st);
 }
 
-int checkout_entry(struct cache_entry *ce, const struct checkout *state, char *topath)
+/*
+ * Write the contents from ce out to the working tree.
+ *
+ * When topath[] is not NULL, instead of writing to the working tree
+ * file named by ce, a temporary file is created by this function and
+ * its name is returned in topath[], which must be able to hold at
+ * least TEMPORARY_FILENAME_LENGTH bytes long.
+ */
+int checkout_entry(struct cache_entry *ce,
+		   const struct checkout *state, char *topath)
 {
-	static char path[PATH_MAX + 1];
+	static struct strbuf path_buf = STRBUF_INIT;
+	char *path;
 	struct stat st;
-	int len = state->base_dir_len;
+	int len;
 
 	if (topath)
 		return write_entry(ce, topath, state, 1);
 
-	memcpy(path, state->base_dir, len);
-	strcpy(path + len, ce->name);
-	len += ce_namelen(ce);
+	strbuf_reset(&path_buf);
+	strbuf_add(&path_buf, state->base_dir, state->base_dir_len);
+	strbuf_add(&path_buf, ce->name, ce_namelen(ce));
+	path = path_buf.buf;
+	len = path_buf.len;
 
 	if (!check_path(path, len, &st, state->base_dir_len)) {
 		unsigned changed = ce_match_stat(ce, &st, CE_MATCH_IGNORE_VALID|CE_MATCH_IGNORE_SKIP_WORKTREE);

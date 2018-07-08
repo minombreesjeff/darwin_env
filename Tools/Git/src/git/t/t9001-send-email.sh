@@ -23,7 +23,6 @@ test_expect_success $PREREQ \
       echo do
       echo "  echo \"!\$a!\""
       echo "done >commandline\$output"
-      test_have_prereq MINGW && echo "dos2unix commandline\$output"
       echo "cat > msgtxt\$output"
       ) >fake.sendmail &&
      chmod +x ./fake.sendmail &&
@@ -1090,55 +1089,6 @@ test_expect_success $PREREQ 'threading but no chain-reply-to' '
 		--nochain-reply-to \
 		$patches $patches >stdout &&
 	grep "In-Reply-To: " stdout
-'
-
-test_expect_success $PREREQ 'warning with an implicit --chain-reply-to' '
-	git send-email \
-	--dry-run \
-	--from="Example <nobody@example.com>" \
-	--to=nobody@example.com \
-	outdir/000?-*.patch 2>errors >out &&
-	grep "no-chain-reply-to" errors
-'
-
-test_expect_success $PREREQ 'no warning with an explicit --chain-reply-to' '
-	git send-email \
-	--dry-run \
-	--from="Example <nobody@example.com>" \
-	--to=nobody@example.com \
-	--chain-reply-to \
-	outdir/000?-*.patch 2>errors >out &&
-	! grep "no-chain-reply-to" errors
-'
-
-test_expect_success $PREREQ 'no warning with an explicit --no-chain-reply-to' '
-	git send-email \
-	--dry-run \
-	--from="Example <nobody@example.com>" \
-	--to=nobody@example.com \
-	--nochain-reply-to \
-	outdir/000?-*.patch 2>errors >out &&
-	! grep "no-chain-reply-to" errors
-'
-
-test_expect_success $PREREQ 'no warning with sendemail.chainreplyto = false' '
-	git config sendemail.chainreplyto false &&
-	git send-email \
-	--dry-run \
-	--from="Example <nobody@example.com>" \
-	--to=nobody@example.com \
-	outdir/000?-*.patch 2>errors >out &&
-	! grep "no-chain-reply-to" errors
-'
-
-test_expect_success $PREREQ 'no warning with sendemail.chainreplyto = true' '
-	git config sendemail.chainreplyto true &&
-	git send-email \
-	--dry-run \
-	--from="Example <nobody@example.com>" \
-	--to=nobody@example.com \
-	outdir/000?-*.patch 2>errors >out &&
-	! grep "no-chain-reply-to" errors
 '
 
 test_expect_success $PREREQ 'sendemail.to works' '

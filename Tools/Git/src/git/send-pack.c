@@ -5,6 +5,7 @@
 #include "sideband.h"
 #include "run-command.h"
 #include "remote.h"
+#include "connect.h"
 #include "send-pack.h"
 #include "quote.h"
 #include "transport.h"
@@ -226,6 +227,7 @@ int send_pack(struct send_pack_args *args,
 		case REF_STATUS_REJECT_ALREADY_EXISTS:
 		case REF_STATUS_REJECT_FETCH_FIRST:
 		case REF_STATUS_REJECT_NEEDS_FORCE:
+		case REF_STATUS_REJECT_STALE:
 		case REF_STATUS_UPTODATE:
 			continue;
 		default:
@@ -300,8 +302,12 @@ int send_pack(struct send_pack_args *args,
 				shutdown(fd[0], SHUT_WR);
 			if (use_sideband)
 				finish_async(&demux);
+			fd[1] = -1;
 			return -1;
 		}
+		if (!args->stateless_rpc)
+			/* Closed by pack_objects() via start_command() */
+			fd[1] = -1;
 	}
 	if (args->stateless_rpc && cmds_sent)
 		packet_flush(out);

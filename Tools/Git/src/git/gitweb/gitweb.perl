@@ -85,6 +85,9 @@ our $project_maxdepth = "++GITWEB_PROJECT_MAXDEPTH++";
 # string of the home link on top of all pages
 our $home_link_str = "++GITWEB_HOME_LINK_STR++";
 
+# extra breadcrumbs preceding the home link
+our @extra_breadcrumbs = ();
+
 # name of your site or organization to appear in page titles
 # replace this with something more descriptive for clearer bookmarks
 our $site_name = "++GITWEB_SITENAME++"
@@ -3982,7 +3985,9 @@ sub print_nav_breadcrumbs_path {
 sub print_nav_breadcrumbs {
 	my %opts = @_;
 
-	print $cgi->a({-href => esc_url($home_link)}, $home_link_str) . " / ";
+	for my $crumb (@extra_breadcrumbs, [ $home_link_str => $home_link ]) {
+		print $cgi->a({-href => esc_url($crumb->[1])}, $crumb->[0]) . " / ";
+	}
 	if (defined $project) {
 		my @dirname = split '/', $project;
 		my $projectbasename = pop @dirname;
@@ -4030,8 +4035,8 @@ sub print_search_form {
 	      $cgi->input({-name=>"h", -value=>$search_hash, -type=>"hidden"}) . "\n" .
 	      $cgi->popup_menu(-name => 'st', -default => 'commit',
 	                       -values => ['commit', 'grep', 'author', 'committer', 'pickaxe']) .
-	      $cgi->sup($cgi->a({-href => href(action=>"search_help")}, "?")) .
-	      " search:\n",
+	      " " . $cgi->a({-href => href(action=>"search_help"),
+			     -title => "search help" }, "?") . " search:\n",
 	      $cgi->textfield(-name => "s", -value => $searchtext, -override => 1) . "\n" .
 	      "<span title=\"Extended regular expression\">" .
 	      $cgi->checkbox(-name => 'sr', -value => 1, -label => 're',
@@ -6463,7 +6468,7 @@ sub git_summary {
 	print "<div class=\"title\">&nbsp;</div>\n";
 	print "<table class=\"projects_list\">\n" .
 	      "<tr id=\"metadata_desc\"><td>description</td><td>" . esc_html($descr) . "</td></tr>\n";
-        unless ($omit_owner) {
+        if ($owner and not $omit_owner) {
 	        print  "<tr id=\"metadata_owner\"><td>owner</td><td>" . esc_html($owner) . "</td></tr>\n";
         }
 	if (defined $cd{'rfc2822'}) {
@@ -6626,6 +6631,7 @@ sub git_blame_common {
 			$hash_base, '--', $file_name
 			or die_error(500, "Open git-blame --porcelain failed");
 	}
+	binmode $fd, ':utf8';
 
 	# incremental blame data returns early
 	if ($format eq 'data') {

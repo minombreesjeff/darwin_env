@@ -1,6 +1,8 @@
 #include "builtin.h"
 #include "pkt-line.h"
 #include "fetch-pack.h"
+#include "remote.h"
+#include "connect.h"
 
 static const char fetch_pack_usage[] =
 "git fetch-pack [--all] [--stdin] [--quiet|-q] [--keep|-k] [--thin] "
@@ -100,6 +102,10 @@ int cmd_fetch_pack(int argc, const char **argv, const char *prefix)
 			pack_lockfile_ptr = &pack_lockfile;
 			continue;
 		}
+		if (!strcmp("--check-self-contained-and-connected", arg)) {
+			args.check_self_contained_and_connected = 1;
+			continue;
+		}
 		usage(fetch_pack_usage);
 	}
 
@@ -150,6 +156,11 @@ int cmd_fetch_pack(int argc, const char **argv, const char *prefix)
 			 sought, nr_sought, pack_lockfile_ptr);
 	if (pack_lockfile) {
 		printf("lock %s\n", pack_lockfile);
+		fflush(stdout);
+	}
+	if (args.check_self_contained_and_connected &&
+	    args.self_contained_and_connected) {
+		printf("connectivity-ok\n");
 		fflush(stdout);
 	}
 	close(fd[0]);

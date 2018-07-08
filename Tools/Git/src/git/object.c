@@ -43,16 +43,17 @@ int type_from_string(const char *str)
 	die("invalid object type \"%s\"", str);
 }
 
-static unsigned int hash_obj(struct object *obj, unsigned int n)
+static unsigned int hash_obj(const unsigned char *sha1, unsigned int n)
 {
 	unsigned int hash;
-	memcpy(&hash, obj->sha1, sizeof(unsigned int));
-	return hash % n;
+	memcpy(&hash, sha1, sizeof(unsigned int));
+	/* Assumes power-of-2 hash sizes in grow_object_hash */
+	return hash & (n - 1);
 }
 
 static void insert_obj_hash(struct object *obj, struct object **hash, unsigned int size)
 {
-	unsigned int j = hash_obj(obj, size);
+	unsigned int j = hash_obj(obj->sha1, size);
 
 	while (hash[j]) {
 		j++;
@@ -62,22 +63,15 @@ static void insert_obj_hash(struct object *obj, struct object **hash, unsigned i
 	hash[j] = obj;
 }
 
-static unsigned int hashtable_index(const unsigned char *sha1)
-{
-	unsigned int i;
-	memcpy(&i, sha1, sizeof(unsigned int));
-	return i % obj_hash_size;
-}
-
 struct object *lookup_object(const unsigned char *sha1)
 {
-	unsigned int i;
+	unsigned int i, first;
 	struct object *obj;
 
 	if (!obj_hash)
 		return NULL;
 
-	i = hashtable_index(sha1);
+	first = i = hash_obj(sha1, obj_hash_size);
 	while ((obj = obj_hash[i]) != NULL) {
 		if (!hashcmp(sha1, obj->sha1))
 			break;
@@ -85,12 +79,26 @@ struct object *lookup_object(const unsigned char *sha1)
 		if (i == obj_hash_size)
 			i = 0;
 	}
+	if (obj && i != first) {
+		/*
+		 * Move object to where we started to look for it so
+		 * that we do not need to walk the hash table the next
+		 * time we look for it.
+		 */
+		struct object *tmp = obj_hash[i];
+		obj_hash[i] = obj_hash[first];
+		obj_hash[first] = tmp;
+	}
 	return obj;
 }
 
 static void grow_object_hash(void)
 {
 	int i;
+	/*
+	 * Note that this size must always be power-of-2 to match hash_obj
+	 * above.
+	 */
 	int new_hash_size = obj_hash_size < 32 ? 32 : 2 * obj_hash_size;
 	struct object **new_hash;
 
@@ -135,7 +143,7 @@ struct object *lookup_unknown_object(const unsigned char *sha1)
 struct object *parse_object_buffer(const unsigned char *sha1, enum object_type type, unsigned long size, void *buffer, int *eaten_p)
 {
 	struct object *obj;
-	int eaten = 0;
+	*eaten_p = 0;
 
 	obj = NULL;
 	if (type == OBJ_BLOB) {
@@ -154,7 +162,7 @@ struct object *parse_object_buffer(const unsigned char *sha1, enum object_type t
 			if (!tree->object.parsed) {
 				if (parse_tree_buffer(tree, buffer, size))
 					return NULL;
-				eaten = 1;
+				*eaten_p = 1;
 			}
 		}
 	} else if (type == OBJ_COMMIT) {
@@ -164,7 +172,7 @@ struct object *parse_object_buffer(const unsigned char *sha1, enum object_type t
 				return NULL;
 			if (!commit->buffer) {
 				commit->buffer = buffer;
-				eaten = 1;
+				*eaten_p = 1;
 			}
 			obj = &commit->object;
 		}
@@ -181,7 +189,6 @@ struct object *parse_object_buffer(const unsigned char *sha1, enum object_type t
 	}
 	if (obj && obj->type == OBJ_NONE)
 		obj->type = type;
-	*eaten_p = eaten;
 	return obj;
 }
 
@@ -255,16 +262,21 @@ int object_list_contains(struct object_list *list, struct object *obj)
 	return 0;
 }
 
-void add_object_array(struct object *obj, const char *name, struct object_array *array)
-{
-	add_object_array_with_mode(obj, name, array, S_IFINVALID);
-}
+/*
+ * A zero-length string to which object_array_entry::name can be
+ * initialized without requiring a malloc/free.
+ */
+static char object_array_slopbuf[1];
 
-void add_object_array_with_mode(struct object *obj, const char *name, struct object_array *array, unsigned mode)
+static void add_object_array_with_mode_context(struct object *obj, const char *name,
+					       struct object_array *array,
+					       unsigned mode,
+					       struct object_context *context)
 {
 	unsigned nr = array->nr;
 	unsigned alloc = array->alloc;
 	struct object_array_entry *objects = array->objects;
+	struct object_array_entry *entry;
 
 	if (nr >= alloc) {
 		alloc = (alloc + 32) * 2;
@@ -272,28 +284,86 @@ void add_object_array_with_mode(struct object *obj, const char *name, struct obj
 		array->alloc = alloc;
 		array->objects = objects;
 	}
-	objects[nr].item = obj;
-	objects[nr].name = name;
-	objects[nr].mode = mode;
+	entry = &objects[nr];
+	entry->item = obj;
+	if (!name)
+		entry->name = NULL;
+	else if (!*name)
+		/* Use our own empty string instead of allocating one: */
+		entry->name = object_array_slopbuf;
+	else
+		entry->name = xstrdup(name);
+	entry->mode = mode;
+	entry->context = context;
 	array->nr = ++nr;
+}
+
+void add_object_array(struct object *obj, const char *name, struct object_array *array)
+{
+	add_object_array_with_mode(obj, name, array, S_IFINVALID);
+}
+
+void add_object_array_with_mode(struct object *obj, const char *name, struct object_array *array, unsigned mode)
+{
+	add_object_array_with_mode_context(obj, name, array, mode, NULL);
+}
+
+void add_object_array_with_context(struct object *obj, const char *name, struct object_array *array, struct object_context *context)
+{
+	if (context)
+		add_object_array_with_mode_context(obj, name, array, context->mode, context);
+	else
+		add_object_array_with_mode_context(obj, name, array, S_IFINVALID, context);
+}
+
+void object_array_filter(struct object_array *array,
+			 object_array_each_func_t want, void *cb_data)
+{
+	unsigned nr = array->nr, src, dst;
+	struct object_array_entry *objects = array->objects;
+
+	for (src = dst = 0; src < nr; src++) {
+		if (want(&objects[src], cb_data)) {
+			if (src != dst)
+				objects[dst] = objects[src];
+			dst++;
+		} else {
+			if (objects[src].name != object_array_slopbuf)
+				free(objects[src].name);
+		}
+	}
+	array->nr = dst;
+}
+
+/*
+ * Return true iff array already contains an entry with name.
+ */
+static int contains_name(struct object_array *array, const char *name)
+{
+	unsigned nr = array->nr, i;
+	struct object_array_entry *object = array->objects;
+
+	for (i = 0; i < nr; i++, object++)
+		if (!strcmp(object->name, name))
+			return 1;
+	return 0;
 }
 
 void object_array_remove_duplicates(struct object_array *array)
 {
-	unsigned int ref, src, dst;
+	unsigned nr = array->nr, src;
 	struct object_array_entry *objects = array->objects;
 
-	for (ref = 0; ref + 1 < array->nr; ref++) {
-		for (src = ref + 1, dst = src;
-		     src < array->nr;
-		     src++) {
-			if (!strcmp(objects[ref].name, objects[src].name))
-				continue;
-			if (src != dst)
-				objects[dst] = objects[src];
-			dst++;
+	array->nr = 0;
+	for (src = 0; src < nr; src++) {
+		if (!contains_name(array, objects[src].name)) {
+			if (src != array->nr)
+				objects[array->nr] = objects[src];
+			array->nr++;
+		} else {
+			if (objects[src].name != object_array_slopbuf)
+				free(objects[src].name);
 		}
-		array->nr = dst;
 	}
 }
 

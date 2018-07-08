@@ -9,8 +9,10 @@
 #include "fetch-pack.h"
 #include "remote.h"
 #include "run-command.h"
+#include "connect.h"
 #include "transport.h"
 #include "version.h"
+#include "prio-queue.h"
 
 static int transfer_unpack_limit = -1;
 static int fetch_unpack_limit = -1;
@@ -37,7 +39,7 @@ static int marked;
  */
 #define MAX_IN_VAIN 256
 
-static struct commit_list *rev_list;
+static struct prio_queue rev_list = { compare_commits_by_commit_date };
 static int non_common_revs, multi_ack, use_sideband, allow_tip_sha1_in_want;
 
 static void rev_list_push(struct commit *commit, int mark)
@@ -49,7 +51,7 @@ static void rev_list_push(struct commit *commit, int mark)
 			if (parse_commit(commit))
 				return;
 
-		commit_list_insert_by_date(commit, &rev_list);
+		prio_queue_put(&rev_list, commit);
 
 		if (!(commit->object.flags & COMMON))
 			non_common_revs++;
@@ -122,10 +124,10 @@ static const unsigned char *get_rev(void)
 		unsigned int mark;
 		struct commit_list *parents;
 
-		if (rev_list == NULL || non_common_revs == 0)
+		if (rev_list.nr == 0 || non_common_revs == 0)
 			return NULL;
 
-		commit = rev_list->item;
+		commit = prio_queue_get(&rev_list);
 		if (!commit->object.parsed)
 			parse_commit(commit);
 		parents = commit->parents;
@@ -152,8 +154,6 @@ static const unsigned char *get_rev(void)
 				mark_common(parents->item, 1, 0);
 			parents = parents->next;
 		}
-
-		rev_list = rev_list->next;
 	}
 
 	return commit->object.sha1;
@@ -183,36 +183,6 @@ static void consume_shallow_list(struct fetch_pack_args *args, int fd)
 			die("git fetch-pack: expected shallow list");
 		}
 	}
-}
-
-struct write_shallow_data {
-	struct strbuf *out;
-	int use_pack_protocol;
-	int count;
-};
-
-static int write_one_shallow(const struct commit_graft *graft, void *cb_data)
-{
-	struct write_shallow_data *data = cb_data;
-	const char *hex = sha1_to_hex(graft->sha1);
-	data->count++;
-	if (data->use_pack_protocol)
-		packet_buf_write(data->out, "shallow %s", hex);
-	else {
-		strbuf_addstr(data->out, hex);
-		strbuf_addch(data->out, '\n');
-	}
-	return 0;
-}
-
-static int write_shallow_commits(struct strbuf *out, int use_pack_protocol)
-{
-	struct write_shallow_data data;
-	data.out = out;
-	data.use_pack_protocol = use_pack_protocol;
-	data.count = 0;
-	for_each_commit_graft(write_one_shallow, &data);
-	return data.count;
 }
 
 static enum ack_type get_ack(int fd, unsigned char *result_sha1)
@@ -442,7 +412,7 @@ static int find_common(struct fetch_pack_args *args,
 					in_vain = 0;
 					got_continue = 1;
 					if (ack == ACK_ready) {
-						rev_list = NULL;
+						clear_prio_queue(&rev_list);
 						got_ready = 1;
 					}
 					break;
@@ -505,7 +475,7 @@ static int mark_complete(const char *refname, const unsigned char *sha1, int fla
 		struct commit *commit = (struct commit *)o;
 		if (!(commit->object.flags & COMPLETE)) {
 			commit->object.flags |= COMPLETE;
-			commit_list_insert_by_date(commit, &complete);
+			commit_list_insert(commit, &complete);
 		}
 	}
 	return 0;
@@ -622,6 +592,7 @@ static int everything_local(struct fetch_pack_args *args,
 	if (!args->depth) {
 		for_each_ref(mark_complete, NULL);
 		for_each_alternate_ref(mark_alternate_complete, NULL);
+		commit_list_sort_by_date(&complete);
 		if (cutoff)
 			mark_recent_complete_commits(args, cutoff);
 	}
@@ -688,9 +659,10 @@ static int get_pack(struct fetch_pack_args *args,
 	const char *argv[22];
 	char keep_arg[256];
 	char hdr_arg[256];
-	const char **av;
+	const char **av, *cmd_name;
 	int do_keep = args->keep_pack;
 	struct child_process cmd;
+	int ret;
 
 	memset(&demux, 0, sizeof(demux));
 	if (use_sideband) {
@@ -734,7 +706,7 @@ static int get_pack(struct fetch_pack_args *args,
 	if (do_keep) {
 		if (pack_lockfile)
 			cmd.out = -1;
-		*av++ = "index-pack";
+		*av++ = cmd_name = "index-pack";
 		*av++ = "--stdin";
 		if (!args->quiet && !args->no_progress)
 			*av++ = "-v";
@@ -747,11 +719,14 @@ static int get_pack(struct fetch_pack_args *args,
 				strcpy(keep_arg + s, "localhost");
 			*av++ = keep_arg;
 		}
+		if (args->check_self_contained_and_connected)
+			*av++ = "--check-self-contained-and-connected";
 	}
 	else {
-		*av++ = "unpack-objects";
+		*av++ = cmd_name = "unpack-objects";
 		if (args->quiet || args->no_progress)
 			*av++ = "-q";
+		args->check_self_contained_and_connected = 0;
 	}
 	if (*hdr_arg)
 		*av++ = hdr_arg;
@@ -766,14 +741,23 @@ static int get_pack(struct fetch_pack_args *args,
 	cmd.in = demux.out;
 	cmd.git_cmd = 1;
 	if (start_command(&cmd))
-		die("fetch-pack: unable to fork off %s", argv[0]);
+		die("fetch-pack: unable to fork off %s", cmd_name);
 	if (do_keep && pack_lockfile) {
 		*pack_lockfile = index_pack_lockfile(cmd.out);
 		close(cmd.out);
 	}
 
-	if (finish_command(&cmd))
-		die("%s failed", argv[0]);
+	if (!use_sideband)
+		/* Closed by start_command() */
+		xd[0] = -1;
+
+	ret = finish_command(&cmd);
+	if (!ret || (args->check_self_contained_and_connected && ret == 1))
+		args->self_contained_and_connected =
+			args->check_self_contained_and_connected &&
+			ret == 0;
+	else
+		die("%s failed", cmd_name);
 	if (use_sideband && finish_async(&demux))
 		die("error in sideband demultiplexer");
 	return 0;
@@ -784,27 +768,6 @@ static int cmp_ref_by_name(const void *a_, const void *b_)
 	const struct ref *a = *((const struct ref **)a_);
 	const struct ref *b = *((const struct ref **)b_);
 	return strcmp(a->name, b->name);
-}
-
-static void setup_alternate_shallow(void)
-{
-	struct strbuf sb = STRBUF_INIT;
-	int fd;
-
-	check_shallow_file_for_update();
-	fd = hold_lock_file_for_update(&shallow_lock, git_path("shallow"),
-				       LOCK_DIE_ON_ERROR);
-	if (write_shallow_commits(&sb, 0)) {
-		if (write_in_full(fd, sb.buf, sb.len) != sb.len)
-			die_errno("failed to write to %s", shallow_lock.filename);
-		alternate_shallow_file = shallow_lock.filename;
-	} else
-		/*
-		 * is_repository_shallow() sees empty string as "no
-		 * shallow file".
-		 */
-		alternate_shallow_file = "";
-	strbuf_release(&sb);
 }
 
 static struct ref *do_fetch_pack(struct fetch_pack_args *args,
@@ -887,7 +850,9 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 	if (args->stateless_rpc)
 		packet_flush(fd[1]);
 	if (args->depth > 0)
-		setup_alternate_shallow();
+		setup_alternate_shallow(&shallow_lock, &alternate_shallow_file);
+	else
+		alternate_shallow_file = NULL;
 	if (get_pack(args, fd, pack_lockfile))
 		die("git fetch-pack: fetch failed.");
 
@@ -978,7 +943,7 @@ struct ref *fetch_pack(struct fetch_pack_args *args,
 	}
 	ref_cpy = do_fetch_pack(args, fd, ref, sought, nr_sought, pack_lockfile);
 
-	if (alternate_shallow_file) {
+	if (args->depth > 0 && alternate_shallow_file) {
 		if (*alternate_shallow_file == '\0') { /* --unshallow */
 			unlink_or_warn(git_path("shallow"));
 			rollback_lock_file(&shallow_lock);

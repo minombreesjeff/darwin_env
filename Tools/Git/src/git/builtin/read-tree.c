@@ -66,7 +66,7 @@ static int exclude_per_directory_cb(const struct option *opt, const char *arg,
 	return 0;
 }
 
-static void debug_stage(const char *label, struct cache_entry *ce,
+static void debug_stage(const char *label, const struct cache_entry *ce,
 			struct unpack_trees_options *o)
 {
 	printf("%s ", label);
@@ -80,7 +80,8 @@ static void debug_stage(const char *label, struct cache_entry *ce,
 		       sha1_to_hex(ce->sha1));
 }
 
-static int debug_merge(struct cache_entry **stages, struct unpack_trees_options *o)
+static int debug_merge(const struct cache_entry * const *stages,
+		       struct unpack_trees_options *o)
 {
 	int i;
 
@@ -177,7 +178,7 @@ int cmd_read_tree(int argc, const char **argv, const char *unused_prefix)
 
 	if (1 < opts.index_only + opts.update)
 		die("-u and -i at the same time makes no sense");
-	if ((opts.update||opts.index_only) && !opts.merge)
+	if ((opts.update || opts.index_only) && !opts.merge)
 		die("%s is meaningless without -m, --reset, or --prefix",
 		    opts.update ? "-u" : "-i");
 	if ((opts.dir && !opts.update))

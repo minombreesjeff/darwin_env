@@ -10,6 +10,7 @@
 #include "color.h"
 #include "gpg-interface.h"
 #include "sequencer.h"
+#include "line-log.h"
 
 struct decoration name_decoration = { "object names" };
 
@@ -616,6 +617,9 @@ void show_log(struct rev_info *opt)
 	ctx.fmt = opt->commit_format;
 	ctx.mailmap = opt->mailmap;
 	ctx.color = opt->diffopt.use_color;
+	ctx.output_encoding = get_log_output_encoding();
+	if (opt->from_ident.mail_begin && opt->from_ident.name_begin)
+		ctx.from_ident = &opt->from_ident;
 	pretty_print_commit(&ctx, commit, &msgbuf);
 
 	if (opt->add_signoff)
@@ -734,7 +738,7 @@ static int log_tree_diff(struct rev_info *opt, struct commit *commit, struct log
 	sha1 = commit->tree->object.sha1;
 
 	/* Root commit? */
-	parents = commit->parents;
+	parents = get_saved_parents(opt, commit);
 	if (!parents) {
 		if (opt->show_root_diff) {
 			diff_root_tree_sha1(sha1, "", &opt->diffopt);
@@ -795,6 +799,9 @@ int log_tree_commit(struct rev_info *opt, struct commit *commit)
 	log.commit = commit;
 	log.parent = NULL;
 	opt->loginfo = &log;
+
+	if (opt->line_level_traverse)
+		return line_log_print(opt, commit);
 
 	shown = log_tree_diff(opt, commit, &log);
 	if (!shown && opt->loginfo && opt->always_show_header) {

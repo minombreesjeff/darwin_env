@@ -212,11 +212,17 @@ static void show_datestring(const char *flag, const char *datestr)
 	show(buffer);
 }
 
-static int show_file(const char *arg)
+static int show_file(const char *arg, int output_prefix)
 {
 	show_default();
 	if ((filter & (DO_NONFLAGS|DO_NOREV)) == (DO_NONFLAGS|DO_NOREV)) {
-		show(arg);
+		if (output_prefix) {
+			const char *prefix = startup_info->prefix;
+			show(prefix_filename(prefix,
+					     prefix ? strlen(prefix) : 0,
+					     arg));
+		} else
+			show(arg);
 		return 1;
 	}
 	return 0;
@@ -340,9 +346,9 @@ static int cmd_parseopt(int argc, const char **argv, const char *prefix)
 		NULL
 	};
 	static struct option parseopt_opts[] = {
-		OPT_BOOLEAN(0, "keep-dashdash", &keep_dashdash,
+		OPT_BOOL(0, "keep-dashdash", &keep_dashdash,
 					N_("keep the `--` passed as an arg")),
-		OPT_BOOLEAN(0, "stop-at-non-option", &stop_at_non_option,
+		OPT_BOOL(0, "stop-at-non-option", &stop_at_non_option,
 					N_("stop parsing after the "
 					   "first non-option argument")),
 		OPT_END(),
@@ -470,6 +476,7 @@ N_("git rev-parse --parseopt [options] -- [<args>...]\n"
 int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 {
 	int i, as_is = 0, verify = 0, quiet = 0, revs_count = 0, type = 0;
+	int output_prefix = 0;
 	unsigned char sha1[20];
 	const char *name = NULL;
 
@@ -478,21 +485,6 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 
 	if (argc > 1 && !strcmp("--sq-quote", argv[1]))
 		return cmd_sq_quote(argc - 2, argv + 2);
-
-	if (argc == 2 && !strcmp("--local-env-vars", argv[1])) {
-		int i;
-		for (i = 0; local_repo_env[i]; i++)
-			printf("%s\n", local_repo_env[i]);
-		return 0;
-	}
-
-	if (argc > 2 && !strcmp(argv[1], "--resolve-git-dir")) {
-		const char *gitdir = resolve_gitdir(argv[2]);
-		if (!gitdir)
-			die("not a gitdir '%s'", argv[2]);
-		puts(gitdir);
-		return 0;
-	}
 
 	if (argc > 1 && !strcmp("-h", argv[1]))
 		usage(builtin_rev_parse_usage);
@@ -503,7 +495,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 		const char *arg = argv[i];
 
 		if (as_is) {
-			if (show_file(arg) && as_is < 2)
+			if (show_file(arg, output_prefix) && as_is < 2)
 				verify_filename(prefix, arg, 0);
 			continue;
 		}
@@ -527,11 +519,18 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 				as_is = 2;
 				/* Pass on the "--" if we show anything but files.. */
 				if (filter & (DO_FLAGS | DO_REVS))
-					show_file(arg);
+					show_file(arg, 0);
 				continue;
 			}
 			if (!strcmp(arg, "--default")) {
 				def = argv[i+1];
+				i++;
+				continue;
+			}
+			if (!strcmp(arg, "--prefix")) {
+				prefix = argv[i+1];
+				startup_info->prefix = prefix;
+				output_prefix = 1;
 				i++;
 				continue;
 			}
@@ -647,6 +646,12 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 				for_each_remote_ref(show_reference, NULL);
 				continue;
 			}
+			if (!strcmp(arg, "--local-env-vars")) {
+				int i;
+				for (i = 0; local_repo_env[i]; i++)
+					printf("%s\n", local_repo_env[i]);
+				continue;
+			}
 			if (!strcmp(arg, "--show-toplevel")) {
 				const char *work_tree = get_git_work_tree();
 				if (work_tree)
@@ -695,6 +700,13 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 					die_errno("unable to get current working directory");
 				len = strlen(cwd);
 				printf("%s%s.git\n", cwd, len && cwd[len-1] != '/' ? "/" : "");
+				continue;
+			}
+			if (!strcmp(arg, "--resolve-git-dir")) {
+				const char *gitdir = resolve_gitdir(argv[i+1]);
+				if (!gitdir)
+					die("not a gitdir '%s'", argv[i+1]);
+				puts(gitdir);
 				continue;
 			}
 			if (!strcmp(arg, "--is-inside-git-dir")) {
@@ -754,7 +766,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 		if (verify)
 			die_no_single_rev(quiet);
 		as_is = 1;
-		if (!show_file(arg))
+		if (!show_file(arg, output_prefix))
 			continue;
 		verify_filename(prefix, arg, 1);
 	}

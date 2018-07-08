@@ -746,7 +746,7 @@ git(1) Manual Page
 <h2 id="_synopsis">SYNOPSIS</h2>
 <div class="sectionbody">
 <div class="verseblock">
-<pre class="content"><em>git</em> [--version] [--help] [-c &lt;name&gt;=&lt;value&gt;]
+<pre class="content"><em>git</em> [--version] [--help] [-C &lt;path&gt;] [-c &lt;name&gt;=&lt;value&gt;]
     [--exec-path[=&lt;path&gt;]] [--html-path] [--man-path] [--info-path]
     [-p|--paginate|--no-pager] [--no-replace-objects] [--bare]
     [--git-dir=&lt;path&gt;] [--work-tree=&lt;path&gt;] [--namespace=&lt;name&gt;]
@@ -799,6 +799,26 @@ can be viewed at <code>http://git-htmldocs.googlecode.com/git/git.html</code>.</
 displayed. See <a href="git-help.html">git-help(1)</a> for more information,
 because <code>git --help ...</code> is converted internally into <code>git
 help ...</code>.</p></div>
+</dd>
+<dt class="hdlist1">
+-C &lt;path&gt;
+</dt>
+<dd>
+<p>
+        Run as if git was started in <em>&lt;path&gt;</em> instead of the current working
+        directory.  When multiple <code>-C</code> options are given, each subsequent
+        non-absolute <code>-C &lt;path&gt;</code> is interpreted relative to the preceding <code>-C
+        &lt;path&gt;</code>.
+</p>
+<div class="paragraph"><p>This option affects options that expect path name like <code>--git-dir</code> and
+<code>--work-tree</code> in that their interpretations of the path names would be
+made relative to the working directory caused by the <code>-C</code> option. For
+example the following invocations are equivalent:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><code>git --git-dir=a.git --work-tree=b -C c status
+git --git-dir=c/a.git --work-tree=c/b status</code></pre>
+</div></div>
 </dd>
 <dt class="hdlist1">
 -c &lt;name&gt;=&lt;value&gt;
@@ -928,9 +948,40 @@ help ...</code>.</p></div>
 </dt>
 <dd>
 <p>
-        Treat pathspecs literally, rather than as glob patterns. This is
-        equivalent to setting the <code>GIT_LITERAL_PATHSPECS</code> environment
+        Treat pathspecs literally (i.e. no globbing, no pathspec magic).
+        This is equivalent to setting the <code>GIT_LITERAL_PATHSPECS</code> environment
         variable to <code>1</code>.
+</p>
+</dd>
+<dt class="hdlist1">
+--glob-pathspecs
+</dt>
+<dd>
+<p>
+        Add "glob" magic to all pathspec. This is equivalent to setting
+        the <code>GIT_GLOB_PATHSPECS</code> environment variable to <code>1</code>. Disabling
+        globbing on individual pathspecs can be done using pathspec
+        magic ":(literal)"
+</p>
+</dd>
+<dt class="hdlist1">
+--noglob-pathspecs
+</dt>
+<dd>
+<p>
+        Add "literal" magic to all pathspec. This is equivalent to setting
+        the <code>GIT_NOGLOB_PATHSPECS</code> environment variable to <code>1</code>. Enabling
+        globbing on individual pathspecs can be done using pathspec
+        magic ":(glob)"
+</p>
+</dd>
+<dt class="hdlist1">
+--icase-pathspecs
+</dt>
+<dd>
+<p>
+        Add "icase" magic to all pathspec. This is equivalent to setting
+        the <code>GIT_ICASE_PATHSPECS</code> environment variable to <code>1</code>.
 </p>
 </dd>
 </dl></div>
@@ -1148,7 +1199,7 @@ ancillary user utilities.</p></div>
 </dt>
 <dd>
 <p>
-        Fetch from and merge with another repository or a local branch.
+        Fetch from and integrate with another repository or a local branch.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1771,7 +1822,7 @@ repositories.</p></div>
 </dt>
 <dd>
 <p>
-        Compares content and mode of blobs between the index and repository.
+        Compare a tree to the working tree or index.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2022,6 +2073,14 @@ users typically do not use them directly.</p></div>
 <dd>
 <p>
         Debug gitignore / exclude files.
+</p>
+</dd>
+<dt class="hdlist1">
+<a href="git-check-mailmap.html">git-check-mailmap(1)</a>
+</dt>
+<dd>
+<p>
+        Show canonical names and email addresses of contacts.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2357,9 +2416,7 @@ Git so take care if using Cogito etc.</p></div>
 </dt>
 <dd>
 <p>
-        Set the path to the working tree.  The value will not be
-        used in combination with repositories found automatically in
-        a .git directory (i.e. $GIT_DIR is not set).
+        Set the path to the root of the working tree.
         This can also be controlled by the <em>--work-tree</em> command line
         option and the core.worktree configuration variable.
 </p>
@@ -2594,8 +2651,9 @@ for further details.</p></div>
 <p>
         If this environment variable is set to "1", then commands such
         as <em>git blame</em> (in incremental mode), <em>git rev-list</em>, <em>git log</em>,
-        and <em>git whatchanged</em> will force a flush of the output stream
-        after each commit-oriented record have been flushed.   If this
+        <em>git check-attr</em> and <em>git check-ignore</em> will
+        force a flush of the output stream after each record have been
+        flushed. If this
         variable is set to "0", the output of these commands will be done
         using completely buffered I/O.   If this environment variable is
         not set, Git will choose buffered or record-oriented flushing
@@ -2622,6 +2680,29 @@ for further details.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+<em>GIT_TRACE_PACK_ACCESS</em>
+</dt>
+<dd>
+<p>
+        If this variable is set to a path, a file will be created at
+        the given path logging all accesses to any packs. For each
+        access, the pack file name and an offset in the pack is
+        recorded. This may be helpful for troubleshooting some
+        pack-related performance problems.
+</p>
+</dd>
+<dt class="hdlist1">
+<em>GIT_TRACE_PACKET</em>
+</dt>
+<dd>
+<p>
+        If this variable is set, it shows a trace of all packets
+        coming in or out of a given program. This can help with
+        debugging object negotiation or other protocol issues. Tracing
+        is turned off at a packet starting with "PACK".
+</p>
+</dd>
+<dt class="hdlist1">
 GIT_LITERAL_PATHSPECS
 </dt>
 <dd>
@@ -2633,6 +2714,48 @@ GIT_LITERAL_PATHSPECS
         glob <code>*.c</code> matches. You might want this if you are feeding
         literal paths to Git (e.g., paths previously given to you by
         <code>git ls-tree</code>, <code>--raw</code> diff output, etc).
+</p>
+</dd>
+<dt class="hdlist1">
+GIT_GLOB_PATHSPECS
+</dt>
+<dd>
+<p>
+        Setting this variable to <code>1</code> will cause Git to treat all
+        pathspecs as glob patterns (aka "glob" magic).
+</p>
+</dd>
+<dt class="hdlist1">
+GIT_NOGLOB_PATHSPECS
+</dt>
+<dd>
+<p>
+        Setting this variable to <code>1</code> will cause Git to treat all
+        pathspecs as literal (aka "literal" magic).
+</p>
+</dd>
+<dt class="hdlist1">
+GIT_ICASE_PATHSPECS
+</dt>
+<dd>
+<p>
+        Setting this variable to <code>1</code> will cause Git to treat all
+        pathspecs as case-insensitive.
+</p>
+</dd>
+<dt class="hdlist1">
+<em>GIT_REFLOG_ACTION</em>
+</dt>
+<dd>
+<p>
+        When a ref is updated, reflog entries are created to keep
+        track of the reason why the ref was updated (which is
+        typically the name of the high-level command that updated
+        the ref), in addition to the old and new values of the ref.
+        A scripted Porcelain command can use set_reflog_action
+        helper function in <code>git-sh-setup</code> to set its name to this
+        variable when it is invoked as the top level command by the
+        end user, to be recorded in the body of the reflog.
 </p>
 </dd>
 </dl></div>
@@ -2743,7 +2866,7 @@ subscribed to the list to send a message there.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-05-09 14:34:12 PDT
+Last updated 2013-11-27 14:09:23 PST
 </div>
 </div>
 </body>

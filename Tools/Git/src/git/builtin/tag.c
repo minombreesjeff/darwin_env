@@ -436,26 +436,26 @@ int cmd_tag(int argc, const char **argv, const char *prefix)
 	struct ref_lock *lock;
 	struct create_tag_options opt;
 	char *cleanup_arg = NULL;
-	int annotate = 0, force = 0, lines = -1, list = 0,
-		delete = 0, verify = 0;
+	int annotate = 0, force = 0, lines = -1;
+	int cmdmode = 0;
 	const char *msgfile = NULL, *keyid = NULL;
 	struct msg_arg msg = { 0, STRBUF_INIT };
 	struct commit_list *with_commit = NULL;
 	struct option options[] = {
-		OPT_BOOLEAN('l', "list", &list, N_("list tag names")),
+		OPT_CMDMODE('l', "list", &cmdmode, N_("list tag names"), 'l'),
 		{ OPTION_INTEGER, 'n', NULL, &lines, N_("n"),
 				N_("print <n> lines of each tag message"),
 				PARSE_OPT_OPTARG, NULL, 1 },
-		OPT_BOOLEAN('d', "delete", &delete, N_("delete tags")),
-		OPT_BOOLEAN('v', "verify", &verify, N_("verify tags")),
+		OPT_CMDMODE('d', "delete", &cmdmode, N_("delete tags"), 'd'),
+		OPT_CMDMODE('v', "verify", &cmdmode, N_("verify tags"), 'v'),
 
 		OPT_GROUP(N_("Tag creation options")),
-		OPT_BOOLEAN('a', "annotate", &annotate,
+		OPT_BOOL('a', "annotate", &annotate,
 					N_("annotated tag, needs a message")),
 		OPT_CALLBACK('m', "message", &msg, N_("message"),
 			     N_("tag message"), parse_msg_arg),
 		OPT_FILENAME('F', "file", &msgfile, N_("read message from file")),
-		OPT_BOOLEAN('s', "sign", &opt.sign, N_("annotated and GPG-signed tag")),
+		OPT_BOOL('s', "sign", &opt.sign, N_("annotated and GPG-signed tag")),
 		OPT_STRING(0, "cleanup", &cleanup_arg, N_("mode"),
 			N_("how to strip spaces and #comments from message")),
 		OPT_STRING('u', "local-user", &keyid, N_("key id"),
@@ -489,22 +489,19 @@ int cmd_tag(int argc, const char **argv, const char *prefix)
 	}
 	if (opt.sign)
 		annotate = 1;
-	if (argc == 0 && !(delete || verify))
-		list = 1;
+	if (argc == 0 && !cmdmode)
+		cmdmode = 'l';
 
-	if ((annotate || msg.given || msgfile || force) &&
-	    (list || delete || verify))
+	if ((annotate || msg.given || msgfile || force) && (cmdmode != 0))
 		usage_with_options(git_tag_usage, options);
 
-	if (list + delete + verify > 1)
-		usage_with_options(git_tag_usage, options);
 	finalize_colopts(&colopts, -1);
-	if (list && lines != -1) {
+	if (cmdmode == 'l' && lines != -1) {
 		if (explicitly_enable_column(colopts))
 			die(_("--column and -n are incompatible"));
 		colopts = 0;
 	}
-	if (list) {
+	if (cmdmode == 'l') {
 		int ret;
 		if (column_active(colopts)) {
 			struct column_options copts;
@@ -523,9 +520,9 @@ int cmd_tag(int argc, const char **argv, const char *prefix)
 		die(_("--contains option is only allowed with -l."));
 	if (points_at.nr)
 		die(_("--points-at option is only allowed with -l."));
-	if (delete)
+	if (cmdmode == 'd')
 		return for_each_tag_name(argv, delete_tag);
-	if (verify)
+	if (cmdmode == 'v')
 		return for_each_tag_name(argv, verify_tag);
 
 	if (msg.given || msgfile) {
@@ -577,7 +574,7 @@ int cmd_tag(int argc, const char **argv, const char *prefix)
 	if (annotate)
 		create_tag(object, tag, &buf, &opt, prev, object);
 
-	lock = lock_any_ref_for_update(ref.buf, prev, 0);
+	lock = lock_any_ref_for_update(ref.buf, prev, 0, NULL);
 	if (!lock)
 		die(_("%s: cannot lock the ref"), ref.buf);
 	if (write_ref_sha1(lock, object, NULL) < 0)

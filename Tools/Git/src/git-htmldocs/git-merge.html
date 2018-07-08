@@ -747,7 +747,7 @@ git-merge(1) Manual Page
 <div class="sectionbody">
 <div class="verseblock">
 <pre class="content"><em>git merge</em> [-n] [--stat] [--no-commit] [--squash] [--[no-]edit]
-        [-s &lt;strategy&gt;] [-X &lt;strategy-option&gt;]
+        [-s &lt;strategy&gt;] [-X &lt;strategy-option&gt;] [-S[&lt;keyid&gt;]]
         [--[no-]rerere-autoupdate] [-m &lt;msg&gt;] [&lt;commit&gt;&#8230;]
 <em>git merge</em> &lt;msg&gt; HEAD &lt;commit&gt;&#8230;
 <em>git merge</em> --abort</pre>
@@ -792,8 +792,8 @@ if there were uncommitted changes when the merge started (and
 especially if those changes were further modified after the merge
 was started), <em>git merge --abort</em> will in some cases be unable to
 reconstruct the original (pre-merge) changes. Therefore:</p></div>
-<div class="paragraph"><p><strong>Warning</strong>: Running <em>git merge</em> with uncommitted changes is
-discouraged: while possible, it leaves you in a state that is hard to
+<div class="paragraph"><p><strong>Warning</strong>: Running <em>git merge</em> with non-trivial uncommitted changes is
+discouraged: while possible, it may leave you in a state that is hard to
 back out of in the case of a conflict.</p></div>
 </div>
 </div>
@@ -820,6 +820,9 @@ inspect and further tweak the merge result before committing.</p></div>
 --edit
 </dt>
 <dt class="hdlist1">
+-e
+</dt>
+<dt class="hdlist1">
 --no-edit
 </dt>
 <dd>
@@ -828,7 +831,7 @@ inspect and further tweak the merge result before committing.</p></div>
         further edit the auto-generated merge message, so that the user
         can explain and justify the merge. The <code>--no-edit</code> option can be
         used to accept the auto-generated message (this is generally
-        discouraged). The <code>--edit</code> option is still useful if you are
+        discouraged). The <code>--edit</code> (or <code>-e</code>) option is still useful if you are
         giving a draft message with the <code>-m</code> option from the command line
         and want to edit it in the editor.
 </p>
@@ -1008,6 +1011,17 @@ option can be used to override --squash.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+-S[&lt;keyid&gt;]
+</dt>
+<dt class="hdlist1">
+--gpg-sign[=&lt;keyid&gt;]
+</dt>
+<dd>
+<p>
+        GPG-sign the resulting merge commit.
+</p>
+</dd>
+<dt class="hdlist1">
 -m &lt;msg&gt;
 </dt>
 <dd>
@@ -1160,11 +1174,12 @@ release point, you may not want to make an unnecessary merge commit.</p></div>
 <div class="paragraph"><p>In such a case, you can "unwrap" the tag yourself before feeding it
 to <code>git merge</code>, or pass <code>--ff-only</code> when you do not have any work on
 your own. e.g.</p></div>
-<div class="paragraph"><p>---
-git fetch origin
+<div class="listingblock">
+<div class="content">
+<pre><code>git fetch origin
 git merge v1.2.3^0
-git merge --ff-only v1.2.3
----</p></div>
+git merge --ff-only v1.2.3</code></pre>
+</div></div>
 </div>
 </div>
 <div class="sect1">
@@ -1651,6 +1666,11 @@ deltawalker
 </li>
 <li>
 <p>
+diffmerge
+</p>
+</li>
+<li>
+<p>
 diffuse
 </p>
 </li>
@@ -1796,7 +1816,7 @@ branch.&lt;name&gt;.mergeoptions
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-05-17 16:33:07 PDT
+Last updated 2013-10-18 15:11:10 PDT
 </div>
 </div>
 </body>

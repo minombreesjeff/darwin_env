@@ -80,7 +80,8 @@ struct dir_struct {
 		DIR_HIDE_EMPTY_DIRECTORIES = 1<<2,
 		DIR_NO_GITLINKS = 1<<3,
 		DIR_COLLECT_IGNORED = 1<<4,
-		DIR_SHOW_IGNORED_TOO = 1<<5
+		DIR_SHOW_IGNORED_TOO = 1<<5,
+		DIR_COLLECT_KILLED_ONLY = 1<<6
 	} flags;
 	struct dir_entry **entries;
 	struct dir_entry **ignored;
@@ -128,15 +129,16 @@ struct dir_struct {
 #define MATCHED_RECURSIVELY 1
 #define MATCHED_FNMATCH 2
 #define MATCHED_EXACTLY 3
-extern char *common_prefix(const char **pathspec);
-extern int match_pathspec(const char **pathspec, const char *name, int namelen, int prefix, char *seen);
+extern int simple_length(const char *match);
+extern int no_wildcard(const char *string);
+extern char *common_prefix(const struct pathspec *pathspec);
 extern int match_pathspec_depth(const struct pathspec *pathspec,
 				const char *name, int namelen,
 				int prefix, char *seen);
 extern int within_depth(const char *name, int namelen, int depth, int max_depth);
 
-extern int fill_directory(struct dir_struct *dir, const char **pathspec);
-extern int read_directory(struct dir_struct *, const char *path, int len, const char **pathspec);
+extern int fill_directory(struct dir_struct *dir, const struct pathspec *pathspec);
+extern int read_directory(struct dir_struct *, const char *path, int len, const struct pathspec *pathspec);
 
 extern int is_excluded_from_list(const char *pathname, int pathlen, const char *basename,
 				 int *dtype, struct exclude_list *el);
@@ -198,10 +200,9 @@ extern int fnmatch_icase(const char *pattern, const char *string, int flags);
 /*
  * The prefix part of pattern must not contains wildcards.
  */
-#define GFNM_PATHNAME 1		/* similar to FNM_PATHNAME */
-#define GFNM_ONESTAR  2		/* there is only _one_ wildcard, a star */
-
-extern int git_fnmatch(const char *pattern, const char *string,
-		       int flags, int prefix);
+struct pathspec_item;
+extern int git_fnmatch(const struct pathspec_item *item,
+		       const char *pattern, const char *string,
+		       int prefix);
 
 #endif

@@ -6,6 +6,7 @@
 #include "resolve-undo.h"
 #include "ll-merge.h"
 #include "attr.h"
+#include "pathspec.h"
 
 #define RESOLVED 0
 #define PUNTED 1
@@ -299,7 +300,7 @@ static int handle_cache(const char *path, unsigned char *sha1, const char *outpu
 {
 	mmfile_t mmfile[3] = {{NULL}};
 	mmbuffer_t result = {NULL, 0};
-	struct cache_entry *ce;
+	const struct cache_entry *ce;
 	int pos, len, i, hunk_no;
 	struct rerere_io_mem io;
 	int marker_size = ll_merge_marker_size(path);
@@ -359,7 +360,7 @@ static int handle_cache(const char *path, unsigned char *sha1, const char *outpu
 
 static int check_one_conflict(int i, int *type)
 {
-	struct cache_entry *e = active_cache[i];
+	const struct cache_entry *e = active_cache[i];
 
 	if (!ce_stage(e)) {
 		*type = RESOLVED;
@@ -374,8 +375,8 @@ static int check_one_conflict(int i, int *type)
 
 	/* Only handle regular files with both stages #2 and #3 */
 	if (i + 1 < active_nr) {
-		struct cache_entry *e2 = active_cache[i];
-		struct cache_entry *e3 = active_cache[i + 1];
+		const struct cache_entry *e2 = active_cache[i];
+		const struct cache_entry *e3 = active_cache[i + 1];
 		if (ce_stage(e2) == 2 &&
 		    ce_stage(e3) == 3 &&
 		    ce_same_name(e, e3) &&
@@ -398,7 +399,7 @@ static int find_conflict(struct string_list *conflict)
 
 	for (i = 0; i < active_nr;) {
 		int conflict_type;
-		struct cache_entry *e = active_cache[i];
+		const struct cache_entry *e = active_cache[i];
 		i = check_one_conflict(i, &conflict_type);
 		if (conflict_type == THREE_STAGED)
 			string_list_insert(conflict, (const char *)e->name);
@@ -414,7 +415,7 @@ int rerere_remaining(struct string_list *merge_rr)
 
 	for (i = 0; i < active_nr;) {
 		int conflict_type;
-		struct cache_entry *e = active_cache[i];
+		const struct cache_entry *e = active_cache[i];
 		i = check_one_conflict(i, &conflict_type);
 		if (conflict_type == PUNTED)
 			string_list_insert(merge_rr, (const char *)e->name);
@@ -656,7 +657,7 @@ static int rerere_forget_one_path(const char *path, struct string_list *rr)
 	return 0;
 }
 
-int rerere_forget(const char **pathspec)
+int rerere_forget(struct pathspec *pathspec)
 {
 	int i, fd;
 	struct string_list conflict = STRING_LIST_INIT_DUP;
@@ -671,8 +672,8 @@ int rerere_forget(const char **pathspec)
 	find_conflict(&conflict);
 	for (i = 0; i < conflict.nr; i++) {
 		struct string_list_item *it = &conflict.items[i];
-		if (!match_pathspec(pathspec, it->string, strlen(it->string),
-				    0, NULL))
+		if (!match_pathspec_depth(pathspec, it->string, strlen(it->string),
+					  0, NULL))
 			continue;
 		rerere_forget_one_path(it->string, &merge_rr);
 	}

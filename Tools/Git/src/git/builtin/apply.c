@@ -2999,7 +2999,7 @@ static int read_blob_object(struct strbuf *buf, const unsigned char *sha1, unsig
 	return 0;
 }
 
-static int read_file_or_gitlink(struct cache_entry *ce, struct strbuf *buf)
+static int read_file_or_gitlink(const struct cache_entry *ce, struct strbuf *buf)
 {
 	if (!ce)
 		return 0;
@@ -3117,7 +3117,7 @@ static struct patch *previous_patch(struct patch *patch, int *gone)
 	return previous;
 }
 
-static int verify_index_match(struct cache_entry *ce, struct stat *st)
+static int verify_index_match(const struct cache_entry *ce, struct stat *st)
 {
 	if (S_ISGITLINK(ce->ce_mode)) {
 		if (!S_ISDIR(st->st_mode))
@@ -3130,7 +3130,7 @@ static int verify_index_match(struct cache_entry *ce, struct stat *st)
 #define SUBMODULE_PATCH_WITHOUT_INDEX 1
 
 static int load_patch_target(struct strbuf *buf,
-			     struct cache_entry *ce,
+			     const struct cache_entry *ce,
 			     struct stat *st,
 			     const char *name,
 			     unsigned expected_mode)
@@ -3160,7 +3160,8 @@ static int load_patch_target(struct strbuf *buf,
  * we read from the result of a previous diff.
  */
 static int load_preimage(struct image *image,
-			 struct patch *patch, struct stat *st, struct cache_entry *ce)
+			 struct patch *patch, struct stat *st,
+			 const struct cache_entry *ce)
 {
 	struct strbuf buf = STRBUF_INIT;
 	size_t len;
@@ -3273,7 +3274,7 @@ static int load_current(struct image *image, struct patch *patch)
 }
 
 static int try_threeway(struct image *image, struct patch *patch,
-			struct stat *st, struct cache_entry *ce)
+			struct stat *st, const struct cache_entry *ce)
 {
 	unsigned char pre_sha1[20], post_sha1[20], our_sha1[20];
 	struct strbuf buf = STRBUF_INIT;
@@ -3343,7 +3344,7 @@ static int try_threeway(struct image *image, struct patch *patch,
 	return 0;
 }
 
-static int apply_data(struct patch *patch, struct stat *st, struct cache_entry *ce)
+static int apply_data(struct patch *patch, struct stat *st, const struct cache_entry *ce)
 {
 	struct image image;
 
@@ -3847,7 +3848,7 @@ static void add_index_file(const char *path, unsigned mode, void *buf, unsigned 
 		const char *s = buf;
 
 		if (get_sha1_hex(s + strlen("Subproject commit "), ce->sha1))
-			die(_("corrupt patch for subproject %s"), path);
+			die(_("corrupt patch for submodule %s"), path);
 	} else {
 		if (!cached) {
 			if (lstat(path, &st) < 0)
@@ -4362,23 +4363,23 @@ int cmd_apply(int argc, const char **argv, const char *prefix_)
 		{ OPTION_CALLBACK, 'p', NULL, NULL, N_("num"),
 			N_("remove <num> leading slashes from traditional diff paths"),
 			0, option_parse_p },
-		OPT_BOOLEAN(0, "no-add", &no_add,
+		OPT_BOOL(0, "no-add", &no_add,
 			N_("ignore additions made by the patch")),
-		OPT_BOOLEAN(0, "stat", &diffstat,
+		OPT_BOOL(0, "stat", &diffstat,
 			N_("instead of applying the patch, output diffstat for the input")),
 		OPT_NOOP_NOARG(0, "allow-binary-replacement"),
 		OPT_NOOP_NOARG(0, "binary"),
-		OPT_BOOLEAN(0, "numstat", &numstat,
+		OPT_BOOL(0, "numstat", &numstat,
 			N_("show number of added and deleted lines in decimal notation")),
-		OPT_BOOLEAN(0, "summary", &summary,
+		OPT_BOOL(0, "summary", &summary,
 			N_("instead of applying the patch, output a summary for the input")),
-		OPT_BOOLEAN(0, "check", &check,
+		OPT_BOOL(0, "check", &check,
 			N_("instead of applying the patch, see if the patch is applicable")),
-		OPT_BOOLEAN(0, "index", &check_index,
+		OPT_BOOL(0, "index", &check_index,
 			N_("make sure the patch is applicable to the current index")),
-		OPT_BOOLEAN(0, "cached", &cached,
+		OPT_BOOL(0, "cached", &cached,
 			N_("apply a patch without touching the working tree")),
-		OPT_BOOLEAN(0, "apply", &force_apply,
+		OPT_BOOL(0, "apply", &force_apply,
 			N_("also apply the patch (use with --stat/--summary/--check)")),
 		OPT_BOOL('3', "3way", &threeway,
 			 N_( "attempt three-way merge if a patch does not apply")),
@@ -4398,13 +4399,13 @@ int cmd_apply(int argc, const char **argv, const char *prefix_)
 		{ OPTION_CALLBACK, 0, "ignore-whitespace", NULL, NULL,
 			N_("ignore changes in whitespace when finding context"),
 			PARSE_OPT_NOARG, option_parse_space_change },
-		OPT_BOOLEAN('R', "reverse", &apply_in_reverse,
+		OPT_BOOL('R', "reverse", &apply_in_reverse,
 			N_("apply the patch in reverse")),
-		OPT_BOOLEAN(0, "unidiff-zero", &unidiff_zero,
+		OPT_BOOL(0, "unidiff-zero", &unidiff_zero,
 			N_("don't expect at least one line of context")),
-		OPT_BOOLEAN(0, "reject", &apply_with_reject,
+		OPT_BOOL(0, "reject", &apply_with_reject,
 			N_("leave the rejected hunks in corresponding *.rej files")),
-		OPT_BOOLEAN(0, "allow-overlap", &allow_overlap,
+		OPT_BOOL(0, "allow-overlap", &allow_overlap,
 			N_("allow overlapping hunks")),
 		OPT__VERBOSE(&apply_verbosely, N_("be verbose")),
 		OPT_BIT(0, "inaccurate-eof", &options,

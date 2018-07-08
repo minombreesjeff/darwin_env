@@ -11,6 +11,7 @@
 #include "thread-utils.h"
 #include "sigchain.h"
 #include "argv-array.h"
+#include "refs.h"
 
 static int debug;
 
@@ -26,7 +27,9 @@ struct helper_data {
 		push : 1,
 		connect : 1,
 		signed_tags : 1,
-		no_disconnect_req : 1;
+		check_connectivity : 1,
+		no_disconnect_req : 1,
+		no_private_update : 1;
 	char *export_marks;
 	char *import_marks;
 	/* These go from remote name (as in "list") to private name */
@@ -47,7 +50,7 @@ static void sendline(struct helper_data *helper, struct strbuf *buffer)
 		die_errno("Full write to remote helper failed");
 }
 
-static int recvline_fh(FILE *helper, struct strbuf *buffer)
+static int recvline_fh(FILE *helper, struct strbuf *buffer, const char *name)
 {
 	strbuf_reset(buffer);
 	if (debug)
@@ -65,7 +68,7 @@ static int recvline_fh(FILE *helper, struct strbuf *buffer)
 
 static int recvline(struct helper_data *helper, struct strbuf *buffer)
 {
-	return recvline_fh(helper->out, buffer);
+	return recvline_fh(helper->out, buffer, helper->name);
 }
 
 static void xchgline(struct helper_data *helper, struct strbuf *buffer)
@@ -185,6 +188,8 @@ static struct child_process *get_helper(struct transport *transport)
 			data->bidi_import = 1;
 		else if (!strcmp(capname, "export"))
 			data->export = 1;
+		else if (!strcmp(capname, "check-connectivity"))
+			data->check_connectivity = 1;
 		else if (!data->refspecs && !prefixcmp(capname, "refspec ")) {
 			ALLOC_GROW(refspecs,
 				   refspec_nr + 1,
@@ -204,6 +209,8 @@ static struct child_process *get_helper(struct transport *transport)
 			strbuf_addstr(&arg, "--import-marks=");
 			strbuf_addstr(&arg, capname + strlen("import-marks "));
 			data->import_marks = strbuf_detach(&arg, NULL);
+		} else if (!prefixcmp(capname, "no-private-update")) {
+			data->no_private_update = 1;
 		} else if (mandatory) {
 			die("Unknown mandatory capability %s. This remote "
 			    "helper probably needs newer version of Git.",
@@ -217,6 +224,8 @@ static struct child_process *get_helper(struct transport *transport)
 		for (i = 0; i < refspec_nr; i++)
 			free((char *)refspecs[i]);
 		free(refspecs);
+	} else if (data->import || data->bidi_import || data->export) {
+		warning("This remote helper should implement refspec capability.");
 	}
 	strbuf_release(&buf);
 	if (debug)
@@ -260,6 +269,7 @@ static const char *unsupported_options[] = {
 	TRANS_OPT_THIN,
 	TRANS_OPT_KEEP
 	};
+
 static const char *boolean_options[] = {
 	TRANS_OPT_THIN,
 	TRANS_OPT_KEEP,
@@ -346,6 +356,9 @@ static int fetch_with_fetch(struct transport *transport,
 	struct strbuf buf = STRBUF_INIT;
 
 	standard_options(transport);
+	if (data->check_connectivity &&
+	    data->transport_options.check_self_contained_and_connected)
+		set_helper_option(transport, "check-connectivity", "true");
 
 	for (i = 0; i < nr_heads; i++) {
 		const struct ref *posn = to_fetch[i];
@@ -369,6 +382,10 @@ static int fetch_with_fetch(struct transport *transport,
 			else
 				transport->pack_lockfile = xstrdup(name);
 		}
+		else if (data->check_connectivity &&
+			 data->transport_options.check_self_contained_and_connected &&
+			 !strcmp(buf.buf, "connectivity-ok"))
+			data->transport_options.self_contained_and_connected = 1;
 		else if (!buf.len)
 			break;
 		else
@@ -473,7 +490,7 @@ static int fetch_with_import(struct transport *transport,
 	 * were fetching.
 	 *
 	 * (If no "refspec" capability was specified, for historical
-	 * reasons we default to *:*.)
+	 * reasons we default to the equivalent of *:*.)
 	 *
 	 * Store the result in to_fetch[i].old_sha1.  Callers such
 	 * as "git fetch" can use the value to write feedback to the
@@ -540,7 +557,7 @@ static int process_connect_service(struct transport *transport,
 		goto exit;
 
 	sendline(data, &cmdbuf);
-	recvline_fh(input, &cmdbuf);
+	recvline_fh(input, &cmdbuf, name);
 	if (!strcmp(cmdbuf.buf, "")) {
 		data->no_disconnect_req = 1;
 		if (debug)
@@ -622,7 +639,7 @@ static int fetch(struct transport *transport,
 	return -1;
 }
 
-static void push_update_ref_status(struct strbuf *buf,
+static int push_update_ref_status(struct strbuf *buf,
 				   struct ref **ref,
 				   struct ref *remote_refs)
 {
@@ -680,6 +697,11 @@ static void push_update_ref_status(struct strbuf *buf,
 			free(msg);
 			msg = NULL;
 		}
+		else if (!strcmp(msg, "stale info")) {
+			status = REF_STATUS_REJECT_STALE;
+			free(msg);
+			msg = NULL;
+		}
 	}
 
 	if (*ref)
@@ -688,7 +710,7 @@ static void push_update_ref_status(struct strbuf *buf,
 		*ref = find_ref_by_name(remote_refs, refname);
 	if (!*ref) {
 		warning("helper reported unexpected status of %s", refname);
-		return;
+		return 1;
 	}
 
 	if ((*ref)->status != REF_STATUS_NONE) {
@@ -697,11 +719,12 @@ static void push_update_ref_status(struct strbuf *buf,
 		 * status reported by the remote helper if the latter is 'no match'.
 		 */
 		if (status == REF_STATUS_NONE)
-			return;
+			return 1;
 	}
 
 	(*ref)->status = status;
 	(*ref)->remote_status = msg;
+	return !(status == REF_STATUS_OK);
 }
 
 static void push_update_refs_status(struct helper_data *data,
@@ -710,23 +733,38 @@ static void push_update_refs_status(struct helper_data *data,
 	struct strbuf buf = STRBUF_INIT;
 	struct ref *ref = remote_refs;
 	for (;;) {
+		char *private;
+
 		recvline(data, &buf);
 		if (!buf.len)
 			break;
 
-		push_update_ref_status(&buf, &ref, remote_refs);
+		if (push_update_ref_status(&buf, &ref, remote_refs))
+			continue;
+
+		if (!data->refspecs || data->no_private_update)
+			continue;
+
+		/* propagate back the update to the remote namespace */
+		private = apply_refspecs(data->refspecs, data->refspec_nr, ref->name);
+		if (!private)
+			continue;
+		update_ref("update by helper", private, ref->new_sha1, NULL, 0, 0);
+		free(private);
 	}
 	strbuf_release(&buf);
 }
 
 static int push_refs_with_push(struct transport *transport,
-		struct ref *remote_refs, int flags)
+			       struct ref *remote_refs, int flags)
 {
 	int force_all = flags & TRANSPORT_PUSH_FORCE;
 	int mirror = flags & TRANSPORT_PUSH_MIRROR;
 	struct helper_data *data = transport->data;
 	struct strbuf buf = STRBUF_INIT;
 	struct ref *ref;
+	struct string_list cas_options = STRING_LIST_INIT_DUP;
+	struct string_list_item *cas_option;
 
 	get_helper(transport);
 	if (!data->push)
@@ -739,6 +777,7 @@ static int push_refs_with_push(struct transport *transport,
 		/* Check for statuses set by set_ref_status_for_push() */
 		switch (ref->status) {
 		case REF_STATUS_REJECT_NONFASTFORWARD:
+		case REF_STATUS_REJECT_STALE:
 		case REF_STATUS_REJECT_ALREADY_EXISTS:
 		case REF_STATUS_UPTODATE:
 			continue;
@@ -761,11 +800,29 @@ static int push_refs_with_push(struct transport *transport,
 		strbuf_addch(&buf, ':');
 		strbuf_addstr(&buf, ref->name);
 		strbuf_addch(&buf, '\n');
+
+		/*
+		 * The "--force-with-lease" options without explicit
+		 * values to expect have already been expanded into
+		 * the ref->old_sha1_expect[] field; we can ignore
+		 * transport->smart_options->cas altogether and instead
+		 * can enumerate them from the refs.
+		 */
+		if (ref->expect_old_sha1) {
+			struct strbuf cas = STRBUF_INIT;
+			strbuf_addf(&cas, "%s:%s",
+				    ref->name, sha1_to_hex(ref->old_sha1_expect));
+			string_list_append(&cas_options, strbuf_detach(&cas, NULL));
+		}
 	}
-	if (buf.len == 0)
+	if (buf.len == 0) {
+		string_list_clear(&cas_options, 0);
 		return 0;
+	}
 
 	standard_options(transport);
+	for_each_string_list_item(cas_option, &cas_options)
+		set_helper_option(transport, "cas", cas_option->string);
 
 	if (flags & TRANSPORT_PUSH_DRY_RUN) {
 		if (set_helper_option(transport, "dry-run", "true") != 0)
@@ -789,6 +846,14 @@ static int push_refs_with_export(struct transport *transport,
 	struct string_list revlist_args = STRING_LIST_INIT_NODUP;
 	struct strbuf buf = STRBUF_INIT;
 
+	if (!data->refspecs)
+		die("remote-helper doesn't support push; refspec needed");
+
+	if (flags & TRANSPORT_PUSH_DRY_RUN) {
+		if (set_helper_option(transport, "dry-run", "true") != 0)
+			die("helper %s does not support dry-run", data->name);
+	}
+
 	helper = get_helper(transport);
 
 	write_constant(helper->in, "export\n");
@@ -799,8 +864,9 @@ static int push_refs_with_export(struct transport *transport,
 		char *private;
 		unsigned char sha1[20];
 
-		if (!data->refspecs)
-			continue;
+		if (ref->deletion)
+			die("remote-helpers do not support ref deletion");
+
 		private = apply_refspecs(data->refspecs, data->refspec_nr, ref->name);
 		if (private && !get_sha1(private, sha1)) {
 			strbuf_addf(&buf, "^%s", private);
@@ -809,13 +875,14 @@ static int push_refs_with_export(struct transport *transport,
 		}
 		free(private);
 
-		if (ref->deletion) {
+		if (ref->deletion)
 			die("remote-helpers do not support ref deletion");
-		}
 
-		if (ref->peer_ref)
+		if (ref->peer_ref) {
+			if (strcmp(ref->peer_ref->name, ref->name))
+				die("remote-helpers do not support old:new syntax");
 			string_list_append(&revlist_args, ref->peer_ref->name);
-
+		}
 	}
 
 	if (get_exporter(transport, &exporter, &revlist_args))
@@ -955,6 +1022,7 @@ int transport_helper_init(struct transport *transport, const char *name)
 #define PBUFFERSIZE 8192
 
 /* Print bidirectional transfer loop debug message. */
+__attribute__((format (printf, 1, 2)))
 static void transfer_debug(const char *fmt, ...)
 {
 	va_list args;
@@ -1040,7 +1108,7 @@ static int udt_do_read(struct unidirectional_transfer *t)
 		return -1;
 	} else if (bytes == 0) {
 		transfer_debug("%s EOF (with %i bytes in buffer)",
-			t->src_name, t->bufuse);
+			t->src_name, (int)t->bufuse);
 		t->state = SSTATE_FLUSHING;
 	} else if (bytes > 0) {
 		t->bufuse += bytes;
@@ -1104,7 +1172,7 @@ static void *udt_copy_task_routine(void *udt)
 #ifndef NO_PTHREADS
 
 /*
- * Join thread, with apporiate errors on failure. Name is name for the
+ * Join thread, with appropriate errors on failure. Name is name for the
  * thread (for error messages). Returns 0 on success, 1 on failure.
  */
 static int tloop_join(pthread_t thread, const char *name)
@@ -1170,7 +1238,7 @@ static void udt_kill_transfer(struct unidirectional_transfer *t)
 }
 
 /*
- * Join process, with apporiate errors on failure. Name is name for the
+ * Join process, with appropriate errors on failure. Name is name for the
  * process (for error messages). Returns 0 on success, 1 on failure.
  */
 static int tloop_join(pid_t pid, const char *name)

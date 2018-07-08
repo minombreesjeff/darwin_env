@@ -5,12 +5,14 @@
 #include "strbuf.h"
 #include "cache.h"
 #include "commit.h"
-#include "notes.h"
 
 #define DEFAULT_MERGE_LOG_LEN 20
 
 extern const char git_usage_string[];
 extern const char git_more_info_string[];
+
+#define PRUNE_PACKED_DRY_RUN 01
+#define PRUNE_PACKED_VERBOSE 02
 
 extern void prune_packed_objects(int);
 
@@ -22,21 +24,6 @@ struct fmt_merge_msg_opts {
 
 extern int fmt_merge_msg(struct strbuf *in, struct strbuf *out,
 			 struct fmt_merge_msg_opts *);
-
-struct notes_rewrite_cfg {
-	struct notes_tree **trees;
-	const char *cmd;
-	int enabled;
-	combine_notes_fn combine;
-	struct string_list *refs;
-	int refs_from_env;
-	int mode_from_env;
-};
-
-struct notes_rewrite_cfg *init_copy_notes_for_rewrite(const char *cmd);
-int copy_note_for_rewrite(struct notes_rewrite_cfg *c,
-			  const unsigned char *from_obj, const unsigned char *to_obj);
-void finish_copy_notes_for_rewrite(struct notes_rewrite_cfg *c);
 
 extern int textconv_object(const char *path, unsigned mode, const unsigned char *sha1, int sha1_valid, char **buf, unsigned long *buf_size);
 
@@ -53,6 +40,7 @@ extern int cmd_checkout(int argc, const char **argv, const char *prefix);
 extern int cmd_checkout_index(int argc, const char **argv, const char *prefix);
 extern int cmd_check_attr(int argc, const char **argv, const char *prefix);
 extern int cmd_check_ignore(int argc, const char **argv, const char *prefix);
+extern int cmd_check_mailmap(int argc, const char **argv, const char *prefix);
 extern int cmd_check_ref_format(int argc, const char **argv, const char *prefix);
 extern int cmd_cherry(int argc, const char **argv, const char *prefix);
 extern int cmd_cherry_pick(int argc, const char **argv, const char *prefix);
@@ -114,6 +102,7 @@ extern int cmd_reflog(int argc, const char **argv, const char *prefix);
 extern int cmd_remote(int argc, const char **argv, const char *prefix);
 extern int cmd_remote_ext(int argc, const char **argv, const char *prefix);
 extern int cmd_remote_fd(int argc, const char **argv, const char *prefix);
+extern int cmd_repack(int argc, const char **argv, const char *prefix);
 extern int cmd_repo_config(int argc, const char **argv, const char *prefix);
 extern int cmd_rerere(int argc, const char **argv, const char *prefix);
 extern int cmd_reset(int argc, const char **argv, const char *prefix);
