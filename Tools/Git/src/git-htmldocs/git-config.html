@@ -1961,6 +1961,8 @@ core.worktree
 <dd>
 <p>
         Set the path to the root of the working tree.
+        If GIT_COMMON_DIR environment variable is set, core.worktree
+        is ignored and not used for determining the root of working tree.
         This can be overridden by the GIT_WORK_TREE environment
         variable and the <em>--work-tree</em> command-line option.
         The value can be an absolute path or relative to the path to
@@ -2193,6 +2195,17 @@ core.commentChar
 </p>
 <div class="paragraph"><p>If set to "auto", <code>git-commit</code> would select a character that is not
 the beginning character of any line in existing commit messages.</p></div>
+</dd>
+<dt class="hdlist1">
+core.packedRefsTimeout
+</dt>
+<dd>
+<p>
+        The length of time, in milliseconds, to retry when trying to
+        lock the <code>packed-refs</code> file. Value 0 means not to retry at
+        all; -1 means to try indefinitely. Default is 1000 (i.e.,
+        retry for 1 second).
+</p>
 </dd>
 <dt class="hdlist1">
 sequence.editor
@@ -2649,7 +2662,8 @@ color.diff.&lt;slot&gt;
 <p>
         Use customized color for diff colorization.  <code>&lt;slot&gt;</code> specifies
         which part of the patch to use the specified color, and is one
-        of <code>plain</code> (context text), <code>meta</code> (metainformation), <code>frag</code>
+        of <code>context</code> (context text - <code>plain</code> is a historical synonym),
+        <code>meta</code> (metainformation), <code>frag</code>
         (hunk header), <em>func</em> (function in hunk header), <code>old</code> (removed lines),
         <code>new</code> (added lines), <code>commit</code> (commit headers), or <code>whitespace</code>
         (highlighting whitespace errors).
@@ -3511,6 +3525,11 @@ vimdiff3
 </li>
 <li>
 <p>
+winmerge
+</p>
+</li>
+<li>
+<p>
 xxdiff
 </p>
 </li>
@@ -3870,6 +3889,18 @@ gc.pruneExpire
         Override the grace period with this config variable.  The value
         "now" may be used to disable this  grace period and always prune
         unreachable objects immediately.
+</p>
+</dd>
+<dt class="hdlist1">
+gc.pruneWorktreesExpire
+</dt>
+<dd>
+<p>
+        When <em>git gc</em> is run, it will call
+        <em>prune --worktrees --expire 3.months.ago</em>.
+        Override the grace period with this config variable. The value
+        "now" may be used to disable the grace period and prune
+        $GIT_DIR/worktrees immediately.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -4426,6 +4457,23 @@ http.saveCookies
 </p>
 </dd>
 <dt class="hdlist1">
+http.sslCipherList
+</dt>
+<dd>
+<p>
+  A list of SSL ciphers to use when negotiating an SSL connection.
+  The available ciphers depend on whether libcurl was built against
+  NSS or OpenSSL and the particular configuration of the crypto
+  library in use.  Internally this sets the <em>CURLOPT_SSL_CIPHER_LIST</em>
+  option; see the libcurl documentation for more details on the format
+  of this list.
+</p>
+<div class="paragraph"><p>Can be overridden by the <em>GIT_SSL_CIPHER_LIST</em> environment variable.
+To force git to use libcurl&#8217;s default cipher list and ignore any
+explicit http.sslCipherList option, set <em>GIT_SSL_CIPHER_LIST</em> to the
+empty string.</p></div>
+</dd>
+<dt class="hdlist1">
 http.sslVerify
 </dt>
 <dd>
@@ -4906,6 +4954,16 @@ merge.ff
 </p>
 </dd>
 <dt class="hdlist1">
+merge.branchdesc
+</dt>
+<dd>
+<p>
+        In addition to branch names, populate the log message with
+        the branch description text associated with them.  Defaults
+        to false.
+</p>
+</dd>
+<dt class="hdlist1">
 merge.log
 </dt>
 <dd>
@@ -5064,6 +5122,11 @@ vimdiff2
 <li>
 <p>
 vimdiff3
+</p>
+</li>
+<li>
+<p>
+winmerge
 </p>
 </li>
 <li>
@@ -5471,7 +5534,7 @@ pull.ff
         a case (equivalent to giving the <code>--no-ff</code> option from the command
         line). When set to <code>only</code>, only such fast-forward merges are
         allowed (equivalent to giving the <code>--ff-only</code> option from the
-        command line).
+        command line). This setting overrides <code>merge.ff</code> when pulling.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -6376,11 +6439,11 @@ uploadpack.hideRefs
         are under the hierarchies listed on the value of this
         variable is excluded, and is hidden from <code>git ls-remote</code>,
         <code>git fetch</code>, etc.  An attempt to fetch a hidden ref by <code>git
-        fetch</code> will fail.  See also <code>uploadpack.allowtipsha1inwant</code>.
+        fetch</code> will fail.  See also <code>uploadpack.allowTipSHA1InWant</code>.
 </p>
 </dd>
 <dt class="hdlist1">
-uploadpack.allowtipsha1inwant
+uploadpack.allowTipSHA1InWant
 </dt>
 <dd>
 <p>
@@ -6388,6 +6451,17 @@ uploadpack.allowtipsha1inwant
         to accept a fetch request that asks for an object at the tip
         of a hidden ref (by default, such a request is rejected).
         see also <code>uploadpack.hideRefs</code>.
+</p>
+</dd>
+<dt class="hdlist1">
+uploadpack.allowReachableSHA1InWant
+</dt>
+<dd>
+<p>
+        Allow <code>upload-pack</code> to accept a fetch request that asks for an
+        object that is reachable from any ref tip. However, note that
+        calculating object reachability is computationally expensive.
+        Defaults to <code>false</code>.
 </p>
 </dd>
 <dt class="hdlist1">

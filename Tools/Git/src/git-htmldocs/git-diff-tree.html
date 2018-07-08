@@ -780,7 +780,6 @@ git-diff-tree(1) Manual Page
 <dd>
 <p>
         Generate patch (see section on generating patches).
-        
 </p>
 </dd>
 <dt class="hdlist1">
@@ -813,8 +812,8 @@ git-diff-tree(1) Manual Page
 </dt>
 <dd>
 <p>
-        Generate the raw format.
-         This is the default.
+        Generate the diff in raw format.
+        This is the default.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1213,6 +1212,20 @@ override configuration settings.</p></div>
         initial indent of the line are considered whitespace errors.
         Exits with non-zero status if problems are found. Not compatible
         with --exit-code.
+</p>
+</dd>
+<dt class="hdlist1">
+--ws-error-highlight=&lt;kind&gt;
+</dt>
+<dd>
+<p>
+        Highlight whitespace errors on lines specified by &lt;kind&gt;
+        in the color specified by <code>color.diff.whitespace</code>.  &lt;kind&gt;
+        is a comma separated list of <code>old</code>, <code>new</code>, <code>context</code>.  When
+        this option is not given, only whitespace errors in <code>new</code>
+        lines are highlighted.  E.g. <code>--ws-error-highlight=new,old</code>
+        highlights whitespace errors on both deleted and added lines.
+        <code>all</code> can be used as a short-hand for <code>old,new,context</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1792,7 +1805,10 @@ people using 80-column terminals.</p></div>
         in their encoding header; this option can be used to tell the
         command to re-code the commit log message in the encoding
         preferred by the user.  For non plumbing commands this
-        defaults to UTF-8.
+        defaults to UTF-8. Note that if an object claims to be encoded
+        in <code>X</code> and we are outputting in <code>X</code>, we will output the object
+        verbatim; this means that invalid sequences in the original
+        commit may be copied to the output.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2028,7 +2044,10 @@ stored in the commit object.  Notably, the SHA-1s are
 displayed in full, regardless of whether --abbrev or
 --no-abbrev are used, and <em>parents</em> information show the
 true parent commits, without taking grafts or history
-simplification into account.</p></div>
+simplification into account. Note that this format affects the way
+commits are displayed, but not the way the diff is shown e.g. with
+<code>git log --raw</code>. To get full object names in a raw diff format,
+use <code>--no-abbrev</code>.</p></div>
 </li>
 <li>
 <p>
@@ -2798,10 +2817,10 @@ rename to a</code></pre>
 <div class="sect1">
 <h2 id="_combined_diff_format">combined diff format</h2>
 <div class="sectionbody">
-<div class="paragraph"><p>Any diff-generating command can take the &#8216;-c` or <code>--cc</code> option to
+<div class="paragraph"><p>Any diff-generating command can take the <code>-c</code> or <code>--cc</code> option to
 produce a <em>combined diff</em> when showing a merge. This is the default
 format when showing merges with <a href="git-diff.html">git-diff(1)</a> or
-<a href="git-show.html">git-show(1)</a>. Note also that you can give the `-m&#8217; option to any
+<a href="git-show.html">git-show(1)</a>. Note also that you can give the <code>-m</code> option to any
 of these commands to force generation of diffs with individual parents
 of a merge.</p></div>
 <div class="paragraph"><p>A <em>combined diff</em> format looks like this:</p></div>

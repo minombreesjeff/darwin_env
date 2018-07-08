@@ -23,7 +23,9 @@ ifndef::git-format-patch[]
 -u::
 --patch::
 	Generate patch (see section on generating patches).
-	{git-diff? This is the default.}
+ifdef::git-diff[]
+	This is the default.
+endif::git-diff[]
 endif::git-format-patch[]
 
 -s::
@@ -41,8 +43,19 @@ endif::git-format-patch[]
 
 ifndef::git-format-patch[]
 --raw::
-	Generate the raw format.
-	{git-diff-core? This is the default.}
+ifndef::git-log[]
+	Generate the diff in raw format.
+ifdef::git-diff-core[]
+	This is the default.
+endif::git-diff-core[]
+endif::git-log[]
+ifdef::git-log[]
+	For each commit, show a summary of changes using the raw diff
+	format. See the "RAW OUTPUT FORMAT" section of
+	linkgit:git-diff[1]. This is different from showing the log
+	itself in raw format, which you can achieve with
+	`--format=raw`.
+endif::git-log[]
 endif::git-format-patch[]
 
 ifndef::git-format-patch[]
@@ -278,6 +291,16 @@ ifndef::git-format-patch[]
 	initial indent of the line are considered whitespace errors.
 	Exits with non-zero status if problems are found. Not compatible
 	with --exit-code.
+
+--ws-error-highlight=<kind>::
+	Highlight whitespace errors on lines specified by <kind>
+	in the color specified by `color.diff.whitespace`.  <kind>
+	is a comma separated list of `old`, `new`, `context`.  When
+	this option is not given, only whitespace errors in `new`
+	lines are highlighted.  E.g. `--ws-error-highlight=new,old`
+	highlights whitespace errors on both deleted and added lines.
+	`all` can be used as a short-hand for `old,new,context`.
+
 endif::git-format-patch[]
 
 --full-index::

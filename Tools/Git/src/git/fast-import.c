@@ -405,7 +405,7 @@ static void dump_marks_helper(FILE *, uintmax_t, struct mark_set *);
 
 static void write_crash_report(const char *err)
 {
-	char *loc = git_path("fast_import_crash_%"PRIuMAX, (uintmax_t) getpid());
+	const char *loc = git_path("fast_import_crash_%"PRIuMAX, (uintmax_t) getpid());
 	FILE *rpt = fopen(loc, "w");
 	struct branch *b;
 	unsigned long lu;
@@ -2588,14 +2588,12 @@ static int parse_from(struct branch *b)
 {
 	const char *from;
 	struct branch *s;
+	unsigned char sha1[20];
 
 	if (!skip_prefix(command_buf.buf, "from ", &from))
 		return 0;
 
-	if (b->branch_tree.tree) {
-		release_tree_content_recursive(b->branch_tree.tree);
-		b->branch_tree.tree = NULL;
-	}
+	hashcpy(sha1, b->branch_tree.versions[1].sha1);
 
 	s = lookup_branch(from);
 	if (b == s)
@@ -2610,14 +2608,16 @@ static int parse_from(struct branch *b)
 		struct object_entry *oe = find_mark(idnum);
 		if (oe->type != OBJ_COMMIT)
 			die("Mark :%" PRIuMAX " not a commit", idnum);
-		hashcpy(b->sha1, oe->idx.sha1);
-		if (oe->pack_id != MAX_PACK_ID) {
-			unsigned long size;
-			char *buf = gfi_unpack_entry(oe, &size);
-			parse_from_commit(b, buf, size);
-			free(buf);
-		} else
-			parse_from_existing(b);
+		if (hashcmp(b->sha1, oe->idx.sha1)) {
+			hashcpy(b->sha1, oe->idx.sha1);
+			if (oe->pack_id != MAX_PACK_ID) {
+				unsigned long size;
+				char *buf = gfi_unpack_entry(oe, &size);
+				parse_from_commit(b, buf, size);
+				free(buf);
+			} else
+				parse_from_existing(b);
+		}
 	} else if (!get_sha1(from, b->sha1)) {
 		parse_from_existing(b);
 		if (is_null_sha1(b->sha1))
@@ -2625,6 +2625,11 @@ static int parse_from(struct branch *b)
 	}
 	else
 		die("Invalid ref name or SHA1 expression: %s", from);
+
+	if (b->branch_tree.tree && hashcmp(sha1, b->branch_tree.versions[1].sha1)) {
+		release_tree_content_recursive(b->branch_tree.tree);
+		b->branch_tree.tree = NULL;
+	}
 
 	read_next_command();
 	return 1;
@@ -3113,12 +3118,9 @@ static void parse_progress(void)
 
 static char* make_fast_import_path(const char *path)
 {
-	struct strbuf abs_path = STRBUF_INIT;
-
 	if (!relative_marks_paths || is_absolute_path(path))
 		return xstrdup(path);
-	strbuf_addf(&abs_path, "%s/info/fast-import/%s", get_git_dir(), path);
-	return strbuf_detach(&abs_path, NULL);
+	return xstrdup(git_path("info/fast-import/%s", path));
 }
 
 static void option_import_marks(const char *marks,

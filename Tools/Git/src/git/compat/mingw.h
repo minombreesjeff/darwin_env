@@ -76,6 +76,14 @@ struct itimerval {
 };
 #define ITIMER_REAL 0
 
+struct utsname {
+	char sysname[16];
+	char nodename[1];
+	char release[16];
+	char version[16];
+	char machine[1];
+};
+
 /*
  * sanitize preprocessor namespace polluted by Windows headers defining
  * macros which collide with git local versions
@@ -98,8 +106,6 @@ static inline unsigned int alarm(unsigned int seconds)
 { return 0; }
 static inline int fsync(int fd)
 { return _commit(fd); }
-static inline pid_t getppid(void)
-{ return 1; }
 static inline void sync(void)
 {}
 static inline uid_t getuid(void)
@@ -121,6 +127,12 @@ static inline int sigaddset(sigset_t *set, int signum)
 #define SIG_UNBLOCK 0
 static inline int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 { return 0; }
+static inline pid_t getppid(void)
+{ return 1; }
+static inline pid_t getpgid(pid_t pid)
+{ return pid == 0 ? getpid() : pid; }
+static inline pid_t tcgetpgrp(int fd)
+{ return getpid(); }
 
 /*
  * simple adaptors
@@ -171,6 +183,7 @@ struct passwd *getpwuid(uid_t uid);
 int setitimer(int type, struct itimerval *in, struct itimerval *out);
 int sigaction(int sig, struct sigaction *in, struct sigaction *out);
 int link(const char *oldpath, const char *newpath);
+int uname(struct utsname *buf);
 
 /*
  * replacements of existing functions

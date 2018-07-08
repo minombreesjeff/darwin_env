@@ -453,6 +453,8 @@ false), while all other repositories are assumed to be bare (bare
 
 core.worktree::
 	Set the path to the root of the working tree.
+	If GIT_COMMON_DIR environment variable is set, core.worktree
+	is ignored and not used for determining the root of working tree.
 	This can be overridden by the GIT_WORK_TREE environment
 	variable and the '--work-tree' command-line option.
 	The value can be an absolute path or relative to the path to
@@ -621,6 +623,12 @@ core.commentChar::
 +
 If set to "auto", `git-commit` would select a character that is not
 the beginning character of any line in existing commit messages.
+
+core.packedRefsTimeout::
+	The length of time, in milliseconds, to retry when trying to
+	lock the `packed-refs` file. Value 0 means not to retry at
+	all; -1 means to try indefinitely. Default is 1000 (i.e.,
+	retry for 1 second).
 
 sequence.editor::
 	Text editor used by `git rebase -i` for editing the rebase instruction file.
@@ -1275,6 +1283,13 @@ gc.pruneExpire::
 	"now" may be used to disable this  grace period and always prune
 	unreachable objects immediately.
 
+gc.pruneWorktreesExpire::
+	When 'git gc' is run, it will call
+	'prune --worktrees --expire 3.months.ago'.
+	Override the grace period with this config variable. The value
+	"now" may be used to disable the grace period and prune
+	$GIT_DIR/worktrees immediately.
+
 gc.reflogExpire::
 gc.<pattern>.reflogExpire::
 	'git reflog expire' removes reflog entries older than
@@ -1283,7 +1298,7 @@ gc.<pattern>.reflogExpire::
 	the refs that match the <pattern>.
 
 gc.reflogExpireUnreachable::
-gc.<ref>.reflogExpireUnreachable::
+gc.<pattern>.reflogExpireUnreachable::
 	'git reflog expire' removes reflog entries older than
 	this time and are not reachable from the current tip;
 	defaults to 30 days.  With "<pattern>" (e.g. "refs/stash")
@@ -1560,6 +1575,19 @@ http.cookieFile::
 http.saveCookies::
 	If set, store cookies received during requests to the file specified by
 	http.cookieFile. Has no effect if http.cookieFile is unset.
+
+http.sslCipherList::
+  A list of SSL ciphers to use when negotiating an SSL connection.
+  The available ciphers depend on whether libcurl was built against
+  NSS or OpenSSL and the particular configuration of the crypto
+  library in use.  Internally this sets the 'CURLOPT_SSL_CIPHER_LIST'
+  option; see the libcurl documentation for more details on the format
+  of this list.
++
+Can be overridden by the 'GIT_SSL_CIPHER_LIST' environment variable.
+To force git to use libcurl's default cipher list and ignore any
+explicit http.sslCipherList option, set 'GIT_SSL_CIPHER_LIST' to the
+empty string.
 
 http.sslVerify::
 	Whether to verify the SSL certificate when fetching or pushing
@@ -2531,13 +2559,19 @@ uploadpack.hideRefs::
 	are under the hierarchies listed on the value of this
 	variable is excluded, and is hidden from `git ls-remote`,
 	`git fetch`, etc.  An attempt to fetch a hidden ref by `git
-	fetch` will fail.  See also `uploadpack.allowtipsha1inwant`.
+	fetch` will fail.  See also `uploadpack.allowTipSHA1InWant`.
 
-uploadpack.allowtipsha1inwant::
+uploadpack.allowTipSHA1InWant::
 	When `uploadpack.hideRefs` is in effect, allow `upload-pack`
 	to accept a fetch request that asks for an object at the tip
 	of a hidden ref (by default, such a request is rejected).
 	see also `uploadpack.hideRefs`.
+
+uploadpack.allowReachableSHA1InWant::
+	Allow `upload-pack` to accept a fetch request that asks for an
+	object that is reachable from any ref tip. However, note that
+	calculating object reachability is computationally expensive.
+	Defaults to `false`.
 
 uploadpack.keepAlive::
 	When `upload-pack` has started `pack-objects`, there may be a

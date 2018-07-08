@@ -2,12 +2,12 @@
 .\"     Title: git-config
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 04/30/2015
+.\"      Date: 07/27/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 2.4.0
+.\"    Source: Git 2.5.0
 .\"  Language: English
 .\"
-.TH "GIT\-CONFIG" "1" "04/30/2015" "Git 2\&.4\&.0" "Git Manual"
+.TH "GIT\-CONFIG" "1" "07/27/2015" "Git 2\&.5\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -1160,7 +1160,7 @@ when the repository was created\&. By default a repository that ends in "/\&.git
 .PP
 core\&.worktree
 .RS 4
-Set the path to the root of the working tree\&. This can be overridden by the GIT_WORK_TREE environment variable and the
+Set the path to the root of the working tree\&. If GIT_COMMON_DIR environment variable is set, core\&.worktree is ignored and not used for determining the root of working tree\&. This can be overridden by the GIT_WORK_TREE environment variable and the
 \fI\-\-work\-tree\fR
 command\-line option\&. The value can be an absolute path or relative to the path to the \&.git directory, which is either specified by \-\-git\-dir or GIT_DIR, or automatically discovered\&. If \-\-git\-dir or GIT_DIR is specified but none of \-\-work\-tree, GIT_WORK_TREE and core\&.worktree is specified, the current working directory is regarded as the top level of your working tree\&.
 .sp
@@ -1334,6 +1334,13 @@ that lets you edit messages consider a line that begins with this character comm
 If set to "auto",
 git\-commit
 would select a character that is not the beginning character of any line in existing commit messages\&.
+.RE
+.PP
+core\&.packedRefsTimeout
+.RS 4
+The length of time, in milliseconds, to retry when trying to lock the
+packed\-refs
+file\&. Value 0 means not to retry at all; \-1 means to try indefinitely\&. Default is 1000 (i\&.e\&., retry for 1 second)\&.
 .RE
 .PP
 sequence\&.editor
@@ -1820,8 +1827,10 @@ color\&.diff\&.<slot>
 Use customized color for diff colorization\&.
 <slot>
 specifies which part of the patch to use the specified color, and is one of
+context
+(context text \-
 plain
-(context text),
+is a historical synonym),
 meta
 (metainformation),
 frag
@@ -2662,6 +2671,17 @@ vimdiff3
 .sp -1
 .IP \(bu 2.3
 .\}
+winmerge
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 xxdiff
 .RE
 .RE
@@ -2895,6 +2915,14 @@ When
 \fIgit gc\fR
 is run, it will call
 \fIprune \-\-expire 2\&.weeks\&.ago\fR\&. Override the grace period with this config variable\&. The value "now" may be used to disable this grace period and always prune unreachable objects immediately\&.
+.RE
+.PP
+gc\&.pruneWorktreesExpire
+.RS 4
+When
+\fIgit gc\fR
+is run, it will call
+\fIprune \-\-worktrees \-\-expire 3\&.months\&.ago\fR\&. Override the grace period with this config variable\&. The value "now" may be used to disable the grace period and prune $GIT_DIR/worktrees immediately\&.
 .RE
 .PP
 gc\&.reflogExpire, gc\&.<pattern>\&.reflogExpire
@@ -3284,6 +3312,19 @@ File containing previously stored cookie lines which should be used in the Git h
 http\&.saveCookies
 .RS 4
 If set, store cookies received during requests to the file specified by http\&.cookieFile\&. Has no effect if http\&.cookieFile is unset\&.
+.RE
+.PP
+http\&.sslCipherList
+.RS 4
+A list of SSL ciphers to use when negotiating an SSL connection\&. The available ciphers depend on whether libcurl was built against NSS or OpenSSL and the particular configuration of the crypto library in use\&. Internally this sets the
+\fICURLOPT_SSL_CIPHER_LIST\fR
+option; see the libcurl documentation for more details on the format of this list\&.
+.sp
+Can be overridden by the
+\fIGIT_SSL_CIPHER_LIST\fR
+environment variable\&. To force git to use libcurl\(cqs default cipher list and ignore any explicit http\&.sslCipherList option, set
+\fIGIT_SSL_CIPHER_LIST\fR
+to the empty string\&.
 .RE
 .PP
 http\&.sslVerify
@@ -3697,6 +3738,11 @@ only, only such fast\-forward merges are allowed (equivalent to giving the
 option from the command line)\&.
 .RE
 .PP
+merge\&.branchdesc
+.RS 4
+In addition to branch names, populate the log message with the branch description text associated with them\&. Defaults to false\&.
+.RE
+.PP
 merge\&.log
 .RS 4
 In addition to branch names, populate the log message with at most the specified number of one\-line descriptions from the actual commits that are being merged\&. Defaults to false, and true is a synonym for 20\&.
@@ -3952,6 +3998,17 @@ vimdiff2
 .IP \(bu 2.3
 .\}
 vimdiff3
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+winmerge
 .RE
 .sp
 .RS 4
@@ -4253,7 +4310,9 @@ false, this variable tells Git to create an extra merge commit in such a case (e
 option from the command line)\&. When set to
 only, only such fast\-forward merges are allowed (equivalent to giving the
 \-\-ff\-only
-option from the command line)\&.
+option from the command line)\&. This setting overrides
+merge\&.ff
+when pulling\&.
 .RE
 .PP
 pull\&.rebase
@@ -4926,10 +4985,10 @@ git ls\-remote,
 git fetch, etc\&. An attempt to fetch a hidden ref by
 git fetch
 will fail\&. See also
-uploadpack\&.allowtipsha1inwant\&.
+uploadpack\&.allowTipSHA1InWant\&.
 .RE
 .PP
-uploadpack\&.allowtipsha1inwant
+uploadpack\&.allowTipSHA1InWant
 .RS 4
 When
 uploadpack\&.hideRefs
@@ -4937,6 +4996,14 @@ is in effect, allow
 upload\-pack
 to accept a fetch request that asks for an object at the tip of a hidden ref (by default, such a request is rejected)\&. see also
 uploadpack\&.hideRefs\&.
+.RE
+.PP
+uploadpack\&.allowReachableSHA1InWant
+.RS 4
+Allow
+upload\-pack
+to accept a fetch request that asks for an object that is reachable from any ref tip\&. However, note that calculating object reachability is computationally expensive\&. Defaults to
+false\&.
 .RE
 .PP
 uploadpack\&.keepAlive

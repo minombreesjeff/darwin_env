@@ -179,13 +179,15 @@ static void add_merge_config(struct ref **head,
 	}
 }
 
-static int add_existing(const char *refname, const unsigned char *sha1,
+static int add_existing(const char *refname, const struct object_id *oid,
 			int flag, void *cbdata)
 {
 	struct string_list *list = (struct string_list *)cbdata;
 	struct string_list_item *item = string_list_insert(list, refname);
-	item->util = xmalloc(20);
-	hashcpy(item->util, sha1);
+	struct object_id *old_oid = xmalloc(sizeof(*old_oid));
+
+	oidcpy(old_oid, oid);
+	item->util = old_oid;
 	return 0;
 }
 
@@ -588,7 +590,8 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 	struct strbuf note = STRBUF_INIT;
 	const char *what, *kind;
 	struct ref *rm;
-	char *url, *filename = dry_run ? "/dev/null" : git_path("FETCH_HEAD");
+	char *url;
+	const char *filename = dry_run ? "/dev/null" : git_path("FETCH_HEAD");
 	int want_status;
 
 	fp = fopen(filename, "a");
@@ -822,7 +825,7 @@ static void check_not_current_branch(struct ref *ref_map)
 
 static int truncate_fetch_head(void)
 {
-	char *filename = git_path("FETCH_HEAD");
+	const char *filename = git_path("FETCH_HEAD");
 	FILE *fp = fopen(filename, "w");
 
 	if (!fp)
@@ -912,9 +915,10 @@ static int do_fetch(struct transport *transport,
 			struct string_list_item *peer_item =
 				string_list_lookup(&existing_refs,
 						   rm->peer_ref->name);
-			if (peer_item)
-				hashcpy(rm->peer_ref->old_sha1,
-					peer_item->util);
+			if (peer_item) {
+				struct object_id *old_oid = peer_item->util;
+				hashcpy(rm->peer_ref->old_sha1, old_oid->hash);
+			}
 		}
 	}
 
@@ -975,17 +979,15 @@ static int get_remote_group(const char *key, const char *value, void *priv)
 {
 	struct remote_group_data *g = priv;
 
-	if (starts_with(key, "remotes.") &&
-			!strcmp(key + 8, g->name)) {
+	if (skip_prefix(key, "remotes.", &key) && !strcmp(key, g->name)) {
 		/* split list by white space */
-		int space = strcspn(value, " \t\n");
 		while (*value) {
-			if (space > 1) {
+			size_t wordlen = strcspn(value, " \t\n");
+
+			if (wordlen >= 1)
 				string_list_append(g->list,
-						   xstrndup(value, space));
-			}
-			value += space + (value[space] != '\0');
-			space = strcspn(value, " \t\n");
+						   xstrndup(value, wordlen));
+			value += wordlen + (value[wordlen] != '\0');
 		}
 	}
 

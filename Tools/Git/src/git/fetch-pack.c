@@ -43,7 +43,12 @@ static int marked;
 #define MAX_IN_VAIN 256
 
 static struct prio_queue rev_list = { compare_commits_by_commit_date };
-static int non_common_revs, multi_ack, use_sideband, allow_tip_sha1_in_want;
+static int non_common_revs, multi_ack, use_sideband;
+/* Allow specifying sha1 if it is a ref tip. */
+#define ALLOW_TIP_SHA1	01
+/* Allow request of a sha1 if it is reachable from a ref (possibly hidden ref). */
+#define ALLOW_REACHABLE_SHA1	02
+static unsigned int allow_unadvertised_object_request;
 
 static void rev_list_push(struct commit *commit, int mark)
 {
@@ -60,7 +65,7 @@ static void rev_list_push(struct commit *commit, int mark)
 	}
 }
 
-static int rev_list_insert_ref(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
+static int rev_list_insert_ref(const char *refname, const unsigned char *sha1)
 {
 	struct object *o = deref_tag(parse_object(sha1), refname, 0);
 
@@ -70,9 +75,16 @@ static int rev_list_insert_ref(const char *refname, const unsigned char *sha1, i
 	return 0;
 }
 
-static int clear_marks(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
+static int rev_list_insert_ref_oid(const char *refname, const struct object_id *oid,
+				   int flag, void *cb_data)
 {
-	struct object *o = deref_tag(parse_object(sha1), refname, 0);
+	return rev_list_insert_ref(refname, oid->hash);
+}
+
+static int clear_marks(const char *refname, const struct object_id *oid,
+		       int flag, void *cb_data)
+{
+	struct object *o = deref_tag(parse_object(oid->hash), refname, 0);
 
 	if (o && o->type == OBJ_COMMIT)
 		clear_commit_marks((struct commit *)o,
@@ -226,7 +238,7 @@ static void send_request(struct fetch_pack_args *args,
 
 static void insert_one_alternate_ref(const struct ref *ref, void *unused)
 {
-	rev_list_insert_ref(NULL, ref->old_sha1, 0, NULL);
+	rev_list_insert_ref(NULL, ref->old_sha1);
 }
 
 #define INITIAL_FLUSH 16
@@ -263,7 +275,7 @@ static int find_common(struct fetch_pack_args *args,
 		for_each_ref(clear_marks, NULL);
 	marked = 1;
 
-	for_each_ref(rev_list_insert_ref, NULL);
+	for_each_ref(rev_list_insert_ref_oid, NULL);
 	for_each_alternate_ref(insert_one_alternate_ref, NULL);
 
 	fetching = 0;
@@ -466,7 +478,7 @@ done:
 
 static struct commit_list *complete;
 
-static int mark_complete(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
+static int mark_complete(const unsigned char *sha1)
 {
 	struct object *o = parse_object(sha1);
 
@@ -485,6 +497,12 @@ static int mark_complete(const char *refname, const unsigned char *sha1, int fla
 		}
 	}
 	return 0;
+}
+
+static int mark_complete_oid(const char *refname, const struct object_id *oid,
+			     int flag, void *cb_data)
+{
+	return mark_complete(oid->hash);
 }
 
 static void mark_recent_complete_commits(struct fetch_pack_args *args,
@@ -542,7 +560,8 @@ static void filter_refs(struct fetch_pack_args *args,
 	}
 
 	/* Append unmatched requests to the list */
-	if (allow_tip_sha1_in_want) {
+	if ((allow_unadvertised_object_request &
+	    (ALLOW_TIP_SHA1 | ALLOW_REACHABLE_SHA1))) {
 		for (i = 0; i < nr_sought; i++) {
 			unsigned char sha1[20];
 
@@ -564,7 +583,7 @@ static void filter_refs(struct fetch_pack_args *args,
 
 static void mark_alternate_complete(const struct ref *ref, void *unused)
 {
-	mark_complete(NULL, ref->old_sha1, 0, NULL);
+	mark_complete(ref->old_sha1);
 }
 
 static int everything_local(struct fetch_pack_args *args,
@@ -599,7 +618,7 @@ static int everything_local(struct fetch_pack_args *args,
 	}
 
 	if (!args->depth) {
-		for_each_ref(mark_complete, NULL);
+		for_each_ref(mark_complete_oid, NULL);
 		for_each_alternate_ref(mark_alternate_complete, NULL);
 		commit_list_sort_by_date(&complete);
 		if (cutoff)
@@ -821,7 +840,12 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 	if (server_supports("allow-tip-sha1-in-want")) {
 		if (args->verbose)
 			fprintf(stderr, "Server supports allow-tip-sha1-in-want\n");
-		allow_tip_sha1_in_want = 1;
+		allow_unadvertised_object_request |= ALLOW_TIP_SHA1;
+	}
+	if (server_supports("allow-reachable-sha1-in-want")) {
+		if (args->verbose)
+			fprintf(stderr, "Server supports allow-reachable-sha1-in-want\n");
+		allow_unadvertised_object_request |= ALLOW_REACHABLE_SHA1;
 	}
 	if (!server_supports("thin-pack"))
 		args->use_thin_pack = 0;

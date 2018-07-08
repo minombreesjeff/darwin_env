@@ -6,7 +6,6 @@
 #include "reachable.h"
 #include "parse-options.h"
 #include "progress.h"
-#include "dir.h"
 
 static const char * const prune_usage[] = {
 	N_("git prune [-n] [-v] [--expire <time>] [--] [<head>...]"),
@@ -119,6 +118,7 @@ int cmd_prune(int argc, const char **argv, const char *prefix)
 	init_revisions(&revs, prefix);
 
 	argc = parse_options(argc, argv, prefix, options, prune_usage, 0);
+
 	while (argc--) {
 		unsigned char sha1[20];
 		const char *name = *argv++;

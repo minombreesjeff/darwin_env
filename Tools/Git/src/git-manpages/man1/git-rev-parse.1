@@ -2,12 +2,12 @@
 .\"     Title: git-rev-parse
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 04/30/2015
+.\"      Date: 07/27/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 2.4.0
+.\"    Source: Git 2.5.0
 .\"  Language: English
 .\"
-.TH "GIT\-REV\-PARSE" "1" "04/30/2015" "Git 2\&.4\&.0" "Git Manual"
+.TH "GIT\-REV\-PARSE" "1" "07/27/2015" "Git 2\&.5\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -146,7 +146,9 @@ eval "set \-\- $(git rev\-parse \-\-sq \-\-prefix "$prefix" "$@")"
 .RS 4
 Verify that exactly one parameter is provided, and that it can be turned into a raw 20\-byte SHA\-1 that can be used to access the object database\&. If so, emit it to the standard output; otherwise, error out\&.
 .sp
-If you want to make sure that the output actually names an object in your object database and/or can be used as a specific type of object For example,
+If you want to make sure that the output actually names an object in your object database and/or can be used as a specific type of object you require, you can add the
+^{type}
+peeling operator to the parameter\&. For example,
 git rev\-parse "$VAR^{commit}"
 will make sure
 $VAR
@@ -294,6 +296,14 @@ $GIT_DIR
 is not defined and the current directory is not detected to lie in a Git repository or work tree print a message to stderr and exit with nonzero status\&.
 .RE
 .PP
+\-\-git\-common\-dir
+.RS 4
+Show
+$GIT_COMMON_DIR
+if defined, else
+$GIT_DIR\&.
+.RE
+.PP
 \-\-is\-inside\-git\-dir
 .RS 4
 When the current working directory is below the repository directory print "true", otherwise "false"\&.
@@ -312,6 +322,11 @@ When the repository is bare print "true", otherwise "false"\&.
 \-\-resolve\-git\-dir <path>
 .RS 4
 Check if <path> is a valid repository or a gitfile that points at a valid repository, and print the location of the repository\&. If <path> is a gitfile then the resolved path to the real repository is printed\&.
+.RE
+.PP
+\-\-git\-path <path>
+.RS 4
+Resolve "$GIT_DIR/<path>" and takes other path relocation variables such as $GIT_OBJECT_DIRECTORY, $GIT_INDEX_FILE\&... into account\&. For example, if $GIT_OBJECT_DIRECTORY is set to /foo/bar then "git rev\-parse \-\-git\-path objects/abc" returns /foo/bar/abc\&.
 .RE
 .PP
 \-\-show\-cdup
@@ -562,6 +577,45 @@ to a branchname (short form
 branch\&.<name>\&.remote
 and
 branch\&.<name>\&.merge)\&. A missing branchname defaults to the current one\&.
+.RE
+.PP
+\fI<branchname>@{push}\fR, e\&.g\&. \fImaster@{push}\fR, \fI@{push}\fR
+.RS 4
+The suffix
+\fI@{push}\fR
+reports the branch "where we would push to" if
+git push
+were run while
+branchname
+was checked out (or the current
+\fIHEAD\fR
+if no branchname is specified)\&. Since our push destination is in a remote repository, of course, we report the local tracking branch that corresponds to that branch (i\&.e\&., something in
+\fIrefs/remotes/\fR)\&.
+.sp
+Here\(cqs an example to make it more clear:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ git config push\&.default current
+$ git config remote\&.pushdefault myfork
+$ git checkout \-b mybranch origin/master
+
+$ git rev\-parse \-\-symbolic\-full\-name @{upstream}
+refs/remotes/origin/master
+
+$ git rev\-parse \-\-symbolic\-full\-name @{push}
+refs/remotes/myfork/mybranch
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+Note in the example that we set up a triangular workflow, where we pull from one location and push to another\&. In a non\-triangular workflow,
+\fI@{push}\fR
+is the same as
+\fI@{upstream}\fR, and there is no need for it\&.
 .RE
 .PP
 \fI<rev>^\fR, e\&.g\&. \fIHEAD^, v1\&.5\&.1^0\fR

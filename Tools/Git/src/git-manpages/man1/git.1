@@ -2,12 +2,12 @@
 .\"     Title: git
 .\"    Author: [see the "Authors" section]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 04/30/2015
+.\"      Date: 07/27/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 2.4.0
+.\"    Source: Git 2.5.0
 .\"  Language: English
 .\"
-.TH "GIT" "1" "04/30/2015" "Git 2\&.4\&.0" "Git Manual"
+.TH "GIT" "1" "07/27/2015" "Git 2\&.5\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -265,7 +265,7 @@ Move objects and refs by archive\&.
 .PP
 \fBgit-checkout\fR(1)
 .RS 4
-Checkout a branch or paths to the working tree\&.
+Switch branches or restore working tree files\&.
 .RE
 .PP
 \fBgit-cherry-pick\fR(1)
@@ -295,7 +295,7 @@ Record changes to the repository\&.
 .PP
 \fBgit-describe\fR(1)
 .RS 4
-Show the most recent tag that is reachable from a commit\&.
+Describe a commit using the most recent tag reachable from it\&.
 .RE
 .PP
 \fBgit-diff\fR(1)
@@ -413,6 +413,11 @@ Initialize, update or inspect submodules\&.
 \fBgit-tag\fR(1)
 .RS 4
 Create, list, delete or verify a tag object signed with GPG\&.
+.RE
+.PP
+\fBgit-worktree\fR(1)
+.RS 4
+Manage multiple worktrees\&.
 .RE
 .PP
 \fBgitk\fR(1)
@@ -1139,6 +1144,15 @@ When run in a directory that does not have "\&.git" repository directory, Git tr
 \fIGIT_CEILING_DIRECTORIES\fR, this will not affect an explicit repository directory set via
 \fIGIT_DIR\fR
 or on the command line\&.
+.RE
+.PP
+\fIGIT_COMMON_DIR\fR
+.RS 4
+If this variable is set to a path, non\-worktree files that are normally in $GIT_DIR will be taken from this path instead\&. Worktree\-specific files such as HEAD or index are taken from $GIT_DIR\&. See
+\fBgitrepository-layout\fR(5)
+and
+\fBgit-worktree\fR(1)
+for details\&. This variable has lower precedence than other path variables such as GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY\&...
 .RE
 .SS "Git Commits"
 .PP

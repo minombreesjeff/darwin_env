@@ -1392,8 +1392,48 @@ sendemail.aliasFileType
 <dd>
 <p>
         Format of the file(s) specified in sendemail.aliasesFile. Must be
-        one of <em>mutt</em>, <em>mailrc</em>, <em>pine</em>, <em>elm</em>, or <em>gnus</em>.
+        one of <em>mutt</em>, <em>mailrc</em>, <em>pine</em>, <em>elm</em>, or <em>gnus</em>, or <em>sendmail</em>.
 </p>
+<div class="paragraph"><p>What an alias file in each format looks like can be found in
+the documentation of the email program of the same name. The
+differences and limitations from the standard formats are
+described below:</p></div>
+<div class="openblock">
+<div class="content">
+<div class="dlist"><dl>
+<dt class="hdlist1">
+sendmail
+</dt>
+<dd>
+<div class="ulist"><ul>
+<li>
+<p>
+Quoted aliases and quoted addresses are not supported: lines that
+        contain a <code>"</code> symbol are ignored.
+</p>
+</li>
+<li>
+<p>
+Redirection to a file (<code>/path/name</code>) or pipe (<code>|command</code>) is not
+        supported.
+</p>
+</li>
+<li>
+<p>
+File inclusion (<code>:include: /path/name</code>) is not supported.
+</p>
+</li>
+<li>
+<p>
+Warnings are printed on the standard error output for any
+        explicitly unsupported constructs, and any other lines that are not
+        recognized by the parser.
+</p>
+</li>
+</ul></div>
+</dd>
+</dl></div>
+</div></div>
 </dd>
 <dt class="hdlist1">
 sendemail.multiEdit
@@ -1463,7 +1503,7 @@ $ git send-email outgoing/*</code></pre>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2015-03-23 14:31:16 PDT
+Last updated 2015-06-24 14:09:45 PDT
 </div>
 </div>
 </body>
