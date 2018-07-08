@@ -2,12 +2,12 @@
 .\"     Title: git-push
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 02/05/2015
+.\"      Date: 04/30/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 2.3.0
+.\"    Source: Git 2.4.0
 .\"  Language: English
 .\"
-.TH "GIT\-PUSH" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
+.TH "GIT\-PUSH" "1" "04/30/2015" "Git 2\&.4\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -32,7 +32,7 @@ git-push \- Update remote refs along with associated objects
 .SH "SYNOPSIS"
 .sp
 .nf
-\fIgit push\fR [\-\-all | \-\-mirror | \-\-tags] [\-\-follow\-tags] [\-n | \-\-dry\-run] [\-\-receive\-pack=<git\-receive\-pack>]
+\fIgit push\fR [\-\-all | \-\-mirror | \-\-tags] [\-\-follow\-tags] [\-\-atomic] [\-n | \-\-dry\-run] [\-\-receive\-pack=<git\-receive\-pack>]
            [\-\-repo=<repository>] [\-f | \-\-force] [\-\-prune] [\-v | \-\-verbose]
            [\-u | \-\-set\-upstream] [\-\-signed]
            [\-\-force\-with\-lease[=<refname>[:<expect>]]]
@@ -166,7 +166,11 @@ are pushed, in addition to refspecs explicitly listed on the command line\&.
 .RS 4
 Push all the refs that would be pushed without this option, and also push annotated tags in
 refs/tags
-that are missing from the remote but are pointing at commit\-ish that are reachable from the refs being pushed\&.
+that are missing from the remote but are pointing at commit\-ish that are reachable from the refs being pushed\&. This can also be specified with configuration variable
+\fIpush\&.followTags\fR\&. For more information, see
+\fIpush\&.followTags\fR
+in
+\fBgit-config\fR(1)\&.
 .RE
 .PP
 \-\-signed
@@ -174,6 +178,11 @@ that are missing from the remote but are pointing at commit\-ish that are reacha
 GPG\-sign the push request to update refs on the receiving side, to allow it to be checked by the hooks and/or be logged\&. See
 \fBgit-receive-pack\fR(1)
 for the details on the receiving end\&.
+.RE
+.PP
+\-\-[no\-]atomic
+.RS 4
+Use an atomic transaction on the remote side if available\&. Either all refs are updated, or on error, no refs are updated\&. If the server does not support atomic pushes the push will fail\&.
 .RE
 .PP
 \-\-receive\-pack=<git\-receive\-pack>, \-\-exec=<git\-receive\-pack>
@@ -187,18 +196,16 @@ program on the remote end\&. Sometimes useful when pushing to a remote repositor
 .RS 4
 Usually, "git push" refuses to update a remote ref that is not an ancestor of the local ref used to overwrite it\&.
 .sp
-This option bypasses the check, but instead requires that the current value of the ref to be the expected value\&. "git push" fails otherwise\&.
+This option overrides this restriction if the current value of the remote ref is the expected value\&. "git push" fails otherwise\&.
 .sp
 Imagine that you have to rebase what you have already published\&. You will have to bypass the "must fast\-forward" rule in order to replace the history you originally published with the rebased history\&. If somebody else built on top of your original history while you are rebasing, the tip of the branch at the remote may advance with her commit, and blindly pushing with
 \-\-force
 will lose her work\&.
 .sp
-This option allows you to say that you expect the history you are updating is what you rebased and want to replace\&. If the remote ref still points at the commit you specified, you can be sure that no other people did anything to the ref (it is like taking a "lease" on the ref without explicitly locking it, and you update the ref while making sure that your earlier "lease" is still valid)\&.
+This option allows you to say that you expect the history you are updating is what you rebased and want to replace\&. If the remote ref still points at the commit you specified, you can be sure that no other people did anything to the ref\&. It is like taking a "lease" on the ref without explicitly locking it, and the remote ref is updated only if the "lease" is still valid\&.
 .sp
 \-\-force\-with\-lease
-alone, without specifying the details, will protect all remote refs that are going to be updated by requiring their current value to be the same as the remote\-tracking branch we have for them, unless specified with a
-\-\-force\-with\-lease=<refname>:<expect>
-option that explicitly states what the expected value is\&.
+alone, without specifying the details, will protect all remote refs that are going to be updated by requiring their current value to be the same as the remote\-tracking branch we have for them\&.
 .sp
 \-\-force\-with\-lease=<refname>, without specifying the expected value, will protect the named ref (alone), if it is going to be updated, by requiring its current value to be the same as the remote\-tracking branch we have for it\&.
 .sp
@@ -241,23 +248,7 @@ section above for details\&.
 .PP
 \-\-repo=<repository>
 .RS 4
-This option is only relevant if no <repository> argument is passed in the invocation\&. In this case,
-\fIgit push\fR
-derives the remote name from the current branch: If it tracks a remote branch, then that remote repository is pushed to\&. Otherwise, the name "origin" is used\&. For this latter case, this option can be used to override the name "origin"\&. In other words, the difference between these two commands
-.sp
-.if n \{\
-.RS 4
-.\}
-.nf
-git push public         #1
-git push \-\-repo=public  #2
-.fi
-.if n \{\
-.RE
-.\}
-.sp
-is that #1 always pushes to "public" whereas #2 pushes to "public" only if the current branch does not track a remote branch\&. This is useful if you write an alias or script around
-\fIgit push\fR\&.
+This option is equivalent to the <repository> argument\&. If both are specified, the command\-line argument takes precedence\&.
 .RE
 .PP
 \-u, \-\-set\-upstream

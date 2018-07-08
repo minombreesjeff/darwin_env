@@ -2,12 +2,12 @@
 .\"     Title: git-rev-list
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 02/05/2015
+.\"      Date: 04/30/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 2.3.0
+.\"    Source: Git 2.4.0
 .\"  Language: English
 .\"
-.TH "GIT\-REV\-LIST" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
+.TH "GIT\-REV\-LIST" "1" "04/30/2015" "Git 2\&.4\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -192,13 +192,19 @@ Limit the commits output to ones with log message that matches the specified pat
 .sp
 When
 \-\-show\-notes
-is in effect, the message from the notes as if it is part of the log message\&.
+is in effect, the message from the notes is matched as if it were part of the log message\&.
 .RE
 .PP
 \-\-all\-match
 .RS 4
 Limit the commits output to ones that match all given
 \-\-grep, instead of ones that match at least one\&.
+.RE
+.PP
+\-\-invert\-grep
+.RS 4
+Limit the commits output to ones with log message that do not match the pattern specified with
+\-\-grep=<pattern>\&.
 .RE
 .PP
 \-i, \-\-regexp\-ignore\-case
@@ -269,7 +275,7 @@ reset these limits (to no limit) again\&. Equivalent forms are
 .PP
 \-\-first\-parent
 .RS 4
-Follow only the first parent commit upon seeing a merge commit\&. This option can give a better overview when viewing the evolution of a particular topic branch, because merges into a topic branch tend to be only about adjusting to updated upstream from time to time, and this option allows you to ignore the individual commits brought in to your history by such a merge\&.
+Follow only the first parent commit upon seeing a merge commit\&. This option can give a better overview when viewing the evolution of a particular topic branch, because merges into a topic branch tend to be only about adjusting to updated upstream from time to time, and this option allows you to ignore the individual commits brought in to your history by such a merge\&. Cannot be combined with \-\-bisect\&.
 .RE
 .PP
 \-\-not
@@ -386,12 +392,6 @@ is intended, it must be given explicitly\&.
 .RS 4
 Pretend as if all objects mentioned by reflogs are listed on the command line as
 <commit>\&.
-.RE
-.PP
-\-\-indexed\-objects
-.RS 4
-Pretend as if all trees and blobs used by the index are listed on the command line\&. Note that you probably want to use
-\-\-objects, too\&.
 .RE
 .PP
 \-\-ignore\-missing
@@ -1075,7 +1075,7 @@ outputs
 .RE
 .\}
 .sp
-would be of roughly the same length\&. Finding the change which introduces a regression is thus reduced to a binary search: repeatedly generate and test new \(aqmidpoint\(cqs until the commit chain is of length one\&.
+would be of roughly the same length\&. Finding the change which introduces a regression is thus reduced to a binary search: repeatedly generate and test new \(aqmidpoint\(cqs until the commit chain is of length one\&. Cannot be combined with \-\-first\-parent\&.
 .RE
 .PP
 \-\-bisect\-vars
@@ -1188,6 +1188,12 @@ Similar to
 to build \(lqthin\(rq packs for shallow repositories\&.
 .RE
 .PP
+\-\-indexed\-objects
+.RS 4
+Pretend as if all trees and blobs used by the index are listed on the command line\&. Note that you probably want to use
+\-\-objects, too\&.
+.RE
+.PP
 \-\-unpacked
 .RS 4
 Only useful with
@@ -1200,7 +1206,8 @@ Only show the given commits, but do not traverse their ancestors\&. This has no 
 unsorted
 is given, the commits are shown in the order they were given on the command line\&. Otherwise (if
 sorted
-or no argument was given), the commits are shown in reverse chronological order by commit time\&.
+or no argument was given), the commits are shown in reverse chronological order by commit time\&. Cannot be combined with
+\-\-graph\&.
 .RE
 .PP
 \-\-do\-walk
@@ -1223,9 +1230,20 @@ can be one of
 \fIfull\fR,
 \fIfuller\fR,
 \fIemail\fR,
-\fIraw\fR
+\fIraw\fR,
+\fIformat:<string>\fR
 and
-\fIformat:<string>\fR\&. See the "PRETTY FORMATS" section for some additional details for each format\&. When omitted, the format defaults to
+\fItformat:<string>\fR\&. When
+\fI<format>\fR
+is none of the above, and has
+\fI%placeholder\fR
+in it, it acts as if
+\fI\-\-pretty=tformat:<format>\fR
+were given\&.
+.sp
+See the "PRETTY FORMATS" section for some additional details for each format\&. When
+\fI=<format>\fR
+part is omitted, it defaults to
 \fImedium\fR\&.
 .sp
 Note: you can specify the default pretty format in the repository configuration (see
@@ -1462,7 +1480,8 @@ you would get an output like this:
 .PP
 \-\-graph
 .RS 4
-Draw a text\-based graphical representation of the commit history on the left hand side of the output\&. This may cause extra lines to be printed in between commits, in order for the graph history to be drawn properly\&.
+Draw a text\-based graphical representation of the commit history on the left hand side of the output\&. This may cause extra lines to be printed in between commits, in order for the graph history to be drawn properly\&. Cannot be combined with
+\-\-no\-walk\&.
 .sp
 This enables parent rewriting, see
 \fIHistory Simplification\fR

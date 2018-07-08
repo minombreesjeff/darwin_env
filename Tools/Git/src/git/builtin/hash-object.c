@@ -22,10 +22,8 @@ static int hash_literally(unsigned char *sha1, int fd, const char *type, unsigne
 
 	if (strbuf_read(&buf, fd, 4096) < 0)
 		ret = -1;
-	else if (flags & HASH_WRITE_OBJECT)
-		ret = write_sha1_file(buf.buf, buf.len, type, sha1);
 	else
-		ret = hash_sha1_file(buf.buf, buf.len, type, sha1);
+		ret = hash_sha1_file_literally(buf.buf, buf.len, type, sha1, flags);
 	strbuf_release(&buf);
 	return ret;
 }
@@ -79,7 +77,7 @@ static void hash_stdin_paths(const char *type, int no_filters, unsigned flags,
 int cmd_hash_object(int argc, const char **argv, const char *prefix)
 {
 	static const char * const hash_object_usage[] = {
-		N_("git hash-object [-t <type>] [-w] [--path=<file>|--no-filters] [--stdin] [--] <file>..."),
+		N_("git hash-object [-t <type>] [-w] [--path=<file> | --no-filters] [--stdin] [--] <file>..."),
 		N_("git hash-object  --stdin-paths < <list-of-paths>"),
 		NULL
 	};

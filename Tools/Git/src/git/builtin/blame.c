@@ -26,13 +26,14 @@
 #include "userdiff.h"
 #include "line-range.h"
 #include "line-log.h"
+#include "dir.h"
 
-static char blame_usage[] = N_("git blame [options] [rev-opts] [rev] [--] file");
+static char blame_usage[] = N_("git blame [<options>] [<rev-opts>] [<rev>] [--] <file>");
 
 static const char *blame_opt_usage[] = {
 	blame_usage,
 	"",
-	N_("[rev-opts] are documented in git-rev-list(1)"),
+	N_("<rev-opts> are documented in git-rev-list(1)"),
 	NULL
 };
 
@@ -2151,16 +2152,6 @@ static void sanity_check_refcnt(struct scoreboard *sb)
 	}
 }
 
-/*
- * Used for the command line parsing; check if the path exists
- * in the working tree.
- */
-static int has_string_in_work_tree(const char *path)
-{
-	struct stat st;
-	return !lstat(path, &st);
-}
-
 static unsigned parse_score(const char *arg)
 {
 	char *end;
@@ -2348,6 +2339,7 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 		if (strbuf_read(&buf, 0, 0) < 0)
 			die_errno("failed to read from stdin");
 	}
+	convert_to_git(path, buf.buf, buf.len, &buf, 0);
 	origin->file.ptr = buf.buf;
 	origin->file.size = buf.len;
 	pretend_sha1_file(buf.buf, buf.len, OBJ_BLOB, origin->blob_sha1);
@@ -2655,14 +2647,14 @@ parse_done:
 		if (argc < 2)
 			usage_with_options(blame_opt_usage, options);
 		path = add_prefix(prefix, argv[argc - 1]);
-		if (argc == 3 && !has_string_in_work_tree(path)) { /* (2b) */
+		if (argc == 3 && !file_exists(path)) { /* (2b) */
 			path = add_prefix(prefix, argv[1]);
 			argv[1] = argv[2];
 		}
 		argv[argc - 1] = "--";
 
 		setup_work_tree();
-		if (!has_string_in_work_tree(path))
+		if (!file_exists(path))
 			die_errno("cannot stat path '%s'", path);
 	}
 

@@ -355,7 +355,7 @@ void overlay_tree_on_cache(const char *tree_name, const char *prefix)
 }
 
 static const char * const ls_files_usage[] = {
-	N_("git ls-files [options] [<file>...]"),
+	N_("git ls-files [<options>] [<file>...]"),
 	NULL
 };
 

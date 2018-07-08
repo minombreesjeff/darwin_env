@@ -893,10 +893,13 @@ lightweight tags by default.</p></div>
 <p>
         Sort in a specific order. Supported type is "refname"
         (lexicographic order), "version:refname" or "v:refname" (tag
-        names are treated as versions). Prepend "-" to reverse sort
-        order. When this option is not given, the sort order defaults to the
-        value configured for the <em>tag.sort</em> variable if it exists, or
-        lexicographic order otherwise. See <a href="git-config.html">git-config(1)</a>.
+        names are treated as versions). The "version:refname" sort
+        order can also be affected by the
+        "versionsort.prereleaseSuffix" configuration variable. Prepend
+        "-" to reverse sort order. When this option is not given, the
+        sort order defaults to the value configured for the <em>tag.sort</em>
+        variable if it exists, or lexicographic order otherwise. See
+        <a href="git-config.html">git-config(1)</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1007,7 +1010,7 @@ it in the repository configuration as follows:</p></div>
 <div class="listingblock">
 <div class="content">
 <pre><code>[user]
-    signingkey = &lt;gpg-key-id&gt;</code></pre>
+    signingKey = &lt;gpg-key-id&gt;</code></pre>
 </div></div>
 </div>
 </div>
@@ -1216,7 +1219,7 @@ ISO 8601
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2014-10-07 15:21:30 PDT
+Last updated 2015-04-28 15:47:21 PDT
 </div>
 </div>
 </body>

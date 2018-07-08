@@ -23,7 +23,9 @@ ifndef::git-format-patch[]
 -u::
 --patch::
 	Generate patch (see section on generating patches).
-	{git-diff? This is the default.}
+ifdef::git-diff[]
+	This is the default.
+endif::git-diff[]
 endif::git-format-patch[]
 
 -s::
@@ -41,8 +43,19 @@ endif::git-format-patch[]
 
 ifndef::git-format-patch[]
 --raw::
-	Generate the raw format.
-	{git-diff-core? This is the default.}
+ifndef::git-log[]
+	Generate the diff in raw format.
+ifdef::git-diff-core[]
+	This is the default.
+endif::git-diff-core[]
+endif::git-log[]
+ifdef::git-log[]
+	For each commit, show a summary of changes using the raw diff
+	format. See the "RAW OUTPUT FORMAT" section of
+	linkgit:git-diff[1]. This is different from showing the log
+	itself in raw format, which you can achieve with
+	`--format=raw`.
+endif::git-log[]
 endif::git-format-patch[]
 
 ifndef::git-format-patch[]
@@ -432,8 +445,8 @@ endif::git-format-patch[]
 -O<orderfile>::
 	Output the patch in the order specified in the
 	<orderfile>, which has one shell glob pattern per line.
-	This overrides the `diff.orderfile` configuration variable
-	(see linkgit:git-config[1]).  To cancel `diff.orderfile`,
+	This overrides the `diff.orderFile` configuration variable
+	(see linkgit:git-config[1]).  To cancel `diff.orderFile`,
 	use `-O/dev/null`.
 
 ifndef::git-format-patch[]

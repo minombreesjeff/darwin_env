@@ -1114,7 +1114,7 @@ _git_commit ()
 
 	case "$cur" in
 	--cleanup=*)
-		__gitcomp "default strip verbatim whitespace
+		__gitcomp "default scissors strip verbatim whitespace
 			" "" "${cur##--cleanup=}"
 		return
 		;;
@@ -1422,7 +1422,7 @@ __git_log_gitk_options="
 # Options that go well for log and shortlog (not gitk)
 __git_log_shortlog_options="
 	--author= --committer= --grep=
-	--all-match
+	--all-match --invert-grep
 "
 
 __git_log_pretty_formats="oneline short medium full fuller email raw format:"
@@ -1448,7 +1448,7 @@ _git_log ()
 		return
 		;;
 	--decorate=*)
-		__gitcomp "long short" "" "${cur##--decorate=}"
+		__gitcomp "full short no" "" "${cur##--decorate=}"
 		return
 		;;
 	--*)
@@ -2186,6 +2186,7 @@ _git_config ()
 		pull.octopus
 		pull.twohead
 		push.default
+		push.followTags
 		rebase.autosquash
 		rebase.stat
 		receive.autogc

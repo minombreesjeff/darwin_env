@@ -13,6 +13,8 @@
 #include "line-log.h"
 
 static struct decoration name_decoration = { "object names" };
+static int decoration_loaded;
+static int decoration_flags;
 
 static char decoration_colors[][COLOR_MAXLEN] = {
 	GIT_COLOR_RESET,
@@ -92,6 +94,8 @@ static int add_ref_decoration(const char *refname, const unsigned char *sha1, in
 	struct object *obj;
 	enum decoration_type type = DECORATION_NONE;
 
+	assert(cb_data == NULL);
+
 	if (starts_with(refname, "refs/replace/")) {
 		unsigned char original_sha1[20];
 		if (!check_replace_refs)
@@ -121,8 +125,6 @@ static int add_ref_decoration(const char *refname, const unsigned char *sha1, in
 	else if (!strcmp(refname, "HEAD"))
 		type = DECORATION_REF_HEAD;
 
-	if (!cb_data || *(int *)cb_data == DECORATE_SHORT_REFS)
-		refname = prettify_refname(refname);
 	add_name_decoration(type, refname, obj);
 	while (obj->type == OBJ_TAG) {
 		obj = ((struct tag *)obj)->tagged;
@@ -146,11 +148,11 @@ static int add_graft_decoration(const struct commit_graft *graft, void *cb_data)
 
 void load_ref_decorations(int flags)
 {
-	static int loaded;
-	if (!loaded) {
-		loaded = 1;
-		for_each_ref(add_ref_decoration, &flags);
-		head_ref(add_ref_decoration, &flags);
+	if (!decoration_loaded) {
+		decoration_loaded = 1;
+		decoration_flags = flags;
+		for_each_ref(add_ref_decoration, NULL);
+		head_ref(add_ref_decoration, NULL);
 		for_each_commit_graft(add_graft_decoration, NULL);
 	}
 }
@@ -173,6 +175,52 @@ static void show_children(struct rev_info *opt, struct commit *commit, int abbre
 }
 
 /*
+ * Do we have HEAD in the output, and also the branch it points at?
+ * If so, find that decoration entry for that current branch.
+ */
+static const struct name_decoration *current_pointed_by_HEAD(const struct name_decoration *decoration)
+{
+	const struct name_decoration *list, *head = NULL;
+	const char *branch_name = NULL;
+	unsigned char unused[20];
+	int rru_flags;
+
+	/* First find HEAD */
+	for (list = decoration; list; list = list->next)
+		if (list->type == DECORATION_REF_HEAD) {
+			head = list;
+			break;
+		}
+	if (!head)
+		return NULL;
+
+	/* Now resolve and find the matching current branch */
+	branch_name = resolve_ref_unsafe("HEAD", 0, unused, &rru_flags);
+	if (!(rru_flags & REF_ISSYMREF))
+		return NULL;
+
+	if (!starts_with(branch_name, "refs/"))
+		return NULL;
+
+	/* OK, do we have that ref in the list? */
+	for (list = decoration; list; list = list->next)
+		if ((list->type == DECORATION_REF_LOCAL) &&
+		    !strcmp(branch_name, list->name)) {
+			return list;
+		}
+
+	return NULL;
+}
+
+static void show_name(struct strbuf *sb, const struct name_decoration *decoration)
+{
+	if (decoration_flags == DECORATE_SHORT_REFS)
+		strbuf_addstr(sb, prettify_refname(decoration->name));
+	else
+		strbuf_addstr(sb, decoration->name);
+}
+
+/*
  * The caller makes sure there is no funny color before calling.
  * format_decorations_extended makes sure the same after return.
  */
@@ -184,6 +232,7 @@ void format_decorations_extended(struct strbuf *sb,
 			const char *suffix)
 {
 	const struct name_decoration *decoration;
+	const struct name_decoration *current_and_HEAD;
 	const char *color_commit =
 		diff_get_color(use_color, DIFF_COMMIT);
 	const char *color_reset =
@@ -192,16 +241,37 @@ void format_decorations_extended(struct strbuf *sb,
 	decoration = get_name_decoration(&commit->object);
 	if (!decoration)
 		return;
+
+	current_and_HEAD = current_pointed_by_HEAD(decoration);
 	while (decoration) {
-		strbuf_addstr(sb, color_commit);
-		strbuf_addstr(sb, prefix);
-		strbuf_addstr(sb, color_reset);
-		strbuf_addstr(sb, decorate_get_color(use_color, decoration->type));
-		if (decoration->type == DECORATION_REF_TAG)
-			strbuf_addstr(sb, "tag: ");
-		strbuf_addstr(sb, decoration->name);
-		strbuf_addstr(sb, color_reset);
-		prefix = separator;
+		/*
+		 * When both current and HEAD are there, only
+		 * show HEAD->current where HEAD would have
+		 * appeared, skipping the entry for current.
+		 */
+		if (decoration != current_and_HEAD) {
+			strbuf_addstr(sb, color_commit);
+			strbuf_addstr(sb, prefix);
+			strbuf_addstr(sb, color_reset);
+			strbuf_addstr(sb, decorate_get_color(use_color, decoration->type));
+			if (decoration->type == DECORATION_REF_TAG)
+				strbuf_addstr(sb, "tag: ");
+
+			show_name(sb, decoration);
+
+			if (current_and_HEAD &&
+			    decoration->type == DECORATION_REF_HEAD) {
+				strbuf_addstr(sb, color_reset);
+				strbuf_addstr(sb, color_commit);
+				strbuf_addstr(sb, " -> ");
+				strbuf_addstr(sb, color_reset);
+				strbuf_addstr(sb, decorate_get_color(use_color, current_and_HEAD->type));
+				show_name(sb, current_and_HEAD);
+			}
+			strbuf_addstr(sb, color_reset);
+
+			prefix = separator;
+		}
 		decoration = decoration->next;
 	}
 	strbuf_addstr(sb, color_commit);

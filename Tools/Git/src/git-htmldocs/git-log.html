@@ -1008,8 +1008,8 @@ ordering and formatting options, such as <code>--reverse</code>.</p></div>
         matches any of the given patterns are chosen (but see
         <code>--all-match</code>).
 </p>
-<div class="paragraph"><p>When <code>--show-notes</code> is in effect, the message from the notes as
-if it is part of the log message.</p></div>
+<div class="paragraph"><p>When <code>--show-notes</code> is in effect, the message from the notes is
+matched as if it were part of the log message.</p></div>
 </dd>
 <dt class="hdlist1">
 --all-match
@@ -1018,6 +1018,15 @@ if it is part of the log message.</p></div>
 <p>
         Limit the commits output to ones that match all given <code>--grep</code>,
         instead of ones that match at least one.
+</p>
+</dd>
+<dt class="hdlist1">
+--invert-grep
+</dt>
+<dd>
+<p>
+        Limit the commits output to ones with log message that do not
+        match the pattern specified with <code>--grep=&lt;pattern&gt;</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1133,7 +1142,8 @@ parents) and <code>--max-parents=-1</code> (negative numbers denote no upper lim
         because merges into a topic branch tend to be only about
         adjusting to updated upstream from time to time, and
         this option allows you to ignore the individual commits
-        brought in to your history by such a merge.
+        brought in to your history by such a merge. Cannot be
+        combined with --bisect.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1226,16 +1236,6 @@ explicitly.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
---indexed-objects
-</dt>
-<dd>
-<p>
-        Pretend as if all trees and blobs used by the index are listed
-        on the command line.  Note that you probably want to use
-        <code>--objects</code>, too.
-</p>
-</dd>
-<dt class="hdlist1">
 --ignore-missing
 </dt>
 <dd>
@@ -1252,7 +1252,7 @@ explicitly.</p></div>
         Pretend as if the bad bisection ref <code>refs/bisect/bad</code>
         was listed and as if it was followed by <code>--not</code> and the good
         bisection refs <code>refs/bisect/good-*</code> on the command
-        line.
+        line. Cannot be combined with --first-parent.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1802,48 +1802,6 @@ together.</p></div>
 <div class="paragraph"><p>These options are mostly targeted for packing of Git repositories.</p></div>
 <div class="dlist"><dl>
 <dt class="hdlist1">
---objects
-</dt>
-<dd>
-<p>
-        Print the object IDs of any object referenced by the listed
-        commits.  <code>--objects foo ^bar</code> thus means &#8220;send me
-        all object IDs which I need to download if I have the commit
-        object <em>bar</em> but not <em>foo</em>&#8221;.
-</p>
-</dd>
-<dt class="hdlist1">
---objects-edge
-</dt>
-<dd>
-<p>
-        Similar to <code>--objects</code>, but also print the IDs of excluded
-        commits prefixed with a &#8220;-&#8221; character.  This is used by
-        <a href="git-pack-objects.html">git-pack-objects(1)</a> to build a &#8220;thin&#8221; pack, which records
-        objects in deltified form based on objects contained in these
-        excluded commits to reduce network traffic.
-</p>
-</dd>
-<dt class="hdlist1">
---objects-edge-aggressive
-</dt>
-<dd>
-<p>
-        Similar to <code>--objects-edge</code>, but it tries harder to find excluded
-        commits at the cost of increased time.  This is used instead of
-        <code>--objects-edge</code> to build &#8220;thin&#8221; packs for shallow repositories.
-</p>
-</dd>
-<dt class="hdlist1">
---unpacked
-</dt>
-<dd>
-<p>
-        Only useful with <code>--objects</code>; print the object IDs that are not
-        in packs.
-</p>
-</dd>
-<dt class="hdlist1">
 --no-walk[=(sorted|unsorted)]
 </dt>
 <dd>
@@ -1854,6 +1812,7 @@ together.</p></div>
         given on the command line. Otherwise (if <code>sorted</code> or no argument
         was given), the commits are shown in reverse chronological order
         by commit time.
+        Cannot be combined with <code>--graph</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1879,10 +1838,13 @@ together.</p></div>
 <p>
         Pretty-print the contents of the commit logs in a given format,
         where <em>&lt;format&gt;</em> can be one of <em>oneline</em>, <em>short</em>, <em>medium</em>,
-        <em>full</em>, <em>fuller</em>, <em>email</em>, <em>raw</em> and <em>format:&lt;string&gt;</em>.  See
-        the "PRETTY FORMATS" section for some additional details for each
-        format.  When omitted, the format defaults to <em>medium</em>.
+        <em>full</em>, <em>fuller</em>, <em>email</em>, <em>raw</em>, <em>format:&lt;string&gt;</em>
+        and <em>tformat:&lt;string&gt;</em>.  When <em>&lt;format&gt;</em> is none of the above,
+        and has <em>%placeholder</em> in it, it acts as if
+        <em>--pretty=tformat:&lt;format&gt;</em> were given.
 </p>
+<div class="paragraph"><p>See the "PRETTY FORMATS" section for some additional details for each
+format.  When <em>=&lt;format&gt;</em> part is omitted, it defaults to <em>medium</em>.</p></div>
 <div class="paragraph"><p>Note: you can specify the default pretty format in the repository
 configuration (see <a href="git-config.html">git-config(1)</a>).</p></div>
 </dd>
@@ -2092,6 +2054,7 @@ format, often found in email messages.</p></div>
         on the left hand side of the output.  This may cause extra lines
         to be printed in between commits, in order for the graph history
         to be drawn properly.
+        Cannot be combined with <code>--no-walk</code>.
 </p>
 <div class="paragraph"><p>This enables parent rewriting, see <em>History Simplification</em> below.</p></div>
 <div class="paragraph"><p>This implies the <code>--topo-order</code> option by default, but the
@@ -3374,8 +3337,8 @@ information.</p></div>
 <p>
         Output the patch in the order specified in the
         &lt;orderfile&gt;, which has one shell glob pattern per line.
-        This overrides the <code>diff.orderfile</code> configuration variable
-        (see <a href="git-config.html">git-config(1)</a>).  To cancel <code>diff.orderfile</code>,
+        This overrides the <code>diff.orderFile</code> configuration variable
+        (see <a href="git-config.html">git-config(1)</a>).  To cancel <code>diff.orderFile</code>,
         use <code>-O/dev/null</code>.
 </p>
 </dd>
@@ -3986,7 +3949,7 @@ log.date
 </p>
 </dd>
 <dt class="hdlist1">
-log.showroot
+log.showRoot
 </dt>
 <dd>
 <p>
@@ -4034,7 +3997,7 @@ and overridden by the <code>--notes=&lt;ref&gt;</code> option.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-12-03 14:06:33 PST
+Last updated 2015-03-23 14:31:16 PDT
 </div>
 </div>
 </body>

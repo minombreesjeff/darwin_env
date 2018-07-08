@@ -400,7 +400,7 @@ static void read_index_info(int line_termination)
 }
 
 static const char * const update_index_usage[] = {
-	N_("git update-index [options] [--] [<file>...]"),
+	N_("git update-index [<options>] [--] [<file>...]"),
 	NULL
 };
 
@@ -584,6 +584,7 @@ static int do_reupdate(int ac, const char **av,
 		path = xstrdup(ce->name);
 		update_one(path);
 		free(path);
+		free(old);
 		if (save_nr != active_nr)
 			goto redo;
 	}

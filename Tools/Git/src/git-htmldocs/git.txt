@@ -43,9 +43,21 @@ unreleased) version of Git, that is available from the 'master'
 branch of the `git.git` repository.
 Documentation for older releases are available here:
 
-* link:v2.3.0/git.html[documentation for release 2.3]
+* link:v2.4.0/git.html[documentation for release 2.4]
 
 * release notes for
+  link:RelNotes/2.4.0.txt[2.4].
+
+* link:v2.3.7/git.html[documentation for release 2.3.7]
+
+* release notes for
+  link:RelNotes/2.3.7.txt[2.3.7],
+  link:RelNotes/2.3.6.txt[2.3.6],
+  link:RelNotes/2.3.5.txt[2.3.5],
+  link:RelNotes/2.3.4.txt[2.3.4],
+  link:RelNotes/2.3.3.txt[2.3.3],
+  link:RelNotes/2.3.2.txt[2.3.2],
+  link:RelNotes/2.3.1.txt[2.3.1],
   link:RelNotes/2.3.0.txt[2.3].
 
 * link:v2.2.2/git.html[documentation for release 2.2.2]
@@ -765,7 +777,8 @@ Git so take care if using Cogito etc.
 'GIT_INDEX_VERSION'::
 	This environment variable allows the specification of an index
 	version for new repositories.  It won't affect existing index
-	files.  By default index file version [23] is used.
+	files.  By default index file version 2 or 3 is used. See
+	linkgit:git-update-index[1] for more information.
 
 'GIT_OBJECT_DIRECTORY'::
 	If the object storage directory is specified via this
@@ -916,7 +929,7 @@ for further details.
 	If this environment variable is set, then Git commands which need to
 	acquire passwords or passphrases (e.g. for HTTP or IMAP authentication)
 	will call this program with a suitable prompt as command-line argument
-	and read the password from its STDOUT. See also the 'core.askpass'
+	and read the password from its STDOUT. See also the 'core.askPass'
 	option in linkgit:git-config[1].
 
 'GIT_TERMINAL_PROMPT'::
@@ -1022,6 +1035,17 @@ GIT_ICASE_PATHSPECS::
 	helper function in `git-sh-setup` to set its name to this
 	variable when it is invoked as the top level command by the
 	end user, to be recorded in the body of the reflog.
+
+`GIT_REF_PARANOIA`::
+	If set to `1`, include broken or badly named refs when iterating
+	over lists of refs. In a normal, non-corrupted repository, this
+	does nothing. However, enabling it may help git to detect and
+	abort some operations in the presence of broken refs. Git sets
+	this variable automatically when performing destructive
+	operations like linkgit:git-prune[1]. You should not need to set
+	it yourself unless you want to be paranoid about making sure
+	an operation has touched every ref (e.g., because you are
+	cloning a repository to make a backup).
 
 
 Discussion[[Discussion]]

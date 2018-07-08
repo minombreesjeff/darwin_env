@@ -34,7 +34,7 @@
  *
  */
 static const char * const builtin_clone_usage[] = {
-	N_("git clone [options] [--] <repo> [<dir>]"),
+	N_("git clone [<options>] [--] <repo> [<dir>]"),
 	NULL
 };
 
@@ -50,15 +50,6 @@ static int option_progress = -1;
 static struct string_list option_config;
 static struct string_list option_reference;
 static int option_dissociate;
-
-static int opt_parse_reference(const struct option *opt, const char *arg, int unset)
-{
-	struct string_list *option_reference = opt->value;
-	if (!arg)
-		return -1;
-	string_list_append(option_reference, arg);
-	return 0;
-}
 
 static struct option builtin_clone_options[] = {
 	OPT__VERBOSITY(&option_verbosity),
@@ -83,8 +74,10 @@ static struct option builtin_clone_options[] = {
 		    N_("initialize submodules in the clone")),
 	OPT_STRING(0, "template", &option_template, N_("template-directory"),
 		   N_("directory from which templates will be used")),
-	OPT_CALLBACK(0 , "reference", &option_reference, N_("repo"),
-		     N_("reference repository"), &opt_parse_reference),
+	OPT_STRING_LIST(0, "reference", &option_reference, N_("repo"),
+			N_("reference repository")),
+	OPT_BOOL(0, "dissociate", &option_dissociate,
+		 N_("use --reference only while cloning")),
 	OPT_STRING('o', "origin", &option_origin, N_("name"),
 		   N_("use <name> instead of 'origin' to track upstream")),
 	OPT_STRING('b', "branch", &option_branch, N_("branch"),
@@ -95,8 +88,6 @@ static struct option builtin_clone_options[] = {
 		    N_("create a shallow clone of that depth")),
 	OPT_BOOL(0, "single-branch", &option_single_branch,
 		    N_("clone only one branch, HEAD or --branch")),
-	OPT_BOOL(0, "dissociate", &option_dissociate,
-		 N_("use --reference only while cloning")),
 	OPT_STRING(0, "separate-git-dir", &real_git_dir, N_("gitdir"),
 		   N_("separate git dir from working tree")),
 	OPT_STRING_LIST('c', "config", &option_config, N_("key=value"),
@@ -156,6 +147,7 @@ static char *get_repo_path(const char *repo, int *is_bundle)
 static char *guess_dir_name(const char *repo, int is_bundle, int is_bare)
 {
 	const char *end = repo + strlen(repo), *start;
+	size_t len;
 	char *dir;
 
 	/*
@@ -182,20 +174,12 @@ static char *guess_dir_name(const char *repo, int is_bundle, int is_bare)
 	/*
 	 * Strip .{bundle,git}.
 	 */
-	if (is_bundle) {
-		if (end - start > 7 && !strncmp(end - 7, ".bundle", 7))
-			end -= 7;
-	} else {
-		if (end - start > 4 && !strncmp(end - 4, ".git", 4))
-			end -= 4;
-	}
+	strip_suffix(start, is_bundle ? ".bundle" : ".git" , &len);
 
-	if (is_bare) {
-		struct strbuf result = STRBUF_INIT;
-		strbuf_addf(&result, "%.*s.git", (int)(end - start), start);
-		dir = strbuf_detach(&result, NULL);
-	} else
-		dir = xstrndup(start, end - start);
+	if (is_bare)
+		dir = xstrfmt("%.*s.git", (int)len, start);
+	else
+		dir = xstrndup(start, len);
 	/*
 	 * Replace sequences of 'control' characters and whitespace
 	 * with one ascii space, remove leading and trailing spaces.
@@ -906,6 +890,8 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 
 	remote = remote_get(option_origin);
 	transport = transport_get(remote, remote->url[0]);
+	transport_set_verbosity(transport, option_verbosity, option_progress);
+
 	path = get_repo_path(remote->url[0], &is_bundle);
 	is_local = option_local != 0 && path && !is_bundle;
 	if (is_local) {
@@ -931,8 +917,6 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 				     option_depth);
 	if (option_single_branch)
 		transport_set_option(transport, TRANS_OPT_FOLLOWTAGS, "1");
-
-	transport_set_verbosity(transport, option_verbosity, option_progress);
 
 	if (option_upload_pack)
 		transport_set_option(transport, TRANS_OPT_UPLOADPACK,

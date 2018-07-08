@@ -56,7 +56,7 @@ static const char *fake_ancestor;
 static int line_termination = '\n';
 static unsigned int p_context = UINT_MAX;
 static const char * const apply_usage[] = {
-	N_("git apply [options] [<patch>...]"),
+	N_("git apply [<options>] [<patch>...]"),
 	NULL
 };
 
@@ -1601,6 +1601,9 @@ static int parse_fragment(const char *line, unsigned long size,
 			if (!deleted && !added)
 				leading++;
 			trailing++;
+			if (!apply_in_reverse &&
+			    ws_error_action == correct_ws_error)
+				check_whitespace(line, len, patch->ws_rule);
 			break;
 		case '-':
 			if (apply_in_reverse &&
@@ -2773,7 +2776,8 @@ static int apply_one_fragment(struct image *img, struct fragment *frag,
 		default:
 			if (apply_verbosely)
 				error(_("invalid start of line: '%c'"), first);
-			return -1;
+			applied_pos = -1;
+			goto out;
 		}
 		if (added_blank_line) {
 			if (!new_blank_lines_at_end)
@@ -2912,6 +2916,7 @@ static int apply_one_fragment(struct image *img, struct fragment *frag,
 			      (int)(old - oldlines), oldlines);
 	}
 
+out:
 	free(oldlines);
 	strbuf_release(&newlines);
 	free(preimage.line_allocated);

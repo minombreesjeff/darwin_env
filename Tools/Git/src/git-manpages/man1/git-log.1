@@ -2,12 +2,12 @@
 .\"     Title: git-log
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 02/05/2015
+.\"      Date: 04/30/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 2.3.0
+.\"    Source: Git 2.4.0
 .\"  Language: English
 .\"
-.TH "GIT\-LOG" "1" "02/05/2015" "Git 2\&.3\&.0" "Git Manual"
+.TH "GIT\-LOG" "1" "04/30/2015" "Git 2\&.4\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -217,13 +217,19 @@ Limit the commits output to ones with log message that matches the specified pat
 .sp
 When
 \-\-show\-notes
-is in effect, the message from the notes as if it is part of the log message\&.
+is in effect, the message from the notes is matched as if it were part of the log message\&.
 .RE
 .PP
 \-\-all\-match
 .RS 4
 Limit the commits output to ones that match all given
 \-\-grep, instead of ones that match at least one\&.
+.RE
+.PP
+\-\-invert\-grep
+.RS 4
+Limit the commits output to ones with log message that do not match the pattern specified with
+\-\-grep=<pattern>\&.
 .RE
 .PP
 \-i, \-\-regexp\-ignore\-case
@@ -294,7 +300,7 @@ reset these limits (to no limit) again\&. Equivalent forms are
 .PP
 \-\-first\-parent
 .RS 4
-Follow only the first parent commit upon seeing a merge commit\&. This option can give a better overview when viewing the evolution of a particular topic branch, because merges into a topic branch tend to be only about adjusting to updated upstream from time to time, and this option allows you to ignore the individual commits brought in to your history by such a merge\&.
+Follow only the first parent commit upon seeing a merge commit\&. This option can give a better overview when viewing the evolution of a particular topic branch, because merges into a topic branch tend to be only about adjusting to updated upstream from time to time, and this option allows you to ignore the individual commits brought in to your history by such a merge\&. Cannot be combined with \-\-bisect\&.
 .RE
 .PP
 \-\-not
@@ -413,12 +419,6 @@ Pretend as if all objects mentioned by reflogs are listed on the command line as
 <commit>\&.
 .RE
 .PP
-\-\-indexed\-objects
-.RS 4
-Pretend as if all trees and blobs used by the index are listed on the command line\&. Note that you probably want to use
-\-\-objects, too\&.
-.RE
-.PP
 \-\-ignore\-missing
 .RS 4
 Upon seeing an invalid object name in the input, pretend as if the bad input was not given\&.
@@ -432,7 +432,7 @@ was listed and as if it was followed by
 \-\-not
 and the good bisection refs
 refs/bisect/good\-*
-on the command line\&.
+on the command line\&. Cannot be combined with \-\-first\-parent\&.
 .RE
 .PP
 \-\-stdin
@@ -1114,45 +1114,14 @@ Output the commits in reverse order\&. Cannot be combined with
 .sp
 These options are mostly targeted for packing of Git repositories\&.
 .PP
-\-\-objects
-.RS 4
-Print the object IDs of any object referenced by the listed commits\&.
-\-\-objects foo ^bar
-thus means \(lqsend me all object IDs which I need to download if I have the commit object
-\fIbar\fR
-but not
-\fIfoo\fR\(rq\&.
-.RE
-.PP
-\-\-objects\-edge
-.RS 4
-Similar to
-\-\-objects, but also print the IDs of excluded commits prefixed with a \(lq\-\(rq character\&. This is used by
-\fBgit-pack-objects\fR(1)
-to build a \(lqthin\(rq pack, which records objects in deltified form based on objects contained in these excluded commits to reduce network traffic\&.
-.RE
-.PP
-\-\-objects\-edge\-aggressive
-.RS 4
-Similar to
-\-\-objects\-edge, but it tries harder to find excluded commits at the cost of increased time\&. This is used instead of
-\-\-objects\-edge
-to build \(lqthin\(rq packs for shallow repositories\&.
-.RE
-.PP
-\-\-unpacked
-.RS 4
-Only useful with
-\-\-objects; print the object IDs that are not in packs\&.
-.RE
-.PP
 \-\-no\-walk[=(sorted|unsorted)]
 .RS 4
 Only show the given commits, but do not traverse their ancestors\&. This has no effect if a range is specified\&. If the argument
 unsorted
 is given, the commits are shown in the order they were given on the command line\&. Otherwise (if
 sorted
-or no argument was given), the commits are shown in reverse chronological order by commit time\&.
+or no argument was given), the commits are shown in reverse chronological order by commit time\&. Cannot be combined with
+\-\-graph\&.
 .RE
 .PP
 \-\-do\-walk
@@ -1173,9 +1142,20 @@ can be one of
 \fIfull\fR,
 \fIfuller\fR,
 \fIemail\fR,
-\fIraw\fR
+\fIraw\fR,
+\fIformat:<string>\fR
 and
-\fIformat:<string>\fR\&. See the "PRETTY FORMATS" section for some additional details for each format\&. When omitted, the format defaults to
+\fItformat:<string>\fR\&. When
+\fI<format>\fR
+is none of the above, and has
+\fI%placeholder\fR
+in it, it acts as if
+\fI\-\-pretty=tformat:<format>\fR
+were given\&.
+.sp
+See the "PRETTY FORMATS" section for some additional details for each format\&. When
+\fI=<format>\fR
+part is omitted, it defaults to
 \fImedium\fR\&.
 .sp
 Note: you can specify the default pretty format in the repository configuration (see
@@ -1402,7 +1382,8 @@ you would get an output like this:
 .PP
 \-\-graph
 .RS 4
-Draw a text\-based graphical representation of the commit history on the left hand side of the output\&. This may cause extra lines to be printed in between commits, in order for the graph history to be drawn properly\&.
+Draw a text\-based graphical representation of the commit history on the left hand side of the output\&. This may cause extra lines to be printed in between commits, in order for the graph history to be drawn properly\&. Cannot be combined with
+\-\-no\-walk\&.
 .sp
 This enables parent rewriting, see
 \fIHistory Simplification\fR
@@ -2993,10 +2974,10 @@ as an extended POSIX regular expression to match\&.
 \-O<orderfile>
 .RS 4
 Output the patch in the order specified in the <orderfile>, which has one shell glob pattern per line\&. This overrides the
-diff\&.orderfile
+diff\&.orderFile
 configuration variable (see
 \fBgit-config\fR(1))\&. To cancel
-diff\&.orderfile, use
+diff\&.orderFile, use
 \-O/dev/null\&.
 .RE
 .PP
@@ -3610,7 +3591,7 @@ option\&.) Defaults to "default", which means to write dates like
 Sat May 8 19:35:34 2010 \-0500\&.
 .RE
 .PP
-log\&.showroot
+log\&.showRoot
 .RS 4
 If
 false,

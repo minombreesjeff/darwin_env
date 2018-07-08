@@ -377,15 +377,12 @@ void read_info_alternates(const char * relative_base, int depth)
 	char *map;
 	size_t mapsz;
 	struct stat st;
-	const char alt_file_name[] = "info/alternates";
-	/* Given that relative_base is no longer than PATH_MAX,
-	   ensure that "path" has enough space to append "/", the
-	   file name, "info/alternates", and a trailing NUL.  */
-	char path[PATH_MAX + 1 + sizeof alt_file_name];
+	char *path;
 	int fd;
 
-	sprintf(path, "%s/%s", relative_base, alt_file_name);
+	path = xstrfmt("%s/info/alternates", relative_base);
 	fd = git_open_noatime(path);
+	free(path);
 	if (fd < 0)
 		return;
 	if (fstat(fd, &st) || (st.st_size == 0)) {
@@ -443,6 +440,7 @@ void prepare_alt_odb(void)
 	read_info_alternates(get_object_directory(), 0);
 }
 
+/* Returns 1 if we have successfully freshened the file, 0 otherwise. */
 static int freshen_file(const char *fn)
 {
 	struct utimbuf t;
@@ -450,11 +448,18 @@ static int freshen_file(const char *fn)
 	return !utime(fn, &t);
 }
 
+/*
+ * All of the check_and_freshen functions return 1 if the file exists and was
+ * freshened (if freshening was requested), 0 otherwise. If they return
+ * 0, you should not assume that it is safe to skip a write of the object (it
+ * either does not exist on disk, or has a stale mtime and may be subject to
+ * pruning).
+ */
 static int check_and_freshen_file(const char *fn, int freshen)
 {
 	if (access(fn, F_OK))
 		return 0;
-	if (freshen && freshen_file(fn))
+	if (freshen && !freshen_file(fn))
 		return 0;
 	return 1;
 }
@@ -707,8 +712,8 @@ static void mmap_limit_check(size_t length)
 		    (uintmax_t)length, (uintmax_t)limit);
 }
 
-void *xmmap(void *start, size_t length,
-	int prot, int flags, int fd, off_t offset)
+void *xmmap_gently(void *start, size_t length,
+		  int prot, int flags, int fd, off_t offset)
 {
 	void *ret;
 
@@ -719,9 +724,16 @@ void *xmmap(void *start, size_t length,
 			return NULL;
 		release_pack_memory(length);
 		ret = mmap(start, length, prot, flags, fd, offset);
-		if (ret == MAP_FAILED)
-			die_errno("Out of memory? mmap failed");
 	}
+	return ret;
+}
+
+void *xmmap(void *start, size_t length,
+	int prot, int flags, int fd, off_t offset)
+{
+	void *ret = xmmap_gently(start, length, prot, flags, fd, offset);
+	if (ret == MAP_FAILED)
+		die_errno("mmap failed");
 	return ret;
 }
 
@@ -2473,10 +2485,8 @@ static int fill_pack_entry(const unsigned char *sha1,
 	 * answer, as it may have been deleted since the index was
 	 * loaded!
 	 */
-	if (!is_pack_valid(p)) {
-		warning("packfile %s cannot be accessed", p->pack_name);
+	if (!is_pack_valid(p))
 		return 0;
-	}
 	e->offset = offset;
 	e->p = p;
 	hashcpy(e->sha1, sha1);
@@ -2999,12 +3009,18 @@ static int freshen_loose_object(const unsigned char *sha1)
 static int freshen_packed_object(const unsigned char *sha1)
 {
 	struct pack_entry e;
-	return find_pack_entry(sha1, &e) && freshen_file(e.p->pack_name);
+	if (!find_pack_entry(sha1, &e))
+		return 0;
+	if (e.p->freshened)
+		return 1;
+	if (!freshen_file(e.p->pack_name))
+		return 0;
+	e.p->freshened = 1;
+	return 1;
 }
 
-int write_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *returnsha1)
+int write_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *sha1)
 {
-	unsigned char sha1[20];
 	char hdr[32];
 	int hdrlen;
 
@@ -3012,11 +3028,30 @@ int write_sha1_file(const void *buf, unsigned long len, const char *type, unsign
 	 * it out into .git/objects/??/?{38} file.
 	 */
 	write_sha1_file_prepare(buf, len, type, sha1, hdr, &hdrlen);
-	if (returnsha1)
-		hashcpy(returnsha1, sha1);
-	if (freshen_loose_object(sha1) || freshen_packed_object(sha1))
+	if (freshen_packed_object(sha1) || freshen_loose_object(sha1))
 		return 0;
 	return write_loose_object(sha1, hdr, hdrlen, buf, len, 0);
+}
+
+int hash_sha1_file_literally(const void *buf, unsigned long len, const char *type,
+			     unsigned char *sha1, unsigned flags)
+{
+	char *header;
+	int hdrlen, status = 0;
+
+	/* type string, SP, %lu of the length plus NUL must fit this */
+	header = xmalloc(strlen(type) + 32);
+	write_sha1_file_prepare(buf, len, type, sha1, header, &hdrlen);
+
+	if (!(flags & HASH_WRITE_OBJECT))
+		goto cleanup;
+	if (freshen_packed_object(sha1) || freshen_loose_object(sha1))
+		goto cleanup;
+	status = write_loose_object(sha1, header, hdrlen, buf, len, 0);
+
+cleanup:
+	free(header);
+	return status;
 }
 
 int force_object_loose(const unsigned char *sha1, time_t mtime)
@@ -3054,7 +3089,7 @@ int has_sha1_pack(const unsigned char *sha1)
 	return find_pack_entry(sha1, &e);
 }
 
-int has_sha1_file(const unsigned char *sha1)
+int has_sha1_file_with_flags(const unsigned char *sha1, int flags)
 {
 	struct pack_entry e;
 
@@ -3062,6 +3097,8 @@ int has_sha1_file(const unsigned char *sha1)
 		return 1;
 	if (has_loose_object(sha1))
 		return 1;
+	if (flags & HAS_SHA1_QUICK)
+		return 0;
 	reprepare_packed_git();
 	return find_pack_entry(sha1, &e);
 }
@@ -3179,7 +3216,7 @@ static int index_core(unsigned char *sha1, int fd, size_t size,
 	int ret;
 
 	if (!size) {
-		ret = index_mem(sha1, NULL, size, type, path, flags);
+		ret = index_mem(sha1, "", size, type, path, flags);
 	} else if (size <= SMALL_FILE_SIZE) {
 		char *buf = xmalloc(size);
 		if (size == read_in_full(fd, buf, size))
@@ -3418,7 +3455,7 @@ static int loose_from_alt_odb(struct alternate_object_database *alt,
 	return r;
 }
 
-int for_each_loose_object(each_loose_object_fn cb, void *data)
+int for_each_loose_object(each_loose_object_fn cb, void *data, unsigned flags)
 {
 	struct loose_alt_odb_data alt;
 	int r;
@@ -3427,6 +3464,9 @@ int for_each_loose_object(each_loose_object_fn cb, void *data)
 					  cb, NULL, NULL, data);
 	if (r)
 		return r;
+
+	if (flags & FOR_EACH_OBJECT_LOCAL_ONLY)
+		return 0;
 
 	alt.cb = cb;
 	alt.data = data;
@@ -3452,13 +3492,15 @@ static int for_each_object_in_pack(struct packed_git *p, each_packed_object_fn c
 	return r;
 }
 
-int for_each_packed_object(each_packed_object_fn cb, void *data)
+int for_each_packed_object(each_packed_object_fn cb, void *data, unsigned flags)
 {
 	struct packed_git *p;
 	int r = 0;
 
 	prepare_packed_git();
 	for (p = packed_git; p; p = p->next) {
+		if ((flags & FOR_EACH_OBJECT_LOCAL_ONLY) && !p->pack_local)
+			continue;
 		r = for_each_object_in_pack(p, cb, data);
 		if (r)
 			break;

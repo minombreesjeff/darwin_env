@@ -1180,8 +1180,8 @@ test_expect_success 'message in editor has initial comment: first line' '
 test_expect_success \
 	'message in editor has initial comment: remainder' '
 	# remove commented lines from the remainder -- should be empty
-	>rest.expect
-	sed -e 1d -e '/^#/d' <actual >rest.actual &&
+	>rest.expect &&
+	sed -e 1d -e "/^#/d" <actual >rest.actual &&
 	test_cmp rest.expect rest.actual
 '
 
@@ -1459,14 +1459,42 @@ test_expect_success 'invalid sort parameter in configuratoin' '
 	test_cmp expect actual
 '
 
+test_expect_success 'version sort with prerelease reordering' '
+	git config --unset tag.sort &&
+	git config versionsort.prereleaseSuffix -rc &&
+	git tag foo1.6-rc1 &&
+	git tag foo1.6-rc2 &&
+	git tag -l --sort=version:refname "foo*" >actual &&
+	cat >expect <<-\EOF &&
+	foo1.3
+	foo1.6-rc1
+	foo1.6-rc2
+	foo1.6
+	foo1.10
+	EOF
+	test_cmp expect actual
+'
+
+test_expect_success 'reverse version sort with prerelease reordering' '
+	git tag -l --sort=-version:refname "foo*" >actual &&
+	cat >expect <<-\EOF &&
+	foo1.10
+	foo1.6
+	foo1.6-rc2
+	foo1.6-rc1
+	foo1.3
+	EOF
+	test_cmp expect actual
+'
+
 run_with_limited_stack () {
 	(ulimit -s 128 && "$@")
 }
 
-test_lazy_prereq ULIMIT 'run_with_limited_stack true'
+test_lazy_prereq ULIMIT_STACK_SIZE 'run_with_limited_stack true'
 
 # we require ulimit, this excludes Windows
-test_expect_success ULIMIT '--contains works in a deep repo' '
+test_expect_success ULIMIT_STACK_SIZE '--contains works in a deep repo' '
 	>expect &&
 	i=1 &&
 	while test $i -lt 8000

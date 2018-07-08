@@ -111,13 +111,12 @@ include::merge-options.txt[]
 	was rebased since last fetched, the rebase uses that information
 	to avoid rebasing non-local changes.
 +
-When preserve, also rebase the current branch on top of the upstream
-branch, but pass `--preserve-merges` along to `git rebase` so that
-locally created merge commits will not be flattened.
+When set to preserve, rebase with the `--preserve-merges` option passed
+to `git rebase` so that locally created merge commits will not be flattened.
 +
 When false, merge the current branch into the upstream branch.
 +
-See `pull.rebase`, `branch.<name>.rebase` and `branch.autosetuprebase` in
+See `pull.rebase`, `branch.<name>.rebase` and `branch.autoSetupRebase` in
 linkgit:git-config[1] if you want to make `git pull` always use
 `--rebase` instead of merging.
 +

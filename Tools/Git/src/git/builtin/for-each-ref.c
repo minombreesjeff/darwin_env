@@ -851,6 +851,11 @@ static int grab_single_ref(const char *refname, const unsigned char *sha1, int f
 		  return 0;
 	}
 
+	if (flag & REF_ISBROKEN) {
+		  warning("ignoring broken ref %s", refname);
+		  return 0;
+	}
+
 	if (*cb->grab_pattern) {
 		const char **pattern;
 		int namelen = strlen(refname);
@@ -1060,7 +1065,7 @@ static int opt_parse_sort(const struct option *opt, const char *arg, int unset)
 }
 
 static char const * const for_each_ref_usage[] = {
-	N_("git for-each-ref [options] [<pattern>]"),
+	N_("git for-each-ref [<options>] [<pattern>]"),
 	NULL
 };
 

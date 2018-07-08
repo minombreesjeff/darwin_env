@@ -568,7 +568,7 @@ extern void update_index_if_able(struct index_state *, struct lock_file *);
 extern int hold_locked_index(struct lock_file *, int);
 extern void set_alternate_index_output(const char *);
 
-extern int delete_ref(const char *, const unsigned char *sha1, int delopt);
+extern int delete_ref(const char *, const unsigned char *sha1, unsigned int flags);
 
 /* Environment bits from configuration mechanism */
 extern int trust_executable_bit;
@@ -816,7 +816,6 @@ enum scld_error safe_create_leading_directories(char *path);
 enum scld_error safe_create_leading_directories_const(const char *path);
 
 int mkdir_in_gitdir(const char *path);
-extern void home_config_paths(char **global, char **xdg, char *file);
 extern char *expand_user_path(const char *path);
 const char *enter_repo(const char *path, int strict);
 static inline int is_absolute_path(const char *path)
@@ -835,6 +834,13 @@ int longest_ancestor_length(const char *path, struct string_list *prefixes);
 char *strip_path_suffix(const char *path, const char *suffix);
 int daemon_avoid_alias(const char *path);
 extern int is_ntfs_dotgit(const char *name);
+
+/**
+ * Return a newly allocated string with the evaluation of
+ * "$XDG_CONFIG_HOME/git/$filename" if $XDG_CONFIG_HOME is non-empty, otherwise
+ * "$HOME/.config/git/$filename". Return NULL upon error.
+ */
+extern char *xdg_config_home(const char *filename);
 
 /* object replacement */
 #define LOOKUP_REPLACE_OBJECT 1
@@ -874,6 +880,7 @@ static inline const unsigned char *lookup_replace_object_extended(const unsigned
 extern int sha1_object_info(const unsigned char *, unsigned long *);
 extern int hash_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *sha1);
 extern int write_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *return_sha1);
+extern int hash_sha1_file_literally(const void *buf, unsigned long len, const char *type, unsigned char *sha1, unsigned flags);
 extern int pretend_sha1_file(void *, unsigned long, enum object_type, unsigned char *);
 extern int force_object_loose(const unsigned char *sha1, time_t mtime);
 extern int git_open_noatime(const char *name);
@@ -894,8 +901,17 @@ extern int has_sha1_pack(const unsigned char *sha1);
  * Return true iff we have an object named sha1, whether local or in
  * an alternate object database, and whether packed or loose.  This
  * function does not respect replace references.
+ *
+ * If the QUICK flag is set, do not re-check the pack directory
+ * when we cannot find the object (this means we may give a false
+ * negative answer if another process is simultaneously repacking).
  */
-extern int has_sha1_file(const unsigned char *sha1);
+#define HAS_SHA1_QUICK 0x1
+extern int has_sha1_file_with_flags(const unsigned char *sha1, int flags);
+static inline int has_sha1_file(const unsigned char *sha1)
+{
+	return has_sha1_file_with_flags(sha1, 0);
+}
 
 /*
  * Return true iff an alternate object database has a loose object
@@ -1174,6 +1190,7 @@ extern struct packed_git {
 	int pack_fd;
 	unsigned pack_local:1,
 		 pack_keep:1,
+		 freshened:1,
 		 do_not_close:1;
 	unsigned char sha1[20];
 	/* something like ".git/objects/pack/xxxxx.pack" */
@@ -1289,14 +1306,16 @@ int for_each_loose_file_in_objdir_buf(struct strbuf *path,
 
 /*
  * Iterate over loose and packed objects in both the local
- * repository and any alternates repositories.
+ * repository and any alternates repositories (unless the
+ * LOCAL_ONLY flag is set).
  */
+#define FOR_EACH_OBJECT_LOCAL_ONLY 0x1
 typedef int each_packed_object_fn(const unsigned char *sha1,
 				  struct packed_git *pack,
 				  uint32_t pos,
 				  void *data);
-extern int for_each_loose_object(each_loose_object_fn, void *);
-extern int for_each_packed_object(each_packed_object_fn, void *);
+extern int for_each_loose_object(each_loose_object_fn, void *, unsigned flags);
+extern int for_each_packed_object(each_packed_object_fn, void *, unsigned flags);
 
 struct object_info {
 	/* Request */

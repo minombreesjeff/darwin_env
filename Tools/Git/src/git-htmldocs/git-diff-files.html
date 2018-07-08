@@ -1431,8 +1431,8 @@ information.</p></div>
 <p>
         Output the patch in the order specified in the
         &lt;orderfile&gt;, which has one shell glob pattern per line.
-        This overrides the <code>diff.orderfile</code> configuration variable
-        (see <a href="git-config.html">git-config(1)</a>).  To cancel <code>diff.orderfile</code>,
+        This overrides the <code>diff.orderFile</code> configuration variable
+        (see <a href="git-config.html">git-config(1)</a>).  To cancel <code>diff.orderFile</code>,
         use <code>-O/dev/null</code>.
 </p>
 </dd>
@@ -1856,7 +1856,8 @@ X: "unknown" change type (most probably a bug, please report it)
 </ul></div>
 <div class="paragraph"><p>Status letters C and R are always followed by a score (denoting the
 percentage of similarity between the source and target of the move or
-copy), and are the only ones to be so.</p></div>
+copy).  Status letter M may be followed by a score (denoting the
+percentage of dissimilarity) for file rewrites.</p></div>
 <div class="paragraph"><p>&lt;sha1&gt; is shown as all 0&#8217;s if a file is new on the filesystem
 and it is out of sync with the index.</p></div>
 <div class="paragraph"><p>Example:</p></div>
