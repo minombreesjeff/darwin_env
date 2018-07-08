@@ -99,6 +99,7 @@ static int show_config(const char *key_, const char *value_, void *cb)
 	const char *vptr = value;
 	int must_free_vptr = 0;
 	int dup_error = 0;
+	int must_print_delim = 0;
 
 	if (!use_key_regexp && strcmp(key_, key))
 		return 0;
@@ -109,10 +110,8 @@ static int show_config(const char *key_, const char *value_, void *cb)
 		return 0;
 
 	if (show_keys) {
-		if (value_)
-			printf("%s%c", key_, key_delim);
-		else
-			printf("%s", key_);
+		printf("%s", key_);
+		must_print_delim = 1;
 	}
 	if (seen && !do_all)
 		dup_error = 1;
@@ -130,16 +129,23 @@ static int show_config(const char *key_, const char *value_, void *cb)
 	} else if (types == TYPE_PATH) {
 		git_config_pathname(&vptr, key_, value_);
 		must_free_vptr = 1;
+	} else if (value_) {
+		vptr = value_;
+	} else {
+		/* Just show the key name */
+		vptr = "";
+		must_print_delim = 0;
 	}
-	else
-		vptr = value_?value_:"";
 	seen++;
 	if (dup_error) {
 		error("More than one value for the key %s: %s",
 				key_, vptr);
 	}
-	else
+	else {
+		if (must_print_delim)
+			printf("%c", key_delim);
 		printf("%s%c", vptr, term);
+	}
 	if (must_free_vptr)
 		/* If vptr must be freed, it's a pointer to a
 		 * dynamically allocated buffer, it's safe to cast to
@@ -303,24 +309,18 @@ static void get_color(const char *def_color)
 	fputs(parsed_color, stdout);
 }
 
-static int stdout_is_tty;
 static int get_colorbool_found;
 static int get_diff_color_found;
+static int get_color_ui_found;
 static int git_get_colorbool_config(const char *var, const char *value,
 		void *cb)
 {
-	if (!strcmp(var, get_colorbool_slot)) {
-		get_colorbool_found =
-			git_config_colorbool(var, value, stdout_is_tty);
-	}
-	if (!strcmp(var, "diff.color")) {
-		get_diff_color_found =
-			git_config_colorbool(var, value, stdout_is_tty);
-	}
-	if (!strcmp(var, "color.ui")) {
-		git_use_color_default = git_config_colorbool(var, value, stdout_is_tty);
-		return 0;
-	}
+	if (!strcmp(var, get_colorbool_slot))
+		get_colorbool_found = git_config_colorbool(var, value);
+	else if (!strcmp(var, "diff.color"))
+		get_diff_color_found = git_config_colorbool(var, value);
+	else if (!strcmp(var, "color.ui"))
+		get_color_ui_found = git_config_colorbool(var, value);
 	return 0;
 }
 
@@ -334,8 +334,10 @@ static int get_colorbool(int print)
 		if (!strcmp(get_colorbool_slot, "color.diff"))
 			get_colorbool_found = get_diff_color_found;
 		if (get_colorbool_found < 0)
-			get_colorbool_found = git_use_color_default;
+			get_colorbool_found = get_color_ui_found;
 	}
+
+	get_colorbool_found = want_color(get_colorbool_found);
 
 	if (print) {
 		printf("%s\n", get_colorbool_found ? "true" : "false");
@@ -436,9 +438,14 @@ int cmd_config(int argc, const char **argv, const char *prefix)
 			      NULL, NULL);
 	}
 	else if (actions == ACTION_SET) {
+		int ret;
 		check_argc(argc, 2, 2);
 		value = normalize_value(argv[0], argv[1]);
-		return git_config_set(argv[0], value);
+		ret = git_config_set(argv[0], value);
+		if (ret == CONFIG_NOTHING_SET)
+			error("cannot overwrite multiple values with a single value\n"
+			"       Use a regexp, --add or --set-all to change %s.", argv[0]);
+		return ret;
 	}
 	else if (actions == ACTION_SET_ALL) {
 		check_argc(argc, 2, 3);
@@ -505,9 +512,7 @@ int cmd_config(int argc, const char **argv, const char *prefix)
 	}
 	else if (actions == ACTION_GET_COLORBOOL) {
 		if (argc == 1)
-			stdout_is_tty = git_config_bool("command line", argv[0]);
-		else if (argc == 0)
-			stdout_is_tty = isatty(1);
+			color_stdout_is_tty = git_config_bool("command line", argv[0]);
 		return get_colorbool(argc != 0);
 	}
 

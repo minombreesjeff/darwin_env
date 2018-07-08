@@ -215,10 +215,14 @@ extern char *gitbasename(char *);
 #define is_dir_sep(c) ((c) == '/')
 #endif
 
+#ifndef find_last_dir_sep
+#define find_last_dir_sep(path) strrchr(path, '/')
+#endif
+
 #if __HP_cc >= 61000
 #define NORETURN __attribute__((noreturn))
 #define NORETURN_PTR
-#elif defined(__GNUC__)
+#elif defined(__GNUC__) && !defined(NO_NORETURN)
 #define NORETURN __attribute__((__noreturn__))
 #define NORETURN_PTR __attribute__((__noreturn__))
 #elif defined(_MSC_VER)
@@ -236,6 +240,7 @@ extern char *gitbasename(char *);
 
 /* General helper functions */
 extern void vreportf(const char *prefix, const char *err, va_list params);
+extern void vwritef(int fd, const char *prefix, const char *err, va_list params);
 extern NORETURN void usage(const char *err);
 extern NORETURN void usagef(const char *err, ...) __attribute__((format (printf, 1, 2)));
 extern NORETURN void die(const char *err, ...) __attribute__((format (printf, 1, 2)));
@@ -244,6 +249,7 @@ extern int error(const char *err, ...) __attribute__((format (printf, 1, 2)));
 extern void warning(const char *err, ...) __attribute__((format (printf, 1, 2)));
 
 extern void set_die_routine(NORETURN_PTR void (*routine)(const char *err, va_list params));
+extern void set_error_routine(void (*routine)(const char *err, va_list params));
 
 extern int prefixcmp(const char *str, const char *prefix);
 extern int suffixcmp(const char *str, const char *suffix);
@@ -463,6 +469,7 @@ extern unsigned char sane_ctype[256];
 #define GIT_ALPHA 0x04
 #define GIT_GLOB_SPECIAL 0x08
 #define GIT_REGEX_SPECIAL 0x10
+#define GIT_PATHSPEC_MAGIC 0x20
 #define sane_istest(x,mask) ((sane_ctype[(unsigned char)(x)] & (mask)) != 0)
 #define isascii(x) (((x) & ~0x7f) == 0)
 #define isspace(x) sane_istest(x,GIT_SPACE)
@@ -473,6 +480,7 @@ extern unsigned char sane_ctype[256];
 #define is_regex_special(x) sane_istest(x,GIT_GLOB_SPECIAL | GIT_REGEX_SPECIAL)
 #define tolower(x) sane_case((unsigned char)(x), 0x20)
 #define toupper(x) sane_case((unsigned char)(x), 0)
+#define is_pathspec_magic(x) sane_istest(x,GIT_PATHSPEC_MAGIC)
 
 static inline int sane_case(int x, int high)
 {

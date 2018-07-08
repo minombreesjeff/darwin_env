@@ -10,8 +10,16 @@ char *prefix_path(const char *prefix, int len, const char *path)
 	char *sanitized;
 	if (is_absolute_path(orig)) {
 		const char *temp = real_path(path);
-		sanitized = xmalloc(len + strlen(temp) + 1);
+		sanitized = xmalloc(len + strlen(temp) + 2);
 		strcpy(sanitized, temp);
+
+		temp = strrchr(path, '\0');
+		temp--;
+		if (*temp == '/') {
+			char *s = strrchr(sanitized, '\0');
+			s[0] = '/';
+			s[1] = '\0';
+		}
 	} else {
 		sanitized = xmalloc(len + strlen(path) + 1);
 		if (len)
@@ -40,34 +48,6 @@ char *prefix_path(const char *prefix, int len, const char *path)
 	return sanitized;
 }
 
-/*
- * Unlike prefix_path, this should be used if the named file does
- * not have to interact with index entry; i.e. name of a random file
- * on the filesystem.
- */
-const char *prefix_filename(const char *pfx, int pfx_len, const char *arg)
-{
-	static char path[PATH_MAX];
-#ifndef WIN32
-	if (!pfx_len || is_absolute_path(arg))
-		return arg;
-	memcpy(path, pfx, pfx_len);
-	strcpy(path + pfx_len, arg);
-#else
-	char *p;
-	/* don't add prefix to absolute paths, but still replace '\' by '/' */
-	if (is_absolute_path(arg))
-		pfx_len = 0;
-	else if (pfx_len)
-		memcpy(path, pfx, pfx_len);
-	strcpy(path + pfx_len, arg);
-	for (p = path + pfx_len; *p; p++)
-		if (*p == '\\')
-			*p = '/';
-#endif
-	return path;
-}
-
 int check_filename(const char *prefix, const char *arg)
 {
 	const char *name;
@@ -85,8 +65,17 @@ static void NORETURN die_verify_filename(const char *prefix, const char *arg)
 {
 	unsigned char sha1[20];
 	unsigned mode;
-	/* try a detailed diagnostic ... */
-	get_sha1_with_mode_1(arg, sha1, &mode, 0, prefix);
+
+	/*
+	 * Saying "'(icase)foo' does not exist in the index" when the
+	 * user gave us ":(icase)foo" is just stupid.  A magic pathspec
+	 * begins with a colon and is followed by a non-alnum; do not
+	 * let get_sha1_with_mode_1(only_to_die=1) to even trigger.
+	 */
+	if (!(arg[0] == ':' && !isalnum(arg[1])))
+		/* try a detailed diagnostic ... */
+		get_sha1_with_mode_1(arg, sha1, &mode, 1, prefix);
+
 	/* ... or fall back the most general message. */
 	die("ambiguous argument '%s': unknown revision or path not in the working tree.\n"
 	    "Use '--' to separate paths from revisions", arg);
@@ -126,6 +115,105 @@ void verify_non_filename(const char *prefix, const char *arg)
 	    "Use '--' to separate filenames from revisions", arg);
 }
 
+/*
+ * Magic pathspec
+ *
+ * NEEDSWORK: These need to be moved to dir.h or even to a new
+ * pathspec.h when we restructure get_pathspec() users to use the
+ * "struct pathspec" interface.
+ *
+ * Possible future magic semantics include stuff like:
+ *
+ *	{ PATHSPEC_NOGLOB, '!', "noglob" },
+ *	{ PATHSPEC_ICASE, '\0', "icase" },
+ *	{ PATHSPEC_RECURSIVE, '*', "recursive" },
+ *	{ PATHSPEC_REGEXP, '\0', "regexp" },
+ *
+ */
+#define PATHSPEC_FROMTOP    (1<<0)
+
+static struct pathspec_magic {
+	unsigned bit;
+	char mnemonic; /* this cannot be ':'! */
+	const char *name;
+} pathspec_magic[] = {
+	{ PATHSPEC_FROMTOP, '/', "top" },
+};
+
+/*
+ * Take an element of a pathspec and check for magic signatures.
+ * Append the result to the prefix.
+ *
+ * For now, we only parse the syntax and throw out anything other than
+ * "top" magic.
+ *
+ * NEEDSWORK: This needs to be rewritten when we start migrating
+ * get_pathspec() users to use the "struct pathspec" interface.  For
+ * example, a pathspec element may be marked as case-insensitive, but
+ * the prefix part must always match literally, and a single stupid
+ * string cannot express such a case.
+ */
+static const char *prefix_pathspec(const char *prefix, int prefixlen, const char *elt)
+{
+	unsigned magic = 0;
+	const char *copyfrom = elt;
+	int i;
+
+	if (elt[0] != ':') {
+		; /* nothing to do */
+	} else if (elt[1] == '(') {
+		/* longhand */
+		const char *nextat;
+		for (copyfrom = elt + 2;
+		     *copyfrom && *copyfrom != ')';
+		     copyfrom = nextat) {
+			size_t len = strcspn(copyfrom, ",)");
+			if (copyfrom[len] == ')')
+				nextat = copyfrom + len;
+			else
+				nextat = copyfrom + len + 1;
+			if (!len)
+				continue;
+			for (i = 0; i < ARRAY_SIZE(pathspec_magic); i++)
+				if (strlen(pathspec_magic[i].name) == len &&
+				    !strncmp(pathspec_magic[i].name, copyfrom, len)) {
+					magic |= pathspec_magic[i].bit;
+					break;
+				}
+			if (ARRAY_SIZE(pathspec_magic) <= i)
+				die("Invalid pathspec magic '%.*s' in '%s'",
+				    (int) len, copyfrom, elt);
+		}
+		if (*copyfrom == ')')
+			copyfrom++;
+	} else {
+		/* shorthand */
+		for (copyfrom = elt + 1;
+		     *copyfrom && *copyfrom != ':';
+		     copyfrom++) {
+			char ch = *copyfrom;
+
+			if (!is_pathspec_magic(ch))
+				break;
+			for (i = 0; i < ARRAY_SIZE(pathspec_magic); i++)
+				if (pathspec_magic[i].mnemonic == ch) {
+					magic |= pathspec_magic[i].bit;
+					break;
+				}
+			if (ARRAY_SIZE(pathspec_magic) <= i)
+				die("Unimplemented pathspec magic '%c' in '%s'",
+				    ch, elt);
+		}
+		if (*copyfrom == ':')
+			copyfrom++;
+	}
+
+	if (magic & PATHSPEC_FROMTOP)
+		return xstrdup(copyfrom);
+	else
+		return prefix_path(prefix, prefixlen, copyfrom);
+}
+
 const char **get_pathspec(const char *prefix, const char **pathspec)
 {
 	const char *entry = *pathspec;
@@ -147,14 +235,45 @@ const char **get_pathspec(const char *prefix, const char **pathspec)
 	dst = pathspec;
 	prefixlen = prefix ? strlen(prefix) : 0;
 	while (*src) {
-		const char *p = prefix_path(prefix, prefixlen, *src);
-		*(dst++) = p;
+		*(dst++) = prefix_pathspec(prefix, prefixlen, *src);
 		src++;
 	}
 	*dst = NULL;
 	if (!*pathspec)
 		return NULL;
 	return pathspec;
+}
+
+const char *pathspec_prefix(const char *prefix, const char **pathspec)
+{
+	const char **p, *n, *prev;
+	unsigned long max;
+
+	if (!pathspec)
+		return prefix ? xmemdupz(prefix, strlen(prefix)) : NULL;
+
+	prev = NULL;
+	max = PATH_MAX;
+	for (p = pathspec; (n = *p) != NULL; p++) {
+		int i, len = 0;
+		for (i = 0; i < max; i++) {
+			char c = n[i];
+			if (prev && prev[i] != c)
+				break;
+			if (!c || c == '*' || c == '?')
+				break;
+			if (c == '/')
+				len = i+1;
+		}
+		prev = n;
+		if (len < max) {
+			max = len;
+			if (!max)
+				break;
+		}
+	}
+
+	return max ? xmemdupz(prev, max) : NULL;
 }
 
 /*
@@ -268,7 +387,7 @@ static int check_repository_format_gently(const char *gitdir, int *nongit_ok)
  * Try to read the location of the git directory from the .git file,
  * return path to git directory if found.
  */
-const char *read_gitfile_gently(const char *path)
+const char *read_gitfile(const char *path)
 {
 	char *buf;
 	char *dir;
@@ -325,11 +444,12 @@ static const char *setup_explicit_git_dir(const char *gitdirenv,
 	const char *work_tree_env = getenv(GIT_WORK_TREE_ENVIRONMENT);
 	const char *worktree;
 	char *gitfile;
+	int offset;
 
 	if (PATH_MAX - 40 < strlen(gitdirenv))
 		die("'$%s' too big", GIT_DIR_ENVIRONMENT);
 
-	gitfile = (char*)read_gitfile_gently(gitdirenv);
+	gitfile = (char*)read_gitfile(gitdirenv);
 	if (gitfile) {
 		gitfile = xstrdup(gitfile);
 		gitdirenv = gitfile;
@@ -390,15 +510,15 @@ static const char *setup_explicit_git_dir(const char *gitdirenv,
 		return NULL;
 	}
 
-	if (!prefixcmp(cwd, worktree) &&
-	    cwd[strlen(worktree)] == '/') { /* cwd inside worktree */
+	offset = dir_inside_of(cwd, worktree);
+	if (offset >= 0) {	/* cwd inside worktree? */
 		set_git_dir(real_path(gitdirenv));
 		if (chdir(worktree))
 			die_errno("Could not chdir to '%s'", worktree);
 		cwd[len++] = '/';
 		cwd[len] = '\0';
 		free(gitfile);
-		return cwd + strlen(worktree) + 1;
+		return cwd + offset;
 	}
 
 	/* cwd outside worktree */
@@ -553,7 +673,7 @@ static const char *setup_git_directory_gently_1(int *nongit_ok)
 	if (one_filesystem)
 		current_device = get_device_or_die(".", NULL);
 	for (;;) {
-		gitfile = (char*)read_gitfile_gently(DEFAULT_GIT_DIR_ENVIRONMENT);
+		gitfile = (char*)read_gitfile(DEFAULT_GIT_DIR_ENVIRONMENT);
 		if (gitfile)
 			gitdirenv = gitfile = xstrdup(gitfile);
 		else {
@@ -602,6 +722,11 @@ const char *setup_git_directory_gently(int *nongit_ok)
 	const char *prefix;
 
 	prefix = setup_git_directory_gently_1(nongit_ok);
+	if (prefix)
+		setenv("GIT_PREFIX", prefix, 1);
+	else
+		setenv("GIT_PREFIX", "", 1);
+
 	if (startup_info) {
 		startup_info->have_repository = !nongit_ok || !*nongit_ok;
 		startup_info->prefix = prefix;

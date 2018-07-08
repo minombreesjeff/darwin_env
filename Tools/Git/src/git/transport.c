@@ -10,6 +10,7 @@
 #include "refs.h"
 #include "branch.h"
 #include "url.h"
+#include "submodule.h"
 
 /* rsync support */
 
@@ -431,7 +432,8 @@ static int fetch_refs_from_bundle(struct transport *transport,
 			       int nr_heads, struct ref **to_fetch)
 {
 	struct bundle_transport_data *data = transport->data;
-	return unbundle(&data->header, data->fd);
+	return unbundle(&data->header, data->fd,
+			transport->progress ? BUNDLE_VERBOSE : 0);
 }
 
 static int close_bundle(struct transport *transport)
@@ -1041,6 +1043,14 @@ int transport_push(struct transport *transport,
 			flags & TRANSPORT_PUSH_MIRROR,
 			flags & TRANSPORT_PUSH_FORCE);
 
+		if ((flags & TRANSPORT_RECURSE_SUBMODULES_CHECK) && !is_bare_repository()) {
+			struct ref *ref = remote_refs;
+			for (; ref; ref = ref->next)
+				if (!is_null_sha1(ref->new_sha1) &&
+				    check_submodule_needs_pushing(ref->new_sha1,transport->remote->name))
+					die("There are unpushed submodules, aborting.");
+		}
+
 		push_ret = transport->push_refs(transport, remote_refs, flags);
 		err = push_had_errors(remote_refs);
 		ret = push_ret | err;
@@ -1190,14 +1200,20 @@ literal_copy:
 	return xstrdup(url);
 }
 
-int refs_from_alternate_cb(struct alternate_object_database *e, void *cb)
+struct alternate_refs_data {
+	alternate_ref_fn *fn;
+	void *data;
+};
+
+static int refs_from_alternate_cb(struct alternate_object_database *e,
+				  void *data)
 {
 	char *other;
 	size_t len;
 	struct remote *remote;
 	struct transport *transport;
 	const struct ref *extra;
-	alternate_ref_fn *ref_fn = cb;
+	struct alternate_refs_data *cb = data;
 
 	e->name[-1] = '\0';
 	other = xstrdup(real_path(e->base));
@@ -1218,8 +1234,16 @@ int refs_from_alternate_cb(struct alternate_object_database *e, void *cb)
 	for (extra = transport_get_remote_refs(transport);
 	     extra;
 	     extra = extra->next)
-		ref_fn(extra, NULL);
+		cb->fn(extra, cb->data);
 	transport_disconnect(transport);
 	free(other);
 	return 0;
+}
+
+void for_each_alternate_ref(alternate_ref_fn fn, void *data)
+{
+	struct alternate_refs_data cb;
+	cb.fn = fn;
+	cb.data = data;
+	foreach_alt_odb(refs_from_alternate_cb, &cb);
 }

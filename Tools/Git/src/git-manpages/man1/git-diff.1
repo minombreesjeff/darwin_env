@@ -2,12 +2,21 @@
 .\"     Title: git-diff
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/02/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8
 .\"  Language: English
 .\"
-.TH "GIT\-DIFF" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-DIFF" "1" "12/02/2011" "Git 1\&.7\&.8" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -97,15 +106,31 @@ Synonym for
 \-p \-\-raw\&.
 .RE
 .PP
+\-\-minimal
+.RS 4
+Spend extra time to make sure the smallest possible diff is produced\&.
+.RE
+.PP
 \-\-patience
 .RS 4
 Generate a diff using the "patience diff" algorithm\&.
 .RE
 .PP
-\-\-stat[=<width>[,<name\-width>]]
+\-\-stat[=<width>[,<name\-width>[,<count>]]]
 .RS 4
 Generate a diffstat\&. You can override the default output width for 80\-column terminal by
-\-\-stat=<width>\&. The width of the filename part can be controlled by giving another width to it separated by a comma\&.
+\-\-stat=<width>\&. The width of the filename part can be controlled by giving another width to it separated by a comma\&. By giving a third parameter
+<count>, you can limit the output to the first
+<count>
+lines, followed by
+\&...
+if there are more\&.
+.sp
+These parameters can also be set individually with
+\-\-stat\-width=<width>,
+\-\-stat\-name\-width=<name\-width>
+and
+\-\-stat\-count=<count>\&.
 .RE
 .PP
 \-\-numstat
@@ -124,22 +149,53 @@ Output only the last line of the
 format containing total number of modified files, as well as number of added and deleted lines\&.
 .RE
 .PP
-\-\-dirstat[=<limit>]
+\-\-dirstat[=<param1,param2,\&...>]
 .RS 4
-Output the distribution of relative amount of changes (number of lines added or removed) for each sub\-directory\&. Directories with changes below a cut\-off percent (3% by default) are not shown\&. The cut\-off percent can be set with
-\-\-dirstat=<limit>\&. Changes in a child directory are not counted for the parent directory, unless
-\-\-cumulative
-is used\&.
-.sp
-Note that the
+Output the distribution of relative amount of changes for each sub\-directory\&. The behavior of
 \-\-dirstat
-option computes the changes while ignoring the amount of pure code movements within a file\&. In other words, rearranging lines in a file is not counted as much as other changes\&.
+can be customized by passing it a comma separated list of parameters\&. The defaults are controlled by the
+diff\&.dirstat
+configuration variable (see
+\fBgit-config\fR(1))\&. The following parameters are available:
+.PP
+changes
+.RS 4
+Compute the dirstat numbers by counting the lines that have been removed from the source, or added to the destination\&. This ignores the amount of pure code movements within a file\&. In other words, rearranging lines in a file is not counted as much as other changes\&. This is the default behavior when no parameter is given\&.
 .RE
 .PP
-\-\-dirstat\-by\-file[=<limit>]
+lines
 .RS 4
-Same as
-\-\-dirstat, but counts changed files instead of lines\&.
+Compute the dirstat numbers by doing the regular line\-based diff analysis, and summing the removed/added line counts\&. (For binary files, count 64\-byte chunks instead, since binary files have no natural concept of lines)\&. This is a more expensive
+\-\-dirstat
+behavior than the
+changes
+behavior, but it does count rearranged lines within a file as much as other changes\&. The resulting output is consistent with what you get from the other
+\-\-*stat
+options\&.
+.RE
+.PP
+files
+.RS 4
+Compute the dirstat numbers by counting the number of files changed\&. Each changed file counts equally in the dirstat analysis\&. This is the computationally cheapest
+\-\-dirstat
+behavior, since it does not have to look at the file contents at all\&.
+.RE
+.PP
+cumulative
+.RS 4
+Count changes in a child directory for the parent directory as well\&. Note that when using
+cumulative, the sum of the percentages reported may exceed 100%\&. The default (non\-cumulative) behavior can be specified with the
+noncumulative
+parameter\&.
+.RE
+.PP
+<limit>
+.RS 4
+An integer parameter specifies a cut\-off percent (3% by default)\&. Directories contributing less than this percentage of the changes are not shown in the output\&.
+.RE
+.sp
+Example: The following will count changed files, while ignoring directories with less than 10% of the total amount of changed files, and accumulating child directory counts in the parent directories:
+\-\-dirstat=files,10,cumulative\&.
 .RE
 .PP
 \-\-summary
@@ -287,7 +343,9 @@ Turn off rename detection, even when the configuration file gives the default to
 .PP
 \-\-check
 .RS 4
-Warn if changes introduce trailing whitespace or an indent that uses a space before a tab\&. Exits with non\-zero status if problems are found\&. Not compatible with \-\-exit\-code\&.
+Warn if changes introduce whitespace errors\&. What are considered whitespace errors is controlled by
+core\&.whitespace
+configuration\&. By default, trailing whitespaces (including lines that solely consist of whitespaces) and a space character that is immediately followed by a tab character inside the initial indent of the line are considered whitespace errors\&. Exits with non\-zero status if problems are found\&. Not compatible with \-\-exit\-code\&.
 .RE
 .PP
 \-\-full\-index
@@ -352,6 +410,18 @@ For performance reasons, by default,
 option finds copies only if the original file of the copy was modified in the same changeset\&. This flag makes the command inspect unmodified files as candidates for the source of copy\&. This is a very expensive operation for large projects, so use it with caution\&. Giving more than one
 \-C
 option has the same effect\&.
+.RE
+.PP
+\-D, \-\-irreversible\-delete
+.RS 4
+Omit the preimage for deletes, i\&.e\&. print only the header but not the diff between the preimage and
+/dev/null\&. The resulting patch is not meant to be applied with
+patch
+nor
+git apply; this is solely for people who want to just concentrate on reviewing the text after the change\&. In addition, the output obviously lack enough information to apply such a patch in reverse, even manually, hence the name of the option\&.
+.sp
+When used together with
+\-B, omit also the preimage in the deletion part of a delete/create pair\&.
 .RE
 .PP
 \-l<num>
@@ -438,6 +508,11 @@ Ignore whitespace when comparing lines\&. This ignores differences even if one l
 Show the context between diff hunks, up to the specified number of lines, thereby fusing hunks that are close to each other\&.
 .RE
 .PP
+\-W, \-\-function\-context
+.RS 4
+Show whole surrounding functions of changes\&.
+.RE
+.PP
 \-\-exit\-code
 .RS 4
 Make the program exit with codes similar to diff(1)\&. That is, it exits with 1 if there were differences and 0 means no differences\&.
@@ -460,6 +535,18 @@ and friends\&.
 \-\-no\-ext\-diff
 .RS 4
 Disallow external diff drivers\&.
+.RE
+.PP
+\-\-textconv, \-\-no\-textconv
+.RS 4
+Allow (or disallow) external text conversion filters to be run when comparing binary files\&. See
+\fBgitattributes\fR(5)
+for details\&. Because textconv filters are typically a one\-way conversion, the resulting diff is suitable for human consumption, but cannot be applied\&. For this reason, textconv filters are enabled by default only for
+\fBgit-diff\fR(1)
+and
+\fBgit-log\fR(1), but not for
+\fBgit-format-patch\fR(1)
+or diff plumbing commands\&.
 .RE
 .PP
 \-\-ignore\-submodules[=<when>]

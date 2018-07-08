@@ -89,6 +89,7 @@ my ($_stdin, $_help, $_edit,
 	$_prefix, $_no_checkout, $_url, $_verbose,
 	$_git_format, $_commit_url, $_tag, $_merge_info);
 $Git::SVN::_follow_parent = 1;
+$SVN::Git::Fetcher::_placeholder_filename = ".gitignore";
 $_q ||= 0;
 my %remote_opts = ( 'username=s' => \$Git::SVN::Prompt::_username,
                     'config-dir=s' => \$Git::SVN::Ra::config_dir,
@@ -139,6 +140,10 @@ my %cmd = (
 			   %fc_opts } ],
 	clone => [ \&cmd_clone, "Initialize and fetch revisions",
 			{ 'revision|r=s' => \$_revision,
+			  'preserve-empty-dirs' =>
+				\$SVN::Git::Fetcher::_preserve_empty_dirs,
+			  'placeholder-filename=s' =>
+				\$SVN::Git::Fetcher::_placeholder_filename,
 			   %fc_opts, %init_opts } ],
 	init => [ \&cmd_init, "Initialize a repo for tracking" .
 			  " (requires URL argument)",
@@ -386,6 +391,12 @@ sub do_git_init_db {
 	my $ignore_regex = \$SVN::Git::Fetcher::_ignore_regex;
 	command_noisy('config', "$pfx.ignore-paths", $$ignore_regex)
 		if defined $$ignore_regex;
+
+	if (defined $SVN::Git::Fetcher::_preserve_empty_dirs) {
+		my $fname = \$SVN::Git::Fetcher::_placeholder_filename;
+		command_noisy('config', "$pfx.preserve-empty-dirs", 'true');
+		command_noisy('config', "$pfx.placeholder-filename", $$fname);
+	}
 }
 
 sub init_subdir {
@@ -497,6 +508,195 @@ sub cmd_set_tree {
 	unlink $gs->{index};
 }
 
+sub split_merge_info_range {
+	my ($range) = @_;
+	if ($range =~ /(\d+)-(\d+)/) {
+		return (int($1), int($2));
+	} else {
+		return (int($range), int($range));
+	}
+}
+
+sub combine_ranges {
+	my ($in) = @_;
+
+	my @fnums = ();
+	my @arr = split(/,/, $in);
+	for my $element (@arr) {
+		my ($start, $end) = split_merge_info_range($element);
+		push @fnums, $start;
+	}
+
+	my @sorted = @arr [ sort {
+		$fnums[$a] <=> $fnums[$b]
+	} 0..$#arr ];
+
+	my @return = ();
+	my $last = -1;
+	my $first = -1;
+	for my $element (@sorted) {
+		my ($start, $end) = split_merge_info_range($element);
+
+		if ($last == -1) {
+			$first = $start;
+			$last = $end;
+			next;
+		}
+		if ($start <= $last+1) {
+			if ($end > $last) {
+				$last = $end;
+			}
+			next;
+		}
+		if ($first == $last) {
+			push @return, "$first";
+		} else {
+			push @return, "$first-$last";
+		}
+		$first = $start;
+		$last = $end;
+	}
+
+	if ($first != -1) {
+		if ($first == $last) {
+			push @return, "$first";
+		} else {
+			push @return, "$first-$last";
+		}
+	}
+
+	return join(',', @return);
+}
+
+sub merge_revs_into_hash {
+	my ($hash, $minfo) = @_;
+	my @lines = split(' ', $minfo);
+
+	for my $line (@lines) {
+		my ($branchpath, $revs) = split(/:/, $line);
+
+		if (exists($hash->{$branchpath})) {
+			# Merge the two revision sets
+			my $combined = "$hash->{$branchpath},$revs";
+			$hash->{$branchpath} = combine_ranges($combined);
+		} else {
+			# Just do range combining for consolidation
+			$hash->{$branchpath} = combine_ranges($revs);
+		}
+	}
+}
+
+sub merge_merge_info {
+	my ($mergeinfo_one, $mergeinfo_two) = @_;
+	my %result_hash = ();
+
+	merge_revs_into_hash(\%result_hash, $mergeinfo_one);
+	merge_revs_into_hash(\%result_hash, $mergeinfo_two);
+
+	my $result = '';
+	# Sort below is for consistency's sake
+	for my $branchname (sort keys(%result_hash)) {
+		my $revlist = $result_hash{$branchname};
+		$result .= "$branchname:$revlist\n"
+	}
+	return $result;
+}
+
+sub populate_merge_info {
+	my ($d, $gs, $uuid, $linear_refs, $rewritten_parent) = @_;
+
+	my %parentshash;
+	read_commit_parents(\%parentshash, $d);
+	my @parents = @{$parentshash{$d}};
+	if ($#parents > 0) {
+		# Merge commit
+		my $all_parents_ok = 1;
+		my $aggregate_mergeinfo = '';
+		my $rooturl = $gs->repos_root;
+
+		if (defined($rewritten_parent)) {
+			# Replace first parent with newly-rewritten version
+			shift @parents;
+			unshift @parents, $rewritten_parent;
+		}
+
+		foreach my $parent (@parents) {
+			my ($branchurl, $svnrev, $paruuid) =
+				cmt_metadata($parent);
+
+			unless (defined($svnrev)) {
+				# Should have been caught be preflight check
+				fatal "merge commit $d has ancestor $parent, but that change "
+                     ."does not have git-svn metadata!";
+			}
+			unless ($branchurl =~ /^$rooturl(.*)/) {
+				fatal "commit $parent git-svn metadata changed mid-run!";
+			}
+			my $branchpath = $1;
+
+			my $ra = Git::SVN::Ra->new($branchurl);
+			my (undef, undef, $props) =
+				$ra->get_dir(canonicalize_path("."), $svnrev);
+			my $par_mergeinfo = $props->{'svn:mergeinfo'};
+			unless (defined $par_mergeinfo) {
+				$par_mergeinfo = '';
+			}
+			# Merge previous mergeinfo values
+			$aggregate_mergeinfo =
+				merge_merge_info($aggregate_mergeinfo,
+								 $par_mergeinfo, 0);
+
+			next if $parent eq $parents[0]; # Skip first parent
+			# Add new changes being placed in tree by merge
+			my @cmd = (qw/rev-list --reverse/,
+					   $parent, qw/--not/);
+			foreach my $par (@parents) {
+				unless ($par eq $parent) {
+					push @cmd, $par;
+				}
+			}
+			my @revsin = ();
+			my ($revlist, $ctx) = command_output_pipe(@cmd);
+			while (<$revlist>) {
+				my $irev = $_;
+				chomp $irev;
+				my (undef, $csvnrev, undef) =
+					cmt_metadata($irev);
+				unless (defined $csvnrev) {
+					# A child is missing SVN annotations...
+					# this might be OK, or might not be.
+					warn "W:child $irev is merged into revision "
+						 ."$d but does not have git-svn metadata. "
+						 ."This means git-svn cannot determine the "
+						 ."svn revision numbers to place into the "
+						 ."svn:mergeinfo property. You must ensure "
+						 ."a branch is entirely committed to "
+						 ."SVN before merging it in order for "
+						 ."svn:mergeinfo population to function "
+						 ."properly";
+				}
+				push @revsin, $csvnrev;
+			}
+			command_close_pipe($revlist, $ctx);
+
+			last unless $all_parents_ok;
+
+			# We now have a list of all SVN revnos which are
+			# merged by this particular parent. Integrate them.
+			next if $#revsin == -1;
+			my $newmergeinfo = "$branchpath:" . join(',', @revsin);
+			$aggregate_mergeinfo =
+				merge_merge_info($aggregate_mergeinfo,
+								 $newmergeinfo, 1);
+		}
+		if ($all_parents_ok and $aggregate_mergeinfo) {
+			return $aggregate_mergeinfo;
+		}
+	}
+
+	return undef;
+}
+
 sub cmd_dcommit {
 	my $head = shift;
 	command_noisy(qw/update-index --refresh/);
@@ -547,7 +747,66 @@ sub cmd_dcommit {
 		     "without --no-rebase may be required."
 	}
 	my $expect_url = $url;
+
+	my $push_merge_info = eval {
+		command_oneline(qw/config --get svn.pushmergeinfo/)
+		};
+	if (not defined($push_merge_info)
+			or $push_merge_info eq "false"
+			or $push_merge_info eq "no"
+			or $push_merge_info eq "never") {
+		$push_merge_info = 0;
+	}
+
+	unless (defined($_merge_info) || ! $push_merge_info) {
+		# Preflight check of changes to ensure no issues with mergeinfo
+		# This includes check for uncommitted-to-SVN parents
+		# (other than the first parent, which we will handle),
+		# information from different SVN repos, and paths
+		# which are not underneath this repository root.
+		my $rooturl = $gs->repos_root;
+		foreach my $d (@$linear_refs) {
+			my %parentshash;
+			read_commit_parents(\%parentshash, $d);
+			my @realparents = @{$parentshash{$d}};
+			if ($#realparents > 0) {
+				# Merge commit
+				shift @realparents; # Remove/ignore first parent
+				foreach my $parent (@realparents) {
+					my ($branchurl, $svnrev, $paruuid) = cmt_metadata($parent);
+					unless (defined $paruuid) {
+						# A parent is missing SVN annotations...
+						# abort the whole operation.
+						fatal "$parent is merged into revision $d, "
+							 ."but does not have git-svn metadata. "
+							 ."Either dcommit the branch or use a "
+							 ."local cherry-pick, FF merge, or rebase "
+							 ."instead of an explicit merge commit.";
+					}
+
+					unless ($paruuid eq $uuid) {
+						# Parent has SVN metadata from different repository
+						fatal "merge parent $parent for change $d has "
+							 ."git-svn uuid $paruuid, while current change "
+							 ."has uuid $uuid!";
+					}
+
+					unless ($branchurl =~ /^$rooturl(.*)/) {
+						# This branch is very strange indeed.
+						fatal "merge parent $parent for $d is on branch "
+							 ."$branchurl, which is not under the "
+							 ."git-svn root $rooturl!";
+					}
+				}
+			}
+		}
+	}
+
+	my $rewritten_parent;
 	Git::SVN::remove_username($expect_url);
+	if (defined($_merge_info)) {
+		$_merge_info =~ tr{ }{\n};
+	}
 	while (1) {
 		my $d = shift @$linear_refs or last;
 		unless (defined $last_rev) {
@@ -561,6 +820,14 @@ sub cmd_dcommit {
 			print "diff-tree $d~1 $d\n";
 		} else {
 			my $cmt_rev;
+
+			unless (defined($_merge_info) || ! $push_merge_info) {
+				$_merge_info = populate_merge_info($d, $gs,
+				                             $uuid,
+				                             $linear_refs,
+				                             $rewritten_parent);
+			}
+
 			my %ed_opts = ( r => $last_rev,
 			                log => get_commit_entry($d)->{log},
 			                ra => Git::SVN::Ra->new($url),
@@ -603,6 +870,9 @@ sub cmd_dcommit {
 				@finish = qw/reset --mixed/;
 			}
 			command_noisy(@finish, $gs->refname);
+
+			$rewritten_parent = command_oneline(qw/rev-parse HEAD/);
+
 			if (@diff) {
 				@refs = ();
 				my ($url_, $rev_, $uuid_, $gs_) =
@@ -784,6 +1054,15 @@ sub cmd_find_rev {
 	print "$result\n" if $result;
 }
 
+sub auto_create_empty_directories {
+	my ($gs) = @_;
+	my $var = eval { command_oneline('config', '--get', '--bool',
+					 "svn-remote.$gs->{repo_id}.automkdirs") };
+	# By default, create empty directories by consulting the unhandled log,
+	# but allow setting it to 'false' to skip it.
+	return !($var && $var eq 'false');
+}
+
 sub cmd_rebase {
 	command_noisy(qw/update-index --refresh/);
 	my ($url, $rev, $uuid, $gs) = working_head_info('HEAD');
@@ -807,7 +1086,9 @@ sub cmd_rebase {
 		$_fetch_all ? $gs->fetch_all : $gs->fetch;
 	}
 	command_noisy(rebase_cmd(), $gs->refname);
-	$gs->mkemptydirs;
+	if (auto_create_empty_directories($gs)) {
+		$gs->mkemptydirs;
+	}
 }
 
 sub cmd_show_ignore {
@@ -1245,7 +1526,9 @@ sub post_fetch_checkout {
 	command_noisy(qw/read-tree -m -u -v HEAD HEAD/);
 	print STDERR "Checked out HEAD:\n  ",
 	             $gs->full_url, " r", $gs->last_rev, "\n";
-	$gs->mkemptydirs($gs->last_rev);
+	if (auto_create_empty_directories($gs)) {
+		$gs->mkemptydirs($gs->last_rev);
+	}
 }
 
 sub complete_svn_url {
@@ -2998,7 +3281,7 @@ sub other_gs {
 			my (undef, $max_commit) = $gs->rev_map_max(1);
 			last if (!$max_commit);
 			my ($url) = ::cmt_metadata($max_commit);
-			last if ($url eq $gs->full_url);
+			last if ($url eq $gs->metadata_url);
 			$ref_id .= '-';
 		}
 		print STDERR "Initializing parent: $ref_id\n" unless $::_q > 1;
@@ -3111,8 +3394,12 @@ sub lookup_svn_merge {
 			next;
 		}
 
-		push @merged_commit_ranges,
-			"$bottom_commit^..$top_commit";
+		if (scalar(command('rev-parse', "$bottom_commit^@"))) {
+			push @merged_commit_ranges,
+			     "$bottom_commit^..$top_commit";
+		} else {
+			push @merged_commit_ranges, "$top_commit";
+		}
 
 		if ( !defined $tip or $top > $tip ) {
 			$tip = $top;
@@ -3141,9 +3428,9 @@ sub check_cherry_pick {
 	my $parents = shift;
 	my @ranges = @_;
 	my %commits = map { $_ => 1 }
-		_rev_list("--no-merges", $tip, "--not", $base, @$parents);
+		_rev_list("--no-merges", $tip, "--not", $base, @$parents, "--");
 	for my $range ( @ranges ) {
-		delete @commits{_rev_list($range)};
+		delete @commits{_rev_list($range, "--")};
 	}
 	for my $commit (keys %commits) {
 		if (has_no_changes($commit)) {
@@ -4063,12 +4350,13 @@ sub _read_password {
 }
 
 package SVN::Git::Fetcher;
-use vars qw/@ISA/;
+use vars qw/@ISA $_ignore_regex $_preserve_empty_dirs $_placeholder_filename
+            @deleted_gpath %added_placeholder $repo_id/;
 use strict;
 use warnings;
 use Carp qw/croak/;
+use File::Basename qw/dirname/;
 use IO::File qw//;
-use vars qw/$_ignore_regex/;
 
 # file baton members: path, mode_a, mode_b, pool, fh, blob, base
 sub new {
@@ -4080,8 +4368,34 @@ sub new {
 		$self->{empty_symlinks} =
 		                  _mark_empty_symlinks($git_svn, $switch_path);
 	}
-	$self->{ignore_regex} = eval { command_oneline('config', '--get',
-			     "svn-remote.$git_svn->{repo_id}.ignore-paths") };
+
+	# some options are read globally, but can be overridden locally
+	# per [svn-remote "..."] section.  Command-line options will *NOT*
+	# override options set in an [svn-remote "..."] section
+	$repo_id = $git_svn->{repo_id};
+	my $k = "svn-remote.$repo_id.ignore-paths";
+	my $v = eval { command_oneline('config', '--get', $k) };
+	$self->{ignore_regex} = $v;
+
+	$k = "svn-remote.$repo_id.preserve-empty-dirs";
+	$v = eval { command_oneline('config', '--get', '--bool', $k) };
+	if ($v && $v eq 'true') {
+		$_preserve_empty_dirs = 1;
+		$k = "svn-remote.$repo_id.placeholder-filename";
+		$v = eval { command_oneline('config', '--get', $k) };
+		$_placeholder_filename = $v;
+	}
+
+	# Load the list of placeholder files added during previous invocations.
+	$k = "svn-remote.$repo_id.added-placeholder";
+	$v = eval { command_oneline('config', '--get-all', $k) };
+	if ($_preserve_empty_dirs && $v) {
+		# command() prints errors to stderr, so we only call it if
+		# command_oneline() succeeded.
+		my @v = command('config', '--get-all', $k);
+		$added_placeholder{ dirname($_) } = $_ foreach @v;
+	}
+
 	$self->{empty} = {};
 	$self->{dir_prop} = {};
 	$self->{file_prop} = {};
@@ -4210,6 +4524,8 @@ sub delete_entry {
 		$self->{gii}->remove($gpath);
 		print "\tD\t$gpath\n" unless $::_q;
 	}
+	# Don't add to @deleted_gpath if we're deleting a placeholder file.
+	push @deleted_gpath, $gpath unless $added_placeholder{dirname($path)};
 	$self->{empty}->{$path} = 0;
 	undef;
 }
@@ -4242,7 +4558,15 @@ sub add_file {
 		my ($dir, $file) = ($path =~ m#^(.*?)/?([^/]+)$#);
 		delete $self->{empty}->{$dir};
 		$mode = '100644';
+
+		if ($added_placeholder{$dir}) {
+			# Remove our placeholder file, if we created one.
+			delete_entry($self, $added_placeholder{$dir})
+				unless $path eq $added_placeholder{$dir};
+			delete $added_placeholder{$dir}
+		}
 	}
+
 	{ path => $path, mode_a => $mode, mode_b => $mode,
 	  pool => SVN::Pool->new, action => 'A' };
 }
@@ -4260,6 +4584,7 @@ sub add_directory {
 			chomp;
 			$self->{gii}->remove($_);
 			print "\tD\t$_\n" unless $::_q;
+			push @deleted_gpath, $gpath;
 		}
 		command_close_pipe($ls, $ctx);
 		$self->{empty}->{$path} = 0;
@@ -4267,6 +4592,13 @@ sub add_directory {
 	my ($dir, $file) = ($path =~ m#^(.*?)/?([^/]+)$#);
 	delete $self->{empty}->{$dir};
 	$self->{empty}->{$path} = 1;
+
+	if ($added_placeholder{$dir}) {
+		# Remove our placeholder file, if we created one.
+		delete_entry($self, $added_placeholder{$dir});
+		delete $added_placeholder{$dir}
+	}
+
 out:
 	{ path => $path };
 }
@@ -4430,10 +4762,94 @@ sub abort_edit {
 
 sub close_edit {
 	my $self = shift;
+
+	if ($_preserve_empty_dirs) {
+		my @empty_dirs;
+
+		# Any entry flagged as empty that also has an associated
+		# dir_prop represents a newly created empty directory.
+		foreach my $i (keys %{$self->{empty}}) {
+			push @empty_dirs, $i if exists $self->{dir_prop}->{$i};
+		}
+
+		# Search for directories that have become empty due subsequent
+		# file deletes.
+		push @empty_dirs, $self->find_empty_directories();
+
+		# Finally, add a placeholder file to each empty directory.
+		$self->add_placeholder_file($_) foreach (@empty_dirs);
+
+		$self->stash_placeholder_list();
+	}
+
 	$self->{git_commit_ok} = 1;
 	$self->{nr} = $self->{gii}->{nr};
 	delete $self->{gii};
 	$self->SUPER::close_edit(@_);
+}
+
+sub find_empty_directories {
+	my ($self) = @_;
+	my @empty_dirs;
+	my %dirs = map { dirname($_) => 1 } @deleted_gpath;
+
+	foreach my $dir (sort keys %dirs) {
+		next if $dir eq ".";
+
+		# If there have been any additions to this directory, there is
+		# no reason to check if it is empty.
+		my $skip_added = 0;
+		foreach my $t (qw/dir_prop file_prop/) {
+			foreach my $path (keys %{ $self->{$t} }) {
+				if (exists $self->{$t}->{dirname($path)}) {
+					$skip_added = 1;
+					last;
+				}
+			}
+			last if $skip_added;
+		}
+		next if $skip_added;
+
+		# Use `git ls-tree` to get the filenames of this directory
+		# that existed prior to this particular commit.
+		my $ls = command('ls-tree', '-z', '--name-only',
+				 $self->{c}, "$dir/");
+		my %files = map { $_ => 1 } split(/\0/, $ls);
+
+		# Remove the filenames that were deleted during this commit.
+		delete $files{$_} foreach (@deleted_gpath);
+
+		# Report the directory if there are no filenames left.
+		push @empty_dirs, $dir unless (scalar %files);
+	}
+	@empty_dirs;
+}
+
+sub add_placeholder_file {
+	my ($self, $dir) = @_;
+	my $path = "$dir/$_placeholder_filename";
+	my $gpath = $self->git_path($path);
+
+	my $fh = $::_repository->temp_acquire($gpath);
+	my $hash = $::_repository->hash_and_insert_object(Git::temp_path($fh));
+	Git::temp_release($fh, 1);
+	$self->{gii}->update('100644', $hash, $gpath) or croak $!;
+
+	# The directory should no longer be considered empty.
+	delete $self->{empty}->{$dir} if exists $self->{empty}->{$dir};
+
+	# Keep track of any placeholder files we create.
+	$added_placeholder{$dir} = $path;
+}
+
+sub stash_placeholder_list {
+	my ($self) = @_;
+	my $k = "svn-remote.$repo_id.added-placeholder";
+	my $v = eval { command_oneline('config', '--get-all', $k) };
+	command_noisy('config', '--unset-all', $k) if $v;
+	foreach (values %added_placeholder) {
+		command_noisy('config', '--add', $k, $_);
+	}
 }
 
 package SVN::Git::Editor;

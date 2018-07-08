@@ -51,8 +51,8 @@ OPTIONS
 
 start::
 --start::
-	Start the httpd instance and exit.  This does not generate
-	any of the configuration files for spawning a new instance.
+	Start the httpd instance and exit.  Regenerate configuration files
+	as necessary for spawning a new instance.
 
 stop::
 --stop::
@@ -62,8 +62,8 @@ stop::
 
 restart::
 --restart::
-	Restart the httpd instance and exit.  This does not generate
-	any of the configuration files for spawning a new instance.
+	Restart the httpd instance and exit.  Regenerate configuration files
+	as necessary for spawning a new instance.
 
 CONFIGURATION
 -------------
@@ -83,6 +83,10 @@ You may specify configuration in your .git/config
 If the configuration variable 'instaweb.browser' is not set,
 'web.browser' will be used instead if it is defined. See
 linkgit:git-web{litdd}browse[1] for more information about this.
+
+SEE ALSO
+--------
+linkgit:gitweb[1]
 
 GIT
 ---

@@ -3,7 +3,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<meta name="generator" content="AsciiDoc 8.4.5" />
+<meta name="generator" content="AsciiDoc 8.5.2" />
 <title>git-read-tree(1)</title>
 <style type="text/css">
 /* Debug borders */
@@ -118,12 +118,14 @@ div#preamble {
 div.tableblock, div.imageblock, div.exampleblock, div.verseblock,
 div.quoteblock, div.literalblock, div.listingblock, div.sidebarblock,
 div.admonitionblock {
-  margin-top: 1.5em;
+  margin-top: 1.0em;
   margin-bottom: 1.5em;
 }
 div.admonitionblock {
-  margin-top: 2.5em;
-  margin-bottom: 2.5em;
+  margin-top: 2.0em;
+  margin-bottom: 2.0em;
+  margin-right: 10%;
+  color: #606060;
 }
 
 div.content { /* Block element content. */
@@ -165,19 +167,19 @@ div.listingblock > div.content {
   padding: 0.5em;
 }
 
-div.quoteblock {
-  padding-left: 2.0em;
+div.quoteblock, div.verseblock {
+  padding-left: 1.0em;
+  margin-left: 1.0em;
   margin-right: 10%;
+  border-left: 5px solid #dddddd;
+  color: #777777;
 }
+
 div.quoteblock > div.attribution {
   padding-top: 0.5em;
   text-align: right;
 }
 
-div.verseblock {
-  padding-left: 2.0em;
-  margin-right: 10%;
-}
 div.verseblock > div.content {
   white-space: pre;
 }
@@ -200,12 +202,12 @@ div.admonitionblock .icon {
 }
 div.admonitionblock td.content {
   padding-left: 0.5em;
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
 }
 
 div.exampleblock > div.content {
-  border-left: 2px solid silver;
-  padding: 0.5em;
+  border-left: 3px solid #dddddd;
+  padding-left: 0.5em;
 }
 
 div.imageblock div.content { padding-left: 0; }
@@ -255,7 +257,7 @@ div.compact div, div.compact div {
 div.tableblock > table {
   border: 3px solid #527bbd;
 }
-thead {
+thead, p.table.header {
   font-family: sans-serif;
   font-weight: bold;
 }
@@ -310,8 +312,40 @@ div.hdlist.compact tr {
   background: yellow;
 }
 
+.footnote, .footnoteref {
+  font-size: 0.8em;
+}
+
+span.footnote, span.footnoteref {
+  vertical-align: super;
+}
+
+#footnotes {
+  margin: 20px 0 20px 0;
+  padding: 7px 0 0 0;
+}
+
+#footnotes div.footnote {
+  margin: 0 0 5px 0;
+}
+
+#footnotes hr {
+  border: none;
+  border-top: 1px solid silver;
+  height: 1px;
+  text-align: left;
+  margin-left: 0;
+  width: 20%;
+  min-width: 100px;
+}
+
+
 @media print {
   div#footer-badges { display: none; }
+}
+
+div#toc {
+  margin-bottom: 2.5em;
 }
 
 div#toctitle {
@@ -392,13 +426,146 @@ div.verseblock-attribution {
 }
 
 div.exampleblock-content {
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
   padding-left: 0.5em;
 }
 
 /* IE6 sets dynamically generated links as visited. */
 div#toc a:visited { color: blue; }
 </style>
+<script type="text/javascript">
+/*<![CDATA[*/
+window.onload = function(){asciidoc.footnotes();}
+var asciidoc = {  // Namespace.
+
+/////////////////////////////////////////////////////////////////////
+// Table Of Contents generator
+/////////////////////////////////////////////////////////////////////
+
+/* Author: Mihai Bazon, September 2002
+ * http://students.infoiasi.ro/~mishoo
+ *
+ * Table Of Content generator
+ * Version: 0.4
+ *
+ * Feel free to use this script under the terms of the GNU General Public
+ * License, as long as you do not remove or alter this notice.
+ */
+
+ /* modified by Troy D. Hanson, September 2006. License: GPL */
+ /* modified by Stuart Rackham, 2006, 2009. License: GPL */
+
+// toclevels = 1..4.
+toc: function (toclevels) {
+
+  function getText(el) {
+    var text = "";
+    for (var i = el.firstChild; i != null; i = i.nextSibling) {
+      if (i.nodeType == 3 /* Node.TEXT_NODE */) // IE doesn't speak constants.
+        text += i.data;
+      else if (i.firstChild != null)
+        text += getText(i);
+    }
+    return text;
+  }
+
+  function TocEntry(el, text, toclevel) {
+    this.element = el;
+    this.text = text;
+    this.toclevel = toclevel;
+  }
+
+  function tocEntries(el, toclevels) {
+    var result = new Array;
+    var re = new RegExp('[hH]([2-'+(toclevels+1)+'])');
+    // Function that scans the DOM tree for header elements (the DOM2
+    // nodeIterator API would be a better technique but not supported by all
+    // browsers).
+    var iterate = function (el) {
+      for (var i = el.firstChild; i != null; i = i.nextSibling) {
+        if (i.nodeType == 1 /* Node.ELEMENT_NODE */) {
+          var mo = re.exec(i.tagName);
+          if (mo && (i.getAttribute("class") || i.getAttribute("className")) != "float") {
+            result[result.length] = new TocEntry(i, getText(i), mo[1]-1);
+          }
+          iterate(i);
+        }
+      }
+    }
+    iterate(el);
+    return result;
+  }
+
+  var toc = document.getElementById("toc");
+  var entries = tocEntries(document.getElementById("content"), toclevels);
+  for (var i = 0; i < entries.length; ++i) {
+    var entry = entries[i];
+    if (entry.element.id == "")
+      entry.element.id = "_toc_" + i;
+    var a = document.createElement("a");
+    a.href = "#" + entry.element.id;
+    a.appendChild(document.createTextNode(entry.text));
+    var div = document.createElement("div");
+    div.appendChild(a);
+    div.className = "toclevel" + entry.toclevel;
+    toc.appendChild(div);
+  }
+  if (entries.length == 0)
+    toc.parentNode.removeChild(toc);
+},
+
+
+/////////////////////////////////////////////////////////////////////
+// Footnotes generator
+/////////////////////////////////////////////////////////////////////
+
+/* Based on footnote generation code from:
+ * http://www.brandspankingnew.net/archive/2005/07/format_footnote.html
+ */
+
+footnotes: function () {
+  var cont = document.getElementById("content");
+  var noteholder = document.getElementById("footnotes");
+  var spans = cont.getElementsByTagName("span");
+  var refs = {};
+  var n = 0;
+  for (i=0; i<spans.length; i++) {
+    if (spans[i].className == "footnote") {
+      n++;
+      // Use [\s\S] in place of . so multi-line matches work.
+      // Because JavaScript has no s (dotall) regex flag.
+      note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+      noteholder.innerHTML +=
+        "<div class='footnote' id='_footnote_" + n + "'>" +
+        "<a href='#_footnoteref_" + n + "' title='Return to text'>" +
+        n + "</a>. " + note + "</div>";
+      spans[i].innerHTML =
+        "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
+        "' title='View footnote' class='footnote'>" + n + "</a>]";
+      var id =spans[i].getAttribute("id");
+      if (id != null) refs["#"+id] = n;
+    }
+  }
+  if (n == 0)
+    noteholder.parentNode.removeChild(noteholder);
+  else {
+    // Process footnoterefs.
+    for (i=0; i<spans.length; i++) {
+      if (spans[i].className == "footnoteref") {
+        var href = spans[i].getElementsByTagName("a")[0].getAttribute("href");
+        href = href.match(/#.*/)[0];  // Because IE return full URL.
+        n = refs[href];
+        spans[i].innerHTML =
+          "[<a href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+      }
+    }
+  }
+}
+
+}
+/*]]>*/
+</script>
 </head>
 <body>
 <div id="header">
@@ -412,12 +579,16 @@ git-read-tree(1) Manual Page
 </p>
 </div>
 </div>
+<div id="content">
 <h2 id="_synopsis">SYNOPSIS</h2>
 <div class="sectionbody">
-<div class="paragraph"><p><em>git read-tree</em> [[-m [--trivial] [--aggressive] | --reset | --prefix=&lt;prefix&gt;]
+<div class="verseblock">
+<div class="verseblock-content"><em>git read-tree</em> [[-m [--trivial] [--aggressive] | --reset | --prefix=&lt;prefix&gt;]
                 [-u [--exclude-per-directory=&lt;gitignore&gt;] | -i]]
                 [--index-output=&lt;file&gt;] [--no-sparse-checkout]
-                (--empty | &lt;tree-ish1&gt; [&lt;tree-ish2&gt; [&lt;tree-ish3&gt;]])</p></div>
+                (--empty | &lt;tree-ish1&gt; [&lt;tree-ish2&gt; [&lt;tree-ish3&gt;]])</div>
+<div class="verseblock-attribution">
+</div></div>
 </div>
 <h2 id="_description">DESCRIPTION</h2>
 <div class="sectionbody">
@@ -469,12 +640,24 @@ will be in unmerged state when <em>git read-tree</em> returns.</p></div>
 <dd>
 <p>
         Usually a merge requires the index file as well as the
-        files in the working tree are up to date with the
+        files in the working tree to be up to date with the
         current head commit, in order not to lose local
         changes.  This flag disables the check with the working
         tree and is meant to be used when creating a merge of
         trees that are not directly related to the current
         working tree status into a temporary index file.
+</p>
+</dd>
+<dt class="hdlist1">
+-n
+</dt>
+<dt class="hdlist1">
+--dry-run
+</dt>
+<dd>
+<p>
+        Check if the command would error out, without updating the index
+        nor the files in the working tree for real.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -503,9 +686,9 @@ will be in unmerged state when <em>git read-tree</em> returns.</p></div>
 <p>
         Usually a three-way merge by <em>git read-tree</em> resolves
         the merge for really trivial cases and leaves other
-        cases unresolved in the index, so that Porcelains can
+        cases unresolved in the index, so that porcelains can
         implement different merge policies.  This flag makes the
-        command to resolve a few more cases internally:
+        command resolve a few more cases internally:
 </p>
 <div class="ulist"><ul>
 <li>
@@ -521,7 +704,7 @@ when both sides remove a path.  The resolution is to remove that path.
 </li>
 <li>
 <p>
-when both sides adds a path identically.  The resolution
+when both sides add a path identically.  The resolution
   is to add that path.
 </p>
 </li>
@@ -533,9 +716,9 @@ when both sides adds a path identically.  The resolution
 <dd>
 <p>
         Keep the current index contents, and read the contents
-        of named tree-ish under directory at <tt>&lt;prefix&gt;</tt>.  The
+        of the named tree-ish under the directory at <tt>&lt;prefix&gt;</tt>. The
         original index file cannot have anything at the path
-        <tt>&lt;prefix&gt;</tt> itself, and have nothing in <tt>&lt;prefix&gt;/</tt>
+        <tt>&lt;prefix&gt;</tt> itself, nor anything in the <tt>&lt;prefix&gt;/</tt>
         directory.  Note that the <tt>&lt;prefix&gt;/</tt> value must end
         with a slash.
 </p>
@@ -876,40 +1059,40 @@ have finished your work-in-progress), attempt the merge again.</p></div>
 </div>
 <h2 id="_sparse_checkout">Sparse checkout</h2>
 <div class="sectionbody">
-<div class="paragraph"><p>"Sparse checkout" allows to sparsely populate working directory.
-It uses skip-worktree bit (see <a href="git-update-index.html">git-update-index(1)</a>) to tell
-Git whether a file on working directory is worth looking at.</p></div>
-<div class="paragraph"><p>"git read-tree" and other merge-based commands ("git merge", "git
-checkout"&#8230;) can help maintaining skip-worktree bitmap and working
+<div class="paragraph"><p>"Sparse checkout" allows populating the working directory sparsely.
+It uses the skip-worktree bit (see <a href="git-update-index.html">git-update-index(1)</a>) to tell
+Git whether a file in the working directory is worth looking at.</p></div>
+<div class="paragraph"><p><em>git read-tree</em> and other merge-based commands (<em>git merge</em>, <em>git
+checkout</em>&#8230;) can help maintaining the skip-worktree bitmap and working
 directory update. <tt>$GIT_DIR/info/sparse-checkout</tt> is used to
-define the skip-worktree reference bitmap. When "git read-tree" needs
-to update working directory, it will reset skip-worktree bit in index
+define the skip-worktree reference bitmap. When <em>git read-tree</em> needs
+to update the working directory, it resets the skip-worktree bit in the index
 based on this file, which uses the same syntax as .gitignore files.
-If an entry matches a pattern in this file, skip-worktree will be
-set on that entry. Otherwise, skip-worktree will be unset.</p></div>
+If an entry matches a pattern in this file, skip-worktree will not be
+set on that entry. Otherwise, skip-worktree will be set.</p></div>
 <div class="paragraph"><p>Then it compares the new skip-worktree value with the previous one. If
-skip-worktree turns from unset to set, it will add the corresponding
-file back. If it turns from set to unset, that file will be removed.</p></div>
+skip-worktree turns from set to unset, it will add the corresponding
+file back. If it turns from unset to set, that file will be removed.</p></div>
 <div class="paragraph"><p>While <tt>$GIT_DIR/info/sparse-checkout</tt> is usually used to specify what
-files are in. You can also specify what files are <em>not</em> in, using
-negate patterns. For example, to remove file "unwanted":</p></div>
+files are in, you can also specify what files are <em>not</em> in, using
+negate patterns. For example, to remove the file <tt>unwanted</tt>:</p></div>
 <div class="listingblock">
 <div class="content">
-<pre><tt>*
+<pre><tt>/*
 !unwanted</tt></pre>
 </div></div>
-<div class="paragraph"><p>Another tricky thing is fully repopulating working directory when you
+<div class="paragraph"><p>Another tricky thing is fully repopulating the working directory when you
 no longer want sparse checkout. You cannot just disable "sparse
-checkout" because skip-worktree are still in the index and you working
-directory is still sparsely populated. You should re-populate working
+checkout" because skip-worktree bits are still in the index and your working
+directory is still sparsely populated. You should re-populate the working
 directory with the <tt>$GIT_DIR/info/sparse-checkout</tt> file content as
 follows:</p></div>
 <div class="listingblock">
 <div class="content">
-<pre><tt>*</tt></pre>
+<pre><tt>/*</tt></pre>
 </div></div>
-<div class="paragraph"><p>Then you can disable sparse checkout. Sparse checkout support in "git
-read-tree" and similar commands is disabled by default. You need to
+<div class="paragraph"><p>Then you can disable sparse checkout. Sparse checkout support in <em>git
+read-tree</em> and similar commands is disabled by default. You need to
 turn <tt>core.sparseCheckout</tt> on in order to have sparse checkout
 support.</p></div>
 </div>
@@ -922,9 +1105,11 @@ support.</p></div>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
+</div>
+<div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-06-01 22:32:49 UTC
+Last updated 2011-11-15 13:45:02 PDT
 </div>
 </div>
 </body>

@@ -102,9 +102,7 @@ int run_diff_files(struct rev_info *revs, unsigned int option)
 		int changed;
 		unsigned dirty_submodule = 0;
 
-		if (DIFF_OPT_TST(&revs->diffopt, QUICK) &&
-		    !revs->diffopt.filter &&
-		    DIFF_OPT_TST(&revs->diffopt, HAS_CHANGES))
+		if (diff_can_quit_early(&revs->diffopt))
 			break;
 
 		if (!ce_path_match(ce, &revs->prune_data))
@@ -291,7 +289,7 @@ static void show_new_file(struct rev_info *revs,
 
 	/*
 	 * New file in the index: it might actually be different in
-	 * the working copy.
+	 * the working tree.
 	 */
 	if (get_stat_data(new, &sha1, &mode, cached, match_missing,
 	    &dirty_submodule, &revs->diffopt) < 0)
@@ -381,7 +379,8 @@ static void do_oneway_diff(struct unpack_trees_options *o,
 	if (cached && idx && ce_stage(idx)) {
 		struct diff_filepair *pair;
 		pair = diff_unmerge(&revs->diffopt, idx->name);
-		fill_filespec(pair->one, idx->sha1, idx->ce_mode);
+		if (tree)
+			fill_filespec(pair->one, tree->sha1, tree->ce_mode);
 		return;
 	}
 
@@ -435,26 +434,30 @@ static int oneway_diff(struct cache_entry **src, struct unpack_trees_options *o)
 	if (tree == o->df_conflict_entry)
 		tree = NULL;
 
-	if (ce_path_match(idx ? idx : tree, &revs->prune_data))
+	if (ce_path_match(idx ? idx : tree, &revs->prune_data)) {
 		do_oneway_diff(o, idx, tree);
+		if (diff_can_quit_early(&revs->diffopt)) {
+			o->exiting_early = 1;
+			return -1;
+		}
+	}
 
 	return 0;
 }
 
-int run_diff_index(struct rev_info *revs, int cached)
+static int diff_cache(struct rev_info *revs,
+		      const unsigned char *tree_sha1,
+		      const char *tree_name,
+		      int cached)
 {
-	struct object *ent;
 	struct tree *tree;
-	const char *tree_name;
-	struct unpack_trees_options opts;
 	struct tree_desc t;
+	struct unpack_trees_options opts;
 
-	ent = revs->pending.objects[0].item;
-	tree_name = revs->pending.objects[0].name;
-	tree = parse_tree_indirect(ent->sha1);
+	tree = parse_tree_indirect(tree_sha1);
 	if (!tree)
-		return error("bad tree object %s", tree_name);
-
+		return error("bad tree object %s",
+			     tree_name ? tree_name : sha1_to_hex(tree_sha1));
 	memset(&opts, 0, sizeof(opts));
 	opts.head_idx = 1;
 	opts.index_only = cached;
@@ -465,9 +468,18 @@ int run_diff_index(struct rev_info *revs, int cached)
 	opts.unpack_data = revs;
 	opts.src_index = &the_index;
 	opts.dst_index = NULL;
+	opts.pathspec = &revs->diffopt.pathspec;
 
 	init_tree_desc(&t, tree->buffer, tree->size);
-	if (unpack_trees(1, &t, &opts))
+	return unpack_trees(1, &t, &opts);
+}
+
+int run_diff_index(struct rev_info *revs, int cached)
+{
+	struct object_array_entry *ent;
+
+	ent = revs->pending.objects;
+	if (diff_cache(revs, ent->item->sha1, ent->name, cached))
 		exit(128);
 
 	diff_set_mnemonic_prefix(&revs->diffopt, "c/", cached ? "i/" : "w/");
@@ -479,53 +491,13 @@ int run_diff_index(struct rev_info *revs, int cached)
 
 int do_diff_cache(const unsigned char *tree_sha1, struct diff_options *opt)
 {
-	struct tree *tree;
 	struct rev_info revs;
-	int i;
-	struct cache_entry **dst;
-	struct cache_entry *last = NULL;
-	struct unpack_trees_options opts;
-	struct tree_desc t;
-
-	/*
-	 * This is used by git-blame to run diff-cache internally;
-	 * it potentially needs to repeatedly run this, so we will
-	 * start by removing the higher order entries the last round
-	 * left behind.
-	 */
-	dst = active_cache;
-	for (i = 0; i < active_nr; i++) {
-		struct cache_entry *ce = active_cache[i];
-		if (ce_stage(ce)) {
-			if (last && !strcmp(ce->name, last->name))
-				continue;
-			cache_tree_invalidate_path(active_cache_tree,
-						   ce->name);
-			last = ce;
-			ce->ce_flags |= CE_REMOVE;
-		}
-		*dst++ = ce;
-	}
-	active_nr = dst - active_cache;
 
 	init_revisions(&revs, NULL);
 	init_pathspec(&revs.prune_data, opt->pathspec.raw);
-	tree = parse_tree_indirect(tree_sha1);
-	if (!tree)
-		die("bad tree object %s", sha1_to_hex(tree_sha1));
+	revs.diffopt = *opt;
 
-	memset(&opts, 0, sizeof(opts));
-	opts.head_idx = 1;
-	opts.index_only = 1;
-	opts.diff_index_cached = !DIFF_OPT_TST(opt, FIND_COPIES_HARDER);
-	opts.merge = 1;
-	opts.fn = oneway_diff;
-	opts.unpack_data = &revs;
-	opts.src_index = &the_index;
-	opts.dst_index = &the_index;
-
-	init_tree_desc(&t, tree->buffer, tree->size);
-	if (unpack_trees(1, &t, &opts))
+	if (diff_cache(&revs, tree_sha1, NULL, 1))
 		exit(128);
 	return 0;
 }

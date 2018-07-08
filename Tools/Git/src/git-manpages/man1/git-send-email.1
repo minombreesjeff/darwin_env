@@ -2,12 +2,21 @@
 .\"     Title: git-send-email
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/02/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8
 .\"  Language: English
 .\"
-.TH "GIT\-SEND\-EMAIL" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-SEND\-EMAIL" "1" "12/02/2011" "Git 1\&.7\&.8" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -22,7 +31,10 @@
 git-send-email \- Send a collection of patches as emails
 .SH "SYNOPSIS"
 .sp
+.nf
 \fIgit send\-email\fR [options] <file|directory|rev\-list options>\&...
+.fi
+.sp
 .SH "DESCRIPTION"
 .sp
 Takes the patches given on the command line and emails them out\&. Patches can be specified as files, directories (which will send all files in the directory), or directly as a revision list\&. In the last case, any format accepted by \fBgit-format-patch\fR(1) can be passed to git send\-email\&.
@@ -410,7 +422,7 @@ is equivalent to
 \fIall\fR
 will suppress all auto cc values\&.
 .RE
-.RS 4
+.sp
 Default is the value of
 \fIsendemail\&.suppresscc\fR
 configuration value; if that is unspecified, default to
@@ -518,7 +530,7 @@ is equivalent to
 +
 \fIcompose\fR
 .RE
-.RS 4
+.sp
 Default is the value of
 \fIsendemail\&.confirm\fR
 configuration value; if that is unspecified, default to
@@ -557,7 +569,7 @@ Perform sanity checks on patches\&. Currently, validation means the following:
 Warn of patches that contain lines longer than 998 characters; this is due to SMTP limits as described by
 \m[blue]\fBhttp://www\&.ietf\&.org/rfc/rfc2821\&.txt\fR\m[]\&.
 .RE
-.RS 4
+.sp
 Default is the value of
 \fIsendemail\&.validate\fR; if this is not set, default to
 \fI\-\-validate\fR\&.

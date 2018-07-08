@@ -70,7 +70,7 @@ struct refspec {
 extern const struct refspec *tag_refspec;
 
 struct ref *alloc_ref(const char *name);
-
+struct ref *copy_ref(const struct ref *ref);
 struct ref *copy_ref_list(const struct ref *ref);
 
 int check_ref_type(const struct ref *ref, int flags);
@@ -164,6 +164,6 @@ struct ref *guess_remote_head(const struct ref *head,
 			      int all);
 
 /* Return refs which no longer exist on remote */
-struct ref *get_stale_heads(struct remote *remote, struct ref *fetch_map);
+struct ref *get_stale_heads(struct refspec *refs, int ref_count, struct ref *fetch_map);
 
 #endif

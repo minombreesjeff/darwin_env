@@ -41,6 +41,7 @@ static long curl_low_speed_limit = -1;
 static long curl_low_speed_time = -1;
 static int curl_ftp_no_epsv;
 static const char *curl_http_proxy;
+static const char *curl_cookie_file;
 static char *user_name, *user_pass;
 static const char *user_agent;
 
@@ -60,7 +61,7 @@ static struct curl_slist *no_pragma_header;
 
 static struct active_request_slot *active_queue_head;
 
-size_t fread_buffer(void *ptr, size_t eltsize, size_t nmemb, void *buffer_)
+size_t fread_buffer(char *ptr, size_t eltsize, size_t nmemb, void *buffer_)
 {
 	size_t size = eltsize * nmemb;
 	struct buffer *buffer = buffer_;
@@ -92,7 +93,7 @@ curlioerr ioctl_buffer(CURL *handle, int cmd, void *clientp)
 }
 #endif
 
-size_t fwrite_buffer(const void *ptr, size_t eltsize, size_t nmemb, void *buffer_)
+size_t fwrite_buffer(char *ptr, size_t eltsize, size_t nmemb, void *buffer_)
 {
 	size_t size = eltsize * nmemb;
 	struct strbuf *buffer = buffer_;
@@ -102,7 +103,7 @@ size_t fwrite_buffer(const void *ptr, size_t eltsize, size_t nmemb, void *buffer
 	return size;
 }
 
-size_t fwrite_null(const void *ptr, size_t eltsize, size_t nmemb, void *strbuf)
+size_t fwrite_null(char *ptr, size_t eltsize, size_t nmemb, void *strbuf)
 {
 	data_received++;
 	return eltsize * nmemb;
@@ -190,6 +191,9 @@ static int http_options(const char *var, const char *value, void *cb)
 	}
 	if (!strcmp("http.proxy", var))
 		return git_config_string(&curl_http_proxy, var, value);
+
+	if (!strcmp("http.cookiefile", var))
+		return git_config_string(&curl_cookie_file, var, value);
 
 	if (!strcmp("http.postbuffer", var)) {
 		http_post_buffer = git_config_int(var, value);
@@ -531,6 +535,7 @@ struct active_request_slot *get_active_slot(void)
 	slot->finished = NULL;
 	slot->callback_data = NULL;
 	slot->callback_func = NULL;
+	curl_easy_setopt(slot->curl, CURLOPT_COOKIEFILE, curl_cookie_file);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, pragma_header);
 	curl_easy_setopt(slot->curl, CURLOPT_ERRORBUFFER, curl_errorstr);
 	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, NULL);
@@ -846,8 +851,13 @@ static int http_request(const char *url, void *result, int target, int options)
 				init_curl_http_auth(slot->curl);
 				ret = HTTP_REAUTH;
 			}
-		} else
+		} else {
+			if (!curl_errorstr[0])
+				strlcpy(curl_errorstr,
+					curl_easy_strerror(results.curl_result),
+					sizeof(curl_errorstr));
 			ret = HTTP_ERROR;
+		}
 	} else {
 		error("Unable to start HTTP request for %s", url);
 		ret = HTTP_START_FAILED;
@@ -903,7 +913,7 @@ int http_error(const char *url, int ret)
 {
 	/* http_request has already handled HTTP_START_FAILED. */
 	if (ret != HTTP_START_FAILED)
-		error("%s while accessing %s\n", curl_errorstr, url);
+		error("%s while accessing %s", curl_errorstr, url);
 
 	return ret;
 }
@@ -1116,9 +1126,8 @@ struct http_pack_request *new_http_pack_request(
 	struct strbuf buf = STRBUF_INIT;
 	struct http_pack_request *preq;
 
-	preq = xmalloc(sizeof(*preq));
+	preq = xcalloc(1, sizeof(*preq));
 	preq->target = target;
-	preq->range_header = NULL;
 
 	end_url_with_slash(&buf, base_url);
 	strbuf_addf(&buf, "objects/pack/pack-%s.pack",
@@ -1167,7 +1176,7 @@ abort:
 }
 
 /* Helpers for fetching objects (loose) */
-static size_t fwrite_sha1_file(void *ptr, size_t eltsize, size_t nmemb,
+static size_t fwrite_sha1_file(char *ptr, size_t eltsize, size_t nmemb,
 			       void *data)
 {
 	unsigned char expn[4096];
@@ -1184,7 +1193,7 @@ static size_t fwrite_sha1_file(void *ptr, size_t eltsize, size_t nmemb,
 	} while (posn < size);
 
 	freq->stream.avail_in = size;
-	freq->stream.next_in = ptr;
+	freq->stream.next_in = (void *)ptr;
 	do {
 		freq->stream.next_out = expn;
 		freq->stream.avail_out = sizeof(expn);
@@ -1203,14 +1212,14 @@ struct http_object_request *new_http_object_request(const char *base_url,
 	char *filename;
 	char prevfile[PATH_MAX];
 	int prevlocal;
-	unsigned char prev_buf[PREV_BUF_SIZE];
+	char prev_buf[PREV_BUF_SIZE];
 	ssize_t prev_read = 0;
 	long prev_posn = 0;
 	char range[RANGE_HEADER_SIZE];
 	struct curl_slist *range_header = NULL;
 	struct http_object_request *freq;
 
-	freq = xmalloc(sizeof(*freq));
+	freq = xcalloc(1, sizeof(*freq));
 	hashcpy(freq->sha1, sha1);
 	freq->localfile = -1;
 
@@ -1247,8 +1256,6 @@ struct http_object_request *new_http_object_request(const char *base_url,
 		      freq->tmpfile, strerror(errno));
 		goto abort;
 	}
-
-	memset(&freq->stream, 0, sizeof(freq->stream));
 
 	git_inflate_init(&freq->stream);
 
@@ -1324,7 +1331,6 @@ struct http_object_request *new_http_object_request(const char *base_url,
 	return freq;
 
 abort:
-	free(filename);
 	free(freq->url);
 	free(freq);
 	return NULL;

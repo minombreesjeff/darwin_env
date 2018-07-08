@@ -101,11 +101,29 @@ test_expect_success 'edit existing notes' '
 	test_must_fail git notes show HEAD^
 '
 
-test_expect_success 'cannot add note where one exists' '
-	! MSG=b2 git notes add &&
+test_expect_success 'cannot "git notes add -m" where notes already exists' '
+	test_must_fail git notes add -m "b2" &&
 	test ! -f .git/NOTES_EDITMSG &&
 	test 1 = $(git ls-tree refs/notes/commits | wc -l) &&
 	test b3 = $(git notes show) &&
+	git show HEAD^ &&
+	test_must_fail git notes show HEAD^
+'
+
+test_expect_success 'can overwrite existing note with "git notes add -f -m"' '
+	git notes add -f -m "b1" &&
+	test ! -f .git/NOTES_EDITMSG &&
+	test 1 = $(git ls-tree refs/notes/commits | wc -l) &&
+	test b1 = $(git notes show) &&
+	git show HEAD^ &&
+	test_must_fail git notes show HEAD^
+'
+
+test_expect_success 'add w/no options on existing note morphs into edit' '
+	MSG=b2 git notes add &&
+	test ! -f .git/NOTES_EDITMSG &&
+	test 1 = $(git ls-tree refs/notes/commits | wc -l) &&
+	test b2 = $(git notes show) &&
 	git show HEAD^ &&
 	test_must_fail git notes show HEAD^
 '
@@ -194,6 +212,13 @@ test_expect_success 'show -F notes' '
 	test_cmp expect-F output
 '
 
+test_expect_success 'Re-adding -F notes without -f fails' '
+	echo "zyxxy" > note5 &&
+	test_must_fail git notes add -F note5 &&
+	git log -3 > output &&
+	test_cmp expect-F output
+'
+
 cat >expect << EOF
 commit 15023535574ded8b1a89052b32673f84cf9582b8
 tree e070e3af51011e47b183c33adf9736736a525709
@@ -246,6 +271,44 @@ do
 		eval "$negate grep xyzzy output"
 	'
 done
+
+test_expect_success 'setup alternate notes ref' '
+	git notes --ref=alternate add -m alternate
+'
+
+test_expect_success 'git log --notes shows default notes' '
+	git log -1 --notes >output &&
+	grep xyzzy output &&
+	! grep alternate output
+'
+
+test_expect_success 'git log --notes=X shows only X' '
+	git log -1 --notes=alternate >output &&
+	! grep xyzzy output &&
+	grep alternate output
+'
+
+test_expect_success 'git log --notes --notes=X shows both' '
+	git log -1 --notes --notes=alternate >output &&
+	grep xyzzy output &&
+	grep alternate output
+'
+
+test_expect_success 'git log --no-notes resets default state' '
+	git log -1 --notes --notes=alternate \
+		--no-notes --notes=alternate \
+		>output &&
+	! grep xyzzy output &&
+	grep alternate output
+'
+
+test_expect_success 'git log --no-notes resets ref list' '
+	git log -1 --notes --notes=alternate \
+		--no-notes --notes \
+		>output &&
+	grep xyzzy output &&
+	! grep alternate output
+'
 
 test_expect_success 'create -m notes (setup)' '
 	: > a5 &&
@@ -370,6 +433,81 @@ test_expect_success 'removing non-existing note should not create new commit' '
 	test_must_fail git notes remove HEAD^ &&
 	git rev-parse --verify refs/notes/commits > after_commit &&
 	test_cmp before_commit after_commit
+'
+
+test_expect_success 'removing more than one' '
+	before=$(git rev-parse --verify refs/notes/commits) &&
+	test_when_finished "git update-ref refs/notes/commits $before" &&
+
+	# We have only two -- add another and make sure it stays
+	git notes add -m "extra" &&
+	git notes list HEAD >after-removal-expect &&
+	git notes remove HEAD^^ HEAD^^^ &&
+	git notes list | sed -e "s/ .*//" >actual &&
+	test_cmp after-removal-expect actual
+'
+
+test_expect_success 'removing is atomic' '
+	before=$(git rev-parse --verify refs/notes/commits) &&
+	test_when_finished "git update-ref refs/notes/commits $before" &&
+	test_must_fail git notes remove HEAD^^ HEAD^^^ HEAD^ &&
+	after=$(git rev-parse --verify refs/notes/commits) &&
+	test "$before" = "$after"
+'
+
+test_expect_success 'removing with --ignore-missing' '
+	before=$(git rev-parse --verify refs/notes/commits) &&
+	test_when_finished "git update-ref refs/notes/commits $before" &&
+
+	# We have only two -- add another and make sure it stays
+	git notes add -m "extra" &&
+	git notes list HEAD >after-removal-expect &&
+	git notes remove --ignore-missing HEAD^^ HEAD^^^ HEAD^ &&
+	git notes list | sed -e "s/ .*//" >actual &&
+	test_cmp after-removal-expect actual
+'
+
+test_expect_success 'removing with --ignore-missing but bogus ref' '
+	before=$(git rev-parse --verify refs/notes/commits) &&
+	test_when_finished "git update-ref refs/notes/commits $before" &&
+	test_must_fail git notes remove --ignore-missing HEAD^^ HEAD^^^ NO-SUCH-COMMIT &&
+	after=$(git rev-parse --verify refs/notes/commits) &&
+	test "$before" = "$after"
+'
+
+test_expect_success 'remove reads from --stdin' '
+	before=$(git rev-parse --verify refs/notes/commits) &&
+	test_when_finished "git update-ref refs/notes/commits $before" &&
+
+	# We have only two -- add another and make sure it stays
+	git notes add -m "extra" &&
+	git notes list HEAD >after-removal-expect &&
+	git rev-parse HEAD^^ HEAD^^^ >input &&
+	git notes remove --stdin <input &&
+	git notes list | sed -e "s/ .*//" >actual &&
+	test_cmp after-removal-expect actual
+'
+
+test_expect_success 'remove --stdin is also atomic' '
+	before=$(git rev-parse --verify refs/notes/commits) &&
+	test_when_finished "git update-ref refs/notes/commits $before" &&
+	git rev-parse HEAD^^ HEAD^^^ HEAD^ >input &&
+	test_must_fail git notes remove --stdin <input &&
+	after=$(git rev-parse --verify refs/notes/commits) &&
+	test "$before" = "$after"
+'
+
+test_expect_success 'removing with --stdin --ignore-missing' '
+	before=$(git rev-parse --verify refs/notes/commits) &&
+	test_when_finished "git update-ref refs/notes/commits $before" &&
+
+	# We have only two -- add another and make sure it stays
+	git notes add -m "extra" &&
+	git notes list HEAD >after-removal-expect &&
+	git rev-parse HEAD^^ HEAD^^^ HEAD^ >input &&
+	git notes remove --ignore-missing --stdin <input &&
+	git notes list | sed -e "s/ .*//" >actual &&
+	test_cmp after-removal-expect actual
 '
 
 test_expect_success 'list notes with "git notes list"' '

@@ -147,7 +147,7 @@ advice.*::
 
 core.fileMode::
 	If false, the executable bit differences between the index and
-	the working copy are ignored; useful on broken filesystems like FAT.
+	the working tree are ignored; useful on broken filesystems like FAT.
 	See linkgit:git-update-index[1].
 +
 The default is true, except linkgit:git-clone[1] or linkgit:git-init[1]
@@ -179,7 +179,7 @@ is created.
 
 core.trustctime::
 	If false, the ctime differences between the index and the
-	working copy are ignored; useful when the inode change time
+	working tree are ignored; useful when the inode change time
 	is regularly modified by something outside Git (file system
 	crawlers and some backup systems).
 	See linkgit:git-update-index[1]. True by default.
@@ -292,7 +292,7 @@ core.ignoreStat::
 	If true, commands which modify both the working tree and the index
 	will mark the updated paths with the "assume unchanged" bit in the
 	index. These marked files are then assumed to stay unchanged in the
-	working copy, until you	mark them otherwise manually - Git will not
+	working tree, until you mark them otherwise manually - Git will not
 	detect the file changes	by lstat() calls. This is useful on systems
 	where those are very slow, such as Microsoft Windows.
 	See linkgit:git-update-index[1].
@@ -344,7 +344,9 @@ core.logAllRefUpdates::
 	SHA1, the date/time and the reason of the update, but
 	only when the file exists.  If this configuration
 	variable is set to true, missing "$GIT_DIR/logs/<ref>"
-	file is automatically created for branch heads.
+	file is automatically created for branch heads (i.e. under
+	refs/heads/), remote refs (i.e. under refs/remotes/),
+	note refs (i.e. under refs/notes/), and the symbolic ref HEAD.
 +
 This information can be used to determine what commit
 was the tip of a branch "2 days ago".
@@ -587,6 +589,8 @@ it will be treated as a shell command.  For example, defining
 "gitk --all --not ORIG_HEAD".  Note that shell commands will be
 executed from the top-level directory of a repository, which may
 not necessarily be the current directory.
+'GIT_PREFIX' is set as returned by running 'git rev-parse --show-prefix'
+from the original current directory. See linkgit:git-rev-parse[1].
 
 am.keepcr::
 	If true, git-am will call git-mailsplit for patches in mbox format
@@ -641,7 +645,7 @@ branch.<name>.remote::
 
 branch.<name>.merge::
 	Defines, together with branch.<name>.remote, the upstream branch
-	for the given branch. It tells 'git fetch'/'git pull' which
+	for the given branch. It tells 'git fetch'/'git pull'/'git rebase' which
 	branch to merge and can also affect 'git push' (see push.default).
 	When in branch <name>, it tells 'git fetch' the default
 	refspec to be marked for merging in FETCH_HEAD. The value is
@@ -674,7 +678,7 @@ branch.<name>.rebase::
 browser.<tool>.cmd::
 	Specify the command to invoke the specified browser. The
 	specified command is evaluated in shell with the URLs passed
-	as arguments. (See linkgit:git-web--browse[1].)
+	as arguments. (See linkgit:git-web{litdd}browse[1].)
 
 browser.<tool>.path::
 	Override the path for the given tool that may be used to
@@ -1194,6 +1198,14 @@ http.proxy::
 	environment variable (see linkgit:curl[1]).  This can be overridden
 	on a per-remote basis; see remote.<name>.proxy
 
+http.cookiefile::
+	File containing previously stored cookie lines which should be used
+	in the git http session, if they match the server. The file format
+	of the file to read cookies from should be plain HTTP headers or
+	the Netscape/Mozilla cookie file format (see linkgit:curl[1]).
+	NOTE that the file specified with http.cookiefile is only used as
+	input. No cookies will be stored in the file.
+
 http.sslVerify::
 	Whether to verify the SSL certificate when fetching or pushing
 	over HTTPS. Can be overridden by the 'GIT_SSL_NO_VERIFY' environment
@@ -1308,9 +1320,15 @@ interactive.singlekey::
 	In interactive commands, allow the user to provide one-letter
 	input with a single key (i.e., without hitting enter).
 	Currently this is used by the `\--patch` mode of
-	linkgit:git-add[1], linkgit:git-reset[1], linkgit:git-stash[1] and
-	linkgit:git-checkout[1]. Note that this setting is silently
-	ignored if portable keystroke input is not available.
+	linkgit:git-add[1], linkgit:git-checkout[1], linkgit:git-commit[1],
+	linkgit:git-reset[1], and linkgit:git-stash[1]. Note that this
+	setting is silently ignored if portable keystroke input
+	is not available.
+
+log.abbrevCommit::
+	If true, makes linkgit:git-log[1], linkgit:git-show[1], and
+	linkgit:git-whatchanged[1] assume `\--abbrev-commit`. You may
+	override this option with `\--no-abbrev-commit`.
 
 log.date::
 	Set the default date-time mode for the 'log' command.
@@ -1435,7 +1453,8 @@ notes.rewriteRef::
 	You may also specify this configuration several times.
 +
 Does not have a default value; you must configure this variable to
-enable note rewriting.
+enable note rewriting.  Set it to `refs/notes/commits` to enable
+rewriting for the default commit notes.
 +
 This setting can be overridden with the `GIT_NOTES_REWRITE_REF`
 environment variable, which must be a colon separated list of refs or

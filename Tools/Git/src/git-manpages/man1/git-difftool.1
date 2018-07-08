@@ -2,12 +2,21 @@
 .\"     Title: git-difftool
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/02/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8
 .\"  Language: English
 .\"
-.TH "GIT\-DIFFTOOL" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-DIFFTOOL" "1" "12/02/2011" "Git 1\&.7\&.8" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -22,7 +31,10 @@
 git-difftool \- Show changes using common diff tools
 .SH "SYNOPSIS"
 .sp
+.nf
 \fIgit difftool\fR [<options>] [<commit> [<commit>]] [\-\-] [<path>\&...]
+.fi
+.sp
 .SH "DESCRIPTION"
 .sp
 \fIgit difftool\fR is a git command that allows you to compare and edit files between revisions using common diff tools\&. \fIgit difftool\fR is a frontend to \fIgit diff\fR and accepts the same options and arguments\&. See \fBgit-diff\fR(1)\&.
@@ -40,7 +52,7 @@ Prompt before each invocation of the diff tool\&. This is the default behaviour;
 .PP
 \-t <tool>, \-\-tool=<tool>
 .RS 4
-Use the diff tool specified by <tool>\&. Valid merge tools are: araxis, bc3, diffuse, emerge, ecmerge, gvimdiff, kdiff3, kompare, meld, opendiff, p4merge, tkdiff, vimdiff and xxdiff\&.
+Use the diff tool specified by <tool>\&. Valid diff tools are: araxis, bc3, diffuse, emerge, ecmerge, gvimdiff, kdiff3, kompare, meld, opendiff, p4merge, tkdiff, vimdiff and xxdiff\&.
 .sp
 If a diff tool is not specified,
 \fIgit difftool\fR

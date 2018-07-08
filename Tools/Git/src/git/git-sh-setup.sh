@@ -39,9 +39,15 @@ git_broken_path_fix () {
 
 # @@BROKEN_PATH_FIX@@
 
-die() {
-	echo >&2 "$@"
-	exit 1
+die () {
+	die_with_status 1 "$@"
+}
+
+die_with_status () {
+	status=$1
+	shift
+	echo >&2 "$*"
+	exit "$status"
 }
 
 GIT_QUIET=
@@ -138,6 +144,13 @@ cd_to_toplevel () {
 		echo >&2 "Cannot chdir to $cdup, the toplevel of the working tree"
 		exit 1
 	}
+}
+
+require_work_tree_exists () {
+	if test "z$(git rev-parse --is-bare-repository)" != zfalse
+	then
+		die "fatal: $0 cannot be used without a working tree."
+	fi
 }
 
 require_work_tree () {

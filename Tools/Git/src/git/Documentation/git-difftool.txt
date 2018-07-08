@@ -7,6 +7,7 @@ git-difftool - Show changes using common diff tools
 
 SYNOPSIS
 --------
+[verse]
 'git difftool' [<options>] [<commit> [<commit>]] [--] [<path>...]
 
 DESCRIPTION
@@ -30,7 +31,7 @@ OPTIONS
 -t <tool>::
 --tool=<tool>::
 	Use the diff tool specified by <tool>.
-	Valid merge tools are:
+	Valid diff tools are:
 	araxis, bc3, diffuse, emerge, ecmerge, gvimdiff, kdiff3,
 	kompare, meld, opendiff, p4merge, tkdiff, vimdiff and xxdiff.
 +

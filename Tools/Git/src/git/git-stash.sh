@@ -7,13 +7,15 @@ USAGE="list [<options>]
    or: $dashless drop [-q|--quiet] [<stash>]
    or: $dashless ( pop | apply ) [--index] [-q|--quiet] [<stash>]
    or: $dashless branch <branchname> [<stash>]
-   or: $dashless [save [--patch] [-k|--[no-]keep-index] [-q|--quiet] [<message>]]
+   or: $dashless [save [--patch] [-k|--[no-]keep-index] [-q|--quiet]
+		       [-u|--include-untracked] [-a|--all] [<message>]]
    or: $dashless clear"
 
 SUBDIRECTORY_OK=Yes
 OPTIONS_SPEC=
 START_DIR=`pwd`
 . git-sh-setup
+. git-sh-i18n
 require_work_tree
 cd_to_toplevel
 
@@ -33,13 +35,20 @@ fi
 
 no_changes () {
 	git diff-index --quiet --cached HEAD --ignore-submodules -- &&
-	git diff-files --quiet --ignore-submodules
+	git diff-files --quiet --ignore-submodules &&
+	(test -z "$untracked" || test -z "$(untracked_files)")
+}
+
+untracked_files () {
+	excl_opt=--exclude-standard
+	test "$untracked" = "all" && excl_opt=
+	git ls-files -o -z $excl_opt
 }
 
 clear_stash () {
 	if test $# != 0
 	then
-		die "git stash clear with parameters is unimplemented"
+		die "$(gettext "git stash clear with parameters is unimplemented")"
 	fi
 	if current=$(git rev-parse --verify $ref_stash 2>/dev/null)
 	then
@@ -49,6 +58,7 @@ clear_stash () {
 
 create_stash () {
 	stash_msg="$1"
+	untracked="$2"
 
 	git update-index -q --refresh
 	if no_changes
@@ -61,7 +71,7 @@ create_stash () {
 	then
 		head=$(git rev-list --oneline -n 1 HEAD --)
 	else
-		die "You do not have the initial commit yet"
+		die "$(gettext "You do not have the initial commit yet")"
 	fi
 
 	if branch=$(git symbolic-ref -q HEAD)
@@ -76,7 +86,26 @@ create_stash () {
 	i_tree=$(git write-tree) &&
 	i_commit=$(printf 'index on %s\n' "$msg" |
 		git commit-tree $i_tree -p $b_commit) ||
-		die "Cannot save the current index state"
+		die "$(gettext "Cannot save the current index state")"
+
+	if test -n "$untracked"
+	then
+		# Untracked files are stored by themselves in a parentless commit, for
+		# ease of unpacking later.
+		u_commit=$(
+			untracked_files | (
+				export GIT_INDEX_FILE="$TMPindex"
+				rm -f "$TMPindex" &&
+				git update-index -z --add --remove --stdin &&
+				u_tree=$(git write-tree) &&
+				printf 'untracked files on %s\n' "$msg" | git commit-tree $u_tree  &&
+				rm -f "$TMPindex"
+		) ) || die "Cannot save the untracked files"
+
+		untracked_commit_option="-p $u_commit";
+	else
+		untracked_commit_option=
+	fi
 
 	if test -z "$patch_mode"
 	then
@@ -90,7 +119,7 @@ create_stash () {
 			git write-tree &&
 			rm -f "$TMPindex"
 		) ) ||
-			die "Cannot save the current worktree state"
+			die "$(gettext "Cannot save the current worktree state")"
 
 	else
 
@@ -103,14 +132,14 @@ create_stash () {
 
 		# state of the working tree
 		w_tree=$(GIT_INDEX_FILE="$TMP-index" git write-tree) ||
-		die "Cannot save the current worktree state"
+		die "$(gettext "Cannot save the current worktree state")"
 
 		git diff-tree -p HEAD $w_tree > "$TMP-patch" &&
 		test -s "$TMP-patch" ||
-		die "No changes selected"
+		die "$(gettext "No changes selected")"
 
 		rm -f "$TMP-index" ||
-		die "Cannot remove temporary index (can't happen)"
+		die "$(gettext "Cannot remove temporary index (can't happen)")"
 
 	fi
 
@@ -122,13 +151,14 @@ create_stash () {
 		stash_msg=$(printf 'On %s: %s' "$branch" "$stash_msg")
 	fi
 	w_commit=$(printf '%s\n' "$stash_msg" |
-		git commit-tree $w_tree -p $b_commit -p $i_commit) ||
-		die "Cannot record working tree state"
+	git commit-tree $w_tree -p $b_commit -p $i_commit $untracked_commit_option) ||
+	die "$(gettext "Cannot record working tree state")"
 }
 
 save_stash () {
 	keep_index=
 	patch_mode=
+	untracked=
 	while test $# != 0
 	do
 		case "$1" in
@@ -146,13 +176,30 @@ save_stash () {
 		-q|--quiet)
 			GIT_QUIET=t
 			;;
+		-u|--include-untracked)
+			untracked=untracked
+			;;
+		-a|--all)
+			untracked=all
+			;;
 		--)
 			shift
 			break
 			;;
 		-*)
-			echo "error: unknown option for 'stash save': $1"
-			echo "       To provide a message, use git stash save -- '$1'"
+			option="$1"
+			# TRANSLATORS: $option is an invalid option, like
+			# `--blah-blah'. The 7 spaces at the beginning of the
+			# second line correspond to "error: ". So you should line
+			# up the second line with however many characters the
+			# translation of "error: " takes in your language. E.g. in
+			# English this is:
+			#
+			#    $ git stash save --blah-blah 2>&1 | head -n 2
+			#    error: unknown option for 'stash save': --blah-blah
+			#           To provide a message, use git stash save -- '--blah-blah'
+			eval_gettextln "$("error: unknown option for 'stash save': \$option
+       To provide a message, use git stash save -- '\$option'")"
 			usage
 			;;
 		*)
@@ -162,29 +209,39 @@ save_stash () {
 		shift
 	done
 
+	if test -n "$patch_mode" && test -n "$untracked"
+	then
+	    die "Can't use --patch and ---include-untracked or --all at the same time"
+	fi
+
 	stash_msg="$*"
 
 	git update-index -q --refresh
 	if no_changes
 	then
-		say 'No local changes to save'
+		say "$(gettext "No local changes to save")"
 		exit 0
 	fi
 	test -f "$GIT_DIR/logs/$ref_stash" ||
-		clear_stash || die "Cannot initialize stash"
+		clear_stash || die "$(gettext "Cannot initialize stash")"
 
-	create_stash "$stash_msg"
+	create_stash "$stash_msg" $untracked
 
 	# Make sure the reflog for stash is kept.
 	: >>"$GIT_DIR/logs/$ref_stash"
 
 	git update-ref -m "$stash_msg" $ref_stash $w_commit ||
-		die "Cannot save the current status"
+		die "$(gettext "Cannot save the current status")"
 	say Saved working directory and index state "$stash_msg"
 
 	if test -z "$patch_mode"
 	then
 		git reset --hard ${GIT_QUIET:+-q}
+		test "$untracked" = "all" && CLEAN_X_OPTION=-x || CLEAN_X_OPTION=
+		if test -n "$untracked"
+		then
+			git clean --force --quiet $CLEAN_X_OPTION
+		fi
 
 		if test "$keep_index" = "t" && test -n $i_tree
 		then
@@ -192,7 +249,7 @@ save_stash () {
 		fi
 	else
 		git apply -R < "$TMP-patch" ||
-		die "Cannot remove worktree changes"
+		die "$(gettext "Cannot remove worktree changes")"
 
 		if test "$keep_index" != "t"
 		then
@@ -234,9 +291,11 @@ show_stash () {
 #   w_commit is set to the commit containing the working tree
 #   b_commit is set to the base commit
 #   i_commit is set to the commit containing the index tree
+#   u_commit is set to the commit containing the untracked files tree
 #   w_tree is set to the working tree
 #   b_tree is set to the base tree
 #   i_tree is set to the index tree
+#   u_tree is set to the untracked files tree
 #
 #   GIT_QUIET is set to t if -q is specified
 #   INDEX_OPTION is set to --index if --index is specified.
@@ -261,9 +320,11 @@ parse_flags_and_rev()
 	w_commit=
 	b_commit=
 	i_commit=
+	u_commit=
 	w_tree=
 	b_tree=
 	i_tree=
+	u_tree=
 
 	REV=$(git rev-parse --no-flags --symbolic "$@") || exit 1
 
@@ -287,18 +348,21 @@ parse_flags_and_rev()
 
 	case $# in
 		0)
-			have_stash || die "No stash found."
+			have_stash || die "$(gettext "No stash found.")"
 			set -- ${ref_stash}@{0}
 		;;
 		1)
 			:
 		;;
 		*)
-			die "Too many revisions specified: $REV"
+			die "$(eval_gettext "Too many revisions specified: \$REV")"
 		;;
 	esac
 
-	REV=$(git rev-parse --quiet --symbolic --verify $1 2>/dev/null) || die "$1 is not valid reference"
+	REV=$(git rev-parse --quiet --symbolic --verify $1 2>/dev/null) || {
+		reference="$1"
+		die "$(eval_gettext "\$reference is not valid reference")"
+	}
 
 	i_commit=$(git rev-parse --quiet --verify $REV^2 2>/dev/null) &&
 	set -- $(git rev-parse $REV $REV^1 $REV: $REV^1: $REV^2: 2>/dev/null) &&
@@ -311,6 +375,9 @@ parse_flags_and_rev()
 	IS_STASH_LIKE=t &&
 	test "$ref_stash" = "$(git rev-parse --symbolic-full-name "${REV%@*}")" &&
 	IS_STASH_REF=t
+
+	u_commit=$(git rev-parse --quiet --verify $REV^3 2>/dev/null) &&
+	u_tree=$(git rev-parse $REV^3: 2>/dev/null)
 }
 
 is_stash_like()
@@ -320,7 +387,10 @@ is_stash_like()
 }
 
 assert_stash_like() {
-	is_stash_like "$@" || die "'$*' is not a stash-like commit"
+	is_stash_like "$@" || {
+		args="$*"
+		die "$(eval_gettext "'\$args' is not a stash-like commit")"
+	}
 }
 
 is_stash_ref() {
@@ -328,18 +398,21 @@ is_stash_ref() {
 }
 
 assert_stash_ref() {
-	is_stash_ref "$@" || die "'$*' is not a stash reference"
+	is_stash_ref "$@" || {
+		args="$*"
+		die "$(eval_gettext "'\$args' is not a stash reference")"
+	}
 }
 
 apply_stash () {
 
 	assert_stash_like "$@"
 
-	git update-index -q --refresh || die 'unable to refresh index'
+	git update-index -q --refresh || die "$(gettext "unable to refresh index")"
 
 	# current index state
 	c_tree=$(git write-tree) ||
-		die 'Cannot apply a stash in the middle of a merge'
+		die "$(gettext "Cannot apply a stash in the middle of a merge")"
 
 	unstashed_index_tree=
 	if test -n "$INDEX_OPTION" && test "$b_tree" != "$i_tree" &&
@@ -347,10 +420,18 @@ apply_stash () {
 	then
 		git diff-tree --binary $s^2^..$s^2 | git apply --cached
 		test $? -ne 0 &&
-			die 'Conflicts in index. Try without --index.'
+			die "$(gettext "Conflicts in index. Try without --index.")"
 		unstashed_index_tree=$(git write-tree) ||
-			die 'Could not save index tree'
+			die "$(gettext "Could not save index tree")"
 		git reset
+	fi
+
+	if test -n "$u_tree"
+	then
+		GIT_INDEX_FILE="$TMPindex" git-read-tree "$u_tree" &&
+		GIT_INDEX_FILE="$TMPindex" git checkout-index --all &&
+		rm -f "$TMPindex" ||
+		die 'Could not restore untracked files from stash'
 	fi
 
 	eval "
@@ -375,7 +456,7 @@ apply_stash () {
 			git diff-index --cached --name-only --diff-filter=A $c_tree >"$a" &&
 			git read-tree --reset $c_tree &&
 			git update-index --add --stdin <"$a" ||
-				die "Cannot unstage modified files"
+				die "$(gettext "Cannot unstage modified files")"
 			rm -f "$a"
 		fi
 		squelch=
@@ -389,7 +470,7 @@ apply_stash () {
 		status=$?
 		if test -n "$INDEX_OPTION"
 		then
-			echo >&2 'Index was not unstashed.'
+			gettextln "Index was not unstashed." >&2
 		fi
 		exit $status
 	fi
@@ -406,14 +487,15 @@ drop_stash () {
 	assert_stash_ref "$@"
 
 	git reflog delete --updateref --rewrite "${REV}" &&
-		say "Dropped ${REV} ($s)" || die "${REV}: Could not drop stash entry"
+		say "$(eval_gettext "Dropped \${REV} (\$s)")" ||
+		die "$(eval_gettext "\${REV}: Could not drop stash entry")"
 
 	# clear_stash if we just dropped the last stash entry
 	git rev-parse --verify "$ref_stash@{0}" > /dev/null 2>&1 || clear_stash
 }
 
 apply_to_branch () {
-	test -n "$1" || die 'No branch name specified'
+	test -n "$1" || die "$(gettext "No branch name specified")"
 	branch=$1
 	shift 1
 
@@ -484,7 +566,7 @@ branch)
 	case $# in
 	0)
 		save_stash &&
-		say '(To restore them type "git stash apply")'
+		say "$(gettext "(To restore them type \"git stash apply\")")"
 		;;
 	*)
 		usage

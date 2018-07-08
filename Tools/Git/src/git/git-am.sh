@@ -22,6 +22,7 @@ whitespace=     pass it through git-apply
 ignore-space-change pass it through git-apply
 ignore-whitespace pass it through git-apply
 directory=      pass it through git-apply
+exclude=        pass it through git-apply
 C=              pass it through git-apply
 p=              pass it through git-apply
 patch-format=   format the patch(es) are in
@@ -37,13 +38,14 @@ rerere-autoupdate update the index with reused conflict resolution if possible
 rebasing*       (internal use for git-rebase)"
 
 . git-sh-setup
+. git-sh-i18n
 prefix=$(git rev-parse --show-prefix)
 set_reflog_action am
 require_work_tree
 cd_to_toplevel
 
 git var GIT_COMMITTER_IDENT >/dev/null ||
-	die "You need to set your committer info first"
+	die "$(gettext "You need to set your committer info first")"
 
 if git rev-parse --verify -q HEAD >/dev/null
 then
@@ -88,8 +90,8 @@ safe_to_abort () {
 	then
 		return 0
 	fi
-	echo >&2 "You seem to have moved HEAD since the last 'am' failure."
-	echo >&2 "Not rewinding to ORIG_HEAD"
+		gettextln "You seem to have moved HEAD since the last 'am' failure.
+Not rewinding to ORIG_HEAD" >&2
 	return 1
 }
 
@@ -98,9 +100,9 @@ stop_here_user_resolve () {
 	    printf '%s\n' "$resolvemsg"
 	    stop_here $1
     fi
-    echo "When you have resolved this problem run \"$cmdline --resolved\"."
-    echo "If you would prefer to skip this patch, instead run \"$cmdline --skip\"."
-    echo "To restore the original branch and stop patching run \"$cmdline --abort\"."
+    eval_gettextln "When you have resolved this problem run \"\$cmdline --resolved\".
+If you would prefer to skip this patch, instead run \"\$cmdline --skip\".
+To restore the original branch and stop patching run \"\$cmdline --abort\"."
 
     stop_here $1
 }
@@ -114,7 +116,7 @@ go_next () {
 
 cannot_fallback () {
 	echo "$1"
-	echo "Cannot fall back to three-way merge."
+	gettextln "Cannot fall back to three-way merge."
 	exit 1
 }
 
@@ -129,7 +131,7 @@ fall_back_3way () {
 	"$dotest/patch" &&
     GIT_INDEX_FILE="$dotest/patch-merge-tmp-index" \
     git write-tree >"$dotest/patch-merge-base+" ||
-    cannot_fallback "Repository lacks necessary blobs to fall back on 3-way merge."
+    cannot_fallback "$(gettext "Repository lacks necessary blobs to fall back on 3-way merge.")"
 
     say Using index info to reconstruct a base tree...
     if GIT_INDEX_FILE="$dotest/patch-merge-tmp-index" \
@@ -138,8 +140,8 @@ fall_back_3way () {
 	mv "$dotest/patch-merge-base+" "$dotest/patch-merge-base"
 	mv "$dotest/patch-merge-tmp-index" "$dotest/patch-merge-index"
     else
-        cannot_fallback "Did you hand edit your patch?
-It does not apply to blobs recorded in its index."
+	cannot_fallback "$(gettext "Did you hand edit your patch?
+It does not apply to blobs recorded in its index.")"
     fi
 
     test -f "$dotest/patch-merge-index" &&
@@ -147,7 +149,7 @@ It does not apply to blobs recorded in its index."
     orig_tree=$(cat "$dotest/patch-merge-base") &&
     rm -fr "$dotest"/patch-merge-* || exit 1
 
-    say Falling back to patching base and 3-way merge...
+    say "$(gettext "Falling back to patching base and 3-way merge...")"
 
     # This is not so wrong.  Depending on which base we picked,
     # orig_tree may be wildly different from ours, but his_tree
@@ -192,10 +194,15 @@ check_patch_format () {
 		return 0
 	fi
 
-	# otherwise, check the first few lines of the first patch to try
-	# to detect its format
+	# otherwise, check the first few non-blank lines of the first
+	# patch to try to detect its format
 	{
-		read l1
+		# Start from first line containing non-whitespace
+		l1=
+		while test -z "$l1"
+		do
+			read l1
+		done
 		read l2
 		read l3
 		case "$l1" in
@@ -254,7 +261,7 @@ split_patches () {
 	stgit-series)
 		if test $# -ne 1
 		then
-			clean_abort "Only one StGIT patch series can be applied at once"
+			clean_abort "$(gettext "Only one StGIT patch series can be applied at once")"
 		fi
 		series_dir=`dirname "$1"`
 		series_file="$1"
@@ -288,7 +295,7 @@ split_patches () {
 			perl -ne 'BEGIN { $subject = 0 }
 				if ($subject > 1) { print ; }
 				elsif (/^\s+$/) { next ; }
-				elsif (/^Author:/) { print s/Author/From/ ; }
+				elsif (/^Author:/) { s/Author/From/ ; print ;}
 				elsif (/^(From|Date)/) { print ; }
 				elsif ($subject) {
 					$subject = 2 ;
@@ -305,10 +312,11 @@ split_patches () {
 		msgnum=
 		;;
 	*)
-		if test -n "$parse_patch" ; then
-			clean_abort "Patch format $patch_format is not supported."
+		if test -n "$patch_format"
+		then
+			clean_abort "$(eval_gettext "Patch format \$patch_format is not supported.")"
 		else
-			clean_abort "Patch format detection failed."
+			clean_abort "$(gettext "Patch format detection failed.")"
 		fi
 		;;
 	esac
@@ -358,11 +366,11 @@ do
 	--rebasing)
 		rebasing=t threeway=t keep=t scissors=f no_inbody_headers=t ;;
 	-d|--dotest)
-		die "-d option is no longer supported.  Do not use."
+		die "$(gettext "-d option is no longer supported.  Do not use.")"
 		;;
 	--resolvemsg)
 		shift; resolvemsg=$1 ;;
-	--whitespace|--directory)
+	--whitespace|--directory|--exclude)
 		git_apply_opt="$git_apply_opt $(sq "$1=$2")"; shift ;;
 	-C|-p)
 		git_apply_opt="$git_apply_opt $(sq "$1$2")"; shift ;;
@@ -421,12 +429,12 @@ then
 		false
 		;;
 	esac ||
-	die "previous rebase directory $dotest still exists but mbox given."
+	die "$(eval_gettext "previous rebase directory \$dotest still exists but mbox given.")"
 	resume=yes
 
 	case "$skip,$abort" in
 	t,t)
-		die "Please make up your mind. --skip or --abort?"
+		die "$(gettext "Please make up your mind. --skip or --abort?")"
 		;;
 	t,)
 		git rerere clear
@@ -453,7 +461,7 @@ then
 else
 	# Make sure we are not given --skip, --resolved, nor --abort
 	test "$skip$resolved$abort" = "" ||
-		die "Resolve operation not in progress, we are not resuming."
+		die "$(gettext "Resolve operation not in progress, we are not resuming.")"
 
 	# Start afresh.
 	mkdir -p "$dotest" || exit
@@ -488,7 +496,6 @@ else
 	echo "$sign" >"$dotest/sign"
 	echo "$utf8" >"$dotest/utf8"
 	echo "$keep" >"$dotest/keep"
-	echo "$keepcr" >"$dotest/keepcr"
 	echo "$scissors" >"$dotest/scissors"
 	echo "$no_inbody_headers" >"$dotest/no_inbody_headers"
 	echo "$GIT_QUIET" >"$dotest/quiet"
@@ -507,6 +514,8 @@ else
 	fi
 fi
 
+git update-index -q --refresh
+
 case "$resolved" in
 '')
 	case "$HAS_HEAD" in
@@ -518,7 +527,7 @@ case "$resolved" in
 	if test "$files"
 	then
 		test -n "$HAS_HEAD" && : >"$dotest/dirtyindex"
-		die "Dirty index: cannot apply patches (dirty: $files)"
+		die "$(eval_gettext "Dirty index: cannot apply patches (dirty: \$files)")"
 	fi
 esac
 
@@ -532,12 +541,6 @@ if test "$(cat "$dotest/keep")" = t
 then
 	keep=-k
 fi
-case "$(cat "$dotest/keepcr")" in
-t)
-	keepcr=--keep-cr ;;
-f)
-	keepcr=--no-keep-cr ;;
-esac
 case "$(cat "$dotest/scissors")" in
 t)
 	scissors=--scissors ;;
@@ -607,9 +610,9 @@ do
 			go_next && continue
 
 		test -s "$dotest/patch" || {
-			echo "Patch is empty.  Was it split wrong?"
-			echo "If you would prefer to skip this patch, instead run \"$cmdline --skip\"."
-			echo "To restore the original branch and stop patching run \"$cmdline --abort\"."
+			eval_gettextln "Patch is empty.  Was it split wrong?
+If you would prefer to skip this patch, instead run \"\$cmdline --skip\".
+To restore the original branch and stop patching run \"\$cmdline --abort\"."
 			stop_here $this
 		}
 		rm -f "$dotest/original-commit" "$dotest/author-script"
@@ -644,7 +647,7 @@ do
 
 	if test -z "$GIT_AUTHOR_EMAIL"
 	then
-		echo "Patch does not have a valid e-mail address."
+		gettextln "Patch does not have a valid e-mail address."
 		stop_here $this
 	fi
 
@@ -691,15 +694,18 @@ do
 	if test "$interactive" = t
 	then
 	    test -t 0 ||
-	    die "cannot be interactive without stdin connected to a terminal."
+	    die "$(gettext "cannot be interactive without stdin connected to a terminal.")"
 	    action=again
 	    while test "$action" = again
 	    do
-		echo "Commit Body is:"
+		gettextln "Commit Body is:"
 		echo "--------------------------"
 		cat "$dotest/final-commit"
 		echo "--------------------------"
-		printf "Apply? [y]es/[n]o/[e]dit/[v]iew patch/[a]ccept all "
+		# TRANSLATORS: Make sure to include [y], [n], [e], [v] and [a]
+		# in your translation. The program will only accept English
+		# input at this point.
+		gettext "Apply? [y]es/[n]o/[e]dit/[v]iew patch/[a]ccept all "
 		read reply
 		case "$reply" in
 		[yY]*) action=yes ;;
@@ -735,7 +741,7 @@ do
 		stop_here $this
 	fi
 
-	say "Applying: $FIRSTLINE"
+	say "$(eval_gettext "Applying: \$FIRSTLINE")"
 
 	case "$resolved" in
 	'')
@@ -756,16 +762,16 @@ do
 		# working tree.
 		resolved=
 		git diff-index --quiet --cached HEAD -- && {
-			echo "No changes - did you forget to use 'git add'?"
-			echo "If there is nothing left to stage, chances are that something else"
-			echo "already introduced the same changes; you might want to skip this patch."
+			gettextln "No changes - did you forget to use 'git add'?
+If there is nothing left to stage, chances are that something else
+already introduced the same changes; you might want to skip this patch."
 			stop_here_user_resolve $this
 		}
 		unmerged=$(git ls-files -u)
 		if test -n "$unmerged"
 		then
-			echo "You still have unmerged paths in your index"
-			echo "did you forget to use 'git add'?"
+			gettextln "You still have unmerged paths in your index
+did you forget to use 'git add'?"
 			stop_here_user_resolve $this
 		fi
 		apply_status=0
@@ -780,7 +786,7 @@ do
 		    # Applying the patch to an earlier tree and merging the
 		    # result may have produced the same tree as ours.
 		    git diff-index --quiet --cached HEAD -- && {
-			say No changes -- Patch already applied.
+			say "$(gettext "No changes -- Patch already applied.")"
 			go_next
 			continue
 		    }
@@ -790,7 +796,7 @@ do
 	fi
 	if test $apply_status != 0
 	then
-		printf 'Patch failed at %s %s\n' "$msgnum" "$FIRSTLINE"
+		eval_gettextln 'Patch failed at $msgnum $FIRSTLINE'
 		stop_here_user_resolve $this
 	fi
 
@@ -806,7 +812,7 @@ do
 			GIT_AUTHOR_DATE=
 		fi
 		parent=$(git rev-parse --verify -q HEAD) ||
-		say >&2 "applying to an empty history"
+		say >&2 "$(gettext "applying to an empty history")"
 
 		if test -n "$committer_date_is_author_date"
 		then

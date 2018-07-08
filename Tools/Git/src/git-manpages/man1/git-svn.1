@@ -2,12 +2,21 @@
 .\"     Title: git-svn
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/02/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8
 .\"  Language: English
 .\"
-.TH "GIT\-SVN" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-SVN" "1" "12/02/2011" "Git 1\&.7\&.8" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -22,7 +31,10 @@
 git-svn \- Bidirectional operation between a Subversion repository and git
 .SH "SYNOPSIS"
 .sp
+.nf
 \fIgit svn\fR <command> [options] [arguments]
+.fi
+.sp
 .SH "DESCRIPTION"
 .sp
 \fIgit svn\fR is a simple conduit for changesets between Subversion and git\&. It provides a bidirectional flow of changes between a Subversion and a git repository\&.
@@ -203,6 +215,16 @@ and
 command will be able to update revisions without affecting the working tree; and the
 \fIrebase\fR
 command will be able to update the working tree with the latest changes\&.
+.PP
+\-\-preserve\-empty\-dirs
+.RS 4
+Create a placeholder file in the local Git repository for each empty directory fetched from Subversion\&. This includes directories that become empty by removing all entries in the Subversion repository (but not the directory itself)\&. The placeholder files are also tracked and removed when no longer necessary\&.
+.RE
+.PP
+\-\-placeholder\-filename=<filename>
+.RS 4
+Set the name of placeholder files created by \-\-preserve\-empty\-dirs\&. Default: "\&.gitignore"
+.RE
 .RE
 .PP
 \fIrebase\fR
@@ -284,9 +306,27 @@ Using this option for any other purpose (don\(cqt ask) is very strongly discoura
 \-\-mergeinfo=<mergeinfo>
 .RS 4
 Add the given merge information during the dcommit (e\&.g\&.
-\-\-mergeinfo="/branches/foo:1\-10")\&. All svn server versions can store this information (as a property), and svn clients starting from version 1\&.5 can make use of it\&.
-\fIgit svn\fR
-currently does not use it and does not set it automatically\&.
+\-\-mergeinfo="/branches/foo:1\-10")\&. All svn server versions can store this information (as a property), and svn clients starting from version 1\&.5 can make use of it\&. To specify merge information from multiple branches, use a single space character between the branches (\-\-mergeinfo="/branches/foo:1\-10 /branches/bar:3,5\-6,8")
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+config key: svn\&.pushmergeinfo
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+This option will cause git\-svn to attempt to automatically populate the svn:mergeinfo property in the SVN repository when possible\&. Currently, this can only be done when dcommitting non\-fast\-forward merges where all parents but the first have already been pushed into SVN\&.
+.RE
+.PP
+\-\-interactive
+.RS 4
+Ask the user to confirm that a patch set should actually be sent to SVN\&. For each patch, one may answer "yes" (accept this patch), "no" (discard this patch), "all" (accept all patches), or "quit"\&.
+
+\fIgit svn dcommit\fR
+returns immediately if answer if "no" or "quit", without commiting anything to SVN\&.
 .RE
 .RE
 .PP
@@ -417,7 +457,7 @@ Any other arguments are passed directly to
 .PP
 \fIblame\fR
 .RS 4
-Show what revision and author last modified each line of a file\&. The output of this mode is format\-compatible with the output of \(oqsvn blame\(cq by default\&. Like the SVN blame command, local uncommitted changes in the working copy are ignored; the version of the file in the HEAD revision is annotated\&. Unknown arguments are passed directly to
+Show what revision and author last modified each line of a file\&. The output of this mode is format\-compatible with the output of \(oqsvn blame\(cq by default\&. Like the SVN blame command, local uncommitted changes in the working tree are ignored; the version of the file in the HEAD revision is annotated\&. Unknown arguments are passed directly to
 \fIgit blame\fR\&.
 .PP
 \-\-git\-format
@@ -454,7 +494,7 @@ Recursively finds and lists the svn:ignore property on directories\&. The output
 .PP
 \fImkdirs\fR
 .RS 4
-Attempts to recreate empty directories that core git cannot track based on information in $GIT_DIR/svn/<refname>/unhandled\&.log files\&. Empty directories are automatically recreated when using "git svn clone" and "git svn rebase", so "mkdirs" is intended for use after commands like "git checkout" or "git reset"\&.
+Attempts to recreate empty directories that core git cannot track based on information in $GIT_DIR/svn/<refname>/unhandled\&.log files\&. Empty directories are automatically recreated when using "git svn clone" and "git svn rebase", so "mkdirs" is intended for use after commands like "git checkout" or "git reset"\&. (See the svn\-remote\&.<name>\&.automkdirs config file option for more information\&.)
 .RE
 .PP
 \fIcommit\-diff\fR
@@ -956,6 +996,13 @@ assumes this option to be "true"\&.
 svn\&.pathnameencoding
 .RS 4
 This instructs git svn to recode pathnames to a given encoding\&. It can be used by windows users and by those who work in non\-utf8 locales to avoid corrupted file names with non\-ASCII characters\&. Valid encodings are the ones supported by Perl\(cqs Encode module\&.
+.RE
+.PP
+svn\-remote\&.<name>\&.automkdirs
+.RS 4
+Normally, the "git svn clone" and "git svn rebase" commands attempt to recreate empty directories that are in the Subversion repository\&. If this option is set to "false", then empty directories will only be created if the "git svn mkdirs" command is run explicitly\&. If unset,
+\fIgit svn\fR
+assumes this option to be "true"\&.
 .RE
 .sp
 Since the noMetadata, rewriteRoot, rewriteUUID, useSvnsyncProps and useSvmProps options all affect the metadata generated and used by \fIgit svn\fR; they \fBmust\fR be set in the configuration file before any history is imported and these settings should never be changed once they are set\&.

@@ -295,7 +295,7 @@ test_expect_success 'preserve merges with -p' '
 '
 
 test_expect_success 'edit ancestor with -p' '
-	FAKE_LINES="1 edit 2 3 4" git rebase -i -p HEAD~3 &&
+	FAKE_LINES="1 2 edit 3 4" git rebase -i -p HEAD~3 &&
 	echo 2 > unrelated-file &&
 	test_tick &&
 	git commit -m L2-modified --amend unrelated-file &&
@@ -317,7 +317,7 @@ test_expect_success '--continue tries to commit' '
 '
 
 test_expect_success 'verbose flag is heeded, even after --continue' '
-	git reset --hard HEAD@{1} &&
+	git reset --hard master@{1} &&
 	test_tick &&
 	test_must_fail git rebase -v -i --onto new-branch1 HEAD^ &&
 	echo resolved > file1 &&
@@ -525,6 +525,20 @@ test_expect_success 'auto-amend only edited commits after "edit"' '
 		test_must_fail git rebase --continue
 	) &&
 	git rebase --abort
+'
+
+test_expect_success 'clean error after failed "exec"' '
+	test_tick &&
+	test_when_finished "git rebase --abort || :" &&
+	(
+		FAKE_LINES="1 exec_false" &&
+		export FAKE_LINES &&
+		test_must_fail git rebase -i HEAD^
+	) &&
+	echo "edited again" > file7 &&
+	git add file7 &&
+	test_must_fail git rebase --continue 2>error &&
+	grep "You have staged changes in your working tree." error
 '
 
 test_expect_success 'rebase a detached HEAD' '

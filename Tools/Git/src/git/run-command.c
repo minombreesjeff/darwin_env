@@ -1,6 +1,7 @@
 #include "cache.h"
 #include "run-command.h"
 #include "exec_cmd.h"
+#include "argv-array.h"
 
 static inline void close_pair(int fd[2])
 {
@@ -77,15 +78,13 @@ static void notify_parent(void)
 
 static NORETURN void die_child(const char *err, va_list params)
 {
-	char msg[4096];
-	int len = vsnprintf(msg, sizeof(msg), err, params);
-	if (len > sizeof(msg))
-		len = sizeof(msg);
-
-	write_in_full(child_err, "fatal: ", 7);
-	write_in_full(child_err, msg, len);
-	write_in_full(child_err, "\n", 1);
+	vwritef(child_err, "fatal: ", err, params);
 	exit(128);
+}
+
+static void error_child(const char *err, va_list params)
+{
+	vwritef(child_err, "error: ", err, params);
 }
 #endif
 
@@ -127,9 +126,6 @@ static int wait_or_whine(pid_t pid, const char *argv0, int silent_exec_failure)
 		if (code == 127) {
 			code = -1;
 			failed_errno = ENOENT;
-			if (!silent_exec_failure)
-				error("cannot run %s: %s", argv0,
-					strerror(ENOENT));
 		}
 	} else {
 		error("waitpid is confused (%s)", argv0);
@@ -217,6 +213,7 @@ fail_pipe:
 			set_cloexec(child_err);
 		}
 		set_die_routine(die_child);
+		set_error_routine(error_child);
 
 		close(notify_pipe[0]);
 		set_cloexec(notify_pipe[1]);
@@ -283,14 +280,14 @@ fail_pipe:
 		} else {
 			execvp(cmd->argv[0], (char *const*) cmd->argv);
 		}
-		/*
-		 * Do not check for cmd->silent_exec_failure; the parent
-		 * process will check it when it sees this exit code.
-		 */
-		if (errno == ENOENT)
+		if (errno == ENOENT) {
+			if (!cmd->silent_exec_failure)
+				error("cannot run %s: %s", cmd->argv[0],
+					strerror(ENOENT));
 			exit(127);
-		else
+		} else {
 			die_errno("cannot exec '%s'", cmd->argv[0]);
+		}
 	}
 	if (cmd->pid < 0)
 		error("cannot fork() for %s: %s", cmd->argv[0],
@@ -609,26 +606,23 @@ int finish_async(struct async *async)
 int run_hook(const char *index_file, const char *name, ...)
 {
 	struct child_process hook;
-	const char **argv = NULL, *env[2];
+	struct argv_array argv = ARGV_ARRAY_INIT;
+	const char *p, *env[2];
 	char index[PATH_MAX];
 	va_list args;
 	int ret;
-	size_t i = 0, alloc = 0;
 
 	if (access(git_path("hooks/%s", name), X_OK) < 0)
 		return 0;
 
 	va_start(args, name);
-	ALLOC_GROW(argv, i + 1, alloc);
-	argv[i++] = git_path("hooks/%s", name);
-	while (argv[i-1]) {
-		ALLOC_GROW(argv, i + 1, alloc);
-		argv[i++] = va_arg(args, const char *);
-	}
+	argv_array_push(&argv, git_path("hooks/%s", name));
+	while ((p = va_arg(args, const char *)))
+		argv_array_push(&argv, p);
 	va_end(args);
 
 	memset(&hook, 0, sizeof(hook));
-	hook.argv = argv;
+	hook.argv = argv.argv;
 	hook.no_stdin = 1;
 	hook.stdout_to_stderr = 1;
 	if (index_file) {
@@ -639,6 +633,6 @@ int run_hook(const char *index_file, const char *name, ...)
 	}
 
 	ret = run_command(&hook);
-	free(argv);
+	argv_array_clear(&argv);
 	return ret;
 }

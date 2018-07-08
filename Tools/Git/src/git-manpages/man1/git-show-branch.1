@@ -2,12 +2,21 @@
 .\"     Title: git-show-branch
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/02/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8
 .\"  Language: English
 .\"
-.TH "GIT\-SHOW\-BRANCH" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-SHOW\-BRANCH" "1" "12/02/2011" "Git 1\&.7\&.8" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -28,10 +37,9 @@ git-show-branch \- Show branches and their commits
                 [\-\-more=<n> | \-\-list | \-\-independent | \-\-merge\-base]
                 [\-\-no\-name | \-\-sha1\-name] [\-\-topics]
                 [(<rev> | <glob>)\&...]
+\fIgit show\-branch\fR (\-g|\-\-reflog)[=<n>[,<base>]] [\-\-list] [<ref>]
 .fi
 .sp
-.sp
-\fIgit show\-branch\fR (\-g|\-\-reflog)[=<n>[,<base>]] [\-\-list] [<ref>]
 .SH "DESCRIPTION"
 .sp
 Shows the commit ancestry graph starting from the commits named with <rev>s or <globs>s (or all refs under refs/heads and/or refs/tags) semi\-visually\&.

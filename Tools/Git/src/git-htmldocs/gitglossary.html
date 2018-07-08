@@ -3,7 +3,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<meta name="generator" content="AsciiDoc 8.4.5" />
+<meta name="generator" content="AsciiDoc 8.5.2" />
 <title>gitglossary(7)</title>
 <style type="text/css">
 /* Debug borders */
@@ -118,12 +118,14 @@ div#preamble {
 div.tableblock, div.imageblock, div.exampleblock, div.verseblock,
 div.quoteblock, div.literalblock, div.listingblock, div.sidebarblock,
 div.admonitionblock {
-  margin-top: 1.5em;
+  margin-top: 1.0em;
   margin-bottom: 1.5em;
 }
 div.admonitionblock {
-  margin-top: 2.5em;
-  margin-bottom: 2.5em;
+  margin-top: 2.0em;
+  margin-bottom: 2.0em;
+  margin-right: 10%;
+  color: #606060;
 }
 
 div.content { /* Block element content. */
@@ -165,19 +167,19 @@ div.listingblock > div.content {
   padding: 0.5em;
 }
 
-div.quoteblock {
-  padding-left: 2.0em;
+div.quoteblock, div.verseblock {
+  padding-left: 1.0em;
+  margin-left: 1.0em;
   margin-right: 10%;
+  border-left: 5px solid #dddddd;
+  color: #777777;
 }
+
 div.quoteblock > div.attribution {
   padding-top: 0.5em;
   text-align: right;
 }
 
-div.verseblock {
-  padding-left: 2.0em;
-  margin-right: 10%;
-}
 div.verseblock > div.content {
   white-space: pre;
 }
@@ -200,12 +202,12 @@ div.admonitionblock .icon {
 }
 div.admonitionblock td.content {
   padding-left: 0.5em;
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
 }
 
 div.exampleblock > div.content {
-  border-left: 2px solid silver;
-  padding: 0.5em;
+  border-left: 3px solid #dddddd;
+  padding-left: 0.5em;
 }
 
 div.imageblock div.content { padding-left: 0; }
@@ -255,7 +257,7 @@ div.compact div, div.compact div {
 div.tableblock > table {
   border: 3px solid #527bbd;
 }
-thead {
+thead, p.table.header {
   font-family: sans-serif;
   font-weight: bold;
 }
@@ -310,8 +312,40 @@ div.hdlist.compact tr {
   background: yellow;
 }
 
+.footnote, .footnoteref {
+  font-size: 0.8em;
+}
+
+span.footnote, span.footnoteref {
+  vertical-align: super;
+}
+
+#footnotes {
+  margin: 20px 0 20px 0;
+  padding: 7px 0 0 0;
+}
+
+#footnotes div.footnote {
+  margin: 0 0 5px 0;
+}
+
+#footnotes hr {
+  border: none;
+  border-top: 1px solid silver;
+  height: 1px;
+  text-align: left;
+  margin-left: 0;
+  width: 20%;
+  min-width: 100px;
+}
+
+
 @media print {
   div#footer-badges { display: none; }
+}
+
+div#toc {
+  margin-bottom: 2.5em;
 }
 
 div#toctitle {
@@ -392,13 +426,146 @@ div.verseblock-attribution {
 }
 
 div.exampleblock-content {
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
   padding-left: 0.5em;
 }
 
 /* IE6 sets dynamically generated links as visited. */
 div#toc a:visited { color: blue; }
 </style>
+<script type="text/javascript">
+/*<![CDATA[*/
+window.onload = function(){asciidoc.footnotes();}
+var asciidoc = {  // Namespace.
+
+/////////////////////////////////////////////////////////////////////
+// Table Of Contents generator
+/////////////////////////////////////////////////////////////////////
+
+/* Author: Mihai Bazon, September 2002
+ * http://students.infoiasi.ro/~mishoo
+ *
+ * Table Of Content generator
+ * Version: 0.4
+ *
+ * Feel free to use this script under the terms of the GNU General Public
+ * License, as long as you do not remove or alter this notice.
+ */
+
+ /* modified by Troy D. Hanson, September 2006. License: GPL */
+ /* modified by Stuart Rackham, 2006, 2009. License: GPL */
+
+// toclevels = 1..4.
+toc: function (toclevels) {
+
+  function getText(el) {
+    var text = "";
+    for (var i = el.firstChild; i != null; i = i.nextSibling) {
+      if (i.nodeType == 3 /* Node.TEXT_NODE */) // IE doesn't speak constants.
+        text += i.data;
+      else if (i.firstChild != null)
+        text += getText(i);
+    }
+    return text;
+  }
+
+  function TocEntry(el, text, toclevel) {
+    this.element = el;
+    this.text = text;
+    this.toclevel = toclevel;
+  }
+
+  function tocEntries(el, toclevels) {
+    var result = new Array;
+    var re = new RegExp('[hH]([2-'+(toclevels+1)+'])');
+    // Function that scans the DOM tree for header elements (the DOM2
+    // nodeIterator API would be a better technique but not supported by all
+    // browsers).
+    var iterate = function (el) {
+      for (var i = el.firstChild; i != null; i = i.nextSibling) {
+        if (i.nodeType == 1 /* Node.ELEMENT_NODE */) {
+          var mo = re.exec(i.tagName);
+          if (mo && (i.getAttribute("class") || i.getAttribute("className")) != "float") {
+            result[result.length] = new TocEntry(i, getText(i), mo[1]-1);
+          }
+          iterate(i);
+        }
+      }
+    }
+    iterate(el);
+    return result;
+  }
+
+  var toc = document.getElementById("toc");
+  var entries = tocEntries(document.getElementById("content"), toclevels);
+  for (var i = 0; i < entries.length; ++i) {
+    var entry = entries[i];
+    if (entry.element.id == "")
+      entry.element.id = "_toc_" + i;
+    var a = document.createElement("a");
+    a.href = "#" + entry.element.id;
+    a.appendChild(document.createTextNode(entry.text));
+    var div = document.createElement("div");
+    div.appendChild(a);
+    div.className = "toclevel" + entry.toclevel;
+    toc.appendChild(div);
+  }
+  if (entries.length == 0)
+    toc.parentNode.removeChild(toc);
+},
+
+
+/////////////////////////////////////////////////////////////////////
+// Footnotes generator
+/////////////////////////////////////////////////////////////////////
+
+/* Based on footnote generation code from:
+ * http://www.brandspankingnew.net/archive/2005/07/format_footnote.html
+ */
+
+footnotes: function () {
+  var cont = document.getElementById("content");
+  var noteholder = document.getElementById("footnotes");
+  var spans = cont.getElementsByTagName("span");
+  var refs = {};
+  var n = 0;
+  for (i=0; i<spans.length; i++) {
+    if (spans[i].className == "footnote") {
+      n++;
+      // Use [\s\S] in place of . so multi-line matches work.
+      // Because JavaScript has no s (dotall) regex flag.
+      note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+      noteholder.innerHTML +=
+        "<div class='footnote' id='_footnote_" + n + "'>" +
+        "<a href='#_footnoteref_" + n + "' title='Return to text'>" +
+        n + "</a>. " + note + "</div>";
+      spans[i].innerHTML =
+        "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
+        "' title='View footnote' class='footnote'>" + n + "</a>]";
+      var id =spans[i].getAttribute("id");
+      if (id != null) refs["#"+id] = n;
+    }
+  }
+  if (n == 0)
+    noteholder.parentNode.removeChild(noteholder);
+  else {
+    // Process footnoterefs.
+    for (i=0; i<spans.length; i++) {
+      if (spans[i].className == "footnoteref") {
+        var href = spans[i].getElementsByTagName("a")[0].getAttribute("href");
+        href = href.match(/#.*/)[0];  // Because IE return full URL.
+        n = refs[href];
+        spans[i].innerHTML =
+          "[<a href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+      }
+    }
+  }
+}
+
+}
+/*]]>*/
+</script>
 </head>
 <body>
 <div id="header">
@@ -412,6 +579,7 @@ gitglossary(7) Manual Page
 </p>
 </div>
 </div>
+<div id="content">
 <h2 id="_synopsis">SYNOPSIS</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>*</p></div>
@@ -720,8 +888,8 @@ to point at the new commit.</p></div>
 <dd>
 <p>
         A <a href="#def_ref">named reference</a> to the <a href="#def_commit">commit</a> at the tip of a
-        <a href="#def_branch">branch</a>.  Heads are stored in
-        <tt>$GIT_DIR/refs/heads/</tt>, except when using packed refs. (See
+        <a href="#def_branch">branch</a>.  Heads are stored in a file in
+        <tt>$GIT_DIR/refs/heads/</tt> directory, except when using packed refs. (See
         <a href="git-pack-refs.html">git-pack-refs(1)</a>.)
 </p>
 </dd>
@@ -733,8 +901,8 @@ to point at the new commit.</p></div>
         The current <a href="#def_branch">branch</a>.  In more detail: Your <a href="#def_working_tree">working tree</a> is normally derived from the state of the tree
         referred to by HEAD.  HEAD is a reference to one of the
         <a href="#def_head">heads</a> in your repository, except when using a
-        <a href="#def_detached_HEAD">detached HEAD</a>, in which case it may
-        reference an arbitrary commit.
+        <a href="#def_detached_HEAD">detached HEAD</a>, in which case it directly
+        references an arbitrary commit.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -919,7 +1087,8 @@ This commit is referred to as a "merge commit", or sometimes just a
        Pattern used to specify paths.
 </p>
 <div class="paragraph"><p>Pathspecs are used on the command line of "git ls-files", "git
-ls-tree", "git grep", "git checkout", and many other commands to
+ls-tree", "git add", "git grep", "git diff", "git checkout",
+and many other commands to
 limit the scope of operations to some subset of the tree or
 worktree.  See the documentation of each command for whether
 paths are relative to the current directory or toplevel.  The
@@ -949,6 +1118,36 @@ in the Documentation subtree,
 including Documentation/chapter_1/figure_1.jpg.</p></div>
 </li>
 </ul></div>
+<div class="paragraph"><p>A pathspec that begins with a colon <tt>:</tt> has special meaning.  In the
+short form, the leading colon <tt>:</tt> is followed by zero or more "magic
+signature" letters (which optionally is terminated by another colon <tt>:</tt>),
+and the remainder is the pattern to match against the path. The optional
+colon that terminates the "magic signature" can be omitted if the pattern
+begins with a character that cannot be a "magic signature" and is not a
+colon.</p></div>
+<div class="paragraph"><p>In the long form, the leading colon <tt>:</tt> is followed by a open
+parenthesis <tt>(</tt>, a comma-separated list of zero or more "magic words",
+and a close parentheses <tt>)</tt>, and the remainder is the pattern to match
+against the path.</p></div>
+<div class="paragraph"><p>The "magic signature" consists of an ASCII symbol that is not
+alphanumeric.</p></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+top <tt>/</tt>
+</dt>
+<dd>
+<p>
+        The magic word <tt>top</tt> (mnemonic: <tt>/</tt>) makes the pattern match
+        from the root of the working tree, even when you are running
+        the command from inside a subdirectory.
+</p>
+</dd>
+</dl></div>
+<div class="paragraph"><p>Currently only the slash <tt>/</tt> is recognized as the "magic signature",
+but it is envisioned that we will support more types of magic in later
+versions of git.</p></div>
+<div class="paragraph"><p>A pathspec with only a colon means "there is no pathspec". This form
+should not be combined with other pathspec.</p></div>
 </dd>
 <dt class="hdlist1">
 <a id="def_parent"></a>parent
@@ -1048,8 +1247,9 @@ including Documentation/chapter_1/figure_1.jpg.</p></div>
 <dd>
 <p>
         A 40-byte hex representation of a <a href="#def_SHA1">SHA1</a> or a name that
-        denotes a particular <a href="#def_object">object</a>. These may be stored in
-        <tt>$GIT_DIR/refs/</tt>.
+        denotes a particular <a href="#def_object">object</a>. They may be stored in
+        a file under <tt>$GIT_DIR/refs/</tt> directory, or
+        in the <tt>$GIT_DIR/packed-refs</tt> file.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1184,14 +1384,14 @@ including Documentation/chapter_1/figure_1.jpg.</p></div>
 </dt>
 <dd>
 <p>
-        A <a href="#def_ref">ref</a> pointing to a <a href="#def_tag_object">tag</a> or
-        <a href="#def_commit_object">commit object</a>. In contrast to a <a href="#def_head">head</a>,
-        a tag is not changed by a <a href="#def_commit">commit</a>. Tags (not
-        <a href="#def_tag_object">tag objects</a>) are stored in <tt>$GIT_DIR/refs/tags/</tt>. A
-        git tag has nothing to do with a Lisp tag (which would be
-        called an <a href="#def_object_type">object type</a> in git&#8217;s context). A
-        tag is most typically used to mark a particular point in the
-        commit ancestry <a href="#def_chain">chain</a>.
+        A <a href="#def_ref">ref</a> under <tt>refs/tags/</tt> namespace that points to an
+        object of an arbitrary type (typically a tag points to either a
+        <a href="#def_tag_object">tag</a> or a <a href="#def_commit_object">commit object</a>).
+        In contrast to a <a href="#def_head">head</a>, a tag is not updated by
+        the <tt>commit</tt> command. A git tag has nothing to do with a Lisp
+        tag (which would be called an <a href="#def_object_type">object type</a>
+        in git&#8217;s context). A tag is most typically used to mark a particular
+        point in the commit ancestry <a href="#def_chain">chain</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1297,9 +1497,11 @@ including Documentation/chapter_1/figure_1.jpg.</p></div>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite.</p></div>
 </div>
+</div>
+<div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2008-12-20 06:24:09 UTC
+Last updated 2011-11-15 13:45:02 PDT
 </div>
 </div>
 </body>

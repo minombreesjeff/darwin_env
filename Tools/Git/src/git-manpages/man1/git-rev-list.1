@@ -2,12 +2,21 @@
 .\"     Title: git-rev-list
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/02/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8
 .\"  Language: English
 .\"
-.TH "GIT\-REV\-LIST" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-REV\-LIST" "1" "12/02/2011" "Git 1\&.7\&.8" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -43,6 +52,7 @@ git-rev-list \- Lists commit objects in reverse chronological order
              [ \-\-tags[=<pattern>] ]
              [ \-\-remotes[=<pattern>] ]
              [ \-\-glob=<glob\-pattern> ]
+             [ \-\-ignore\-missing ]
              [ \-\-stdin ]
              [ \-\-quiet ]
              [ \-\-topo\-order ]
@@ -296,6 +306,11 @@ are listed on the command line as
 at the end is implied\&.
 .RE
 .PP
+\-\-ignore\-missing
+.RS 4
+Upon seeing an invalid object name in the input, pretend as if the bad input was not given\&.
+.RE
+.PP
 \-\-stdin
 .RS 4
 In addition to the
@@ -423,7 +438,7 @@ Simplifies the history to the simplest history explaining the final state of the
 .PP
 \-\-full\-history
 .RS 4
-As the default mode but does not prune some history\&.
+Same as the default mode, but does not prune some history\&.
 .RE
 .PP
 \-\-dense
@@ -477,7 +492,7 @@ In the following, we will always refer to the same example history to illustrate
 .\}
 .sp
 .sp
-The horizontal line of history A\(emP is taken to be the first parent of each merge\&. The commits are:
+The horizontal line of history A\-\-\-P is taken to be the first parent of each merge\&. The commits are:
 .sp
 .RS 4
 .ie n \{\
@@ -743,7 +758,7 @@ with its simplification \(oqP\(cq`\&. In the process, drop parents that are ance
 .\}
 If after this parent rewriting, \(oqC\(cq` is a root or merge commit (has zero or >1 parents), a boundary commit, or !TREESAME, it remains\&. Otherwise, it is replaced with its only parent\&.
 .RE
-.RS 4
+.sp
 The effect of this is best shown by way of comparing to
 \fI\-\-full\-history\fR
 with parent rewriting\&. The example turns into:
@@ -1036,6 +1051,15 @@ Instead of showing the full 40\-byte hexadecimal commit object name, show only a
 This should make "\-\-pretty=oneline" a whole lot more readable for people using 80\-column terminals\&.
 .RE
 .PP
+\-\-no\-abbrev\-commit
+.RS 4
+Show the full 40\-byte hexadecimal commit object name\&. This negates
+\-\-abbrev\-commit
+and those options which imply it such as "\-\-oneline"\&. It also overrides the
+\fIlog\&.abbrevCommit\fR
+variable\&.
+.RE
+.PP
 \-\-oneline
 .RS 4
 This is a shorthand for "\-\-pretty=oneline \-\-abbrev\-commit" used together\&.
@@ -1046,7 +1070,7 @@ This is a shorthand for "\-\-pretty=oneline \-\-abbrev\-commit" used together\&.
 The commit objects record the encoding used for the log message in their encoding header; this option can be used to tell the command to re\-code the commit log message in the encoding preferred by the user\&. For non plumbing commands this defaults to UTF\-8\&.
 .RE
 .PP
-\-\-no\-notes, \-\-show\-notes[=<ref>]
+\-\-notes[=<ref>]
 .RS 4
 Show the notes (see
 \fBgit-notes\fR(1)) that annotate the commit, when showing the commit log message\&. This is the default for
@@ -1059,21 +1083,35 @@ commands when there is no
 \-\-format
 nor
 \-\-oneline
-option is given on the command line\&.
+option given on the command line\&.
 .sp
-With an optional argument, add this ref to the list of notes\&. The ref is taken to be in
-refs/notes/
-if it is not qualified\&.
-.RE
-.PP
-\-\-[no\-]standard\-notes
-.RS 4
-Enable or disable populating the notes ref list from the
+By default, the notes shown are from the notes refs listed in the
 \fIcore\&.notesRef\fR
 and
 \fInotes\&.displayRef\fR
-variables (or corresponding environment overrides)\&. Enabled by default\&. See
-\fBgit-config\fR(1)\&.
+variables (or corresponding environment overrides)\&. See
+\fBgit-config\fR(1)
+for more details\&.
+.sp
+With an optional
+\fI<ref>\fR
+argument, show this notes ref instead of the default notes ref(s)\&. The ref is taken to be in
+refs/notes/
+if it is not qualified\&.
+.sp
+Multiple \-\-notes options can be combined to control which notes are being displayed\&. Examples: "\-\-notes=foo" will show only notes from "refs/notes/foo"; "\-\-notes=foo \-\-notes" will show both notes from "refs/notes/foo" and from the default notes ref(s)\&.
+.RE
+.PP
+\-\-no\-notes
+.RS 4
+Do not show notes\&. This negates the above
+\-\-notes
+option, by resetting the list of notes refs from which notes are shown\&. Options are parsed in the order given on the command line, so e\&.g\&. "\-\-notes \-\-notes=foo \-\-no\-notes \-\-notes=bar" will only show notes from "refs/notes/bar"\&.
+.RE
+.PP
+\-\-show\-notes[=<ref>], \-\-[no\-]standard\-notes
+.RS 4
+These options are deprecated\&. Use the above \-\-notes/\-\-no\-notes options instead\&.
 .RE
 .PP
 \-\-relative\-date
@@ -1204,7 +1242,8 @@ option may also be specified\&.
 \-\-count
 .RS 4
 Print a number stating how many commits would have been listed, and suppress all other output\&. When used together with
-\fI\-\-left\-right\fR, instead print the counts for left and right commits, separated by a tab\&.
+\fI\-\-left\-right\fR, instead print the counts for left and right commits, separated by a tab\&. When used together with
+\fI\-\-cherry\-mark\fR, omit patch equivalent commits from these counts and print the count for equivalent commits separated by a tab\&.
 .RE
 .SH "PRETTY FORMATS"
 .sp

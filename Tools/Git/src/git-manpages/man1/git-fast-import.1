@@ -2,12 +2,21 @@
 .\"     Title: git-fast-import
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/02/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8
 .\"  Language: English
 .\"
-.TH "GIT\-FAST\-IMPORT" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-FAST\-IMPORT" "1" "12/02/2011" "Git 1\&.7\&.8" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -22,7 +31,10 @@
 git-fast-import \- Backend for fast Git data importers
 .SH "SYNOPSIS"
 .sp
+.nf
 frontend | \fIgit fast\-import\fR [options]
+.fi
+.sp
 .SH "DESCRIPTION"
 .sp
 This program is usually not what the end user wants to run directly\&. Most end users want to use one of the existing frontend programs, which parses a specific type of foreign source and feeds the contents stored there to \fIgit fast\-import\fR\&.
@@ -99,6 +111,13 @@ Specify the file descriptor that will be written to when the
 cat\-blob
 command is encountered in the stream\&. The default behaviour is to write to
 stdout\&.
+.RE
+.PP
+\-\-done
+.RS 4
+Require a
+done
+command at the end of the stream\&. This option might be useful for detecting errors that cause the frontend to terminate before it has started to write a stream\&.
 .RE
 .PP
 \-\-export\-pack\-edges=<file>
@@ -252,6 +271,17 @@ progress
 Causes fast\-import to echo the entire line to its own standard output\&. This command is optional and is not needed to perform an import\&.
 .RE
 .PP
+done
+.RS 4
+Marks the end of the stream\&. This command is optional unless the
+done
+feature was requested using the
+\-\-done
+command line option or
+feature done
+command\&.
+.RE
+.PP
 cat\-blob
 .RS 4
 Causes fast\-import to print a blob in
@@ -336,7 +366,7 @@ An author command may optionally appear, if the author information might differ 
 .sp
 The committer command indicates who made this commit, and when they made it\&.
 .sp
-Here <name> is the person\(cqs display name (for example \(lqCom M Itter\(rq) and <email> is the person\(cqs email address (\(lq\m[blue]\fBcm@example\&.com\fR\m[]\&\s-2\u[1]\d\s+2\(rq)\&. LT and GT are the literal less\-than (\ex3c) and greater\-than (\ex3e) symbols\&. These are required to delimit the email address from the other fields in the line\&. Note that <name> is free\-form and may contain any sequence of bytes, except LT and LF\&. It is typically UTF\-8 encoded\&.
+Here <name> is the person\(cqs display name (for example \(lqCom M Itter\(rq) and <email> is the person\(cqs email address (\(lq\m[blue]\fBcm@example\&.com\fR\m[]\&\s-2\u[1]\d\s+2\(rq)\&. LT and GT are the literal less\-than (\ex3c) and greater\-than (\ex3e) symbols\&. These are required to delimit the email address from the other fields in the line\&. Note that <name> and <email> are free\-form and may contain any sequence of bytes, except LT, GT and LF\&. <name> is typically UTF\-8 encoded\&.
 .sp
 The time of the change is specified by <when> using the date format that was selected by the \-\-date\-format=<fmt> command line option\&. See \(lqDate Formats\(rq above for the set of supported formats, and their syntax\&.
 .RE
@@ -751,7 +781,7 @@ Issuing a filedeleteall followed by the needed filemodify commands to set the co
 \fBnotemodify\fR
 .RS 4
 .sp
-Included in a commit command to add a new note (annotating a given commit) or change the content of an existing note\&. This command has two different means of specifying the content of the note\&.
+Included in a commit <notes_ref> command to add a new note annotating a <committish> or change this annotation contents\&. Internally it is similar to filemodify 100644 on <committish> path (maybe split into subdirectories)\&. It\(cqs not advised to use any other commands to write to the <notes_ref> tree except filedeleteall to delete all existing notes in this tree\&. This command has two different means of specifying the content of the note\&.
 .PP
 External data format
 .RS 4
@@ -1145,9 +1175,9 @@ Act as though the corresponding command\-line option with a leading
 was passed on the command line (see OPTIONS, above)\&.
 .RE
 .PP
-import\-marks
+import\-marks, import\-marks\-if\-exists
 .RS 4
-Like \-\-import\-marks except in two respects: first, only one "feature import\-marks" command is allowed per stream; second, an \-\-import\-marks= command\-line option overrides any "feature import\-marks" command in the stream\&.
+Like \-\-import\-marks except in two respects: first, only one "feature import\-marks" or "feature import\-marks\-if\-exists" command is allowed per stream; second, an \-\-import\-marks= or \-\-import\-marks\-if\-exists command\-line option overrides any of these "feature" commands in the stream; third, "feature import\-marks\-if\-exists" like a corresponding command\-line option silently skips a nonexistent file\&.
 .RE
 .PP
 cat\-blob, ls
@@ -1166,6 +1196,13 @@ Require that the backend support the
 (N) subcommand to the
 \fIcommit\fR
 command\&. Versions of fast\-import not supporting notes will exit with a message indicating so\&.
+.RE
+.PP
+done
+.RS 4
+Error out if the stream ends without a
+\fIdone\fR
+command\&. Without this feature, errors causing the frontend to end abruptly at a convenient point in the stream can go undetected\&.
 .RE
 .SS "option"
 .sp
@@ -1241,6 +1278,11 @@ cat\-blob\-fd
 .\}
 force
 .RE
+.SS "done"
+.sp
+If the done feature is not in use, treated as if EOF was read\&. This can be used to tell fast\-import to finish early\&.
+.sp
+If the \-\-done command line option or feature done command is in use, the done command is mandatory and marks the end of the stream\&.
 .SH "CRASH REPORTS"
 .sp
 If fast\-import is supplied invalid input it will terminate with a non\-zero exit status and create a crash report in the top level of the Git repository it was importing into\&. Crash reports contain a snapshot of the internal fast\-import state as well as the most recent commands that lead up to the crash\&.

@@ -6,9 +6,9 @@
 #include "run-command.h"
 
 const char git_usage_string[] =
-	"git [--version] [--exec-path[=<path>]] [--html-path]\n"
-	"           [-p|--paginate|--no-pager] [--no-replace-objects]\n"
-	"           [--bare] [--git-dir=<path>] [--work-tree=<path>]\n"
+	"git [--version] [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]\n"
+	"           [-p|--paginate|--no-pager] [--no-replace-objects] [--bare]\n"
+	"           [--git-dir=<path>] [--work-tree=<path>] [--namespace=<name>]\n"
 	"           [-c name=value] [--help]\n"
 	"           <command> [<args>]";
 
@@ -95,6 +95,12 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 		} else if (!strcmp(cmd, "--html-path")) {
 			puts(system_path(GIT_HTML_PATH));
 			exit(0);
+		} else if (!strcmp(cmd, "--man-path")) {
+			puts(system_path(GIT_MAN_PATH));
+			exit(0);
+		} else if (!strcmp(cmd, "--info-path")) {
+			puts(system_path(GIT_INFO_PATH));
+			exit(0);
 		} else if (!strcmp(cmd, "-p") || !strcmp(cmd, "--paginate")) {
 			use_pager = 1;
 		} else if (!strcmp(cmd, "--no-pager")) {
@@ -118,6 +124,20 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 			(*argc)--;
 		} else if (!prefixcmp(cmd, "--git-dir=")) {
 			setenv(GIT_DIR_ENVIRONMENT, cmd + 10, 1);
+			if (envchanged)
+				*envchanged = 1;
+		} else if (!strcmp(cmd, "--namespace")) {
+			if (*argc < 2) {
+				fprintf(stderr, "No namespace given for --namespace.\n" );
+				usage(git_usage_string);
+			}
+			setenv(GIT_NAMESPACE_ENVIRONMENT, (*argv)[1], 1);
+			if (envchanged)
+				*envchanged = 1;
+			(*argv)++;
+			(*argc)--;
+		} else if (!prefixcmp(cmd, "--namespace=")) {
+			setenv(GIT_NAMESPACE_ENVIRONMENT, cmd + 12, 1);
 			if (envchanged)
 				*envchanged = 1;
 		} else if (!strcmp(cmd, "--work-tree")) {
@@ -314,7 +334,7 @@ static void handle_internal_command(int argc, const char **argv)
 		{ "annotate", cmd_annotate, RUN_SETUP },
 		{ "apply", cmd_apply, RUN_SETUP_GENTLY },
 		{ "archive", cmd_archive },
-		{ "bisect--helper", cmd_bisect__helper, RUN_SETUP | NEED_WORK_TREE },
+		{ "bisect--helper", cmd_bisect__helper, RUN_SETUP },
 		{ "blame", cmd_blame, RUN_SETUP },
 		{ "branch", cmd_branch, RUN_SETUP },
 		{ "bundle", cmd_bundle, RUN_SETUP_GENTLY },
@@ -453,6 +473,8 @@ static void execv_dashed_external(const char **argv)
 	const char *tmp;
 	int status;
 
+	if (use_pager == -1)
+		use_pager = check_pager_config(argv[0]);
 	commit_pager_choice();
 
 	strbuf_addf(&cmd, "git-%s", argv[0]);

@@ -2,12 +2,21 @@
 .\"     Title: git-commit
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/02/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8
 .\"  Language: English
 .\"
-.TH "GIT\-COMMIT" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-COMMIT" "1" "12/02/2011" "Git 1\&.7\&.8" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -23,11 +32,12 @@ git-commit \- Record changes to the repository
 .SH "SYNOPSIS"
 .sp
 .nf
-\fIgit commit\fR [\-a | \-\-interactive] [\-s] [\-v] [\-u<mode>] [\-\-amend] [\-\-dry\-run]
-           [(\-c | \-C | \-\-fixup | \-\-squash) <commit>] [\-F <file> | \-m <msg>]
-           [\-\-reset\-author] [\-\-allow\-empty] [\-\-allow\-empty\-message] [\-\-no\-verify]
-           [\-e] [\-\-author=<author>] [\-\-date=<date>] [\-\-cleanup=<mode>]
-           [\-\-status | \-\-no\-status] [\-i | \-o] [\-\-] [<file>\&...]
+\fIgit commit\fR [\-a | \-\-interactive | \-\-patch] [\-s] [\-v] [\-u<mode>] [\-\-amend]
+           [\-\-dry\-run] [(\-c | \-C | \-\-fixup | \-\-squash) <commit>]
+           [\-F <file> | \-m <msg>] [\-\-reset\-author] [\-\-allow\-empty]
+           [\-\-allow\-empty\-message] [\-\-no\-verify] [\-e] [\-\-author=<author>]
+           [\-\-date=<date>] [\-\-cleanup=<mode>] [\-\-status | \-\-no\-status]
+           [\-i | \-o] [\-\-] [<file>\&...]
 .fi
 .sp
 .SH "DESCRIPTION"
@@ -100,10 +110,12 @@ command to automatically "add" changes from all known files (i\&.e\&. all files 
 .sp -1
 .IP "  5." 4.2
 .\}
-by using the \-\-interactive switch with the
+by using the \-\-interactive or \-\-patch switches with the
 \fIcommit\fR
-command to decide one by one which files should be part of the commit, before finalizing the operation\&. Currently, this is done by invoking
-\fIgit add \-\-interactive\fR\&.
+command to decide one by one which files or hunks should be part of the commit, before finalizing the operation\&. See the
+`Interactive Mode` section of
+\fBgit-add\fR(1)
+to learn how to operate these modes\&.
 .RE
 .sp
 The \-\-dry\-run option can be used to obtain a summary of what is included by any of the above for the next commit by giving the same set of parameters (options and paths)\&.
@@ -114,6 +126,13 @@ If you make a commit and then find a mistake immediately after that, you can rec
 \-a, \-\-all
 .RS 4
 Tell the command to automatically stage files that have been modified and deleted, but new files you have not told git about are not affected\&.
+.RE
+.PP
+\-p, \-\-patch
+.RS 4
+Use the interactive patch selection interface to chose which changes to commit\&. See
+\fBgit-add\fR(1)
+for details\&.
 .RE
 .PP
 \-C <commit>, \-\-reuse\-message=<commit>
@@ -440,7 +459,7 @@ DD\&.MM\&.YYYY\&.
 .RE
 .SH "EXAMPLES"
 .sp
-When recording your own work, the contents of modified files in your working tree are temporarily stored to a staging area called the "index" with \fIgit add\fR\&. A file can be reverted back, only in the index but not in the working tree, to that of the last commit with git reset HEAD \(em <file>, which effectively reverts \fIgit add\fR and prevents the changes to this file from participating in the next commit\&. After building the state to be committed incrementally with these commands, git commit (without any pathname parameter) is used to record what has been staged so far\&. This is the most basic form of the command\&. An example:
+When recording your own work, the contents of modified files in your working tree are temporarily stored to a staging area called the "index" with \fIgit add\fR\&. A file can be reverted back, only in the index but not in the working tree, to that of the last commit with git reset HEAD \-\- <file>, which effectively reverts \fIgit add\fR and prevents the changes to this file from participating in the next commit\&. After building the state to be committed incrementally with these commands, git commit (without any pathname parameter) is used to record what has been staged so far\&. This is the most basic form of the command\&. An example:
 .sp
 .if n \{\
 .RS 4

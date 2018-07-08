@@ -2,12 +2,21 @@
 .\"     Title: git-blame
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/02/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8
 .\"  Language: English
 .\"
-.TH "GIT\-BLAME" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-BLAME" "1" "12/02/2011" "Git 1\&.7\&.8" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -24,7 +33,7 @@ git-blame \- Show what revision and author last modified each line of a file
 .sp
 .nf
 \fIgit blame\fR [\-c] [\-b] [\-l] [\-\-root] [\-t] [\-f] [\-n] [\-s] [\-e] [\-p] [\-w] [\-\-incremental] [\-L n,m]
-            [\-S <revs\-file>] [\-M] [\-C] [\-C] [\-C] [\-\-since=<date>]
+            [\-S <revs\-file>] [\-M] [\-C] [\-C] [\-C] [\-\-since=<date>] [\-\-abbrev=<n>]
             [<rev> | \-\-contents <file> | \-\-reverse <rev>] [\-\-] <file>
 .fi
 .sp
@@ -141,6 +150,11 @@ Walk history forward instead of backward\&. Instead of showing the revision in w
 Show in a format designed for machine consumption\&.
 .RE
 .PP
+\-\-line\-porcelain
+.RS 4
+Show the porcelain format, but output commit information for each line, not just the first time a commit is referenced\&. Implies \-\-porcelain\&.
+.RE
+.PP
 \-\-incremental
 .RS 4
 Show the result incrementally in a format designed for machine consumption\&.
@@ -189,7 +203,7 @@ options given, the <num> argument of the last
 will take effect\&.
 .RE
 .PP
-\-h, \-\-help
+\-h
 .RS 4
 Show help message\&.
 .RE
@@ -233,6 +247,11 @@ Show the author email instead of author name (Default: off)\&.
 \-w
 .RS 4
 Ignore whitespace when comparing the parent\(cqs version and the child\(cqs to find where the lines came from\&.
+.RE
+.PP
+\-\-abbrev=<n>
+.RS 4
+Instead of using the default 7+1 hexadecimal digits as the abbreviated object name, use <n>+1 digits\&. Note that 1 column is used for a caret to mark the boundary commit\&.
 .RE
 .SH "THE PORCELAIN FORMAT"
 .sp
@@ -318,6 +337,21 @@ the first line of the commit log message ("summary")\&.
 .RE
 .sp
 The contents of the actual line is output after the above header, prefixed by a TAB\&. This is to allow adding more header elements later\&.
+.sp
+The porcelain format generally suppresses commit information that has already been seen\&. For example, two lines that are blamed to the same commit will both be shown, but the details for that commit will be shown only once\&. This is more efficient, but may require more state be kept by the reader\&. The \-\-line\-porcelain option can be used to output full commit information for each line, allowing simpler (but less efficient) usage like:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+# count the number of lines attributed to each author
+git blame \-\-line\-porcelain file |
+sed \-n \(aqs/^author //p\(aq |
+sort | uniq \-c | sort \-rn
+.fi
+.if n \{\
+.RE
+.\}
 .SH "SPECIFYING RANGES"
 .sp
 Unlike \fIgit blame\fR and \fIgit annotate\fR in older versions of git, the extent of the annotation can be limited to both line ranges and revision ranges\&. When you are interested in finding the origin for lines 40\-60 for file foo, you can use the \-L option like so (they mean the same thing \(em both ask for 21 lines starting at line 40):

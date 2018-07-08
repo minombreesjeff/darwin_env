@@ -276,41 +276,6 @@ static void prune_cache(const char *prefix)
 	active_nr = last;
 }
 
-static const char *pathspec_prefix(const char *prefix)
-{
-	const char **p, *n, *prev;
-	unsigned long max;
-
-	if (!pathspec) {
-		max_prefix_len = prefix ? strlen(prefix) : 0;
-		return prefix;
-	}
-
-	prev = NULL;
-	max = PATH_MAX;
-	for (p = pathspec; (n = *p) != NULL; p++) {
-		int i, len = 0;
-		for (i = 0; i < max; i++) {
-			char c = n[i];
-			if (prev && prev[i] != c)
-				break;
-			if (!c || c == '*' || c == '?')
-				break;
-			if (c == '/')
-				len = i+1;
-		}
-		prev = n;
-		if (len < max) {
-			max = len;
-			if (!max)
-				break;
-		}
-	}
-
-	max_prefix_len = max;
-	return max ? xmemdupz(prev, max) : NULL;
-}
-
 static void strip_trailing_slash_from_submodules(void)
 {
 	const char **p;
@@ -338,7 +303,7 @@ void overlay_tree_on_cache(const char *tree_name, const char *prefix)
 {
 	struct tree *tree;
 	unsigned char sha1[20];
-	const char **match;
+	struct pathspec pathspec;
 	struct cache_entry *last_stage0 = NULL;
 	int i;
 
@@ -360,10 +325,11 @@ void overlay_tree_on_cache(const char *tree_name, const char *prefix)
 		static const char *(matchbuf[2]);
 		matchbuf[0] = prefix;
 		matchbuf[1] = NULL;
-		match = matchbuf;
+		init_pathspec(&pathspec, matchbuf);
+		pathspec.items[0].use_wildcard = 0;
 	} else
-		match = NULL;
-	if (read_tree(tree, 1, match))
+		init_pathspec(&pathspec, NULL);
+	if (read_tree(tree, 1, &pathspec))
 		die("unable to read tree entries %s", tree_name);
 
 	for (i = 0; i < active_nr; i++) {
@@ -387,11 +353,13 @@ void overlay_tree_on_cache(const char *tree_name, const char *prefix)
 	}
 }
 
-int report_path_error(const char *ps_matched, const char **pathspec, int prefix_len)
+int report_path_error(const char *ps_matched, const char **pathspec, const char *prefix)
 {
 	/*
 	 * Make sure all pathspec matched; otherwise it is an error.
 	 */
+	struct strbuf sb = STRBUF_INIT;
+	const char *name;
 	int num, errors = 0;
 	for (num = 0; pathspec[num]; num++) {
 		int other, found_dup;
@@ -416,10 +384,12 @@ int report_path_error(const char *ps_matched, const char **pathspec, int prefix_
 		if (found_dup)
 			continue;
 
+		name = quote_path_relative(pathspec[num], -1, &sb, prefix);
 		error("pathspec '%s' did not match any file(s) known to git.",
-		      pathspec[num] + prefix_len);
+		      name);
 		errors++;
 	}
+	strbuf_release(&sb);
 	return errors;
 }
 
@@ -575,7 +545,8 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 		strip_trailing_slash_from_submodules();
 
 	/* Find common prefix for all pathspec's */
-	max_prefix = pathspec_prefix(prefix);
+	max_prefix = pathspec_prefix(prefix, pathspec);
+	max_prefix_len = max_prefix ? strlen(max_prefix) : 0;
 
 	/* Treat unmatching pathspec elements as errors */
 	if (pathspec && error_unmatch) {
@@ -610,7 +581,7 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 
 	if (ps_matched) {
 		int bad;
-		bad = report_path_error(ps_matched, pathspec, prefix_len);
+		bad = report_path_error(ps_matched, pathspec, prefix);
 		if (bad)
 			fprintf(stderr, "Did you forget to 'git add'?\n");
 

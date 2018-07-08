@@ -101,6 +101,7 @@ struct transport {
 #define TRANSPORT_PUSH_MIRROR 8
 #define TRANSPORT_PUSH_PORCELAIN 16
 #define TRANSPORT_PUSH_SET_UPSTREAM 32
+#define TRANSPORT_RECURSE_SUBMODULES_CHECK 64
 
 #define TRANSPORT_SUMMARY_WIDTH (2 * DEFAULT_ABBREV + 3)
 
@@ -167,6 +168,6 @@ void transport_print_push_status(const char *dest, struct ref *refs,
 		  int verbose, int porcelain, int *nonfastforward);
 
 typedef void alternate_ref_fn(const struct ref *, void *);
-extern int refs_from_alternate_cb(struct alternate_object_database *e, void *cb);
+extern void for_each_alternate_ref(alternate_ref_fn, void *);
 
 #endif

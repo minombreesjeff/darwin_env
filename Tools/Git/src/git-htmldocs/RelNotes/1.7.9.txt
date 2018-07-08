@@ -1,0 +1,96 @@
+Git v1.7.9 Release Notes (draft)
+========================
+
+Updates since v1.7.8
+--------------------
+
+ * git-gui updated to 0.16.0.
+
+ * git-p4 (in contrib/) updates.
+
+ * Porcelain commands like "git reset" did not distinguish deletions
+   and type-changes from ordinary modification, and reported them with
+   the same 'M' moniker. They now use 'D' (for deletion) and 'T' (for
+   type-change) to match "git status -s" and "git diff --name-status".
+
+ * "git branch -m <current branch> HEAD" is an obvious no-op and is
+   now allowed.
+
+ * "git checkout -B <current branch> <elsewhere>" is a more intuitive
+   way to spell "git reset --keep <elsewhere>".
+
+ * "git checkout" and "git merge" learned "--no-overwrite-ignore" option
+   to tell Git that untracked and ignored files are not expendable.
+
+ * fsck and prune are relatively lengthy operations that still go
+   silent while making the end-user wait. They learned to give progress
+   output like other slow operations.
+
+ * The set of built-in function-header patterns for various languages
+   knows MATLAB.
+
+ * "git pull" can be used to fetch and merge an annotated/signed tag,
+   instead of the tip of a topic branch. The GPG signature from the
+   signed tag is recorded in the resulting merge commit for later
+   auditing.
+
+ * "git branch --edit-description" can be used to add descriptive text
+   to explain what a topic branch is about.
+
+ * "git fmt-merge-msg" learned to take the branch description into
+   account when preparing a merge summary that "git merge" records
+   when merging a local branch.
+
+ * "git request-pull" has been updated to convey more information
+   useful for integrators to decide if a topic is worth merging and
+   what is pulled is indeed what the requestor asked to pull,
+   including:
+
+   - the tip of the branch being requested to be merged;
+   - the branch description describing what the topic is about;
+   - the contents of the annotated tag, when requesting to pull a tag.
+
+ * "git pull" learned to notice 'pull.rebase' configuration variable,
+   which serves as a global fallback for setting 'branch.<name>.rebase'
+   configuration variable per branch.
+
+ * "git tag" learned "--cleanup" option to control how the whitespaces
+   and empty lines in tag message are cleaned up.
+
+ * "gitweb" learned to show side-by-side diff.
+
+Also contains minor documentation updates and code clean-ups.
+
+
+Fixes since v1.7.8
+------------------
+
+ * The function header pattern for files with "diff=cpp" attribute did
+   not consider "type *funcname(type param1,..." as the beginning of a
+   function.
+   (merge 37e7793 tr/userdiff-c-returns-pointer later to maint).
+
+ * LF-to-CRLF streaming filter used when checking out a large-ish blob
+   fell into an infinite loop with a rare input.
+   (merge 284e3d2 cn/maint-lf-to-crlf-filter later to maint).
+
+ * "git archive" mistakenly allowed remote clients to ask for commits
+   that are not at the tip of any ref.
+   (merge 7b51c33 jk/maint-upload-archive later to maint).
+
+ * "git apply --check" did not error out when given an empty input
+   without any patch.
+   (merge cc64b31 bc/maint-apply-check-no-patch later to maint).
+
+ * The error message from "git diff" and "git status" when they fail
+   to inspect changes in submodules did not report which submodule they
+   had trouble with.
+   (merge 6a5ceda jl/submodule-status-failure-report later to maint).
+
+--
+exec >/var/tmp/1
+O=v1.7.8-246-gb3f17ac
+echo O=$(git describe master)
+git log --first-parent --oneline --reverse ^$O master
+echo
+git shortlog --no-merges ^$O ^maint master

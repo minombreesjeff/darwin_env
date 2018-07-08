@@ -36,6 +36,9 @@ extern int for_each_tag_ref_submodule(const char *submodule, each_ref_fn fn, voi
 extern int for_each_branch_ref_submodule(const char *submodule, each_ref_fn fn, void *cb_data);
 extern int for_each_remote_ref_submodule(const char *submodule, each_ref_fn fn, void *cb_data);
 
+extern int head_ref_namespaced(each_ref_fn fn, void *cb_data);
+extern int for_each_namespaced_ref(each_ref_fn fn, void *cb_data);
+
 static inline const char *has_glob_specials(const char *pattern)
 {
 	return strpbrk(pattern, "?*[");
@@ -54,6 +57,7 @@ extern void warn_dangling_symref(FILE *fp, const char *msg_fmt, const char *refn
  */
 extern void add_extra_ref(const char *refname, const unsigned char *sha1, int flags);
 extern void clear_extra_refs(void);
+extern int ref_exists(char *);
 
 extern int peel_ref(const char *, unsigned char *);
 

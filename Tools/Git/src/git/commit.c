@@ -39,6 +39,18 @@ struct commit *lookup_commit_reference(const unsigned char *sha1)
 	return lookup_commit_reference_gently(sha1, 0);
 }
 
+struct commit *lookup_commit_or_die(const unsigned char *sha1, const char *ref_name)
+{
+	struct commit *c = lookup_commit_reference(sha1);
+	if (!c)
+		die(_("could not parse %s"), ref_name);
+	if (hashcmp(sha1, c->object.sha1)) {
+		warning(_("%s %s is not a commit!"),
+			ref_name, sha1_to_hex(sha1));
+	}
+	return c;
+}
+
 struct commit *lookup_commit(const unsigned char *sha1)
 {
 	struct object *obj = lookup_object(sha1);
@@ -214,22 +226,12 @@ struct commit_graft *lookup_commit_graft(const unsigned char *sha1)
 	return commit_graft[pos];
 }
 
-int write_shallow_commits(struct strbuf *out, int use_pack_protocol)
+int for_each_commit_graft(each_commit_graft_fn fn, void *cb_data)
 {
-	int i, count = 0;
-	for (i = 0; i < commit_graft_nr; i++)
-		if (commit_graft[i]->nr_parent < 0) {
-			const char *hex =
-				sha1_to_hex(commit_graft[i]->sha1);
-			count++;
-			if (use_pack_protocol)
-				packet_buf_write(out, "shallow %s", hex);
-			else {
-				strbuf_addstr(out, hex);
-				strbuf_addch(out, '\n');
-			}
-		}
-	return count;
+	int i, ret;
+	for (i = ret = 0; i < commit_graft_nr && !ret; i++)
+		ret = fn(commit_graft[i], cb_data);
+	return ret;
 }
 
 int unregister_shallow(const unsigned char *sha1)
@@ -515,7 +517,7 @@ void sort_in_topological_order(struct commit_list ** list, int lifo)
 
 		commit = work_item->item;
 		for (parents = commit->parents; parents ; parents = parents->next) {
-			struct commit *parent=parents->item;
+			struct commit *parent = parents->item;
 
 			if (!parent->indegree)
 				continue;

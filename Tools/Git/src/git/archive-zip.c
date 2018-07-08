@@ -90,14 +90,14 @@ static void copy_le32(unsigned char *dest, unsigned int n)
 static void *zlib_deflate(void *data, unsigned long size,
 		int compression_level, unsigned long *compressed_size)
 {
-	z_stream stream;
+	git_zstream stream;
 	unsigned long maxsize;
 	void *buffer;
 	int result;
 
 	memset(&stream, 0, sizeof(stream));
-	deflateInit(&stream, compression_level);
-	maxsize = deflateBound(&stream, size);
+	git_deflate_init(&stream, compression_level);
+	maxsize = git_deflate_bound(&stream, size);
 	buffer = xmalloc(maxsize);
 
 	stream.next_in = data;
@@ -106,7 +106,7 @@ static void *zlib_deflate(void *data, unsigned long size,
 	stream.avail_out = maxsize;
 
 	do {
-		result = deflate(&stream, Z_FINISH);
+		result = git_deflate(&stream, Z_FINISH);
 	} while (result == Z_OK);
 
 	if (result != Z_STREAM_END) {
@@ -114,7 +114,7 @@ static void *zlib_deflate(void *data, unsigned long size,
 		return NULL;
 	}
 
-	deflateEnd(&stream);
+	git_deflate_end(&stream);
 	*compressed_size = stream.total_out;
 
 	return buffer;
@@ -261,7 +261,8 @@ static void dos_time(time_t *time, int *dos_date, int *dos_time)
 	*dos_time = t->tm_sec / 2 + t->tm_min * 32 + t->tm_hour * 2048;
 }
 
-int write_zip_archive(struct archiver_args *args)
+static int write_zip_archive(const struct archiver *ar,
+			     struct archiver_args *args)
 {
 	int err;
 
@@ -277,4 +278,15 @@ int write_zip_archive(struct archiver_args *args)
 	free(zip_dir);
 
 	return err;
+}
+
+static struct archiver zip_archiver = {
+	"zip",
+	write_zip_archive,
+	ARCHIVER_WANT_COMPRESSION_LEVELS|ARCHIVER_REMOTE
+};
+
+void init_zip_archiver(void)
+{
+	register_archiver(&zip_archiver);
 }

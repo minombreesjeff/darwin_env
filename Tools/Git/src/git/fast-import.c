@@ -170,6 +170,11 @@ Format of STDIN stream:
 #define DEPTH_BITS 13
 #define MAX_DEPTH ((1<<DEPTH_BITS)-1)
 
+/*
+ * We abuse the setuid bit on directories to mean "do not delta".
+ */
+#define NO_DELTA S_ISUID
+
 struct object_entry {
 	struct pack_idx_entry idx;
 	struct object_entry *next;
@@ -284,6 +289,7 @@ static uintmax_t marks_set_count;
 static uintmax_t object_count_by_type[1 << TYPE_BITS];
 static uintmax_t duplicate_count_by_type[1 << TYPE_BITS];
 static uintmax_t delta_count_by_type[1 << TYPE_BITS];
+static uintmax_t delta_count_attempts_by_type[1 << TYPE_BITS];
 static unsigned long object_count;
 static unsigned long branch_count;
 static unsigned long branch_load_count;
@@ -304,6 +310,7 @@ static unsigned int atom_cnt;
 static struct atom_str **atom_table;
 
 /* The .pack file being generated */
+static struct pack_idx_option pack_idx_opts;
 static unsigned int pack_id;
 static struct sha1file *pack_file;
 static struct packed_git *pack_data;
@@ -354,6 +361,7 @@ static unsigned int cmd_save = 100;
 static uintmax_t next_mark;
 static struct strbuf new_data = STRBUF_INIT;
 static int seen_data_command;
+static int require_explicit_termination;
 
 /* Signal handling */
 static volatile sig_atomic_t checkpoint_requested;
@@ -896,7 +904,7 @@ static const char *create_index(void)
 	if (c != last)
 		die("internal consistency error creating the index");
 
-	tmpfile = write_idx_file(NULL, idx, object_count, pack_data->sha1);
+	tmpfile = write_idx_file(NULL, idx, object_count, &pack_idx_opts, pack_data->sha1);
 	free(idx);
 	return tmpfile;
 }
@@ -1017,7 +1025,7 @@ static int store_object(
 	unsigned char sha1[20];
 	unsigned long hdrlen, deltalen;
 	git_SHA_CTX c;
-	z_stream s;
+	git_zstream s;
 
 	hdrlen = sprintf((char *)hdr,"%s %lu", typename(type),
 		(unsigned long)dat->len) + 1;
@@ -1043,6 +1051,7 @@ static int store_object(
 	}
 
 	if (last && last->data.buf && last->depth < max_depth && dat->len > 20) {
+		delta_count_attempts_by_type[type]++;
 		delta = diff_delta(last->data.buf, last->data.len,
 			dat->buf, dat->len,
 			&deltalen, dat->len - 20);
@@ -1050,7 +1059,7 @@ static int store_object(
 		delta = NULL;
 
 	memset(&s, 0, sizeof(s));
-	deflateInit(&s, pack_compression_level);
+	git_deflate_init(&s, pack_compression_level);
 	if (delta) {
 		s.next_in = delta;
 		s.avail_in = deltalen;
@@ -1058,11 +1067,11 @@ static int store_object(
 		s.next_in = (void *)dat->buf;
 		s.avail_in = dat->len;
 	}
-	s.avail_out = deflateBound(&s, s.avail_in);
+	s.avail_out = git_deflate_bound(&s, s.avail_in);
 	s.next_out = out = xmalloc(s.avail_out);
-	while (deflate(&s, Z_FINISH) == Z_OK)
-		/* nothing */;
-	deflateEnd(&s);
+	while (git_deflate(&s, Z_FINISH) == Z_OK)
+		; /* nothing */
+	git_deflate_end(&s);
 
 	/* Determine if we should auto-checkpoint. */
 	if ((max_packsize && (pack_size + 60 + s.total_out) > max_packsize)
@@ -1078,14 +1087,14 @@ static int store_object(
 			delta = NULL;
 
 			memset(&s, 0, sizeof(s));
-			deflateInit(&s, pack_compression_level);
+			git_deflate_init(&s, pack_compression_level);
 			s.next_in = (void *)dat->buf;
 			s.avail_in = dat->len;
-			s.avail_out = deflateBound(&s, s.avail_in);
+			s.avail_out = git_deflate_bound(&s, s.avail_in);
 			s.next_out = out = xrealloc(out, s.avail_out);
-			while (deflate(&s, Z_FINISH) == Z_OK)
-				/* nothing */;
-			deflateEnd(&s);
+			while (git_deflate(&s, Z_FINISH) == Z_OK)
+				; /* nothing */
+			git_deflate_end(&s);
 		}
 	}
 
@@ -1163,7 +1172,7 @@ static void stream_blob(uintmax_t len, unsigned char *sha1out, uintmax_t mark)
 	off_t offset;
 	git_SHA_CTX c;
 	git_SHA_CTX pack_file_ctx;
-	z_stream s;
+	git_zstream s;
 	int status = Z_OK;
 
 	/* Determine if we should auto-checkpoint. */
@@ -1187,7 +1196,7 @@ static void stream_blob(uintmax_t len, unsigned char *sha1out, uintmax_t mark)
 	crc32_begin(pack_file);
 
 	memset(&s, 0, sizeof(s));
-	deflateInit(&s, pack_compression_level);
+	git_deflate_init(&s, pack_compression_level);
 
 	hdrlen = encode_in_pack_object_header(OBJ_BLOB, len, out_buf);
 	if (out_sz <= hdrlen)
@@ -1209,7 +1218,7 @@ static void stream_blob(uintmax_t len, unsigned char *sha1out, uintmax_t mark)
 			len -= n;
 		}
 
-		status = deflate(&s, len ? 0 : Z_FINISH);
+		status = git_deflate(&s, len ? 0 : Z_FINISH);
 
 		if (!s.avail_out || status == Z_STREAM_END) {
 			size_t n = s.next_out - out_buf;
@@ -1228,7 +1237,7 @@ static void stream_blob(uintmax_t len, unsigned char *sha1out, uintmax_t mark)
 			die("unexpected deflate failure: %d", status);
 		}
 	}
-	deflateEnd(&s);
+	git_deflate_end(&s);
 	git_SHA1_Final(sha1, &c);
 
 	if (sha1out)
@@ -1414,8 +1423,9 @@ static void mktree(struct tree_content *t, int v, struct strbuf *b)
 		struct tree_entry *e = t->entries[i];
 		if (!e->versions[v].mode)
 			continue;
-		strbuf_addf(b, "%o %s%c", (unsigned int)e->versions[v].mode,
-					e->name->str_dat, '\0');
+		strbuf_addf(b, "%o %s%c",
+			(unsigned int)(e->versions[v].mode & ~NO_DELTA),
+			e->name->str_dat, '\0');
 		strbuf_add(b, e->versions[v].sha1, 20);
 	}
 }
@@ -1425,7 +1435,7 @@ static void store_tree(struct tree_entry *root)
 	struct tree_content *t = root->tree;
 	unsigned int i, j, del;
 	struct last_object lo = { STRBUF_INIT, 0, 0, /* no_swap */ 1 };
-	struct object_entry *le;
+	struct object_entry *le = NULL;
 
 	if (!is_null_sha1(root->versions[1].sha1))
 		return;
@@ -1435,7 +1445,8 @@ static void store_tree(struct tree_entry *root)
 			store_tree(t->entries[i]);
 	}
 
-	le = find_object(root->versions[0].sha1);
+	if (!(root->versions[0].mode & NO_DELTA))
+		le = find_object(root->versions[0].sha1);
 	if (S_ISDIR(root->versions[0].mode) && le && le->pack_id == pack_id) {
 		mktree(t, 0, &old_tree);
 		lo.data = old_tree;
@@ -1469,6 +1480,7 @@ static void tree_content_replace(
 {
 	if (!S_ISDIR(mode))
 		die("Root cannot be a non-directory");
+	hashclr(root->versions[0].sha1);
 	hashcpy(root->versions[1].sha1, sha1);
 	if (root->tree)
 		release_tree_content_recursive(root->tree);
@@ -1513,6 +1525,23 @@ static int tree_content_set(
 				if (e->tree)
 					release_tree_content_recursive(e->tree);
 				e->tree = subtree;
+
+				/*
+				 * We need to leave e->versions[0].sha1 alone
+				 * to avoid modifying the preimage tree used
+				 * when writing out the parent directory.
+				 * But after replacing the subdir with a
+				 * completely different one, it's not a good
+				 * delta base any more, and besides, we've
+				 * thrown away the tree entries needed to
+				 * make a delta against it.
+				 *
+				 * So let's just explicitly disable deltas
+				 * for the subtree.
+				 */
+				if (S_ISDIR(e->versions[0].mode))
+					e->versions[0].mode |= NO_DELTA;
+
 				hashclr(root->versions[1].sha1);
 				return 1;
 			}
@@ -1967,32 +1996,41 @@ static int validate_raw_date(const char *src, char *result, int maxlen)
 
 static char *parse_ident(const char *buf)
 {
-	const char *gt;
+	const char *ltgt;
 	size_t name_len;
 	char *ident;
 
-	gt = strrchr(buf, '>');
-	if (!gt)
+	/* ensure there is a space delimiter even if there is no name */
+	if (*buf == '<')
+		--buf;
+
+	ltgt = buf + strcspn(buf, "<>");
+	if (*ltgt != '<')
+		die("Missing < in ident string: %s", buf);
+	if (ltgt != buf && ltgt[-1] != ' ')
+		die("Missing space before < in ident string: %s", buf);
+	ltgt = ltgt + 1 + strcspn(ltgt + 1, "<>");
+	if (*ltgt != '>')
 		die("Missing > in ident string: %s", buf);
-	gt++;
-	if (*gt != ' ')
+	ltgt++;
+	if (*ltgt != ' ')
 		die("Missing space after > in ident string: %s", buf);
-	gt++;
-	name_len = gt - buf;
+	ltgt++;
+	name_len = ltgt - buf;
 	ident = xmalloc(name_len + 24);
 	strncpy(ident, buf, name_len);
 
 	switch (whenspec) {
 	case WHENSPEC_RAW:
-		if (validate_raw_date(gt, ident + name_len, 24) < 0)
-			die("Invalid raw date \"%s\" in ident: %s", gt, buf);
+		if (validate_raw_date(ltgt, ident + name_len, 24) < 0)
+			die("Invalid raw date \"%s\" in ident: %s", ltgt, buf);
 		break;
 	case WHENSPEC_RFC2822:
-		if (parse_date(gt, ident + name_len, 24) < 0)
-			die("Invalid rfc2822 date \"%s\" in ident: %s", gt, buf);
+		if (parse_date(ltgt, ident + name_len, 24) < 0)
+			die("Invalid rfc2822 date \"%s\" in ident: %s", ltgt, buf);
 		break;
 	case WHENSPEC_NOW:
-		if (strcmp("now", gt))
+		if (strcmp("now", ltgt))
 			die("Date in ident must be 'now': %s", buf);
 		datestamp(ident + name_len, 24);
 		break;
@@ -2688,13 +2726,13 @@ static void parse_new_tag(void)
 		type = oe->type;
 		hashcpy(sha1, oe->idx.sha1);
 	} else if (!get_sha1(from, sha1)) {
-		unsigned long size;
-		char *buf;
-
-		buf = read_sha1_file(sha1, &type, &size);
-		if (!buf || size < 46)
-			die("Not a valid commit: %s", from);
-		free(buf);
+		struct object_entry *oe = find_object(sha1);
+		if (!oe) {
+			type = sha1_object_info(sha1, NULL);
+			if (type < 0)
+				die("Not a valid object: %s", from);
+		} else
+			type = oe->type;
 	} else
 		die("Invalid ref name or SHA1 expression: %s", from);
 	read_next_command();
@@ -2798,7 +2836,12 @@ static void cat_blob(struct object_entry *oe, unsigned char sha1[20])
 	strbuf_release(&line);
 	cat_blob_write(buf, size);
 	cat_blob_write("\n", 1);
-	free(buf);
+	if (oe && oe->pack_id == pack_id) {
+		last_blob.offset = oe->idx.offset;
+		strbuf_attach(&last_blob.data, buf, size, size);
+		last_blob.depth = oe->depth;
+	} else
+		free(buf);
 }
 
 static void parse_cat_blob(void)
@@ -2927,7 +2970,7 @@ static void print_ls(int mode, const unsigned char *sha1, const char *path)
 		/* mode SP type SP object_name TAB path LF */
 		strbuf_reset(&line);
 		strbuf_addf(&line, "%06o %s %s\t",
-				mode, type, sha1_to_hex(sha1));
+				mode & ~NO_DELTA, type, sha1_to_hex(sha1));
 		quote_c_style(path, &line, NULL, 0);
 		strbuf_addch(&line, '\n');
 	}
@@ -3139,6 +3182,8 @@ static int parse_one_feature(const char *feature, int from_stream)
 		relative_marks_paths = 1;
 	} else if (!strcmp(feature, "no-relative-marks")) {
 		relative_marks_paths = 0;
+	} else if (!strcmp(feature, "done")) {
+		require_explicit_termination = 1;
 	} else if (!strcmp(feature, "force")) {
 		force_update = 1;
 	} else if (!strcmp(feature, "notes") || !strcmp(feature, "ls")) {
@@ -3195,10 +3240,10 @@ static int git_pack_config(const char *k, const char *v, void *cb)
 		return 0;
 	}
 	if (!strcmp(k, "pack.indexversion")) {
-		pack_idx_default_version = git_config_int(k, v);
-		if (pack_idx_default_version > 2)
+		pack_idx_opts.version = git_config_int(k, v);
+		if (pack_idx_opts.version > 2)
 			die("bad pack.indexversion=%"PRIu32,
-			    pack_idx_default_version);
+			    pack_idx_opts.version);
 		return 0;
 	}
 	if (!strcmp(k, "pack.packsizelimit")) {
@@ -3252,6 +3297,7 @@ int main(int argc, const char **argv)
 		usage(fast_import_usage);
 
 	setup_git_directory();
+	reset_pack_idx_option(&pack_idx_opts);
 	git_config(git_pack_config, NULL);
 	if (!pack_compression_seen && core_compression_seen)
 		pack_compression_level = core_compression_level;
@@ -3288,6 +3334,8 @@ int main(int argc, const char **argv)
 			parse_reset_branch();
 		else if (!strcmp("checkpoint", command_buf.buf))
 			parse_checkpoint();
+		else if (!strcmp("done", command_buf.buf))
+			break;
 		else if (!prefixcmp(command_buf.buf, "progress "))
 			parse_progress();
 		else if (!prefixcmp(command_buf.buf, "feature "))
@@ -3306,6 +3354,9 @@ int main(int argc, const char **argv)
 	/* argv hasn't been parsed yet, do so */
 	if (!seen_data_command)
 		parse_argv();
+
+	if (require_explicit_termination && feof(stdin))
+		die("stream ends early");
 
 	end_packfile();
 
@@ -3328,10 +3379,10 @@ int main(int argc, const char **argv)
 		fprintf(stderr, "---------------------------------------------------------------------\n");
 		fprintf(stderr, "Alloc'd objects: %10" PRIuMAX "\n", alloc_count);
 		fprintf(stderr, "Total objects:   %10" PRIuMAX " (%10" PRIuMAX " duplicates                  )\n", total_count, duplicate_count);
-		fprintf(stderr, "      blobs  :   %10" PRIuMAX " (%10" PRIuMAX " duplicates %10" PRIuMAX " deltas)\n", object_count_by_type[OBJ_BLOB], duplicate_count_by_type[OBJ_BLOB], delta_count_by_type[OBJ_BLOB]);
-		fprintf(stderr, "      trees  :   %10" PRIuMAX " (%10" PRIuMAX " duplicates %10" PRIuMAX " deltas)\n", object_count_by_type[OBJ_TREE], duplicate_count_by_type[OBJ_TREE], delta_count_by_type[OBJ_TREE]);
-		fprintf(stderr, "      commits:   %10" PRIuMAX " (%10" PRIuMAX " duplicates %10" PRIuMAX " deltas)\n", object_count_by_type[OBJ_COMMIT], duplicate_count_by_type[OBJ_COMMIT], delta_count_by_type[OBJ_COMMIT]);
-		fprintf(stderr, "      tags   :   %10" PRIuMAX " (%10" PRIuMAX " duplicates %10" PRIuMAX " deltas)\n", object_count_by_type[OBJ_TAG], duplicate_count_by_type[OBJ_TAG], delta_count_by_type[OBJ_TAG]);
+		fprintf(stderr, "      blobs  :   %10" PRIuMAX " (%10" PRIuMAX " duplicates %10" PRIuMAX " deltas of %10" PRIuMAX" attempts)\n", object_count_by_type[OBJ_BLOB], duplicate_count_by_type[OBJ_BLOB], delta_count_by_type[OBJ_BLOB], delta_count_attempts_by_type[OBJ_BLOB]);
+		fprintf(stderr, "      trees  :   %10" PRIuMAX " (%10" PRIuMAX " duplicates %10" PRIuMAX " deltas of %10" PRIuMAX" attempts)\n", object_count_by_type[OBJ_TREE], duplicate_count_by_type[OBJ_TREE], delta_count_by_type[OBJ_TREE], delta_count_attempts_by_type[OBJ_TREE]);
+		fprintf(stderr, "      commits:   %10" PRIuMAX " (%10" PRIuMAX " duplicates %10" PRIuMAX " deltas of %10" PRIuMAX" attempts)\n", object_count_by_type[OBJ_COMMIT], duplicate_count_by_type[OBJ_COMMIT], delta_count_by_type[OBJ_COMMIT], delta_count_attempts_by_type[OBJ_COMMIT]);
+		fprintf(stderr, "      tags   :   %10" PRIuMAX " (%10" PRIuMAX " duplicates %10" PRIuMAX " deltas of %10" PRIuMAX" attempts)\n", object_count_by_type[OBJ_TAG], duplicate_count_by_type[OBJ_TAG], delta_count_by_type[OBJ_TAG], delta_count_attempts_by_type[OBJ_TAG]);
 		fprintf(stderr, "Total branches:  %10lu (%10lu loads     )\n", branch_count, branch_load_count);
 		fprintf(stderr, "      marks:     %10" PRIuMAX " (%10" PRIuMAX " unique    )\n", (((uintmax_t)1) << marks->shift) * 1024, marks_set_count);
 		fprintf(stderr, "      atoms:     %10u\n", atom_cnt);

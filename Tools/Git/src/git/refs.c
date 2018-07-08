@@ -451,7 +451,7 @@ int resolve_gitlink_ref(const char *path, const char *refname, unsigned char *re
 	memcpy(gitdir + len, "/.git", 6);
 	len += 5;
 
-	tmp = read_gitfile_gently(gitdir);
+	tmp = read_gitfile(gitdir);
 	if (tmp) {
 		free(gitdir);
 		len = strlen(tmp);
@@ -584,7 +584,7 @@ int read_ref(const char *ref, unsigned char *sha1)
 static int do_one_ref(const char *base, each_ref_fn fn, int trim,
 		      int flags, void *cb_data, struct ref_list *entry)
 {
-	if (strncmp(base, entry->name, trim))
+	if (prefixcmp(entry->name, base))
 		return 0;
 
 	if (!(flags & DO_FOR_EACH_INCLUDE_BROKEN)) {
@@ -728,12 +728,12 @@ int head_ref_submodule(const char *submodule, each_ref_fn fn, void *cb_data)
 
 int for_each_ref(each_ref_fn fn, void *cb_data)
 {
-	return do_for_each_ref(NULL, "refs/", fn, 0, 0, cb_data);
+	return do_for_each_ref(NULL, "", fn, 0, 0, cb_data);
 }
 
 int for_each_ref_submodule(const char *submodule, each_ref_fn fn, void *cb_data)
 {
-	return do_for_each_ref(submodule, "refs/", fn, 0, 0, cb_data);
+	return do_for_each_ref(submodule, "", fn, 0, 0, cb_data);
 }
 
 int for_each_ref_in(const char *prefix, each_ref_fn fn, void *cb_data)
@@ -782,6 +782,31 @@ int for_each_replace_ref(each_ref_fn fn, void *cb_data)
 	return do_for_each_ref(NULL, "refs/replace/", fn, 13, 0, cb_data);
 }
 
+int head_ref_namespaced(each_ref_fn fn, void *cb_data)
+{
+	struct strbuf buf = STRBUF_INIT;
+	int ret = 0;
+	unsigned char sha1[20];
+	int flag;
+
+	strbuf_addf(&buf, "%sHEAD", get_git_namespace());
+	if (resolve_ref(buf.buf, sha1, 1, &flag))
+		ret = fn(buf.buf, sha1, flag, cb_data);
+	strbuf_release(&buf);
+
+	return ret;
+}
+
+int for_each_namespaced_ref(each_ref_fn fn, void *cb_data)
+{
+	struct strbuf buf = STRBUF_INIT;
+	int ret;
+	strbuf_addf(&buf, "%srefs/", get_git_namespace());
+	ret = do_for_each_ref(NULL, buf.buf, fn, 0, 0, cb_data);
+	strbuf_release(&buf);
+	return ret;
+}
+
 int for_each_glob_ref_in(each_ref_fn fn, const char *pattern,
 	const char *prefix, void *cb_data)
 {
@@ -819,7 +844,7 @@ int for_each_glob_ref(each_ref_fn fn, const char *pattern, void *cb_data)
 
 int for_each_rawref(each_ref_fn fn, void *cb_data)
 {
-	return do_for_each_ref(NULL, "refs/", fn, 0,
+	return do_for_each_ref(NULL, "", fn, 0,
 			       DO_FOR_EACH_INCLUDE_BROKEN, cb_data);
 }
 
@@ -837,7 +862,7 @@ int for_each_rawref(each_ref_fn fn, void *cb_data)
 
 static inline int bad_ref_char(int ch)
 {
-	if (((unsigned) ch) <= ' ' ||
+	if (((unsigned) ch) <= ' ' || ch == 0x7f ||
 	    ch == '~' || ch == '^' || ch == ':' || ch == '\\')
 		return 1;
 	/* 2.13 Pattern Matching Notation */
@@ -1186,7 +1211,6 @@ int delete_ref(const char *refname, const unsigned char *sha1, int delopt)
 
 int rename_ref(const char *oldref, const char *newref, const char *logmsg)
 {
-	static const char renamed_ref[] = "RENAMED-REF";
 	unsigned char sha1[20], orig_sha1[20];
 	int flag = 0, logmoved = 0;
 	struct ref_lock *lock;
@@ -1209,13 +1233,6 @@ int rename_ref(const char *oldref, const char *newref, const char *logmsg)
 
 	if (!is_refname_available(newref, oldref, get_loose_refs(NULL), 0))
 		return 1;
-
-	lock = lock_ref_sha1_basic(renamed_ref, NULL, 0, NULL);
-	if (!lock)
-		return error("unable to lock %s", renamed_ref);
-	lock->force_write = 1;
-	if (write_ref_sha1(lock, orig_sha1, logmsg))
-		return error("unable to save current sha1 in %s", renamed_ref);
 
 	if (log && rename(git_path("logs/%s", oldref), git_path(TMP_RENAMED_LOG)))
 		return error("unable to move logfile logs/%s to "TMP_RENAMED_LOG": %s",
@@ -1451,7 +1468,7 @@ int write_ref_sha1(struct ref_lock *lock,
 	}
 	o = parse_object(sha1);
 	if (!o) {
-		error("Trying to write ref %s with nonexistant object %s",
+		error("Trying to write ref %s with nonexistent object %s",
 			lock->ref_name, sha1_to_hex(sha1));
 		unlock_ref(lock);
 		return -1;
@@ -1824,6 +1841,12 @@ int update_ref(const char *action, const char *refname,
 		return 1;
 	}
 	return 0;
+}
+
+int ref_exists(char *refname)
+{
+	unsigned char sha1[20];
+	return !!resolve_ref(refname, sha1, 1, NULL);
 }
 
 struct ref *find_ref_by_name(const struct ref *list, const char *name)

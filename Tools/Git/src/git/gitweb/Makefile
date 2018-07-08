@@ -20,6 +20,7 @@ INSTALL ?= install
 # default configuration for gitweb
 GITWEB_CONFIG = gitweb_config.perl
 GITWEB_CONFIG_SYSTEM = /etc/gitweb.conf
+GITWEB_CONFIG_COMMON = /etc/gitweb-common.conf
 GITWEB_HOME_LINK_STR = projects
 GITWEB_SITENAME =
 GITWEB_PROJECTROOT = /pub/git
@@ -86,7 +87,7 @@ ifndef V
 endif
 endif
 
-all:: gitweb.cgi
+all:: gitweb.cgi static/gitweb.js
 
 GITWEB_PROGRAMS = gitweb.cgi
 
@@ -112,11 +113,24 @@ endif
 
 GITWEB_FILES += static/git-logo.png static/git-favicon.png
 
+# JavaScript files that are composed (concatenated) to form gitweb.js
+#
+# js/lib/common-lib.js should be always first, then js/lib/*.js,
+# then the rest of files; js/gitweb.js should be last (if it exists)
+GITWEB_JSLIB_FILES += static/js/lib/common-lib.js
+GITWEB_JSLIB_FILES += static/js/lib/datetime.js
+GITWEB_JSLIB_FILES += static/js/lib/cookies.js
+GITWEB_JSLIB_FILES += static/js/javascript-detection.js
+GITWEB_JSLIB_FILES += static/js/adjust-timezone.js
+GITWEB_JSLIB_FILES += static/js/blame_incremental.js
+
+
 GITWEB_REPLACE = \
 	-e 's|++GIT_VERSION++|$(GIT_VERSION)|g' \
 	-e 's|++GIT_BINDIR++|$(bindir)|g' \
 	-e 's|++GITWEB_CONFIG++|$(GITWEB_CONFIG)|g' \
 	-e 's|++GITWEB_CONFIG_SYSTEM++|$(GITWEB_CONFIG_SYSTEM)|g' \
+	-e 's|++GITWEB_CONFIG_COMMON++|$(GITWEB_CONFIG_COMMON)|g' \
 	-e 's|++GITWEB_HOME_LINK_STR++|$(GITWEB_HOME_LINK_STR)|g' \
 	-e 's|++GITWEB_SITENAME++|$(GITWEB_SITENAME)|g' \
 	-e 's|++GITWEB_PROJECTROOT++|$(GITWEB_PROJECTROOT)|g' \
@@ -144,6 +158,11 @@ gitweb.cgi: gitweb.perl GITWEB-BUILD-OPTIONS
 	sed -e '1s|#!.*perl|#!$(PERL_PATH_SQ)|' \
 		$(GITWEB_REPLACE) $< >$@+ && \
 	chmod +x $@+ && \
+	mv $@+ $@
+
+static/gitweb.js: $(GITWEB_JSLIB_FILES)
+	$(QUIET_GEN)$(RM) $@ $@+ && \
+	cat $^ >$@+ && \
 	mv $@+ $@
 
 ### Testing rules

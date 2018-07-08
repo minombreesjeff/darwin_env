@@ -17,7 +17,7 @@ SYNOPSIS
 'git notes' merge [-v | -q] [-s <strategy> ] <notes_ref>
 'git notes' merge --commit [-v | -q]
 'git notes' merge --abort [-v | -q]
-'git notes' remove [<object>]
+'git notes' remove [--ignore-missing] [--stdin] [<object>...]
 'git notes' prune [-n | -v]
 'git notes' get-ref
 
@@ -57,8 +57,11 @@ list::
 
 add::
 	Add notes for a given object (defaults to HEAD). Abort if the
-	object already has notes (use `-f` to overwrite an
-	existing note).
+	object already has notes (use `-f` to overwrite existing notes).
+	However, if you're using `add` interactively (using an editor
+	to supply the notes contents), then - instead of aborting -
+	the existing notes will be opened in the editor (like the `edit`
+	subcommand).
 
 copy::
 	Copy the notes for the first object onto the second object.
@@ -103,8 +106,9 @@ When done, the user can either finalize the merge with
 'git notes merge --abort'.
 
 remove::
-	Remove the notes for a given object (defaults to HEAD).
-	This is equivalent to specifying an empty note message to
+	Remove the notes for given objects (defaults to HEAD). When
+	giving zero or one object from the command line, this is
+	equivalent to specifying an empty note message to
 	the `edit` subcommand.
 
 prune::
@@ -138,8 +142,9 @@ OPTIONS
 
 -C <object>::
 --reuse-message=<object>::
-	Take the note message from the given blob object (for
-	example, another note).
+	Take the given blob object (for	example, another note) as the
+	note message. (Use `git notes copy <object>` instead to
+	copy notes between objects.)
 
 -c <object>::
 --reedit-message=<object>::
@@ -150,6 +155,15 @@ OPTIONS
 	Manipulate the notes tree in <ref>.  This overrides
 	'GIT_NOTES_REF' and the "core.notesRef" configuration.  The ref
 	is taken to be in `refs/notes/` if it is not qualified.
+
+--ignore-missing::
+	Do not consider it an error to request removing notes from an
+	object that does not have notes attached to it.
+
+--stdin::
+	Also read the object names to remove notes from from the standard
+	input (there is no reason you cannot combine this with object
+	names from the command line).
 
 -n::
 --dry-run::
@@ -272,6 +286,8 @@ $ blob=$(git hash-object -w a.out)
 $ git notes --ref=built add -C "$blob" HEAD
 ------------
 
+(You cannot simply use `git notes --ref=built add -F a.out HEAD`
+because that is not binary-safe.)
 Of course, it doesn't make much sense to display non-text-format notes
 with 'git log', so if you use such notes, you'll probably need to write
 some special-purpose tools to do something useful with them.

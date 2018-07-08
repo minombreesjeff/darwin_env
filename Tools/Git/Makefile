@@ -21,6 +21,8 @@ export OBJROOT ?= $(CURDIR)/roots/obj
 export SYMROOT ?= $(CURDIR)/roots/sym
 export DSTROOT ?= $(CURDIR)/roots/dst
 
+PREFIX=$(DEVELOPER_DIR)/usr
+
 ifndef CC
 ifdef SDKROOT
 CC := $(shell xcrun -find -sdk $(SDKROOT) cc)
@@ -45,11 +47,10 @@ $(foreach arch,$(RC_ARCHS),$(eval cflags := $(subst $(cflags),-arch $(arch) ,)))
 export RC_CFLAGS := $(cflags)
 
 STRIP := strip -S
-LNDIR := /usr/X11/bin/lndir
-submakevars := -j`sysctl -n hw.activecpu` prefix=/usr \
+submakevars := -j`sysctl -n hw.activecpu` prefix=$(PREFIX) \
   NO_FINK=YesPlease NO_DARWIN_PORTS=YesPlease \
   RUNTIME_PREFIX=YesPlease \
-  GITGUI_VERSION=0.12.0 V=1 \
+  GITGUI_VERSION=0.12.2 V=1 \
   CFLAGS='-ggdb3 -Os -pipe -Wall -Wformat-security -D_FORTIFY_SOURCE=2'
 
 objarch   := $(foreach arch,$(RC_ARCHS),$(OBJROOT)/$(arch))
@@ -72,35 +73,27 @@ installhdrs:
 build: $(OBJROOT)/dsyms.timestamp
 
 install: install-bin install-man
-	if [ -f "$(DSTROOT)/usr/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish Shell" ] ; then \
-		rm "$(DSTROOT)/usr/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish Shell" ; \
-		ln -s "/System/Library/Frameworks/Tk.framework/Resources/Wish Shell.app/Contents/MacOS/Wish Shell" "$(DSTROOT)/usr/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish Shell" ; \
+	if [ -f "$(DSTROOT)$(PREFIX)/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish Shell" ] ; then \
+		rm "$(DSTROOT)$(PREFIX)/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish Shell" ; \
+		ln -s "/System/Library/Frameworks/Tk.framework/Resources/Wish Shell.app/Contents/MacOS/Wish Shell" "$(DSTROOT)$(PREFIX)/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish Shell" ; \
 	else \
-		rm "$(DSTROOT)/usr/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish" ; \
-		ln -s "/System/Library/Frameworks/Tk.framework/Resources/Wish.app/Contents/MacOS/Wish" "$(DSTROOT)/usr/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish" ; \
+		rm "$(DSTROOT)$(PREFIX)/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish" ; \
+		ln -s "/System/Library/Frameworks/Tk.framework/Resources/Wish.app/Contents/MacOS/Wish" "$(DSTROOT)$(PREFIX)/share/git-gui/lib/Git Gui.app/Contents/MacOS/Wish" ; \
 	fi
-	install -d -o root -g wheel -m 0755 $(DSTROOT)/usr/local/OpenSourceVersions
-	install -o root -g wheel -m 0644 $(SRCROOT)/Git.plist $(DSTROOT)/usr/local/OpenSourceVersions
+	install -d -o root -g wheel -m 0755 $(DSTROOT)$(PREFIX)/local/OpenSourceVersions
+	install -o root -g wheel -m 0644 $(SRCROOT)/Git.plist $(DSTROOT)$(PREFIX)/local/OpenSourceVersions
 
 install-bin: $(OBJROOT)/dsyms.timestamp
 	$(MAKE) -C $(firstarch) $(submakevars) \
 	  'CC=$(CC) -arch $(firstword $(RC_ARCHS))' \
 	  'DESTDIR=$(DSTROOT)' \
 	  install
-	rm -fr $(DSTROOT)/usr/System #XXX Bogus perldoc installation
+	rm -fr $(DSTROOT)$(PREFIX)/System #XXX Bogus perldoc installation
 
 install-man: $(OBJROOT)/dir.timestamp
-	for section in 1 5 7; do \
-	    install -d -o root -g wheel -m 0755 \
-	      $(DSTROOT)/usr/share/man/man$$section; \
-	    find $(mandir)/man$$section -type f -name "*.$$section" | \
-	      while read page; do \
-	          page_="$(OBJROOT)/$$(basename $$page).gz"; \
-	          gzip -c < "$$page" > "$$page_"; \
-		  install -C -o root -g wheel -m 0644 "$$page_" \
-		    $(DSTROOT)/usr/share/man/man$$section; \
-	      done; \
-	done
+	install -d -o root -g wheel -m 0755 $(DSTROOT)$(PREFIX)/share/man
+	ditto $(mandir) $(DSTROOT)$(PREFIX)/share/man
+	chown -R root:wheel $(DSTROOT)$(PREFIX)/share/man
 
 $(OBJROOT)/programs-list: $(firstarch)/build.timestamp
 	$(MAKE) -C $(firstarch) -f $(CURDIR)/examine.make $(submakevars) \
@@ -111,6 +104,7 @@ $(OBJROOT)/universal.timestamp: \
   $(SYMROOT)/dir.timestamp \
   $(foreach x,$(objarch),$(x)/build.timestamp)
 	for prog in $$(cat $<); do \
+	    test -h $(firstarch)/$$prog && continue; \
 	    (set -x; lipo -create -output $(firstarch)/$$prog.u \
 	      $(foreach x,$(objarch),$(x)/$$prog) && \
 	      mv $(firstarch)/$$prog.u $(firstarch)/$$prog && \
@@ -144,10 +138,10 @@ define each_arch
 $(OBJROOT)/$(1)/dir.timestamp:
 	mkdir -p $$(dir $$@) && touch $$@
 
-$(OBJROOT)/$(1)/lndir.timestamp: $(OBJROOT)/$(1)/dir.timestamp
-	$$(LNDIR) $$(CURDIR)/src/git $$(dir $$@) && touch $$@
+$(OBJROOT)/$(1)/ditto.timestamp: $(OBJROOT)/$(1)/dir.timestamp
+	ditto $$(CURDIR)/src/git $$(dir $$@) && touch $$@
 
-$(OBJROOT)/$(1)/build.timestamp: $(OBJROOT)/$(1)/lndir.timestamp
+$(OBJROOT)/$(1)/build.timestamp: $(OBJROOT)/$(1)/ditto.timestamp
 	cat /dev/null > $$(OBJROOT)/$(1)/program-list
 	$$(MAKE) -C $$(dir $$@) $$(submakevars) \
 	  'CC=$$(CC) -arch $(1)' \

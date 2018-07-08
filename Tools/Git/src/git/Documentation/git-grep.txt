@@ -12,7 +12,8 @@ SYNOPSIS
 'git grep' [-a | --text] [-I] [-i | --ignore-case] [-w | --word-regexp]
 	   [-v | --invert-match] [-h|-H] [--full-name]
 	   [-E | --extended-regexp] [-G | --basic-regexp]
-	   [-F | --fixed-strings] [-n]
+	   [-P | --perl-regexp]
+	   [-F | --fixed-strings] [-n | --line-number]
 	   [-l | --files-with-matches] [-L | --files-without-match]
 	   [(-O | --open-files-in-pager) [<pager>]]
 	   [-z | --null]
@@ -97,6 +98,11 @@ OPTIONS
 	Use POSIX extended/basic regexp for patterns.  Default
 	is to use basic regexp.
 
+-P::
+--perl-regexp::
+	Use Perl-compatible regexp for patterns. Requires libpcre to be
+	compiled in.
+
 -F::
 --fixed-strings::
 	Use fixed strings for patterns (don't interpret pattern
@@ -142,14 +148,12 @@ OPTIONS
 	gives the default to color output.
 	Same as `--color=never`.
 
--[ABC] <context>::
-	Show `context` trailing (`A` -- after), or leading (`B`
-	-- before), or both (`C` -- context) lines, and place a
-	line containing `--` between contiguous groups of
-	matches.
+--break::
+	Print an empty line between matches from different files.
 
--<num>::
-	A shortcut for specifying `-C<num>`.
+--heading::
+	Show the filename above the matches in that file instead of
+	at the start of each shown line.
 
 -p::
 --show-function::
@@ -158,6 +162,29 @@ OPTIONS
 	The name is determined in the same way as 'git diff' works out
 	patch hunk headers (see 'Defining a custom hunk-header' in
 	linkgit:gitattributes[5]).
+
+-<num>::
+-C <num>::
+--context <num>::
+	Show <num> leading and trailing lines, and place a line
+	containing `--` between contiguous groups of matches.
+
+-A <num>::
+--after-context <num>::
+	Show <num> trailing lines, and place a line containing
+	`--` between contiguous groups of matches.
+
+-B <num>::
+--before-context <num>::
+	Show <num> leading lines, and place a line containing
+	`--` between contiguous groups of matches.
+
+-W::
+--function-context::
+	Show the surrounding text from the previous line containing a
+	function name up to the one before the next function name,
+	effectively showing the whole function in which the match was
+	found.
 
 -f <file>::
 	Read patterns from <file>, one per line.
@@ -202,15 +229,15 @@ OPTIONS
 Examples
 --------
 
-git grep {apostrophe}time_t{apostrophe} \-- {apostrophe}*.[ch]{apostrophe}::
+`git grep {apostrophe}time_t{apostrophe} \-- {apostrophe}*.[ch]{apostrophe}`::
 	Looks for `time_t` in all tracked .c and .h files in the working
 	directory and its subdirectories.
 
-git grep -e {apostrophe}#define{apostrophe} --and \( -e MAX_PATH -e PATH_MAX \)::
+`git grep -e {apostrophe}#define{apostrophe} --and \( -e MAX_PATH -e PATH_MAX \)`::
 	Looks for a line that has `#define` and either `MAX_PATH` or
 	`PATH_MAX`.
 
-git grep --all-match -e NODE -e Unexpected::
+`git grep --all-match -e NODE -e Unexpected`::
 	Looks for a line that has `NODE` or `Unexpected` in
 	files that have lines that match both.
 

@@ -66,9 +66,9 @@ struct buffer {
 };
 
 /* Curl request read/write callbacks */
-extern size_t fread_buffer(void *ptr, size_t eltsize, size_t nmemb, void *strbuf);
-extern size_t fwrite_buffer(const void *ptr, size_t eltsize, size_t nmemb, void *strbuf);
-extern size_t fwrite_null(const void *ptr, size_t eltsize, size_t nmemb, void *strbuf);
+extern size_t fread_buffer(char *ptr, size_t eltsize, size_t nmemb, void *strbuf);
+extern size_t fwrite_buffer(char *ptr, size_t eltsize, size_t nmemb, void *strbuf);
+extern size_t fwrite_null(char *ptr, size_t eltsize, size_t nmemb, void *strbuf);
 #ifndef NO_CURL_IOCTL
 extern curlioerr ioctl_buffer(CURL *handle, int cmd, void *clientp);
 #endif
@@ -172,7 +172,7 @@ struct http_object_request {
 	unsigned char sha1[20];
 	unsigned char real_sha1[20];
 	git_SHA_CTX c;
-	z_stream stream;
+	git_zstream stream;
 	int zret;
 	int rename;
 	struct active_request_slot *slot;

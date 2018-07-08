@@ -92,7 +92,7 @@ static int ce_compare_data(struct cache_entry *ce, struct stat *st)
 
 	if (fd >= 0) {
 		unsigned char sha1[20];
-		if (!index_fd(sha1, fd, st, 0, OBJ_BLOB, ce->name, 0))
+		if (!index_fd(sha1, fd, st, OBJ_BLOB, ce->name, 0))
 			match = hashcmp(sha1, ce->sha1);
 		/* index_fd() closed the file descriptor already */
 	}
@@ -641,7 +641,7 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 		return 0;
 	}
 	if (!intent_only) {
-		if (index_path(ce->sha1, path, st, 1))
+		if (index_path(ce->sha1, path, st, HASH_WRITE_OBJECT))
 			return error("unable to index file %s", path);
 	} else
 		record_intent_to_add(ce);
@@ -726,11 +726,12 @@ static int verify_dotfile(const char *rest)
 	 * has already been discarded, we now test
 	 * the rest.
 	 */
-	switch (*rest) {
+
 	/* "." is not allowed */
-	case '\0': case '/':
+	if (*rest == '\0' || is_dir_sep(*rest))
 		return 0;
 
+	switch (*rest) {
 	/*
 	 * ".git" followed by  NUL or slash is bad. This
 	 * shares the path end test with the ".." case.
@@ -743,7 +744,7 @@ static int verify_dotfile(const char *rest)
 		rest += 2;
 	/* fallthrough */
 	case '.':
-		if (rest[1] == '\0' || rest[1] == '/')
+		if (rest[1] == '\0' || is_dir_sep(rest[1]))
 			return 0;
 	}
 	return 1;
@@ -753,23 +754,19 @@ int verify_path(const char *path)
 {
 	char c;
 
+	if (has_dos_drive_prefix(path))
+		return 0;
+
 	goto inside;
 	for (;;) {
 		if (!c)
 			return 1;
-		if (c == '/') {
+		if (is_dir_sep(c)) {
 inside:
 			c = *path++;
-			switch (c) {
-			default:
-				continue;
-			case '/': case '\0':
-				break;
-			case '.':
-				if (verify_dotfile(path))
-					continue;
-			}
-			return 0;
+			if ((c == '.' && !verify_dotfile(path)) ||
+			    is_dir_sep(c) || c == '\0')
+				return 0;
 		}
 		c = *path++;
 	}
@@ -1087,7 +1084,7 @@ static void show_file(const char * fmt, const char * name, int in_porcelain,
 {
 	if (in_porcelain && *first && header_msg) {
 		printf("%s\n", header_msg);
-		*first=0;
+		*first = 0;
 	}
 	printf(fmt, name);
 }
@@ -1252,9 +1249,9 @@ static void convert_from_disk(struct ondisk_cache_entry *ondisk, struct cache_en
 
 static inline size_t estimate_cache_size(size_t ondisk_size, unsigned int entries)
 {
-	long per_entry;
-
-	per_entry = sizeof(struct cache_entry) - sizeof(struct ondisk_cache_entry);
+	size_t fix_size_mem = offsetof(struct cache_entry, name);
+	size_t fix_size_dsk = offsetof(struct ondisk_cache_entry, name);
+	long per_entry = (fix_size_mem - fix_size_dsk + 7) & ~7;
 
 	/*
 	 * Alignment can cause differences. This should be "alignof", but

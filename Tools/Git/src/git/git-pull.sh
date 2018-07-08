@@ -9,28 +9,29 @@ LONG_USAGE='Fetch one or more remote refs and merge it/them into the current HEA
 SUBDIRECTORY_OK=Yes
 OPTIONS_SPEC=
 . git-sh-setup
-set_reflog_action "pull $*"
-require_work_tree
+. git-sh-i18n
+set_reflog_action "pull${1+ $*}"
+require_work_tree_exists
 cd_to_toplevel
 
 
 die_conflict () {
     git diff-index --cached --name-status -r --ignore-submodules HEAD --
     if [ $(git config --bool --get advice.resolveConflict || echo true) = "true" ]; then
-	die "Pull is not possible because you have unmerged files.
+	die "$(gettext "Pull is not possible because you have unmerged files.
 Please, fix them up in the work tree, and then use 'git add/rm <file>'
-as appropriate to mark resolution, or use 'git commit -a'."
+as appropriate to mark resolution, or use 'git commit -a'.")"
     else
-	die "Pull is not possible because you have unmerged files."
+	die "$(gettext "Pull is not possible because you have unmerged files.")"
     fi
 }
 
 die_merge () {
     if [ $(git config --bool --get advice.resolveConflict || echo true) = "true" ]; then
-	die "You have not concluded your merge (MERGE_HEAD exists).
-Please, commit your changes before you can merge."
+	die "$(gettext "You have not concluded your merge (MERGE_HEAD exists).
+Please, commit your changes before you can merge.")"
     else
-	die "You have not concluded your merge (MERGE_HEAD exists)."
+	die "$(gettext "You have not concluded your merge (MERGE_HEAD exists).")"
     fi
 }
 
@@ -168,34 +169,10 @@ error_on_no_merge_candidates () {
 		echo "You asked to pull from the remote '$1', but did not specify"
 		echo "a branch. Because this is not the default configured remote"
 		echo "for your current branch, you must specify a branch on the command line."
-	elif [ -z "$curr_branch" ]; then
-		echo "You are not currently on a branch, so I cannot use any"
-		echo "'branch.<branchname>.merge' in your configuration file."
-		echo "Please specify which remote branch you want to use on the command"
-		echo "line and try again (e.g. 'git pull <repository> <refspec>')."
-		echo "See git-pull(1) for details."
-	elif [ -z "$upstream" ]; then
-		echo "You asked me to pull without telling me which branch you"
-		echo "want to $op_type $op_prep, and 'branch.${curr_branch}.merge' in"
-		echo "your configuration file does not tell me, either. Please"
-		echo "specify which branch you want to use on the command line and"
-		echo "try again (e.g. 'git pull <repository> <refspec>')."
-		echo "See git-pull(1) for details."
-		echo
-		echo "If you often $op_type $op_prep the same branch, you may want to"
-		echo "use something like the following in your configuration file:"
-		echo
-		echo "    [branch \"${curr_branch}\"]"
-		echo "    remote = <nickname>"
-		echo "    merge = <remote-ref>"
-		test rebase = "$op_type" &&
-			echo "    rebase = true"
-		echo
-		echo "    [remote \"<nickname>\"]"
-		echo "    url = <url>"
-		echo "    fetch = <refspec>"
-		echo
-		echo "See git-config(1) for details."
+	elif [ -z "$curr_branch" -o -z "$upstream" ]; then
+		. git-parse-remote
+		error_on_missing_default_upstream "pull" $op_type $op_prep \
+			"git pull <repository> <refspec>"
 	else
 		echo "Your configuration specifies to $op_type $op_prep the ref '${upstream#refs/heads/}'"
 		echo "from the remote, but no such ref was fetched."
@@ -209,7 +186,7 @@ test true = "$rebase" && {
 		# On an unborn branch
 		if test -f "$GIT_DIR/index"
 		then
-			die "updating an unborn branch with changes added to the index"
+			die "$(gettext "updating an unborn branch with changes added to the index")"
 		fi
 	else
 		require_clean_work_tree "pull with rebase" "Please commit or stash them."
@@ -240,17 +217,17 @@ then
 	# $orig_head commit, but we are merging into $curr_head.
 	# First update the working tree to match $curr_head.
 
-	echo >&2 "Warning: fetch updated the current branch head."
-	echo >&2 "Warning: fast-forwarding your working tree from"
-	echo >&2 "Warning: commit $orig_head."
+	eval_gettextln "Warning: fetch updated the current branch head.
+Warning: fast-forwarding your working tree from
+Warning: commit \$orig_head." >&2
 	git update-index -q --refresh
 	git read-tree -u -m "$orig_head" "$curr_head" ||
-		die 'Cannot fast-forward your working tree.
+		die "$(eval_gettext "Cannot fast-forward your working tree.
 After making sure that you saved anything precious from
-$ git diff '$orig_head'
+$ git diff \$orig_head
 output, run
 $ git reset --hard
-to recover.'
+to recover.")"
 
 fi
 
@@ -265,11 +242,11 @@ case "$merge_head" in
 ?*' '?*)
 	if test -z "$orig_head"
 	then
-		die "Cannot merge multiple branches into empty head"
+		die "$(gettext "Cannot merge multiple branches into empty head")"
 	fi
 	if test true = "$rebase"
 	then
-		die "Cannot rebase onto multiple branches"
+		die "$(gettext "Cannot rebase onto multiple branches")"
 	fi
 	;;
 esac

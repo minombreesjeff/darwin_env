@@ -3,7 +3,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<meta name="generator" content="AsciiDoc 8.4.5" />
+<meta name="generator" content="AsciiDoc 8.5.2" />
 <title>git-diff-index(1)</title>
 <style type="text/css">
 /* Debug borders */
@@ -118,12 +118,14 @@ div#preamble {
 div.tableblock, div.imageblock, div.exampleblock, div.verseblock,
 div.quoteblock, div.literalblock, div.listingblock, div.sidebarblock,
 div.admonitionblock {
-  margin-top: 1.5em;
+  margin-top: 1.0em;
   margin-bottom: 1.5em;
 }
 div.admonitionblock {
-  margin-top: 2.5em;
-  margin-bottom: 2.5em;
+  margin-top: 2.0em;
+  margin-bottom: 2.0em;
+  margin-right: 10%;
+  color: #606060;
 }
 
 div.content { /* Block element content. */
@@ -165,19 +167,19 @@ div.listingblock > div.content {
   padding: 0.5em;
 }
 
-div.quoteblock {
-  padding-left: 2.0em;
+div.quoteblock, div.verseblock {
+  padding-left: 1.0em;
+  margin-left: 1.0em;
   margin-right: 10%;
+  border-left: 5px solid #dddddd;
+  color: #777777;
 }
+
 div.quoteblock > div.attribution {
   padding-top: 0.5em;
   text-align: right;
 }
 
-div.verseblock {
-  padding-left: 2.0em;
-  margin-right: 10%;
-}
 div.verseblock > div.content {
   white-space: pre;
 }
@@ -200,12 +202,12 @@ div.admonitionblock .icon {
 }
 div.admonitionblock td.content {
   padding-left: 0.5em;
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
 }
 
 div.exampleblock > div.content {
-  border-left: 2px solid silver;
-  padding: 0.5em;
+  border-left: 3px solid #dddddd;
+  padding-left: 0.5em;
 }
 
 div.imageblock div.content { padding-left: 0; }
@@ -255,7 +257,7 @@ div.compact div, div.compact div {
 div.tableblock > table {
   border: 3px solid #527bbd;
 }
-thead {
+thead, p.table.header {
   font-family: sans-serif;
   font-weight: bold;
 }
@@ -310,8 +312,40 @@ div.hdlist.compact tr {
   background: yellow;
 }
 
+.footnote, .footnoteref {
+  font-size: 0.8em;
+}
+
+span.footnote, span.footnoteref {
+  vertical-align: super;
+}
+
+#footnotes {
+  margin: 20px 0 20px 0;
+  padding: 7px 0 0 0;
+}
+
+#footnotes div.footnote {
+  margin: 0 0 5px 0;
+}
+
+#footnotes hr {
+  border: none;
+  border-top: 1px solid silver;
+  height: 1px;
+  text-align: left;
+  margin-left: 0;
+  width: 20%;
+  min-width: 100px;
+}
+
+
 @media print {
   div#footer-badges { display: none; }
+}
+
+div#toc {
+  margin-bottom: 2.5em;
 }
 
 div#toctitle {
@@ -392,13 +426,146 @@ div.verseblock-attribution {
 }
 
 div.exampleblock-content {
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
   padding-left: 0.5em;
 }
 
 /* IE6 sets dynamically generated links as visited. */
 div#toc a:visited { color: blue; }
 </style>
+<script type="text/javascript">
+/*<![CDATA[*/
+window.onload = function(){asciidoc.footnotes();}
+var asciidoc = {  // Namespace.
+
+/////////////////////////////////////////////////////////////////////
+// Table Of Contents generator
+/////////////////////////////////////////////////////////////////////
+
+/* Author: Mihai Bazon, September 2002
+ * http://students.infoiasi.ro/~mishoo
+ *
+ * Table Of Content generator
+ * Version: 0.4
+ *
+ * Feel free to use this script under the terms of the GNU General Public
+ * License, as long as you do not remove or alter this notice.
+ */
+
+ /* modified by Troy D. Hanson, September 2006. License: GPL */
+ /* modified by Stuart Rackham, 2006, 2009. License: GPL */
+
+// toclevels = 1..4.
+toc: function (toclevels) {
+
+  function getText(el) {
+    var text = "";
+    for (var i = el.firstChild; i != null; i = i.nextSibling) {
+      if (i.nodeType == 3 /* Node.TEXT_NODE */) // IE doesn't speak constants.
+        text += i.data;
+      else if (i.firstChild != null)
+        text += getText(i);
+    }
+    return text;
+  }
+
+  function TocEntry(el, text, toclevel) {
+    this.element = el;
+    this.text = text;
+    this.toclevel = toclevel;
+  }
+
+  function tocEntries(el, toclevels) {
+    var result = new Array;
+    var re = new RegExp('[hH]([2-'+(toclevels+1)+'])');
+    // Function that scans the DOM tree for header elements (the DOM2
+    // nodeIterator API would be a better technique but not supported by all
+    // browsers).
+    var iterate = function (el) {
+      for (var i = el.firstChild; i != null; i = i.nextSibling) {
+        if (i.nodeType == 1 /* Node.ELEMENT_NODE */) {
+          var mo = re.exec(i.tagName);
+          if (mo && (i.getAttribute("class") || i.getAttribute("className")) != "float") {
+            result[result.length] = new TocEntry(i, getText(i), mo[1]-1);
+          }
+          iterate(i);
+        }
+      }
+    }
+    iterate(el);
+    return result;
+  }
+
+  var toc = document.getElementById("toc");
+  var entries = tocEntries(document.getElementById("content"), toclevels);
+  for (var i = 0; i < entries.length; ++i) {
+    var entry = entries[i];
+    if (entry.element.id == "")
+      entry.element.id = "_toc_" + i;
+    var a = document.createElement("a");
+    a.href = "#" + entry.element.id;
+    a.appendChild(document.createTextNode(entry.text));
+    var div = document.createElement("div");
+    div.appendChild(a);
+    div.className = "toclevel" + entry.toclevel;
+    toc.appendChild(div);
+  }
+  if (entries.length == 0)
+    toc.parentNode.removeChild(toc);
+},
+
+
+/////////////////////////////////////////////////////////////////////
+// Footnotes generator
+/////////////////////////////////////////////////////////////////////
+
+/* Based on footnote generation code from:
+ * http://www.brandspankingnew.net/archive/2005/07/format_footnote.html
+ */
+
+footnotes: function () {
+  var cont = document.getElementById("content");
+  var noteholder = document.getElementById("footnotes");
+  var spans = cont.getElementsByTagName("span");
+  var refs = {};
+  var n = 0;
+  for (i=0; i<spans.length; i++) {
+    if (spans[i].className == "footnote") {
+      n++;
+      // Use [\s\S] in place of . so multi-line matches work.
+      // Because JavaScript has no s (dotall) regex flag.
+      note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+      noteholder.innerHTML +=
+        "<div class='footnote' id='_footnote_" + n + "'>" +
+        "<a href='#_footnoteref_" + n + "' title='Return to text'>" +
+        n + "</a>. " + note + "</div>";
+      spans[i].innerHTML =
+        "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
+        "' title='View footnote' class='footnote'>" + n + "</a>]";
+      var id =spans[i].getAttribute("id");
+      if (id != null) refs["#"+id] = n;
+    }
+  }
+  if (n == 0)
+    noteholder.parentNode.removeChild(noteholder);
+  else {
+    // Process footnoterefs.
+    for (i=0; i<spans.length; i++) {
+      if (spans[i].className == "footnoteref") {
+        var href = spans[i].getElementsByTagName("a")[0].getAttribute("href");
+        href = href.match(/#.*/)[0];  // Because IE return full URL.
+        n = refs[href];
+        spans[i].innerHTML =
+          "[<a href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+      }
+    }
+  }
+}
+
+}
+/*]]>*/
+</script>
 </head>
 <body>
 <div id="header">
@@ -412,9 +579,13 @@ git-diff-index(1) Manual Page
 </p>
 </div>
 </div>
+<div id="content">
 <h2 id="_synopsis">SYNOPSIS</h2>
 <div class="sectionbody">
-<div class="paragraph"><p><em>git diff-index</em> [-m] [--cached] [&lt;common diff options&gt;] &lt;tree-ish&gt; [&lt;path&gt;&#8230;]</p></div>
+<div class="verseblock">
+<div class="verseblock-content"><em>git diff-index</em> [-m] [--cached] [&lt;common diff options&gt;] &lt;tree-ish&gt; [&lt;path&gt;&#8230;]</div>
+<div class="verseblock-attribution">
+</div></div>
 </div>
 <h2 id="_description">DESCRIPTION</h2>
 <div class="sectionbody">
@@ -473,6 +644,15 @@ entries in the index are compared.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+--minimal
+</dt>
+<dd>
+<p>
+        Spend extra time to make sure the smallest possible
+        diff is produced.
+</p>
+</dd>
+<dt class="hdlist1">
 --patience
 </dt>
 <dd>
@@ -481,7 +661,7 @@ entries in the index are compared.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
---stat[=&lt;width&gt;[,&lt;name-width&gt;]]
+--stat[=&lt;width&gt;[,&lt;name-width&gt;[,&lt;count&gt;]]]
 </dt>
 <dd>
 <p>
@@ -489,7 +669,12 @@ entries in the index are compared.</p></div>
         output width for 80-column terminal by <tt>--stat=&lt;width&gt;</tt>.
         The width of the filename part can be controlled by
         giving another width to it separated by a comma.
+        By giving a third parameter <tt>&lt;count&gt;</tt>, you can limit the
+        output to the first <tt>&lt;count&gt;</tt> lines, followed by
+        <tt>&#8230;</tt> if there are more.
 </p>
+<div class="paragraph"><p>These parameters can also be set individually with <tt>--stat-width=&lt;width&gt;</tt>,
+<tt>--stat-name-width=&lt;name-width&gt;</tt> and <tt>--stat-count=&lt;count&gt;</tt>.</p></div>
 </dd>
 <dt class="hdlist1">
 --numstat
@@ -514,27 +699,81 @@ entries in the index are compared.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
---dirstat[=&lt;limit&gt;]
+--dirstat[=&lt;param1,param2,&#8230;&gt;]
 </dt>
 <dd>
 <p>
-        Output the distribution of relative amount of changes (number of lines added or
-        removed) for each sub-directory. Directories with changes below
-        a cut-off percent (3% by default) are not shown. The cut-off percent
-        can be set with <tt>--dirstat=&lt;limit&gt;</tt>. Changes in a child directory are not
-        counted for the parent directory, unless <tt>--cumulative</tt> is used.
+        Output the distribution of relative amount of changes for each
+        sub-directory. The behavior of <tt>--dirstat</tt> can be customized by
+        passing it a comma separated list of parameters.
+        The defaults are controlled by the <tt>diff.dirstat</tt> configuration
+        variable (see <a href="git-config.html">git-config(1)</a>).
+        The following parameters are available:
 </p>
-<div class="paragraph"><p>Note that the <tt>--dirstat</tt> option computes the changes while ignoring
-the amount of pure code movements within a file.  In other words,
-rearranging lines in a file is not counted as much as other changes.</p></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<tt>changes</tt>
+</dt>
+<dd>
+<p>
+        Compute the dirstat numbers by counting the lines that have been
+        removed from the source, or added to the destination. This ignores
+        the amount of pure code movements within a file.  In other words,
+        rearranging lines in a file is not counted as much as other changes.
+        This is the default behavior when no parameter is given.
+</p>
 </dd>
 <dt class="hdlist1">
---dirstat-by-file[=&lt;limit&gt;]
+<tt>lines</tt>
 </dt>
 <dd>
 <p>
-        Same as <tt>--dirstat</tt>, but counts changed files instead of lines.
+        Compute the dirstat numbers by doing the regular line-based diff
+        analysis, and summing the removed/added line counts. (For binary
+        files, count 64-byte chunks instead, since binary files have no
+        natural concept of lines). This is a more expensive <tt>--dirstat</tt>
+        behavior than the <tt>changes</tt> behavior, but it does count rearranged
+        lines within a file as much as other changes. The resulting output
+        is consistent with what you get from the other <tt>--*stat</tt> options.
 </p>
+</dd>
+<dt class="hdlist1">
+<tt>files</tt>
+</dt>
+<dd>
+<p>
+        Compute the dirstat numbers by counting the number of files changed.
+        Each changed file counts equally in the dirstat analysis. This is
+        the computationally cheapest <tt>--dirstat</tt> behavior, since it does
+        not have to look at the file contents at all.
+</p>
+</dd>
+<dt class="hdlist1">
+<tt>cumulative</tt>
+</dt>
+<dd>
+<p>
+        Count changes in a child directory for the parent directory as well.
+        Note that when using <tt>cumulative</tt>, the sum of the percentages
+        reported may exceed 100%. The default (non-cumulative) behavior can
+        be specified with the <tt>noncumulative</tt> parameter.
+</p>
+</dd>
+<dt class="hdlist1">
+&lt;limit&gt;
+</dt>
+<dd>
+<p>
+        An integer parameter specifies a cut-off percent (3% by default).
+        Directories contributing less than this percentage of the changes
+        are not shown in the output.
+</p>
+</dd>
+</dl></div>
+<div class="paragraph"><p>Example: The following will count changed files, while ignoring
+directories with less than 10% of the total amount of changed files,
+and accumulating child directory counts in the parent directories:
+<tt>--dirstat=files,10,cumulative</tt>.</p></div>
 </dd>
 <dt class="hdlist1">
 --summary
@@ -712,10 +951,14 @@ override configuration settings.</p></div>
 </dt>
 <dd>
 <p>
-        Warn if changes introduce trailing whitespace
-        or an indent that uses a space before a tab. Exits with
-        non-zero status if problems are found. Not compatible with
-        --exit-code.
+        Warn if changes introduce whitespace errors.  What are
+        considered whitespace errors is controlled by <tt>core.whitespace</tt>
+        configuration.  By default, trailing whitespaces (including
+        lines that solely consist of whitespaces) and a space character
+        that is immediately followed by a tab character inside the
+        initial indent of the line are considered whitespace errors.
+        Exits with non-zero status if problems are found. Not compatible
+        with --exit-code.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -819,6 +1062,25 @@ another file.</p></div>
         projects, so use it with caution.  Giving more than one
         <tt>-C</tt> option has the same effect.
 </p>
+</dd>
+<dt class="hdlist1">
+-D
+</dt>
+<dt class="hdlist1">
+--irreversible-delete
+</dt>
+<dd>
+<p>
+        Omit the preimage for deletes, i.e. print only the header but not
+        the diff between the preimage and <tt>/dev/null</tt>. The resulting patch
+        is not meant to be applied with <tt>patch</tt> nor <tt>git apply</tt>; this is
+        solely for people who want to just concentrate on reviewing the
+        text after the change. In addition, the output obviously lack
+        enough information to apply such a patch in reverse, even manually,
+        hence the name of the option.
+</p>
+<div class="paragraph"><p>When used together with <tt>-B</tt>, omit also the preimage in the deletion part
+of a delete/create pair.</p></div>
 </dd>
 <dt class="hdlist1">
 -l&lt;num&gt;
@@ -974,6 +1236,17 @@ another file.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+-W
+</dt>
+<dt class="hdlist1">
+--function-context
+</dt>
+<dd>
+<p>
+        Show whole surrounding functions of changes.
+</p>
+</dd>
+<dt class="hdlist1">
 --exit-code
 </dt>
 <dd>
@@ -1007,6 +1280,24 @@ another file.</p></div>
 <dd>
 <p>
         Disallow external diff drivers.
+</p>
+</dd>
+<dt class="hdlist1">
+--textconv
+</dt>
+<dt class="hdlist1">
+--no-textconv
+</dt>
+<dd>
+<p>
+        Allow (or disallow) external text conversion filters to be run
+        when comparing binary files. See <a href="gitattributes.html">gitattributes(5)</a> for
+        details. Because textconv filters are typically a one-way
+        conversion, the resulting diff is suitable for human
+        consumption, but cannot be applied. For this reason, textconv
+        filters are enabled by default only for <a href="git-diff.html">git-diff(1)</a> and
+        <a href="git-log.html">git-log(1)</a>, but not for <a href="git-format-patch.html">git-format-patch(1)</a> or
+        diff plumbing commands.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1737,9 +2028,11 @@ always have the special all-zero sha1.</td>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
+</div>
+<div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-05-31 19:37:07 UTC
+Last updated 2011-11-15 13:45:02 PDT
 </div>
 </div>
 </body>

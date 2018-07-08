@@ -8,6 +8,7 @@ git-fast-import - Backend for fast Git data importers
 
 SYNOPSIS
 --------
+[verse]
 frontend | 'git fast-import' [options]
 
 DESCRIPTION
@@ -100,6 +101,12 @@ OPTIONS
 	Specify the file descriptor that will be written to
 	when the `cat-blob` command is encountered in the stream.
 	The default behaviour is to write to `stdout`.
+
+--done::
+	Require a `done` command at the end of the stream.
+	This option might be useful for detecting errors that
+	cause the frontend to terminate before it has started to
+	write a stream.
 
 --export-pack-edges=<file>::
 	After creating a packfile, print a line of data to
@@ -330,6 +337,11 @@ and control the current import process.  More detailed discussion
 	standard output.  This command is optional and is not needed
 	to perform an import.
 
+`done`::
+	Marks the end of the stream. This command is optional
+	unless the `done` feature was requested using the
+	`--done` command line option or `feature done` command.
+
 `cat-blob`::
 	Causes fast-import to print a blob in 'cat-file --batch'
 	format to the file descriptor set with `--cat-blob-fd` or
@@ -413,8 +425,8 @@ Here `<name>` is the person's display name (for example
 (``cm@example.com'').  `LT` and `GT` are the literal less-than (\x3c)
 and greater-than (\x3e) symbols.  These are required to delimit
 the email address from the other fields in the line.  Note that
-`<name>` is free-form and may contain any sequence of bytes, except
-`LT` and `LF`.  It is typically UTF-8 encoded.
+`<name>` and `<email>` are free-form and may contain any sequence
+of bytes, except `LT`, `GT` and `LF`.  `<name>` is typically UTF-8 encoded.
 
 The time of the change is specified by `<when>` using the date format
 that was selected by the \--date-format=<fmt> command line option.
@@ -648,9 +660,14 @@ paths for a commit are encouraged to do so.
 
 `notemodify`
 ^^^^^^^^^^^^
-Included in a `commit` command to add a new note (annotating a given
-commit) or change the content of an existing note.  This command has
-two different means of specifying the content of the note.
+Included in a `commit` `<notes_ref>` command to add a new note
+annotating a `<committish>` or change this annotation contents.
+Internally it is similar to filemodify 100644 on `<committish>`
+path (maybe split into subdirectories). It's not advised to
+use any other commands to write to the `<notes_ref>` tree except
+`filedeleteall` to delete all existing notes in this tree.
+This command has two different means of specifying the content
+of the note.
 
 External data format::
 	The data content for the note was already supplied by a prior
@@ -995,10 +1012,14 @@ force::
 	(see OPTIONS, above).
 
 import-marks::
+import-marks-if-exists::
 	Like --import-marks except in two respects: first, only one
-	"feature import-marks" command is allowed per stream;
-	second, an --import-marks= command-line option overrides
-	any "feature import-marks" command in the stream.
+	"feature import-marks" or "feature import-marks-if-exists"
+	command is allowed per stream; second, an --import-marks=
+	or --import-marks-if-exists command-line option overrides
+	any of these "feature" commands in the stream; third,
+	"feature import-marks-if-exists" like a corresponding
+	command-line option silently skips a nonexistent file.
 
 cat-blob::
 ls::
@@ -1015,6 +1036,11 @@ notes::
 	Versions of fast-import not supporting notes will exit
 	with a message indicating so.
 
+done::
+	Error out if the stream ends without a 'done' command.
+	Without this feature, errors causing the frontend to end
+	abruptly at a convenient point in the stream can go
+	undetected.
 
 `option`
 ~~~~~~~~
@@ -1043,6 +1069,15 @@ not be passed as option:
 * export-marks
 * cat-blob-fd
 * force
+
+`done`
+~~~~~~
+If the `done` feature is not in use, treated as if EOF was read.
+This can be used to tell fast-import to finish early.
+
+If the `--done` command line option or `feature done` command is
+in use, the `done` command is mandatory and marks the end of the
+stream.
 
 Crash Reports
 -------------

@@ -1,5 +1,6 @@
-set gitexecdir {@@gitexecdir@@}
-set gitguilib  {@@GITGUI_LIBDIR@@}
+set gitprefix [regsub "/usr/.*" [file normalize [info script]] "/usr"]
+set gitexecdir [file join $gitprefix libexec git-core]
+set gitguilib  [file join $gitprefix share git-gui lib]
 set env(PATH) "$gitexecdir:$env(PATH)"
 
 if {[string first -psn [lindex $argv 0]] == 0} {

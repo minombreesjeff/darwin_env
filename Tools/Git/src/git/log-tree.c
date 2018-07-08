@@ -18,6 +18,7 @@ enum decoration_type {
 	DECORATION_REF_TAG,
 	DECORATION_REF_STASH,
 	DECORATION_REF_HEAD,
+	DECORATION_GRAFTED,
 };
 
 static char decoration_colors[][COLOR_MAXLEN] = {
@@ -27,11 +28,12 @@ static char decoration_colors[][COLOR_MAXLEN] = {
 	GIT_COLOR_BOLD_YELLOW,	/* REF_TAG */
 	GIT_COLOR_BOLD_MAGENTA,	/* REF_STASH */
 	GIT_COLOR_BOLD_CYAN,	/* REF_HEAD */
+	GIT_COLOR_BOLD_BLUE,	/* GRAFTED */
 };
 
 static const char *decorate_get_color(int decorate_use_color, enum decoration_type ix)
 {
-	if (decorate_use_color)
+	if (want_color(decorate_use_color))
 		return decoration_colors[ix];
 	return "";
 }
@@ -77,7 +79,7 @@ int parse_decorate_color_config(const char *var, const int ofs, const char *valu
  * for showing the commit sha1, use the same check for --decorate
  */
 #define decorate_get_color_opt(o, ix) \
-	decorate_get_color(DIFF_OPT_TST((o), COLOR_DIFF), ix)
+	decorate_get_color((o)->use_color, ix)
 
 static void add_name_decoration(enum decoration_type type, const char *name, struct object *obj)
 {
@@ -90,16 +92,32 @@ static void add_name_decoration(enum decoration_type type, const char *name, str
 
 static int add_ref_decoration(const char *refname, const unsigned char *sha1, int flags, void *cb_data)
 {
-	struct object *obj = parse_object(sha1);
+	struct object *obj;
 	enum decoration_type type = DECORATION_NONE;
+
+	if (!prefixcmp(refname, "refs/replace/")) {
+		unsigned char original_sha1[20];
+		if (!read_replace_refs)
+			return 0;
+		if (get_sha1_hex(refname + 13, original_sha1)) {
+			warning("invalid replace ref %s", refname);
+			return 0;
+		}
+		obj = parse_object(original_sha1);
+		if (obj)
+			add_name_decoration(DECORATION_GRAFTED, "replaced", obj);
+		return 0;
+	}
+
+	obj = parse_object(sha1);
 	if (!obj)
 		return 0;
 
-	if (!prefixcmp(refname, "refs/heads"))
+	if (!prefixcmp(refname, "refs/heads/"))
 		type = DECORATION_REF_LOCAL;
-	else if (!prefixcmp(refname, "refs/remotes"))
+	else if (!prefixcmp(refname, "refs/remotes/"))
 		type = DECORATION_REF_REMOTE;
-	else if (!prefixcmp(refname, "refs/tags"))
+	else if (!prefixcmp(refname, "refs/tags/"))
 		type = DECORATION_REF_TAG;
 	else if (!prefixcmp(refname, "refs/stash"))
 		type = DECORATION_REF_STASH;
@@ -118,6 +136,15 @@ static int add_ref_decoration(const char *refname, const unsigned char *sha1, in
 	return 0;
 }
 
+static int add_graft_decoration(const struct commit_graft *graft, void *cb_data)
+{
+	struct commit *commit = lookup_commit(graft->sha1);
+	if (!commit)
+		return 0;
+	add_name_decoration(DECORATION_GRAFTED, "grafted", &commit->object);
+	return 0;
+}
+
 void load_ref_decorations(int flags)
 {
 	static int loaded;
@@ -125,6 +152,7 @@ void load_ref_decorations(int flags)
 		loaded = 1;
 		for_each_ref(add_ref_decoration, &flags);
 		head_ref(add_ref_decoration, &flags);
+		for_each_commit_graft(add_graft_decoration, NULL);
 	}
 }
 
@@ -294,8 +322,9 @@ void log_write_email_headers(struct rev_info *opt, struct commit *commit,
 	if (opt->total > 0) {
 		static char buffer[64];
 		snprintf(buffer, sizeof(buffer),
-			 "Subject: [%s %0*d/%d] ",
+			 "Subject: [%s%s%0*d/%d] ",
 			 opt->subject_prefix,
+			 *opt->subject_prefix ? " " : "",
 			 digits_in_number(opt->total),
 			 opt->nr, opt->total);
 		subject = buffer;
@@ -484,8 +513,10 @@ void show_log(struct rev_info *opt)
 	ctx.date_mode = opt->date_mode;
 	ctx.abbrev = opt->diffopt.abbrev;
 	ctx.after_subject = extra_headers;
+	ctx.preserve_subject = opt->preserve_subject;
 	ctx.reflog_info = opt->reflog_info;
-	pretty_print_commit(opt->commit_format, commit, &msgbuf, &ctx);
+	ctx.fmt = opt->commit_format;
+	pretty_print_commit(&ctx, commit, &msgbuf);
 
 	if (opt->add_signoff)
 		append_signoff(&msgbuf, opt->add_signoff);

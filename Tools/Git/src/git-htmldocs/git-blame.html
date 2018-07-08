@@ -3,7 +3,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<meta name="generator" content="AsciiDoc 8.4.5" />
+<meta name="generator" content="AsciiDoc 8.5.2" />
 <title>git-blame(1)</title>
 <style type="text/css">
 /* Debug borders */
@@ -118,12 +118,14 @@ div#preamble {
 div.tableblock, div.imageblock, div.exampleblock, div.verseblock,
 div.quoteblock, div.literalblock, div.listingblock, div.sidebarblock,
 div.admonitionblock {
-  margin-top: 1.5em;
+  margin-top: 1.0em;
   margin-bottom: 1.5em;
 }
 div.admonitionblock {
-  margin-top: 2.5em;
-  margin-bottom: 2.5em;
+  margin-top: 2.0em;
+  margin-bottom: 2.0em;
+  margin-right: 10%;
+  color: #606060;
 }
 
 div.content { /* Block element content. */
@@ -165,19 +167,19 @@ div.listingblock > div.content {
   padding: 0.5em;
 }
 
-div.quoteblock {
-  padding-left: 2.0em;
+div.quoteblock, div.verseblock {
+  padding-left: 1.0em;
+  margin-left: 1.0em;
   margin-right: 10%;
+  border-left: 5px solid #dddddd;
+  color: #777777;
 }
+
 div.quoteblock > div.attribution {
   padding-top: 0.5em;
   text-align: right;
 }
 
-div.verseblock {
-  padding-left: 2.0em;
-  margin-right: 10%;
-}
 div.verseblock > div.content {
   white-space: pre;
 }
@@ -200,12 +202,12 @@ div.admonitionblock .icon {
 }
 div.admonitionblock td.content {
   padding-left: 0.5em;
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
 }
 
 div.exampleblock > div.content {
-  border-left: 2px solid silver;
-  padding: 0.5em;
+  border-left: 3px solid #dddddd;
+  padding-left: 0.5em;
 }
 
 div.imageblock div.content { padding-left: 0; }
@@ -255,7 +257,7 @@ div.compact div, div.compact div {
 div.tableblock > table {
   border: 3px solid #527bbd;
 }
-thead {
+thead, p.table.header {
   font-family: sans-serif;
   font-weight: bold;
 }
@@ -310,8 +312,40 @@ div.hdlist.compact tr {
   background: yellow;
 }
 
+.footnote, .footnoteref {
+  font-size: 0.8em;
+}
+
+span.footnote, span.footnoteref {
+  vertical-align: super;
+}
+
+#footnotes {
+  margin: 20px 0 20px 0;
+  padding: 7px 0 0 0;
+}
+
+#footnotes div.footnote {
+  margin: 0 0 5px 0;
+}
+
+#footnotes hr {
+  border: none;
+  border-top: 1px solid silver;
+  height: 1px;
+  text-align: left;
+  margin-left: 0;
+  width: 20%;
+  min-width: 100px;
+}
+
+
 @media print {
   div#footer-badges { display: none; }
+}
+
+div#toc {
+  margin-bottom: 2.5em;
 }
 
 div#toctitle {
@@ -392,13 +426,146 @@ div.verseblock-attribution {
 }
 
 div.exampleblock-content {
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
   padding-left: 0.5em;
 }
 
 /* IE6 sets dynamically generated links as visited. */
 div#toc a:visited { color: blue; }
 </style>
+<script type="text/javascript">
+/*<![CDATA[*/
+window.onload = function(){asciidoc.footnotes();}
+var asciidoc = {  // Namespace.
+
+/////////////////////////////////////////////////////////////////////
+// Table Of Contents generator
+/////////////////////////////////////////////////////////////////////
+
+/* Author: Mihai Bazon, September 2002
+ * http://students.infoiasi.ro/~mishoo
+ *
+ * Table Of Content generator
+ * Version: 0.4
+ *
+ * Feel free to use this script under the terms of the GNU General Public
+ * License, as long as you do not remove or alter this notice.
+ */
+
+ /* modified by Troy D. Hanson, September 2006. License: GPL */
+ /* modified by Stuart Rackham, 2006, 2009. License: GPL */
+
+// toclevels = 1..4.
+toc: function (toclevels) {
+
+  function getText(el) {
+    var text = "";
+    for (var i = el.firstChild; i != null; i = i.nextSibling) {
+      if (i.nodeType == 3 /* Node.TEXT_NODE */) // IE doesn't speak constants.
+        text += i.data;
+      else if (i.firstChild != null)
+        text += getText(i);
+    }
+    return text;
+  }
+
+  function TocEntry(el, text, toclevel) {
+    this.element = el;
+    this.text = text;
+    this.toclevel = toclevel;
+  }
+
+  function tocEntries(el, toclevels) {
+    var result = new Array;
+    var re = new RegExp('[hH]([2-'+(toclevels+1)+'])');
+    // Function that scans the DOM tree for header elements (the DOM2
+    // nodeIterator API would be a better technique but not supported by all
+    // browsers).
+    var iterate = function (el) {
+      for (var i = el.firstChild; i != null; i = i.nextSibling) {
+        if (i.nodeType == 1 /* Node.ELEMENT_NODE */) {
+          var mo = re.exec(i.tagName);
+          if (mo && (i.getAttribute("class") || i.getAttribute("className")) != "float") {
+            result[result.length] = new TocEntry(i, getText(i), mo[1]-1);
+          }
+          iterate(i);
+        }
+      }
+    }
+    iterate(el);
+    return result;
+  }
+
+  var toc = document.getElementById("toc");
+  var entries = tocEntries(document.getElementById("content"), toclevels);
+  for (var i = 0; i < entries.length; ++i) {
+    var entry = entries[i];
+    if (entry.element.id == "")
+      entry.element.id = "_toc_" + i;
+    var a = document.createElement("a");
+    a.href = "#" + entry.element.id;
+    a.appendChild(document.createTextNode(entry.text));
+    var div = document.createElement("div");
+    div.appendChild(a);
+    div.className = "toclevel" + entry.toclevel;
+    toc.appendChild(div);
+  }
+  if (entries.length == 0)
+    toc.parentNode.removeChild(toc);
+},
+
+
+/////////////////////////////////////////////////////////////////////
+// Footnotes generator
+/////////////////////////////////////////////////////////////////////
+
+/* Based on footnote generation code from:
+ * http://www.brandspankingnew.net/archive/2005/07/format_footnote.html
+ */
+
+footnotes: function () {
+  var cont = document.getElementById("content");
+  var noteholder = document.getElementById("footnotes");
+  var spans = cont.getElementsByTagName("span");
+  var refs = {};
+  var n = 0;
+  for (i=0; i<spans.length; i++) {
+    if (spans[i].className == "footnote") {
+      n++;
+      // Use [\s\S] in place of . so multi-line matches work.
+      // Because JavaScript has no s (dotall) regex flag.
+      note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+      noteholder.innerHTML +=
+        "<div class='footnote' id='_footnote_" + n + "'>" +
+        "<a href='#_footnoteref_" + n + "' title='Return to text'>" +
+        n + "</a>. " + note + "</div>";
+      spans[i].innerHTML =
+        "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
+        "' title='View footnote' class='footnote'>" + n + "</a>]";
+      var id =spans[i].getAttribute("id");
+      if (id != null) refs["#"+id] = n;
+    }
+  }
+  if (n == 0)
+    noteholder.parentNode.removeChild(noteholder);
+  else {
+    // Process footnoterefs.
+    for (i=0; i<spans.length; i++) {
+      if (spans[i].className == "footnoteref") {
+        var href = spans[i].getElementsByTagName("a")[0].getAttribute("href");
+        href = href.match(/#.*/)[0];  // Because IE return full URL.
+        n = refs[href];
+        spans[i].innerHTML =
+          "[<a href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+      }
+    }
+  }
+}
+
+}
+/*]]>*/
+</script>
 </head>
 <body>
 <div id="header">
@@ -412,11 +579,12 @@ git-blame(1) Manual Page
 </p>
 </div>
 </div>
+<div id="content">
 <h2 id="_synopsis">SYNOPSIS</h2>
 <div class="sectionbody">
 <div class="verseblock">
 <div class="verseblock-content"><em>git blame</em> [-c] [-b] [-l] [--root] [-t] [-f] [-n] [-s] [-e] [-p] [-w] [--incremental] [-L n,m]
-            [-S &lt;revs-file&gt;] [-M] [-C] [-C] [-C] [--since=&lt;date&gt;]
+            [-S &lt;revs-file&gt;] [-M] [-C] [-C] [-C] [--since=&lt;date&gt;] [--abbrev=&lt;n&gt;]
             [&lt;rev&gt; | --contents &lt;file&gt; | --reverse &lt;rev&gt;] [--] &lt;file&gt;</div>
 <div class="verseblock-attribution">
 </div></div>
@@ -551,6 +719,16 @@ of lines before or after the line given by &lt;start&gt;.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+--line-porcelain
+</dt>
+<dd>
+<p>
+        Show the porcelain format, but output commit information for
+        each line, not just the first time a commit is referenced.
+        Implies --porcelain.
+</p>
+</dd>
+<dt class="hdlist1">
 --incremental
 </dt>
 <dd>
@@ -640,9 +818,6 @@ take effect.</p></div>
 <dt class="hdlist1">
 -h
 </dt>
-<dt class="hdlist1">
---help
-</dt>
 <dd>
 <p>
         Show help message.
@@ -722,6 +897,16 @@ take effect.</p></div>
         the child&#8217;s to find where the lines came from.
 </p>
 </dd>
+<dt class="hdlist1">
+--abbrev=&lt;n&gt;
+</dt>
+<dd>
+<p>
+        Instead of using the default 7+1 hexadecimal digits as the
+        abbreviated object name, use &lt;n&gt;+1 digits. Note that 1 column
+        is used for a caret to mark the boundary commit.
+</p>
+</dd>
 </dl></div>
 </div>
 <h2 id="_the_porcelain_format">THE PORCELAIN FORMAT</h2>
@@ -776,6 +961,20 @@ the first line of the commit log message ("summary").
 <div class="paragraph"><p>The contents of the actual line is output after the above
 header, prefixed by a TAB. This is to allow adding more
 header elements later.</p></div>
+<div class="paragraph"><p>The porcelain format generally suppresses commit information that has
+already been seen. For example, two lines that are blamed to the same
+commit will both be shown, but the details for that commit will be shown
+only once. This is more efficient, but may require more state be kept by
+the reader. The <tt>--line-porcelain</tt> option can be used to output full
+commit information for each line, allowing simpler (but less efficient)
+usage like:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><tt># count the number of lines attributed to each author
+git blame --line-porcelain file |
+sed -n 's/^author //p' |
+sort | uniq -c | sort -rn</tt></pre>
+</div></div>
 </div>
 <h2 id="_specifying_ranges">SPECIFYING RANGES</h2>
 <div class="sectionbody">
@@ -963,9 +1162,11 @@ the email address.</p></div>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
+</div>
+<div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-06-01 22:32:49 UTC
+Last updated 2011-11-15 13:45:02 PDT
 </div>
 </div>
 </body>

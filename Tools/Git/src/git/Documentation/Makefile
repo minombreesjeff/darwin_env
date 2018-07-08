@@ -6,7 +6,7 @@ MAN5_TXT=gitattributes.txt gitignore.txt gitmodules.txt githooks.txt \
 	gitrepository-layout.txt
 MAN7_TXT=gitcli.txt gittutorial.txt gittutorial-2.txt \
 	gitcvs-migration.txt gitcore-tutorial.txt gitglossary.txt \
-	gitdiffcore.txt gitrevisions.txt gitworkflows.txt
+	gitdiffcore.txt gitnamespaces.txt gitrevisions.txt gitworkflows.txt
 
 MAN_TXT = $(MAN1_TXT) $(MAN5_TXT) $(MAN7_TXT)
 MAN_XML=$(patsubst %.txt,%.xml,$(MAN_TXT))
@@ -46,8 +46,8 @@ MANPAGE_XSL = manpage-normal.xsl
 XMLTO_EXTRA =
 INSTALL?=install
 RM ?= rm -f
-DOC_REF = origin/man
-HTML_REF = origin/html
+MAN_REPO = ../../git-manpages
+HTML_REPO = ../../git-htmldocs
 
 infodir?=$(prefix)/share/info
 MAKEINFO=makeinfo
@@ -232,6 +232,7 @@ cmd-list.made: cmd-list.perl ../command-list.txt $(MAN1_TXT)
 clean:
 	$(RM) *.xml *.xml+ *.html *.html+ *.1 *.5 *.7
 	$(RM) *.texi *.texi+ *.texi++ git.info gitman.info
+	$(RM) *.pdf
 	$(RM) howto-index.txt howto/*.html doc.dep
 	$(RM) technical/api-*.html technical/api-index.txt
 	$(RM) $(cmds_txt) *.made
@@ -326,12 +327,23 @@ $(patsubst %.txt,%.html,$(wildcard howto/*.txt)): %.html : %.txt
 install-webdoc : html
 	'$(SHELL_PATH_SQ)' ./install-webdoc.sh $(WEBDOC_DEST)
 
+# You must have a clone of git-htmldocs and git-manpages repositories
+# next to the git repository itself for the following to work.
+
 quick-install: quick-install-man
 
-quick-install-man:
-	'$(SHELL_PATH_SQ)' ./install-doc-quick.sh $(DOC_REF) $(DESTDIR)$(mandir)
+require-manrepo::
+	@if test ! -d $(MAN_REPO); \
+	then echo "git-manpages repository must exist at $(MAN_REPO)"; exit 1; fi
 
-quick-install-html:
-	'$(SHELL_PATH_SQ)' ./install-doc-quick.sh $(HTML_REF) $(DESTDIR)$(htmldir)
+quick-install-man: require-manrepo
+	'$(SHELL_PATH_SQ)' ./install-doc-quick.sh $(MAN_REPO) $(DESTDIR)$(mandir)
+
+require-htmlrepo::
+	@if test ! -d $(HTML_REPO); \
+	then echo "git-htmldocs repository must exist at $(HTML_REPO)"; exit 1; fi
+
+quick-install-html: require-htmlrepo
+	'$(SHELL_PATH_SQ)' ./install-doc-quick.sh $(HTML_REPO) $(DESTDIR)$(htmldir)
 
 .PHONY: FORCE

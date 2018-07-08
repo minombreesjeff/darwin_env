@@ -8,12 +8,13 @@
  * are.
  */
 #include "cache.h"
+#include "refs.h"
 
 char git_default_email[MAX_GITNAME];
 char git_default_name[MAX_GITNAME];
 int user_ident_explicitly_given;
 int trust_executable_bit = 1;
-int trust_ctime = 1;
+int trust_ctime = 0;
 int has_symlinks = 1;
 int minimum_abbrev = 4, default_abbrev = 7;
 int ignore_case;
@@ -28,6 +29,7 @@ const char *git_log_output_encoding;
 int shared_repository = PERM_UMASK;
 const char *apply_default_whitespace;
 const char *apply_default_ignorewhitespace;
+const char *git_attributes_file;
 int zlib_compression_level = Z_BEST_SPEED;
 int core_compression_level;
 int core_compression_seen;
@@ -36,14 +38,15 @@ size_t packed_git_window_size = DEFAULT_PACKED_GIT_WINDOW_SIZE;
 size_t packed_git_limit = DEFAULT_PACKED_GIT_LIMIT;
 size_t delta_base_cache_limit = 16 * 1024 * 1024;
 unsigned long big_file_threshold = 512 * 1024 * 1024;
+const char *log_pack_access;
 const char *pager_program;
 int pager_use_color = 1;
 const char *editor_program;
 const char *askpass_program;
 const char *excludes_file;
 enum auto_crlf auto_crlf = AUTO_CRLF_FALSE;
-int read_replace_refs = 1;
-enum eol eol = EOL_UNSET;
+int read_replace_refs = 1; /* NEEDSWORK: rename to use_replace_refs */
+enum eol core_eol = EOL_UNSET;
 enum safe_crlf safe_crlf = SAFE_CRLF_WARN;
 unsigned whitespace_rule_cfg = WS_DEFAULT_RULE;
 enum branch_track git_branch_track = BRANCH_TRACK_REMOTE;
@@ -64,6 +67,9 @@ int core_preload_index = 0;
 /* This is set by setup_git_dir_gently() and/or git_default_config() */
 char *git_work_tree_cfg;
 static char *work_tree;
+
+static const char *namespace;
+static size_t namespace_len;
 
 static const char *git_dir;
 static char *git_object_dir, *git_index_file, *git_graft_file;
@@ -86,12 +92,33 @@ const char * const local_repo_env[LOCAL_REPO_ENV_SIZE + 1] = {
 	NULL
 };
 
+static char *expand_namespace(const char *raw_namespace)
+{
+	struct strbuf buf = STRBUF_INIT;
+	struct strbuf **components, **c;
+
+	if (!raw_namespace || !*raw_namespace)
+		return xstrdup("");
+
+	strbuf_addstr(&buf, raw_namespace);
+	components = strbuf_split(&buf, '/');
+	strbuf_reset(&buf);
+	for (c = components; *c; c++)
+		if (strcmp((*c)->buf, "/") != 0)
+			strbuf_addf(&buf, "refs/namespaces/%s", (*c)->buf);
+	strbuf_list_free(components);
+	if (check_ref_format(buf.buf) != CHECK_REF_FORMAT_OK)
+		die("bad git namespace path \"%s\"", raw_namespace);
+	strbuf_addch(&buf, '/');
+	return strbuf_detach(&buf, NULL);
+}
+
 static void setup_git_env(void)
 {
 	git_dir = getenv(GIT_DIR_ENVIRONMENT);
 	git_dir = git_dir ? xstrdup(git_dir) : NULL;
 	if (!git_dir) {
-		git_dir = read_gitfile_gently(DEFAULT_GIT_DIR_ENVIRONMENT);
+		git_dir = read_gitfile(DEFAULT_GIT_DIR_ENVIRONMENT);
 		git_dir = git_dir ? xstrdup(git_dir) : NULL;
 	}
 	if (!git_dir)
@@ -111,6 +138,8 @@ static void setup_git_env(void)
 		git_graft_file = git_pathdup("info/grafts");
 	if (getenv(NO_REPLACE_OBJECTS_ENVIRONMENT))
 		read_replace_refs = 0;
+	namespace = expand_namespace(getenv(GIT_NAMESPACE_ENVIRONMENT));
+	namespace_len = strlen(namespace);
 }
 
 int is_bare_repository(void)
@@ -129,6 +158,20 @@ const char *get_git_dir(void)
 	if (!git_dir)
 		setup_git_env();
 	return git_dir;
+}
+
+const char *get_git_namespace(void)
+{
+	if (!namespace)
+		setup_git_env();
+	return namespace;
+}
+
+const char *strip_namespace(const char *namespaced_ref)
+{
+	if (prefixcmp(namespaced_ref, get_git_namespace()) != 0)
+		return NULL;
+	return namespaced_ref + namespace_len;
 }
 
 static int git_work_tree_initialized;

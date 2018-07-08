@@ -347,6 +347,21 @@ test_expect_success 'fetch mirrors do not act as mirrors during push' '
 	)
 '
 
+test_expect_success 'add fetch mirror with specific branches' '
+	git init --bare mirror-fetch/track &&
+	(cd mirror-fetch/track &&
+	 git remote add --mirror=fetch -t heads/new parent ../parent
+	)
+'
+
+test_expect_success 'fetch mirror respects specific branches' '
+	(cd mirror-fetch/track &&
+	 git fetch parent &&
+	 git rev-parse --verify refs/heads/new &&
+	 test_must_fail git rev-parse --verify refs/heads/renamed
+	)
+'
+
 test_expect_success 'add --mirror=push' '
 	mkdir mirror-push &&
 	git init --bare mirror-push/public &&
@@ -379,6 +394,13 @@ test_expect_success 'push mirrors do not act as mirrors during fetch' '
 	 git fetch public &&
 	 git rev-parse --verify refs/heads/renamed &&
 	 test_must_fail git rev-parse --verify refs/heads/renamed2
+	)
+'
+
+test_expect_success 'push mirrors do not allow you to specify refs' '
+	git init mirror-push/track &&
+	(cd mirror-push/track &&
+	 test_must_fail git remote add --mirror=push -t new public ../public
 	)
 '
 
@@ -606,6 +628,37 @@ test_expect_success 'rename a remote' '
 	 test "$(git rev-parse upstream/master)" = "$(git rev-parse master)" &&
 	 test "$(git config remote.upstream.fetch)" = "+refs/heads/*:refs/remotes/upstream/*" &&
 	 test "$(git config branch.master.remote)" = "upstream")
+
+'
+
+test_expect_success 'rename does not update a non-default fetch refspec' '
+
+	git clone one four.one &&
+	(cd four.one &&
+	 git config remote.origin.fetch +refs/heads/*:refs/heads/origin/* &&
+	 git remote rename origin upstream &&
+	 test "$(git config remote.upstream.fetch)" = "+refs/heads/*:refs/heads/origin/*" &&
+	 git rev-parse -q origin/master)
+
+'
+
+test_expect_success 'rename a remote with name part of fetch spec' '
+
+	git clone one four.two &&
+	(cd four.two &&
+	 git remote rename origin remote &&
+	 git remote rename remote upstream &&
+	 test "$(git config remote.upstream.fetch)" = "+refs/heads/*:refs/remotes/upstream/*")
+
+'
+
+test_expect_success 'rename a remote with name prefix of other remote' '
+
+	git clone one four.three &&
+	(cd four.three &&
+	 git remote add o git://example.com/repo.git &&
+	 git remote rename o upstream &&
+	 test "$(git rev-parse origin/master)" = "$(git rev-parse master)")
 
 '
 

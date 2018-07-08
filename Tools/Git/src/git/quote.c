@@ -1,5 +1,6 @@
 #include "cache.h"
 #include "quote.h"
+#include "argv-array.h"
 
 int quote_path_fully = 1;
 
@@ -120,7 +121,9 @@ char *sq_dequote(char *arg)
 	return sq_dequote_step(arg, NULL);
 }
 
-int sq_dequote_to_argv(char *arg, const char ***argv, int *nr, int *alloc)
+static int sq_dequote_to_argv_internal(char *arg,
+				       const char ***argv, int *nr, int *alloc,
+				       struct argv_array *array)
 {
 	char *next = arg;
 
@@ -130,11 +133,25 @@ int sq_dequote_to_argv(char *arg, const char ***argv, int *nr, int *alloc)
 		char *dequoted = sq_dequote_step(next, &next);
 		if (!dequoted)
 			return -1;
-		ALLOC_GROW(*argv, *nr + 1, *alloc);
-		(*argv)[(*nr)++] = dequoted;
+		if (argv) {
+			ALLOC_GROW(*argv, *nr + 1, *alloc);
+			(*argv)[(*nr)++] = dequoted;
+		}
+		if (array)
+			argv_array_push(array, dequoted);
 	} while (next);
 
 	return 0;
+}
+
+int sq_dequote_to_argv(char *arg, const char ***argv, int *nr, int *alloc)
+{
+	return sq_dequote_to_argv_internal(arg, argv, nr, alloc, NULL);
+}
+
+int sq_dequote_to_argv_array(char *arg, struct argv_array *array)
+{
+	return sq_dequote_to_argv_internal(arg, NULL, NULL, NULL, array);
 }
 
 /* 1 means: quote as octal
@@ -325,8 +342,12 @@ static const char *path_relative(const char *in, int len,
 
 	if (len < 0)
 		len = strlen(in);
-	if (prefix && prefix_len < 0)
-		prefix_len = strlen(prefix);
+	if (prefix_len < 0) {
+		if (prefix)
+			prefix_len = strlen(prefix);
+		else
+			prefix_len = 0;
+	}
 
 	off = 0;
 	i = 0;

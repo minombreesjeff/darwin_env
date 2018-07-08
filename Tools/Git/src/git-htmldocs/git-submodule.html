@@ -3,7 +3,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<meta name="generator" content="AsciiDoc 8.4.5" />
+<meta name="generator" content="AsciiDoc 8.5.2" />
 <title>git-submodule(1)</title>
 <style type="text/css">
 /* Debug borders */
@@ -118,12 +118,14 @@ div#preamble {
 div.tableblock, div.imageblock, div.exampleblock, div.verseblock,
 div.quoteblock, div.literalblock, div.listingblock, div.sidebarblock,
 div.admonitionblock {
-  margin-top: 1.5em;
+  margin-top: 1.0em;
   margin-bottom: 1.5em;
 }
 div.admonitionblock {
-  margin-top: 2.5em;
-  margin-bottom: 2.5em;
+  margin-top: 2.0em;
+  margin-bottom: 2.0em;
+  margin-right: 10%;
+  color: #606060;
 }
 
 div.content { /* Block element content. */
@@ -165,19 +167,19 @@ div.listingblock > div.content {
   padding: 0.5em;
 }
 
-div.quoteblock {
-  padding-left: 2.0em;
+div.quoteblock, div.verseblock {
+  padding-left: 1.0em;
+  margin-left: 1.0em;
   margin-right: 10%;
+  border-left: 5px solid #dddddd;
+  color: #777777;
 }
+
 div.quoteblock > div.attribution {
   padding-top: 0.5em;
   text-align: right;
 }
 
-div.verseblock {
-  padding-left: 2.0em;
-  margin-right: 10%;
-}
 div.verseblock > div.content {
   white-space: pre;
 }
@@ -200,12 +202,12 @@ div.admonitionblock .icon {
 }
 div.admonitionblock td.content {
   padding-left: 0.5em;
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
 }
 
 div.exampleblock > div.content {
-  border-left: 2px solid silver;
-  padding: 0.5em;
+  border-left: 3px solid #dddddd;
+  padding-left: 0.5em;
 }
 
 div.imageblock div.content { padding-left: 0; }
@@ -255,7 +257,7 @@ div.compact div, div.compact div {
 div.tableblock > table {
   border: 3px solid #527bbd;
 }
-thead {
+thead, p.table.header {
   font-family: sans-serif;
   font-weight: bold;
 }
@@ -310,8 +312,40 @@ div.hdlist.compact tr {
   background: yellow;
 }
 
+.footnote, .footnoteref {
+  font-size: 0.8em;
+}
+
+span.footnote, span.footnoteref {
+  vertical-align: super;
+}
+
+#footnotes {
+  margin: 20px 0 20px 0;
+  padding: 7px 0 0 0;
+}
+
+#footnotes div.footnote {
+  margin: 0 0 5px 0;
+}
+
+#footnotes hr {
+  border: none;
+  border-top: 1px solid silver;
+  height: 1px;
+  text-align: left;
+  margin-left: 0;
+  width: 20%;
+  min-width: 100px;
+}
+
+
 @media print {
   div#footer-badges { display: none; }
+}
+
+div#toc {
+  margin-bottom: 2.5em;
 }
 
 div#toctitle {
@@ -392,13 +426,146 @@ div.verseblock-attribution {
 }
 
 div.exampleblock-content {
-  border-left: 2px solid silver;
+  border-left: 3px solid #dddddd;
   padding-left: 0.5em;
 }
 
 /* IE6 sets dynamically generated links as visited. */
 div#toc a:visited { color: blue; }
 </style>
+<script type="text/javascript">
+/*<![CDATA[*/
+window.onload = function(){asciidoc.footnotes();}
+var asciidoc = {  // Namespace.
+
+/////////////////////////////////////////////////////////////////////
+// Table Of Contents generator
+/////////////////////////////////////////////////////////////////////
+
+/* Author: Mihai Bazon, September 2002
+ * http://students.infoiasi.ro/~mishoo
+ *
+ * Table Of Content generator
+ * Version: 0.4
+ *
+ * Feel free to use this script under the terms of the GNU General Public
+ * License, as long as you do not remove or alter this notice.
+ */
+
+ /* modified by Troy D. Hanson, September 2006. License: GPL */
+ /* modified by Stuart Rackham, 2006, 2009. License: GPL */
+
+// toclevels = 1..4.
+toc: function (toclevels) {
+
+  function getText(el) {
+    var text = "";
+    for (var i = el.firstChild; i != null; i = i.nextSibling) {
+      if (i.nodeType == 3 /* Node.TEXT_NODE */) // IE doesn't speak constants.
+        text += i.data;
+      else if (i.firstChild != null)
+        text += getText(i);
+    }
+    return text;
+  }
+
+  function TocEntry(el, text, toclevel) {
+    this.element = el;
+    this.text = text;
+    this.toclevel = toclevel;
+  }
+
+  function tocEntries(el, toclevels) {
+    var result = new Array;
+    var re = new RegExp('[hH]([2-'+(toclevels+1)+'])');
+    // Function that scans the DOM tree for header elements (the DOM2
+    // nodeIterator API would be a better technique but not supported by all
+    // browsers).
+    var iterate = function (el) {
+      for (var i = el.firstChild; i != null; i = i.nextSibling) {
+        if (i.nodeType == 1 /* Node.ELEMENT_NODE */) {
+          var mo = re.exec(i.tagName);
+          if (mo && (i.getAttribute("class") || i.getAttribute("className")) != "float") {
+            result[result.length] = new TocEntry(i, getText(i), mo[1]-1);
+          }
+          iterate(i);
+        }
+      }
+    }
+    iterate(el);
+    return result;
+  }
+
+  var toc = document.getElementById("toc");
+  var entries = tocEntries(document.getElementById("content"), toclevels);
+  for (var i = 0; i < entries.length; ++i) {
+    var entry = entries[i];
+    if (entry.element.id == "")
+      entry.element.id = "_toc_" + i;
+    var a = document.createElement("a");
+    a.href = "#" + entry.element.id;
+    a.appendChild(document.createTextNode(entry.text));
+    var div = document.createElement("div");
+    div.appendChild(a);
+    div.className = "toclevel" + entry.toclevel;
+    toc.appendChild(div);
+  }
+  if (entries.length == 0)
+    toc.parentNode.removeChild(toc);
+},
+
+
+/////////////////////////////////////////////////////////////////////
+// Footnotes generator
+/////////////////////////////////////////////////////////////////////
+
+/* Based on footnote generation code from:
+ * http://www.brandspankingnew.net/archive/2005/07/format_footnote.html
+ */
+
+footnotes: function () {
+  var cont = document.getElementById("content");
+  var noteholder = document.getElementById("footnotes");
+  var spans = cont.getElementsByTagName("span");
+  var refs = {};
+  var n = 0;
+  for (i=0; i<spans.length; i++) {
+    if (spans[i].className == "footnote") {
+      n++;
+      // Use [\s\S] in place of . so multi-line matches work.
+      // Because JavaScript has no s (dotall) regex flag.
+      note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+      noteholder.innerHTML +=
+        "<div class='footnote' id='_footnote_" + n + "'>" +
+        "<a href='#_footnoteref_" + n + "' title='Return to text'>" +
+        n + "</a>. " + note + "</div>";
+      spans[i].innerHTML =
+        "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
+        "' title='View footnote' class='footnote'>" + n + "</a>]";
+      var id =spans[i].getAttribute("id");
+      if (id != null) refs["#"+id] = n;
+    }
+  }
+  if (n == 0)
+    noteholder.parentNode.removeChild(noteholder);
+  else {
+    // Process footnoterefs.
+    for (i=0; i<spans.length; i++) {
+      if (spans[i].className == "footnoteref") {
+        var href = spans[i].getElementsByTagName("a")[0].getAttribute("href");
+        href = href.match(/#.*/)[0];  // Because IE return full URL.
+        n = refs[href];
+        spans[i].innerHTML =
+          "[<a href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+      }
+    }
+  }
+}
+
+}
+/*]]>*/
+</script>
 </head>
 <body>
 <div id="header">
@@ -412,6 +579,7 @@ git-submodule(1) Manual Page
 </p>
 </div>
 </div>
+<div id="content">
 <h2 id="_synopsis">SYNOPSIS</h2>
 <div class="sectionbody">
 <div class="verseblock">
@@ -421,7 +589,8 @@ git-submodule(1) Manual Page
 <em>git submodule</em> [--quiet] init [--] [&lt;path&gt;&#8230;]
 <em>git submodule</em> [--quiet] update [--init] [-N|--no-fetch] [--rebase]
               [--reference &lt;repository&gt;] [--merge] [--recursive] [--] [&lt;path&gt;&#8230;]
-<em>git submodule</em> [--quiet] summary [--cached|--files] [--summary-limit &lt;n&gt;] [commit] [--] [&lt;path&gt;&#8230;]
+<em>git submodule</em> [--quiet] summary [--cached|--files] [(-n|--summary-limit) &lt;n&gt;]
+              [commit] [--] [&lt;path&gt;&#8230;]
 <em>git submodule</em> [--quiet] foreach [--recursive] &lt;command&gt;
 <em>git submodule</em> [--quiet] sync [--] [&lt;path&gt;&#8230;]</div>
 <div class="verseblock-attribution">
@@ -485,7 +654,9 @@ to exist in the superproject. If &lt;path&gt; is not given, the
 <div class="paragraph"><p>&lt;repository&gt; is the URL of the new submodule&#8217;s origin repository.
 This may be either an absolute URL, or (if it begins with ./
 or ../), the location relative to the superproject&#8217;s origin
-repository.</p></div>
+repository. If the superproject doesn&#8217;t have an origin configured
+the superproject is its own authoritative upstream and the current
+working directory is used instead.</p></div>
 <div class="paragraph"><p>&lt;path&gt; is the relative location for the cloned submodule to
 exist in the superproject. If &lt;path&gt; does not exist, then the
 submodule is created by cloning from the named URL. If &lt;path&gt; does
@@ -515,8 +686,12 @@ status
         repository and <tt>U</tt> if the submodule has merge conflicts.
         This command is the default command for <em>git submodule</em>.
 </p>
-<div class="paragraph"><p>If <em>--recursive</em> is specified, this command will recurse into nested
+<div class="paragraph"><p>If <tt>--recursive</tt> is specified, this command will recurse into nested
 submodules, and show their status as well.</p></div>
+<div class="paragraph"><p>If you are only interested in changes of the currently initialized
+submodules with respect to the commit recorded in the index or the HEAD,
+<a href="git-status.html">git-status(1)</a> and <a href="git-diff.html">git-diff(1)</a> will provide that information
+too (and can also report changes to a submodule&#8217;s work tree).</p></div>
 </dd>
 <dt class="hdlist1">
 init
@@ -525,6 +700,8 @@ init
 <p>
         Initialize the submodules, i.e. register each submodule name
         and url found in .gitmodules into .git/config.
+        It will also copy the value of <tt>submodule.$name.update</tt> into
+        .git/config.
         The key used in .git/config is <tt>submodule.$name.url</tt>.
         This command does not alter existing information in .git/config.
         You can then customize the submodule clone URLs in .git/config
@@ -541,15 +718,18 @@ update
 <p>
         Update the registered submodules, i.e. clone missing submodules and
         checkout the commit specified in the index of the containing repository.
-        This will make the submodules HEAD be detached unless <em>--rebase</em> or
-        <em>--merge</em> is specified or the key <tt>submodule.$name.update</tt> is set to
-        <tt>rebase</tt> or <tt>merge</tt>.
+        This will make the submodules HEAD be detached unless <tt>--rebase</tt> or
+        <tt>--merge</tt> is specified or the key <tt>submodule.$name.update</tt> is set to
+        <tt>rebase</tt>, <tt>merge</tt> or <tt>none</tt>.
 </p>
 <div class="paragraph"><p>If the submodule is not yet initialized, and you just want to use the
 setting as stored in .gitmodules, you can automatically initialize the
-submodule with the --init option.</p></div>
-<div class="paragraph"><p>If <em>--recursive</em> is specified, this command will recurse into the
+submodule with the <tt>--init</tt> option.</p></div>
+<div class="paragraph"><p>If <tt>--recursive</tt> is specified, this command will recurse into the
 registered submodules, and update any nested submodules within.</p></div>
+<div class="paragraph"><p>If the configuration key <tt>submodule.$name.update</tt> is set to <tt>none</tt> the
+submodule with name <tt>$name</tt> will not be updated by default. This can be
+overriden by adding <tt>--checkout</tt> to the command.</p></div>
 </dd>
 <dt class="hdlist1">
 summary
@@ -559,12 +739,14 @@ summary
         Show commit summary between the given commit (defaults to HEAD) and
         working tree/index. For a submodule in question, a series of commits
         in the submodule between the given super project commit and the
-        index or working tree (switched by --cached) are shown. If the option
-        --files is given, show the series of commits in the submodule between
+        index or working tree (switched by <tt>--cached</tt>) are shown. If the option
+        <tt>--files</tt> is given, show the series of commits in the submodule between
         the index of the super project and the working tree of the submodule
-        (this option doesn&#8217;t allow to use the --cached option or to provide an
+        (this option doesn&#8217;t allow to use the <tt>--cached</tt> option or to provide an
         explicit commit).
 </p>
+<div class="paragraph"><p>Using the <tt>--submodule=log</tt> option with <a href="git-diff.html">git-diff(1)</a> will provide that
+information too.</p></div>
 </dd>
 <dt class="hdlist1">
 foreach
@@ -579,9 +761,9 @@ foreach
         superproject, $sha1 is the commit as recorded in the superproject,
         and $toplevel is the absolute path to the top-level of the superproject.
         Any submodules defined in the superproject but not checked out are
-        ignored by this command. Unless given --quiet, foreach prints the name
+        ignored by this command. Unless given <tt>--quiet</tt>, foreach prints the name
         of each submodule before evaluating the command.
-        If --recursive is given, submodules are traversed recursively (i.e.
+        If <tt>--recursive</tt> is given, submodules are traversed recursively (i.e.
         the given shell command is evaluated in nested submodules as well).
         A non-zero return from the command in any submodule causes
         the processing to terminate. This can be overridden by adding <em>|| :</em>
@@ -597,12 +779,14 @@ sync
 <dd>
 <p>
         Synchronizes submodules' remote URL configuration setting
-        to the value specified in .gitmodules.  This is useful when
+        to the value specified in .gitmodules. It will only affect those
+        submodules which already have an url entry in .git/config (that is the
+        case when they are initialized or freshly added). This is useful when
         submodule URLs change upstream and you need to update your local
         repositories accordingly.
 </p>
 <div class="paragraph"><p>"git submodule sync" synchronizes all submodules while
-"git submodule sync&#8201;&#8212;&#8201;A" synchronizes submodule "A" only.</p></div>
+"git submodule sync -- A" synchronizes submodule "A" only.</p></div>
 </dd>
 </dl></div>
 </div>
@@ -639,8 +823,10 @@ sync
 </dt>
 <dd>
 <p>
-        This option is only valid for the add command.
-        Allow adding an otherwise ignored submodule path.
+        This option is only valid for add and update commands.
+        When running add, allow adding an otherwise ignored submodule path.
+        When running update, throw away local changes in submodules when
+        switching to a different commit.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -720,6 +906,16 @@ sync
 </p>
 </dd>
 <dt class="hdlist1">
+--init
+</dt>
+<dd>
+<p>
+        This option is only valid for the update command.
+        Initialize all submodules for which "git submodule init" has not been
+        called so far before updating.
+</p>
+</dd>
+<dt class="hdlist1">
 --reference &lt;repository&gt;
 </dt>
 <dd>
@@ -729,7 +925,7 @@ sync
         this option will be passed to the <a href="git-clone.html">git-clone(1)</a> command.
 </p>
 <div class="paragraph"><p><strong>NOTE</strong>: Do <strong>not</strong> use this option unless you have read the note
-for <a href="git-clone.html">git-clone(1)</a>'s --reference and --shared options carefully.</p></div>
+for <a href="git-clone.html">git-clone(1)</a>'s <tt>--reference</tt> and <tt>--shared</tt> options carefully.</p></div>
 </dd>
 <dt class="hdlist1">
 --recursive
@@ -766,9 +962,11 @@ for details.</p></div>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
+</div>
+<div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-06-01 22:32:49 UTC
+Last updated 2011-11-15 13:45:02 PDT
 </div>
 </div>
 </body>

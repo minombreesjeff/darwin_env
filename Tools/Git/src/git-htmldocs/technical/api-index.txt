@@ -8,6 +8,7 @@ documents them.
 // table of contents begin
 ////////////////////////////////////////////////////////////////
 * link:api-allocation-growing.html[allocation growing API]
+* link:api-argv-array.html[argv-array API]
 * link:api-builtin.html[builtin API]
 * link:api-decorate.html[decorate API]
 * link:api-diff.html[diff API]
@@ -22,10 +23,12 @@ documents them.
 * link:api-object-access.html[object access API]
 * link:api-parse-options.html[parse-options API]
 * link:api-quote.html[quote API]
+* link:api-ref-iteration.html[ref iteration API]
 * link:api-remote.html[Remotes configuration API]
 * link:api-revision-walking.html[revision walking API]
 * link:api-run-command.html[run-command API]
 * link:api-setup.html[setup API]
+* link:api-sha1-array.html[sha1-array API]
 * link:api-sigchain.html[sigchain API]
 * link:api-strbuf.html[strbuf API]
 * link:api-string-list.html[string-list API]

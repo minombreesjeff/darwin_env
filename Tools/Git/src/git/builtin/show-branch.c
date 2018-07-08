@@ -12,16 +12,6 @@ static const char* show_branch_usage[] = {
 };
 
 static int showbranch_use_color = -1;
-static char column_colors[][COLOR_MAXLEN] = {
-	GIT_COLOR_RED,
-	GIT_COLOR_GREEN,
-	GIT_COLOR_YELLOW,
-	GIT_COLOR_BLUE,
-	GIT_COLOR_MAGENTA,
-	GIT_COLOR_CYAN,
-};
-
-#define COLUMN_COLORS_MAX (ARRAY_SIZE(column_colors))
 
 static int default_num;
 static int default_alloc;
@@ -36,14 +26,14 @@ static const char **default_arg;
 
 static const char *get_color_code(int idx)
 {
-	if (showbranch_use_color)
-		return column_colors[idx];
+	if (want_color(showbranch_use_color))
+		return column_colors_ansi[idx % column_colors_ansi_max];
 	return "";
 }
 
 static const char *get_color_reset_code(void)
 {
-	if (showbranch_use_color)
+	if (want_color(showbranch_use_color))
 		return GIT_COLOR_RESET;
 	return "";
 }
@@ -293,8 +283,7 @@ static void show_one_commit(struct commit *commit, int no_name)
 	struct commit_name *name = commit->util;
 
 	if (commit->object.parsed) {
-		struct pretty_print_context ctx = {0};
-		pretty_print_commit(CMIT_FMT_ONELINE, commit, &pretty, &ctx);
+		pp_commit_easy(CMIT_FMT_ONELINE, commit, &pretty);
 		pretty_str = pretty.buf;
 	}
 	if (!prefixcmp(pretty_str, "[PATCH] "))
@@ -584,7 +573,7 @@ static int git_show_branch_config(const char *var, const char *value, void *cb)
 	}
 
 	if (!strcmp(var, "color.showbranch")) {
-		showbranch_use_color = git_config_colorbool(var, value, -1);
+		showbranch_use_color = git_config_colorbool(var, value);
 		return 0;
 	}
 
@@ -695,9 +684,6 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 	};
 
 	git_config(git_show_branch_config, NULL);
-
-	if (showbranch_use_color == -1)
-		showbranch_use_color = git_use_color_default;
 
 	/* If nothing is specified, try the default first */
 	if (ac == 1 && default_num) {
@@ -892,7 +878,7 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 				for (j = 0; j < i; j++)
 					putchar(' ');
 				printf("%s%c%s [%s] ",
-				       get_color_code(i % COLUMN_COLORS_MAX),
+				       get_color_code(i),
 				       is_head ? '*' : '!',
 				       get_color_reset_code(), ref_name[i]);
 			}
@@ -954,7 +940,7 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 				else
 					mark = '+';
 				printf("%s%c%s",
-				       get_color_code(i % COLUMN_COLORS_MAX),
+				       get_color_code(i),
 				       mark, get_color_reset_code());
 			}
 			putchar(' ');

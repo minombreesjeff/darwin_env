@@ -59,27 +59,6 @@ enum graph_state {
 	GRAPH_COLLAPSING
 };
 
-/*
- * The list of available column colors.
- */
-static const char *column_colors_ansi[] = {
-	GIT_COLOR_RED,
-	GIT_COLOR_GREEN,
-	GIT_COLOR_YELLOW,
-	GIT_COLOR_BLUE,
-	GIT_COLOR_MAGENTA,
-	GIT_COLOR_CYAN,
-	GIT_COLOR_BOLD_RED,
-	GIT_COLOR_BOLD_GREEN,
-	GIT_COLOR_BOLD_YELLOW,
-	GIT_COLOR_BOLD_BLUE,
-	GIT_COLOR_BOLD_MAGENTA,
-	GIT_COLOR_BOLD_CYAN,
-	GIT_COLOR_RESET,
-};
-
-#define COLUMN_COLORS_ANSI_MAX (ARRAY_SIZE(column_colors_ansi) - 1)
-
 static const char **column_colors;
 static unsigned short column_colors_max;
 
@@ -228,7 +207,7 @@ struct git_graph *graph_init(struct rev_info *opt)
 
 	if (!column_colors)
 		graph_set_column_colors(column_colors_ansi,
-					COLUMN_COLORS_ANSI_MAX);
+					column_colors_ansi_max);
 
 	graph->commit = NULL;
 	graph->revs = opt;
@@ -368,7 +347,7 @@ static struct commit_list *first_interesting_parent(struct git_graph *graph)
 
 static unsigned short graph_get_current_column_color(const struct git_graph *graph)
 {
-	if (!DIFF_OPT_TST(&graph->revs->diffopt, COLOR_DIFF))
+	if (!want_color(graph->revs->diffopt.use_color))
 		return column_colors_max;
 	return graph->default_column_color;
 }

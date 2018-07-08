@@ -182,6 +182,7 @@ static int builtin_diff_combined(struct rev_info *revs,
 		hashcpy((unsigned char *)(parent + i), ent[i].item->sha1);
 	diff_tree_combined(parent[0], parent + 1, ents - 1,
 			   revs->dense_combined_merges, revs);
+	free((void *)parent);
 	return 0;
 }
 
@@ -275,9 +276,6 @@ int cmd_diff(int argc, const char **argv, const char *prefix)
 	prefix = setup_git_directory_gently(&nongit);
 	gitmodules_config();
 	git_config(git_diff_ui_config, NULL);
-
-	if (diff_use_color_default == -1)
-		diff_use_color_default = git_use_color_default;
 
 	init_revisions(&rev, prefix);
 

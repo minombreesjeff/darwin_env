@@ -24,6 +24,23 @@ struct rev_info;
 struct log_info;
 struct string_list;
 
+struct rev_cmdline_info {
+	unsigned int nr;
+	unsigned int alloc;
+	struct rev_cmdline_entry {
+		struct object *item;
+		const char *name;
+		enum {
+			REV_CMD_REF,
+			REV_CMD_PARENTS_ONLY,
+			REV_CMD_LEFT,
+			REV_CMD_RIGHT,
+			REV_CMD_REV
+		} whence;
+		unsigned flags;
+	} *rev;
+};
+
 struct rev_info {
 	/* Starting list */
 	struct commit_list *commits;
@@ -32,11 +49,15 @@ struct rev_info {
 	/* Parents of shown commits */
 	struct object_array boundary_commits;
 
+	/* The end-points specified by the end user */
+	struct rev_cmdline_info cmdline;
+
 	/* Basic information */
 	const char *prefix;
 	const char *def;
 	struct pathspec prune_data;
-	unsigned int early_output;
+	unsigned int	early_output:1,
+			ignore_missing:1;
 
 	/* Traversal flags */
 	unsigned int	dense:1,
@@ -90,9 +111,11 @@ struct rev_info {
 			show_notes_given:1,
 			pretty_given:1,
 			abbrev_commit:1,
+			abbrev_commit_given:1,
 			use_terminator:1,
 			missing_newline:1,
-			date_mode_explicit:1;
+			date_mode_explicit:1,
+			preserve_subject:1;
 	unsigned int	disable_stdin:1;
 
 	enum date_mode date_mode;
@@ -141,6 +164,7 @@ struct rev_info {
 	/* commit counts */
 	int count_left;
 	int count_right;
+	int count_same;
 };
 
 #define REV_TREE_SAME		0

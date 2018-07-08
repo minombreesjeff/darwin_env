@@ -2,12 +2,21 @@
 .\"     Title: git-tag
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 06/01/2011
+.\"      Date: 12/15/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.5.4
+.\"    Source: Git 1.7.8.247.g10f4e
 .\"  Language: English
 .\"
-.TH "GIT\-TAG" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
+.TH "GIT\-TAG" "1" "12/15/2011" "Git 1\&.7\&.8\&.247\&.g10f4e" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -26,7 +35,7 @@ git-tag \- Create, list, delete or verify a tag object signed with GPG
 \fIgit tag\fR [\-a | \-s | \-u <key\-id>] [\-f] [\-m <msg> | \-F <file>]
         <tagname> [<commit> | <object>]
 \fIgit tag\fR \-d <tagname>\&...
-\fIgit tag\fR [\-n[<num>]] \-l [\-\-contains <commit>] [<pattern>]
+\fIgit tag\fR [\-n[<num>]] \-l [\-\-contains <commit>] [<pattern>\&...]
 \fIgit tag\fR \-v <tagname>\&...
 .fi
 .sp
@@ -45,17 +54,17 @@ Otherwise just a tag reference for the SHA1 object name of the commit object is 
 A GnuPG signed tag object will be created when \-s or \-u <key\-id> is used\&. When \-u <key\-id> is not used, the committer identity for the current user is used to find the GnuPG key for signing\&.
 .SH "OPTIONS"
 .PP
-\-a
+\-a, \-\-annotate
 .RS 4
 Make an unsigned, annotated tag object
 .RE
 .PP
-\-s
+\-s, \-\-sign
 .RS 4
 Make a GPG\-signed tag, using the default e\-mail address\(cqs key
 .RE
 .PP
-\-u <key\-id>
+\-u <key\-id>, \-\-local\-user=<key\-id>
 .RS 4
 Make a GPG\-signed tag, using the given key
 .RE
@@ -65,12 +74,12 @@ Make a GPG\-signed tag, using the given key
 Replace an existing tag with the given name (instead of failing)
 .RE
 .PP
-\-d
+\-d, \-\-delete
 .RS 4
 Delete existing tags with the given names\&.
 .RE
 .PP
-\-v
+\-v, \-\-verify
 .RS 4
 Verify the gpg signature of the given tag names\&.
 .RE
@@ -81,9 +90,9 @@ Verify the gpg signature of the given tag names\&.
 \-n, only the first line is printed\&. If the tag is not annotated, the commit message is displayed instead\&.
 .RE
 .PP
-\-l <pattern>
+\-l <pattern>, \-\-list <pattern>
 .RS 4
-List tags with names that match the given pattern (or all if no pattern is given)\&. Typing "git tag" without arguments, also lists all tags\&.
+List tags with names that match the given pattern (or all if no pattern is given)\&. Running "git tag" without arguments also lists all tags\&. The pattern is a shell wildcard (i\&.e\&., matched using fnmatch(3))\&. Multiple patterns may be given; if any of them matches, the tag is shown\&.
 .RE
 .PP
 \-\-contains <commit>
@@ -91,7 +100,7 @@ List tags with names that match the given pattern (or all if no pattern is given
 Only list tags which contain the specified commit\&.
 .RE
 .PP
-\-m <msg>
+\-m <msg>, \-\-message=<msg>
 .RS 4
 Use the given tag message (instead of prompting)\&. If multiple
 \-m
@@ -104,7 +113,7 @@ if none of
 is given\&.
 .RE
 .PP
-\-F <file>
+\-F <file>, \-\-file=<file>
 .RS 4
 Take the tag message from the given file\&. Use
 \fI\-\fR
@@ -115,6 +124,25 @@ if none of
 \-s, or
 \-u <key\-id>
 is given\&.
+.RE
+.PP
+\-\-cleanup=<mode>
+.RS 4
+This option sets how the tag message is cleaned up\&. The
+\fI<mode>\fR
+can be one of
+\fIverbatim\fR,
+\fIwhitespace\fR
+and
+\fIstrip\fR\&. The
+\fIstrip\fR
+mode is default\&. The
+\fIverbatim\fR
+mode does not change message at all,
+\fIwhitespace\fR
+removes just leading/trailing whitespace lines and
+\fIstrip\fR
+removes both whitespace and commentary\&.
 .RE
 .PP
 <tagname>

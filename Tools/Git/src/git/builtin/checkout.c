@@ -19,6 +19,7 @@
 #include "ll-merge.h"
 #include "resolve-undo.h"
 #include "submodule.h"
+#include "argv-array.h"
 
 static const char * const checkout_usage[] = {
 	"git checkout [options] <branch>",
@@ -71,7 +72,7 @@ static int update_some(const unsigned char *sha1, const char *base, int baselen,
 	hashcpy(ce->sha1, sha1);
 	memcpy(ce->name, base, baselen);
 	memcpy(ce->name + baselen, pathname, len - baselen);
-	ce->ce_flags = create_ce_flags(len, 0);
+	ce->ce_flags = create_ce_flags(len, 0) | CE_UPDATE;
 	ce->ce_mode = create_ce_mode(mode);
 	add_cache_entry(ce, ADD_CACHE_OK_TO_ADD | ADD_CACHE_OK_TO_REPLACE);
 	return 0;
@@ -79,7 +80,10 @@ static int update_some(const unsigned char *sha1, const char *base, int baselen,
 
 static int read_tree_some(struct tree *tree, const char **pathspec)
 {
-	read_tree_recursive(tree, "", 0, 0, pathspec, update_some, NULL);
+	struct pathspec ps;
+	init_pathspec(&ps, pathspec);
+	read_tree_recursive(tree, "", 0, 0, &ps, update_some, NULL);
+	free_pathspec(&ps);
 
 	/* update the index with the given tree's info
 	 * for all args, expanding wildcards, and exit
@@ -198,7 +202,7 @@ static int checkout_merged(int pos, struct checkout *state)
 }
 
 static int checkout_paths(struct tree *source_tree, const char **pathspec,
-			  struct checkout_opts *opts)
+			  const char *prefix, struct checkout_opts *opts)
 {
 	int pos;
 	struct checkout state;
@@ -225,10 +229,12 @@ static int checkout_paths(struct tree *source_tree, const char **pathspec,
 
 	for (pos = 0; pos < active_nr; pos++) {
 		struct cache_entry *ce = active_cache[pos];
+		if (source_tree && !(ce->ce_flags & CE_UPDATE))
+			continue;
 		match_pathspec(pathspec, ce->name, ce_namelen(ce), 0, ps_matched);
 	}
 
-	if (report_path_error(ps_matched, pathspec, 0))
+	if (report_path_error(ps_matched, pathspec, prefix))
 		return 1;
 
 	/* "checkout -m path" to recreate conflicted state */
@@ -263,6 +269,8 @@ static int checkout_paths(struct tree *source_tree, const char **pathspec,
 	state.refresh_cache = 1;
 	for (pos = 0; pos < active_nr; pos++) {
 		struct cache_entry *ce = active_cache[pos];
+		if (source_tree && !(ce->ce_flags & CE_UPDATE))
+			continue;
 		if (match_pathspec(pathspec, ce->name, ce_namelen(ce), 0, NULL)) {
 			if (!ce_stage(ce)) {
 				errs |= checkout_entry(ce, &state, NULL);
@@ -303,9 +311,8 @@ static void show_local_changes(struct object *head, struct diff_options *opts)
 static void describe_detached_head(const char *msg, struct commit *commit)
 {
 	struct strbuf sb = STRBUF_INIT;
-	struct pretty_print_context ctx = {0};
 	parse_commit(commit);
-	pretty_print_commit(CMIT_FMT_ONELINE, commit, &sb, &ctx);
+	pp_commit_easy(CMIT_FMT_ONELINE, commit, &sb);
 	fprintf(stderr, "%s %s... %s\n", msg,
 		find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV), sb.buf);
 	strbuf_release(&sb);
@@ -404,7 +411,7 @@ static int merge_working_tree(struct checkout_opts *opts,
 		topts.fn = twoway_merge;
 		topts.dir = xcalloc(1, sizeof(*topts.dir));
 		topts.dir->flags |= DIR_SHOW_IGNORED;
-		topts.dir->exclude_per_dir = ".gitignore";
+		setup_standard_excludes(topts.dir);
 		tree = parse_tree_indirect(old->commit ?
 					   old->commit->object.sha1 :
 					   EMPTY_TREE_SHA1_BIN);
@@ -586,24 +593,12 @@ static void update_refs_for_switch(struct checkout_opts *opts,
 		report_tracking(new);
 }
 
-struct rev_list_args {
-	int argc;
-	int alloc;
-	const char **argv;
-};
-
-static void add_one_rev_list_arg(struct rev_list_args *args, const char *s)
-{
-	ALLOC_GROW(args->argv, args->argc + 1, args->alloc);
-	args->argv[args->argc++] = s;
-}
-
 static int add_one_ref_to_rev_list_arg(const char *refname,
 				       const unsigned char *sha1,
 				       int flags,
 				       void *cb_data)
 {
-	add_one_rev_list_arg(cb_data, refname);
+	argv_array_push(cb_data, refname);
 	return 0;
 }
 
@@ -620,14 +615,12 @@ static int clear_commit_marks_from_one_ref(const char *refname,
 
 static void describe_one_orphan(struct strbuf *sb, struct commit *commit)
 {
-	struct pretty_print_context ctx = { 0 };
-
 	parse_commit(commit);
 	strbuf_addstr(sb, "  ");
 	strbuf_addstr(sb,
 		find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV));
 	strbuf_addch(sb, ' ');
-	pretty_print_commit(CMIT_FMT_ONELINE, commit, sb, &ctx);
+	pp_commit_easy(CMIT_FMT_ONELINE, commit, sb);
 	strbuf_addch(sb, '\n');
 }
 
@@ -657,24 +650,25 @@ static void suggest_reattach(struct commit *commit, struct rev_info *revs)
 		"Warning: you are leaving %d commit behind, "
 		"not connected to\n"
 		"any of your branches:\n\n"
-		"%s\n"
-		"If you want to keep it by creating a new branch, "
-		"this may be a good time\nto do so with:\n\n"
-		" git branch new_branch_name %s\n\n",
+		"%s\n",
 		/* The plural version */
 		"Warning: you are leaving %d commits behind, "
 		"not connected to\n"
 		"any of your branches:\n\n"
-		"%s\n"
-		"If you want to keep them by creating a new branch, "
-		"this may be a good time\nto do so with:\n\n"
-		" git branch new_branch_name %s\n\n",
+		"%s\n",
 		/* Give ngettext() the count */
 		lost),
 		lost,
-		sb.buf,
-		sha1_to_hex(commit->object.sha1));
+		sb.buf);
 	strbuf_release(&sb);
+
+	if (advice_detached_head)
+		fprintf(stderr,
+			_(
+			"If you want to keep them by creating a new branch, "
+			"this may be a good time\nto do so with:\n\n"
+			" git branch new_branch_name %s\n\n"),
+			sha1_to_hex(commit->object.sha1));
 }
 
 /*
@@ -684,15 +678,14 @@ static void suggest_reattach(struct commit *commit, struct rev_info *revs)
  */
 static void orphaned_commit_warning(struct commit *commit)
 {
-	struct rev_list_args args = { 0, 0, NULL };
+	struct argv_array args = ARGV_ARRAY_INIT;
 	struct rev_info revs;
 
-	add_one_rev_list_arg(&args, "(internal)");
-	add_one_rev_list_arg(&args, sha1_to_hex(commit->object.sha1));
-	add_one_rev_list_arg(&args, "--not");
+	argv_array_push(&args, "(internal)");
+	argv_array_push(&args, sha1_to_hex(commit->object.sha1));
+	argv_array_push(&args, "--not");
 	for_each_ref(add_one_ref_to_rev_list_arg, &args);
-	add_one_rev_list_arg(&args, "--");
-	add_one_rev_list_arg(&args, NULL);
+	argv_array_push(&args, "--");
 
 	init_revisions(&revs, NULL);
 	if (setup_revisions(args.argc - 1, args.argv, &revs, NULL) != 1)
@@ -704,6 +697,7 @@ static void orphaned_commit_warning(struct commit *commit)
 	else
 		describe_detached_head(_("Previous HEAD position was"), commit);
 
+	argv_array_clear(&args);
 	clear_commit_marks(commit, -1);
 	for_each_ref(clear_commit_marks_from_one_ref, NULL);
 }
@@ -715,10 +709,12 @@ static int switch_branches(struct checkout_opts *opts, struct branch_info *new)
 	unsigned char rev[20];
 	int flag;
 	memset(&old, 0, sizeof(old));
-	old.path = resolve_ref("HEAD", rev, 0, &flag);
+	old.path = xstrdup(resolve_ref("HEAD", rev, 0, &flag));
 	old.commit = lookup_commit_reference_gently(rev, 1);
-	if (!(flag & REF_ISSYMREF))
+	if (!(flag & REF_ISSYMREF)) {
+		free((char *)old.path);
 		old.path = NULL;
+	}
 
 	if (old.path && !prefixcmp(old.path, "refs/heads/"))
 		old.name = old.path + strlen("refs/heads/");
@@ -741,6 +737,7 @@ static int switch_branches(struct checkout_opts *opts, struct branch_info *new)
 	update_refs_for_switch(opts, &old, new);
 
 	ret = post_checkout_hook(old.commit, new->commit, 1);
+	free((char *)old.path);
 	return ret || opts->writeout_error;
 }
 
@@ -1060,7 +1057,7 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		if (1 < !!opts.writeout_stage + !!opts.force + !!opts.merge)
 			die(_("git checkout: --ours/--theirs, --force and --merge are incompatible when\nchecking out of the index."));
 
-		return checkout_paths(source_tree, pathspec, &opts);
+		return checkout_paths(source_tree, pathspec, prefix, &opts);
 	}
 
 	if (patch_mode)
@@ -1068,15 +1065,10 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 
 	if (opts.new_branch) {
 		struct strbuf buf = STRBUF_INIT;
-		if (strbuf_check_branch_ref(&buf, opts.new_branch))
-			die(_("git checkout: we do not like '%s' as a branch name."),
-			    opts.new_branch);
-		if (!get_sha1(buf.buf, rev)) {
-			opts.branch_exists = 1;
-			if (!opts.new_branch_force)
-				die(_("git checkout: branch %s already exists"),
-				    opts.new_branch);
-		}
+
+		opts.branch_exists = validate_new_branchname(opts.new_branch, &buf,
+							     !!opts.new_branch_force, 0);
+
 		strbuf_release(&buf);
 	}
 

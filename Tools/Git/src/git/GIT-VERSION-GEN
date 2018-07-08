@@ -1,7 +1,11 @@
 #!/bin/sh
 
 GVF=GIT-VERSION-FILE
-DEF_VER=v1.7.5.4
+DEF_VER=v1.7.7.5
+
+if [ -n "$RC_ProjectSourceVersion" ] ; then
+	DEF_VER="$DEF_VER (Apple Git-$RC_ProjectSourceVersion)"
+fi
 
 LF='
 '

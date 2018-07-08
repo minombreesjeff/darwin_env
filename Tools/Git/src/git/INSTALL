@@ -25,6 +25,19 @@ set up install paths (via config.mak.autogen), so you can write instead
 	$ make all doc ;# as yourself
 	# make install install-doc install-html;# as root
 
+If you're willing to trade off (much) longer build time for a later
+faster git you can also do a profile feedback build with
+
+	$ make profile-all
+	# make prefix=... install
+
+This will run the complete test suite as training workload and then
+rebuild git with the generated profile feedback. This results in a git
+which is a few percent faster on CPU intensive workloads.  This
+may be a good tradeoff for distribution packagers.
+
+Note that the profile feedback build stage currently generates
+a lot of additional compiler warnings.
 
 Issues of note:
 
@@ -126,34 +139,11 @@ Issues of note:
    uses some compatibility wrappers to work on AsciiDoc 8. If you have
    AsciiDoc 7, try "make ASCIIDOC7=YesPlease".
 
-   Alternatively, pre-formatted documentation is available in
-   "html" and "man" branches of the git repository itself.  For
-   example, you could:
-
-	$ mkdir manual && cd manual
-	$ git init
-	$ git fetch-pack git://git.kernel.org/pub/scm/git/git.git man html |
-	  while read a b
-	  do
-	    echo $a >.git/$b
-	  done
-	$ cp .git/refs/heads/man .git/refs/heads/master
-	$ git checkout
-
-   to checkout the pre-built man pages.  Also in this repository:
-
-	$ git checkout html
-
-   would instead give you a copy of what you see at:
-
-	http://www.kernel.org/pub/software/scm/git/docs/
-
    There are also "make quick-install-doc", "make quick-install-man"
    and "make quick-install-html" which install preformatted man pages
-   and html documentation.
-   This does not require asciidoc/xmlto, but it only works from within
-   a cloned checkout of git.git with these two extra branches, and will
-   not work for the maintainer for obvious chicken-and-egg reasons.
+   and html documentation. To use these build targets, you need to
+   clone two separate git-htmldocs and git-manpages repositories next
+   to the clone of git itself.
 
    It has been reported that docbook-xsl version 1.72 and 1.73 are
    buggy; 1.72 misformats manual pages for callouts, and 1.73 needs

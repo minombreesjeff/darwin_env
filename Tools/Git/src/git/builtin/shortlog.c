@@ -29,9 +29,6 @@ static int compare_by_number(const void *a1, const void *a2)
 		return -1;
 }
 
-const char *format_subject(struct strbuf *sb, const char *msg,
-			   const char *line_separator);
-
 static void insert_one_record(struct shortlog *log,
 			      const char *author,
 			      const char *oneline)
@@ -141,9 +138,8 @@ void shortlog_add_commit(struct shortlog *log, struct commit *commit)
 	const char *author = NULL, *buffer;
 	struct strbuf buf = STRBUF_INIT;
 	struct strbuf ufbuf = STRBUF_INIT;
-	struct pretty_print_context ctx = {0};
 
-	pretty_print_commit(CMIT_FMT_RAW, commit, &buf, &ctx);
+	pp_commit_easy(CMIT_FMT_RAW, commit, &buf);
 	buffer = buf.buf;
 	while (*buffer && *buffer != '\n') {
 		const char *eol = strchr(buffer, '\n');
@@ -162,11 +158,12 @@ void shortlog_add_commit(struct shortlog *log, struct commit *commit)
 		    sha1_to_hex(commit->object.sha1));
 	if (log->user_format) {
 		struct pretty_print_context ctx = {0};
+		ctx.fmt = CMIT_FMT_USERFORMAT;
 		ctx.abbrev = log->abbrev;
 		ctx.subject = "";
 		ctx.after_subject = "";
 		ctx.date_mode = DATE_NORMAL;
-		pretty_print_commit(CMIT_FMT_USERFORMAT, commit, &ufbuf, &ctx);
+		pretty_print_commit(&ctx, commit, &ufbuf);
 		buffer = ufbuf.buf;
 	} else if (*buffer) {
 		buffer++;

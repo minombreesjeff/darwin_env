@@ -8,11 +8,15 @@ git-http-fetch - Download from a remote git repository via HTTP
 
 SYNOPSIS
 --------
+[verse]
 'git http-fetch' [-c] [-t] [-a] [-d] [-v] [-w filename] [--recover] [--stdin] <commit> <url>
 
 DESCRIPTION
 -----------
 Downloads a remote git repository via HTTP.
+
+*NOTE*: use of this command without -a is deprecated.  The -a
+behaviour will become the default in a future release.
 
 OPTIONS
 -------

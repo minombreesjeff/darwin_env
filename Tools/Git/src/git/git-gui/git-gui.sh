@@ -49,7 +49,9 @@ catch {rename send {}} ; # What an evil concept...
 ##
 ## locate our library
 
-set oguilib {@@GITGUI_LIBDIR@@}
+#set oguilib {@@GITGUI_LIBDIR@@}
+set gitprefix [regsub "/usr/.*" [file normalize [info script]] "/usr"]
+set oguilib [file join $gitprefix share git-gui lib]
 set oguirel {@@GITGUI_RELATIVE@@}
 if {$oguirel eq {1}} {
 	set oguilib [file dirname [file normalize $argv0]]

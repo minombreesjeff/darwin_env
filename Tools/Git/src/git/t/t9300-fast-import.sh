@@ -94,6 +94,12 @@ data <<EOF
 An annotated tag without a tagger
 EOF
 
+tag series-A-blob
+from :3
+data <<EOF
+An annotated tag that annotates a blob.
+EOF
+
 INPUT_END
 test_expect_success \
     'A: create pack from stdin' \
@@ -152,6 +158,18 @@ test_expect_success 'A: verify tag/series-A' '
 '
 
 cat >expect <<EOF
+object $(git rev-parse refs/heads/master:file3)
+type blob
+tag series-A-blob
+
+An annotated tag that annotates a blob.
+EOF
+test_expect_success 'A: verify tag/series-A-blob' '
+	git cat-file tag tags/series-A-blob >actual &&
+	test_cmp expect actual
+'
+
+cat >expect <<EOF
 :2 `git rev-parse --verify master:file2`
 :3 `git rev-parse --verify master:file3`
 :4 `git rev-parse --verify master:file4`
@@ -168,6 +186,55 @@ test_expect_success \
 		--export-marks=marks.new \
 		</dev/null &&
 	test_cmp expect marks.new'
+
+test_tick
+new_blob=$(echo testing | git hash-object --stdin)
+cat >input <<INPUT_END
+tag series-A-blob-2
+from $(git rev-parse refs/heads/master:file3)
+data <<EOF
+Tag blob by sha1.
+EOF
+
+blob
+mark :6
+data <<EOF
+testing
+EOF
+
+commit refs/heads/new_blob
+committer  <> 0 +0000
+data 0
+M 644 :6 new_blob
+#pretend we got sha1 from fast-import
+ls "new_blob"
+
+tag series-A-blob-3
+from $new_blob
+data <<EOF
+Tag new_blob.
+EOF
+INPUT_END
+
+cat >expect <<EOF
+object $(git rev-parse refs/heads/master:file3)
+type blob
+tag series-A-blob-2
+
+Tag blob by sha1.
+object $new_blob
+type blob
+tag series-A-blob-3
+
+Tag new_blob.
+EOF
+
+test_expect_success \
+	'A: tag blob by sha1' \
+	'git fast-import <input &&
+	git cat-file tag tags/series-A-blob-2 >actual &&
+	git cat-file tag tags/series-A-blob-3 >>actual &&
+	test_cmp expect actual'
 
 test_tick
 cat >input <<INPUT_END
@@ -323,6 +390,105 @@ test_expect_success \
 	 test -f .git/TEMP_TAG &&
 	 test `git rev-parse master` = `git rev-parse TEMP_TAG^`'
 rm -f .git/TEMP_TAG
+
+git gc 2>/dev/null >/dev/null
+git prune 2>/dev/null >/dev/null
+
+cat >input <<INPUT_END
+commit refs/heads/empty-committer-1
+committer  <> $GIT_COMMITTER_DATE
+data <<COMMIT
+empty commit
+COMMIT
+INPUT_END
+test_expect_success 'B: accept empty committer' '
+	git fast-import <input &&
+	out=$(git fsck) &&
+	echo "$out" &&
+	test -z "$out"
+'
+git update-ref -d refs/heads/empty-committer-1 || true
+
+git gc 2>/dev/null >/dev/null
+git prune 2>/dev/null >/dev/null
+
+cat >input <<INPUT_END
+commit refs/heads/empty-committer-2
+committer <a@b.com> $GIT_COMMITTER_DATE
+data <<COMMIT
+empty commit
+COMMIT
+INPUT_END
+test_expect_success 'B: accept and fixup committer with no name' '
+	git fast-import <input &&
+	out=$(git fsck) &&
+	echo "$out" &&
+	test -z "$out"
+'
+git update-ref -d refs/heads/empty-committer-2 || true
+
+git gc 2>/dev/null >/dev/null
+git prune 2>/dev/null >/dev/null
+
+cat >input <<INPUT_END
+commit refs/heads/invalid-committer
+committer Name email> $GIT_COMMITTER_DATE
+data <<COMMIT
+empty commit
+COMMIT
+INPUT_END
+test_expect_success 'B: fail on invalid committer (1)' '
+	test_must_fail git fast-import <input
+'
+git update-ref -d refs/heads/invalid-committer || true
+
+cat >input <<INPUT_END
+commit refs/heads/invalid-committer
+committer Name <e<mail> $GIT_COMMITTER_DATE
+data <<COMMIT
+empty commit
+COMMIT
+INPUT_END
+test_expect_success 'B: fail on invalid committer (2)' '
+	test_must_fail git fast-import <input
+'
+git update-ref -d refs/heads/invalid-committer || true
+
+cat >input <<INPUT_END
+commit refs/heads/invalid-committer
+committer Name <email>> $GIT_COMMITTER_DATE
+data <<COMMIT
+empty commit
+COMMIT
+INPUT_END
+test_expect_success 'B: fail on invalid committer (3)' '
+	test_must_fail git fast-import <input
+'
+git update-ref -d refs/heads/invalid-committer || true
+
+cat >input <<INPUT_END
+commit refs/heads/invalid-committer
+committer Name <email $GIT_COMMITTER_DATE
+data <<COMMIT
+empty commit
+COMMIT
+INPUT_END
+test_expect_success 'B: fail on invalid committer (4)' '
+	test_must_fail git fast-import <input
+'
+git update-ref -d refs/heads/invalid-committer || true
+
+cat >input <<INPUT_END
+commit refs/heads/invalid-committer
+committer Name<email> $GIT_COMMITTER_DATE
+data <<COMMIT
+empty commit
+COMMIT
+INPUT_END
+test_expect_success 'B: fail on invalid committer (5)' '
+	test_must_fail git fast-import <input
+'
+git update-ref -d refs/heads/invalid-committer || true
 
 ###
 ### series C
@@ -733,6 +899,47 @@ test_expect_success \
 	'git fast-import <input &&
 	 git diff-tree --abbrev --raw L^ L >output &&
 	 test_cmp expect output'
+
+cat >input <<INPUT_END
+blob
+mark :1
+data <<EOF
+the data
+EOF
+
+commit refs/heads/L2
+committer C O Mitter <committer@example.com> 1112912473 -0700
+data <<COMMIT
+init L2
+COMMIT
+M 644 :1 a/b/c
+M 644 :1 a/b/d
+M 644 :1 a/e/f
+
+commit refs/heads/L2
+committer C O Mitter <committer@example.com> 1112912473 -0700
+data <<COMMIT
+update L2
+COMMIT
+C a g
+C a/e g/b
+M 644 :1 g/b/h
+INPUT_END
+
+cat <<EOF >expect
+g/b/f
+g/b/h
+EOF
+
+test_expect_success \
+    'L: nested tree copy does not corrupt deltas' \
+	'git fast-import <input &&
+	git ls-tree L2 g/b/ >tmp &&
+	cat tmp | cut -f 2 >actual &&
+	test_cmp expect actual &&
+	git fsck `git rev-parse L2`'
+
+git update-ref -d refs/heads/L2
 
 ###
 ### series M
@@ -1882,6 +2089,53 @@ test_expect_success 'R: --import-marks-if-exists' '
 	test_cmp expect io.marks
 '
 
+test_expect_success 'R: feature import-marks-if-exists' '
+	rm -f io.marks &&
+	>expect &&
+
+	git fast-import --export-marks=io.marks <<-\EOF &&
+	feature import-marks-if-exists=not_io.marks
+	EOF
+	test_cmp expect io.marks &&
+
+	blob=$(echo hi | git hash-object --stdin) &&
+
+	echo ":1 $blob" >io.marks &&
+	echo ":1 $blob" >expect &&
+	echo ":2 $blob" >>expect &&
+
+	git fast-import --export-marks=io.marks <<-\EOF &&
+	feature import-marks-if-exists=io.marks
+	blob
+	mark :2
+	data 3
+	hi
+
+	EOF
+	test_cmp expect io.marks &&
+
+	echo ":3 $blob" >>expect &&
+
+	git fast-import --import-marks=io.marks \
+			--export-marks=io.marks <<-\EOF &&
+	feature import-marks-if-exists=not_io.marks
+	blob
+	mark :3
+	data 3
+	hi
+
+	EOF
+	test_cmp expect io.marks &&
+
+	>expect &&
+
+	git fast-import --import-marks-if-exists=not_io.marks \
+			--export-marks=io.marks <<-\EOF
+	feature import-marks-if-exists=io.marks
+	EOF
+	test_cmp expect io.marks
+'
+
 cat >input << EOF
 feature import-marks=marks.out
 feature export-marks=marks.new
@@ -1893,7 +2147,7 @@ test_expect_success \
     test_cmp marks.out marks.new'
 
 cat >input <<EOF
-feature import-marks=nonexistant.marks
+feature import-marks=nonexistent.marks
 feature export-marks=marks.new
 EOF
 
@@ -1904,7 +2158,7 @@ test_expect_success \
 
 
 cat >input <<EOF
-feature import-marks=nonexistant.marks
+feature import-marks=nonexistent.marks
 feature export-marks=combined.marks
 EOF
 
@@ -2195,6 +2449,48 @@ EOF
 test_expect_success 'R: quiet option results in no stats being output' '
     cat input | git fast-import 2> output &&
     test_cmp empty output
+'
+
+test_expect_success 'R: feature done means terminating "done" is mandatory' '
+	echo feature done | test_must_fail git fast-import &&
+	test_must_fail git fast-import --done </dev/null
+'
+
+test_expect_success 'R: terminating "done" with trailing gibberish is ok' '
+	git fast-import <<-\EOF &&
+	feature done
+	done
+	trailing gibberish
+	EOF
+	git fast-import <<-\EOF
+	done
+	more trailing gibberish
+	EOF
+'
+
+test_expect_success 'R: terminating "done" within commit' '
+	cat >expect <<-\EOF &&
+	OBJID
+	:000000 100644 OBJID OBJID A	hello.c
+	:000000 100644 OBJID OBJID A	hello2.c
+	EOF
+	git fast-import <<-EOF &&
+	commit refs/heads/done-ends
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<EOT
+	Commit terminated by "done" command
+	EOT
+	M 100644 inline hello.c
+	data <<EOT
+	Hello, world.
+	EOT
+	C hello.c hello2.c
+	done
+	EOF
+	git rev-list done-ends |
+	git diff-tree -r --stdin --root --always |
+	sed -e "s/$_x40/OBJID/g" >actual &&
+	test_cmp expect actual
 '
 
 cat >input <<EOF

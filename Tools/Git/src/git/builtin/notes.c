@@ -29,7 +29,7 @@ static const char * const git_notes_usage[] = {
 	"git notes [--ref <notes_ref>] merge [-v | -q] [-s <strategy> ] <notes_ref>",
 	"git notes merge --commit [-v | -q]",
 	"git notes merge --abort [-v | -q]",
-	"git notes [--ref <notes_ref>] remove [<object>]",
+	"git notes [--ref <notes_ref>] remove [<object>...]",
 	"git notes [--ref <notes_ref>] prune [-n | -v]",
 	"git notes [--ref <notes_ref>] get-ref",
 	NULL
@@ -99,16 +99,6 @@ struct msg_arg {
 	int use_editor;
 	struct strbuf buf;
 };
-
-static void expand_notes_ref(struct strbuf *sb)
-{
-	if (!prefixcmp(sb->buf, "refs/notes/"))
-		return; /* we're happy */
-	else if (!prefixcmp(sb->buf, "notes/"))
-		strbuf_insert(sb, 0, "refs/", 5);
-	else
-		strbuf_insert(sb, 0, "refs/notes/", 11);
-}
 
 static int list_each_note(const unsigned char *object_sha1,
 		const unsigned char *note_sha1, char *note_path,
@@ -529,6 +519,8 @@ static int list(int argc, const char **argv, const char *prefix)
 	return retval;
 }
 
+static int append_edit(int argc, const char **argv, const char *prefix);
+
 static int add(int argc, const char **argv, const char *prefix)
 {
 	int retval = 0, force = 0;
@@ -556,14 +548,14 @@ static int add(int argc, const char **argv, const char *prefix)
 	};
 
 	argc = parse_options(argc, argv, prefix, options, git_notes_add_usage,
-			     0);
+			     PARSE_OPT_KEEP_ARGV0);
 
-	if (1 < argc) {
+	if (2 < argc) {
 		error(_("too many parameters"));
 		usage_with_options(git_notes_add_usage, options);
 	}
 
-	object_ref = argc ? argv[0] : "HEAD";
+	object_ref = argc > 1 ? argv[1] : "HEAD";
 
 	if (get_sha1(object_ref, object))
 		die(_("Failed to resolve '%s' as a valid ref."), object_ref);
@@ -573,6 +565,18 @@ static int add(int argc, const char **argv, const char *prefix)
 
 	if (note) {
 		if (!force) {
+			if (!msg.given) {
+				/*
+				 * Redirect to "edit" subcommand.
+				 *
+				 * We only end up here if none of -m/-F/-c/-C
+				 * or -f are given. The original args are
+				 * therefore still in argv[0-1].
+				 */
+				argv[0] = "edit";
+				free_notes(t);
+				return append_edit(argc, argv, prefix);
+			}
 			retval = error(_("Cannot add notes. Found existing notes "
 				       "for object %s. Use '-f' to overwrite "
 				       "existing notes"), sha1_to_hex(object));
@@ -949,40 +953,60 @@ static int merge(int argc, const char **argv, const char *prefix)
 	return result < 0; /* return non-zero on conflicts */
 }
 
+#define IGNORE_MISSING 1
+
+static int remove_one_note(struct notes_tree *t, const char *name, unsigned flag)
+{
+	int status;
+	unsigned char sha1[20];
+	if (get_sha1(name, sha1))
+		return error(_("Failed to resolve '%s' as a valid ref."), name);
+	status = remove_note(t, sha1);
+	if (status)
+		fprintf(stderr, _("Object %s has no note\n"), name);
+	else
+		fprintf(stderr, _("Removing note for object %s\n"), name);
+	return (flag & IGNORE_MISSING) ? 0 : status;
+}
+
 static int remove_cmd(int argc, const char **argv, const char *prefix)
 {
+	unsigned flag = 0;
+	int from_stdin = 0;
 	struct option options[] = {
+		OPT_BIT(0, "ignore-missing", &flag,
+			"attempt to remove non-existent note is not an error",
+			IGNORE_MISSING),
+		OPT_BOOLEAN(0, "stdin", &from_stdin,
+			    "read object names from the standard input"),
 		OPT_END()
 	};
-	const char *object_ref;
 	struct notes_tree *t;
-	unsigned char object[20];
-	int retval;
+	int retval = 0;
 
 	argc = parse_options(argc, argv, prefix, options,
 			     git_notes_remove_usage, 0);
 
-	if (1 < argc) {
-		error(_("too many parameters"));
-		usage_with_options(git_notes_remove_usage, options);
-	}
-
-	object_ref = argc ? argv[0] : "HEAD";
-
-	if (get_sha1(object_ref, object))
-		die(_("Failed to resolve '%s' as a valid ref."), object_ref);
-
 	t = init_notes_check("remove");
 
-	retval = remove_note(t, object);
-	if (retval)
-		fprintf(stderr, _("Object %s has no note\n"), sha1_to_hex(object));
-	else {
-		fprintf(stderr, _("Removing note for object %s\n"),
-			sha1_to_hex(object));
-
-		commit_notes(t, "Notes removed by 'git notes remove'");
+	if (!argc && !from_stdin) {
+		retval = remove_one_note(t, "HEAD", flag);
+	} else {
+		while (*argv) {
+			retval |= remove_one_note(t, *argv, flag);
+			argv++;
+		}
 	}
+	if (from_stdin) {
+		struct strbuf sb = STRBUF_INIT;
+		while (strbuf_getwholeline(&sb, stdin, '\n') != EOF) {
+			strbuf_rtrim(&sb);
+			retval |= remove_one_note(t, sb.buf, flag);
+		}
+		strbuf_release(&sb);
+	}
+	if (!retval)
+		commit_notes(t, "Notes removed by 'git notes remove'");
 	free_notes(t);
 	return retval;
 }

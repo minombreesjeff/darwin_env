@@ -169,7 +169,7 @@ enum dav_header_flag {
 	DAV_HEADER_TIMEOUT = (1u << 2)
 };
 
-static char *xml_entities(char *s)
+static char *xml_entities(const char *s)
 {
 	struct strbuf buf = STRBUF_INIT;
 	while (*s) {
@@ -195,6 +195,34 @@ static char *xml_entities(char *s)
 		s++;
 	}
 	return strbuf_detach(&buf, NULL);
+}
+
+static void curl_setup_http_get(CURL *curl, const char *url,
+		const char *custom_req)
+{
+	curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, custom_req);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite_null);
+}
+
+static void curl_setup_http(CURL *curl, const char *url,
+		const char *custom_req, struct buffer *buffer,
+		curl_write_callback write_fn)
+{
+	curl_easy_setopt(curl, CURLOPT_PUT, 1);
+	curl_easy_setopt(curl, CURLOPT_URL, url);
+	curl_easy_setopt(curl, CURLOPT_INFILE, buffer);
+	curl_easy_setopt(curl, CURLOPT_INFILESIZE, buffer->buf.len);
+	curl_easy_setopt(curl, CURLOPT_READFUNCTION, fread_buffer);
+#ifndef NO_CURL_IOCTL
+	curl_easy_setopt(curl, CURLOPT_IOCTLFUNCTION, ioctl_buffer);
+	curl_easy_setopt(curl, CURLOPT_IOCTLDATA, &buffer);
+#endif
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_fn);
+	curl_easy_setopt(curl, CURLOPT_NOBODY, 0);
+	curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, custom_req);
+	curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
 }
 
 static struct curl_slist *get_dav_token_headers(struct remote_lock *lock, enum dav_header_flag options)
@@ -272,11 +300,8 @@ static void start_mkcol(struct transfer_request *request)
 	slot = get_active_slot();
 	slot->callback_func = process_response;
 	slot->callback_data = request;
-	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1); /* undo PUT setup */
-	curl_easy_setopt(slot->curl, CURLOPT_URL, request->url);
+	curl_setup_http_get(slot->curl, request->url, DAV_MKCOL);
 	curl_easy_setopt(slot->curl, CURLOPT_ERRORBUFFER, request->errorstr);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_MKCOL);
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_null);
 
 	if (start_active_slot(slot)) {
 		request->slot = slot;
@@ -352,15 +377,15 @@ static void start_put(struct transfer_request *request)
 	unsigned long len;
 	int hdrlen;
 	ssize_t size;
-	z_stream stream;
+	git_zstream stream;
 
 	unpacked = read_sha1_file(request->obj->sha1, &type, &len);
 	hdrlen = sprintf(hdr, "%s %lu", typename(type), len) + 1;
 
 	/* Set it up */
 	memset(&stream, 0, sizeof(stream));
-	deflateInit(&stream, zlib_compression_level);
-	size = deflateBound(&stream, len + hdrlen);
+	git_deflate_init(&stream, zlib_compression_level);
+	size = git_deflate_bound(&stream, len + hdrlen);
 	strbuf_init(&request->buffer.buf, size);
 	request->buffer.posn = 0;
 
@@ -371,15 +396,15 @@ static void start_put(struct transfer_request *request)
 	/* First header.. */
 	stream.next_in = (void *)hdr;
 	stream.avail_in = hdrlen;
-	while (deflate(&stream, 0) == Z_OK)
-		/* nothing */;
+	while (git_deflate(&stream, 0) == Z_OK)
+		; /* nothing */
 
 	/* Then the data itself.. */
 	stream.next_in = unpacked;
 	stream.avail_in = len;
-	while (deflate(&stream, Z_FINISH) == Z_OK)
-		/* nothing */;
-	deflateEnd(&stream);
+	while (git_deflate(&stream, Z_FINISH) == Z_OK)
+		; /* nothing */
+	git_deflate_end(&stream);
 	free(unpacked);
 
 	request->buffer.buf.len = stream.total_out;
@@ -395,19 +420,8 @@ static void start_put(struct transfer_request *request)
 	slot = get_active_slot();
 	slot->callback_func = process_response;
 	slot->callback_data = request;
-	curl_easy_setopt(slot->curl, CURLOPT_INFILE, &request->buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_INFILESIZE, request->buffer.buf.len);
-	curl_easy_setopt(slot->curl, CURLOPT_READFUNCTION, fread_buffer);
-#ifndef NO_CURL_IOCTL
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLFUNCTION, ioctl_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLDATA, &request->buffer);
-#endif
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_null);
-	curl_easy_setopt(slot->curl, CURLOPT_NOBODY, 0);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_PUT);
-	curl_easy_setopt(slot->curl, CURLOPT_UPLOAD, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_PUT, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_URL, request->url);
+	curl_setup_http(slot->curl, request->url, DAV_PUT,
+			&request->buffer, fwrite_null);
 
 	if (start_active_slot(slot)) {
 		request->slot = slot;
@@ -427,13 +441,10 @@ static void start_move(struct transfer_request *request)
 	slot = get_active_slot();
 	slot->callback_func = process_response;
 	slot->callback_data = request;
-	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1); /* undo PUT setup */
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_MOVE);
+	curl_setup_http_get(slot->curl, request->url, DAV_MOVE);
 	dav_headers = curl_slist_append(dav_headers, request->dest);
 	dav_headers = curl_slist_append(dav_headers, "Overwrite: T");
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, dav_headers);
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_null);
-	curl_easy_setopt(slot->curl, CURLOPT_URL, request->url);
 
 	if (start_active_slot(slot)) {
 		request->slot = slot;
@@ -458,10 +469,7 @@ static int refresh_lock(struct remote_lock *lock)
 
 	slot = get_active_slot();
 	slot->results = &results;
-	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_null);
-	curl_easy_setopt(slot->curl, CURLOPT_URL, lock->url);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_LOCK);
+	curl_setup_http_get(slot->curl, lock->url, DAV_LOCK);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, dav_headers);
 
 	if (start_active_slot(slot)) {
@@ -797,7 +805,7 @@ static void handle_new_lock_ctx(struct xml_ctx *ctx, int tag_closed)
 	}
 }
 
-static void one_remote_ref(char *refname);
+static void one_remote_ref(const char *refname);
 
 static void
 xml_start_tag(void *userData, const char *name, const char **atts)
@@ -876,10 +884,7 @@ static struct remote_lock *lock_remote(const char *path, long timeout)
 		ep[1] = '\0';
 		slot = get_active_slot();
 		slot->results = &results;
-		curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
-		curl_easy_setopt(slot->curl, CURLOPT_URL, url);
-		curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_MKCOL);
-		curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_null);
+		curl_setup_http_get(slot->curl, url, DAV_MKCOL);
 		if (start_active_slot(slot)) {
 			run_active_slot(slot);
 			if (results.curl_result != CURLE_OK &&
@@ -909,19 +914,9 @@ static struct remote_lock *lock_remote(const char *path, long timeout)
 
 	slot = get_active_slot();
 	slot->results = &results;
-	curl_easy_setopt(slot->curl, CURLOPT_INFILE, &out_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_INFILESIZE, out_buffer.buf.len);
-	curl_easy_setopt(slot->curl, CURLOPT_READFUNCTION, fread_buffer);
-#ifndef NO_CURL_IOCTL
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLFUNCTION, ioctl_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLDATA, &out_buffer);
-#endif
-	curl_easy_setopt(slot->curl, CURLOPT_FILE, &in_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_URL, url);
-	curl_easy_setopt(slot->curl, CURLOPT_UPLOAD, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_LOCK);
+	curl_setup_http(slot->curl, url, DAV_LOCK, &out_buffer, fwrite_buffer);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, dav_headers);
+	curl_easy_setopt(slot->curl, CURLOPT_FILE, &in_buffer);
 
 	lock = xcalloc(1, sizeof(*lock));
 	lock->timeout = -1;
@@ -987,9 +982,7 @@ static int unlock_remote(struct remote_lock *lock)
 
 	slot = get_active_slot();
 	slot->results = &results;
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_null);
-	curl_easy_setopt(slot->curl, CURLOPT_URL, lock->url);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_UNLOCK);
+	curl_setup_http_get(slot->curl, lock->url, DAV_UNLOCK);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, dav_headers);
 
 	if (start_active_slot(slot)) {
@@ -1167,19 +1160,10 @@ static void remote_ls(const char *path, int flags,
 
 	slot = get_active_slot();
 	slot->results = &results;
-	curl_easy_setopt(slot->curl, CURLOPT_INFILE, &out_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_INFILESIZE, out_buffer.buf.len);
-	curl_easy_setopt(slot->curl, CURLOPT_READFUNCTION, fread_buffer);
-#ifndef NO_CURL_IOCTL
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLFUNCTION, ioctl_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLDATA, &out_buffer);
-#endif
-	curl_easy_setopt(slot->curl, CURLOPT_FILE, &in_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_URL, url);
-	curl_easy_setopt(slot->curl, CURLOPT_UPLOAD, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_PROPFIND);
+	curl_setup_http(slot->curl, url, DAV_PROPFIND,
+			&out_buffer, fwrite_buffer);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, dav_headers);
+	curl_easy_setopt(slot->curl, CURLOPT_FILE, &in_buffer);
 
 	if (start_active_slot(slot)) {
 		run_active_slot(slot);
@@ -1250,19 +1234,10 @@ static int locking_available(void)
 
 	slot = get_active_slot();
 	slot->results = &results;
-	curl_easy_setopt(slot->curl, CURLOPT_INFILE, &out_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_INFILESIZE, out_buffer.buf.len);
-	curl_easy_setopt(slot->curl, CURLOPT_READFUNCTION, fread_buffer);
-#ifndef NO_CURL_IOCTL
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLFUNCTION, ioctl_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLDATA, &out_buffer);
-#endif
-	curl_easy_setopt(slot->curl, CURLOPT_FILE, &in_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_URL, repo->url);
-	curl_easy_setopt(slot->curl, CURLOPT_UPLOAD, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_PROPFIND);
+	curl_setup_http(slot->curl, repo->url, DAV_PROPFIND,
+			&out_buffer, fwrite_buffer);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, dav_headers);
+	curl_easy_setopt(slot->curl, CURLOPT_FILE, &in_buffer);
 
 	if (start_active_slot(slot)) {
 		run_active_slot(slot);
@@ -1436,19 +1411,9 @@ static int update_remote(unsigned char *sha1, struct remote_lock *lock)
 
 	slot = get_active_slot();
 	slot->results = &results;
-	curl_easy_setopt(slot->curl, CURLOPT_INFILE, &out_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_INFILESIZE, out_buffer.buf.len);
-	curl_easy_setopt(slot->curl, CURLOPT_READFUNCTION, fread_buffer);
-#ifndef NO_CURL_IOCTL
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLFUNCTION, ioctl_buffer);
-	curl_easy_setopt(slot->curl, CURLOPT_IOCTLDATA, &out_buffer);
-#endif
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_null);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_PUT);
+	curl_setup_http(slot->curl, lock->url, DAV_PUT,
+			&out_buffer, fwrite_null);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, dav_headers);
-	curl_easy_setopt(slot->curl, CURLOPT_UPLOAD, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_PUT, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_URL, lock->url);
 
 	if (start_active_slot(slot)) {
 		run_active_slot(slot);
@@ -1471,7 +1436,7 @@ static int update_remote(unsigned char *sha1, struct remote_lock *lock)
 
 static struct ref *remote_refs;
 
-static void one_remote_ref(char *refname)
+static void one_remote_ref(const char *refname)
 {
 	struct ref *ref;
 	struct object *obj;
@@ -1572,19 +1537,9 @@ static void update_remote_info_refs(struct remote_lock *lock)
 
 		slot = get_active_slot();
 		slot->results = &results;
-		curl_easy_setopt(slot->curl, CURLOPT_INFILE, &buffer);
-		curl_easy_setopt(slot->curl, CURLOPT_INFILESIZE, buffer.buf.len);
-		curl_easy_setopt(slot->curl, CURLOPT_READFUNCTION, fread_buffer);
-#ifndef NO_CURL_IOCTL
-		curl_easy_setopt(slot->curl, CURLOPT_IOCTLFUNCTION, ioctl_buffer);
-		curl_easy_setopt(slot->curl, CURLOPT_IOCTLDATA, &buffer);
-#endif
-		curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_null);
-		curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_PUT);
+		curl_setup_http(slot->curl, lock->url, DAV_PUT,
+				&buffer, fwrite_null);
 		curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, dav_headers);
-		curl_easy_setopt(slot->curl, CURLOPT_UPLOAD, 1);
-		curl_easy_setopt(slot->curl, CURLOPT_PUT, 1);
-		curl_easy_setopt(slot->curl, CURLOPT_URL, lock->url);
 
 		if (start_active_slot(slot)) {
 			run_active_slot(slot);
@@ -1651,16 +1606,16 @@ static void fetch_symref(const char *path, char **symref, unsigned char *sha1)
 	strbuf_release(&buffer);
 }
 
-static int verify_merge_base(unsigned char *head_sha1, unsigned char *branch_sha1)
+static int verify_merge_base(unsigned char *head_sha1, struct ref *remote)
 {
-	struct commit *head = lookup_commit(head_sha1);
-	struct commit *branch = lookup_commit(branch_sha1);
+	struct commit *head = lookup_commit_or_die(head_sha1, "HEAD");
+	struct commit *branch = lookup_commit_or_die(remote->old_sha1, remote->name);
 	struct commit_list *merge_bases = get_merge_bases(head, branch, 1);
 
 	return (merge_bases && !merge_bases->next && merge_bases->item == branch);
 }
 
-static int delete_remote_branch(char *pattern, int force)
+static int delete_remote_branch(const char *pattern, int force)
 {
 	struct ref *refs = remote_refs;
 	struct ref *remote_ref = NULL;
@@ -1700,7 +1655,7 @@ static int delete_remote_branch(char *pattern, int force)
 		return error("Remote HEAD is not a symref");
 
 	/* Remote branch must not be the remote HEAD */
-	for (i=0; symref && i<MAXDEPTH; i++) {
+	for (i = 0; symref && i < MAXDEPTH; i++) {
 		if (!strcmp(remote_ref->name, symref))
 			return error("Remote branch %s is the current HEAD",
 				     remote_ref->name);
@@ -1725,7 +1680,7 @@ static int delete_remote_branch(char *pattern, int force)
 			return error("Remote branch %s resolves to object %s\nwhich does not exist locally, perhaps you need to fetch?", remote_ref->name, sha1_to_hex(remote_ref->old_sha1));
 
 		/* Remote branch must be an ancestor of remote HEAD */
-		if (!verify_merge_base(head_sha1, remote_ref->old_sha1)) {
+		if (!verify_merge_base(head_sha1, remote_ref)) {
 			return error("The branch '%s' is not an ancestor "
 				     "of your current HEAD.\n"
 				     "If you are sure you want to delete it,"
@@ -1742,10 +1697,7 @@ static int delete_remote_branch(char *pattern, int force)
 	sprintf(url, "%s%s", repo->url, remote_ref->name);
 	slot = get_active_slot();
 	slot->results = &results;
-	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
-	curl_easy_setopt(slot->curl, CURLOPT_WRITEFUNCTION, fwrite_null);
-	curl_easy_setopt(slot->curl, CURLOPT_URL, url);
-	curl_easy_setopt(slot->curl, CURLOPT_CUSTOMREQUEST, DAV_DELETE);
+	curl_setup_http_get(slot->curl, url, DAV_DELETE);
 	if (start_active_slot(slot)) {
 		run_active_slot(slot);
 		free(url);

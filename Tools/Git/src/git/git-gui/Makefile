@@ -169,19 +169,9 @@ endif
 ifdef GITGUI_MACOSXAPP
 GITGUI_MAIN := git-gui.tcl
 
-git-gui: GIT-VERSION-FILE GIT-GUI-VARS
-	$(QUIET_GEN)rm -f $@ $@+ && \
-	echo '#!$(SHELL_PATH_SQ)' >$@+ && \
-	echo 'if test "z$$*" = zversion ||' >>$@+ && \
-	echo '   test "z$$*" = z--version' >>$@+ && \
-	echo then >>$@+ && \
-	echo '	'echo \'git-gui version '$(GITGUI_VERSION)'\' >>$@+ && \
-	echo else >>$@+ && \
-	echo '	'exec \''$(libdir_SQ)/Git Gui.app/Contents/MacOS/$(subst \,,$(TKEXECUTABLE))'\' \
-		'"$$0" "$$@"' >>$@+ && \
-	echo fi >>$@+ && \
-	chmod +x $@+ && \
-	mv $@+ $@
+git-gui: GIT-VERSION-FILE GIT-GUI-VARS libexec-git-gui.sh
+	cp libexec-git-gui.sh $@
+	chmod 755 $@
 
 Git\ Gui.app: GIT-VERSION-FILE GIT-GUI-VARS \
 		macosx/Info.plist \

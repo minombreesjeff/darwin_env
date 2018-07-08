@@ -179,12 +179,21 @@ test_expect_success 'configuration To: header' '
 	grep "^To: R. E. Cipient <rcipient@example.com>\$" patch9
 '
 
+# check_patch <patch>: Verify that <patch> looks like a half-sane
+# patch email to avoid a false positive with !grep
+check_patch () {
+	grep -e "^From:" "$1" &&
+	grep -e "^Date:" "$1" &&
+	grep -e "^Subject:" "$1"
+}
+
 test_expect_success '--no-to overrides config.to' '
 
 	git config --replace-all format.to \
 		"R. E. Cipient <rcipient@example.com>" &&
 	git format-patch --no-to --stdout master..side |
 	sed -e "/^\$/q" >patch10 &&
+	check_patch patch10 &&
 	! grep "^To: R. E. Cipient <rcipient@example.com>\$" patch10
 '
 
@@ -195,6 +204,7 @@ test_expect_success '--no-to and --to replaces config.to' '
 	git format-patch --no-to --to="Someone Else <else@out.there>" \
 		--stdout master..side |
 	sed -e "/^\$/q" >patch11 &&
+	check_patch patch11 &&
 	! grep "^To: Someone <someone@out.there>\$" patch11 &&
 	grep "^To: Someone Else <else@out.there>\$" patch11
 '
@@ -205,15 +215,17 @@ test_expect_success '--no-cc overrides config.cc' '
 		"C. E. Cipient <rcipient@example.com>" &&
 	git format-patch --no-cc --stdout master..side |
 	sed -e "/^\$/q" >patch12 &&
+	check_patch patch12 &&
 	! grep "^Cc: C. E. Cipient <rcipient@example.com>\$" patch12
 '
 
-test_expect_success '--no-add-headers overrides config.headers' '
+test_expect_success '--no-add-header overrides config.headers' '
 
 	git config --replace-all format.headers \
 		"Header1: B. E. Cipient <rcipient@example.com>" &&
-	git format-patch --no-add-headers --stdout master..side |
+	git format-patch --no-add-header --stdout master..side |
 	sed -e "/^\$/q" >patch13 &&
+	check_patch patch13 &&
 	! grep "^Header1: B. E. Cipient <rcipient@example.com>\$" patch13
 '
 
@@ -445,22 +457,22 @@ test_expect_success 'thread deep cover-letter in-reply-to' '
 '
 
 test_expect_success 'thread via config' '
-	git config format.thread true &&
+	test_config format.thread true &&
 	check_threading expect.thread master
 '
 
 test_expect_success 'thread deep via config' '
-	git config format.thread deep &&
+	test_config format.thread deep &&
 	check_threading expect.deep master
 '
 
 test_expect_success 'thread config + override' '
-	git config format.thread deep &&
+	test_config format.thread deep &&
 	check_threading expect.thread --thread master
 '
 
 test_expect_success 'thread config + --no-thread' '
-	git config format.thread deep &&
+	test_config format.thread deep &&
 	check_threading expect.no-threading --no-thread master
 '
 
@@ -480,6 +492,7 @@ test_expect_success 'cover-letter inherits diff options' '
 	git mv file foo &&
 	git commit -m foo &&
 	git format-patch --cover-letter -1 &&
+	check_patch 0000-cover-letter.patch &&
 	! grep "file => foo .* 0 *\$" 0000-cover-letter.patch &&
 	git format-patch --cover-letter -1 -M &&
 	grep "file => foo .* 0 *\$" 0000-cover-letter.patch
@@ -657,6 +670,7 @@ test_expect_success 'format-patch --no-signature ignores format.signature' '
 	git config format.signature "config sig" &&
 	git format-patch --stdout --signature="my sig" --no-signature \
 		-1 >output &&
+	check_patch output &&
 	! grep "config sig" output &&
 	! grep "my sig" output &&
 	! grep "^-- \$" output
@@ -673,17 +687,20 @@ test_expect_success 'format-patch --signature --cover-letter' '
 test_expect_success 'format.signature="" supresses signatures' '
 	git config format.signature "" &&
 	git format-patch --stdout -1 >output &&
+	check_patch output &&
 	! grep "^-- \$" output
 '
 
 test_expect_success 'format-patch --no-signature supresses signatures' '
 	git config --unset-all format.signature &&
 	git format-patch --stdout --no-signature -1 >output &&
+	check_patch output &&
 	! grep "^-- \$" output
 '
 
 test_expect_success 'format-patch --signature="" supresses signatures' '
-	git format-patch --signature="" -1 >output &&
+	git format-patch --stdout --signature="" -1 >output &&
+	check_patch output &&
 	! grep "^-- \$" output
 '
 
@@ -793,6 +810,22 @@ test_expect_success 'format-patch wraps extremely long headers (rfc2047)' '
 	test_cmp expect subject
 '
 
+M8="foo_bar_"
+M64=$M8$M8$M8$M8$M8$M8$M8$M8
+cat >expect <<EOF
+From: $M64
+ <foobar@foo.bar>
+EOF
+test_expect_success 'format-patch wraps non-quotable headers' '
+	rm -rf patches/ &&
+	echo content >>file &&
+	git add file &&
+	git commit -mfoo --author "$M64 <foobar@foo.bar>" &&
+	git format-patch --stdout -1 >patch &&
+	sed -n "/^From: /p; /^ /p; /^$/q" <patch >from &&
+	test_cmp expect from
+'
+
 check_author() {
 	echo content >>file &&
 	git add file &&
@@ -832,6 +865,32 @@ test_expect_success 'subject lines do not have 822 atom-quoting' '
 	git commit -m "header with . in it" &&
 	git format-patch -k -1 --stdout >patch &&
 	grep ^Subject: patch >actual &&
+	test_cmp expect actual
+'
+
+cat >expect <<'EOF'
+Subject: [PREFIX 1/1] header with . in it
+EOF
+test_expect_success 'subject prefixes have space prepended' '
+	git format-patch -n -1 --stdout --subject-prefix=PREFIX >patch &&
+	grep ^Subject: patch >actual &&
+	test_cmp expect actual
+'
+
+cat >expect <<'EOF'
+Subject: [1/1] header with . in it
+EOF
+test_expect_success 'empty subject prefix does not have extra space' '
+	git format-patch -n -1 --stdout --subject-prefix= >patch &&
+	grep ^Subject: patch >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'format patch ignores color.ui' '
+	test_unconfig color.ui &&
+	git format-patch --stdout -1 >expect &&
+	test_config color.ui always &&
+	git format-patch --stdout -1 >actual &&
 	test_cmp expect actual
 '
 
