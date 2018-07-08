@@ -26,6 +26,7 @@
 #endif
 
 static int diff_detect_rename_default;
+static int diff_compaction_heuristic; /* experimental */
 static int diff_rename_limit_default = 400;
 static int diff_suppress_blank_empty;
 static int diff_use_color_default = -1;
@@ -168,6 +169,11 @@ long parse_algorithm_value(const char *value)
  * never be affected by the setting of diff.renames
  * the user happens to have in the configuration file.
  */
+void init_diff_ui_defaults(void)
+{
+	diff_detect_rename_default = 1;
+}
+
 int git_diff_ui_config(const char *var, const char *value, void *cb)
 {
 	if (!strcmp(var, "diff.color") || !strcmp(var, "color.diff")) {
@@ -182,6 +188,10 @@ int git_diff_ui_config(const char *var, const char *value, void *cb)
 	}
 	if (!strcmp(var, "diff.renames")) {
 		diff_detect_rename_default = git_config_rename(var, value);
+		return 0;
+	}
+	if (!strcmp(var, "diff.compactionheuristic")) {
+		diff_compaction_heuristic = git_config_bool(var, value);
 		return 0;
 	}
 	if (!strcmp(var, "diff.autorefreshindex")) {
@@ -2672,6 +2682,13 @@ static int reuse_worktree_file(const char *name, const unsigned char *sha1, int 
 	if (!FAST_WORKING_DIRECTORY && !want_file && has_sha1_pack(sha1))
 		return 0;
 
+	/*
+	 * Similarly, if we'd have to convert the file contents anyway, that
+	 * makes the optimization not worthwhile.
+	 */
+	if (!want_file && would_convert_to_git(name))
+		return 0;
+
 	len = strlen(name);
 	pos = cache_name_pos(name, len);
 	if (pos < 0)
@@ -3273,6 +3290,8 @@ void diff_setup(struct diff_options *options)
 	options->use_color = diff_use_color_default;
 	options->detect_rename = diff_detect_rename_default;
 	options->xdl_opts |= diff_algorithm;
+	if (diff_compaction_heuristic)
+		DIFF_XDL_SET(options, COMPACTION_HEURISTIC);
 
 	options->orderfile = diff_order_file_cfg;
 
@@ -3793,6 +3812,10 @@ int diff_opt_parse(struct diff_options *options,
 		DIFF_XDL_SET(options, IGNORE_WHITESPACE_AT_EOL);
 	else if (!strcmp(arg, "--ignore-blank-lines"))
 		DIFF_XDL_SET(options, IGNORE_BLANK_LINES);
+	else if (!strcmp(arg, "--compaction-heuristic"))
+		DIFF_XDL_SET(options, COMPACTION_HEURISTIC);
+	else if (!strcmp(arg, "--no-compaction-heuristic"))
+		DIFF_XDL_CLR(options, COMPACTION_HEURISTIC);
 	else if (!strcmp(arg, "--patience"))
 		options->xdl_opts = DIFF_WITH_ALG(options, PATIENCE_DIFF);
 	else if (!strcmp(arg, "--histogram"))

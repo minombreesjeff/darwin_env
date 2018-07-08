@@ -108,14 +108,25 @@ pwd=$(pwd)
 
 cat <<EOF >expect
 Submodule path '../super': checked out '$supersha1'
-Submodule 'merging' ($pwd/merging) registered for path '../super/merging'
-Submodule 'none' ($pwd/none) registered for path '../super/none'
-Submodule 'rebasing' ($pwd/rebasing) registered for path '../super/rebasing'
-Submodule 'submodule' ($pwd/submodule) registered for path '../super/submodule'
 Submodule path '../super/merging': checked out '$mergingsha1'
 Submodule path '../super/none': checked out '$nonesha1'
 Submodule path '../super/rebasing': checked out '$rebasingsha1'
 Submodule path '../super/submodule': checked out '$submodulesha1'
+EOF
+
+cat <<EOF >expect2
+Submodule 'merging' ($pwd/merging) registered for path '../super/merging'
+Submodule 'none' ($pwd/none) registered for path '../super/none'
+Submodule 'rebasing' ($pwd/rebasing) registered for path '../super/rebasing'
+Submodule 'submodule' ($pwd/submodule) registered for path '../super/submodule'
+Cloning into '$pwd/recursivesuper/super/merging'...
+done.
+Cloning into '$pwd/recursivesuper/super/none'...
+done.
+Cloning into '$pwd/recursivesuper/super/rebasing'...
+done.
+Cloning into '$pwd/recursivesuper/super/submodule'...
+done.
 EOF
 
 test_expect_success 'submodule update --init --recursive from subdirectory' '
@@ -123,9 +134,10 @@ test_expect_success 'submodule update --init --recursive from subdirectory' '
 	(cd recursivesuper &&
 	 mkdir tmp &&
 	 cd tmp &&
-	 git submodule update --init --recursive ../super >../../actual
+	 git submodule update --init --recursive ../super >../../actual 2>../../actual2
 	) &&
-	test_cmp expect actual
+	test_cmp expect actual &&
+	test_cmp expect2 actual2
 '
 
 apos="'";
@@ -850,4 +862,31 @@ test_expect_success 'submodule update --recursive drops module name before recur
 	 test_i18ngrep "Submodule path .deeper/submodule/subsubmodule.: checked out" actual
 	)
 '
+
+test_expect_success 'submodule update can be run in parallel' '
+	(cd super2 &&
+	 GIT_TRACE=$(pwd)/trace.out git submodule update --jobs 7 &&
+	 grep "7 tasks" trace.out &&
+	 git config submodule.fetchJobs 8 &&
+	 GIT_TRACE=$(pwd)/trace.out git submodule update &&
+	 grep "8 tasks" trace.out &&
+	 GIT_TRACE=$(pwd)/trace.out git submodule update --jobs 9 &&
+	 grep "9 tasks" trace.out
+	)
+'
+
+test_expect_success 'git clone passes the parallel jobs config on to submodules' '
+	test_when_finished "rm -rf super4" &&
+	GIT_TRACE=$(pwd)/trace.out git clone --recurse-submodules --jobs 7 . super4 &&
+	grep "7 tasks" trace.out &&
+	rm -rf super4 &&
+	git config --global submodule.fetchJobs 8 &&
+	GIT_TRACE=$(pwd)/trace.out git clone --recurse-submodules . super4 &&
+	grep "8 tasks" trace.out &&
+	rm -rf super4 &&
+	GIT_TRACE=$(pwd)/trace.out git clone --recurse-submodules --jobs 9 . super4 &&
+	grep "9 tasks" trace.out &&
+	rm -rf super4
+'
+
 test_done

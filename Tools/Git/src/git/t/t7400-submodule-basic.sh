@@ -22,6 +22,22 @@ test_expect_success 'setup - initial commit' '
 	git branch initial
 '
 
+test_expect_success 'submodule init aborts on missing .gitmodules file' '
+	test_when_finished "git update-index --remove sub" &&
+	git update-index --add --cacheinfo 160000,$(git rev-parse HEAD),sub &&
+	# missing the .gitmodules file here
+	test_must_fail git submodule init 2>actual &&
+	test_i18ngrep "No url found for submodule path" actual
+'
+
+test_expect_success 'submodule update aborts on missing .gitmodules file' '
+	test_when_finished "git update-index --remove sub" &&
+	git update-index --add --cacheinfo 160000,$(git rev-parse HEAD),sub &&
+	# missing the .gitmodules file here
+	git submodule update sub 2>actual &&
+	test_i18ngrep "Submodule path .sub. not initialized" actual
+'
+
 test_expect_success 'configuration parsing' '
 	test_when_finished "rm -f .gitmodules" &&
 	cat >.gitmodules <<-\EOF &&
@@ -466,7 +482,7 @@ test_expect_success 'update --init' '
 	git config --remove-section submodule.example &&
 	test_must_fail git config submodule.example.url &&
 
-	git submodule update init > update.out &&
+	git submodule update init 2> update.out &&
 	cat update.out &&
 	test_i18ngrep "not initialized" update.out &&
 	test_must_fail git rev-parse --resolve-git-dir init/.git &&
@@ -484,7 +500,7 @@ test_expect_success 'update --init from subdirectory' '
 	mkdir -p sub &&
 	(
 		cd sub &&
-		git submodule update ../init >update.out &&
+		git submodule update ../init 2>update.out &&
 		cat update.out &&
 		test_i18ngrep "not initialized" update.out &&
 		test_must_fail git rev-parse --resolve-git-dir ../init/.git &&
@@ -902,7 +918,7 @@ test_expect_success 'submodule deinit works on repository without submodules' '
 		git init &&
 		>file &&
 		git add file &&
-		git commit -m "repo should not be empty"
+		git commit -m "repo should not be empty" &&
 		git submodule deinit . &&
 		git submodule deinit --all
 	)

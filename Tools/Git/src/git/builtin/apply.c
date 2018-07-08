@@ -442,7 +442,7 @@ static int is_dev_null(const char *str)
 #define TERM_SPACE	1
 #define TERM_TAB	2
 
-static int name_terminate(const char *name, int namelen, int c, int terminate)
+static int name_terminate(int c, int terminate)
 {
 	if (c == ' ' && !(terminate & TERM_SPACE))
 		return 0;
@@ -671,7 +671,7 @@ static char *find_name_common(const char *line, const char *def,
 		if (!end && isspace(c)) {
 			if (c == '\n')
 				break;
-			if (name_terminate(start, line-start, c, terminate))
+			if (name_terminate(c, terminate))
 				break;
 		}
 		line++;
@@ -4383,6 +4383,8 @@ static int apply_patch(int fd, const char *filename, int options)
 			listp = &patch->next;
 		}
 		else {
+			if (apply_verbosely)
+				say_patch_name(stderr, _("Skipped patch '%s'."), patch);
 			free_patch(patch);
 			skipped_patch++;
 		}

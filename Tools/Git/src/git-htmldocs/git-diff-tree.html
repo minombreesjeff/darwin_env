@@ -825,6 +825,20 @@ git-diff-tree(1) Manual Page
 </p>
 </dd>
 <dt class="hdlist1">
+--compaction-heuristic
+</dt>
+<dt class="hdlist1">
+--no-compaction-heuristic
+</dt>
+<dd>
+<p>
+        These are to help debugging and tuning an experimental
+        heuristic (which is off by default) that shifts the hunk
+        boundary in an attempt to make the resulting patch easier
+        to read.
+</p>
+</dd>
+<dt class="hdlist1">
 --minimal
 </dt>
 <dd>
@@ -1179,7 +1193,7 @@ newline.</p></div>
 <div class="paragraph"><p>For example, <code>--word-diff-regex=.</code> will treat each character as a word
 and, correspondingly, show differences character by character.</p></div>
 <div class="paragraph"><p>The regex can also be set via a diff driver or configuration option, see
-<a href="gitattributes.html">gitattributes(1)</a> or <a href="git-config.html">git-config(1)</a>.  Giving it explicitly
+<a href="gitattributes.html">gitattributes(5)</a> or <a href="git-config.html">git-config(1)</a>.  Giving it explicitly
 overrides any diff driver or configuration setting.  Diff drivers
 override configuration settings.</p></div>
 </dd>
@@ -1206,8 +1220,8 @@ override configuration settings.</p></div>
 </dt>
 <dd>
 <p>
-        Warn if changes introduce whitespace errors.  What are
-        considered whitespace errors is controlled by <code>core.whitespace</code>
+        Warn if changes introduce conflict markers or whitespace errors.
+        What are considered whitespace errors is controlled by <code>core.whitespace</code>
         configuration.  By default, trailing whitespaces (including
         lines that solely consist of whitespaces) and a space character
         that is immediately followed by a tab character inside the
@@ -1814,6 +1828,28 @@ people using 80-column terminals.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+--expand-tabs=&lt;n&gt;
+</dt>
+<dt class="hdlist1">
+--expand-tabs
+</dt>
+<dt class="hdlist1">
+--no-expand-tabs
+</dt>
+<dd>
+<p>
+        Perform a tab expansion (replace each tab with enough spaces
+        to fill to the next display column that is multiple of <em>&lt;n&gt;</em>)
+        in the log message before showing it in the output.
+        <code>--expand-tabs</code> is a short-hand for <code>--expand-tabs=8</code>, and
+        <code>--no-expand-tabs</code> is a short-hand for <code>--expand-tabs=0</code>,
+        which disables tab expansion.
+</p>
+<div class="paragraph"><p>By default, tabs are expanded in pretty formats that indent the log
+message by 4 spaces (i.e.  <em>medium</em>, which is the default, <em>full</em>,
+and <em>fuller</em>).</p></div>
+</dd>
+<dt class="hdlist1">
 --notes[=&lt;treeish&gt;]
 </dt>
 <dd>
@@ -2250,8 +2286,8 @@ The title was &gt;&gt;t4119: test autocomputing -p&lt;n&gt; for traditional diff
 </li>
 <li>
 <p>
-<em>%G?</em>: show "G" for a Good signature, "B" for a Bad signature, "U" for a good,
-  untrusted signature and "N" for no signature
+<em>%G?</em>: show "G" for a good (valid) signature, "B" for a bad signature,
+  "U" for a good signature with unknown validity and "N" for no signature
 </p>
 </li>
 <li>

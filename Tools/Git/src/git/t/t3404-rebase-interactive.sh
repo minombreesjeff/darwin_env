@@ -60,9 +60,9 @@ test_expect_success 'setup' '
 	test_commit P fileP
 '
 
-# "exec" commands are ran with the user shell by default, but this may
+# "exec" commands are run with the user shell by default, but this may
 # be non-POSIX. For example, if SHELL=zsh then ">file" doesn't work
-# to create a file. Unseting SHELL avoids such non-portable behavior
+# to create a file. Unsetting SHELL avoids such non-portable behavior
 # in tests. It must be exported for it to take effect where needed.
 SHELL=
 export SHELL
@@ -770,7 +770,6 @@ test_expect_success 'rebase-i history with funny messages' '
 	test_cmp expect actual
 '
 
-
 test_expect_success 'prepare for rebase -i --exec' '
 	git checkout master &&
 	git checkout -b execute &&
@@ -778,7 +777,6 @@ test_expect_success 'prepare for rebase -i --exec' '
 	test_commit two_exec main.txt two_exec &&
 	test_commit three_exec main.txt three_exec
 '
-
 
 test_expect_success 'running "git rebase -i --exec git show HEAD"' '
 	set_fake_editor &&
@@ -792,7 +790,6 @@ test_expect_success 'running "git rebase -i --exec git show HEAD"' '
 	test_cmp expected actual
 '
 
-
 test_expect_success 'running "git rebase --exec git show HEAD -i"' '
 	git reset --hard execute &&
 	set_fake_editor &&
@@ -805,7 +802,6 @@ test_expect_success 'running "git rebase --exec git show HEAD -i"' '
 	sed -e "1,9d" expect >expected &&
 	test_cmp expected actual
 '
-
 
 test_expect_success 'running "git rebase -ix git show HEAD"' '
 	git reset --hard execute &&
@@ -834,7 +830,6 @@ test_expect_success 'rebase -ix with several <CMD>' '
 	test_cmp expected actual
 '
 
-
 test_expect_success 'rebase -ix with several instances of --exec' '
 	git reset --hard execute &&
 	set_fake_editor &&
@@ -848,7 +843,6 @@ test_expect_success 'rebase -ix with several instances of --exec' '
 	sed -e "1,11d" expect >expected &&
 	test_cmp expected actual
 '
-
 
 test_expect_success 'rebase -ix with --autosquash' '
 	git reset --hard execute &&
@@ -875,15 +869,14 @@ test_expect_success 'rebase -ix with --autosquash' '
 	test_cmp expected actual
 '
 
-
-test_expect_success 'rebase --exec without -i shows error message' '
+test_expect_success 'rebase --exec works without -i ' '
 	git reset --hard execute &&
-	set_fake_editor &&
-	test_must_fail git rebase --exec "git show HEAD" HEAD~2 2>actual &&
-	echo "The --exec option must be used with the --interactive option" >expected &&
-	test_i18ncmp expected actual
+	rm -rf exec_output &&
+	EDITOR="echo >invoked_editor" git rebase --exec "echo a line >>exec_output"  HEAD~2 2>actual &&
+	test_i18ngrep  "Successfully rebased and updated" actual &&
+	test_line_count = 2 exec_output &&
+	test_path_is_missing invoked_editor
 '
-
 
 test_expect_success 'rebase -i --exec without <CMD>' '
 	git reset --hard execute &&

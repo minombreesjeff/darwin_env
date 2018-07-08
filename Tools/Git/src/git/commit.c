@@ -414,7 +414,7 @@ int find_commit_subject(const char *commit_buffer, const char **subject)
 	while (*p && (*p != '\n' || p[1] != '\n'))
 		p++;
 	if (*p) {
-		p += 2;
+		p = skip_blank_lines(p + 2);
 		for (eol = p; *eol && *eol != '\n'; eol++)
 			; /* do nothing */
 	} else
@@ -1092,9 +1092,14 @@ static int do_sign_commit(struct strbuf *buf, const char *keyid)
 {
 	struct strbuf sig = STRBUF_INIT;
 	int inspos, copypos;
+	const char *eoh;
 
 	/* find the end of the header */
-	inspos = strstr(buf->buf, "\n\n") - buf->buf + 1;
+	eoh = strstr(buf->buf, "\n\n");
+	if (!eoh)
+		inspos = buf->len;
+	else
+		inspos = eoh - buf->buf + 1;
 
 	if (!keyid || !*keyid)
 		keyid = get_signing_key();

@@ -996,8 +996,12 @@ There are some macros to easily define options:</p></div>
 <dd>
 <p>
         Introduce a count-up option.
-        <code>int_var</code> is incremented on each use of <code>--option</code>, and
-        reset to zero with <code>--no-option</code>.
+        Each use of <code>--option</code> increments <code>int_var</code>, starting from zero
+        (even if initially negative), and <code>--no-option</code> resets it to
+        zero. To determine if <code>--option</code> or <code>--no-option</code> was encountered at
+        all, initialize <code>int_var</code> to a negative value, and if it is still
+        negative after parse_options(), then neither <code>--option</code> nor
+        <code>--no-option</code> was seen.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1164,6 +1168,18 @@ There are some macros to easily define options:</p></div>
         to another command.
 </p>
 </dd>
+<dt class="hdlist1">
+<code>OPT_CMDMODE(short, long, &amp;int_var, description, enum_val)</code>
+</dt>
+<dd>
+<p>
+        Define an "operation mode" option, only one of which in the same
+        group of "operating mode" options that share the same <code>int_var</code>
+        can be given by the user. <code>enum_val</code> is set to <code>int_var</code> when the
+        option is used, but an error is reported if other "operating mode"
+        option has already set its value to the same <code>int_var</code>.
+</p>
+</dd>
 </dl></div>
 <div class="paragraph"><p>The last element of the array must be <code>OPT_END()</code>.</p></div>
 <div class="paragraph"><p>If not stated otherwise, interpret the arguments as follows:</p></div>
@@ -1269,7 +1285,7 @@ for real-world examples.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2015-08-03 12:41:59 PDT
+Last updated 2016-05-23 15:52:04 PDT
 </div>
 </div>
 </body>

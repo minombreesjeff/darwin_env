@@ -375,13 +375,7 @@ GIT-VERSION-FILE: FORCE
 # CFLAGS and LDFLAGS are for the users to override from the command line.
 
 CFLAGS = -g -O2 -Wall
-LDFLAGS =
-ALL_CFLAGS = $(CPPFLAGS) $(CFLAGS)
-ALL_LDFLAGS = $(LDFLAGS)
-STRIP ?= strip
-
-ifdef DEVELOPER
-CFLAGS += -Werror \
+DEVELOPER_CFLAGS = -Werror \
 	-Wdeclaration-after-statement \
 	-Wno-format-zero-length \
 	-Wold-style-definition \
@@ -390,7 +384,10 @@ CFLAGS += -Werror \
 	-Wstrict-prototypes \
 	-Wunused \
 	-Wvla
-endif
+LDFLAGS =
+ALL_CFLAGS = $(CPPFLAGS) $(CFLAGS)
+ALL_LDFLAGS = $(LDFLAGS)
+STRIP ?= strip
 
 # Create as necessary, replace existing, make ranlib unneeded.
 ARFLAGS = rcs
@@ -440,7 +437,6 @@ DIFF = diff
 TAR = tar
 FIND = find
 INSTALL = install
-RPMBUILD = rpmbuild
 TCL_PATH = tclsh
 TCLTK_PATH = wish
 XGETTEXT = xgettext
@@ -621,7 +617,7 @@ TEST_PROGRAMS_NEED_X += test-svn-fe
 TEST_PROGRAMS_NEED_X += test-urlmatch-normalization
 TEST_PROGRAMS_NEED_X += test-wildmatch
 
-TEST_PROGRAMS = $(patsubst %,%$X,$(TEST_PROGRAMS_NEED_X))
+TEST_PROGRAMS = $(patsubst %,t/helper/%$X,$(TEST_PROGRAMS_NEED_X))
 
 # List built-in command $C whose implementation cmd_$C() is not in
 # builtin/$C.o but is linked in as part of some other command.
@@ -951,6 +947,10 @@ GIT_USER_AGENT = git/$(GIT_VERSION)
 include config.mak.uname
 -include config.mak.autogen
 -include config.mak
+
+ifdef DEVELOPER
+CFLAGS += $(DEVELOPER_CFLAGS)
+endif
 
 ifndef sysconfdir
 ifeq ($(prefix),/usr)
@@ -1940,7 +1940,7 @@ VCSSVN_OBJS += vcs-svn/fast_export.o
 VCSSVN_OBJS += vcs-svn/svndiff.o
 VCSSVN_OBJS += vcs-svn/svndump.o
 
-TEST_OBJS := $(patsubst test-%$X,test-%.o,$(TEST_PROGRAMS))
+TEST_OBJS := $(patsubst %$X,%.o,$(TEST_PROGRAMS))
 OBJECTS := $(LIB_OBJS) $(BUILTIN_OBJS) $(PROGRAM_OBJS) $(TEST_OBJS) \
 	$(XDIFF_OBJS) \
 	$(VCSSVN_OBJS) \
@@ -2246,7 +2246,7 @@ bin-wrappers/%: wrap-for-bin.sh
 	@mkdir -p bin-wrappers
 	$(QUIET_GEN)sed -e '1s|#!.*/sh|#!$(SHELL_PATH_SQ)|' \
 	     -e 's|@@BUILD_DIR@@|$(shell pwd)|' \
-	     -e 's|@@PROG@@|$(@F)|' < $< > $@ && \
+	     -e 's|@@PROG@@|$(patsubst test-%,t/helper/test-%,$(@F))|' < $< > $@ && \
 	chmod +x $@
 
 # GNU make supports exporting all variables by "export" without parameters.
@@ -2266,25 +2266,17 @@ perf: all
 
 .PHONY: test perf
 
-test-ctype$X: ctype.o
+t/helper/test-line-buffer$X: $(VCSSVN_LIB)
 
-test-date$X: date.o ctype.o
-
-test-delta$X: diff-delta.o patch-delta.o
-
-test-line-buffer$X: vcs-svn/lib.a
-
-test-parse-options$X: parse-options.o parse-options-cb.o
-
-test-svn-fe$X: vcs-svn/lib.a
+t/helper/test-svn-fe$X: $(VCSSVN_LIB)
 
 .PRECIOUS: $(TEST_OBJS)
 
-test-%$X: test-%.o GIT-LDFLAGS $(GITLIBS)
+t/helper/test-%$X: t/helper/test-%.o GIT-LDFLAGS $(GITLIBS)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LIBS)
 
-check-sha1:: test-sha1$X
-	./test-sha1.sh
+check-sha1:: t/helper/test-sha1$X
+	t/helper/test-sha1.sh
 
 SP_OBJ = $(patsubst %.o,%.sp,$(C_OBJ))
 
@@ -2431,31 +2423,25 @@ quick-install-html:
 
 ### Maintainer's dist rules
 
-git.spec: git.spec.in GIT-VERSION-FILE
-	sed -e 's/@@VERSION@@/$(GIT_VERSION)/g' < $< > $@+
-	mv $@+ $@
-
 GIT_TARNAME = git-$(GIT_VERSION)
-dist: git.spec git-archive$(X) configure
+dist: git-archive$(X) configure
 	./git-archive --format=tar \
 		--prefix=$(GIT_TARNAME)/ HEAD^{tree} > $(GIT_TARNAME).tar
 	@mkdir -p $(GIT_TARNAME)
-	@cp git.spec configure $(GIT_TARNAME)
+	@cp configure $(GIT_TARNAME)
 	@echo $(GIT_VERSION) > $(GIT_TARNAME)/version
 	@$(MAKE) -C git-gui TARDIR=../$(GIT_TARNAME)/git-gui dist-version
 	$(TAR) rf $(GIT_TARNAME).tar \
-		$(GIT_TARNAME)/git.spec \
 		$(GIT_TARNAME)/configure \
 		$(GIT_TARNAME)/version \
 		$(GIT_TARNAME)/git-gui/version
 	@$(RM) -r $(GIT_TARNAME)
 	gzip -f -9 $(GIT_TARNAME).tar
 
-rpm: dist
-	$(RPMBUILD) \
-		--define "_source_filedigest_algorithm md5" \
-		--define "_binary_filedigest_algorithm md5" \
-		-ta $(GIT_TARNAME).tar.gz
+rpm::
+	@echo >&2 "Use distro packaged sources to run rpmbuild"
+	@false
+.PHONY: rpm
 
 htmldocs = git-htmldocs-$(GIT_VERSION)
 manpages = git-manpages-$(GIT_VERSION)
@@ -2491,8 +2477,8 @@ profile-clean:
 	$(RM) $(addsuffix *.gcno,$(addprefix $(PROFILE_DIR)/, $(object_dirs)))
 
 clean: profile-clean coverage-clean
-	$(RM) *.o *.res refs/*.o block-sha1/*.o ppc/*.o compat/*.o compat/*/*.o
-	$(RM) xdiff/*.o vcs-svn/*.o ewah/*.o builtin/*.o
+	$(RM) *.res
+	$(RM) $(OBJECTS)
 	$(RM) $(LIB_FILE) $(XDIFF_LIB) $(VCSSVN_LIB)
 	$(RM) $(ALL_PROGRAMS) $(SCRIPT_LIB) $(BUILT_INS) git$X
 	$(RM) $(TEST_PROGRAMS) $(NO_INSTALL)
@@ -2531,6 +2517,7 @@ ALL_COMMANDS += git-gui git-citool
 
 .PHONY: check-docs
 check-docs::
+	$(MAKE) -C Documentation lint-docs
 	@(for v in $(ALL_COMMANDS); \
 	do \
 		case "$$v" in \

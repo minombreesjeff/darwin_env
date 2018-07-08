@@ -242,7 +242,6 @@ static int checkout_paths(const struct checkout_opts *opts,
 	struct checkout state;
 	static char *ps_matched;
 	unsigned char rev[20];
-	int flag;
 	struct commit *head;
 	int errs = 0;
 	struct lock_file *lock_file;
@@ -375,7 +374,7 @@ static int checkout_paths(const struct checkout_opts *opts,
 	if (write_locked_index(&the_index, lock_file, COMMIT_LOCK))
 		die(_("unable to write new index file"));
 
-	read_ref_full("HEAD", 0, rev, &flag);
+	read_ref_full("HEAD", 0, rev, NULL);
 	head = lookup_commit_reference_gently(rev, 1);
 
 	errs |= post_checkout_hook(head, head, 0);
@@ -549,7 +548,7 @@ static int merge_working_tree(const struct checkout_opts *opts,
 			 * entries in the index.
 			 */
 
-			add_files_to_cache(NULL, NULL, 0);
+			add_files_to_cache(NULL, NULL, 0, 0);
 			/*
 			 * NEEDSWORK: carrying over local changes
 			 * when branches have different end-of-line
@@ -1111,7 +1110,7 @@ static int checkout_branch(struct checkout_opts *opts,
 		char *head_ref = resolve_refdup("HEAD", 0, sha1, &flag);
 		if (head_ref &&
 		    (!(flag & REF_ISSYMREF) || strcmp(head_ref, new->path)))
-			die_if_checked_out(new->path);
+			die_if_checked_out(new->path, 1);
 		free(head_ref);
 	}
 

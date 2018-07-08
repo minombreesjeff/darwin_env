@@ -341,15 +341,15 @@ static unsigned long write_no_reuse_object(struct sha1file *f, struct object_ent
 }
 
 /* Return 0 if we will bust the pack-size limit */
-static unsigned long write_reuse_object(struct sha1file *f, struct object_entry *entry,
-					unsigned long limit, int usable_delta)
+static off_t write_reuse_object(struct sha1file *f, struct object_entry *entry,
+				unsigned long limit, int usable_delta)
 {
 	struct packed_git *p = entry->in_pack;
 	struct pack_window *w_curs = NULL;
 	struct revindex_entry *revidx;
 	off_t offset;
 	enum object_type type = entry->type;
-	unsigned long datalen;
+	off_t datalen;
 	unsigned char header[10], dheader[10];
 	unsigned hdrlen;
 
@@ -415,11 +415,12 @@ static unsigned long write_reuse_object(struct sha1file *f, struct object_entry 
 }
 
 /* Return 0 if we will bust the pack-size limit */
-static unsigned long write_object(struct sha1file *f,
-				  struct object_entry *entry,
-				  off_t write_offset)
+static off_t write_object(struct sha1file *f,
+			  struct object_entry *entry,
+			  off_t write_offset)
 {
-	unsigned long limit, len;
+	unsigned long limit;
+	off_t len;
 	int usable_delta, to_reuse;
 
 	if (!pack_to_stdout)
@@ -491,7 +492,7 @@ static enum write_one_status write_one(struct sha1file *f,
 				       struct object_entry *e,
 				       off_t *offset)
 {
-	unsigned long size;
+	off_t size;
 	int recursing;
 
 	/*
@@ -835,8 +836,7 @@ static void write_pack_file(void)
 			 * to preserve this property.
 			 */
 			if (stat(pack_tmp_name, &st) < 0) {
-				warning("failed to stat %s: %s",
-					pack_tmp_name, strerror(errno));
+				warning_errno("failed to stat %s", pack_tmp_name);
 			} else if (!last_mtime) {
 				last_mtime = st.st_mtime;
 			} else {
@@ -844,8 +844,7 @@ static void write_pack_file(void)
 				utb.actime = st.st_atime;
 				utb.modtime = --last_mtime;
 				if (utime(pack_tmp_name, &utb) < 0)
-					warning("failed utime() on %s: %s",
-						pack_tmp_name, strerror(errno));
+					warning_errno("failed utime() on %s", pack_tmp_name);
 			}
 
 			strbuf_addf(&tmpname, "%s-", base_name);
@@ -1193,7 +1192,7 @@ static void add_pbase_object(struct tree_desc *tree,
 		if (cmp < 0)
 			return;
 		if (name[cmplen] != '/') {
-			add_object_entry(entry.sha1,
+			add_object_entry(entry.oid->hash,
 					 object_type(entry.mode),
 					 fullname, 1);
 			return;
@@ -1204,7 +1203,7 @@ static void add_pbase_object(struct tree_desc *tree,
 			const char *down = name+cmplen+1;
 			int downlen = name_cmp_len(down);
 
-			tree = pbase_tree_get(entry.sha1);
+			tree = pbase_tree_get(entry.oid->hash);
 			if (!tree)
 				return;
 			init_tree_desc(&sub, tree->tree_data, tree->tree_size);

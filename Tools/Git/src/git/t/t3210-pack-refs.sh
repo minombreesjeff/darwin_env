@@ -201,7 +201,7 @@ test_expect_success 'timeout if packed-refs.lock exists' '
 	test_must_fail git pack-refs --all --prune
 '
 
-test_expect_success 'retry acquiring packed-refs.lock' '
+test_expect_failure 'retry acquiring packed-refs.lock' '
 	LOCK=.git/packed-refs.lock &&
 	>"$LOCK" &&
 	test_when_finished "wait; rm -f $LOCK" &&

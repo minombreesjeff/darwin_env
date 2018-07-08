@@ -197,6 +197,13 @@ void strbuf_add(struct strbuf *sb, const void *data, size_t len)
 	strbuf_setlen(sb, sb->len + len);
 }
 
+void strbuf_addbuf(struct strbuf *sb, const struct strbuf *sb2)
+{
+	strbuf_grow(sb, sb2->len);
+	memcpy(sb->buf + sb->len, sb2->buf, sb2->len);
+	strbuf_setlen(sb, sb->len + sb2->len);
+}
+
 void strbuf_adddup(struct strbuf *sb, size_t pos, size_t len)
 {
 	strbuf_grow(sb, len);
@@ -394,6 +401,12 @@ ssize_t strbuf_read_once(struct strbuf *sb, int fd, size_t hint)
 		strbuf_setlen(sb, sb->len + cnt);
 	return cnt;
 }
+
+ssize_t strbuf_write(struct strbuf *sb, FILE *f)
+{
+	return sb->len ? fwrite(sb->buf, 1, sb->len, f) : 0;
+}
+
 
 #define STRBUF_MAXLINK (2*PATH_MAX)
 

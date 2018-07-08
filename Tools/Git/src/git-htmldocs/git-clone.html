@@ -753,8 +753,8 @@ git-clone(1) Manual Page
           [-o &lt;name&gt;] [-b &lt;name&gt;] [-u &lt;upload-pack&gt;] [--reference &lt;repository&gt;]
           [--dissociate] [--separate-git-dir &lt;git dir&gt;]
           [--depth &lt;depth&gt;] [--[no-]single-branch]
-          [--recursive | --recurse-submodules] [--] &lt;repository&gt;
-          [&lt;directory&gt;]</pre>
+          [--recursive | --recurse-submodules] [--[no-]shallow-submodules]
+          [--jobs &lt;n&gt;] [--] &lt;repository&gt; [&lt;directory&gt;]</pre>
 <div class="attribution">
 </div></div>
 </div>
@@ -1030,7 +1030,9 @@ objects from the source repository into a pack in the cloned repository.</p></di
         Create a <em>shallow</em> clone with a history truncated to the
         specified number of commits. Implies <code>--single-branch</code> unless
         <code>--no-single-branch</code> is given to fetch the histories near the
-        tips of all branches.
+        tips of all branches. This implies <code>--shallow-submodules</code>. If
+        you want to have a shallow superproject clone, but full submodules,
+        also pass <code>--no-shallow-submodules</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1065,6 +1067,14 @@ objects from the source repository into a pack in the cloned repository.</p></di
 </p>
 </dd>
 <dt class="hdlist1">
+--[no-]shallow-submodules
+</dt>
+<dd>
+<p>
+        All submodules which are cloned will be shallow with a depth of 1.
+</p>
+</dd>
+<dt class="hdlist1">
 --separate-git-dir=&lt;git dir&gt;
 </dt>
 <dd>
@@ -1074,6 +1084,18 @@ objects from the source repository into a pack in the cloned repository.</p></di
         then make a filesystem-agnostic Git symbolic link to there.
         The result is Git repository can be separated from working
         tree.
+</p>
+</dd>
+<dt class="hdlist1">
+-j &lt;n&gt;
+</dt>
+<dt class="hdlist1">
+--jobs &lt;n&gt;
+</dt>
+<dd>
+<p>
+        The number of submodules fetched at the same time.
+        Defaults to the <code>submodule.fetchJobs</code> option.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1293,7 +1315,7 @@ Create a bare repository to publish your changes to the public:
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2016-02-17 14:30:28 PST
+Last updated 2016-05-06 15:26:51 PDT
 </div>
 </div>
 </body>

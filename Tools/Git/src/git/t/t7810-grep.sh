@@ -9,7 +9,9 @@ test_description='git grep various.
 . ./test-lib.sh
 
 cat >hello.c <<EOF
+#include <assert.h>
 #include <stdio.h>
+
 int main(int argc, const char **argv)
 {
 	printf("Hello world.\n");
@@ -175,7 +177,7 @@ do
 
 	test_expect_success "grep -c $L (no /dev/null)" '
 		! git grep -c test $H | grep /dev/null
-        '
+	'
 
 	test_expect_success "grep --max-depth -1 $L" '
 		{
@@ -353,7 +355,7 @@ test_expect_success 'grep -l -C' '
 cat >expected <<EOF
 file:5
 EOF
-test_expect_success 'grep -l -C' '
+test_expect_success 'grep -c -C' '
 	git grep -c -C1 foo >actual &&
 	test_cmp expected actual
 '
@@ -715,6 +717,7 @@ test_expect_success 'grep -p' '
 
 cat >expected <<EOF
 hello.c-#include <stdio.h>
+hello.c-
 hello.c=int main(int argc, const char **argv)
 hello.c-{
 hello.c-	printf("Hello world.\n");
@@ -737,6 +740,16 @@ EOF
 
 test_expect_success 'grep -W' '
 	git grep -W return >actual &&
+	test_cmp expected actual
+'
+
+cat >expected <<EOF
+hello.c-#include <assert.h>
+hello.c:#include <stdio.h>
+EOF
+
+test_expect_success 'grep -W shows no trailing empty lines' '
+	git grep -W stdio >actual &&
 	test_cmp expected actual
 '
 
@@ -1232,8 +1245,8 @@ test_expect_success 'grep --heading' '
 
 cat >expected <<EOF
 <BOLD;GREEN>hello.c<RESET>
-2:int main(int argc, const <BLACK;BYELLOW>char<RESET> **argv)
-6:	/* <BLACK;BYELLOW>char<RESET> ?? */
+4:int main(int argc, const <BLACK;BYELLOW>char<RESET> **argv)
+8:	/* <BLACK;BYELLOW>char<RESET> ?? */
 
 <BOLD;GREEN>hello_world<RESET>
 3:Hel<BLACK;BYELLOW>lo_w<RESET>orld
@@ -1340,7 +1353,7 @@ test_expect_success 'grep --color -e A --and --not -e B with context' '
 '
 
 cat >expected <<EOF
-hello.c-#include <stdio.h>
+hello.c-
 hello.c=int main(int argc, const char **argv)
 hello.c-{
 hello.c:	pr<RED>int<RESET>f("<RED>Hello<RESET> world.\n");
@@ -1361,6 +1374,64 @@ test_expect_success 'grep --color -e A --and -e B -p with context' '
 
 	git grep --color=always -p -C3 -e int --and -e Hello --no-index hello.c |
 	test_decode_color >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'grep can find things only in the work tree' '
+	: >work-tree-only &&
+	git add work-tree-only &&
+	test_when_finished "git rm -f work-tree-only" &&
+	echo "find in work tree" >work-tree-only &&
+	git grep --quiet "find in work tree" &&
+	test_must_fail git grep --quiet --cached "find in work tree" &&
+	test_must_fail git grep --quiet "find in work tree" HEAD
+'
+
+test_expect_success 'grep can find things only in the work tree (i-t-a)' '
+	echo "intend to add this" >intend-to-add &&
+	git add -N intend-to-add &&
+	test_when_finished "git rm -f intend-to-add" &&
+	git grep --quiet "intend to add this" &&
+	test_must_fail git grep --quiet --cached "intend to add this" &&
+	test_must_fail git grep --quiet "intend to add this" HEAD
+'
+
+test_expect_success 'grep does not search work tree with assume unchanged' '
+	echo "intend to add this" >intend-to-add &&
+	git add -N intend-to-add &&
+	git update-index --assume-unchanged intend-to-add &&
+	test_when_finished "git rm -f intend-to-add" &&
+	test_must_fail git grep --quiet "intend to add this" &&
+	test_must_fail git grep --quiet --cached "intend to add this" &&
+	test_must_fail git grep --quiet "intend to add this" HEAD
+'
+
+test_expect_success 'grep can find things only in the index' '
+	echo "only in the index" >cache-this &&
+	git add cache-this &&
+	rm cache-this &&
+	test_when_finished "git rm --cached cache-this" &&
+	test_must_fail git grep --quiet "only in the index" &&
+	git grep --quiet --cached "only in the index" &&
+	test_must_fail git grep --quiet "only in the index" HEAD
+'
+
+test_expect_success 'grep does not report i-t-a with -L --cached' '
+	echo "intend to add this" >intend-to-add &&
+	git add -N intend-to-add &&
+	test_when_finished "git rm -f intend-to-add" &&
+	git ls-files | grep -v "^intend-to-add\$" >expected &&
+	git grep -L --cached "nonexistent_string" >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'grep does not report i-t-a and assume unchanged with -L' '
+	echo "intend to add this" >intend-to-add-assume-unchanged &&
+	git add -N intend-to-add-assume-unchanged &&
+	test_when_finished "git rm -f intend-to-add-assume-unchanged" &&
+	git update-index --assume-unchanged intend-to-add-assume-unchanged &&
+	git ls-files | grep -v "^intend-to-add-assume-unchanged\$" >expected &&
+	git grep -L "nonexistent_string" >actual &&
 	test_cmp expected actual
 '
 

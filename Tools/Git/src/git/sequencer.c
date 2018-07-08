@@ -112,7 +112,7 @@ static void remove_sequencer_state(void)
 {
 	struct strbuf seq_dir = STRBUF_INIT;
 
-	strbuf_addf(&seq_dir, "%s", git_path(SEQ_DIR));
+	strbuf_addstr(&seq_dir, git_path(SEQ_DIR));
 	remove_dir_recursively(&seq_dir, 0);
 	strbuf_release(&seq_dir);
 }
@@ -544,10 +544,8 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 		 * information followed by "\n\n".
 		 */
 		p = strstr(msg.message, "\n\n");
-		if (p) {
-			p += 2;
-			strbuf_addstr(&msgbuf, p);
-		}
+		if (p)
+			strbuf_addstr(&msgbuf, skip_blank_lines(p + 2));
 
 		if (opts->record_origin) {
 			if (!has_conforming_footer(&msgbuf, NULL, 0))
@@ -875,8 +873,7 @@ static int sequencer_rollback(struct replay_opts *opts)
 		return rollback_single_pick();
 	}
 	if (!f)
-		return error(_("cannot open %s: %s"), git_path_head_file(),
-						strerror(errno));
+		return error_errno(_("cannot open %s"), git_path_head_file());
 	if (strbuf_getline_lf(&buf, f)) {
 		error(_("cannot read %s: %s"), git_path_head_file(),
 		      ferror(f) ?  strerror(errno) : _("unexpected end of file"));
@@ -887,6 +884,10 @@ static int sequencer_rollback(struct replay_opts *opts)
 	if (get_sha1_hex(buf.buf, sha1) || buf.buf[40] != '\0') {
 		error(_("stored pre-cherry-pick HEAD file '%s' is corrupt"),
 			git_path_head_file());
+		goto fail;
+	}
+	if (is_null_sha1(sha1)) {
+		error(_("cannot abort from a branch yet to be born"));
 		goto fail;
 	}
 	if (reset_for_rollback(sha1))
@@ -1087,11 +1088,8 @@ int sequencer_pick_revisions(struct replay_opts *opts)
 	walk_revs_populate_todo(&todo_list, opts);
 	if (create_seq_dir() < 0)
 		return -1;
-	if (get_sha1("HEAD", sha1)) {
-		if (opts->action == REPLAY_REVERT)
-			return error(_("Can't revert as initial commit"));
-		return error(_("Can't cherry-pick into empty head"));
-	}
+	if (get_sha1("HEAD", sha1) && (opts->action == REPLAY_REVERT))
+		return error(_("Can't revert as initial commit"));
 	save_head(sha1_to_hex(sha1));
 	save_opts(opts);
 	return pick_commits(todo_list, opts);

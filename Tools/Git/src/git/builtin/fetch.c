@@ -37,7 +37,7 @@ static int prune = -1; /* unspecified */
 static int all, append, dry_run, force, keep, multiple, update_head_ok, verbosity;
 static int progress = -1, recurse_submodules = RECURSE_SUBMODULES_DEFAULT;
 static int tags = TAGS_DEFAULT, unshallow, update_shallow;
-static int max_children = 1;
+static int max_children = -1;
 static enum transport_family family;
 static const char *depth;
 static const char *upload_pack;
@@ -607,7 +607,7 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 
 	fp = fopen(filename, "a");
 	if (!fp)
-		return error(_("cannot open %s: %s\n"), filename, strerror(errno));
+		return error_errno(_("cannot open %s"), filename);
 
 	if (raw_url)
 		url = transport_anonymize_url(raw_url);
@@ -848,7 +848,7 @@ static int truncate_fetch_head(void)
 	FILE *fp = fopen_for_writing(filename);
 
 	if (!fp)
-		return error(_("cannot open %s: %s\n"), filename, strerror(errno));
+		return error_errno(_("cannot open %s"), filename);
 	fclose(fp);
 	return 0;
 }
@@ -1005,7 +1005,7 @@ static int get_remote_group(const char *key, const char *value, void *priv)
 			size_t wordlen = strcspn(value, " \t\n");
 
 			if (wordlen >= 1)
-				string_list_append(g->list,
+				string_list_append_nodup(g->list,
 						   xstrndup(value, wordlen));
 			value += wordlen + (value[wordlen] != '\0');
 		}
@@ -1143,7 +1143,7 @@ static int fetch_one(struct remote *remote, int argc, const char **argv)
 int cmd_fetch(int argc, const char **argv, const char *prefix)
 {
 	int i;
-	struct string_list list = STRING_LIST_INIT_NODUP;
+	struct string_list list = STRING_LIST_INIT_DUP;
 	struct remote *remote;
 	int result = 0;
 	struct argv_array argv_gc_auto = ARGV_ARRAY_INIT;
@@ -1226,8 +1226,6 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 		argv_array_clear(&options);
 	}
 
-	/* All names were strdup()ed or strndup()ed */
-	list.strdup_strings = 1;
 	string_list_clear(&list, 0);
 
 	close_all_packs();

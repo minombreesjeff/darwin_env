@@ -101,8 +101,8 @@ test_expect_success 'oneline' '
 
 test_expect_success 'diff-filter=A' '
 
-	git log --pretty="format:%s" --diff-filter=A HEAD > actual &&
-	git log --pretty="format:%s" --diff-filter A HEAD > actual-separate &&
+	git log --no-renames --pretty="format:%s" --diff-filter=A HEAD > actual &&
+	git log --no-renames --pretty="format:%s" --diff-filter A HEAD > actual-separate &&
 	printf "fifth\nfourth\nthird\ninitial" > expect &&
 	test_cmp expect actual &&
 	test_cmp expect actual-separate
@@ -119,7 +119,7 @@ test_expect_success 'diff-filter=M' '
 
 test_expect_success 'diff-filter=D' '
 
-	actual=$(git log --pretty="format:%s" --diff-filter=D HEAD) &&
+	actual=$(git log --no-renames --pretty="format:%s" --diff-filter=D HEAD) &&
 	expect=$(echo sixth ; echo third) &&
 	verbose test "$actual" = "$expect"
 
@@ -252,6 +252,20 @@ test_expect_success 'log --grep -i' '
 test_expect_success 'log -F -E --grep=<ere> uses ere' '
 	echo second >expect &&
 	git log -1 --pretty="tformat:%s" -F -E --grep=s.c.nd >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log with grep.patternType configuration' '
+	>expect &&
+	git -c grep.patterntype=fixed \
+	log -1 --pretty=tformat:%s --grep=s.c.nd >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log with grep.patternType configuration and command line' '
+	echo second >expect &&
+	git -c grep.patterntype=fixed \
+	log -1 --pretty=tformat:%s --basic-regexp --grep=s.c.nd >actual &&
 	test_cmp expect actual
 '
 
@@ -848,7 +862,7 @@ sanitize_output () {
 }
 
 test_expect_success 'log --graph with diff and stats' '
-	git log --graph --pretty=short --stat -p >actual &&
+	git log --no-renames --graph --pretty=short --stat -p >actual &&
 	sanitize_output >actual.sanitized <actual &&
 	test_i18ncmp expect actual.sanitized
 '

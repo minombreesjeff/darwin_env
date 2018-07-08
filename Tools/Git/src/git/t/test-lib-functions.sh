@@ -612,7 +612,7 @@ test_must_fail () {
 	then
 		echo >&2 "test_must_fail: command succeeded: $*"
 		return 1
-	elif test $exit_code -eq 141 && list_contains "$_test_ok" sigpipe
+	elif test_match_signal 13 $exit_code && list_contains "$_test_ok" sigpipe
 	then
 		return 0
 	elif test $exit_code -gt 129 && test $exit_code -le 192
@@ -938,4 +938,41 @@ mingw_read_file_strip_cr_ () {
 		fi
 		eval "$1=\$$1\$line"
 	done
+}
+
+# Like "env FOO=BAR some-program", but run inside a subshell, which means
+# it also works for shell functions (though those functions cannot impact
+# the environment outside of the test_env invocation).
+test_env () {
+	(
+		while test $# -gt 0
+		do
+			case "$1" in
+			*=*)
+				eval "${1%%=*}=\${1#*=}"
+				eval "export ${1%%=*}"
+				shift
+				;;
+			*)
+				"$@"
+				exit
+				;;
+			esac
+		done
+	)
+}
+
+# Returns true if the numeric exit code in "$2" represents the expected signal
+# in "$1". Signals should be given numerically.
+test_match_signal () {
+	if test "$2" = "$((128 + $1))"
+	then
+		# POSIX
+		return 0
+	elif test "$2" = "$((256 + $1))"
+	then
+		# ksh
+		return 0
+	fi
+	return 1
 }
