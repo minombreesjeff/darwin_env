@@ -524,6 +524,9 @@ entries in the index are compared.</p></div>
         can be set with <tt>--dirstat=&lt;limit&gt;</tt>. Changes in a child directory are not
         counted for the parent directory, unless <tt>--cumulative</tt> is used.
 </p>
+<div class="paragraph"><p>Note that the <tt>--dirstat</tt> option computes the changes while ignoring
+the amount of pure code movements within a file.  In other words,
+rearranging lines in a file is not counted as much as other changes.</p></div>
 </dd>
 <dt class="hdlist1">
 --dirstat-by-file[=&lt;limit&gt;]
@@ -598,7 +601,8 @@ any of those replacements occurred.</p></div>
 <dd>
 <p>
         Show colored diff.
-        The value must be always (the default), never, or auto.
+        The value must be <tt>always</tt> (the default for <tt>&lt;when&gt;</tt>), <tt>never</tt>, or <tt>auto</tt>.
+        The default value is <tt>never</tt>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -606,9 +610,8 @@ any of those replacements occurred.</p></div>
 </dt>
 <dd>
 <p>
-        Turn off colored diff, even when the configuration file
-        gives the default to color output.
-        Same as <tt>--color=never</tt>.
+        Turn off colored diff.
+        It is the same as <tt>--color=never</tt>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -784,7 +787,7 @@ another file.</p></div>
 <dd>
 <p>
         Detect renames.
-        If <tt>n</tt> is specified, it is a is a threshold on the similarity
+        If <tt>n</tt> is specified, it is a threshold on the similarity
         index (i.e. amount of addition/deletions compared to the
         file&#8217;s size). For example, <tt>-M90%</tt> means git should consider a
         delete/add pair to be a rename if more than 90% of the file
@@ -1698,8 +1701,8 @@ have not actually done a <em>git update-index</em> on it yet - there is no
 "object" associated with the new state, and you get:</p></div>
 <div class="literalblock">
 <div class="content">
-<pre><tt>torvalds@ppc970:~/v2.6/linux&gt; git diff-index HEAD
-*100644-&gt;100664 blob    7476bb......-&gt;000000......      kernel/sched.c</tt></pre>
+<pre><tt>torvalds@ppc970:~/v2.6/linux&gt; git diff-index --abbrev HEAD
+:100644 100664 7476bb... 000000...      kernel/sched.c</tt></pre>
 </div></div>
 <div class="paragraph"><p>i.e., it shows that the tree has changed, and that <tt>kernel/sched.c</tt> has is
 not up-to-date and may contain new stuff. The all-zero sha1 means that to
@@ -1730,21 +1733,13 @@ always have the special all-zero sha1.</td>
 </tr></table>
 </div>
 </div>
-<h2 id="_author">Author</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Written by Linus Torvalds &lt;<a href="mailto:torvalds@osdl.org">torvalds@osdl.org</a>&gt;</p></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Documentation by David Greaves, Junio C Hamano and the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.</p></div>
-</div>
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-05-31 19:37:07 UTC
 </div>
 </div>
 </body>

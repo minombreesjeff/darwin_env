@@ -4,49 +4,49 @@
 <array>
 	<dict>
 		<key>OpenSourceImportDate</key>
-		<string>2011-04-06</string>
+		<string>2011-06-08</string>
 		<key>OpenSourceLicense</key>
 		<string>GPL</string>
 		<key>OpenSourceProject</key>
 		<string>git</string>
 		<key>OpenSourceSHA1</key>
-		<string>0c5d6b06cfbe73eb60ce7a59b9eec5fb9c6dc034</string>
+		<string>076eca037a993de2c1bcf093fee5a1ad56af71fa</string>
 		<key>OpenSourceURL</key>
-		<string>http://kernel.org/pub/software/scm/git/git-1.7.4.4.tar.bz2</string>
+		<string>http://kernel.org/pub/software/scm/git/git-1.7.5.4.tar.bz2</string>
 		<key>OpenSourceVersion</key>
-		<string>1.7.4.4</string>
+		<string>1.7.5.4</string>
 		<key>OpenSourceWebsiteURL</key>
 		<string>http://git-scm.com</string>
 	</dict>
 	<dict>
 		<key>OpenSourceImportDate</key>
-		<string>2011-04-06</string>
+		<string>2011-06-08</string>
 		<key>OpenSourceLicense</key>
 		<string>GPL</string>
 		<key>OpenSourceProject</key>
 		<string>git-htmldocs</string>
 		<key>OpenSourceSHA1</key>
-		<string>c63b910f549a50806238c3db703eaa4e29ee6124</string>
+		<string>1f4c9906b77fd4151c320e44b351e06fd9e7eca5</string>
 		<key>OpenSourceURL</key>
-		<string>http://kernel.org/pub/software/scm/git/git-htmldocs-1.7.4.4.tar.bz2</string>
+		<string>http://kernel.org/pub/software/scm/git/git-htmldocs-1.7.5.4.tar.bz2</string>
 		<key>OpenSourceVersion</key>
-		<string>1.7.4.4</string>
+		<string>1.7.5.4</string>
 		<key>OpenSourceWebsiteURL</key>
 		<string>http://git-scm.com</string>
 	</dict>
 	<dict>
 		<key>OpenSourceImportDate</key>
-		<string>2011-04-06</string>
+		<string>2011-06-08</string>
 		<key>OpenSourceLicense</key>
 		<string>GPL</string>
 		<key>OpenSourceProject</key>
 		<string>git-manpages</string>
 		<key>OpenSourceSHA1</key>
-		<string>46335ecefe46ae211c10dcaa7422945af14d51d6</string>
+		<string>f7ca383d94152777eca28fdffce38d88a51b90cf</string>
 		<key>OpenSourceURL</key>
-		<string>http://kernel.org/pub/software/scm/git/git-manpages-1.7.4.4.tar.bz2</string>
+		<string>http://kernel.org/pub/software/scm/git/git-manpages-1.7.5.4.tar.bz2</string>
 		<key>OpenSourceVersion</key>
-		<string>1.7.4.4</string>
+		<string>1.7.5.4</string>
 		<key>OpenSourceWebsiteURL</key>
 		<string>http://git-scm.com</string>
 	</dict>

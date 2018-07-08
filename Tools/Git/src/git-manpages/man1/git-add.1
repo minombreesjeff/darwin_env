@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-add
-.\"    Author: [see the "Author" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 04/06/2011
+.\"      Date: 06/01/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.4.4
+.\"    Source: Git 1.7.5.4
 .\"  Language: English
 .\"
-.TH "GIT\-ADD" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.TH "GIT\-ADD" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -120,7 +120,9 @@ Don\(cqt add the file(s), but only refresh their stat() information in the index
 .PP
 \-\-ignore\-errors
 .RS 4
-If some files could not be added because of errors indexing them, do not abort the operation, but continue adding the others\&. The command shall still exit with non\-zero status\&.
+If some files could not be added because of errors indexing them, do not abort the operation, but continue adding the others\&. The command shall still exit with non\-zero status\&. The configuration variable
+add\&.ignoreErrors
+can be set to true to make this the default behaviour\&.
 .RE
 .PP
 \-\-ignore\-missing
@@ -298,7 +300,7 @@ patch
 .RS 4
 This lets you choose one path out of a
 \fIstatus\fR
-like selection\&. After choosing the path, it presents the diff between the index and the working tree file and asks you if you want to stage the change of each hunk\&. You can say:
+like selection\&. After choosing the path, it presents the diff between the index and the working tree file and asks you if you want to stage the change of each hunk\&. You can select one of the following options and type return:
 .sp
 .if n \{\
 .RS 4
@@ -324,6 +326,11 @@ e \- manually edit the current hunk
 .\}
 .sp
 After deciding the fate for all hunks, if there is any hunk that was chosen, the index is updated with the selected hunks\&.
+.sp
+You can omit having to type return here, by setting the configuration variable
+interactive\&.singlekey
+to
+true\&.
 .RE
 .PP
 diff
@@ -405,23 +412,6 @@ modifying the contents of context or removal lines
 .SH "SEE ALSO"
 .sp
 \fBgit-status\fR(1) \fBgit-rm\fR(1) \fBgit-reset\fR(1) \fBgit-mv\fR(1) \fBgit-commit\fR(1) \fBgit-update-index\fR(1)
-.SH "AUTHOR"
-.sp
-Written by Linus Torvalds <\m[blue]\fBtorvalds@osdl\&.org\fR\m[]\&\s-2\u[1]\d\s+2>
-.SH "DOCUMENTATION"
-.sp
-Documentation by Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>\&.
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite
-.SH "NOTES"
-.IP " 1." 4
-torvalds@osdl.org
-.RS 4
-\%mailto:torvalds@osdl.org
-.RE
-.IP " 2." 4
-git@vger.kernel.org
-.RS 4
-\%mailto:git@vger.kernel.org
-.RE

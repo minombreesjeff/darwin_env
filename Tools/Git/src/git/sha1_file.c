@@ -13,6 +13,7 @@
 #include "commit.h"
 #include "tag.h"
 #include "tree.h"
+#include "tree-walk.h"
 #include "refs.h"
 #include "pack-revindex.h"
 #include "sha1-lookup.h"
@@ -25,17 +26,10 @@
 #endif
 #endif
 
-#ifdef NO_C99_FORMAT
-#define SZ_FMT "lu"
-static unsigned long sz_fmt(size_t s) { return (unsigned long)s; }
-#else
-#define SZ_FMT "zu"
-static size_t sz_fmt(size_t s) { return s; }
-#endif
+#define SZ_FMT PRIuMAX
+static inline uintmax_t sz_fmt(size_t s) { return s; }
 
 const unsigned char null_sha1[20];
-
-static int git_open_noatime(const char *name, struct packed_git *p);
 
 /*
  * This is meant to hold a *small* number of objects that you would
@@ -70,6 +64,35 @@ static struct cached_object *find_cached_object(const unsigned char *sha1)
 	if (!hashcmp(sha1, empty_tree.sha1))
 		return &empty_tree;
 	return NULL;
+}
+
+int mkdir_in_gitdir(const char *path)
+{
+	if (mkdir(path, 0777)) {
+		int saved_errno = errno;
+		struct stat st;
+		struct strbuf sb = STRBUF_INIT;
+
+		if (errno != EEXIST)
+			return -1;
+		/*
+		 * Are we looking at a path in a symlinked worktree
+		 * whose original repository does not yet have it?
+		 * e.g. .git/rr-cache pointing at its original
+		 * repository in which the user hasn't performed any
+		 * conflict resolution yet?
+		 */
+		if (lstat(path, &st) || !S_ISLNK(st.st_mode) ||
+		    strbuf_readlink(&sb, path, st.st_size) ||
+		    !is_absolute_path(sb.buf) ||
+		    mkdir(sb.buf, 0777)) {
+			strbuf_release(&sb);
+			errno = saved_errno;
+			return -1;
+		}
+		strbuf_release(&sb);
+	}
+	return adjust_shared_perm(path);
 }
 
 int safe_create_leading_directories(char *path)
@@ -202,6 +225,7 @@ struct alternate_object_database *alt_odb_list;
 static struct alternate_object_database **alt_odb_tail;
 
 static void read_info_alternates(const char * alternates, int depth);
+static int git_open_noatime(const char *name);
 
 /*
  * Prepare alternate object database registry.
@@ -335,7 +359,7 @@ static void read_info_alternates(const char * relative_base, int depth)
 	int fd;
 
 	sprintf(path, "%s/%s", relative_base, alt_file_name);
-	fd = git_open_noatime(path, NULL);
+	fd = git_open_noatime(path);
 	if (fd < 0)
 		return;
 	if (fstat(fd, &st) || (st.st_size == 0)) {
@@ -450,7 +474,7 @@ static int check_packed_git_idx(const char *path,  struct packed_git *p)
 	struct pack_idx_header *hdr;
 	size_t idx_size;
 	uint32_t version, nr, i, *index;
-	int fd = git_open_noatime(path, p);
+	int fd = git_open_noatime(path);
 	struct stat st;
 
 	if (fd < 0)
@@ -732,7 +756,7 @@ static int open_packed_git_1(struct packed_git *p)
 	while (pack_max_fds <= pack_open_fds && unuse_one_window(NULL, -1))
 		; /* nothing */
 
-	p->pack_fd = git_open_noatime(p->pack_name, p);
+	p->pack_fd = git_open_noatime(p->pack_name);
 	if (p->pack_fd < 0 || fstat(p->pack_fd, &st))
 		return -1;
 	pack_open_fds++;
@@ -1120,7 +1144,7 @@ int check_sha1_signature(const unsigned char *sha1, void *map, unsigned long siz
 	return hashcmp(sha1, real_sha1) ? -1 : 0;
 }
 
-static int git_open_noatime(const char *name, struct packed_git *p)
+static int git_open_noatime(const char *name)
 {
 	static int sha1_file_open_flag = O_NOATIME;
 
@@ -1145,7 +1169,7 @@ static int open_sha1_file(const unsigned char *sha1)
 	char *name = sha1_file_name(sha1);
 	struct alternate_object_database *alt;
 
-	fd = git_open_noatime(name, NULL);
+	fd = git_open_noatime(name);
 	if (fd >= 0)
 		return fd;
 
@@ -1154,7 +1178,7 @@ static int open_sha1_file(const unsigned char *sha1)
 	for (alt = alt_odb_list; alt; alt = alt->next) {
 		name = alt->name;
 		fill_sha1_path(name, sha1);
-		fd = git_open_noatime(alt->base, NULL);
+		fd = git_open_noatime(alt->base);
 		if (fd >= 0)
 			return fd;
 	}
@@ -1283,7 +1307,7 @@ static void *unpack_sha1_rest(z_stream *stream, void *buffer, unsigned long size
 		/*
 		 * The above condition must be (bytes <= size), not
 		 * (bytes < size).  In other words, even though we
-		 * expect no more output and set avail_out to zer0,
+		 * expect no more output and set avail_out to zero,
 		 * the input zlib stream may have bytes that express
 		 * "this concludes the stream", and we *do* want to
 		 * eat that input.
@@ -1509,7 +1533,7 @@ static int unpack_object_header(struct packed_git *p,
 	enum object_type type;
 
 	/* use_pack() assures us we have [base, base + 20) available
-	 * as a range that we can look at at.  (Its actually the hash
+	 * as a range that we can look at.  (Its actually the hash
 	 * size that is assured.)  With our object header encoding
 	 * the maximum deflated object size is 2^137, which is just
 	 * insane, so we know won't exceed what we have been given.
@@ -2527,8 +2551,37 @@ int has_sha1_file(const unsigned char *sha1)
 	return has_loose_object(sha1);
 }
 
+static void check_tree(const void *buf, size_t size)
+{
+	struct tree_desc desc;
+	struct name_entry entry;
+
+	init_tree_desc(&desc, buf, size);
+	while (tree_entry(&desc, &entry))
+		/* do nothing
+		 * tree_entry() will die() on malformed entries */
+		;
+}
+
+static void check_commit(const void *buf, size_t size)
+{
+	struct commit c;
+	memset(&c, 0, sizeof(c));
+	if (parse_commit_buffer(&c, buf, size))
+		die("corrupt commit");
+}
+
+static void check_tag(const void *buf, size_t size)
+{
+	struct tag t;
+	memset(&t, 0, sizeof(t));
+	if (parse_tag_buffer(&t, buf, size))
+		die("corrupt tag");
+}
+
 static int index_mem(unsigned char *sha1, void *buf, size_t size,
-		     int write_object, enum object_type type, const char *path)
+		     int write_object, enum object_type type,
+		     const char *path, int format_check)
 {
 	int ret, re_allocated = 0;
 
@@ -2546,6 +2599,14 @@ static int index_mem(unsigned char *sha1, void *buf, size_t size,
 			re_allocated = 1;
 		}
 	}
+	if (format_check) {
+		if (type == OBJ_TREE)
+			check_tree(buf, size);
+		if (type == OBJ_COMMIT)
+			check_commit(buf, size);
+		if (type == OBJ_TAG)
+			check_tag(buf, size);
+	}
 
 	if (write_object)
 		ret = write_sha1_file(buf, size, typename(type), sha1);
@@ -2559,7 +2620,7 @@ static int index_mem(unsigned char *sha1, void *buf, size_t size,
 #define SMALL_FILE_SIZE (32*1024)
 
 int index_fd(unsigned char *sha1, int fd, struct stat *st, int write_object,
-	     enum object_type type, const char *path)
+	     enum object_type type, const char *path, int format_check)
 {
 	int ret;
 	size_t size = xsize_t(st->st_size);
@@ -2568,23 +2629,25 @@ int index_fd(unsigned char *sha1, int fd, struct stat *st, int write_object,
 		struct strbuf sbuf = STRBUF_INIT;
 		if (strbuf_read(&sbuf, fd, 4096) >= 0)
 			ret = index_mem(sha1, sbuf.buf, sbuf.len, write_object,
-					type, path);
+					type, path, format_check);
 		else
 			ret = -1;
 		strbuf_release(&sbuf);
 	} else if (!size) {
-		ret = index_mem(sha1, NULL, size, write_object, type, path);
+		ret = index_mem(sha1, NULL, size, write_object, type, path,
+				format_check);
 	} else if (size <= SMALL_FILE_SIZE) {
 		char *buf = xmalloc(size);
 		if (size == read_in_full(fd, buf, size))
 			ret = index_mem(sha1, buf, size, write_object, type,
-					path);
+					path, format_check);
 		else
 			ret = error("short read %s", strerror(errno));
 		free(buf);
 	} else {
 		void *buf = xmmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-		ret = index_mem(sha1, buf, size, write_object, type, path);
+		ret = index_mem(sha1, buf, size, write_object, type, path,
+				format_check);
 		munmap(buf, size);
 	}
 	close(fd);
@@ -2602,7 +2665,7 @@ int index_path(unsigned char *sha1, const char *path, struct stat *st, int write
 		if (fd < 0)
 			return error("open(\"%s\"): %s", path,
 				     strerror(errno));
-		if (index_fd(sha1, fd, st, write_object, OBJ_BLOB, path) < 0)
+		if (index_fd(sha1, fd, st, write_object, OBJ_BLOB, path, 0) < 0)
 			return error("%s: failed to insert into database",
 				     path);
 		break;

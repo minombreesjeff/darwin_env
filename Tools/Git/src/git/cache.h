@@ -5,6 +5,7 @@
 #include "strbuf.h"
 #include "hash.h"
 #include "advice.h"
+#include "gettext.h"
 
 #include SHA1_HEADER
 #ifndef git_SHA_CTX
@@ -443,6 +444,7 @@ extern void verify_non_filename(const char *prefix, const char *name);
 
 #define INIT_DB_QUIET 0x0001
 
+extern int set_git_dir_init(const char *git_dir, const char *real_git_dir, int);
 extern int init_db(const char *template_dir, unsigned int flags);
 
 #define alloc_nr(x) (((x)+16)*3/2)
@@ -507,8 +509,23 @@ extern int index_name_is_other(const struct index_state *, const char *, int);
 extern int ie_match_stat(const struct index_state *, struct cache_entry *, struct stat *, unsigned int);
 extern int ie_modified(const struct index_state *, struct cache_entry *, struct stat *, unsigned int);
 
-extern int ce_path_match(const struct cache_entry *ce, const char **pathspec);
-extern int index_fd(unsigned char *sha1, int fd, struct stat *st, int write_object, enum object_type type, const char *path);
+struct pathspec {
+	const char **raw; /* get_pathspec() result, not freed by free_pathspec() */
+	int nr;
+	unsigned int has_wildcard:1;
+	unsigned int recursive:1;
+	int max_depth;
+	struct pathspec_item {
+		const char *match;
+		int len;
+		unsigned int has_wildcard:1;
+	} *items;
+};
+
+extern int init_pathspec(struct pathspec *, const char **);
+extern void free_pathspec(struct pathspec *);
+extern int ce_path_match(const struct cache_entry *ce, const struct pathspec *pathspec);
+extern int index_fd(unsigned char *sha1, int fd, struct stat *st, int write_object, enum object_type type, const char *path, int format_check);
 extern int index_path(unsigned char *sha1, const char *path, struct stat *st, int write_object);
 extern void fill_stat_cache_info(struct cache_entry *ce, struct stat *st);
 
@@ -518,7 +535,7 @@ extern void fill_stat_cache_info(struct cache_entry *ce, struct stat *st);
 #define REFRESH_IGNORE_MISSING	0x0008	/* ignore non-existent */
 #define REFRESH_IGNORE_SUBMODULES	0x0010	/* ignore submodules */
 #define REFRESH_IN_PORCELAIN	0x0020	/* user friendly output, not "needs update" */
-extern int refresh_index(struct index_state *, unsigned int flags, const char **pathspec, char *seen, char *header_msg);
+extern int refresh_index(struct index_state *, unsigned int flags, const char **pathspec, char *seen, const char *header_msg);
 
 struct lock_file {
 	struct lock_file *next;
@@ -563,6 +580,7 @@ extern int core_compression_seen;
 extern size_t packed_git_window_size;
 extern size_t packed_git_limit;
 extern size_t delta_base_cache_limit;
+extern unsigned long big_file_threshold;
 extern int read_replace_refs;
 extern int fsync_object_files;
 extern int core_preload_index;
@@ -718,6 +736,7 @@ int set_shared_perm(const char *path, int mode);
 #define adjust_shared_perm(path) set_shared_perm((path), 0)
 int safe_create_leading_directories(char *path);
 int safe_create_leading_directories_const(const char *path);
+int mkdir_in_gitdir(const char *path);
 extern char *expand_user_path(const char *path);
 char *enter_repo(char *path, int strict);
 static inline int is_absolute_path(const char *path)
@@ -725,9 +744,9 @@ static inline int is_absolute_path(const char *path)
 	return path[0] == '/' || has_dos_drive_prefix(path);
 }
 int is_directory(const char *);
-const char *make_absolute_path(const char *path);
-const char *make_nonrelative_path(const char *path);
-const char *make_relative_path(const char *abs, const char *base);
+const char *real_path(const char *path);
+const char *absolute_path(const char *path);
+const char *relative_path(const char *abs, const char *base);
 int normalize_path_copy(char *dst, const char *src);
 int longest_ancestor_length(const char *path, const char *prefix_list);
 char *strip_path_suffix(const char *path, const char *suffix);
@@ -953,6 +972,7 @@ extern struct ref *find_ref_by_name(const struct ref *list, const char *name);
 extern char *git_getpass(const char *prompt);
 extern struct child_process *git_connect(int fd[2], const char *url, const char *prog, int flags);
 extern int finish_connect(struct child_process *conn);
+extern int git_connection_is_socket(struct child_process *conn);
 extern int path_match(const char *path, int nr, char **match);
 struct extra_have_objects {
 	int nr, alloc;
@@ -994,8 +1014,6 @@ typedef int (*config_fn_t)(const char *, const char *, void *);
 extern int git_default_config(const char *, const char *, void *);
 extern int git_config_from_file(config_fn_t fn, const char *, void *);
 extern void git_config_push_parameter(const char *text);
-extern int git_config_parse_parameter(const char *text);
-extern int git_config_parse_environment(void);
 extern int git_config_from_parameters(config_fn_t fn, void *data);
 extern int git_config(config_fn_t fn, void *);
 extern int git_config_early(config_fn_t fn, void *, const char *repo_config);
@@ -1015,7 +1033,6 @@ extern const char *git_etc_gitconfig(void);
 extern int check_repository_format_version(const char *var, const char *value, void *cb);
 extern int git_env_bool(const char *, int);
 extern int git_config_system(void);
-extern int git_config_global(void);
 extern int config_error_nonbool(const char *);
 extern const char *get_log_output_encoding(void);
 extern const char *get_commit_output_encoding(void);
@@ -1077,9 +1094,14 @@ extern void alloc_report(void);
 /* trace.c */
 __attribute__((format (printf, 1, 2)))
 extern void trace_printf(const char *format, ...);
+extern void trace_vprintf(const char *key, const char *format, va_list ap);
 __attribute__((format (printf, 2, 3)))
 extern void trace_argv_printf(const char **argv, const char *format, ...);
 extern void trace_repo_setup(const char *prefix);
+extern int trace_want(const char *key);
+extern void trace_strbuf(const char *key, const struct strbuf *buf);
+
+void packet_trace_identity(const char *prog);
 
 /* convert.c */
 /* returns 1 if *dst was used */

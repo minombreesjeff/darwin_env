@@ -38,7 +38,7 @@ override RC_ProjectSourceVersion := $(tmp)
 endif
 export RC_ProjectSourceVersion
 ifndef RC_ARCHS
-export RC_ARCHS := $(shell uname -m) $(warning using host architecture)
+RC_ARCHS := $(shell uname -m) $(warning using host architecture)
 endif
 cflags := $(strip $(RC_CFLAGS))
 $(foreach arch,$(RC_ARCHS),$(eval cflags := $(subst $(cflags),-arch $(arch) ,)))
@@ -155,6 +155,7 @@ $(OBJROOT)/$(1)/build.timestamp: $(OBJROOT)/$(1)/lndir.timestamp
 	  && touch $$@
 
 endef
+
 $(foreach arch,$(RC_ARCHS),$(eval $(call each_arch,$(arch))))
 
 # ;; Local Variables: **

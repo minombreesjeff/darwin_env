@@ -416,7 +416,7 @@ git-reset(1) Manual Page
 <div class="sectionbody">
 <div class="verseblock">
 <div class="verseblock-content"><em>git reset</em> [-q] [&lt;commit&gt;] [--] &lt;paths&gt;&#8230;
-<em>git reset</em> --patch [&lt;commit&gt;] [--] [&lt;paths&gt;&#8230;]
+<em>git reset</em> [--patch|-p] [&lt;commit&gt;] [--] [&lt;paths&gt;&#8230;]
 <em>git reset</em> [--soft | --mixed | --hard | --merge | --keep] [-q] [&lt;commit&gt;]</div>
 <div class="verseblock-attribution">
 </div></div>
@@ -455,8 +455,9 @@ working tree in one go.</p></div>
         and &lt;commit&gt; (defaults to HEAD).  The chosen hunks are applied
         in reverse to the index.
 </p>
-<div class="paragraph"><p>This means that <tt>git reset -p</tt> is the opposite of <tt>git add -p</tt> (see
-<a href="git-add.html">git-add(1)</a>).</p></div>
+<div class="paragraph"><p>This means that <tt>git reset -p</tt> is the opposite of <tt>git add -p</tt>, i.e.
+you can use it to selectively reset hunks. See the &#8220;Interactive Mode&#8221;
+section of <a href="git-add.html">git-add(1)</a> to learn how to operate the <tt>--patch</tt> mode.</p></div>
 </dd>
 <dt class="hdlist1">
 <em>git reset</em> [--&lt;mode&gt;] [&lt;commit&gt;]
@@ -994,21 +995,13 @@ entries:</p></div>
 </div></div>
 <div class="paragraph"><p>X means any state and U means an unmerged index.</p></div>
 </div>
-<h2 id="_author">Author</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Written by Junio C Hamano &lt;<a href="mailto:gitster@pobox.com">gitster@pobox.com</a>&gt; and Linus Torvalds &lt;<a href="mailto:torvalds@osdl.org">torvalds@osdl.org</a>&gt;</p></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Documentation by Junio C Hamano and the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.</p></div>
-</div>
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-05-26 23:06:27 UTC
 </div>
 </div>
 </body>

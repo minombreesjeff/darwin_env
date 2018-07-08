@@ -43,36 +43,25 @@ TERM=dumb
 export LANG LC_ALL PAGER TERM TZ
 EDITOR=:
 unset VISUAL
-unset GIT_EDITOR
-unset AUTHOR_DATE
-unset AUTHOR_EMAIL
-unset AUTHOR_NAME
-unset COMMIT_AUTHOR_EMAIL
-unset COMMIT_AUTHOR_NAME
 unset EMAIL
-unset GIT_ALTERNATE_OBJECT_DIRECTORIES
-unset GIT_AUTHOR_DATE
+unset $(perl -e '
+	my @env = keys %ENV;
+	my $ok = join("|", qw(
+		TRACE
+		DEBUG
+		USE_LOOKUP
+		TEST
+		.*_TEST
+		PROVE
+		VALGRIND
+	));
+	my @vars = grep(/^GIT_/ && !/^GIT_($ok)/o, @env);
+	print join("\n", @vars);
+')
 GIT_AUTHOR_EMAIL=author@example.com
 GIT_AUTHOR_NAME='A U Thor'
-unset GIT_COMMITTER_DATE
 GIT_COMMITTER_EMAIL=committer@example.com
 GIT_COMMITTER_NAME='C O Mitter'
-unset GIT_DIFF_OPTS
-unset GIT_DIR
-unset GIT_WORK_TREE
-unset GIT_EXTERNAL_DIFF
-unset GIT_INDEX_FILE
-unset GIT_OBJECT_DIRECTORY
-unset GIT_CEILING_DIRECTORIES
-unset SHA1_FILE_DIRECTORIES
-unset SHA1_FILE_DIRECTORY
-unset GIT_NOTES_REF
-unset GIT_NOTES_DISPLAY_REF
-unset GIT_NOTES_REWRITE_REF
-unset GIT_NOTES_REWRITE_MODE
-unset GIT_REFLOG_ACTION
-unset GIT_CHERRY_PICK_HELP
-unset GIT_QUIET
 GIT_MERGE_VERBOSITY=5
 export GIT_MERGE_VERBOSITY
 export GIT_AUTHOR_EMAIL GIT_AUTHOR_NAME
@@ -99,6 +88,9 @@ esac
 # A regexp to match 5 and 40 hexdigits
 _x05='[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
 _x40="$_x05$_x05$_x05$_x05$_x05$_x05$_x05$_x05"
+
+# Zero SHA-1
+_z40=0000000000000000000000000000000000000000
 
 # Each test should start with something like this, after copyright notices:
 #
@@ -954,8 +946,8 @@ fi
 GIT_TEMPLATE_DIR="$GIT_BUILD_DIR"/templates/blt
 unset GIT_CONFIG
 GIT_CONFIG_NOSYSTEM=1
-GIT_CONFIG_NOGLOBAL=1
-export PATH GIT_EXEC_PATH GIT_TEMPLATE_DIR GIT_CONFIG_NOSYSTEM GIT_CONFIG_NOGLOBAL
+GIT_ATTR_NOSYSTEM=1
+export PATH GIT_EXEC_PATH GIT_TEMPLATE_DIR GIT_CONFIG_NOSYSTEM GIT_ATTR_NOSYSTEM
 
 . "$GIT_BUILD_DIR"/GIT-BUILD-OPTIONS
 
@@ -1078,6 +1070,41 @@ esac
 
 test -z "$NO_PERL" && test_set_prereq PERL
 test -z "$NO_PYTHON" && test_set_prereq PYTHON
+
+# Can we rely on git's output in the C locale?
+if test -n "$GETTEXT_POISON"
+then
+	GIT_GETTEXT_POISON=YesPlease
+	export GIT_GETTEXT_POISON
+else
+	test_set_prereq C_LOCALE_OUTPUT
+fi
+
+# Use this instead of test_cmp to compare files that contain expected and
+# actual output from git commands that can be translated.  When running
+# under GETTEXT_POISON this pretends that the command produced expected
+# results.
+test_i18ncmp () {
+	test -n "$GETTEXT_POISON" || test_cmp "$@"
+}
+
+# Use this instead of "grep expected-string actual" to see if the
+# output from a git command that can be translated either contains an
+# expected string, or does not contain an unwanted one.  When running
+# under GETTEXT_POISON this pretends that the command produced expected
+# results.
+test_i18ngrep () {
+	if test -n "$GETTEXT_POISON"
+	then
+	    : # pretend success
+	elif test "x!" = "x$1"
+	then
+		shift
+		! grep "$@"
+	else
+		grep "$@"
+	fi
+}
 
 # test whether the filesystem supports symbolic links
 ln -s x y 2>/dev/null && test -h y 2>/dev/null && test_set_prereq SYMLINKS

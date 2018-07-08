@@ -75,7 +75,7 @@ EOF
 test_expect_success 'git branch shows detached HEAD properly' '
 	git checkout HEAD^0 &&
 	git branch >actual &&
-	test_cmp expect actual
+	test_i18ncmp expect actual
 '
 
 test_done

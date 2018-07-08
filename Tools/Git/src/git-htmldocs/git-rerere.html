@@ -414,7 +414,7 @@ git-rerere(1) Manual Page
 </div>
 <h2 id="_synopsis">SYNOPSIS</h2>
 <div class="sectionbody">
-<div class="paragraph"><p><em>git rerere</em> [<em>clear</em>|<em>forget</em> [&lt;pathspec&gt;]|<em>diff</em>|<em>status</em>|<em>gc</em>]</p></div>
+<div class="paragraph"><p><em>git rerere</em> [<em>clear</em>|<em>forget</em> &lt;pathspec&gt;|<em>diff</em>|<em>status</em>|<em>gc</em>]</p></div>
 </div>
 <h2 id="_description">DESCRIPTION</h2>
 <div class="sectionbody">
@@ -458,7 +458,7 @@ will automatically invoke this command.
 <dd>
 <p>
 This resets the conflict resolutions which rerere has recorded for the current
-conflict in &lt;pathspec&gt;.  The &lt;pathspec&gt; is optional.
+conflict in &lt;pathspec&gt;.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -621,17 +621,13 @@ would conflict the same way as the test merge you resolved earlier.
 <em>git rerere</em> will be run by <em>git rebase</em> to help you resolve this
 conflict.</p></div>
 </div>
-<h2 id="_author">Author</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Written by Junio C Hamano &lt;<a href="mailto:gitster@pobox.com">gitster@pobox.com</a>&gt;</p></div>
-</div>
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-04-19 22:26:58 UTC
 </div>
 </div>
 </body>

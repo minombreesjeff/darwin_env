@@ -438,6 +438,27 @@ git-grep(1) Manual Page
 <div class="paragraph"><p>Look for specified patterns in the tracked files in the work tree, blobs
 registered in the index file, or blobs in given tree objects.</p></div>
 </div>
+<h2 id="_configuration">CONFIGURATION</h2>
+<div class="sectionbody">
+<div class="dlist"><dl>
+<dt class="hdlist1">
+grep.lineNumber
+</dt>
+<dd>
+<p>
+        If set to true, enable <em>-n</em> option by default.
+</p>
+</dd>
+<dt class="hdlist1">
+grep.extendedRegexp
+</dt>
+<dd>
+<p>
+        If set to true, enable <em>--extended-regexp</em> option by default.
+</p>
+</dd>
+</dl></div>
+</div>
 <h2 id="_options">OPTIONS</h2>
 <div class="sectionbody">
 <div class="dlist"><dl>
@@ -825,22 +846,13 @@ git grep --all-match -e NODE -e Unexpected
 </dd>
 </dl></div>
 </div>
-<h2 id="_author">Author</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Originally written by Linus Torvalds &lt;<a href="mailto:torvalds@osdl.org">torvalds@osdl.org</a>&gt;, later
-revamped by Junio C Hamano.</p></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Documentation by Junio C Hamano and the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.</p></div>
-</div>
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-06-01 22:32:49 UTC
 </div>
 </div>
 </body>

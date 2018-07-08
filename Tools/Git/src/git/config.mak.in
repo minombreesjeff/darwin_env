@@ -18,6 +18,7 @@ bindir = @bindir@
 gitexecdir = @libexecdir@/git-core
 datarootdir = @datarootdir@
 template_dir = @datadir@/git-core/templates
+sysconfdir = @sysconfdir@
 
 mandir=@mandir@
 
@@ -43,7 +44,6 @@ NO_D_INO_IN_DIRENT=@NO_D_INO_IN_DIRENT@
 NO_D_TYPE_IN_DIRENT=@NO_D_TYPE_IN_DIRENT@
 NO_SOCKADDR_STORAGE=@NO_SOCKADDR_STORAGE@
 NO_IPV6=@NO_IPV6@
-NO_C99_FORMAT=@NO_C99_FORMAT@
 NO_HSTRERROR=@NO_HSTRERROR@
 NO_STRCASESTR=@NO_STRCASESTR@
 NO_STRTOK_R=@NO_STRTOK_R@

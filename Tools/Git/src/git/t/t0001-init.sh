@@ -47,7 +47,7 @@ test_expect_success 'plain nested in bare' '
 
 test_expect_success 'plain through aliased command, outside any git repo' '
 	(
-		sane_unset GIT_DIR GIT_WORK_TREE GIT_CONFIG_NOGLOBAL &&
+		sane_unset GIT_DIR GIT_WORK_TREE &&
 		HOME=$(pwd)/alias-config &&
 		export HOME &&
 		mkdir alias-config &&
@@ -190,11 +190,11 @@ test_expect_success 'reinit' '
 		git init >out1 2>err1 &&
 		git init >out2 2>err2
 	) &&
-	grep "Initialized empty" again/out1 &&
-	grep "Reinitialized existing" again/out2 &&
+	test_i18ngrep "Initialized empty" again/out1 &&
+	test_i18ngrep "Reinitialized existing" again/out2 &&
 	>again/empty &&
-	test_cmp again/empty again/err1 &&
-	test_cmp again/empty again/err2
+	test_i18ncmp again/empty again/err1 &&
+	test_i18ncmp again/empty again/err2
 '
 
 test_expect_success 'init with --template' '
@@ -231,7 +231,6 @@ test_expect_success 'init with init.templatedir set' '
 		git config -f "$test_config"  init.templatedir "${HOME}/templatedir-source" &&
 		mkdir templatedir-set &&
 		cd templatedir-set &&
-		sane_unset GIT_CONFIG_NOGLOBAL &&
 		sane_unset GIT_TEMPLATE_DIR &&
 		NO_SET_GIT_TEMPLATE_DIR=t &&
 		export NO_SET_GIT_TEMPLATE_DIR &&
@@ -243,7 +242,6 @@ test_expect_success 'init with init.templatedir set' '
 test_expect_success 'init --bare/--shared overrides system/global config' '
 	(
 		test_config="$HOME"/.gitconfig &&
-		sane_unset GIT_CONFIG_NOGLOBAL &&
 		git config -f "$test_config" core.bare false &&
 		git config -f "$test_config" core.sharedRepository 0640 &&
 		mkdir init-bare-shared-override &&
@@ -258,7 +256,6 @@ test_expect_success 'init --bare/--shared overrides system/global config' '
 test_expect_success 'init honors global core.sharedRepository' '
 	(
 		test_config="$HOME"/.gitconfig &&
-		sane_unset GIT_CONFIG_NOGLOBAL &&
 		git config -f "$test_config" core.sharedRepository 0666 &&
 		mkdir shared-honor-global &&
 		cd shared-honor-global &&
@@ -372,6 +369,52 @@ test_expect_success 'init prefers command line to GIT_DIR' '
 	GIT_DIR=otherdir git --bare init newdir &&
 	test -d newdir/refs &&
 	! test -d otherdir/refs
+'
+
+test_expect_success 'init with separate gitdir' '
+	rm -rf newdir &&
+	git init --separate-git-dir realgitdir newdir &&
+	echo "gitdir: `pwd`/realgitdir" >expected &&
+	test_cmp expected newdir/.git &&
+	test -d realgitdir/refs
+'
+
+test_expect_success 're-init to update git link' '
+	(
+	cd newdir &&
+	git init --separate-git-dir ../surrealgitdir
+	) &&
+	echo "gitdir: `pwd`/surrealgitdir" >expected &&
+	test_cmp expected newdir/.git &&
+	test -d surrealgitdir/refs &&
+	! test -d realgitdir/refs
+'
+
+test_expect_success 're-init to move gitdir' '
+	rm -rf newdir realgitdir surrealgitdir &&
+	git init newdir &&
+	(
+	cd newdir &&
+	git init --separate-git-dir ../realgitdir
+	) &&
+	echo "gitdir: `pwd`/realgitdir" >expected &&
+	test_cmp expected newdir/.git &&
+	test -d realgitdir/refs
+'
+
+test_expect_success SYMLINKS 're-init to move gitdir symlink' '
+	rm -rf newdir realgitdir &&
+	git init newdir &&
+	(
+	cd newdir &&
+	mv .git here &&
+	ln -s here .git &&
+	git init --separate-git-dir ../realgitdir
+	) &&
+	echo "gitdir: `pwd`/realgitdir" >expected &&
+	test_cmp expected newdir/.git &&
+	test -d realgitdir/refs &&
+	! test -d newdir/here
 '
 
 test_done

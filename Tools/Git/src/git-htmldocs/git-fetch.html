@@ -433,7 +433,7 @@ the given &lt;refspec&gt;s, and if the repository has objects that are
 pointed by remote tags that it does not yet have, then fetch
 those missing tags.  If the other end has tags that point at
 branches you are not interested in, you will not get them.</p></div>
-<div class="paragraph"><p><em>git fetch</em> can fetch from either a single named repository, or
+<div class="paragraph"><p><em>git fetch</em> can fetch from either a single named repository,
 or from several repositories at once if &lt;group&gt; is given and
 there is a remotes.&lt;group&gt; entry in the configuration file.
 (See <a href="git-config.html">git-config(1)</a>).</p></div>
@@ -561,12 +561,28 @@ there is a remotes.&lt;group&gt; entry in the configuration file.
 </p>
 </dd>
 <dt class="hdlist1">
---[no-]recurse-submodules
+--recurse-submodules[=yes|on-demand|no]
 </dt>
 <dd>
 <p>
-        This option controls if new commits of all populated submodules should
-        be fetched too (see <a href="git-config.html">git-config(1)</a> and <a href="gitmodules.html">gitmodules(5)</a>).
+        This option controls if and under what conditions new commits of
+        populated submodules should be fetched too. It can be used as a
+        boolean option to completely disable recursion when set to <em>no</em> or to
+        unconditionally recurse into all populated submodules when set to
+        <em>yes</em>, which is the default when this option is used without any
+        value. Use <em>on-demand</em> to only recurse into a populated submodule
+        when the superproject retrieves a commit that updates the submodule&#8217;s
+        reference to a commit that isn&#8217;t already in the local submodule
+        clone.
+</p>
+</dd>
+<dt class="hdlist1">
+--no-recurse-submodules
+</dt>
+<dd>
+<p>
+        Disable recursive fetching of submodules (this has the same effect as
+        using the <em>--recurse-submodules=no</em> option).
 </p>
 </dd>
 <dt class="hdlist1">
@@ -577,6 +593,19 @@ there is a remotes.&lt;group&gt; entry in the configuration file.
         Prepend &lt;path&gt; to paths printed in informative messages
         such as "Fetching submodule foo".  This option is used
         internally when recursing over submodules.
+</p>
+</dd>
+<dt class="hdlist1">
+--recurse-submodules-default=[yes|on-demand]
+</dt>
+<dd>
+<p>
+        This option is used internally to temporarily provide a
+        non-negative default value for the --recurse-submodules
+        option.  All other methods of configuring fetch&#8217;s submodule
+        recursion (such as settings in <a href="gitmodules.html">gitmodules(5)</a> and
+        <a href="git-config.html">git-config(1)</a>) override this option, as does
+        specifying --[no-]recurse-submodules directly.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -994,18 +1023,18 @@ because it is prefixed with a plus sign; <tt>tmp</tt> will not be.</p></div>
 </li>
 </ul></div>
 </div>
+<h2 id="_bugs">BUGS</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>Using --recurse-submodules can only fetch new commits in already checked
+out submodules right now. When e.g. upstream added a new submodule in the
+just fetched commits of the superproject the submodule itself can not be
+fetched, making it impossible to check out that submodule later without
+having to do a fetch again. This is expected to be fixed in a future git
+version.</p></div>
+</div>
 <h2 id="_see_also">SEE ALSO</h2>
 <div class="sectionbody">
 <div class="paragraph"><p><a href="git-pull.html">git-pull(1)</a></p></div>
-</div>
-<h2 id="_author">Author</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Written by Linus Torvalds &lt;<a href="mailto:torvalds@osdl.org">torvalds@osdl.org</a>&gt; and
-Junio C Hamano &lt;<a href="mailto:gitster@pobox.com">gitster@pobox.com</a>&gt;</p></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Documentation by David Greaves, Junio C Hamano and the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.</p></div>
 </div>
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
@@ -1013,7 +1042,7 @@ Junio C Hamano &lt;<a href="mailto:gitster@pobox.com">gitster@pobox.com</a>&gt;<
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-04-19 22:26:58 UTC
 </div>
 </div>
 </body>

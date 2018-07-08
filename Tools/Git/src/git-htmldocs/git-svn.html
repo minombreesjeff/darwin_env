@@ -654,28 +654,6 @@ Skip "branches" and "tags" of first level directories
 </dd>
 </dl></div>
 </dd>
-<dt class="hdlist1">
---use-log-author
-</dt>
-<dd>
-<p>
-        When retrieving svn commits into git (as part of fetch, rebase, or
-        dcommit operations), look for the first From: or Signed-off-by: line
-        in the log message and use that as the author string.
-</p>
-</dd>
-<dt class="hdlist1">
---add-author-from
-</dt>
-<dd>
-<p>
-        When committing to svn from git (as part of commit or dcommit
-        operations), if the existing log message doesn&#8217;t already have a
-        From: or Signed-off-by: line, append a From: line based on the
-        git commit&#8217;s author string.  If you use this, then --use-log-author
-        will retrieve a valid author string for all commits.
-</p>
-</dd>
 </dl></div>
 </dd>
 <dt class="hdlist1">
@@ -770,6 +748,18 @@ config key: svn.commiturl (overwrites all svn-remote.&lt;name&gt;.commiturl opti
 </div></div>
 <div class="paragraph"><p>Using this option for any other purpose (don&#8217;t ask) is very strongly
 discouraged.</p></div>
+</dd>
+<dt class="hdlist1">
+--mergeinfo=&lt;mergeinfo&gt;
+</dt>
+<dd>
+<p>
+        Add the given merge information during the dcommit
+        (e.g. <tt>--mergeinfo="/branches/foo:1-10"</tt>). All svn server versions can
+        store this information (as a property), and svn clients starting from
+        version 1.5 can make use of it. <em>git svn</em> currently does not use it
+        and does not set it automatically.
+</p>
 </dd>
 </dl></div>
 </dd>
@@ -1384,6 +1374,28 @@ repository that will be fetched from.</p></div>
 <div class="paragraph"><p>For <em>branch</em> and <em>tag</em>, display the urls that will be used for copying when
 creating the branch or tag.</p></div>
 </dd>
+<dt class="hdlist1">
+--use-log-author
+</dt>
+<dd>
+<p>
+        When retrieving svn commits into git (as part of <em>fetch</em>, <em>rebase</em>, or
+        <em>dcommit</em> operations), look for the first <tt>From:</tt> or <tt>Signed-off-by:</tt> line
+        in the log message and use that as the author string.
+</p>
+</dd>
+<dt class="hdlist1">
+--add-author-from
+</dt>
+<dd>
+<p>
+        When committing to svn from git (as part of <em>commit-diff</em>, <em>set-tree</em> or <em>dcommit</em>
+        operations), if the existing log message doesn&#8217;t already have a
+        <tt>From:</tt> or <tt>Signed-off-by:</tt> line, append a <tt>From:</tt> line based on the
+        git commit&#8217;s author string.  If you use this, then <tt>--use-log-author</tt>
+        will retrieve a valid author string for all commits.
+</p>
+</dd>
 </dl></div>
 </div>
 <h2 id="_advanced_options">ADVANCED OPTIONS</h2>
@@ -1518,6 +1530,20 @@ svn-remote.&lt;name&gt;.rewriteUUID
 </p>
 </dd>
 <dt class="hdlist1">
+svn-remote.&lt;name&gt;.pushurl
+</dt>
+<dd>
+<p>
+        Similar to git&#8217;s <em>remote.&lt;name&gt;.pushurl</em>, this key is designed
+        to be used in cases where <em>url</em> points to an SVN repository
+        via a read-only transport, to provide an alternate read/write
+        transport. It is assumed that both keys point to the same
+        repository. Unlike <em>commiturl</em>, <em>pushurl</em> is a base path. If
+        either <em>commiturl</em> or <em>pushurl</em> could be used, <em>commiturl</em>
+        takes precedence.
+</p>
+</dd>
+<dt class="hdlist1">
 svn.brokenSymlinkWorkaround
 </dt>
 <dd>
@@ -1630,10 +1656,9 @@ use <tt>git svn rebase</tt> to update your work branch instead of <tt>git pull</
 when committing into SVN, which can lead to merge commits reversing
 previous commits in SVN.</p></div>
 </div>
-<h2 id="_design_philosophy">DESIGN PHILOSOPHY</h2>
+<h2 id="_merge_tracking">MERGE TRACKING</h2>
 <div class="sectionbody">
-<div class="paragraph"><p>Merge tracking in Subversion is lacking and doing branched development
-with Subversion can be cumbersome as a result.  While <em>git svn</em> can track
+<div class="paragraph"><p>While <em>git svn</em> can track
 copy history (including branches and tags) for repositories adopting a
 standard layout, it cannot yet represent merge history that happened
 inside git back upstream to SVN users.  Therefore it is advised that
@@ -1642,15 +1667,14 @@ compatibility with SVN (see the CAVEATS section below).</p></div>
 </div>
 <h2 id="_caveats">CAVEATS</h2>
 <div class="sectionbody">
-<div class="paragraph"><p>For the sake of simplicity and interoperating with a less-capable system
-(SVN), it is recommended that all <em>git svn</em> users clone, fetch and dcommit
+<div class="paragraph"><p>For the sake of simplicity and interoperating with Subversion,
+it is recommended that all <em>git svn</em> users clone, fetch and dcommit
 directly from the SVN server, and avoid all <em>git clone</em>/<em>pull</em>/<em>merge</em>/<em>push</em>
 operations between git repositories and branches.  The recommended
 method of exchanging code between git branches and users is
 <em>git format-patch</em> and <em>git am</em>, or just 'dcommit&#8217;ing to the SVN repository.</p></div>
 <div class="paragraph"><p>Running <em>git merge</em> or <em>git pull</em> is NOT recommended on a branch you
-plan to <em>dcommit</em> from.  Subversion does not represent merges in any
-reasonable or useful fashion; so users using Subversion cannot see any
+plan to <em>dcommit</em> from because Subversion users cannot see any
 merges you&#8217;ve made.  Furthermore, if you merge or pull from a git branch
 that is a mirror of an SVN branch, <em>dcommit</em> may commit to the wrong
 branch.</p></div>
@@ -1696,7 +1720,7 @@ properties are logged to $GIT_DIR/svn/&lt;refname&gt;/unhandled.log</p></div>
 tracked when committing to SVN.  I do not plan on adding support for
 this as it&#8217;s quite difficult and time-consuming to get working for all
 the possible corner cases (git doesn&#8217;t do it, either).  Committing
-renamed and copied files are fully supported if they&#8217;re similar enough
+renamed and copied files is fully supported if they&#8217;re similar enough
 for git to detect them.</p></div>
 </div>
 <h2 id="_configuration">CONFIGURATION</h2>
@@ -1741,17 +1765,13 @@ reset) branches-maxRev and/or tags-maxRev as appropriate.</p></div>
 <div class="sectionbody">
 <div class="paragraph"><p><a href="git-rebase.html">git-rebase(1)</a></p></div>
 </div>
-<h2 id="_author">Author</h2>
+<h2 id="_git">GIT</h2>
 <div class="sectionbody">
-<div class="paragraph"><p>Written by Eric Wong &lt;<a href="mailto:normalperson@yhbt.net">normalperson@yhbt.net</a>&gt;.</p></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Written by Eric Wong &lt;<a href="mailto:normalperson@yhbt.net">normalperson@yhbt.net</a>&gt;.</p></div>
+<div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-06-01 22:32:49 UTC
 </div>
 </div>
 </body>

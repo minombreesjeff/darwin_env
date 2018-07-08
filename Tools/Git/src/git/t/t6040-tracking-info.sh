@@ -48,7 +48,7 @@ test_expect_success 'branch -v' '
 		git branch -v
 	) |
 	sed -n -e "$script" >actual &&
-	test_cmp expect actual
+	test_i18ncmp expect actual
 '
 
 test_expect_success 'checkout' '

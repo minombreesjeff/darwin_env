@@ -319,13 +319,13 @@ test_expect_success 'fail if the index has unresolved entries' '
 
 	test_must_fail git merge "$c5" &&
 	test_must_fail git merge "$c5" 2> out &&
-	grep "not possible because you have unmerged files" out &&
+	test_i18ngrep "not possible because you have unmerged files" out &&
 	git add -u &&
 	test_must_fail git merge "$c5" 2> out &&
-	grep "You have not concluded your merge" out &&
+	test_i18ngrep "You have not concluded your merge" out &&
 	rm -f .git/MERGE_HEAD &&
 	test_must_fail git merge "$c5" 2> out &&
-	grep "Your local changes to the following files would be overwritten by merge:" out
+	test_i18ngrep "Your local changes to the following files would be overwritten by merge:" out
 '
 
 test_expect_success 'merge-recursive remove conflict' '

@@ -1451,7 +1451,6 @@ core.bigFileThreshold
 for most projects as source code and other text files can still
 be delta compressed, but larger binary media files won&#8217;t be.</p></div>
 <div class="paragraph"><p>Common unit suffixes of <em>k</em>, <em>m</em>, or <em>g</em> are supported.</p></div>
-<div class="paragraph"><p>Currently only <a href="git-fast-import.html">git-fast-import(1)</a> honors this setting.</p></div>
 </dd>
 <dt class="hdlist1">
 core.excludesfile
@@ -1888,10 +1887,16 @@ color.diff
 </dt>
 <dd>
 <p>
-        When set to <tt>always</tt>, always use colors in patch.
-        When false (or <tt>never</tt>), never.  When set to <tt>true</tt> or <tt>auto</tt>, use
-        colors only when the output is to the terminal. Defaults to false.
+        Whether to use ANSI escape sequences to add color to patches.
+        If this is set to <tt>always</tt>, <a href="git-diff.html">git-diff(1)</a>,
+        <a href="git-log.html">git-log(1)</a>, and <a href="git-show.html">git-show(1)</a> will use color
+        for all patches.  If it is set to <tt>true</tt> or <tt>auto</tt>, those
+        commands will only use color when output is to the terminal.
+        Defaults to false.
 </p>
+<div class="paragraph"><p>This does not affect <a href="git-format-patch.html">git-format-patch(1)</a> nor the
+<em>git-diff-&#42;</em> plumbing commands.  Can be overridden on the
+command line with the <tt>--color[=&lt;when&gt;]</tt> option.</p></div>
 </dd>
 <dt class="hdlist1">
 color.diff.&lt;slot&gt;
@@ -2071,11 +2076,15 @@ color.ui
 </dt>
 <dd>
 <p>
-        When set to <tt>always</tt>, always use colors in all git commands which
-        are capable of colored output. When false (or <tt>never</tt>), never. When
-        set to <tt>true</tt> or <tt>auto</tt>, use colors only when the output is to the
-        terminal. When more specific variables of color.* are set, they always
-        take precedence over this setting. Defaults to false.
+        This variable determines the default value for variables such
+        as <tt>color.diff</tt> and <tt>color.grep</tt> that control the use of color
+        per command family. Its scope will expand as more commands learn
+        configuration to set a default for the <tt>--color</tt> option.  Set it
+        to <tt>always</tt> if you want all output not intended for machine
+        consumption to use color, to <tt>true</tt> or <tt>auto</tt> if you want such
+        output to use color when written to the terminal, or to <tt>false</tt> or
+        <tt>never</tt> if you prefer git commands not to use color unless enabled
+        explicitly with some other configuration or the <tt>--color</tt> option.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2125,6 +2134,17 @@ diff.external
         as described under "git Diffs" in <a href="git.html">git(1)</a>.  Note: if
         you want to use an external diff program only on a subset of
         your files, you might want to use <a href="gitattributes.html">gitattributes(5)</a> instead.
+</p>
+</dd>
+<dt class="hdlist1">
+diff.ignoreSubmodules
+</dt>
+<dd>
+<p>
+        Sets the default value of --ignore-submodules. Note that this
+        affects only <em>git diff</em> Porcelain, and not lower level <em>diff</em>
+        commands such as <em>git diff-files</em>. <em>git checkout</em> also honors
+        this setting when reporting uncommitted changes.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2208,17 +2228,6 @@ diff.renames
 </p>
 </dd>
 <dt class="hdlist1">
-diff.ignoreSubmodules
-</dt>
-<dd>
-<p>
-        Sets the default value of --ignore-submodules. Note that this
-        affects only <em>git diff</em> Porcelain, and not lower level <em>diff</em>
-        commands such as <em>git diff-files</em>. <em>git checkout</em> also honors
-        this setting when reporting uncommitted changes.
-</p>
-</dd>
-<dt class="hdlist1">
 diff.suppressBlankEmpty
 </dt>
 <dd>
@@ -2228,14 +2237,74 @@ diff.suppressBlankEmpty
 </p>
 </dd>
 <dt class="hdlist1">
+diff.&lt;driver&gt;.command
+</dt>
+<dd>
+<p>
+        The custom diff driver command.  See <a href="gitattributes.html">gitattributes(5)</a>
+        for details.
+</p>
+</dd>
+<dt class="hdlist1">
+diff.&lt;driver&gt;.xfuncname
+</dt>
+<dd>
+<p>
+        The regular expression that the diff driver should use to
+        recognize the hunk header.  A built-in pattern may also be used.
+        See <a href="gitattributes.html">gitattributes(5)</a> for details.
+</p>
+</dd>
+<dt class="hdlist1">
+diff.&lt;driver&gt;.binary
+</dt>
+<dd>
+<p>
+        Set this option to true to make the diff driver treat files as
+        binary.  See <a href="gitattributes.html">gitattributes(5)</a> for details.
+</p>
+</dd>
+<dt class="hdlist1">
+diff.&lt;driver&gt;.textconv
+</dt>
+<dd>
+<p>
+        The command that the diff driver should call to generate the
+        text-converted version of a file.  The result of the
+        conversion is used to generate a human-readable diff.  See
+        <a href="gitattributes.html">gitattributes(5)</a> for details.
+</p>
+</dd>
+<dt class="hdlist1">
+diff.&lt;driver&gt;.wordregex
+</dt>
+<dd>
+<p>
+        The regular expression that the diff driver should use to
+        split words in a line.  See <a href="gitattributes.html">gitattributes(5)</a> for
+        details.
+</p>
+</dd>
+<dt class="hdlist1">
+diff.&lt;driver&gt;.cachetextconv
+</dt>
+<dd>
+<p>
+        Set this option to true to make the diff driver cache the text
+        conversion outputs.  See <a href="gitattributes.html">gitattributes(5)</a> for details.
+</p>
+</dd>
+<dt class="hdlist1">
 diff.tool
 </dt>
 <dd>
 <p>
-        Controls which diff tool is used.  <tt>diff.tool</tt> overrides
-        <tt>merge.tool</tt> when used by <a href="git-difftool.html">git-difftool(1)</a> and has
-        the same valid values as <tt>merge.tool</tt> minus "tortoisemerge"
-        and plus "kompare".
+        The diff tool to be used by <a href="git-difftool.html">git-difftool(1)</a>.  This
+        option overrides <tt>merge.tool</tt>, and has the same valid built-in
+        values as <tt>merge.tool</tt> minus "tortoisemerge" and plus
+        "kompare".  Any other value is treated as a custom diff tool,
+        and there must be a corresponding <tt>difftool.&lt;tool&gt;.cmd</tt>
+        option.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2284,9 +2353,13 @@ fetch.recurseSubmodules
 </dt>
 <dd>
 <p>
-        A boolean value which changes the behavior for fetch and pull, the
-        default is to not recursively fetch populated submodules unless
-        configured otherwise.
+        This option can be either set to a boolean value or to <em>on-demand</em>.
+        Setting it to a boolean changes the behavior of fetch and pull to
+        unconditionally recurse into submodules when set to true or to not
+        recurse at all when set to false. When set to <em>on-demand</em> (the default
+        value), fetch and pull will only recurse into a populated submodule
+        when its superproject retrieves a commit that updates the submodule&#8217;s
+        reference.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2416,6 +2489,26 @@ format.signoff
     patch should be a conscious act and means that you certify you have
     the rights to submit this work under the same open source license.
     Please see the <em>SubmittingPatches</em> document for further discussion.
+</p>
+</dd>
+<dt class="hdlist1">
+filter.&lt;driver&gt;.clean
+</dt>
+<dd>
+<p>
+        The command which is used to convert the content of a worktree
+        file to a blob upon checkin.  See <a href="gitattributes.html">gitattributes(5)</a> for
+        details.
+</p>
+</dd>
+<dt class="hdlist1">
+filter.&lt;driver&gt;.smudge
+</dt>
+<dd>
+<p>
+        The command which is used to convert the content of a blob
+        object to a worktree file upon checkout.  See
+        <a href="gitattributes.html">gitattributes(5)</a> for details.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2638,6 +2731,22 @@ gitcvs.dbTableNamePrefix
 is one of "ext" and "pserver") to make them apply only for the given
 access method.</p></div>
 <div class="dlist"><dl>
+<dt class="hdlist1">
+grep.lineNumber
+</dt>
+<dd>
+<p>
+        If set to true, enable <em>-n</em> option by default.
+</p>
+</dd>
+<dt class="hdlist1">
+grep.extendedRegexp
+</dt>
+<dd>
+<p>
+        If set to true, enable <em>--extended-regexp</em> option by default.
+</p>
+</dd>
 <dt class="hdlist1">
 gui.commitmsgwidth
 </dt>
@@ -3113,8 +3222,9 @@ interactive.singlekey
 <p>
         In interactive commands, allow the user to provide one-letter
         input with a single key (i.e., without hitting enter).
-        Currently this is used only by the <tt>--patch</tt> mode of
-        <a href="git-add.html">git-add(1)</a>.  Note that this setting is silently
+        Currently this is used by the <tt>--patch</tt> mode of
+        <a href="git-add.html">git-add(1)</a>, <a href="git-reset.html">git-reset(1)</a>, <a href="git-stash.html">git-stash(1)</a> and
+        <a href="git-checkout.html">git-checkout(1)</a>. Note that this setting is silently
         ignored if portable keystroke input is not available.
 </p>
 </dd>
@@ -3208,6 +3318,21 @@ merge.conflictstyle
 </p>
 </dd>
 <dt class="hdlist1">
+merge.defaultToUpstream
+</dt>
+<dd>
+<p>
+        If merge is called without any commit argument, merge the upstream
+        branches configured for the current branch by using their last
+        observed values stored in their remote tracking branches.
+        The values of the <tt>branch.&lt;current branch&gt;.merge</tt> that name the
+        branches at the remote named by <tt>branch.&lt;current branch&gt;.remote</tt>
+        are consulted, and then they are mapped via <tt>remote.&lt;remote&gt;.fetch</tt>
+        to their corresponding remote tracking branches, and the tips of
+        these tracking branches are merged.
+</p>
+</dd>
+<dt class="hdlist1">
 merge.log
 </dt>
 <dd>
@@ -3258,10 +3383,10 @@ merge.tool
 <dd>
 <p>
         Controls which merge resolution program is used by
-        <a href="git-mergetool.html">git-mergetool(1)</a>.  Valid built-in values are: "kdiff3",
-        "tkdiff", "meld", "xxdiff", "emerge", "vimdiff", "gvimdiff",
-        "diffuse", "ecmerge", "tortoisemerge", "p4merge", "araxis" and
-        "opendiff".  Any other value is treated is custom merge tool
+        <a href="git-mergetool.html">git-mergetool(1)</a>.  Valid built-in values are: "araxis",
+        "bc3", "diffuse", "ecmerge", "emerge", "gvimdiff", "kdiff3", "meld",
+        "opendiff", "p4merge", "tkdiff", "tortoisemerge", "vimdiff"
+        and "xxdiff".  Any other value is treated is custom merge tool
         and there must be a corresponding mergetool.&lt;tool&gt;.cmd option.
 </p>
 </dd>
@@ -4116,7 +4241,7 @@ submodule.&lt;name&gt;.fetchRecurseSubmodules
 </dt>
 <dd>
 <p>
-        This option can be used to enable/disable recursive fetching of this
+        This option can be used to control recursive fetching of this
         submodule. It can be overridden by using the --[no-]recurse-submodules
         command line option to "git fetch" and "git pull".
         This setting will override that from in the <a href="gitmodules.html">gitmodules(5)</a>
@@ -4241,21 +4366,13 @@ web.browser
 </dd>
 </dl></div>
 </div>
-<h2 id="_author">Author</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Written by Johannes Schindelin &lt;<a href="mailto:Johannes.Schindelin@gmx.de">Johannes.Schindelin@gmx.de</a>&gt;</p></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Documentation by Johannes Schindelin, Petr Baudis and the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.</p></div>
-</div>
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-06-01 22:32:49 UTC
 </div>
 </div>
 </body>

@@ -228,7 +228,7 @@ test_expect_success 'checkout to detach HEAD (with advice declined)' '
 	git config advice.detachedHead false &&
 	git checkout -f renamer && git clean -f &&
 	git checkout renamer^ 2>messages &&
-	grep "HEAD is now at 7329388" messages &&
+	test_i18ngrep "HEAD is now at 7329388" messages &&
 	test 1 -eq $(wc -l <messages) &&
 	H=$(git rev-parse --verify HEAD) &&
 	M=$(git show-ref -s --verify refs/heads/master) &&
@@ -246,7 +246,7 @@ test_expect_success 'checkout to detach HEAD' '
 	git config advice.detachedHead true &&
 	git checkout -f renamer && git clean -f &&
 	git checkout renamer^ 2>messages &&
-	grep "HEAD is now at 7329388" messages &&
+	test_i18ngrep "HEAD is now at 7329388" messages &&
 	test 1 -lt $(wc -l <messages) &&
 	H=$(git rev-parse --verify HEAD) &&
 	M=$(git show-ref -s --verify refs/heads/master) &&

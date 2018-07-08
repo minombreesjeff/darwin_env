@@ -2020,17 +2020,15 @@ are the 40-hexdigit SHA1 hashes,
 <p>
 are the octal representation of the file modes.
 </p>
-</dd>
-</dl></div>
-<div class="paragraph"><p>+
-The file parameters can point at the user&#8217;s working file
+<div class="paragraph"><p>The file parameters can point at the user&#8217;s working file
 (e.g. <tt>new-file</tt> in "git-diff-files"), <tt>/dev/null</tt> (e.g. <tt>old-file</tt>
 when a new file is added), or a temporary file (e.g. <tt>old-file</tt> in the
 index).  <em>GIT_EXTERNAL_DIFF</em> should not worry about unlinking the
 temporary file --- it is removed when <em>GIT_EXTERNAL_DIFF</em> exits.</p></div>
-<div class="paragraph"><p>+
-For a path that is unmerged, <em>GIT_EXTERNAL_DIFF</em> is called with 1
+<div class="paragraph"><p>For a path that is unmerged, <em>GIT_EXTERNAL_DIFF</em> is called with 1
 parameter, &lt;path&gt;.</p></div>
+</dd>
+</dl></div>
 <h3 id="_other">other</h3><div style="clear:left"></div>
 <div class="dlist"><dl>
 <dt class="hdlist1">
@@ -2167,34 +2165,12 @@ unmerged version of a file when a merge is in progress.</p></div>
 </div>
 <h2 id="_authors">Authors</h2>
 <div class="sectionbody">
-<div class="ulist"><ul>
-<li>
-<p>
-git&#8217;s founding father is Linus Torvalds &lt;<a href="mailto:torvalds@osdl.org">torvalds@osdl.org</a>&gt;.
-</p>
-</li>
-<li>
-<p>
-The current git nurse is Junio C Hamano &lt;<a href="mailto:gitster@pobox.com">gitster@pobox.com</a>&gt;.
-</p>
-</li>
-<li>
-<p>
-The git potty was written by Andreas Ericsson &lt;<a href="mailto:ae@op5.se">ae@op5.se</a>&gt;.
-</p>
-</li>
-<li>
-<p>
-General upbringing is handled by the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.
-</p>
-</li>
-</ul></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>The documentation for git suite was started by David Greaves
-&lt;<a href="mailto:david@dgreaves.com">david@dgreaves.com</a>&gt;, and later enhanced greatly by the
-contributors on the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.</p></div>
+<div class="paragraph"><p>Git was started by Linus Torvalds, and is currently maintained by Junio
+C Hamano. Numerous contributions have come from the git mailing list
+&lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;. For a more complete list of contributors, see
+<a href="http://git-scm.com/about">http://git-scm.com/about</a>. If you have a clone of git.git itself, the
+output of <a href="git-shortlog.html">git-shortlog(1)</a> and <a href="git-blame.html">git-blame(1)</a> can show you
+the authors for specific parts of the project.</p></div>
 </div>
 <h2 id="_reporting_bugs">Reporting Bugs</h2>
 <div class="sectionbody">
@@ -2216,7 +2192,7 @@ subscribed to the list to send a message there.</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-06-01 22:32:49 UTC
 </div>
 </div>
 </body>

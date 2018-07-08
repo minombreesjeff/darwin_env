@@ -417,7 +417,7 @@ git-merge(1) Manual Page
 <div class="verseblock">
 <div class="verseblock-content"><em>git merge</em> [-n] [--stat] [--no-commit] [--squash]
         [-s &lt;strategy&gt;] [-X &lt;strategy-option&gt;]
-        [--[no-]rerere-autoupdate] [-m &lt;msg&gt;] &lt;commit&gt;&#8230;
+        [--[no-]rerere-autoupdate] [-m &lt;msg&gt;] [&lt;commit&gt;&#8230;]
 <em>git merge</em> &lt;msg&gt; HEAD &lt;commit&gt;&#8230;
 <em>git merge</em> --abort</div>
 <div class="verseblock-attribution">
@@ -605,7 +605,7 @@ option can be used to override --squash.</p></div>
 </dt>
 <dd>
 <p>
-        Operate quietly.
+        Operate quietly. Implies --no-progress.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -617,6 +617,20 @@ option can be used to override --squash.</p></div>
 <dd>
 <p>
         Be verbose.
+</p>
+</dd>
+<dt class="hdlist1">
+--progress
+</dt>
+<dt class="hdlist1">
+--no-progress
+</dt>
+<dd>
+<p>
+        Turn progress on/off explicitly. If neither is specified,
+        progress is shown if standard error is connected to a terminal.
+        Note that not all merge strategies may support progress
+        reporting.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -666,9 +680,13 @@ commit or stash your changes before running <em>git merge</em>.</p></div>
 <dd>
 <p>
         Commits, usually other branch heads, to merge into our branch.
-        You need at least one &lt;commit&gt;.  Specifying more than one
-        &lt;commit&gt; obviously means you are trying an Octopus.
+        Specifying more than one commit will create a merge with
+        more than two parents (affectionately called an Octopus merge).
 </p>
+<div class="paragraph"><p>If no commit is given from the command line, and if <tt>merge.defaultToUpstream</tt>
+configuration variable is set, merge the remote tracking branches
+that the current branch is configured to use as its upstream.
+See also the configuration section of this manual page.</p></div>
 </dd>
 </dl></div>
 </div>
@@ -1106,6 +1124,21 @@ merge.conflictstyle
 </p>
 </dd>
 <dt class="hdlist1">
+merge.defaultToUpstream
+</dt>
+<dd>
+<p>
+        If merge is called without any commit argument, merge the upstream
+        branches configured for the current branch by using their last
+        observed values stored in their remote tracking branches.
+        The values of the <tt>branch.&lt;current branch&gt;.merge</tt> that name the
+        branches at the remote named by <tt>branch.&lt;current branch&gt;.remote</tt>
+        are consulted, and then they are mapped via <tt>remote.&lt;remote&gt;.fetch</tt>
+        to their corresponding remote tracking branches, and the tips of
+        these tracking branches are merged.
+</p>
+</dd>
+<dt class="hdlist1">
 merge.log
 </dt>
 <dd>
@@ -1156,10 +1189,10 @@ merge.tool
 <dd>
 <p>
         Controls which merge resolution program is used by
-        <a href="git-mergetool.html">git-mergetool(1)</a>.  Valid built-in values are: "kdiff3",
-        "tkdiff", "meld", "xxdiff", "emerge", "vimdiff", "gvimdiff",
-        "diffuse", "ecmerge", "tortoisemerge", "p4merge", "araxis" and
-        "opendiff".  Any other value is treated is custom merge tool
+        <a href="git-mergetool.html">git-mergetool(1)</a>.  Valid built-in values are: "araxis",
+        "bc3", "diffuse", "ecmerge", "emerge", "gvimdiff", "kdiff3", "meld",
+        "opendiff", "p4merge", "tkdiff", "tortoisemerge", "vimdiff"
+        and "xxdiff".  Any other value is treated is custom merge tool
         and there must be a corresponding mergetool.&lt;tool&gt;.cmd option.
 </p>
 </dd>
@@ -1225,21 +1258,13 @@ branch.&lt;name&gt;.mergeoptions
 <a href="git-add.html">git-add(1)</a>, <a href="git-rm.html">git-rm(1)</a>,
 <a href="git-mergetool.html">git-mergetool(1)</a></p></div>
 </div>
-<h2 id="_author">Author</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Written by Junio C Hamano &lt;<a href="mailto:gitster@pobox.com">gitster@pobox.com</a>&gt;</p></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Documentation by Junio C Hamano and the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.</p></div>
-</div>
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-04-19 22:26:58 UTC
 </div>
 </div>
 </body>

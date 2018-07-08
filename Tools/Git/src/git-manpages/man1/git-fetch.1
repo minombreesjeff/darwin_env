@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-fetch
-.\"    Author: [see the "Author" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 04/06/2011
+.\"      Date: 06/01/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.4.4
+.\"    Source: Git 1.7.5.4
 .\"  Language: English
 .\"
-.TH "GIT\-FETCH" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.TH "GIT\-FETCH" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -37,7 +37,7 @@ The ref names and their object names of fetched refs are stored in \&.git/FETCH_
 .sp
 When <refspec> stores the fetched result in remote\-tracking branches, the tags that point at these branches are automatically followed\&. This is done by first fetching from the remote using the given <refspec>s, and if the repository has objects that are pointed by remote tags that it does not yet have, then fetch those missing tags\&. If the other end has tags that point at branches you are not interested in, you will not get them\&.
 .sp
-\fIgit fetch\fR can fetch from either a single named repository, or or from several repositories at once if <group> is given and there is a remotes\&.<group> entry in the configuration file\&. (See \fBgit-config\fR(1))\&.
+\fIgit fetch\fR can fetch from either a single named repository, or from several repositories at once if <group> is given and there is a remotes\&.<group> entry in the configuration file\&. (See \fBgit-config\fR(1))\&.
 .SH "OPTIONS"
 .PP
 \-\-all
@@ -111,17 +111,34 @@ Most of the tags are fetched automatically as branch heads are downloaded, but t
 \fBgit-config\fR(1)\&.
 .RE
 .PP
-\-\-[no\-]recurse\-submodules
+\-\-recurse\-submodules[=yes|on\-demand|no]
 .RS 4
-This option controls if new commits of all populated submodules should be fetched too (see
-\fBgit-config\fR(1)
-and
-\fBgitmodules\fR(5))\&.
+This option controls if and under what conditions new commits of populated submodules should be fetched too\&. It can be used as a boolean option to completely disable recursion when set to
+\fIno\fR
+or to unconditionally recurse into all populated submodules when set to
+\fIyes\fR, which is the default when this option is used without any value\&. Use
+\fIon\-demand\fR
+to only recurse into a populated submodule when the superproject retrieves a commit that updates the submodule\(cqs reference to a commit that isn\(cqt already in the local submodule clone\&.
+.RE
+.PP
+\-\-no\-recurse\-submodules
+.RS 4
+Disable recursive fetching of submodules (this has the same effect as using the
+\fI\-\-recurse\-submodules=no\fR
+option)\&.
 .RE
 .PP
 \-\-submodule\-prefix=<path>
 .RS 4
 Prepend <path> to paths printed in informative messages such as "Fetching submodule foo"\&. This option is used internally when recursing over submodules\&.
+.RE
+.PP
+\-\-recurse\-submodules\-default=[yes|on\-demand]
+.RS 4
+This option is used internally to temporarily provide a non\-negative default value for the \-\-recurse\-submodules option\&. All other methods of configuring fetch\(cqs submodule recursion (such as settings in
+\fBgitmodules\fR(5)
+and
+\fBgit-config\fR(1)) override this option, as does specifying \-\-[no\-]recurse\-submodules directly\&.
 .RE
 .PP
 \-u, \-\-update\-head\-ok
@@ -679,31 +696,12 @@ branch will be updated even if it is does not fast\-forward, because it is prefi
 tmp
 will not be\&.
 .RE
+.SH "BUGS"
+.sp
+Using \-\-recurse\-submodules can only fetch new commits in already checked out submodules right now\&. When e\&.g\&. upstream added a new submodule in the just fetched commits of the superproject the submodule itself can not be fetched, making it impossible to check out that submodule later without having to do a fetch again\&. This is expected to be fixed in a future git version\&.
 .SH "SEE ALSO"
 .sp
 \fBgit-pull\fR(1)
-.SH "AUTHOR"
-.sp
-Written by Linus Torvalds <\m[blue]\fBtorvalds@osdl\&.org\fR\m[]\&\s-2\u[1]\d\s+2> and Junio C Hamano <\m[blue]\fBgitster@pobox\&.com\fR\m[]\&\s-2\u[2]\d\s+2>
-.SH "DOCUMENTATION"
-.sp
-Documentation by David Greaves, Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[3]\d\s+2>\&.
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite
-.SH "NOTES"
-.IP " 1." 4
-torvalds@osdl.org
-.RS 4
-\%mailto:torvalds@osdl.org
-.RE
-.IP " 2." 4
-gitster@pobox.com
-.RS 4
-\%mailto:gitster@pobox.com
-.RE
-.IP " 3." 4
-git@vger.kernel.org
-.RS 4
-\%mailto:git@vger.kernel.org
-.RE

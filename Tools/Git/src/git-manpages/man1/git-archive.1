@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-archive
-.\"    Author: [see the "Author" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 04/06/2011
+.\"      Date: 06/01/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.4.4
+.\"    Source: Git 1.7.5.4
 .\"  Language: English
 .\"
-.TH "GIT\-ARCHIVE" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.TH "GIT\-ARCHIVE" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -112,7 +112,9 @@ Highest and slowest compression level\&. You can specify any number from 1 to 9 
 .PP
 tar\&.umask
 .RS 4
-This variable can be used to restrict the permission bits of tar archive entries\&. The default is 0002, which turns off the world write bit\&. The special value "user" indicates that the archiving user\(cqs umask will be used instead\&. See umask(2) for details\&.
+This variable can be used to restrict the permission bits of tar archive entries\&. The default is 0002, which turns off the world write bit\&. The special value "user" indicates that the archiving user\(cqs umask will be used instead\&. See umask(2) for details\&. If
+\-\-remote
+is used then only the configuration of the remote repository takes effect\&.
 .RE
 .SH "ATTRIBUTES"
 .PP
@@ -164,18 +166,6 @@ Create a Zip archive that contains the contents of the latest commit on the curr
 .SH "SEE ALSO"
 .sp
 \fBgitattributes\fR(5)
-.SH "AUTHOR"
-.sp
-Written by Franck Bui\-Huu and Rene Scharfe\&.
-.SH "DOCUMENTATION"
-.sp
-Documentation by David Greaves, Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[1]\d\s+2>\&.
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite
-.SH "NOTES"
-.IP " 1." 4
-git@vger.kernel.org
-.RS 4
-\%mailto:git@vger.kernel.org
-.RE

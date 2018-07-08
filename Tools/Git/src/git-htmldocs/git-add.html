@@ -610,6 +610,8 @@ subdirectories.</p></div>
         If some files could not be added because of errors indexing
         them, do not abort the operation, but continue adding the
         others. The command shall still exit with non-zero status.
+        The configuration variable <tt>add.ignoreErrors</tt> can be set to
+        true to make this the default behaviour.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -776,7 +778,8 @@ patch
   This lets you choose one path out of a <em>status</em> like selection.
   After choosing the path, it presents the diff between the index
   and the working tree file and asks you if you want to stage
-  the change of each hunk.  You can say:
+  the change of each hunk.  You can select one of the following
+  options and type return:
 </p>
 <div class="literalblock">
 <div class="content">
@@ -797,6 +800,8 @@ e - manually edit the current hunk
 </div></div>
 <div class="paragraph"><p>After deciding the fate for all hunks, if there is any hunk
 that was chosen, the index is updated with the selected hunks.</p></div>
+<div class="paragraph"><p>You can omit having to type return here, by setting the configuration
+variable <tt>interactive.singlekey</tt> to <tt>true</tt>.</p></div>
 </dd>
 <dt class="hdlist1">
 diff
@@ -922,21 +927,13 @@ modifying the contents of context or removal lines
 <a href="git-commit.html">git-commit(1)</a>
 <a href="git-update-index.html">git-update-index(1)</a></p></div>
 </div>
-<h2 id="_author">Author</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Written by Linus Torvalds &lt;<a href="mailto:torvalds@osdl.org">torvalds@osdl.org</a>&gt;</p></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Documentation by Junio C Hamano and the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.</p></div>
-</div>
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-05-26 23:06:27 UTC
 </div>
 </div>
 </body>

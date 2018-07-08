@@ -422,6 +422,10 @@ git-rev-list(1) Manual Page
              [ --sparse ]
              [ --merges ]
              [ --no-merges ]
+             [ --min-parents=&lt;number&gt; ]
+             [ --no-min-parents ]
+             [ --max-parents=&lt;number&gt; ]
+             [ --no-max-parents ]
              [ --first-parent ]
              [ --remove-empty ]
              [ --full-history ]
@@ -437,6 +441,9 @@ git-rev-list(1) Manual Page
              [ --parents ]
              [ --timestamp ]
              [ --left-right ]
+             [ --left-only ]
+             [ --right-only ]
+             [ --cherry-mark ]
              [ --cherry-pick ]
              [ --encoding[=&lt;encoding&gt;] ]
              [ --(author|committer|grep)=&lt;pattern&gt; ]
@@ -636,7 +643,7 @@ ordering and formatting options, such as <em>--reverse</em>.</p></div>
 </dt>
 <dd>
 <p>
-        Print only merge commits.
+        Print only merge commits. This is exactly the same as <tt>--min-parents=2</tt>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -644,8 +651,32 @@ ordering and formatting options, such as <em>--reverse</em>.</p></div>
 </dt>
 <dd>
 <p>
-        Do not print commits with more than one parent.
+        Do not print commits with more than one parent. This is
+        exactly the same as <tt>--max-parents=1</tt>.
 </p>
+</dd>
+<dt class="hdlist1">
+--min-parents=&lt;number&gt;
+</dt>
+<dt class="hdlist1">
+--max-parents=&lt;number&gt;
+</dt>
+<dt class="hdlist1">
+--no-min-parents
+</dt>
+<dt class="hdlist1">
+--no-max-parents
+</dt>
+<dd>
+<p>
+        Show only commits which have at least (or at most) that many
+        commits. In particular, <tt>--max-parents=1</tt> is the same as <tt>--no-merges</tt>,
+        <tt>--min-parents=2</tt> is the same as <tt>--merges</tt>.  <tt>--max-parents=0</tt>
+        gives all root commits and <tt>--min-parents=3</tt> all octopus merges.
+</p>
+<div class="paragraph"><p><tt>--no-min-parents</tt> and <tt>--no-max-parents</tt> reset these limits (to no limit)
+again.  Equivalent forms are <tt>--min-parents=0</tt> (any commit has 0 or more
+parents) and <tt>--max-parents=-1</tt> (negative numbers denote no upper limit).</p></div>
 </dd>
 <dt class="hdlist1">
 --first-parent
@@ -747,6 +778,15 @@ ordering and formatting options, such as <em>--reverse</em>.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+--cherry-mark
+</dt>
+<dd>
+<p>
+        Like <tt>--cherry-pick</tt> (see below) but mark equivalent commits
+        with <tt>=</tt> rather than omitting them, and inequivalent ones with <tt>+</tt>.
+</p>
+</dd>
+<dt class="hdlist1">
 --cherry-pick
 </dt>
 <dd>
@@ -757,11 +797,41 @@ ordering and formatting options, such as <em>--reverse</em>.</p></div>
 </p>
 <div class="paragraph"><p>For example, if you have two branches, <tt>A</tt> and <tt>B</tt>, a usual way
 to list all commits on only one side of them is with
-<tt>--left-right</tt>, like the example above in the description of
-that option.  It however shows the commits that were cherry-picked
+<tt>--left-right</tt> (see the example below in the description of
+the <tt>--left-right</tt> option).  It however shows the commits that were cherry-picked
 from the other branch (for example, "3rd on b" may be cherry-picked
 from branch A).  With this option, such pairs of commits are
 excluded from the output.</p></div>
+</dd>
+<dt class="hdlist1">
+--left-only
+</dt>
+<dt class="hdlist1">
+--right-only
+</dt>
+<dd>
+<p>
+        List only commits on the respective side of a symmetric range,
+        i.e. only those which would be marked <tt>&lt;</tt> resp. <tt>&gt;</tt> by
+        <tt>--left-right</tt>.
+</p>
+<div class="paragraph"><p>For example, <tt>--cherry-pick --right-only A&#8230;B</tt> omits those
+commits from <tt>B</tt> which are in <tt>A</tt> or are patch-equivalent to a commit in
+<tt>A</tt>. In other words, this lists the <tt>&#43;</tt> commits from <tt>git cherry A B</tt>.
+More precisely, <tt>--cherry-pick --right-only --no-merges</tt> gives the exact
+list.</p></div>
+</dd>
+<dt class="hdlist1">
+--cherry
+</dt>
+<dd>
+<p>
+        A synonym for <tt>--right-only --cherry-mark --no-merges</tt>; useful to
+        limit the output to the commits on our side and mark those that
+        have been applied to the other side of a forked history with
+        <tt>git log --cherry upstream&#8230;mybranch</tt>, similar to
+        <tt>git cherry upstream mybranch</tt>.
+</p>
 </dd>
 <dt class="hdlist1">
 -g
@@ -1939,22 +2009,13 @@ $ git log -2 --pretty=%h 4da45bef</tt></pre>
 </li>
 </ul></div>
 </div>
-<h2 id="_author">Author</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Written by Linus Torvalds &lt;<a href="mailto:torvalds@osdl.org">torvalds@osdl.org</a>&gt;</p></div>
-</div>
-<h2 id="_documentation">Documentation</h2>
-<div class="sectionbody">
-<div class="paragraph"><p>Documentation by David Greaves, Junio C Hamano, Jonas Fonseca
-and the git-list &lt;<a href="mailto:git@vger.kernel.org">git@vger.kernel.org</a>&gt;.</p></div>
-</div>
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite</p></div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-04-06 19:12:56 UTC
+Last updated 2011-06-01 22:32:49 UTC
 </div>
 </div>
 </body>

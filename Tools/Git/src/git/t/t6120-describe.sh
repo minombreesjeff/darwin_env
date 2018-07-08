@@ -124,7 +124,7 @@ warning: tag 'A' is really 'Q' here
 EOF
 check_describe A-* HEAD
 test_expect_success 'warning was displayed for Q' '
-	test_cmp err.expect err.actual
+	test_i18ncmp err.expect err.actual
 '
 test_expect_success 'rename tag Q back to A' '
 	mv .git/refs/tags/Q .git/refs/tags/A

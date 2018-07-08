@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-pull
-.\"    Author: [see the "Author" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 04/06/2011
+.\"      Date: 06/01/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.4.4
+.\"    Source: Git 1.7.5.4
 .\"  Language: English
 .\"
-.TH "GIT\-PULL" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.TH "GIT\-PULL" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -82,7 +82,7 @@ This is passed to both underlying git\-fetch to squelch reporting of during tran
 Pass \-\-verbose to git\-fetch and git\-merge\&.
 .RE
 .PP
-\-\-[no\-]recurse\-submodules
+\-\-[no\-]recurse\-submodules[=yes|on\-demand|no]
 .RS 4
 This option controls if new commits of all populated submodules should be fetched too (see
 \fBgit-config\fR(1)
@@ -161,12 +161,17 @@ Synonyms to \-\-stat and \-\-no\-stat; these are deprecated and will be removed 
 .PP
 \-q, \-\-quiet
 .RS 4
-Operate quietly\&.
+Operate quietly\&. Implies \-\-no\-progress\&.
 .RE
 .PP
 \-v, \-\-verbose
 .RS 4
 Be verbose\&.
+.RE
+.PP
+\-\-progress, \-\-no\-progress
+.RS 4
+Turn progress on/off explicitly\&. If neither is specified, progress is shown if standard error is connected to a terminal\&. Note that not all merge strategies may support progress reporting\&.
 .RE
 .PP
 \-\-rebase
@@ -1014,31 +1019,12 @@ $ git merge origin/next
 .RE
 .sp
 If you tried a pull which resulted in a complex conflicts and would want to start over, you can recover with \fIgit reset\fR\&.
+.SH "BUGS"
+.sp
+Using \-\-recurse\-submodules can only fetch new commits in already checked out submodules right now\&. When e\&.g\&. upstream added a new submodule in the just fetched commits of the superproject the submodule itself can not be fetched, making it impossible to check out that submodule later without having to do a fetch again\&. This is expected to be fixed in a future git version\&.
 .SH "SEE ALSO"
 .sp
 \fBgit-fetch\fR(1), \fBgit-merge\fR(1), \fBgit-config\fR(1)
-.SH "AUTHOR"
-.sp
-Written by Linus Torvalds <\m[blue]\fBtorvalds@osdl\&.org\fR\m[]\&\s-2\u[1]\d\s+2> and Junio C Hamano <\m[blue]\fBgitster@pobox\&.com\fR\m[]\&\s-2\u[2]\d\s+2>
-.SH "DOCUMENTATION"
-.sp
-Documentation by Jon Loeliger, David Greaves, Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[3]\d\s+2>\&.
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite
-.SH "NOTES"
-.IP " 1." 4
-torvalds@osdl.org
-.RS 4
-\%mailto:torvalds@osdl.org
-.RE
-.IP " 2." 4
-gitster@pobox.com
-.RS 4
-\%mailto:gitster@pobox.com
-.RE
-.IP " 3." 4
-git@vger.kernel.org
-.RS 4
-\%mailto:git@vger.kernel.org
-.RE

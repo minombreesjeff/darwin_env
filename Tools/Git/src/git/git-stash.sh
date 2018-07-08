@@ -136,11 +136,12 @@ save_stash () {
 			keep_index=t
 			;;
 		--no-keep-index)
-			keep_index=
+			keep_index=n
 			;;
 		-p|--patch)
 			patch_mode=t
-			keep_index=t
+			# only default to keep if we don't already have an override
+			test -z "$keep_index" && keep_index=t
 			;;
 		-q|--quiet)
 			GIT_QUIET=t
@@ -185,7 +186,7 @@ save_stash () {
 	then
 		git reset --hard ${GIT_QUIET:+-q}
 
-		if test -n "$keep_index" && test -n $i_tree
+		if test "$keep_index" = "t" && test -n $i_tree
 		then
 			git read-tree --reset -u $i_tree
 		fi
@@ -193,7 +194,7 @@ save_stash () {
 		git apply -R < "$TMP-patch" ||
 		die "Cannot remove worktree changes"
 
-		if test -z "$keep_index"
+		if test "$keep_index" != "t"
 		then
 			git reset
 		fi
@@ -264,7 +265,7 @@ parse_flags_and_rev()
 	b_tree=
 	i_tree=
 
-	REV=$(git rev-parse --no-flags --symbolic "$@" 2>/dev/null)
+	REV=$(git rev-parse --no-flags --symbolic "$@") || exit 1
 
 	FLAGS=
 	for opt
@@ -310,16 +311,6 @@ parse_flags_and_rev()
 	IS_STASH_LIKE=t &&
 	test "$ref_stash" = "$(git rev-parse --symbolic-full-name "${REV%@*}")" &&
 	IS_STASH_REF=t
-
-	if test "${REV}" != "${REV%{*\}}"
-	then
-		# maintainers: it would be better if git rev-parse indicated
-		# this condition with a non-zero status code but as of 1.7.2.1 it
-		# it did not. So, we use non-empty stderr output as a proxy for the
-		# condition of interest.
-		test -z "$(git rev-parse "$REV" 2>&1 >/dev/null)" || die "$REV does not exist in the stash log"
-	fi
-
 }
 
 is_stash_like()
@@ -344,9 +335,7 @@ apply_stash () {
 
 	assert_stash_like "$@"
 
-	git update-index -q --refresh &&
-	git diff-files --quiet --ignore-submodules ||
-		die 'Cannot apply to a dirty working tree, please stage your changes'
+	git update-index -q --refresh || die 'unable to refresh index'
 
 	# current index state
 	c_tree=$(git write-tree) ||

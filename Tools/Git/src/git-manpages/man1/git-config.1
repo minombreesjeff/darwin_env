@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-config
-.\"    Author: [see the "Author" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 04/06/2011
+.\"      Date: 06/01/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.4.4
+.\"    Source: Git 1.7.5.4
 .\"  Language: English
 .\"
-.TH "GIT\-CONFIG" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.TH "GIT\-CONFIG" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -957,10 +957,6 @@ Common unit suffixes of
 \fIm\fR, or
 \fIg\fR
 are supported\&.
-.sp
-Currently only
-\fBgit-fast-import\fR(1)
-honors this setting\&.
 .RE
 .PP
 core\&.excludesfile
@@ -1415,12 +1411,23 @@ reverse\&. The first color given is the foreground; the second is the background
 .PP
 color\&.diff
 .RS 4
-When set to
-always, always use colors in patch\&. When false (or
-never), never\&. When set to
+Whether to use ANSI escape sequences to add color to patches\&. If this is set to
+always,
+\fBgit-diff\fR(1),
+\fBgit-log\fR(1), and
+\fBgit-show\fR(1)
+will use color for all patches\&. If it is set to
 true
 or
-auto, use colors only when the output is to the terminal\&. Defaults to false\&.
+auto, those commands will only use color when output is to the terminal\&. Defaults to false\&.
+.sp
+This does not affect
+\fBgit-format-patch\fR(1)
+nor the
+\fIgit\-diff\-*\fR
+plumbing commands\&. Can be overridden on the command line with the
+\-\-color[=<when>]
+option\&.
 .RE
 .PP
 color\&.diff\&.<slot>
@@ -1607,12 +1614,25 @@ warning is shown in, defaulting to red)\&. The values of these variables may be 
 .PP
 color\&.ui
 .RS 4
-When set to
-always, always use colors in all git commands which are capable of colored output\&. When false (or
-never), never\&. When set to
+This variable determines the default value for variables such as
+color\&.diff
+and
+color\&.grep
+that control the use of color per command family\&. Its scope will expand as more commands learn configuration to set a default for the
+\-\-color
+option\&. Set it to
+always
+if you want all output not intended for machine consumption to use color, to
 true
 or
-auto, use colors only when the output is to the terminal\&. When more specific variables of color\&.* are set, they always take precedence over this setting\&. Defaults to false\&.
+auto
+if you want such output to use color when written to the terminal, or to
+false
+or
+never
+if you prefer git commands not to use color unless enabled explicitly with some other configuration or the
+\-\-color
+option\&.
 .RE
 .PP
 commit\&.status
@@ -1647,6 +1667,18 @@ If this config variable is set, diff generation is not performed using the inter
 \fBgit\fR(1)\&. Note: if you want to use an external diff program only on a subset of your files, you might want to use
 \fBgitattributes\fR(5)
 instead\&.
+.RE
+.PP
+diff\&.ignoreSubmodules
+.RS 4
+Sets the default value of \-\-ignore\-submodules\&. Note that this affects only
+\fIgit diff\fR
+Porcelain, and not lower level
+\fIdiff\fR
+commands such as
+\fIgit diff\-files\fR\&.
+\fIgit checkout\fR
+also honors this setting when reporting uncommitted changes\&.
 .RE
 .PP
 diff\&.mnemonicprefix
@@ -1701,34 +1733,62 @@ diff\&.renames
 Tells git to detect renames\&. If set to any boolean value, it will enable basic rename detection\&. If set to "copies" or "copy", it will detect copies, as well\&.
 .RE
 .PP
-diff\&.ignoreSubmodules
-.RS 4
-Sets the default value of \-\-ignore\-submodules\&. Note that this affects only
-\fIgit diff\fR
-Porcelain, and not lower level
-\fIdiff\fR
-commands such as
-\fIgit diff\-files\fR\&.
-\fIgit checkout\fR
-also honors this setting when reporting uncommitted changes\&.
-.RE
-.PP
 diff\&.suppressBlankEmpty
 .RS 4
 A boolean to inhibit the standard behavior of printing a space before each empty output line\&. Defaults to false\&.
 .RE
 .PP
+diff\&.<driver>\&.command
+.RS 4
+The custom diff driver command\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+diff\&.<driver>\&.xfuncname
+.RS 4
+The regular expression that the diff driver should use to recognize the hunk header\&. A built\-in pattern may also be used\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+diff\&.<driver>\&.binary
+.RS 4
+Set this option to true to make the diff driver treat files as binary\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+diff\&.<driver>\&.textconv
+.RS 4
+The command that the diff driver should call to generate the text\-converted version of a file\&. The result of the conversion is used to generate a human\-readable diff\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+diff\&.<driver>\&.wordregex
+.RS 4
+The regular expression that the diff driver should use to split words in a line\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+diff\&.<driver>\&.cachetextconv
+.RS 4
+Set this option to true to make the diff driver cache the text conversion outputs\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
 diff\&.tool
 .RS 4
-Controls which diff tool is used\&.
-diff\&.tool
-overrides
+The diff tool to be used by
+\fBgit-difftool\fR(1)\&. This option overrides
+merge\&.tool, and has the same valid built\-in values as
 merge\&.tool
-when used by
-\fBgit-difftool\fR(1)
-and has the same valid values as
-merge\&.tool
-minus "tortoisemerge" and plus "kompare"\&.
+minus "tortoisemerge" and plus "kompare"\&. Any other value is treated as a custom diff tool, and there must be a corresponding
+difftool\&.<tool>\&.cmd
+option\&.
 .RE
 .PP
 difftool\&.<tool>\&.path
@@ -1759,7 +1819,10 @@ whitespace\&.
 .PP
 fetch\&.recurseSubmodules
 .RS 4
-A boolean value which changes the behavior for fetch and pull, the default is to not recursively fetch populated submodules unless configured otherwise\&.
+This option can be either set to a boolean value or to
+\fIon\-demand\fR\&. Setting it to a boolean changes the behavior of fetch and pull to unconditionally recurse into submodules when set to true or to not recurse at all when set to false\&. When set to
+\fIon\-demand\fR
+(the default value), fetch and pull will only recurse into a populated submodule when its superproject retrieves a commit that updates the submodule\(cqs reference\&.
 .RE
 .PP
 fetch\&.unpackLimit
@@ -1844,6 +1907,20 @@ option of format\-patch by default\&.
 Adding the Signed\-off\-by: line to a patch should be a conscious act and means that you certify you have the rights to submit this work under the same open source license\&. Please see the
 \fISubmittingPatches\fR
 document for further discussion\&.
+.RE
+.PP
+filter\&.<driver>\&.clean
+.RS 4
+The command which is used to convert the content of a worktree file to a blob upon checkin\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+filter\&.<driver>\&.smudge
+.RS 4
+The command which is used to convert the content of a blob object to a worktree file upon checkout\&. See
+\fBgitattributes\fR(5)
+for details\&.
 .RE
 .PP
 gc\&.aggressiveWindow
@@ -1999,6 +2076,20 @@ for details)\&. Any non\-alphabetic characters will be replaced with underscores
 .RE
 .sp
 All gitcvs variables except for \fIgitcvs\&.usecrlfattr\fR and \fIgitcvs\&.allbinary\fR can also be specified as \fIgitcvs\&.<access_method>\&.<varname>\fR (where \fIaccess_method\fR is one of "ext" and "pserver") to make them apply only for the given access method\&.
+.PP
+grep\&.lineNumber
+.RS 4
+If set to true, enable
+\fI\-n\fR
+option by default\&.
+.RE
+.PP
+grep\&.extendedRegexp
+.RS 4
+If set to true, enable
+\fI\-\-extended\-regexp\fR
+option by default\&.
+.RE
 .PP
 gui\&.commitmsgwidth
 .RS 4
@@ -2349,10 +2440,14 @@ The port number to bind the gitweb httpd to\&. See
 .PP
 interactive\&.singlekey
 .RS 4
-In interactive commands, allow the user to provide one\-letter input with a single key (i\&.e\&., without hitting enter)\&. Currently this is used only by the
+In interactive commands, allow the user to provide one\-letter input with a single key (i\&.e\&., without hitting enter)\&. Currently this is used by the
 \-\-patch
 mode of
-\fBgit-add\fR(1)\&. Note that this setting is silently ignored if portable keystroke input is not available\&.
+\fBgit-add\fR(1),
+\fBgit-reset\fR(1),
+\fBgit-stash\fR(1)
+and
+\fBgit-checkout\fR(1)\&. Note that this setting is silently ignored if portable keystroke input is not available\&.
 .RE
 .PP
 log\&.date
@@ -2442,6 +2537,17 @@ marker and the original text before the
 marker\&.
 .RE
 .PP
+merge\&.defaultToUpstream
+.RS 4
+If merge is called without any commit argument, merge the upstream branches configured for the current branch by using their last observed values stored in their remote tracking branches\&. The values of the
+branch\&.<current branch>\&.merge
+that name the branches at the remote named by
+branch\&.<current branch>\&.remote
+are consulted, and then they are mapped via
+remote\&.<remote>\&.fetch
+to their corresponding remote tracking branches, and the tips of these tracking branches are merged\&.
+.RE
+.PP
 merge\&.log
 .RS 4
 In addition to branch names, populate the log message with at most the specified number of one\-line descriptions from the actual commits that are being merged\&. Defaults to false, and true is a synonym for 20\&.
@@ -2466,7 +2572,7 @@ Whether to print the diffstat between ORIG_HEAD and the merge result at the end 
 merge\&.tool
 .RS 4
 Controls which merge resolution program is used by
-\fBgit-mergetool\fR(1)\&. Valid built\-in values are: "kdiff3", "tkdiff", "meld", "xxdiff", "emerge", "vimdiff", "gvimdiff", "diffuse", "ecmerge", "tortoisemerge", "p4merge", "araxis" and "opendiff"\&. Any other value is treated is custom merge tool and there must be a corresponding mergetool\&.<tool>\&.cmd option\&.
+\fBgit-mergetool\fR(1)\&. Valid built\-in values are: "araxis", "bc3", "diffuse", "ecmerge", "emerge", "gvimdiff", "kdiff3", "meld", "opendiff", "p4merge", "tkdiff", "tortoisemerge", "vimdiff" and "xxdiff"\&. Any other value is treated is custom merge tool and there must be a corresponding mergetool\&.<tool>\&.cmd option\&.
 .RE
 .PP
 merge\&.verbosity
@@ -3080,7 +3186,7 @@ for details\&.
 .PP
 submodule\&.<name>\&.fetchRecurseSubmodules
 .RS 4
-This option can be used to enable/disable recursive fetching of this submodule\&. It can be overridden by using the \-\-[no\-]recurse\-submodules command line option to "git fetch" and "git pull"\&. This setting will override that from in the
+This option can be used to control recursive fetching of this submodule\&. It can be overridden by using the \-\-[no\-]recurse\-submodules command line option to "git fetch" and "git pull"\&. This setting will override that from in the
 \fBgitmodules\fR(5)
 file\&.
 .RE
@@ -3150,23 +3256,6 @@ and
 \fBgit-help\fR(1)
 may use it\&.
 .RE
-.SH "AUTHOR"
-.sp
-Written by Johannes Schindelin <\m[blue]\fBJohannes\&.Schindelin@gmx\&.de\fR\m[]\&\s-2\u[1]\d\s+2>
-.SH "DOCUMENTATION"
-.sp
-Documentation by Johannes Schindelin, Petr Baudis and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>\&.
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite
-.SH "NOTES"
-.IP " 1." 4
-Johannes.Schindelin@gmx.de
-.RS 4
-\%mailto:Johannes.Schindelin@gmx.de
-.RE
-.IP " 2." 4
-git@vger.kernel.org
-.RS 4
-\%mailto:git@vger.kernel.org
-.RE

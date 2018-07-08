@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: git-svn
-.\"    Author: [see the "Author" section]
+.\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 04/06/2011
+.\"      Date: 06/01/2011
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.4.4
+.\"    Source: Git 1.7.5.4
 .\"  Language: English
 .\"
-.TH "GIT\-SVN" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.TH "GIT\-SVN" "1" "06/01/2011" "Git 1\&.7\&.5\&.4" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * set default formatting
 .\" -----------------------------------------------------------------
@@ -184,16 +184,6 @@ Skip "branches" and "tags" of first level directories
 .sp
 .RE
 .RE
-.PP
-\-\-use\-log\-author
-.RS 4
-When retrieving svn commits into git (as part of fetch, rebase, or dcommit operations), look for the first From: or Signed\-off\-by: line in the log message and use that as the author string\&.
-.RE
-.PP
-\-\-add\-author\-from
-.RS 4
-When committing to svn from git (as part of commit or dcommit operations), if the existing log message doesn\(cqt already have a From: or Signed\-off\-by: line, append a From: line based on the git commit\(cqs author string\&. If you use this, then \-\-use\-log\-author will retrieve a valid author string for all commits\&.
-.RE
 .RE
 .PP
 \fIclone\fR
@@ -289,6 +279,14 @@ config key: svn\&.commiturl (overwrites all svn\-remote\&.<name>\&.commiturl opt
 .\}
 .sp
 Using this option for any other purpose (don\(cqt ask) is very strongly discouraged\&.
+.RE
+.PP
+\-\-mergeinfo=<mergeinfo>
+.RS 4
+Add the given merge information during the dcommit (e\&.g\&.
+\-\-mergeinfo="/branches/foo:1\-10")\&. All svn server versions can store this information (as a property), and svn clients starting from version 1\&.5 can make use of it\&.
+\fIgit svn\fR
+currently does not use it and does not set it automatically\&.
 .RE
 .RE
 .PP
@@ -815,6 +813,37 @@ For
 and
 \fItag\fR, display the urls that will be used for copying when creating the branch or tag\&.
 .RE
+.PP
+\-\-use\-log\-author
+.RS 4
+When retrieving svn commits into git (as part of
+\fIfetch\fR,
+\fIrebase\fR, or
+\fIdcommit\fR
+operations), look for the first
+From:
+or
+Signed\-off\-by:
+line in the log message and use that as the author string\&.
+.RE
+.PP
+\-\-add\-author\-from
+.RS 4
+When committing to svn from git (as part of
+\fIcommit\-diff\fR,
+\fIset\-tree\fR
+or
+\fIdcommit\fR
+operations), if the existing log message doesn\(cqt already have a
+From:
+or
+Signed\-off\-by:
+line, append a
+From:
+line based on the git commit\(cqs author string\&. If you use this, then
+\-\-use\-log\-author
+will retrieve a valid author string for all commits\&.
+.RE
 .SH "ADVANCED OPTIONS"
 .PP
 \-i<GIT_SVN_ID>, \-\-id <GIT_SVN_ID>
@@ -896,6 +925,23 @@ on the server locally (accessing via file://) but wish to distribute the reposit
 svn\-remote\&.<name>\&.rewriteUUID
 .RS 4
 Similar to the useSvmProps option; this is for users who need to remap the UUID manually\&. This may be useful in situations where the original UUID is not available via either useSvmProps or useSvnsyncProps\&.
+.RE
+.PP
+svn\-remote\&.<name>\&.pushurl
+.RS 4
+Similar to git\(cqs
+\fIremote\&.<name>\&.pushurl\fR, this key is designed to be used in cases where
+\fIurl\fR
+points to an SVN repository via a read\-only transport, to provide an alternate read/write transport\&. It is assumed that both keys point to the same repository\&. Unlike
+\fIcommiturl\fR,
+\fIpushurl\fR
+is a base path\&. If either
+\fIcommiturl\fR
+or
+\fIpushurl\fR
+could be used,
+\fIcommiturl\fR
+takes precedence\&.
 .RE
 .PP
 svn\&.brokenSymlinkWorkaround
@@ -1002,14 +1048,14 @@ The initial \fIgit svn clone\fR can be quite time\-consuming (especially for lar
 Originally, \fIgit svn\fR recommended that the \fIremotes/git\-svn\fR branch be pulled or merged from\&. This is because the author favored git svn set\-tree B to commit a single head rather than the git svn set\-tree A\&.\&.B notation to commit multiple commits\&.
 .sp
 If you use git svn set\-tree A\&.\&.B to commit several diffs and you do not have the latest remotes/git\-svn merged into my\-branch, you should use git svn rebase to update your work branch instead of git pull or git merge\&. pull/merge can cause non\-linear history to be flattened when committing into SVN, which can lead to merge commits reversing previous commits in SVN\&.
-.SH "DESIGN PHILOSOPHY"
+.SH "MERGE TRACKING"
 .sp
-Merge tracking in Subversion is lacking and doing branched development with Subversion can be cumbersome as a result\&. While \fIgit svn\fR can track copy history (including branches and tags) for repositories adopting a standard layout, it cannot yet represent merge history that happened inside git back upstream to SVN users\&. Therefore it is advised that users keep history as linear as possible inside git to ease compatibility with SVN (see the CAVEATS section below)\&.
+While \fIgit svn\fR can track copy history (including branches and tags) for repositories adopting a standard layout, it cannot yet represent merge history that happened inside git back upstream to SVN users\&. Therefore it is advised that users keep history as linear as possible inside git to ease compatibility with SVN (see the CAVEATS section below)\&.
 .SH "CAVEATS"
 .sp
-For the sake of simplicity and interoperating with a less\-capable system (SVN), it is recommended that all \fIgit svn\fR users clone, fetch and dcommit directly from the SVN server, and avoid all \fIgit clone\fR/\fIpull\fR/\fImerge\fR/\fIpush\fR operations between git repositories and branches\&. The recommended method of exchanging code between git branches and users is \fIgit format\-patch\fR and \fIgit am\fR, or just \(aqdcommit\(cqing to the SVN repository\&.
+For the sake of simplicity and interoperating with Subversion, it is recommended that all \fIgit svn\fR users clone, fetch and dcommit directly from the SVN server, and avoid all \fIgit clone\fR/\fIpull\fR/\fImerge\fR/\fIpush\fR operations between git repositories and branches\&. The recommended method of exchanging code between git branches and users is \fIgit format\-patch\fR and \fIgit am\fR, or just \(aqdcommit\(cqing to the SVN repository\&.
 .sp
-Running \fIgit merge\fR or \fIgit pull\fR is NOT recommended on a branch you plan to \fIdcommit\fR from\&. Subversion does not represent merges in any reasonable or useful fashion; so users using Subversion cannot see any merges you\(cqve made\&. Furthermore, if you merge or pull from a git branch that is a mirror of an SVN branch, \fIdcommit\fR may commit to the wrong branch\&.
+Running \fIgit merge\fR or \fIgit pull\fR is NOT recommended on a branch you plan to \fIdcommit\fR from because Subversion users cannot see any merges you\(cqve made\&. Furthermore, if you merge or pull from a git branch that is a mirror of an SVN branch, \fIdcommit\fR may commit to the wrong branch\&.
 .sp
 If you do merge, note the following rule: \fIgit svn dcommit\fR will attempt to commit on top of the SVN commit named in
 .sp
@@ -1048,7 +1094,7 @@ branches = debug/*:refs/remotes/svn/debug/*
 .sp
 We ignore all SVN properties except svn:executable\&. Any unhandled properties are logged to $GIT_DIR/svn/<refname>/unhandled\&.log
 .sp
-Renamed and copied directories are not detected by git and hence not tracked when committing to SVN\&. I do not plan on adding support for this as it\(cqs quite difficult and time\-consuming to get working for all the possible corner cases (git doesn\(cqt do it, either)\&. Committing renamed and copied files are fully supported if they\(cqre similar enough for git to detect them\&.
+Renamed and copied directories are not detected by git and hence not tracked when committing to SVN\&. I do not plan on adding support for this as it\(cqs quite difficult and time\-consuming to get working for all the possible corner cases (git doesn\(cqt do it, either)\&. Committing renamed and copied files is fully supported if they\(cqre similar enough for git to detect them\&.
 .SH "CONFIGURATION"
 .sp
 \fIgit svn\fR stores [svn\-remote] configuration information in the repository \&.git/config file\&. It is similar the core git [remote] sections except \fIfetch\fR keys do not accept glob arguments; but they are instead handled by the \fIbranches\fR and \fItags\fR keys\&. Since some SVN repositories are oddly configured with multiple projects glob expansions such those listed below are allowed:
@@ -1091,15 +1137,6 @@ Note that git\-svn keeps track of the highest revision in which a branch or tag 
 .SH "SEE ALSO"
 .sp
 \fBgit-rebase\fR(1)
-.SH "AUTHOR"
+.SH "GIT"
 .sp
-Written by Eric Wong <\m[blue]\fBnormalperson@yhbt\&.net\fR\m[]\&\s-2\u[1]\d\s+2>\&.
-.SH "DOCUMENTATION"
-.sp
-Written by Eric Wong <\m[blue]\fBnormalperson@yhbt\&.net\fR\m[]\&\s-2\u[1]\d\s+2>\&.
-.SH "NOTES"
-.IP " 1." 4
-normalperson@yhbt.net
-.RS 4
-\%mailto:normalperson@yhbt.net
-.RE
+Part of the \fBgit\fR(1) suite
