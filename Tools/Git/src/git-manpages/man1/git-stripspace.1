@@ -1,0 +1,60 @@
+'\" t
+.\"     Title: git-stripspace
+.\"    Author: [see the "Author" section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GIT\-STRIPSPACE" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+git-stripspace \- Filter out empty lines
+.SH "SYNOPSIS"
+.sp
+\fIgit stripspace\fR [\-s | \-\-strip\-comments] < <stream>
+.SH "DESCRIPTION"
+.sp
+Remove multiple empty lines, and empty lines at beginning and end\&.
+.SH "OPTIONS"
+.PP
+\-s, \-\-strip\-comments
+.RS 4
+In addition to empty lines, also strip lines starting with
+\fI#\fR\&.
+.RE
+.PP
+<stream>
+.RS 4
+Byte stream to act on\&.
+.RE
+.SH "AUTHOR"
+.sp
+Written by Linus Torvalds <\m[blue]\fBtorvalds@osdl\&.org\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "DOCUMENTATION"
+.sp
+Documentation by Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>\&.
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+torvalds@osdl.org
+.RS 4
+\%mailto:torvalds@osdl.org
+.RE
+.IP " 2." 4
+git@vger.kernel.org
+.RS 4
+\%mailto:git@vger.kernel.org
+.RE

@@ -1,0 +1,118 @@
+'\" t
+.\"     Title: git-name-rev
+.\"    Author: [see the "Author" section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GIT\-NAME\-REV" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+git-name-rev \- Find symbolic names for given revs
+.SH "SYNOPSIS"
+.sp
+.nf
+\fIgit name\-rev\fR [\-\-tags] [\-\-refs=<pattern>]
+               ( \-\-all | \-\-stdin | <committish>\&... )
+.fi
+.sp
+.SH "DESCRIPTION"
+.sp
+Finds symbolic names suitable for human digestion for revisions given in any format parsable by \fIgit rev\-parse\fR\&.
+.SH "OPTIONS"
+.PP
+\-\-tags
+.RS 4
+Do not use branch names, but only tags to name the commits
+.RE
+.PP
+\-\-refs=<pattern>
+.RS 4
+Only use refs whose names match a given shell pattern\&.
+.RE
+.PP
+\-\-all
+.RS 4
+List all commits reachable from all refs
+.RE
+.PP
+\-\-stdin
+.RS 4
+Read from stdin, append "(<rev_name>)" to all sha1\(cqs of nameable commits, and pass to stdout
+.RE
+.PP
+\-\-name\-only
+.RS 4
+Instead of printing both the SHA\-1 and the name, print only the name\&. If given with \-\-tags the usual tag prefix of "tags/" is also omitted from the name, matching the output of
+git\-describe
+more closely\&.
+.RE
+.PP
+\-\-no\-undefined
+.RS 4
+Die with error code != 0 when a reference is undefined, instead of printing
+undefined\&.
+.RE
+.PP
+\-\-always
+.RS 4
+Show uniquely abbreviated commit object as fallback\&.
+.RE
+.SH "EXAMPLE"
+.sp
+Given a commit, find out where it is relative to the local refs\&. Say somebody wrote you about that fantastic commit 33db5f4d9027a10e477ccf054b2c1ab94f74c85a\&. Of course, you look into the commit, but that only tells you what happened, but not the context\&.
+.sp
+Enter \fIgit name\-rev\fR:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+% git name\-rev 33db5f4d9027a10e477ccf054b2c1ab94f74c85a
+33db5f4d9027a10e477ccf054b2c1ab94f74c85a tags/v0\&.99~940
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+Now you are wiser, because you know that it happened 940 revisions before v0\&.99\&.
+.sp
+Another nice thing you can do is:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+% git log | git name\-rev \-\-stdin
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.SH "AUTHOR"
+.sp
+Written by Johannes Schindelin <\m[blue]\fBJohannes\&.Schindelin@gmx\&.de\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "DOCUMENTATION"
+.sp
+Documentation by Johannes Schindelin\&.
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+Johannes.Schindelin@gmx.de
+.RS 4
+\%mailto:Johannes.Schindelin@gmx.de
+.RE

@@ -1,0 +1,117 @@
+'\" t
+.\"     Title: git-merge-file
+.\"    Author: [see the "Author" section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GIT\-MERGE\-FILE" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+git-merge-file \- Run a three\-way file merge
+.SH "SYNOPSIS"
+.sp
+.nf
+\fIgit merge\-file\fR [\-L <current\-name> [\-L <base\-name> [\-L <other\-name>]]]
+        [\-\-ours|\-\-theirs|\-\-union] [\-p|\-\-stdout] [\-q|\-\-quiet] [\-\-marker\-size=<n>]
+        <current\-file> <base\-file> <other\-file>
+.fi
+.sp
+.SH "DESCRIPTION"
+.sp
+\fIgit merge\-file\fR incorporates all changes that lead from the <base\-file> to <other\-file> into <current\-file>\&. The result ordinarily goes into <current\-file>\&. \fIgit merge\-file\fR is useful for combining separate changes to an original\&. Suppose <base\-file> is the original, and both <current\-file> and <other\-file> are modifications of <base\-file>, then \fIgit merge\-file\fR combines both changes\&.
+.sp
+A conflict occurs if both <current\-file> and <other\-file> have changes in a common segment of lines\&. If a conflict is found, \fIgit merge\-file\fR normally outputs a warning and brackets the conflict with lines containing <<<<<<< and >>>>>>> markers\&. A typical conflict will look like this:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+<<<<<<< A
+lines in file A
+=======
+lines in file B
+>>>>>>> B
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+If there are conflicts, the user should edit the result and delete one of the alternatives\&. When \-\-ours, \-\-theirs, or \-\-union option is in effect, however, these conflicts are resolved favouring lines from <current\-file>, lines from <other\-file>, or lines from both respectively\&. The length of the conflict markers can be given with the \-\-marker\-size option\&.
+.sp
+The exit value of this program is negative on error, and the number of conflicts otherwise\&. If the merge was clean, the exit value is 0\&.
+.sp
+\fIgit merge\-file\fR is designed to be a minimal clone of RCS \fImerge\fR; that is, it implements all of RCS \fImerge\fR\(aqs functionality which is needed by \fBgit\fR(1)\&.
+.SH "OPTIONS"
+.PP
+\-L <label>
+.RS 4
+This option may be given up to three times, and specifies labels to be used in place of the corresponding file names in conflict reports\&. That is,
+git merge\-file \-L x \-L y \-L z a b c
+generates output that looks like it came from files x, y and z instead of from files a, b and c\&.
+.RE
+.PP
+\-p
+.RS 4
+Send results to standard output instead of overwriting
+<current\-file>\&.
+.RE
+.PP
+\-q
+.RS 4
+Quiet; do not warn about conflicts\&.
+.RE
+.PP
+\-\-ours, \-\-theirs, \-\-union
+.RS 4
+Instead of leaving conflicts in the file, resolve conflicts favouring our (or their or both) side of the lines\&.
+.RE
+.SH "EXAMPLES"
+.PP
+git merge\-file README\&.my README README\&.upstream
+.RS 4
+combines the changes of README\&.my and README\&.upstream since README, tries to merge them and writes the result into README\&.my\&.
+.RE
+.PP
+git merge\-file \-L a \-L b \-L c tmp/a123 tmp/b234 tmp/c345
+.RS 4
+merges tmp/a123 and tmp/c345 with the base tmp/b234, but uses labels
+a
+and
+c
+instead of
+tmp/a123
+and
+tmp/c345\&.
+.RE
+.SH "AUTHOR"
+.sp
+Written by Johannes Schindelin <\m[blue]\fBjohannes\&.schindelin@gmx\&.de\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "DOCUMENTATION"
+.sp
+Documentation by Johannes Schindelin and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>, with parts copied from the original documentation of RCS \fImerge\fR\&.
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+johannes.schindelin@gmx.de
+.RS 4
+\%mailto:johannes.schindelin@gmx.de
+.RE
+.IP " 2." 4
+git@vger.kernel.org
+.RS 4
+\%mailto:git@vger.kernel.org
+.RE

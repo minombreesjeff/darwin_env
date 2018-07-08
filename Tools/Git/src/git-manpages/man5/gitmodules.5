@@ -1,0 +1,112 @@
+'\" t
+.\"     Title: gitmodules
+.\"    Author: [see the DOCUMENTATION section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GITMODULES" "5" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+gitmodules \- defining submodule properties
+.SH "SYNOPSIS"
+.sp
+$GIT_WORK_DIR/\&.gitmodules
+.SH "DESCRIPTION"
+.sp
+The \&.gitmodules file, located in the top\-level directory of a git working tree, is a text file with a syntax matching the requirements of \fBgit-config\fR(1)\&.
+.sp
+The file contains one subsection per submodule, and the subsection value is the name of the submodule\&. Each submodule section also contains the following required keys:
+.PP
+submodule\&.<name>\&.path
+.RS 4
+Defines the path, relative to the top\-level directory of the git working tree, where the submodule is expected to be checked out\&. The path name must not end with a
+/\&. All submodule paths must be unique within the \&.gitmodules file\&.
+.RE
+.PP
+submodule\&.<name>\&.url
+.RS 4
+Defines an url from where the submodule repository can be cloned\&. This may be either an absolute URL ready to be passed to
+\fBgit-clone\fR(1)
+or (if it begins with \&./ or \&.\&./) a location relative to the superproject\(cqs origin repository\&.
+.RE
+.PP
+submodule\&.<name>\&.update
+.RS 4
+Defines what to do when the submodule is updated by the superproject\&. If
+\fIcheckout\fR
+(the default), the new commit specified in the superproject will be checked out in the submodule on a detached HEAD\&. If
+\fIrebase\fR, the current branch of the submodule will be rebased onto the commit specified in the superproject\&. If
+\fImerge\fR, the commit specified in the superproject will be merged into the current branch in the submodule\&. This config option is overridden if
+\fIgit submodule update\fR
+is given the
+\fI\-\-merge\fR
+or
+\fI\-\-rebase\fR
+options\&.
+.RE
+.PP
+submodule\&.<name>\&.fetchRecurseSubmodules
+.RS 4
+This option can be used to enable/disable recursive fetching of this submodule\&. If this option is also present in the submodules entry in \&.git/config of the superproject, the setting there will override the one found in \&.gitmodules\&. Both settings can be overridden on the command line by using the "\-\-[no\-]recurse\-submodules" option to "git fetch" and "git pull"\&.\&.
+.RE
+.PP
+submodule\&.<name>\&.ignore
+.RS 4
+Defines under what circumstances "git status" and the diff family show a submodule as modified\&. When set to "all", it will never be considered modified, "dirty" will ignore all changes to the submodules work tree and takes only differences between the HEAD of the submodule and the commit recorded in the superproject into account\&. "untracked" will additionally let submodules with modified tracked files in their work tree show up\&. Using "none" (the default when this option is not set) also shows submodules that have untracked files in their work tree as changed\&. If this option is also present in the submodules entry in \&.git/config of the superproject, the setting there will override the one found in \&.gitmodules\&. Both settings can be overridden on the command line by using the "\-\-ignore\-submodule" option\&.
+.RE
+.SH "EXAMPLES"
+.sp
+Consider the following \&.gitmodules file:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+[submodule "libfoo"]
+        path = include/foo
+        url = git://foo\&.com/git/lib\&.git
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+[submodule "libbar"]
+        path = include/bar
+        url = git://bar\&.com/git/lib\&.git
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+This defines two submodules, libfoo and libbar\&. These are expected to be checked out in the paths \fIinclude/foo\fR and \fIinclude/bar\fR, and for both submodules an url is specified which can be used for cloning the submodules\&.
+.SH "SEE ALSO"
+.sp
+\fBgit-submodule\fR(1) \fBgit-config\fR(1)
+.SH "DOCUMENTATION"
+.sp
+Documentation by Lars Hjemli <\m[blue]\fBhjemli@gmail\&.com\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+hjemli@gmail.com
+.RS 4
+\%mailto:hjemli@gmail.com
+.RE

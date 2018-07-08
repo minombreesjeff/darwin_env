@@ -1,0 +1,152 @@
+'\" t
+.\"     Title: git-cat-file
+.\"    Author: [see the "Author" section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GIT\-CAT\-FILE" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+git-cat-file \- Provide content or type and size information for repository objects
+.SH "SYNOPSIS"
+.sp
+.nf
+\fIgit cat\-file\fR (\-t | \-s | \-e | \-p | <type> | \-\-textconv ) <object>
+\fIgit cat\-file\fR (\-\-batch | \-\-batch\-check) < <list\-of\-objects>
+.fi
+.sp
+.SH "DESCRIPTION"
+.sp
+In its first form, the command provides the content or the type of an object in the repository\&. The type is required unless \fI\-t\fR or \fI\-p\fR is used to find the object type, or \fI\-s\fR is used to find the object size, or \fI\-\-textconv\fR is used (which implies type "blob")\&.
+.sp
+In the second form, a list of objects (separated by linefeeds) is provided on stdin, and the SHA1, type, and size of each object is printed on stdout\&.
+.SH "OPTIONS"
+.PP
+<object>
+.RS 4
+The name of the object to show\&. For a more complete list of ways to spell object names, see the "SPECIFYING REVISIONS" section in
+\fBgitrevisions\fR(7)\&.
+.RE
+.PP
+\-t
+.RS 4
+Instead of the content, show the object type identified by <object>\&.
+.RE
+.PP
+\-s
+.RS 4
+Instead of the content, show the object size identified by <object>\&.
+.RE
+.PP
+\-e
+.RS 4
+Suppress all output; instead exit with zero status if <object> exists and is a valid object\&.
+.RE
+.PP
+\-p
+.RS 4
+Pretty\-print the contents of <object> based on its type\&.
+.RE
+.PP
+<type>
+.RS 4
+Typically this matches the real type of <object> but asking for a type that can trivially be dereferenced from the given <object> is also permitted\&. An example is to ask for a "tree" with <object> being a commit object that contains it, or to ask for a "blob" with <object> being a tag object that points at it\&.
+.RE
+.PP
+\-\-textconv
+.RS 4
+Show the content as transformed by a textconv filter\&. In this case, <object> has be of the form <treeish>:<path>, or :<path> in order to apply the filter to the content recorded in the index at <path>\&.
+.RE
+.PP
+\-\-batch
+.RS 4
+Print the SHA1, type, size, and contents of each object provided on stdin\&. May not be combined with any other options or arguments\&.
+.RE
+.PP
+\-\-batch\-check
+.RS 4
+Print the SHA1, type, and size of each object provided on stdin\&. May not be combined with any other options or arguments\&.
+.RE
+.SH "OUTPUT"
+.sp
+If \fI\-t\fR is specified, one of the <type>\&.
+.sp
+If \fI\-s\fR is specified, the size of the <object> in bytes\&.
+.sp
+If \fI\-e\fR is specified, no output\&.
+.sp
+If \fI\-p\fR is specified, the contents of <object> are pretty\-printed\&.
+.sp
+If <type> is specified, the raw (though uncompressed) contents of the <object> will be returned\&.
+.sp
+If \fI\-\-batch\fR is specified, output of the following form is printed for each object specified on stdin:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+<sha1> SP <type> SP <size> LF
+<contents> LF
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+If \fI\-\-batch\-check\fR is specified, output of the following form is printed for each object specified on stdin:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+<sha1> SP <type> SP <size> LF
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+For both \fI\-\-batch\fR and \fI\-\-batch\-check\fR, output of the following form is printed for each object specified on stdin that does not exist in the repository:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+<object> SP missing LF
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.SH "AUTHOR"
+.sp
+Written by Linus Torvalds <\m[blue]\fBtorvalds@osdl\&.org\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "DOCUMENTATION"
+.sp
+Documentation by David Greaves, Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>\&.
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+torvalds@osdl.org
+.RS 4
+\%mailto:torvalds@osdl.org
+.RE
+.IP " 2." 4
+git@vger.kernel.org
+.RS 4
+\%mailto:git@vger.kernel.org
+.RE

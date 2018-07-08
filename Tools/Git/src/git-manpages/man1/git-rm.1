@@ -1,0 +1,184 @@
+'\" t
+.\"     Title: git-rm
+.\"    Author: [see the "Author" section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GIT\-RM" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+git-rm \- Remove files from the working tree and from the index
+.SH "SYNOPSIS"
+.sp
+\fIgit rm\fR [\-f | \-\-force] [\-n] [\-r] [\-\-cached] [\-\-ignore\-unmatch] [\-\-quiet] [\-\-] <file>\&...
+.SH "DESCRIPTION"
+.sp
+Remove files from the index, or from the working tree and the index\&. git rm will not remove a file from just your working directory\&. (There is no option to remove a file only from the working tree and yet keep it in the index; use /bin/rm if you want to do that\&.) The files being removed have to be identical to the tip of the branch, and no updates to their contents can be staged in the index, though that default behavior can be overridden with the \-f option\&. When \-\-cached is given, the staged content has to match either the tip of the branch or the file on disk, allowing the file to be removed from just the index\&.
+.SH "OPTIONS"
+.PP
+<file>\&...
+.RS 4
+Files to remove\&. Fileglobs (e\&.g\&.
+*\&.c) can be given to remove all matching files\&. If you want git to expand file glob characters, you may need to shell\-escape them\&. A leading directory name (e\&.g\&.
+dir
+to remove
+dir/file1
+and
+dir/file2) can be given to remove all files in the directory, and recursively all sub\-directories, but this requires the
+\-r
+option to be explicitly given\&.
+.RE
+.PP
+\-f, \-\-force
+.RS 4
+Override the up\-to\-date check\&.
+.RE
+.PP
+\-n, \-\-dry\-run
+.RS 4
+Don\(cqt actually remove any file(s)\&. Instead, just show if they exist in the index and would otherwise be removed by the command\&.
+.RE
+.PP
+\-r
+.RS 4
+Allow recursive removal when a leading directory name is given\&.
+.RE
+.PP
+\-\-
+.RS 4
+This option can be used to separate command\-line options from the list of files, (useful when filenames might be mistaken for command\-line options)\&.
+.RE
+.PP
+\-\-cached
+.RS 4
+Use this option to unstage and remove paths only from the index\&. Working tree files, whether modified or not, will be left alone\&.
+.RE
+.PP
+\-\-ignore\-unmatch
+.RS 4
+Exit with a zero status even if no files matched\&.
+.RE
+.PP
+\-q, \-\-quiet
+.RS 4
+
+git rm
+normally outputs one line (in the form of an
+rm
+command) for each file removed\&. This option suppresses that output\&.
+.RE
+.SH "DISCUSSION"
+.sp
+The <file> list given to the command can be exact pathnames, file glob patterns, or leading directory names\&. The command removes only the paths that are known to git\&. Giving the name of a file that you have not told git about does not remove that file\&.
+.sp
+File globbing matches across directory boundaries\&. Thus, given two directories d and d2, there is a difference between using git rm \(aqd*\(aq and git rm \(aqd/*\(aq, as the former will also remove all of directory d2\&.
+.SH "REMOVING FILES THAT HAVE DISAPPEARED FROM THE FILESYSTEM"
+.sp
+There is no option for git rm to remove from the index only the paths that have disappeared from the filesystem\&. However, depending on the use case, there are several ways that can be done\&.
+.SS "Using \(lqgit commit \-a\(rq"
+.sp
+If you intend that your next commit should record all modifications of tracked files in the working tree and record all removals of files that have been removed from the working tree with rm (as opposed to git rm), use git commit \-a, as it will automatically notice and record all removals\&. You can also have a similar effect without committing by using git add \-u\&.
+.SS "Using \(lqgit add \-A\(rq"
+.sp
+When accepting a new code drop for a vendor branch, you probably want to record both the removal of paths and additions of new paths as well as modifications of existing paths\&.
+.sp
+Typically you would first remove all tracked files from the working tree using this command:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+git ls\-files \-z | xargs \-0 rm \-f
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+and then untar the new code in the working tree\&. Alternately you could \fIrsync\fR the changes into the working tree\&.
+.sp
+After that, the easiest way to record all removals, additions, and modifications in the working tree is:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+git add \-A
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+See \fBgit-add\fR(1)\&.
+.SS "Other ways"
+.sp
+If all you really want to do is to remove from the index the files that are no longer present in the working tree (perhaps because your working tree is dirty so that you cannot use git commit \-a), use the following command:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+git diff \-\-name\-only \-\-diff\-filter=D \-z | xargs \-0 git rm \-\-cached
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.SH "EXAMPLES"
+.PP
+git rm Documentation/\e*\&.txt
+.RS 4
+Removes all
+*\&.txt
+files from the index that are under the
+Documentation
+directory and any of its subdirectories\&.
+.sp
+Note that the asterisk
+*
+is quoted from the shell in this example; this lets git, and not the shell, expand the pathnames of files and subdirectories under the
+Documentation/
+directory\&.
+.RE
+.PP
+git rm \-f git\-*\&.sh
+.RS 4
+Because this example lets the shell expand the asterisk (i\&.e\&. you are listing the files explicitly), it does not remove
+subdir/git\-foo\&.sh\&.
+.RE
+.SH "SEE ALSO"
+.sp
+\fBgit-add\fR(1)
+.SH "AUTHOR"
+.sp
+Written by Linus Torvalds <\m[blue]\fBtorvalds@osdl\&.org\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "DOCUMENTATION"
+.sp
+Documentation by Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>\&.
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+torvalds@osdl.org
+.RS 4
+\%mailto:torvalds@osdl.org
+.RE
+.IP " 2." 4
+git@vger.kernel.org
+.RS 4
+\%mailto:git@vger.kernel.org
+.RE

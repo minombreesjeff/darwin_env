@@ -1,0 +1,60 @@
+'\" t
+.\"     Title: git-symbolic-ref
+.\"    Author: [see the "Author" section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GIT\-SYMBOLIC\-REF" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+git-symbolic-ref \- Read and modify symbolic refs
+.SH "SYNOPSIS"
+.sp
+\fIgit symbolic\-ref\fR [\-q] [\-m <reason>] <name> [<ref>]
+.SH "DESCRIPTION"
+.sp
+Given one argument, reads which branch head the given symbolic ref refers to and outputs its path, relative to the \&.git/ directory\&. Typically you would give HEAD as the <name> argument to see which branch your working tree is on\&.
+.sp
+Given two arguments, creates or updates a symbolic ref <name> to point at the given branch <ref>\&.
+.sp
+A symbolic ref is a regular file that stores a string that begins with ref: refs/\&. For example, your \&.git/HEAD is a regular file whose contents is ref: refs/heads/master\&.
+.SH "OPTIONS"
+.PP
+\-q, \-\-quiet
+.RS 4
+Do not issue an error message if the <name> is not a symbolic ref but a detached HEAD; instead exit with non\-zero status silently\&.
+.RE
+.PP
+\-m
+.RS 4
+Update the reflog for <name> with <reason>\&. This is valid only when creating or updating a symbolic ref\&.
+.RE
+.SH "NOTES"
+.sp
+In the past, \&.git/HEAD was a symbolic link pointing at refs/heads/master\&. When we wanted to switch to another branch, we did ln \-sf refs/heads/newbranch \&.git/HEAD, and when we wanted to find out which branch we are on, we did readlink \&.git/HEAD\&. This was fine, and internally that is what still happens by default, but on platforms that do not have working symlinks, or that do not have the readlink(1) command, this was a bit cumbersome\&. On some platforms, ln \-sf does not even work as advertised (horrors)\&. Therefore symbolic links are now deprecated and symbolic refs are used by default\&.
+.sp
+\fIgit symbolic\-ref\fR will exit with status 0 if the contents of the symbolic ref were printed correctly, with status 1 if the requested name is not a symbolic ref, or 128 if another error occurs\&.
+.SH "AUTHOR"
+.sp
+Written by Junio C Hamano <\m[blue]\fBgitster@pobox\&.com\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+gitster@pobox.com
+.RS 4
+\%mailto:gitster@pobox.com
+.RE

@@ -1,0 +1,52 @@
+'\" t
+.\"     Title: git-shell
+.\"    Author: [see the "Author" section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GIT\-SHELL" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+git-shell \- Restricted login shell for Git\-only SSH access
+.SH "SYNOPSIS"
+.sp
+\fIgit shell\fR [\-c <command> <argument>]
+.SH "DESCRIPTION"
+.sp
+A login shell for SSH accounts to provide restricted Git access\&. When \fI\-c\fR is given, the program executes <command> non\-interactively; <command> can be one of \fIgit receive\-pack\fR, \fIgit upload\-pack\fR, \fIgit upload\-archive\fR, \fIcvs server\fR, or a command in COMMAND_DIR\&. The shell is started in interactive mode when no arguments are given; in this case, COMMAND_DIR must exist, and any of the executables in it can be invoked\&.
+.sp
+\fIcvs server\fR is a special command which executes git\-cvsserver\&.
+.sp
+COMMAND_DIR is the path "$HOME/git\-shell\-commands"\&. The user must have read and execute permissions to the directory in order to execute the programs in it\&. The programs are executed with a cwd of $HOME, and <argument> is parsed as a command\-line string\&.
+.SH "AUTHOR"
+.sp
+Written by Linus Torvalds <\m[blue]\fBtorvalds@osdl\&.org\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "DOCUMENTATION"
+.sp
+Documentation by Petr Baudis and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>\&.
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+torvalds@osdl.org
+.RS 4
+\%mailto:torvalds@osdl.org
+.RE
+.IP " 2." 4
+git@vger.kernel.org
+.RS 4
+\%mailto:git@vger.kernel.org
+.RE

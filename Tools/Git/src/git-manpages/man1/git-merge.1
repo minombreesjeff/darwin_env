@@ -1,0 +1,760 @@
+'\" t
+.\"     Title: git-merge
+.\"    Author: [see the "Author" section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GIT\-MERGE" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+git-merge \- Join two or more development histories together
+.SH "SYNOPSIS"
+.sp
+.nf
+\fIgit merge\fR [\-n] [\-\-stat] [\-\-no\-commit] [\-\-squash]
+        [\-s <strategy>] [\-X <strategy\-option>]
+        [\-\-[no\-]rerere\-autoupdate] [\-m <msg>] <commit>\&...
+\fIgit merge\fR <msg> HEAD <commit>\&...
+\fIgit merge\fR \-\-abort
+.fi
+.sp
+.SH "DESCRIPTION"
+.sp
+Incorporates changes from the named commits (since the time their histories diverged from the current branch) into the current branch\&. This command is used by \fIgit pull\fR to incorporate changes from another repository and can be used by hand to merge changes from one branch into another\&.
+.sp
+Assume the following history exists and the current branch is "master":
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+          A\-\-\-B\-\-\-C topic
+         /
+    D\-\-\-E\-\-\-F\-\-\-G master
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+Then "git merge topic" will replay the changes made on the topic branch since it diverged from master (i\&.e\&., E) until its current commit (C) on top of master, and record the result in a new commit along with the names of the two parent commits and a log message from the user describing the changes\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+          A\-\-\-B\-\-\-C topic
+         /         \e
+    D\-\-\-E\-\-\-F\-\-\-G\-\-\-H master
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+The second syntax (<msg> HEAD <commit>\&...) is supported for historical reasons\&. Do not use it from the command line or in new scripts\&. It is the same as git merge \-m <msg> <commit>\&...\&.
+.sp
+The third syntax ("git merge \-\-abort") can only be run after the merge has resulted in conflicts\&. \fIgit merge \-\-abort\fR will abort the merge process and try to reconstruct the pre\-merge state\&. However, if there were uncommitted changes when the merge started (and especially if those changes were further modified after the merge was started), \fIgit merge \-\-abort\fR will in some cases be unable to reconstruct the original (pre\-merge) changes\&. Therefore:
+.sp
+\fBWarning\fR: Running \fIgit merge\fR with uncommitted changes is discouraged: while possible, it leaves you in a state that is hard to back out of in the case of a conflict\&.
+.SH "OPTIONS"
+.PP
+\-\-commit, \-\-no\-commit
+.RS 4
+Perform the merge and commit the result\&. This option can be used to override \-\-no\-commit\&.
+.sp
+With \-\-no\-commit perform the merge but pretend the merge failed and do not autocommit, to give the user a chance to inspect and further tweak the merge result before committing\&.
+.RE
+.PP
+\-\-ff, \-\-no\-ff
+.RS 4
+Do not generate a merge commit if the merge resolved as a fast\-forward, only update the branch pointer\&. This is the default behavior of git\-merge\&.
+.sp
+With \-\-no\-ff Generate a merge commit even if the merge resolved as a fast\-forward\&.
+.RE
+.PP
+\-\-log[=<n>], \-\-no\-log
+.RS 4
+In addition to branch names, populate the log message with one\-line descriptions from at most <n> actual commits that are being merged\&. See also
+\fBgit-fmt-merge-msg\fR(1)\&.
+.sp
+With \-\-no\-log do not list one\-line descriptions from the actual commits being merged\&.
+.RE
+.PP
+\-\-stat, \-n, \-\-no\-stat
+.RS 4
+Show a diffstat at the end of the merge\&. The diffstat is also controlled by the configuration option merge\&.stat\&.
+.sp
+With \-n or \-\-no\-stat do not show a diffstat at the end of the merge\&.
+.RE
+.PP
+\-\-squash, \-\-no\-squash
+.RS 4
+Produce the working tree and index state as if a real merge happened (except for the merge information), but do not actually make a commit or move the
+HEAD, nor record
+$GIT_DIR/MERGE_HEAD
+to cause the next
+git commit
+command to create a merge commit\&. This allows you to create a single commit on top of the current branch whose effect is the same as merging another branch (or more in case of an octopus)\&.
+.sp
+With \-\-no\-squash perform the merge and commit the result\&. This option can be used to override \-\-squash\&.
+.RE
+.PP
+\-\-ff\-only
+.RS 4
+Refuse to merge and exit with a non\-zero status unless the current
+HEAD
+is already up\-to\-date or the merge can be resolved as a fast\-forward\&.
+.RE
+.PP
+\-s <strategy>, \-\-strategy=<strategy>
+.RS 4
+Use the given merge strategy; can be supplied more than once to specify them in the order they should be tried\&. If there is no
+\-s
+option, a built\-in list of strategies is used instead (\fIgit merge\-recursive\fR
+when merging a single head,
+\fIgit merge\-octopus\fR
+otherwise)\&.
+.RE
+.PP
+\-X <option>, \-\-strategy\-option=<option>
+.RS 4
+Pass merge strategy specific option through to the merge strategy\&.
+.RE
+.PP
+\-\-summary, \-\-no\-summary
+.RS 4
+Synonyms to \-\-stat and \-\-no\-stat; these are deprecated and will be removed in the future\&.
+.RE
+.PP
+\-q, \-\-quiet
+.RS 4
+Operate quietly\&.
+.RE
+.PP
+\-v, \-\-verbose
+.RS 4
+Be verbose\&.
+.RE
+.PP
+\-m <msg>
+.RS 4
+Set the commit message to be used for the merge commit (in case one is created)\&.
+.sp
+If
+\-\-log
+is specified, a shortlog of the commits being merged will be appended to the specified message\&.
+.sp
+The
+\fIgit fmt\-merge\-msg\fR
+command can be used to give a good default for automated
+\fIgit merge\fR
+invocations\&.
+.RE
+.PP
+\-\-rerere\-autoupdate, \-\-no\-rerere\-autoupdate
+.RS 4
+Allow the rerere mechanism to update the index with the result of auto\-conflict resolution if possible\&.
+.RE
+.PP
+\-\-abort
+.RS 4
+Abort the current conflict resolution process, and try to reconstruct the pre\-merge state\&.
+.sp
+If there were uncommitted worktree changes present when the merge started,
+\fIgit merge \-\-abort\fR
+will in some cases be unable to reconstruct these changes\&. It is therefore recommended to always commit or stash your changes before running
+\fIgit merge\fR\&.
+.sp
+\fIgit merge \-\-abort\fR
+is equivalent to
+\fIgit reset \-\-merge\fR
+when
+MERGE_HEAD
+is present\&.
+.RE
+.PP
+<commit>\&...
+.RS 4
+Commits, usually other branch heads, to merge into our branch\&. You need at least one <commit>\&. Specifying more than one <commit> obviously means you are trying an Octopus\&.
+.RE
+.SH "PRE-MERGE CHECKS"
+.sp
+Before applying outside changes, you should get your own work in good shape and committed locally, so it will not be clobbered if there are conflicts\&. See also \fBgit-stash\fR(1)\&. \fIgit pull\fR and \fIgit merge\fR will stop without doing anything when local uncommitted changes overlap with files that \fIgit pull\fR/\fIgit merge\fR may need to update\&.
+.sp
+To avoid recording unrelated changes in the merge commit, \fIgit pull\fR and \fIgit merge\fR will also abort if there are any changes registered in the index relative to the HEAD commit\&. (One exception is when the changed index entries are in the state that would result from the merge already\&.)
+.sp
+If all named commits are already ancestors of HEAD, \fIgit merge\fR will exit early with the message "Already up\-to\-date\&."
+.SH "FAST-FORWARD MERGE"
+.sp
+Often the current branch head is an ancestor of the named commit\&. This is the most common case especially when invoked from \fIgit pull\fR: you are tracking an upstream repository, you have committed no local changes, and now you want to update to a newer upstream revision\&. In this case, a new commit is not needed to store the combined history; instead, the HEAD (along with the index) is updated to point at the named commit, without creating an extra merge commit\&.
+.sp
+This behavior can be suppressed with the \-\-no\-ff option\&.
+.SH "TRUE MERGE"
+.sp
+Except in a fast\-forward merge (see above), the branches to be merged must be tied together by a merge commit that has both of them as its parents\&.
+.sp
+A merged version reconciling the changes from all branches to be merged is committed, and your HEAD, index, and working tree are updated to it\&. It is possible to have modifications in the working tree as long as they do not overlap; the update will preserve them\&.
+.sp
+When it is not obvious how to reconcile the changes, the following happens:
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 1.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  1." 4.2
+.\}
+The
+HEAD
+pointer stays the same\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 2.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  2." 4.2
+.\}
+The
+MERGE_HEAD
+ref is set to point to the other branch head\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 3.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  3." 4.2
+.\}
+Paths that merged cleanly are updated both in the index file and in your working tree\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 4.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  4." 4.2
+.\}
+For conflicting paths, the index file records up to three versions: stage 1 stores the version from the common ancestor, stage 2 from
+HEAD, and stage 3 from
+MERGE_HEAD
+(you can inspect the stages with
+git ls\-files \-u)\&. The working tree files contain the result of the "merge" program; i\&.e\&. 3\-way merge results with familiar conflict markers
+<<<
+===
+>>>\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04' 5.\h'+01'\c
+.\}
+.el \{\
+.sp -1
+.IP "  5." 4.2
+.\}
+No other changes are made\&. In particular, the local modifications you had before you started merge will stay the same and the index entries for them stay as they were, i\&.e\&. matching
+HEAD\&.
+.RE
+.sp
+If you tried a merge which resulted in complex conflicts and want to start over, you can recover with git merge \-\-abort\&.
+.SH "HOW CONFLICTS ARE PRESENTED"
+.sp
+During a merge, the working tree files are updated to reflect the result of the merge\&. Among the changes made to the common ancestor\(cqs version, non\-overlapping ones (that is, you changed an area of the file while the other side left that area intact, or vice versa) are incorporated in the final result verbatim\&. When both sides made changes to the same area, however, git cannot randomly pick one side over the other, and asks you to resolve it by leaving what both sides did to that area\&.
+.sp
+By default, git uses the same style as that is used by "merge" program from the RCS suite to present such a conflicted hunk, like this:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+Here are lines that are either unchanged from the common
+ancestor, or cleanly resolved because only one side changed\&.
+<<<<<<< yours:sample\&.txt
+Conflict resolution is hard;
+let\(aqs go shopping\&.
+=======
+Git makes conflict resolution easy\&.
+>>>>>>> theirs:sample\&.txt
+And here is another line that is cleanly resolved or unmodified\&.
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+The area where a pair of conflicting changes happened is marked with markers <<<<<<<, =======, and >>>>>>>\&. The part before the ======= is typically your side, and the part afterwards is typically their side\&.
+.sp
+The default format does not show what the original said in the conflicting area\&. You cannot tell how many lines are deleted and replaced with Barbie\(cqs remark on your side\&. The only thing you can tell is that your side wants to say it is hard and you\(cqd prefer to go shopping, while the other side wants to claim it is easy\&.
+.sp
+An alternative style can be used by setting the "merge\&.conflictstyle" configuration variable to "diff3"\&. In "diff3" style, the above conflict may look like this:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+Here are lines that are either unchanged from the common
+ancestor, or cleanly resolved because only one side changed\&.
+<<<<<<< yours:sample\&.txt
+Conflict resolution is hard;
+let\(aqs go shopping\&.
+|||||||
+Conflict resolution is hard\&.
+=======
+Git makes conflict resolution easy\&.
+>>>>>>> theirs:sample\&.txt
+And here is another line that is cleanly resolved or unmodified\&.
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.sp
+In addition to the <<<<<<<, =======, and >>>>>>> markers, it uses another ||||||| marker that is followed by the original text\&. You can tell that the original just stated a fact, and your side simply gave in to that statement and gave up, while the other side tried to have a more positive attitude\&. You can sometimes come up with a better resolution by viewing the original\&.
+.SH "HOW TO RESOLVE CONFLICTS"
+.sp
+After seeing a conflict, you can do two things:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Decide not to merge\&. The only clean\-ups you need are to reset the index file to the
+HEAD
+commit to reverse 2\&. and to clean up working tree changes made by 2\&. and 3\&.;
+git merge \-\-abort
+can be used for this\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Resolve the conflicts\&. Git will mark the conflicts in the working tree\&. Edit the files into shape and
+\fIgit add\fR
+them to the index\&. Use
+\fIgit commit\fR
+to seal the deal\&.
+.RE
+.sp
+You can work through the conflict with a number of tools:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Use a mergetool\&.
+git mergetool
+to launch a graphical mergetool which will work you through the merge\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Look at the diffs\&.
+git diff
+will show a three\-way diff, highlighting changes from both the
+HEAD
+and
+MERGE_HEAD
+versions\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Look at the diffs from each branch\&.
+git log \-\-merge \-p <path>
+will show diffs first for the
+HEAD
+version and then the
+MERGE_HEAD
+version\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Look at the originals\&.
+git show :1:filename
+shows the common ancestor,
+git show :2:filename
+shows the
+HEAD
+version, and
+git show :3:filename
+shows the
+MERGE_HEAD
+version\&.
+.RE
+.SH "EXAMPLES"
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Merge branches
+fixes
+and
+enhancements
+on top of the current branch, making an octopus merge:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ git merge fixes enhancements
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Merge branch
+obsolete
+into the current branch, using
+ours
+merge strategy:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ git merge \-s ours obsolete
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Merge branch
+maint
+into the current branch, but do not make a new commit automatically:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ git merge \-\-no\-commit maint
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+This can be used when you want to include further changes to the merge, or want to write your own merge commit message\&.
+.sp
+You should refrain from abusing this option to sneak substantial changes into a merge commit\&. Small fixups like bumping release/version name would be acceptable\&.
+.RE
+.SH "MERGE STRATEGIES"
+.sp
+The merge mechanism (\fIgit\-merge\fR and \fIgit\-pull\fR commands) allows the backend \fImerge strategies\fR to be chosen with \-s option\&. Some strategies can also take their own options, which can be passed by giving \-X<option> arguments to \fIgit\-merge\fR and/or \fIgit\-pull\fR\&.
+.PP
+resolve
+.RS 4
+This can only resolve two heads (i\&.e\&. the current branch and another branch you pulled from) using a 3\-way merge algorithm\&. It tries to carefully detect criss\-cross merge ambiguities and is considered generally safe and fast\&.
+.RE
+.PP
+recursive
+.RS 4
+This can only resolve two heads using a 3\-way merge algorithm\&. When there is more than one common ancestor that can be used for 3\-way merge, it creates a merged tree of the common ancestors and uses that as the reference tree for the 3\-way merge\&. This has been reported to result in fewer merge conflicts without causing mis\-merges by tests done on actual merge commits taken from Linux 2\&.6 kernel development history\&. Additionally this can detect and handle merges involving renames\&. This is the default merge strategy when pulling or merging one branch\&.
+.sp
+The
+\fIrecursive\fR
+strategy can take the following options:
+.PP
+ours
+.RS 4
+This option forces conflicting hunks to be auto\-resolved cleanly by favoring
+\fIour\fR
+version\&. Changes from the other tree that do not conflict with our side are reflected to the merge result\&.
+.sp
+This should not be confused with the
+\fIours\fR
+merge strategy, which does not even look at what the other tree contains at all\&. It discards everything the other tree did, declaring
+\fIour\fR
+history contains all that happened in it\&.
+.RE
+.PP
+theirs
+.RS 4
+This is opposite of
+\fIours\fR\&.
+.RE
+.PP
+patience
+.RS 4
+With this option,
+\fImerge\-recursive\fR
+spends a little extra time to avoid mismerges that sometimes occur due to unimportant matching lines (e\&.g\&., braces from distinct functions)\&. Use this when the branches to be merged have diverged wildly\&. See also
+\fBgit-diff\fR(1)
+\-\-patience\&.
+.RE
+.PP
+ignore\-space\-change, ignore\-all\-space, ignore\-space\-at\-eol
+.RS 4
+Treats lines with the indicated type of whitespace change as unchanged for the sake of a three\-way merge\&. Whitespace changes mixed with other changes to a line are not ignored\&. See also
+\fBgit-diff\fR(1)
+\-b,
+\-w, and
+\-\-ignore\-space\-at\-eol\&.
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+If
+\fItheir\fR
+version only introduces whitespace changes to a line,
+\fIour\fR
+version is used;
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+If
+\fIour\fR
+version introduces whitespace changes but
+\fItheir\fR
+version includes a substantial change,
+\fItheir\fR
+version is used;
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+Otherwise, the merge proceeds in the usual way\&.
+.RE
+.RE
+.PP
+renormalize
+.RS 4
+This runs a virtual check\-out and check\-in of all three stages of a file when resolving a three\-way merge\&. This option is meant to be used when merging branches with different clean filters or end\-of\-line normalization rules\&. See "Merging branches with differing checkin/checkout attributes" in
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+no\-renormalize
+.RS 4
+Disables the
+renormalize
+option\&. This overrides the
+merge\&.renormalize
+configuration variable\&.
+.RE
+.PP
+rename\-threshold=<n>
+.RS 4
+Controls the similarity threshold used for rename detection\&. See also
+\fBgit-diff\fR(1)
+\-M\&.
+.RE
+.PP
+subtree[=<path>]
+.RS 4
+This option is a more advanced form of
+\fIsubtree\fR
+strategy, where the strategy makes a guess on how two trees must be shifted to match with each other when merging\&. Instead, the specified path is prefixed (or stripped from the beginning) to make the shape of two trees to match\&.
+.RE
+.RE
+.PP
+octopus
+.RS 4
+This resolves cases with more than two heads, but refuses to do a complex merge that needs manual resolution\&. It is primarily meant to be used for bundling topic branch heads together\&. This is the default merge strategy when pulling or merging more than one branch\&.
+.RE
+.PP
+ours
+.RS 4
+This resolves any number of heads, but the resulting tree of the merge is always that of the current branch head, effectively ignoring all changes from all other branches\&. It is meant to be used to supersede old development history of side branches\&. Note that this is different from the \-Xours option to the
+\fIrecursive\fR
+merge strategy\&.
+.RE
+.PP
+subtree
+.RS 4
+This is a modified recursive strategy\&. When merging trees A and B, if B corresponds to a subtree of A, B is first adjusted to match the tree structure of A, instead of reading the trees at the same level\&. This adjustment is also done to the common ancestor tree\&.
+.RE
+.SH "CONFIGURATION"
+.PP
+merge\&.conflictstyle
+.RS 4
+Specify the style in which conflicted hunks are written out to working tree files upon merge\&. The default is "merge", which shows a
+<<<<<<<
+conflict marker, changes made by one side, a
+=======
+marker, changes made by the other side, and then a
+>>>>>>>
+marker\&. An alternate style, "diff3", adds a
+|||||||
+marker and the original text before the
+=======
+marker\&.
+.RE
+.PP
+merge\&.log
+.RS 4
+In addition to branch names, populate the log message with at most the specified number of one\-line descriptions from the actual commits that are being merged\&. Defaults to false, and true is a synonym for 20\&.
+.RE
+.PP
+merge\&.renameLimit
+.RS 4
+The number of files to consider when performing rename detection during a merge; if not specified, defaults to the value of diff\&.renameLimit\&.
+.RE
+.PP
+merge\&.renormalize
+.RS 4
+Tell git that canonical representation of files in the repository has changed over time (e\&.g\&. earlier commits record text files with CRLF line endings, but recent ones use LF line endings)\&. In such a repository, git can convert the data recorded in commits to a canonical form before performing a merge to reduce unnecessary conflicts\&. For more information, see section "Merging branches with differing checkin/checkout attributes" in
+\fBgitattributes\fR(5)\&.
+.RE
+.PP
+merge\&.stat
+.RS 4
+Whether to print the diffstat between ORIG_HEAD and the merge result at the end of the merge\&. True by default\&.
+.RE
+.PP
+merge\&.tool
+.RS 4
+Controls which merge resolution program is used by
+\fBgit-mergetool\fR(1)\&. Valid built\-in values are: "kdiff3", "tkdiff", "meld", "xxdiff", "emerge", "vimdiff", "gvimdiff", "diffuse", "ecmerge", "tortoisemerge", "p4merge", "araxis" and "opendiff"\&. Any other value is treated is custom merge tool and there must be a corresponding mergetool\&.<tool>\&.cmd option\&.
+.RE
+.PP
+merge\&.verbosity
+.RS 4
+Controls the amount of output shown by the recursive merge strategy\&. Level 0 outputs nothing except a final error message if conflicts were detected\&. Level 1 outputs only conflicts, 2 outputs conflicts and file changes\&. Level 5 and above outputs debugging information\&. The default is level 2\&. Can be overridden by the
+\fIGIT_MERGE_VERBOSITY\fR
+environment variable\&.
+.RE
+.PP
+merge\&.<driver>\&.name
+.RS 4
+Defines a human\-readable name for a custom low\-level merge driver\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+merge\&.<driver>\&.driver
+.RS 4
+Defines the command that implements a custom low\-level merge driver\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+merge\&.<driver>\&.recursive
+.RS 4
+Names a low\-level merge driver to be used when performing an internal merge between common ancestors\&. See
+\fBgitattributes\fR(5)
+for details\&.
+.RE
+.PP
+branch\&.<name>\&.mergeoptions
+.RS 4
+Sets default options for merging into branch <name>\&. The syntax and supported options are the same as those of
+\fIgit merge\fR, but option values containing whitespace characters are currently not supported\&.
+.RE
+.SH "SEE ALSO"
+.sp
+\fBgit-fmt-merge-msg\fR(1), \fBgit-pull\fR(1), \fBgitattributes\fR(5), \fBgit-reset\fR(1), \fBgit-diff\fR(1), \fBgit-ls-files\fR(1), \fBgit-add\fR(1), \fBgit-rm\fR(1), \fBgit-mergetool\fR(1)
+.SH "AUTHOR"
+.sp
+Written by Junio C Hamano <\m[blue]\fBgitster@pobox\&.com\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "DOCUMENTATION"
+.sp
+Documentation by Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>\&.
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+gitster@pobox.com
+.RS 4
+\%mailto:gitster@pobox.com
+.RE
+.IP " 2." 4
+git@vger.kernel.org
+.RS 4
+\%mailto:git@vger.kernel.org
+.RE

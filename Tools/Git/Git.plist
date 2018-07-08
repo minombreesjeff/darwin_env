@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+	<dict>
+		<key>OpenSourceImportDate</key>
+		<string>2011-04-06</string>
+		<key>OpenSourceLicense</key>
+		<string>GPL</string>
+		<key>OpenSourceProject</key>
+		<string>git</string>
+		<key>OpenSourceSHA1</key>
+		<string>0c5d6b06cfbe73eb60ce7a59b9eec5fb9c6dc034</string>
+		<key>OpenSourceURL</key>
+		<string>http://kernel.org/pub/software/scm/git/git-1.7.4.4.tar.bz2</string>
+		<key>OpenSourceVersion</key>
+		<string>1.7.4.4</string>
+		<key>OpenSourceWebsiteURL</key>
+		<string>http://git-scm.com</string>
+	</dict>
+	<dict>
+		<key>OpenSourceImportDate</key>
+		<string>2011-04-06</string>
+		<key>OpenSourceLicense</key>
+		<string>GPL</string>
+		<key>OpenSourceProject</key>
+		<string>git-htmldocs</string>
+		<key>OpenSourceSHA1</key>
+		<string>c63b910f549a50806238c3db703eaa4e29ee6124</string>
+		<key>OpenSourceURL</key>
+		<string>http://kernel.org/pub/software/scm/git/git-htmldocs-1.7.4.4.tar.bz2</string>
+		<key>OpenSourceVersion</key>
+		<string>1.7.4.4</string>
+		<key>OpenSourceWebsiteURL</key>
+		<string>http://git-scm.com</string>
+	</dict>
+	<dict>
+		<key>OpenSourceImportDate</key>
+		<string>2011-04-06</string>
+		<key>OpenSourceLicense</key>
+		<string>GPL</string>
+		<key>OpenSourceProject</key>
+		<string>git-manpages</string>
+		<key>OpenSourceSHA1</key>
+		<string>46335ecefe46ae211c10dcaa7422945af14d51d6</string>
+		<key>OpenSourceURL</key>
+		<string>http://kernel.org/pub/software/scm/git/git-manpages-1.7.4.4.tar.bz2</string>
+		<key>OpenSourceVersion</key>
+		<string>1.7.4.4</string>
+		<key>OpenSourceWebsiteURL</key>
+		<string>http://git-scm.com</string>
+	</dict>
+</array>
+</plist>

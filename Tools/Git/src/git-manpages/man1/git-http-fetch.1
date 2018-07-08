@@ -1,0 +1,101 @@
+'\" t
+.\"     Title: git-http-fetch
+.\"    Author: [see the "Author" section]
+.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
+.\"      Date: 04/06/2011
+.\"    Manual: Git Manual
+.\"    Source: Git 1.7.4.4
+.\"  Language: English
+.\"
+.TH "GIT\-HTTP\-FETCH" "1" "04/06/2011" "Git 1\&.7\&.4\&.4" "Git Manual"
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+git-http-fetch \- Download from a remote git repository via HTTP
+.SH "SYNOPSIS"
+.sp
+\fIgit http\-fetch\fR [\-c] [\-t] [\-a] [\-d] [\-v] [\-w filename] [\-\-recover] [\-\-stdin] <commit> <url>
+.SH "DESCRIPTION"
+.sp
+Downloads a remote git repository via HTTP\&.
+.SH "OPTIONS"
+.PP
+commit\-id
+.RS 4
+Either the hash or the filename under [URL]/refs/ to pull\&.
+.RE
+.PP
+\-c
+.RS 4
+Get the commit objects\&.
+.RE
+.PP
+\-t
+.RS 4
+Get trees associated with the commit objects\&.
+.RE
+.PP
+\-a
+.RS 4
+Get all the objects\&.
+.RE
+.PP
+\-v
+.RS 4
+Report what is downloaded\&.
+.RE
+.PP
+\-w <filename>
+.RS 4
+Writes the commit\-id into the filename under $GIT_DIR/refs/<filename> on the local end after the transfer is complete\&.
+.RE
+.PP
+\-\-stdin
+.RS 4
+Instead of a commit id on the command line (which is not expected in this case),
+\fIgit http\-fetch\fR
+expects lines on stdin in the format
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+<commit\-id>[\(aq\et\(aq<filename\-as\-in\-\-w>]
+.fi
+.if n \{\
+.RE
+.\}
+.RE
+.PP
+\-\-recover
+.RS 4
+Verify that everything reachable from target is fetched\&. Used after an earlier fetch is interrupted\&.
+.RE
+.SH "AUTHOR"
+.sp
+Written by Linus Torvalds <\m[blue]\fBtorvalds@osdl\&.org\fR\m[]\&\s-2\u[1]\d\s+2>
+.SH "DOCUMENTATION"
+.sp
+Documentation by David Greaves, Junio C Hamano and the git\-list <\m[blue]\fBgit@vger\&.kernel\&.org\fR\m[]\&\s-2\u[2]\d\s+2>\&.
+.SH "GIT"
+.sp
+Part of the \fBgit\fR(1) suite
+.SH "NOTES"
+.IP " 1." 4
+torvalds@osdl.org
+.RS 4
+\%mailto:torvalds@osdl.org
+.RE
+.IP " 2." 4
+git@vger.kernel.org
+.RS 4
+\%mailto:git@vger.kernel.org
+.RE
