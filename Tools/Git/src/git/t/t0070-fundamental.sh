@@ -12,8 +12,7 @@ test_expect_success 'character classes (isspace, isalpha etc.)' '
 	test-ctype
 '
 
-# They don't actually fail, and I don't feel like fixing them either.
-test_expect_failure 'mktemp to nonexistent directory prints filename' '
+test_expect_success 'mktemp to nonexistent directory prints filename' '
 	test_must_fail test-mktemp doesnotexist/testXXXXXX 2>err &&
 	grep "doesnotexist/test" err
 '
@@ -30,7 +29,7 @@ test_expect_success 'git_mkstemps_mode does not fail if fd 0 is not open' '
 	git commit --allow-empty -m message <&-
 '
 
-test_expect_failure 'check for a bug in the regex routines' '
+test_expect_success 'check for a bug in the regex routines' '
 	# if this test fails, re-build git with NO_REGEX=1
 	test-regex
 '

@@ -204,10 +204,12 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 				fprintf(stderr, "No directory given for -C.\n" );
 				usage(git_usage_string);
 			}
-			if (chdir((*argv)[1]))
-				die_errno("Cannot change to '%s'", (*argv)[1]);
-			if (envchanged)
-				*envchanged = 1;
+			if ((*argv)[1][0]) {
+				if (chdir((*argv)[1]))
+					die_errno("Cannot change to '%s'", (*argv)[1]);
+				if (envchanged)
+					*envchanged = 1;
+			}
 			(*argv)++;
 			(*argc)--;
 		} else {
@@ -618,6 +620,7 @@ int main(int argc, char **av)
 {
 	const char **argv = (const char **) av;
 	const char *cmd;
+	int done_help = 0;
 
 	startup_info = &git_startup_info;
 
@@ -680,9 +683,7 @@ int main(int argc, char **av)
 	setup_path();
 
 	while (1) {
-		static int done_help = 0;
-		static int was_alias = 0;
-		was_alias = run_argv(&argc, &argv);
+		int was_alias = run_argv(&argc, &argv);
 		if (errno != ENOENT)
 			break;
 		if (was_alias) {

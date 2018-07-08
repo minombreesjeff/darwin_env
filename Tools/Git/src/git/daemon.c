@@ -61,6 +61,22 @@ static char *canon_hostname;
 static char *ip_address;
 static char *tcp_port;
 
+static int hostname_lookup_done;
+
+static void lookup_hostname(void);
+
+static const char *get_canon_hostname(void)
+{
+	lookup_hostname();
+	return canon_hostname;
+}
+
+static const char *get_ip_address(void)
+{
+	lookup_hostname();
+	return ip_address;
+}
+
 static void logreport(int priority, const char *err, va_list params)
 {
 	if (log_syslog) {
@@ -106,6 +122,46 @@ static void NORETURN daemon_die(const char *err, va_list params)
 	exit(1);
 }
 
+static void strbuf_addstr_or_null(struct strbuf *sb, const char *s)
+{
+	if (s)
+		strbuf_addstr(sb, s);
+}
+
+struct expand_path_context {
+	const char *directory;
+};
+
+static size_t expand_path(struct strbuf *sb, const char *placeholder, void *ctx)
+{
+	struct expand_path_context *context = ctx;
+
+	switch (placeholder[0]) {
+	case 'H':
+		strbuf_addstr_or_null(sb, hostname);
+		return 1;
+	case 'C':
+		if (placeholder[1] == 'H') {
+			strbuf_addstr_or_null(sb, get_canon_hostname());
+			return 2;
+		}
+		break;
+	case 'I':
+		if (placeholder[1] == 'P') {
+			strbuf_addstr_or_null(sb, get_ip_address());
+			return 2;
+		}
+		break;
+	case 'P':
+		strbuf_addstr_or_null(sb, tcp_port);
+		return 1;
+	case 'D':
+		strbuf_addstr(sb, context->directory);
+		return 1;
+	}
+	return 0;
+}
+
 static const char *path_ok(const char *directory)
 {
 	static char rpath[PATH_MAX];
@@ -144,14 +200,10 @@ static const char *path_ok(const char *directory)
 	}
 	else if (interpolated_path && saw_extended_args) {
 		struct strbuf expanded_path = STRBUF_INIT;
-		struct strbuf_expand_dict_entry dict[6];
+		struct expand_path_context context;
 
-		dict[0].placeholder = "H"; dict[0].value = hostname;
-		dict[1].placeholder = "CH"; dict[1].value = canon_hostname;
-		dict[2].placeholder = "IP"; dict[2].value = ip_address;
-		dict[3].placeholder = "P"; dict[3].value = tcp_port;
-		dict[4].placeholder = "D"; dict[4].value = directory;
-		dict[5].placeholder = NULL; dict[5].value = NULL;
+		context.directory = directory;
+
 		if (*dir != '/') {
 			/* Allow only absolute */
 			logerror("'%s': Non-absolute path denied (interpolated-path active)", dir);
@@ -159,7 +211,7 @@ static const char *path_ok(const char *directory)
 		}
 
 		strbuf_expand(&expanded_path, interpolated_path,
-				strbuf_expand_dict_cb, &dict);
+			      expand_path, &context);
 		strlcpy(interp_path, expanded_path.buf, PATH_MAX);
 		strbuf_release(&expanded_path);
 		loginfo("Interpolated dir '%s'", interp_path);
@@ -254,8 +306,8 @@ static int run_access_hook(struct daemon_service *service, const char *dir, cons
 	*arg++ = service->name;
 	*arg++ = path;
 	*arg++ = STRARG(hostname);
-	*arg++ = STRARG(canon_hostname);
-	*arg++ = STRARG(ip_address);
+	*arg++ = STRARG(get_canon_hostname());
+	*arg++ = STRARG(get_ip_address());
 	*arg++ = STRARG(tcp_port);
 	*arg = NULL;
 #undef STRARG
@@ -485,6 +537,45 @@ static void parse_host_and_port(char *hostport, char **host,
 }
 
 /*
+ * Sanitize a string from the client so that it's OK to be inserted into a
+ * filesystem path. Specifically, we disallow slashes, runs of "..", and
+ * trailing and leading dots, which means that the client cannot escape
+ * our base path via ".." traversal.
+ */
+static void sanitize_client_strbuf(struct strbuf *out, const char *in)
+{
+	for (; *in; in++) {
+		if (*in == '/')
+			continue;
+		if (*in == '.' && (!out->len || out->buf[out->len - 1] == '.'))
+			continue;
+		strbuf_addch(out, *in);
+	}
+
+	while (out->len && out->buf[out->len - 1] == '.')
+		strbuf_setlen(out, out->len - 1);
+}
+
+static char *sanitize_client(const char *in)
+{
+	struct strbuf out = STRBUF_INIT;
+	sanitize_client_strbuf(&out, in);
+	return strbuf_detach(&out, NULL);
+}
+
+/*
+ * Like sanitize_client, but we also perform any canonicalization
+ * to make life easier on the admin.
+ */
+static char *canonicalize_client(const char *in)
+{
+	struct strbuf out = STRBUF_INIT;
+	sanitize_client_strbuf(&out, in);
+	strbuf_tolower(&out);
+	return strbuf_detach(&out, NULL);
+}
+
+/*
  * Read the host as supplied by the client connection.
  */
 static void parse_host_arg(char *extra_args, int buflen)
@@ -505,10 +596,11 @@ static void parse_host_arg(char *extra_args, int buflen)
 				parse_host_and_port(val, &host, &port);
 				if (port) {
 					free(tcp_port);
-					tcp_port = xstrdup(port);
+					tcp_port = sanitize_client(port);
 				}
 				free(hostname);
-				hostname = xstrdup_tolower(host);
+				hostname = canonicalize_client(host);
+				hostname_lookup_done = 0;
 			}
 
 			/* On to the next one */
@@ -517,11 +609,14 @@ static void parse_host_arg(char *extra_args, int buflen)
 		if (extra_args < end && *extra_args)
 			die("Invalid request");
 	}
+}
 
-	/*
-	 * Locate canonical hostname and its IP address.
-	 */
-	if (hostname) {
+/*
+ * Locate canonical hostname and its IP address.
+ */
+static void lookup_hostname(void)
+{
+	if (!hostname_lookup_done && hostname) {
 #ifndef NO_IPV6
 		struct addrinfo hints;
 		struct addrinfo *ai;
@@ -541,8 +636,9 @@ static void parse_host_arg(char *extra_args, int buflen)
 			ip_address = xstrdup(addrbuf);
 
 			free(canon_hostname);
-			canon_hostname = xstrdup(ai->ai_canonname ?
-						 ai->ai_canonname : ip_address);
+			canon_hostname = ai->ai_canonname ?
+				sanitize_client(ai->ai_canonname) :
+				xstrdup(ip_address);
 
 			freeaddrinfo(ai);
 		}
@@ -564,11 +660,12 @@ static void parse_host_arg(char *extra_args, int buflen)
 				  addrbuf, sizeof(addrbuf));
 
 			free(canon_hostname);
-			canon_hostname = xstrdup(hent->h_name);
+			canon_hostname = sanitize_client(hent->h_name);
 			free(ip_address);
 			ip_address = xstrdup(addrbuf);
 		}
 #endif
+		hostname_lookup_done = 1;
 	}
 }
 

@@ -11,7 +11,7 @@
 	<key>CFBundleIconFile</key>
 	<string>git-gui.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.apple.git-gui</string>
+	<string>cz.or.repo.git-gui</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

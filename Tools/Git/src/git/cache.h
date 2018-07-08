@@ -614,6 +614,14 @@ extern int protect_hfs;
 extern int protect_ntfs;
 
 /*
+ * Include broken refs in all ref iterations, which will
+ * generally choke dangerous operations rather than letting
+ * them silently proceed without taking the broken ref into
+ * account.
+ */
+extern int ref_paranoia;
+
+/*
  * The character that begins a commented line in user-editable file
  * that is subject to stripspace.
  */
@@ -1569,7 +1577,6 @@ extern int ws_blank_line(const char *line, int len, unsigned ws_rule);
 #define ws_tab_width(rule)     ((rule) & WS_TAB_WIDTH_MASK)
 
 /* ls-files */
-int report_path_error(const char *ps_matched, const struct pathspec *pathspec, const char *prefix);
 void overlay_tree_on_cache(const char *tree_name, const char *prefix);
 
 char *alias_lookup(const char *alias);

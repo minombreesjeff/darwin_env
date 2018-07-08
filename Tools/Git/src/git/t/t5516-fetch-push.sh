@@ -238,7 +238,7 @@ test_expect_success 'push with pushInsteadOf' '
 test_expect_success 'push with pushInsteadOf and explicit pushurl (pushInsteadOf should not rewrite)' '
 	mk_empty testrepo &&
 	test_config "url.trash2/.pushInsteadOf" testrepo/ &&
-	test_config "url.trash3/.pusnInsteadOf" trash/wrong &&
+	test_config "url.trash3/.pushInsteadOf" trash/wrong &&
 	test_config remote.r.url trash/wrong &&
 	test_config remote.r.pushurl "testrepo/" &&
 	git push r refs/heads/master:refs/remotes/origin/master &&
@@ -1107,9 +1107,16 @@ test_expect_success 'fetch exact SHA1' '
 			git config uploadpack.allowtipsha1inwant true
 		) &&
 
-		git fetch -v ../testrepo $the_commit:refs/heads/copy &&
-		result=$(git rev-parse --verify refs/heads/copy) &&
-		test "$the_commit" = "$result"
+		git fetch -v ../testrepo $the_commit:refs/heads/copy master:refs/heads/extra &&
+		cat >expect <<-EOF &&
+		$the_commit
+		$the_first_commit
+		EOF
+		{
+			git rev-parse --verify refs/heads/copy &&
+			git rev-parse --verify refs/heads/extra
+		} >actual &&
+		test_cmp expect actual
 	)
 '
 
