@@ -4,43 +4,43 @@
 <array>
 	<dict>
 		<key>OpenSourceImportDate</key>
-		<string>2014-05-12</string>
+		<string>2014-12-18</string>
 		<key>OpenSourceLicense</key>
 		<string>GPL</string>
 		<key>OpenSourceProject</key>
 		<string>git</string>
 		<key>OpenSourceURL</key>
-		<string>http://kernel.org/pub/software/scm/git/git-1.9.3.tar.bz2</string>
+		<string>http://kernel.org/pub/software/scm/git/git-1.9.5.tar.bz2</string>
 		<key>OpenSourceVersion</key>
-		<string>1.9.3</string>
+		<string>1.9.5</string>
 		<key>OpenSourceWebsiteURL</key>
 		<string>http://git-scm.com</string>
 	</dict>
 	<dict>
 		<key>OpenSourceImportDate</key>
-		<string>2014-05-12</string>
+		<string>2014-12-18</string>
 		<key>OpenSourceLicense</key>
 		<string>GPL</string>
 		<key>OpenSourceProject</key>
 		<string>git-htmldocs</string>
 		<key>OpenSourceURL</key>
-		<string>http://kernel.org/pub/software/scm/git/git-htmldocs-1.9.3.tar.bz2</string>
+		<string>http://kernel.org/pub/software/scm/git/git-htmldocs-1.9.5.tar.bz2</string>
 		<key>OpenSourceVersion</key>
-		<string>1.9.3</string>
+		<string>1.9.5</string>
 		<key>OpenSourceWebsiteURL</key>
 		<string>http://git-scm.com</string>
 	</dict>
 	<dict>
 		<key>OpenSourceImportDate</key>
-		<string>2014-05-12</string>
+		<string>2014-12-18</string>
 		<key>OpenSourceLicense</key>
 		<string>GPL</string>
 		<key>OpenSourceProject</key>
 		<string>git-manpages</string>
 		<key>OpenSourceURL</key>
-		<string>http://kernel.org/pub/software/scm/git/git-manpages-1.9.3.tar.bz2</string>
+		<string>http://kernel.org/pub/software/scm/git/git-manpages-1.9.5.tar.bz2</string>
 		<key>OpenSourceVersion</key>
-		<string>1.9.3</string>
+		<string>1.9.5</string>
 		<key>OpenSourceWebsiteURL</key>
 		<string>http://git-scm.com</string>
 	</dict>
