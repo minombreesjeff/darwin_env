@@ -395,7 +395,7 @@ test_expect_success 'setup submodule' '
 	git branch original HEAD
 '
 
-orig_head=`git show-ref --hash --head HEAD`
+orig_head=$(git show-ref --hash --head HEAD)
 
 test_expect_success 'rewrite submodule with another content' '
 	git filter-branch --tree-filter "test -d submod && {
@@ -404,7 +404,7 @@ test_expect_success 'rewrite submodule with another content' '
 					 mkdir submod &&
 					 : > submod/file
 					 } || :" HEAD &&
-	test $orig_head != `git show-ref --hash --head HEAD`
+	test $orig_head != $(git show-ref --hash --head HEAD)
 '
 
 test_expect_success 'replace submodule revision' '
@@ -413,7 +413,7 @@ test_expect_success 'replace submodule revision' '
 	    "if git ls-files --error-unmatch -- submod > /dev/null 2>&1
 	     then git update-index --cacheinfo 160000 0123456789012345678901234567890123456789 submod
 	     fi" HEAD &&
-	test $orig_head != `git show-ref --hash --head HEAD`
+	test $orig_head != $(git show-ref --hash --head HEAD)
 '
 
 test_expect_success 'filter commit message without trailing newline' '

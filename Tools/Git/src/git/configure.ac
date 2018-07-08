@@ -471,6 +471,13 @@ if test -n "$ASCIIDOC"; then
 	esac
 fi
 
+if grep -a ascii configure.ac >/dev/null; then
+  AC_MSG_RESULT([Using 'grep -a' for sane_grep])
+  SANE_TEXT_GREP=-a
+else
+  SANE_TEXT_GREP=
+fi
+GIT_CONF_SUBST([SANE_TEXT_GREP])
 
 ## Checks for libraries.
 AC_MSG_NOTICE([CHECKS for libraries])
@@ -962,10 +969,6 @@ AC_CHECK_LIB([iconv], [locale_charset],
        [AC_CHECK_LIB([charset], [locale_charset],
                      [CHARSET_LIB=-lcharset])])
 GIT_CONF_SUBST([CHARSET_LIB])
-#
-# Define NO_HMAC_CTX_CLEANUP=YesPlease if HMAC_CTX_cleanup is missing.
-AC_CHECK_LIB([crypto], [HMAC_CTX_cleanup],
-	[], [GIT_CONF_SUBST([NO_HMAC_CTX_CLEANUP], [YesPlease])])
 #
 # Define HAVE_CLOCK_GETTIME=YesPlease if clock_gettime is available.
 GIT_CHECK_FUNC(clock_gettime,

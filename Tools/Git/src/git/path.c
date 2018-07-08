@@ -134,7 +134,7 @@ static struct common_dir common_list[] = {
  * definite
  * definition
  *
- * The trie would look look like:
+ * The trie would look like:
  * root: len = 0, children a and d non-NULL, value = NULL.
  *    a: len = 2, contents = bc, value = (data for "abc")
  *    d: len = 2, contents = ef, children i non-NULL, value = (data for "def")
@@ -584,6 +584,9 @@ char *expand_user_path(const char *path)
 			if (!home)
 				goto return_null;
 			strbuf_addstr(&user_path, home);
+#ifdef GIT_WINDOWS_NATIVE
+			convert_slashes(user_path.buf);
+#endif
 		} else {
 			struct passwd *pw = getpw_str(username, username_len);
 			if (!pw)
@@ -699,17 +702,17 @@ static int calc_shared_perm(int mode)
 {
 	int tweak;
 
-	if (shared_repository < 0)
-		tweak = -shared_repository;
+	if (get_shared_repository() < 0)
+		tweak = -get_shared_repository();
 	else
-		tweak = shared_repository;
+		tweak = get_shared_repository();
 
 	if (!(mode & S_IWUSR))
 		tweak &= ~0222;
 	if (mode & S_IXUSR)
 		/* Copy read bits to execute bits */
 		tweak |= (tweak & 0444) >> 2;
-	if (shared_repository < 0)
+	if (get_shared_repository() < 0)
 		mode = (mode & ~0777) | tweak;
 	else
 		mode |= tweak;
@@ -722,7 +725,7 @@ int adjust_shared_perm(const char *path)
 {
 	int old_mode, new_mode;
 
-	if (!shared_repository)
+	if (!get_shared_repository())
 		return 0;
 	if (get_st_mode_bits(path, &old_mode) < 0)
 		return -1;

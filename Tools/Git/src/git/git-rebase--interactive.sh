@@ -82,6 +82,7 @@ rewritten_pending="$state_dir"/rewritten-pending
 cr=$(printf "\015")
 
 strategy_args=${strategy:+--strategy=$strategy}
+test -n "$strategy_opts" &&
 eval '
 	for strategy_opt in '"$strategy_opts"'
 	do
@@ -1233,7 +1234,8 @@ then
 	git rev-list $revisions |
 	while read rev
 	do
-		if test -f "$rewritten"/$rev && test "$(sane_grep "$rev" "$state_dir"/not-cherry-picks)" = ""
+		if test -f "$rewritten"/$rev &&
+		   ! sane_grep "$rev" "$state_dir"/not-cherry-picks >/dev/null
 		then
 			# Use -f2 because if rev-list is telling us this commit is
 			# not worthwhile, we don't want to track its multiple heads,

@@ -2,12 +2,12 @@
 .\"     Title: git-clone
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 01/04/2016
+.\"      Date: 03/28/2016
 .\"    Manual: Git Manual
-.\"    Source: Git 2.7.0
+.\"    Source: Git 2.8.0
 .\"  Language: English
 .\"
-.TH "GIT\-CLONE" "1" "01/04/2016" "Git 2\&.7\&.0" "Git Manual"
+.TH "GIT\-CLONE" "1" "03/28/2016" "Git 2\&.8\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -125,7 +125,7 @@ options only to reduce network transfer, and stop borrowing from them after a cl
 .PP
 \-\-quiet, \-q
 .RS 4
-Operate quietly\&. Progress is not reported to the standard error stream\&. This flag is also passed to the \(oqrsync\(cq command when given\&.
+Operate quietly\&. Progress is not reported to the standard error stream\&.
 .RE
 .PP
 \-\-verbose, \-v
@@ -210,7 +210,11 @@ core\&.eol=true)\&. If multiple values are given for the same key, each value wi
 .RS 4
 Create a
 \fIshallow\fR
-clone with a history truncated to the specified number of revisions\&.
+clone with a history truncated to the specified number of commits\&. Implies
+\-\-single\-branch
+unless
+\-\-no\-single\-branch
+is given to fetch the histories near the tips of all branches\&.
 .RE
 .PP
 \-\-[no\-]single\-branch
@@ -219,11 +223,7 @@ Clone only the history leading to the tip of a single branch, either specified b
 \-\-branch
 option or the primary branch remote\(cqs
 HEAD
-points at\&. When creating a shallow clone with the
-\-\-depth
-option, this is the default, unless
-\-\-no\-single\-branch
-is given to fetch the histories near the tips of all branches\&. Further fetches into the resulting repository will only update the remote\-tracking branch for the branch this option was used for the initial cloning\&. If the HEAD at the remote did not point at any branch when
+points at\&. Further fetches into the resulting repository will only update the remote\-tracking branch for the branch this option was used for the initial cloning\&. If the HEAD at the remote did not point at any branch when
 \-\-single\-branch
 clone was made, no remote\-tracking branch is created\&.
 .RE
@@ -265,7 +265,7 @@ host\&.xz:foo/\&.git)\&. Cloning into an existing directory is only allowed if t
 .sp
 In general, URLs contain information about the transport protocol, the address of the remote server, and the path to the repository\&. Depending on the transport protocol, some of this information may be absent\&.
 .sp
-Git supports ssh, git, http, and https protocols (in addition, ftp, and ftps can be used for fetching and rsync can be used for fetching and pushing, but these are inefficient and deprecated; do not use them)\&.
+Git supports ssh, git, http, and https protocols (in addition, ftp, and ftps can be used for fetching, but this is inefficient and deprecated; do not use it)\&.
 .sp
 The native transport (i\&.e\&. git:// URL) does no authentication and should be used with caution on unsecured networks\&.
 .sp
@@ -313,17 +313,6 @@ http[s]://host\&.xz[:port]/path/to/repo\&.git/
 .IP \(bu 2.3
 .\}
 ftp[s]://host\&.xz[:port]/path/to/repo\&.git/
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-rsync://host\&.xz/path/to/repo\&.git/
 .RE
 .sp
 An alternative scp\-like syntax may also be used with the ssh protocol:

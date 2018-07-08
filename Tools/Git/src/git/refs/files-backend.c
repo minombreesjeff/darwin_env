@@ -1850,12 +1850,17 @@ static int verify_lock(struct ref_lock *lock,
 	if (read_ref_full(lock->ref_name,
 			  mustexist ? RESOLVE_REF_READING : 0,
 			  lock->old_oid.hash, NULL)) {
-		int save_errno = errno;
-		strbuf_addf(err, "can't verify ref %s", lock->ref_name);
-		errno = save_errno;
-		return -1;
+		if (old_sha1) {
+			int save_errno = errno;
+			strbuf_addf(err, "can't verify ref %s", lock->ref_name);
+			errno = save_errno;
+			return -1;
+		} else {
+			hashclr(lock->old_oid.hash);
+			return 0;
+		}
 	}
-	if (hashcmp(lock->old_oid.hash, old_sha1)) {
+	if (old_sha1 && hashcmp(lock->old_oid.hash, old_sha1)) {
 		strbuf_addf(err, "ref %s is at %s but expected %s",
 			    lock->ref_name,
 			    sha1_to_hex(lock->old_oid.hash),
@@ -1892,7 +1897,8 @@ static struct ref_lock *lock_ref_sha1_basic(const char *refname,
 	const char *orig_refname = refname;
 	struct ref_lock *lock;
 	int last_errno = 0;
-	int type, lflags;
+	int type;
+	int lflags = 0;
 	int mustexist = (old_sha1 && !is_null_sha1(old_sha1));
 	int resolve_flags = 0;
 	int attempts_remaining = 3;
@@ -1903,10 +1909,11 @@ static struct ref_lock *lock_ref_sha1_basic(const char *refname,
 
 	if (mustexist)
 		resolve_flags |= RESOLVE_REF_READING;
-	if (flags & REF_DELETING) {
+	if (flags & REF_DELETING)
 		resolve_flags |= RESOLVE_REF_ALLOW_BAD_NAME;
-		if (flags & REF_NODEREF)
-			resolve_flags |= RESOLVE_REF_NO_RECURSE;
+	if (flags & REF_NODEREF) {
+		resolve_flags |= RESOLVE_REF_NO_RECURSE;
+		lflags |= LOCK_NO_DEREF;
 	}
 
 	refname = resolve_ref_unsafe(refname, resolve_flags,
@@ -1942,6 +1949,10 @@ static struct ref_lock *lock_ref_sha1_basic(const char *refname,
 
 		goto error_return;
 	}
+
+	if (flags & REF_NODEREF)
+		refname = orig_refname;
+
 	/*
 	 * If the ref did not exist and we are creating it, make sure
 	 * there is no existing packed ref whose name begins with our
@@ -1957,11 +1968,6 @@ static struct ref_lock *lock_ref_sha1_basic(const char *refname,
 
 	lock->lk = xcalloc(1, sizeof(struct lock_file));
 
-	lflags = 0;
-	if (flags & REF_NODEREF) {
-		refname = orig_refname;
-		lflags |= LOCK_NO_DEREF;
-	}
 	lock->ref_name = xstrdup(refname);
 	lock->orig_ref_name = xstrdup(orig_refname);
 	strbuf_git_path(&ref_file, "%s", refname);
@@ -1995,7 +2001,7 @@ static struct ref_lock *lock_ref_sha1_basic(const char *refname,
 			goto error_return;
 		}
 	}
-	if (old_sha1 && verify_lock(lock, old_sha1, mustexist, err)) {
+	if (verify_lock(lock, old_sha1, mustexist, err)) {
 		last_errno = errno;
 		goto error_return;
 	}
@@ -2820,73 +2826,108 @@ static int commit_ref_update(struct ref_lock *lock,
 	return 0;
 }
 
-int create_symref(const char *ref_target, const char *refs_heads_master,
-		  const char *logmsg)
+static int create_ref_symlink(struct ref_lock *lock, const char *target)
 {
-	char *lockpath = NULL;
-	char ref[1000];
-	int fd, len, written;
-	char *git_HEAD = git_pathdup("%s", ref_target);
-	unsigned char old_sha1[20], new_sha1[20];
-	struct strbuf err = STRBUF_INIT;
-
-	if (logmsg && read_ref(ref_target, old_sha1))
-		hashclr(old_sha1);
-
-	if (safe_create_leading_directories(git_HEAD) < 0)
-		return error("unable to create directory for %s", git_HEAD);
-
+	int ret = -1;
 #ifndef NO_SYMLINK_HEAD
-	if (prefer_symlink_refs) {
-		unlink(git_HEAD);
-		if (!symlink(refs_heads_master, git_HEAD))
-			goto done;
+	char *ref_path = get_locked_file_path(lock->lk);
+	unlink(ref_path);
+	ret = symlink(target, ref_path);
+	free(ref_path);
+
+	if (ret)
 		fprintf(stderr, "no symlink - falling back to symbolic ref\n");
-	}
 #endif
+	return ret;
+}
 
-	len = snprintf(ref, sizeof(ref), "ref: %s\n", refs_heads_master);
-	if (sizeof(ref) <= len) {
-		error("refname too long: %s", refs_heads_master);
-		goto error_free_return;
-	}
-	lockpath = mkpathdup("%s.lock", git_HEAD);
-	fd = open(lockpath, O_CREAT | O_EXCL | O_WRONLY, 0666);
-	if (fd < 0) {
-		error("Unable to open %s for writing", lockpath);
-		goto error_free_return;
-	}
-	written = write_in_full(fd, ref, len);
-	if (close(fd) != 0 || written != len) {
-		error("Unable to write to %s", lockpath);
-		goto error_unlink_return;
-	}
-	if (rename(lockpath, git_HEAD) < 0) {
-		error("Unable to create %s", git_HEAD);
-		goto error_unlink_return;
-	}
-	if (adjust_shared_perm(git_HEAD)) {
-		error("Unable to fix permissions on %s", lockpath);
-	error_unlink_return:
-		unlink_or_warn(lockpath);
-	error_free_return:
-		free(lockpath);
-		free(git_HEAD);
-		return -1;
-	}
-	free(lockpath);
-
-#ifndef NO_SYMLINK_HEAD
-	done:
-#endif
-	if (logmsg && !read_ref(refs_heads_master, new_sha1) &&
-		log_ref_write(ref_target, old_sha1, new_sha1, logmsg, 0, &err)) {
+static void update_symref_reflog(struct ref_lock *lock, const char *refname,
+				 const char *target, const char *logmsg)
+{
+	struct strbuf err = STRBUF_INIT;
+	unsigned char new_sha1[20];
+	if (logmsg && !read_ref(target, new_sha1) &&
+	    log_ref_write(refname, lock->old_oid.hash, new_sha1, logmsg, 0, &err)) {
 		error("%s", err.buf);
 		strbuf_release(&err);
 	}
+}
 
-	free(git_HEAD);
+static int create_symref_locked(struct ref_lock *lock, const char *refname,
+				const char *target, const char *logmsg)
+{
+	if (prefer_symlink_refs && !create_ref_symlink(lock, target)) {
+		update_symref_reflog(lock, refname, target, logmsg);
+		return 0;
+	}
+
+	if (!fdopen_lock_file(lock->lk, "w"))
+		return error("unable to fdopen %s: %s",
+			     lock->lk->tempfile.filename.buf, strerror(errno));
+
+	update_symref_reflog(lock, refname, target, logmsg);
+
+	/* no error check; commit_ref will check ferror */
+	fprintf(lock->lk->tempfile.fp, "ref: %s\n", target);
+	if (commit_ref(lock) < 0)
+		return error("unable to write symref for %s: %s", refname,
+			     strerror(errno));
 	return 0;
+}
+
+int create_symref(const char *refname, const char *target, const char *logmsg)
+{
+	struct strbuf err = STRBUF_INIT;
+	struct ref_lock *lock;
+	int ret;
+
+	lock = lock_ref_sha1_basic(refname, NULL, NULL, NULL, REF_NODEREF, NULL,
+				   &err);
+	if (!lock) {
+		error("%s", err.buf);
+		strbuf_release(&err);
+		return -1;
+	}
+
+	ret = create_symref_locked(lock, refname, target, logmsg);
+	unlock_ref(lock);
+	return ret;
+}
+
+int set_worktree_head_symref(const char *gitdir, const char *target)
+{
+	static struct lock_file head_lock;
+	struct ref_lock *lock;
+	struct strbuf head_path = STRBUF_INIT;
+	const char *head_rel;
+	int ret;
+
+	strbuf_addf(&head_path, "%s/HEAD", absolute_path(gitdir));
+	if (hold_lock_file_for_update(&head_lock, head_path.buf,
+				      LOCK_NO_DEREF) < 0) {
+		struct strbuf err = STRBUF_INIT;
+		unable_to_lock_message(head_path.buf, errno, &err);
+		error("%s", err.buf);
+		strbuf_release(&err);
+		strbuf_release(&head_path);
+		return -1;
+	}
+
+	/* head_rel will be "HEAD" for the main tree, "worktrees/wt/HEAD" for
+	   linked trees */
+	head_rel = remove_leading_path(head_path.buf,
+				       absolute_path(get_git_common_dir()));
+	/* to make use of create_symref_locked(), initialize ref_lock */
+	lock = xcalloc(1, sizeof(struct ref_lock));
+	lock->lk = &head_lock;
+	lock->ref_name = xstrdup(head_rel);
+	lock->orig_ref_name = xstrdup(head_rel);
+
+	ret = create_symref_locked(lock, head_rel, target, NULL);
+
+	unlock_ref(lock); /* will free lock */
+	strbuf_release(&head_path);
+	return ret;
 }
 
 int reflog_exists(const char *refname)

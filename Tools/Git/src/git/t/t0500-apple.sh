@@ -1,7 +1,17 @@
 #!/bin/sh
 #
-# Copyright (c) 2012 Apple Inc.
+# Copyright (c) 2012-2016 Apple Inc.
 #
+# Tests for regressions found by Apple Inc. for issues that upstream does not
+# want to fix or accept tests for.
+
+
+test_description='Apple Inc. specific tests'
+
+. ./test-lib.sh
+
+TESTROOT=$(pwd)
+
 # <rdar://problem/10238070>
 #
 # This test case addresses a regression introduced between v1.7.3 and v1.7.5
@@ -10,13 +20,7 @@
 # ...
 # found 18e051a3981f38db08521bb61ccf7e4571335353
 
-test_description='Test for failure when adding a path that contains a .git directory'
-
-. ./test-lib.sh
-
-TESTROOT=$(pwd)
-
-test_expect_success 'test' '
+test_expect_success '<rdar://problem/10238070> -- git add of a path that contains a .git directory' '
 	rm -rf .git &&
 	mkdir -p orig/sub/dir/otherdir &&
 	cd orig/sub &&

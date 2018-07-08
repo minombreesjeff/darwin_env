@@ -9,6 +9,7 @@
 #include "convert.h"
 #include "trace.h"
 #include "string-list.h"
+#include "pack-revindex.h"
 
 #include SHA1_HEADER
 #ifndef platform_SHA_CTX
@@ -650,7 +651,6 @@ extern int prefer_symlink_refs;
 extern int log_all_ref_updates;
 extern int warn_ambiguous_refs;
 extern int warn_on_object_refname_ambiguity;
-extern int shared_repository;
 extern const char *apply_default_whitespace;
 extern const char *apply_default_ignorewhitespace;
 extern const char *git_attributes_file;
@@ -662,6 +662,9 @@ extern size_t packed_git_limit;
 extern size_t delta_base_cache_limit;
 extern unsigned long big_file_threshold;
 extern unsigned long pack_size_limit_cfg;
+
+void set_shared_repository(int value);
+int get_shared_repository(void);
 
 /*
  * Do replace refs need to be checked this run?  This variable is
@@ -696,6 +699,14 @@ extern int ref_paranoia;
  */
 extern char comment_line_char;
 extern int auto_comment_line_char;
+
+/* Windows only */
+enum hide_dotfiles_type {
+	HIDE_DOTFILES_FALSE = 0,
+	HIDE_DOTFILES_TRUE,
+	HIDE_DOTFILES_DOTGITONLY
+};
+extern enum hide_dotfiles_type hide_dotfiles;
 
 enum branch_track {
 	BRANCH_TRACK_UNSPECIFIED = -1,
@@ -744,9 +755,39 @@ extern int grafts_replace_parents;
  */
 #define GIT_REPO_VERSION 0
 #define GIT_REPO_VERSION_READ 1
-extern int repository_format_version;
 extern int repository_format_precious_objects;
-extern int check_repository_format(void);
+
+struct repository_format {
+	int version;
+	int precious_objects;
+	int is_bare;
+	char *work_tree;
+	struct string_list unknown_extensions;
+};
+
+/*
+ * Read the repository format characteristics from the config file "path" into
+ * "format" struct. Returns the numeric version. On error, -1 is returned,
+ * format->version is set to -1, and all other fields in the struct are
+ * undefined.
+ */
+int read_repository_format(struct repository_format *format, const char *path);
+
+/*
+ * Verify that the repository described by repository_format is something we
+ * can read. If it is, return 0. Otherwise, return -1, and "err" will describe
+ * any errors encountered.
+ */
+int verify_repository_format(const struct repository_format *format,
+			     struct strbuf *err);
+
+/*
+ * Check the repository format version in the path found in get_git_dir(),
+ * and die if it is a version we don't understand. Generally one would
+ * set_git_dir() before calling this, and use it only for "are we in a valid
+ * repo?".
+ */
+extern void check_repository_format(void);
 
 #define MTIME_CHANGED	0x0001
 #define CTIME_CHANGED	0x0002
@@ -924,8 +965,6 @@ static inline int is_empty_blob_sha1(const unsigned char *sha1)
 }
 
 int git_mkstemp(char *path, size_t n, const char *template);
-
-int git_mkstemps(char *path, size_t n, const char *template, int suffix_len);
 
 /* set default permissions by passing mode arguments to open(2) */
 int git_mkstemps_mode(char *pattern, int suffix_len, int mode);
@@ -1320,6 +1359,7 @@ extern struct packed_git {
 		 freshened:1,
 		 do_not_close:1;
 	unsigned char sha1[20];
+	struct revindex_entry *revindex;
 	/* something like ".git/objects/pack/xxxxx.pack" */
 	char pack_name[FLEX_ARRAY]; /* more */
 } *packed_git;
@@ -1516,15 +1556,14 @@ struct git_config_source {
 typedef int (*config_fn_t)(const char *, const char *, void *);
 extern int git_default_config(const char *, const char *, void *);
 extern int git_config_from_file(config_fn_t fn, const char *, void *);
-extern int git_config_from_buf(config_fn_t fn, const char *name,
-			       const char *buf, size_t len, void *data);
+extern int git_config_from_mem(config_fn_t fn, const char *origin_type,
+					const char *name, const char *buf, size_t len, void *data);
 extern void git_config_push_parameter(const char *text);
 extern int git_config_from_parameters(config_fn_t fn, void *data);
 extern void git_config(config_fn_t fn, void *);
 extern int git_config_with_options(config_fn_t fn, void *,
 				   struct git_config_source *config_source,
 				   int respect_includes);
-extern int git_config_early(config_fn_t fn, void *, const char *repo_config);
 extern int git_parse_ulong(const char *, unsigned long *);
 extern int git_parse_maybe_bool(const char *);
 extern int git_config_int(const char *, const char *);
@@ -1549,7 +1588,6 @@ extern int git_config_rename_section(const char *, const char *);
 extern int git_config_rename_section_in_file(const char *, const char *, const char *);
 extern const char *git_etc_gitconfig(void);
 extern const char *git_xcode_gitconfig(void);
-extern int check_repository_format_version(const char *var, const char *value, void *cb);
 extern int git_env_bool(const char *, int);
 extern unsigned long git_env_ulong(const char *, unsigned long);
 extern int git_config_system(void);
@@ -1561,6 +1599,8 @@ extern const char *get_log_output_encoding(void);
 extern const char *get_commit_output_encoding(void);
 
 extern int git_config_parse_parameter(const char *, config_fn_t fn, void *data);
+extern const char *current_config_origin_type(void);
+extern const char *current_config_name(void);
 
 struct config_include_data {
 	int depth;
@@ -1639,6 +1679,14 @@ extern int git_config_get_bool(const char *key, int *dest);
 extern int git_config_get_bool_or_int(const char *key, int *is_bool, int *dest);
 extern int git_config_get_maybe_bool(const char *key, int *dest);
 extern int git_config_get_pathname(const char *key, const char **dest);
+extern int git_config_get_untracked_cache(void);
+
+/*
+ * This is a hack for test programs like test-dump-untracked-cache to
+ * ensure that they do not modify the untracked cache when reading it.
+ * Do not use it otherwise!
+ */
+extern int ignore_untracked_cache_config;
 
 struct key_value_info {
 	const char *filename;
@@ -1760,7 +1808,7 @@ int split_cmdline(char *cmdline, const char ***argv);
 /* Takes a negative value returned by split_cmdline */
 const char *split_cmdline_strerror(int cmdline_errno);
 
-/* git.c */
+/* setup.c */
 struct startup_info {
 	int have_repository;
 	const char *prefix;

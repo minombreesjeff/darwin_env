@@ -8,7 +8,7 @@ dashless=$(basename "$0" | sed -e 's/-/ /')
 USAGE="[--quiet] add [-b <branch>] [-f|--force] [--name <name>] [--reference <repository>] [--] <repository> [<path>]
    or: $dashless [--quiet] status [--cached] [--recursive] [--] [<path>...]
    or: $dashless [--quiet] init [--] [<path>...]
-   or: $dashless [--quiet] deinit [-f|--force] [--] <path>...
+   or: $dashless [--quiet] deinit [-f|--force] (--all| [--] <path>...)
    or: $dashless [--quiet] update [--init] [--remote] [-N|--no-fetch] [-f|--force] [--checkout|--merge|--rebase] [--reference <repository>] [--recursive] [--] [<path>...]
    or: $dashless [--quiet] summary [--cached|--files] [--summary-limit <n>] [commit] [--] [<path>...]
    or: $dashless [--quiet] foreach [--recursive] <command>
@@ -413,8 +413,8 @@ cmd_foreach()
 		die_if_unmatched "$mode"
 		if test -e "$sm_path"/.git
 		then
-			displaypath=$(relative_path "$sm_path")
-			say "$(eval_gettext "Entering '\$prefix\$displaypath'")"
+			displaypath=$(relative_path "$prefix$sm_path")
+			say "$(eval_gettext "Entering '\$displaypath'")"
 			name=$(git submodule--helper name "$sm_path")
 			(
 				prefix="$prefix$sm_path/"
@@ -434,7 +434,7 @@ cmd_foreach()
 					cmd_foreach "--recursive" "$@"
 				fi
 			) <&3 3<&- ||
-			die "$(eval_gettext "Stopping at '\$prefix\$displaypath'; script returned non-zero status.")"
+			die "$(eval_gettext "Stopping at '\$displaypath'; script returned non-zero status.")"
 		fi
 	done
 }
@@ -473,7 +473,7 @@ cmd_init()
 		die_if_unmatched "$mode"
 		name=$(git submodule--helper name "$sm_path") || exit
 
-		displaypath=$(relative_path "$sm_path")
+		displaypath=$(relative_path "$prefix$sm_path")
 
 		# Copy url setting when it is not set yet
 		if test -z "$(git config "submodule.$name.url")"
@@ -521,6 +521,7 @@ cmd_init()
 cmd_deinit()
 {
 	# parse $args after "submodule ... deinit".
+	deinit_all=
 	while test $# -ne 0
 	do
 		case "$1" in
@@ -529,6 +530,9 @@ cmd_deinit()
 			;;
 		-q|--quiet)
 			GIT_QUIET=1
+			;;
+		--all)
+			deinit_all=t
 			;;
 		--)
 			shift
@@ -544,9 +548,14 @@ cmd_deinit()
 		shift
 	done
 
-	if test $# = 0
+	if test -n "$deinit_all" && test "$#" -ne 0
 	then
-		die "$(eval_gettext "Use '.' if you really want to deinitialize all submodules")"
+		echo >&2 "$(eval_gettext "pathspec and --all are incompatible")"
+		usage
+	fi
+	if test $# = 0 && test -z "$deinit_all"
+	then
+		die "$(eval_gettext "Use '--all' if you really want to deinitialize all submodules")"
 	fi
 
 	git submodule--helper list --prefix "$wt_prefix" "$@" |
@@ -590,6 +599,24 @@ cmd_deinit()
 		fi
 	done
 }
+
+is_tip_reachable () (
+	clear_local_git_env
+	cd "$1" &&
+	rev=$(git rev-list -n 1 "$2" --not --all 2>/dev/null) &&
+	test -z "$rev"
+)
+
+fetch_in_submodule () (
+	clear_local_git_env
+	cd "$1" &&
+	case "$2" in
+	'')
+		git fetch ;;
+	*)
+		git fetch $(get_default_remote) "$2" ;;
+	esac
+)
 
 #
 # Update each submodule path to correct revision, using clone and checkout as needed
@@ -745,10 +772,15 @@ Maybe you want to use 'update --init'?")"
 			then
 				# Run fetch only if $sha1 isn't present or it
 				# is not reachable from a ref.
-				(clear_local_git_env; cd "$sm_path" &&
-					( (rev=$(git rev-list -n 1 $sha1 --not --all 2>/dev/null) &&
-					 test -z "$rev") || git-fetch)) ||
+				is_tip_reachable "$sm_path" "$sha1" ||
+				fetch_in_submodule "$sm_path" ||
 				die "$(eval_gettext "Unable to fetch in submodule path '\$displaypath'")"
+
+				# Now we tried the usual fetch, but $sha1 may
+				# not be reachable from any of the refs
+				is_tip_reachable "$sm_path" "$sha1" ||
+				fetch_in_submodule "$sm_path" "$sha1" ||
+				die "$(eval_gettext "Fetched in submodule path '\$displaypath', but it did not contain $sha1. Direct fetching of that commit failed.")"
 			fi
 
 			# Is this something we just cloned?
@@ -779,8 +811,8 @@ Maybe you want to use 'update --init'?")"
 				;;
 			!*)
 				command="${update_module#!}"
-				die_msg="$(eval_gettext "Execution of '\$command \$sha1' failed in submodule path '\$prefix\$sm_path'")"
-				say_msg="$(eval_gettext "Submodule path '\$prefix\$sm_path': '\$command \$sha1'")"
+				die_msg="$(eval_gettext "Execution of '\$command \$sha1' failed in submodule path '\$displaypath'")"
+				say_msg="$(eval_gettext "Submodule path '\$displaypath': '\$command \$sha1'")"
 				must_die_on_failure=yes
 				;;
 			*)
@@ -1136,6 +1168,7 @@ cmd_status()
 			(
 				prefix="$displaypath/"
 				clear_local_git_env
+				wt_prefix=
 				cd "$sm_path" &&
 				eval cmd_status
 			) ||

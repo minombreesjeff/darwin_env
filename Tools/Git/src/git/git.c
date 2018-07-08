@@ -15,7 +15,6 @@ const char git_more_info_string[] =
 	   "concept guides. See 'git help <command>' or 'git help <concept>'\n"
 	   "to read about a specific subcommand or concept.");
 
-static struct startup_info git_startup_info;
 static int use_pager = -1;
 static char *orig_cwd;
 static const char *env_names[] = {
@@ -25,14 +24,14 @@ static const char *env_names[] = {
 	GIT_PREFIX_ENVIRONMENT
 };
 static char *orig_env[4];
-static int saved_environment;
+static int save_restore_env_balance;
 
-static void save_env(void)
+static void save_env_before_alias(void)
 {
 	int i;
-	if (saved_environment)
-		return;
-	saved_environment = 1;
+
+	assert(save_restore_env_balance == 0);
+	save_restore_env_balance = 1;
 	orig_cwd = xgetcwd();
 	for (i = 0; i < ARRAY_SIZE(env_names); i++) {
 		orig_env[i] = getenv(env_names[i]);
@@ -41,17 +40,25 @@ static void save_env(void)
 	}
 }
 
-static void restore_env(void)
+static void restore_env(int external_alias)
 {
 	int i;
-	if (orig_cwd && chdir(orig_cwd))
+
+	assert(save_restore_env_balance == 1);
+	save_restore_env_balance = 0;
+	if (!external_alias && orig_cwd && chdir(orig_cwd))
 		die_errno("could not move to %s", orig_cwd);
 	free(orig_cwd);
 	for (i = 0; i < ARRAY_SIZE(env_names); i++) {
-		if (orig_env[i])
+		if (external_alias &&
+		    !strcmp(env_names[i], GIT_PREFIX_ENVIRONMENT))
+			continue;
+		if (orig_env[i]) {
 			setenv(env_names[i], orig_env[i], 1);
-		else
+			free(orig_env[i]);
+		} else {
 			unsetenv(env_names[i]);
+		}
 	}
 }
 
@@ -226,14 +233,14 @@ static int handle_options(const char ***argv, int *argc, int *envchanged)
 static int handle_alias(int *argcp, const char ***argv)
 {
 	int envchanged = 0, ret = 0, saved_errno = errno;
-	const char *subdir;
 	int count, option_count;
 	const char **new_argv;
 	const char *alias_command;
 	char *alias_string;
 	int unused_nongit;
 
-	subdir = setup_git_directory_gently(&unused_nongit);
+	save_env_before_alias();
+	setup_git_directory_gently(&unused_nongit);
 
 	alias_command = (*argv)[0];
 	alias_string = alias_lookup(alias_command);
@@ -242,6 +249,7 @@ static int handle_alias(int *argcp, const char ***argv)
 			struct child_process child = CHILD_PROCESS_INIT;
 
 			commit_pager_choice();
+			restore_env(1);
 
 			child.use_shell = 1;
 			argv_array_push(&child.args, alias_string + 1);
@@ -287,8 +295,7 @@ static int handle_alias(int *argcp, const char ***argv)
 		ret = 1;
 	}
 
-	if (subdir && chdir(subdir))
-		die_errno("Cannot change to '%s'", subdir);
+	restore_env(0);
 
 	errno = saved_errno;
 
@@ -303,7 +310,6 @@ static int handle_alias(int *argcp, const char ***argv)
  * RUN_SETUP for reading from the configuration file.
  */
 #define NEED_WORK_TREE		(1<<3)
-#define NO_SETUP		(1<<4)
 
 struct cmd_struct {
 	const char *cmd;
@@ -385,7 +391,7 @@ static struct cmd_struct commands[] = {
 	{ "cherry", cmd_cherry, RUN_SETUP },
 	{ "cherry-pick", cmd_cherry_pick, RUN_SETUP | NEED_WORK_TREE },
 	{ "clean", cmd_clean, RUN_SETUP | NEED_WORK_TREE },
-	{ "clone", cmd_clone, NO_SETUP },
+	{ "clone", cmd_clone },
 	{ "column", cmd_column, RUN_SETUP_GENTLY },
 	{ "commit", cmd_commit, RUN_SETUP | NEED_WORK_TREE },
 	{ "commit-tree", cmd_commit_tree, RUN_SETUP },
@@ -411,8 +417,8 @@ static struct cmd_struct commands[] = {
 	{ "hash-object", cmd_hash_object },
 	{ "help", cmd_help },
 	{ "index-pack", cmd_index_pack, RUN_SETUP_GENTLY },
-	{ "init", cmd_init_db, NO_SETUP },
-	{ "init-db", cmd_init_db, NO_SETUP },
+	{ "init", cmd_init_db },
+	{ "init-db", cmd_init_db },
 	{ "interpret-trailers", cmd_interpret_trailers, RUN_SETUP_GENTLY },
 	{ "log", cmd_log, RUN_SETUP },
 	{ "ls-files", cmd_ls_files, RUN_SETUP },
@@ -529,12 +535,8 @@ static void handle_builtin(int argc, const char **argv)
 	}
 
 	builtin = get_builtin(cmd);
-	if (builtin) {
-		if (saved_environment && (builtin->option & NO_SETUP))
-			restore_env();
-		else
-			exit(run_builtin(builtin, argc, argv));
-	}
+	if (builtin)
+		exit(run_builtin(builtin, argc, argv));
 }
 
 static void execv_dashed_external(const char **argv)
@@ -578,8 +580,17 @@ static int run_argv(int *argcp, const char ***argv)
 	int done_alias = 0;
 
 	while (1) {
-		/* See if it's a builtin */
-		handle_builtin(*argcp, *argv);
+		/*
+		 * If we tried alias and futzed with our environment,
+		 * it no longer is safe to invoke builtins directly in
+		 * general.  We have to spawn them as dashed externals.
+		 *
+		 * NEEDSWORK: if we can figure out cases
+		 * where it is safe to do, we can avoid spawning a new
+		 * process.
+		 */
+		if (!done_alias)
+			handle_builtin(*argcp, *argv);
 
 		/* .. then try the external ones */
 		execv_dashed_external(*argv);
@@ -590,7 +601,6 @@ static int run_argv(int *argcp, const char ***argv)
 		 */
 		if (done_alias)
 			break;
-		save_env();
 		if (!handle_alias(argcp, argv))
 			break;
 		done_alias = 1;
@@ -625,8 +635,6 @@ int main(int argc, char **av)
 	const char **argv = (const char **) av;
 	const char *cmd;
 	int done_help = 0;
-
-	startup_info = &git_startup_info;
 
 	cmd = git_extract_argv0_path(argv[0]);
 	if (!cmd)

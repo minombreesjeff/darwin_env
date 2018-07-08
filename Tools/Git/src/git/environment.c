@@ -13,7 +13,7 @@
 #include "commit.h"
 
 int trust_executable_bit = 1;
-int trust_ctime = 0;
+int trust_ctime = 1;
 int check_stat = 1;
 int has_symlinks = 1;
 int minimum_abbrev = 4, default_abbrev = 7;
@@ -25,11 +25,9 @@ int log_all_ref_updates = -1; /* unspecified */
 int warn_ambiguous_refs = 1;
 int warn_on_object_refname_ambiguity = 1;
 int ref_paranoia = -1;
-int repository_format_version;
 int repository_format_precious_objects;
 const char *git_commit_encoding;
 const char *git_log_output_encoding;
-int shared_repository = PERM_UMASK;
 const char *apply_default_whitespace;
 const char *apply_default_ignorewhitespace;
 const char *git_attributes_file;
@@ -64,8 +62,8 @@ int grafts_replace_parents = 1;
 int core_apply_sparse_checkout;
 int merge_log_config = -1;
 int precomposed_unicode = -1; /* see probe_utf8_pathname_composition() */
-struct startup_info *startup_info;
 unsigned long pack_size_limit_cfg;
+enum hide_dotfiles_type hide_dotfiles = HIDE_DOTFILES_DOTGITONLY;
 
 #ifndef PROTECT_HFS_DEFAULT
 #define PROTECT_HFS_DEFAULT 0
@@ -86,6 +84,13 @@ int auto_comment_line_char;
 
 /* Parallel index stat data preload? */
 int core_preload_index = 1;
+
+/*
+ * This is a hack for test programs like test-dump-untracked-cache to
+ * ensure that they do not modify the untracked cache when reading it.
+ * Do not use it otherwise!
+ */
+int ignore_untracked_cache_config;
 
 /* This is set by setup_git_dir_gently() and/or git_default_config() */
 char *git_work_tree_cfg;
@@ -317,4 +322,25 @@ const char *get_log_output_encoding(void)
 const char *get_commit_output_encoding(void)
 {
 	return git_commit_encoding ? git_commit_encoding : "UTF-8";
+}
+
+static int the_shared_repository = PERM_UMASK;
+static int need_shared_repository_from_config = 1;
+
+void set_shared_repository(int value)
+{
+	the_shared_repository = value;
+	need_shared_repository_from_config = 0;
+}
+
+int get_shared_repository(void)
+{
+	if (need_shared_repository_from_config) {
+		const char *var = "core.sharedrepository";
+		const char *value;
+		if (!git_config_get_value(var, &value))
+			the_shared_repository = git_config_perm(var, value);
+		need_shared_repository_from_config = 0;
+	}
+	return the_shared_repository;
 }

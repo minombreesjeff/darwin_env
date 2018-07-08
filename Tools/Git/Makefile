@@ -8,10 +8,16 @@
 # per-architecture binaries into universal binaries.
 # Finally, we use Git's own Makefiles to perform the
 # installation from the first architecture's subdirectory.
-# 
+#
 export makefile := $(realpath $(lastword $(MAKEFILE_LIST)))
 export srcdir   := $(dir $(makefile))
 export mandir   := $(srcdir)/src/git-manpages
+
+ifndef DEVELOPER_DIR
+DEVELOPER_DIR := $(shell xcode-select -p)
+endif
+
+include $(DEVELOPER_DIR)/AppleInternal/Makefiles/DT_Signing.mk
 
 .PHONY: all build install installsrc installhdrs root merge \
   install-bin install-man
@@ -23,15 +29,15 @@ export DSTROOT ?= $(CURDIR)/roots/dst
 
 PREFIX=$(DEVELOPER_DIR)/usr
 
-ifdef SDKROOT
+ifndef SDKROOT
+SDKROOT := $(shell xcrun --sdk macosx.internal --show-sdk-path)
+endif
+
 CC := $(shell xcrun -find -sdk $(SDKROOT) cc)
 AR := $(shell xcrun -find -sdk $(SDKROOT) ar)
 DSYMUTIL := $(shell xcrun -find -sdk $(SDKROOT) dsymutil)
-else
-CC := $(shell xcrun -find cc)
-AR := $(shell xcrun -find ar)
-DSYMUTIL := $(shell xcrun -find dsymutil)
-endif
+
+export CODESIGN_ALLOCATE :=  $(shell xcrun -find -sdk $(SDKROOT) codesign_allocate)
 
 tmp := $(strip $(shell expr '$(RC_ProjectSourceVersion)' : \
   '\([0-9]\{1,4\}\(\.[0-9]\{0,3\}\)\{0,1\}\)$$'))
@@ -48,8 +54,11 @@ cflags := $(strip $(RC_CFLAGS))
 $(foreach arch,$(RC_ARCHS),$(eval cflags := $(subst $(cflags),-arch $(arch) ,)))
 export RC_CFLAGS := $(cflags)
 
-CFLAGS = -g3 -gdwarf-2 -Os -pipe -Wall -Wformat-security -D_FORTIFY_SOURCE=2
-LDFLAGS = -sectcreate __TEXT __info_plist $(OBJROOT)/Info.plist
+CFLAGS = -g3 -gdwarf-2 -Os -pipe -Wall -Wformat-security -D_FORTIFY_SOURCE=2 -isysroot $(SDKROOT) -I$(SDKROOT)/usr/local/libressl/include
+LDFLAGS = -sectcreate __TEXT __info_plist $(OBJROOT)/Info.plist -isysroot $(SDKROOT) -L$(SDKROOT)/usr/local/libressl/lib
+
+# Remove this when <rdar://problem/25891622> is fixed
+LDFLAGS += -L$(OBJROOT)
 
 STRIP := strip -S
 submakevars := -j`sysctl -n hw.activecpu` prefix=$(PREFIX) \
@@ -82,7 +91,7 @@ endif
 installhdrs:
 	@echo No headers to install.
 
-build: $(OBJROOT)/dsyms.timestamp
+build: $(OBJROOT)/dsyms.timestamp $(OBJROOT)/codesign.timestamp
 
 install: install-bin install-man install-contrib
 	rm -rf "$(DSTROOT)$(PREFIX)/share/git-gui"
@@ -105,7 +114,7 @@ install-contrib:
 	$(CC) -c $(CFLAGS) $(RC_CFLAGS) $(SRCROOT)/src/git/contrib/credential/osxkeychain/git-credential-osxkeychain.c -o $(OBJROOT)/git-credential-osxkeychain.o
 	$(CC) -o $(DSTROOT)$(PREFIX)/libexec/git-core/git-credential-osxkeychain $(OBJROOT)/git-credential-osxkeychain.o -framework Security
 
-install-bin: $(OBJROOT)/dsyms.timestamp
+install-bin: build
 	$(MAKE) -C $(firstarch) $(submakevars) \
 	  'CC=$(CC) -arch $(firstword $(RC_ARCHS))' \
 	  'AR=$(AR)' \
@@ -133,6 +142,13 @@ $(OBJROOT)/universal.timestamp: \
 	      mv $(firstarch)/$$prog.u $(firstarch)/$$prog && \
 	      cp $(firstarch)/$$prog $(SYMROOT)/ && \
 	      $(STRIP) $(firstarch)/$$prog); \
+	done
+	touch $@
+
+$(OBJROOT)/codesign.timestamp: $(OBJROOT)/programs-list $(OBJROOT)/universal.timestamp
+	for prog in $$(cat $<); do \
+	    test -h $(firstarch)/$$prog && continue; \
+	    (set -x; /usr/bin/codesign --force --sign - $(DVT_CODE_SIGN_FLAGS) -o library --timestamp=none $(firstarch)/$$prog) || exit 1; \
 	done
 	touch $@
 
@@ -164,7 +180,7 @@ $(OBJROOT)/$(1)/dir.timestamp:
 $(OBJROOT)/$(1)/ditto.timestamp: $(OBJROOT)/$(1)/dir.timestamp
 	ditto $$(CURDIR)/src/git $$(dir $$@) && touch $$@
 
-$(OBJROOT)/$(1)/build.timestamp: $(OBJROOT)/$(1)/ditto.timestamp $(OBJROOT)/Info.plist
+$(OBJROOT)/$(1)/build.timestamp: $(OBJROOT)/$(1)/ditto.timestamp $(OBJROOT)/Info.plist $(OBJROOT)/libcrypto.dylib $(OBJROOT)/libssl.dylib
 	cat /dev/null > $$(OBJROOT)/$(1)/program-list
 	$$(MAKE) -C $$(dir $$@) $$(submakevars) \
 	  'CC=$$(CC) -arch $(1)' \
@@ -173,6 +189,14 @@ $(OBJROOT)/$(1)/build.timestamp: $(OBJROOT)/$(1)/ditto.timestamp $(OBJROOT)/Info
 	  && touch $$@
 
 endef
+
+# Remove this when <rdar://problem/25891622> is fixed
+$(OBJROOT)/libcrypto.dylib: $(SDKROOT)/usr/lib/libcrypto.35.dylib
+	ln -s $(SDKROOT)/usr/lib/libcrypto.35.dylib $(OBJROOT)/libcrypto.dylib
+
+# Remove this when <rdar://problem/25891622> is fixed
+$(OBJROOT)/libssl.dylib: $(SDKROOT)/usr/lib/libssl.35.dylib
+	ln -s $(SDKROOT)/usr/lib/libssl.35.dylib $(OBJROOT)/libssl.dylib
 
 $(foreach arch,$(RC_ARCHS),$(eval $(call each_arch,$(arch))))
 

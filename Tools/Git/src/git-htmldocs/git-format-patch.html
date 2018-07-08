@@ -803,7 +803,11 @@ will only be numbers, without the first line of the commit appended.
 The names of the output files are printed to standard
 output, unless the <code>--stdout</code> option is specified.</p></div>
 <div class="paragraph"><p>If <code>-o</code> is specified, output files are created in &lt;dir&gt;.  Otherwise
-they are created in the current working directory.</p></div>
+they are created in the current working directory. The default path
+can be set with the <em>format.outputDirectory</em> configuration option.
+The <code>-o</code> option takes precedence over <code>format.outputDirectory</code>.
+To store patches in the current working directory even when
+<code>format.outputDirectory</code> points elsewhere, use <code>-o .</code>.</p></div>
 <div class="paragraph"><p>By default, the subject of a single patch is "[PATCH] " followed by
 the concatenation of lines from the commit message up to the first blank
 line (see the DISCUSSION section of <a href="git-commit.html">git-commit(1)</a>).</p></div>
@@ -1457,6 +1461,7 @@ of a delete/create pair.</p></div>
 <p>
         Add <code>Signed-off-by:</code> line to the commit message, using
         the committer identity of yourself.
+        See the signoff option in <a href="git-commit.html">git-commit(1)</a> for more information.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2123,7 +2128,7 @@ as e-mailable patches:
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2015-12-22 15:41:43 PST
+Last updated 2016-01-26 16:20:09 PST
 </div>
 </div>
 </body>

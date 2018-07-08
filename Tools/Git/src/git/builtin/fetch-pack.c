@@ -16,10 +16,20 @@ static void add_sought_entry(struct ref ***sought, int *nr, int *alloc,
 	struct ref *ref;
 	struct object_id oid;
 
-	if (!get_oid_hex(name, &oid) && name[GIT_SHA1_HEXSZ] == ' ')
-		name += GIT_SHA1_HEXSZ + 1;
-	else
+	if (!get_oid_hex(name, &oid)) {
+		if (name[GIT_SHA1_HEXSZ] == ' ') {
+			/* <sha1> <ref>, find refname */
+			name += GIT_SHA1_HEXSZ + 1;
+		} else if (name[GIT_SHA1_HEXSZ] == '\0') {
+			; /* <sha1>, leave sha1 as name */
+		} else {
+			/* <ref>, clear cruft from oid */
+			oidclr(&oid);
+		}
+	} else {
+		/* <ref>, clear cruft from get_oid_hex */
 		oidclr(&oid);
+	}
 
 	ref = alloc_ref(name);
 	oidcpy(&ref->old_oid, &oid);
@@ -149,7 +159,7 @@ int cmd_fetch_pack(int argc, const char **argv, const char *prefix)
 		else {
 			/* read from stdin one ref per line, until EOF */
 			struct strbuf line = STRBUF_INIT;
-			while (strbuf_getline(&line, stdin, '\n') != EOF)
+			while (strbuf_getline_lf(&line, stdin) != EOF)
 				add_sought_entry(&sought, &nr_sought, &alloc_sought, line.buf);
 			strbuf_release(&line);
 		}

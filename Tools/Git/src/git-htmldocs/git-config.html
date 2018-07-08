@@ -748,18 +748,18 @@ git-config(1) Manual Page
 <h2 id="_synopsis">SYNOPSIS</h2>
 <div class="sectionbody">
 <div class="verseblock">
-<pre class="content"><em>git config</em> [&lt;file-option&gt;] [type] [-z|--null] name [value [value_regex]]
+<pre class="content"><em>git config</em> [&lt;file-option&gt;] [type] [--show-origin] [-z|--null] name [value [value_regex]]
 <em>git config</em> [&lt;file-option&gt;] [type] --add name value
 <em>git config</em> [&lt;file-option&gt;] [type] --replace-all name value [value_regex]
-<em>git config</em> [&lt;file-option&gt;] [type] [-z|--null] --get name [value_regex]
-<em>git config</em> [&lt;file-option&gt;] [type] [-z|--null] --get-all name [value_regex]
-<em>git config</em> [&lt;file-option&gt;] [type] [-z|--null] [--name-only] --get-regexp name_regex [value_regex]
+<em>git config</em> [&lt;file-option&gt;] [type] [--show-origin] [-z|--null] --get name [value_regex]
+<em>git config</em> [&lt;file-option&gt;] [type] [--show-origin] [-z|--null] --get-all name [value_regex]
+<em>git config</em> [&lt;file-option&gt;] [type] [--show-origin] [-z|--null] [--name-only] --get-regexp name_regex [value_regex]
 <em>git config</em> [&lt;file-option&gt;] [type] [-z|--null] --get-urlmatch name URL
 <em>git config</em> [&lt;file-option&gt;] --unset name [value_regex]
 <em>git config</em> [&lt;file-option&gt;] --unset-all name [value_regex]
 <em>git config</em> [&lt;file-option&gt;] --rename-section old_name new_name
 <em>git config</em> [&lt;file-option&gt;] --remove-section name
-<em>git config</em> [&lt;file-option&gt;] [-z|--null] [--name-only] -l | --list
+<em>git config</em> [&lt;file-option&gt;] [--show-origin] [-z|--null] [--name-only] -l | --list
 <em>git config</em> [&lt;file-option&gt;] --get-color name [default]
 <em>git config</em> [&lt;file-option&gt;] --get-colorbool name [stdout-is-tty]
 <em>git config</em> [&lt;file-option&gt;] -e | --edit</pre>
@@ -1073,6 +1073,17 @@ from all available files.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+--show-origin
+</dt>
+<dd>
+<p>
+        Augment the output of all queried config options with the
+        origin type (file, standard input, blob, command line) and
+        the actual origin (config file path, ref, or blob id if
+        applicable).
+</p>
+</dd>
+<dt class="hdlist1">
 --get-colorbool name [stdout-is-tty]
 </dt>
 <dd>
@@ -1116,7 +1127,9 @@ from all available files.</p></div>
 <dd>
 <p>
         Respect <code>include.*</code> directives in config files when looking up
-        values. Defaults to on.
+        values. Defaults to <code>off</code> when a specific file is given (e.g.,
+        using <code>--file</code>, <code>--global</code>, etc) and <code>on</code> when searching all
+        config files.
 </p>
 </dd>
 </dl></div>
@@ -1780,6 +1793,20 @@ core.trustctime
         is regularly modified by something outside Git (file system
         crawlers and some backup systems).
         See <a href="git-update-index.html">git-update-index(1)</a>. True by default.
+</p>
+</dd>
+<dt class="hdlist1">
+core.untrackedCache
+</dt>
+<dd>
+<p>
+        Determines what to do about the untracked cache feature of the
+        index. It will be kept, if this variable is unset or set to
+        <code>keep</code>. It will automatically be added if set to <code>true</code>. And
+        it will automatically be removed, if set to <code>false</code>. Before
+        setting it to <code>true</code>, you should check that mtime is working
+        properly on your system.
+        See <a href="git-update-index.html">git-update-index(1)</a>. <code>keep</code> by default.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2591,6 +2618,7 @@ branch.&lt;name&gt;.rebase
 <div class="paragraph"><p>When preserve, also pass <code>--preserve-merges</code> along to <em>git rebase</em>
 so that locally committed merge commits will not be flattened
 by running <em>git pull</em>.</p></div>
+<div class="paragraph"><p>When the value is <code>interactive</code>, the rebase is run in interactive mode.</p></div>
 <div class="paragraph"><p><strong>NOTE</strong>: this is a possibly dangerous operation; do <strong>not</strong> use
 it unless you understand the implications (see <a href="git-rebase.html">git-rebase(1)</a>
 for details).</p></div>
@@ -3823,6 +3851,15 @@ format.coverLetter
 </p>
 </dd>
 <dt class="hdlist1">
+format.outputDirectory
+</dt>
+<dd>
+<p>
+        Set a custom directory to store the resulting files instead of the
+        current working directory.
+</p>
+</dd>
+<dt class="hdlist1">
 filter.&lt;driver&gt;.clean
 </dt>
 <dd>
@@ -4205,6 +4242,24 @@ grep.extendedRegexp
 </p>
 </dd>
 <dt class="hdlist1">
+grep.threads
+</dt>
+<dd>
+<p>
+        Number of grep worker threads to use.
+        See <code>grep.threads</code> in <a href="git-grep.html">git-grep(1)</a> for more information.
+</p>
+</dd>
+<dt class="hdlist1">
+grep.fallbackToNoIndex
+</dt>
+<dd>
+<p>
+        If set to true, fall back to git grep --no-index if git grep
+        is executed outside of a git repository.  Defaults to false.
+</p>
+</dd>
+<dt class="hdlist1">
 gpg.program
 </dt>
 <dd>
@@ -4489,9 +4544,72 @@ http.proxy
 <dd>
 <p>
         Override the HTTP proxy, normally configured using the <em>http_proxy</em>,
-        <em>https_proxy</em>, and <em>all_proxy</em> environment variables (see
-        <code>curl(1)</code>).  This can be overridden on a per-remote basis; see
-        remote.&lt;name&gt;.proxy
+        <em>https_proxy</em>, and <em>all_proxy</em> environment variables (see <code>curl(1)</code>). In
+        addition to the syntax understood by curl, it is possible to specify a
+        proxy string with a user name but no password, in which case git will
+        attempt to acquire one in the same way it does for other credentials. See
+        <a href="gitcredentials.html">gitcredentials(7)</a> for more information. The syntax thus is
+        <em>[protocol://][user[:password]@]proxyhost[:port]</em>. This can be overridden
+        on a per-remote basis; see remote.&lt;name&gt;.proxy
+</p>
+</dd>
+<dt class="hdlist1">
+http.proxyAuthMethod
+</dt>
+<dd>
+<p>
+        Set the method with which to authenticate against the HTTP proxy. This
+        only takes effect if the configured proxy string contains a user name part
+        (i.e. is of the form <em>user@host</em> or <em>user@host:port</em>). This can be
+        overridden on a per-remote basis; see <code>remote.&lt;name&gt;.proxyAuthMethod</code>.
+        Both can be overridden by the <em>GIT_HTTP_PROXY_AUTHMETHOD</em> environment
+        variable.  Possible values are:
+</p>
+<div class="openblock">
+<div class="content">
+<div class="ulist"><ul>
+<li>
+<p>
+<code>anyauth</code> - Automatically pick a suitable authentication method. It is
+  assumed that the proxy answers an unauthenticated request with a 407
+  status code and one or more Proxy-authenticate headers with supported
+  authentication methods. This is the default.
+</p>
+</li>
+<li>
+<p>
+<code>basic</code> - HTTP Basic authentication
+</p>
+</li>
+<li>
+<p>
+<code>digest</code> - HTTP Digest authentication; this prevents the password from being
+  transmitted to the proxy in clear text
+</p>
+</li>
+<li>
+<p>
+<code>negotiate</code> - GSS-Negotiate authentication (compare the --negotiate option
+  of <code>curl(1)</code>)
+</p>
+</li>
+<li>
+<p>
+<code>ntlm</code> - NTLM authentication (compare the --ntlm option of <code>curl(1)</code>)
+</p>
+</li>
+</ul></div>
+</div></div>
+</dd>
+<dt class="hdlist1">
+http.emptyAuth
+</dt>
+<dd>
+<p>
+        Attempt authentication without seeking a username or password.  This
+        can be used to attempt GSS-Negotiate authentication without specifying
+        a username in the URL, as libcurl normally requires a username for
+        authentication.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -4643,6 +4761,19 @@ http.sslCAPath
         Path containing files with the CA certificates to verify the peer
         with when fetching or pushing over HTTPS. Can be overridden
         by the <em>GIT_SSL_CAPATH</em> environment variable.
+</p>
+</dd>
+<dt class="hdlist1">
+http.pinnedpubkey
+</dt>
+<dd>
+<p>
+        Public key of the https service. It may either be the filename of
+        a PEM or DER encoded public key file or a string starting with
+        <em>sha256//</em> followed by the base64 encoded sha256 hash of the
+        public key. See also libcurl <em>CURLOPT_PINNEDPUBLICKEY</em>. git will
+        exit with an error if this option is set but not supported by
+        cURL.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -5579,7 +5710,7 @@ pack.indexVersion
         larger than 2 GB.
 </p>
 <div class="paragraph"><p>If you have an old Git that does not understand the version 2 <code>*.idx</code> file,
-cloning or fetching over a non native protocol (e.g. "http" and "rsync")
+cloning or fetching over a non native protocol (e.g. "http")
 that will copy both <code>*.pack</code> file and corresponding <code>*.idx</code> file from the
 other side may give you a repository that cannot be accessed with your
 older version of Git. If the <code>*.pack</code> file is smaller than 2 GB, however,
@@ -5692,6 +5823,7 @@ pull.rebase
 <div class="paragraph"><p>When preserve, also pass <code>--preserve-merges</code> along to <em>git rebase</em>
 so that locally committed merge commits will not be flattened
 by running <em>git pull</em>.</p></div>
+<div class="paragraph"><p>When the value is <code>interactive</code>, the rebase is run in interactive mode.</p></div>
 <div class="paragraph"><p><strong>NOTE</strong>: this is a possibly dangerous operation; do <strong>not</strong> use
 it unless you understand the implications (see <a href="git-rebase.html">git-rebase(1)</a>
 for details).</p></div>
@@ -6103,6 +6235,16 @@ remote.&lt;name&gt;.proxy
         For remotes that require curl (http, https and ftp), the URL to
         the proxy to use for that remote.  Set to the empty string to
         disable proxying for that remote.
+</p>
+</dd>
+<dt class="hdlist1">
+remote.&lt;name&gt;.proxyAuthMethod
+</dt>
+<dd>
+<p>
+        For remotes that require curl (http, https and ftp), the method to use for
+        authenticating against the proxy in use (probably set in
+        <code>remote.&lt;name&gt;.proxy</code>). See <code>http.proxyAuthMethod</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -6790,6 +6932,21 @@ user.name
 </p>
 </dd>
 <dt class="hdlist1">
+user.useConfigOnly
+</dt>
+<dd>
+<p>
+        Instruct Git to avoid trying to guess defaults for <em>user.email</em>
+        and <em>user.name</em>, and instead retrieve the values only from the
+        configuration. For example, if you have multiple email addresses
+        and would like to use a different one for each repository, then
+        with this configuration option set to <code>true</code> in the global config
+        along with a name, Git will prompt you to set up an email before
+        making new commits in a newly cloned repository.
+        Defaults to <code>false</code>.
+</p>
+</dd>
+<dt class="hdlist1">
 user.signingKey
 </dt>
 <dd>
@@ -6841,7 +6998,7 @@ web.browser
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2015-08-31 16:04:31 PDT
+Last updated 2016-02-26 14:09:26 PST
 </div>
 </div>
 </body>

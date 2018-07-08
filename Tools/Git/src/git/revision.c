@@ -1579,10 +1579,7 @@ static void append_prune_data(struct cmdline_pathspec *prune, const char **av)
 static void read_pathspec_from_stdin(struct rev_info *revs, struct strbuf *sb,
 				     struct cmdline_pathspec *prune)
 {
-	while (strbuf_getwholeline(sb, stdin, '\n') != EOF) {
-		int len = sb->len;
-		if (len && sb->buf[len - 1] == '\n')
-			sb->buf[--len] = '\0';
+	while (strbuf_getline(sb, stdin) != EOF) {
 		ALLOC_GROW(prune->path, prune->nr + 1, prune->alloc);
 		prune->path[prune->nr++] = xstrdup(sb->buf);
 	}
@@ -1599,10 +1596,8 @@ static void read_revisions_from_stdin(struct rev_info *revs,
 	warn_on_object_refname_ambiguity = 0;
 
 	strbuf_init(&sb, 1000);
-	while (strbuf_getwholeline(&sb, stdin, '\n') != EOF) {
+	while (strbuf_getline(&sb, stdin) != EOF) {
 		int len = sb.len;
-		if (len && sb.buf[len - 1] == '\n')
-			sb.buf[--len] = '\0';
 		if (!len)
 			break;
 		if (sb.buf[0] == '-') {

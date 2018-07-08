@@ -87,6 +87,21 @@ test_expect_success 'plain nested in bare through aliased command' '
 	check_config bare-ancestor-aliased.git/plain-nested/.git false unset
 '
 
+test_expect_success 'No extra GIT_* on alias scripts' '
+	write_script script <<-\EOF &&
+	env |
+		sed -n \
+			-e "/^GIT_PREFIX=/d" \
+			-e "/^GIT_TEXTDOMAINDIR=/d" \
+			-e "/^GIT_/s/=.*//p" |
+		sort
+	EOF
+	./script >expected &&
+	git config alias.script \!./script &&
+	( mkdir sub && cd sub && git script >../actual ) &&
+	test_cmp expected actual
+'
+
 test_expect_success 'plain with GIT_WORK_TREE' '
 	mkdir plain-wt &&
 	test_must_fail env GIT_WORK_TREE="$(pwd)/plain-wt" git init plain-wt
@@ -337,6 +352,36 @@ test_expect_success SYMLINKS 're-init to move gitdir symlink' '
 	test_cmp expected newdir/.git &&
 	test_cmp expected newdir/here &&
 	test_path_is_dir realgitdir/refs
+'
+
+# Tests for the hidden file attribute on windows
+is_hidden () {
+	# Use the output of `attrib`, ignore the absolute path
+	case "$(attrib "$1")" in *H*?:*) return 0;; esac
+	return 1
+}
+
+test_expect_success MINGW '.git hidden' '
+	rm -rf newdir &&
+	(
+		unset GIT_DIR GIT_WORK_TREE
+		mkdir newdir &&
+		cd newdir &&
+		git init &&
+		is_hidden .git
+	) &&
+	check_config newdir/.git false unset
+'
+
+test_expect_success MINGW 'bare git dir not hidden' '
+	rm -rf newdir &&
+	(
+		unset GIT_DIR GIT_WORK_TREE GIT_CONFIG
+		mkdir newdir &&
+		cd newdir &&
+		git --bare init
+	) &&
+	! is_hidden newdir
 '
 
 test_done

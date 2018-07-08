@@ -202,13 +202,13 @@ do
 		}
 		run_list=$1; shift ;;
 	--run=*)
-		run_list=$(expr "z$1" : 'z[^=]*=\(.*\)'); shift ;;
+		run_list=${1#--*=}; shift ;;
 	-h|--h|--he|--hel|--help)
 		help=t; shift ;;
 	-v|--v|--ve|--ver|--verb|--verbo|--verbos|--verbose)
 		verbose=t; shift ;;
 	--verbose-only=*)
-		verbose_only=$(expr "z$1" : 'z[^=]*=\(.*\)')
+		verbose_only=${1#--*=}
 		shift ;;
 	-q|--q|--qu|--qui|--quie|--quiet)
 		# Ignore --quiet under a TAP::Harness. Saying how many tests
@@ -222,15 +222,15 @@ do
 		valgrind=memcheck
 		shift ;;
 	--valgrind=*)
-		valgrind=$(expr "z$1" : 'z[^=]*=\(.*\)')
+		valgrind=${1#--*=}
 		shift ;;
 	--valgrind-only=*)
-		valgrind_only=$(expr "z$1" : 'z[^=]*=\(.*\)')
+		valgrind_only=${1#--*=}
 		shift ;;
 	--tee)
 		shift ;; # was handled already
 	--root=*)
-		root=$(expr "z$1" : 'z[^=]*=\(.*\)')
+		root=${1#--*=}
 		shift ;;
 	--chain-lint)
 		GIT_TEST_CHAIN_LINT=1
@@ -321,6 +321,19 @@ then
 else
 	exec 4>/dev/null 3>/dev/null
 fi
+
+# Send any "-x" output directly to stderr to avoid polluting tests
+# which capture stderr. We can do this unconditionally since it
+# has no effect if tracing isn't turned on.
+#
+# Note that this sets up the trace fd as soon as we assign the variable, so it
+# must come after the creation of descriptor 4 above. Likewise, we must never
+# unset this, as it has the side effect of closing descriptor 4, which we
+# use to show verbose tests to the user.
+#
+# Note also that we don't need or want to export it. The tracing is local to
+# this shell, and we would not want to influence any shells we exec.
+BASH_XTRACEFD=4
 
 test_failure=0
 test_count=0
@@ -1002,7 +1015,7 @@ test_i18ngrep () {
 test_lazy_prereq PIPE '
 	# test whether the filesystem supports FIFOs
 	case $(uname -s) in
-	CYGWIN*)
+	CYGWIN*|MINGW*)
 		false
 		;;
 	*)

@@ -2,12 +2,12 @@
 .\"     Title: git-fetch
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 01/04/2016
+.\"      Date: 03/28/2016
 .\"    Manual: Git Manual
-.\"    Source: Git 2.7.0
+.\"    Source: Git 2.8.0
 .\"  Language: English
 .\"
-.TH "GIT\-FETCH" "1" "01/04/2016" "Git 2\&.7\&.0" "Git Manual"
+.TH "GIT\-FETCH" "1" "03/28/2016" "Git 2\&.8\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -66,14 +66,14 @@ will be overwritten\&.
 .PP
 \-\-depth=<depth>
 .RS 4
-Deepen or shorten the history of a
+Limit fetching to the specified number of commits from the tip of each remote branch history\&. If fetching to a
 \fIshallow\fR
 repository created by
 git clone
 with
 \-\-depth=<depth>
 option (see
-\fBgit-clone\fR(1)) to the specified number of commits from the tip of each remote branch history\&. Tags for the deepened commits are not fetched\&.
+\fBgit-clone\fR(1)), deepen or shorten the history to the specified number of commits\&. Tags for the deepened commits are not fetched\&.
 .RE
 .PP
 \-\-unshallow
@@ -155,6 +155,11 @@ or to unconditionally recurse into all populated submodules when set to
 to only recurse into a populated submodule when the superproject retrieves a commit that updates the submodule\(cqs reference to a commit that isn\(cqt already in the local submodule clone\&.
 .RE
 .PP
+\-j, \-\-jobs=<n>
+.RS 4
+Number of parallel children to be used for fetching submodules\&. Each will fetch from different submodules, such that fetching many submodules will be faster\&. By default submodules will be fetched one at a time\&.
+.RE
+.PP
 \-\-no\-recurse\-submodules
 .RS 4
 Disable recursive fetching of submodules (this has the same effect as using the
@@ -206,6 +211,16 @@ Be verbose\&.
 \-\-progress
 .RS 4
 Progress status is reported on the standard error stream by default when it is attached to a terminal, unless \-q is specified\&. This flag forces progress status even if the standard error stream is not directed to a terminal\&.
+.RE
+.PP
+\-4, \-\-ipv4
+.RS 4
+Use IPv4 addresses only, ignoring IPv6 addresses\&.
+.RE
+.PP
+\-6, \-\-ipv6
+.RS 4
+Use IPv6 addresses only, ignoring IPv4 addresses\&.
 .RE
 .PP
 <repository>
@@ -264,7 +279,7 @@ sign to indicate non\-fast\-forward updates will be needed for such branches\&. 
 .sp
 In general, URLs contain information about the transport protocol, the address of the remote server, and the path to the repository\&. Depending on the transport protocol, some of this information may be absent\&.
 .sp
-Git supports ssh, git, http, and https protocols (in addition, ftp, and ftps can be used for fetching and rsync can be used for fetching and pushing, but these are inefficient and deprecated; do not use them)\&.
+Git supports ssh, git, http, and https protocols (in addition, ftp, and ftps can be used for fetching, but this is inefficient and deprecated; do not use it)\&.
 .sp
 The native transport (i\&.e\&. git:// URL) does no authentication and should be used with caution on unsecured networks\&.
 .sp
@@ -312,17 +327,6 @@ http[s]://host\&.xz[:port]/path/to/repo\&.git/
 .IP \(bu 2.3
 .\}
 ftp[s]://host\&.xz[:port]/path/to/repo\&.git/
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-rsync://host\&.xz/path/to/repo\&.git/
 .RE
 .sp
 An alternative scp\-like syntax may also be used with the ssh protocol:

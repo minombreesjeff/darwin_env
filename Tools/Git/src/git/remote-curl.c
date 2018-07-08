@@ -119,6 +119,19 @@ static int set_option(const char *name, const char *value)
 		else
 			return -1;
 		return 0;
+
+#if LIBCURL_VERSION_NUM >= 0x070a08
+	} else if (!strcmp(name, "family")) {
+		if (!strcmp(value, "ipv4"))
+			git_curl_ipresolve = CURL_IPRESOLVE_V4;
+		else if (!strcmp(value, "ipv6"))
+			git_curl_ipresolve = CURL_IPRESOLVE_V6;
+		else if (!strcmp(value, "all"))
+			git_curl_ipresolve = CURL_IPRESOLVE_WHATEVER;
+		else
+			return -1;
+		return 0;
+#endif /* LIBCURL_VERSION_NUM >= 0x070a08 */
 	} else {
 		return 1 /* unsupported */;
 	}
@@ -840,7 +853,7 @@ static void parse_fetch(struct strbuf *buf)
 			die("http transport does not support %s", buf->buf);
 
 		strbuf_reset(buf);
-		if (strbuf_getline(buf, stdin, '\n') == EOF)
+		if (strbuf_getline_lf(buf, stdin) == EOF)
 			return;
 		if (!*buf->buf)
 			break;
@@ -952,7 +965,7 @@ static void parse_push(struct strbuf *buf)
 			die("http transport does not support %s", buf->buf);
 
 		strbuf_reset(buf);
-		if (strbuf_getline(buf, stdin, '\n') == EOF)
+		if (strbuf_getline_lf(buf, stdin) == EOF)
 			goto free_specs;
 		if (!*buf->buf)
 			break;
@@ -1002,7 +1015,7 @@ int main(int argc, const char **argv)
 	do {
 		const char *arg;
 
-		if (strbuf_getline(&buf, stdin, '\n') == EOF) {
+		if (strbuf_getline_lf(&buf, stdin) == EOF) {
 			if (ferror(stdin))
 				error("remote-curl: error reading command stream from git");
 			return 1;

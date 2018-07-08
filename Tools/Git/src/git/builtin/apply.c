@@ -931,22 +931,19 @@ static char *gitdiff_verify_name(const char *line, int isnull, char *orig_name, 
 		return find_name(line, NULL, p_value, TERM_TAB);
 
 	if (orig_name) {
-		int len;
-		const char *name;
+		int len = strlen(orig_name);
 		char *another;
-		name = orig_name;
-		len = strlen(name);
 		if (isnull)
-			die(_("git apply: bad git-diff - expected /dev/null, got %s on line %d"), name, linenr);
+			die(_("git apply: bad git-diff - expected /dev/null, got %s on line %d"),
+			    orig_name, linenr);
 		another = find_name(line, NULL, p_value, TERM_TAB);
-		if (!another || memcmp(another, name, len + 1))
+		if (!another || memcmp(another, orig_name, len + 1))
 			die((side == DIFF_NEW_NAME) ?
 			    _("git apply: bad git-diff - inconsistent new filename on line %d") :
 			    _("git apply: bad git-diff - inconsistent old filename on line %d"), linenr);
 		free(another);
 		return orig_name;
-	}
-	else {
+	} else {
 		/* expect "/dev/null" */
 		if (memcmp("/dev/null", line, 9) || line[9] != '\n')
 			die(_("git apply: bad git-diff - expected /dev/null on line %d"), linenr);
@@ -956,21 +953,15 @@ static char *gitdiff_verify_name(const char *line, int isnull, char *orig_name, 
 
 static int gitdiff_oldname(const char *line, struct patch *patch)
 {
-	char *orig = patch->old_name;
 	patch->old_name = gitdiff_verify_name(line, patch->is_new, patch->old_name,
 					      DIFF_OLD_NAME);
-	if (orig != patch->old_name)
-		free(orig);
 	return 0;
 }
 
 static int gitdiff_newname(const char *line, struct patch *patch)
 {
-	char *orig = patch->new_name;
 	patch->new_name = gitdiff_verify_name(line, patch->is_delete, patch->new_name,
 					      DIFF_NEW_NAME);
-	if (orig != patch->new_name)
-		free(orig);
 	return 0;
 }
 
@@ -1872,6 +1863,11 @@ static struct fragment *parse_binary_hunk(char **buf_p,
 	return NULL;
 }
 
+/*
+ * Returns:
+ *   -1 in case of error,
+ *   the length of the parsed binary patch otherwise
+ */
 static int parse_binary(char *buffer, unsigned long size, struct patch *patch)
 {
 	/*
@@ -2017,6 +2013,8 @@ static int parse_chunk(char *buffer, unsigned long size, struct patch *patch)
 			linenr++;
 			used = parse_binary(buffer + hd + llen,
 					    size - hd - llen, patch);
+			if (used < 0)
+				return -1;
 			if (used)
 				patchsize = used + llen;
 			else
@@ -4373,8 +4371,10 @@ static int apply_patch(int fd, const char *filename, int options)
 		patch->inaccurate_eof = !!(options & INACCURATE_EOF);
 		patch->recount =  !!(options & RECOUNT);
 		nr = parse_chunk(buf.buf + offset, buf.len - offset, patch);
-		if (nr < 0)
+		if (nr < 0) {
+			free_patch(patch);
 			break;
+		}
 		if (apply_in_reverse)
 			reverse_patches(patch);
 		if (use_patch(patch)) {
@@ -4464,16 +4464,6 @@ static int option_parse_p(const struct option *opt,
 	return 0;
 }
 
-static int option_parse_z(const struct option *opt,
-			  const char *arg, int unset)
-{
-	if (unset)
-		line_termination = '\n';
-	else
-		line_termination = 0;
-	return 0;
-}
-
 static int option_parse_space_change(const struct option *opt,
 			  const char *arg, int unset)
 {
@@ -4546,9 +4536,9 @@ int cmd_apply(int argc, const char **argv, const char *prefix_)
 			 N_( "attempt three-way merge if a patch does not apply")),
 		OPT_FILENAME(0, "build-fake-ancestor", &fake_ancestor,
 			N_("build a temporary index based on embedded index information")),
-		{ OPTION_CALLBACK, 'z', NULL, NULL, NULL,
-			N_("paths are separated with NUL character"),
-			PARSE_OPT_NOARG, option_parse_z },
+		/* Think twice before adding "--nul" synonym to this */
+		OPT_SET_INT('z', NULL, &line_termination,
+			N_("paths are separated with NUL character"), '\0'),
 		OPT_INTEGER('C', NULL, &p_context,
 				N_("ensure at least <n> lines of context match")),
 		{ OPTION_CALLBACK, 0, "whitespace", &whitespace_option, N_("action"),

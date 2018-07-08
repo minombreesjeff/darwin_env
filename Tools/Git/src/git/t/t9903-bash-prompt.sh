@@ -67,7 +67,7 @@ repo_with_newline='repo
 with
 newline'
 
-if mkdir "$repo_with_newline" 2>/dev/null
+if test_have_prereq !MINGW && mkdir "$repo_with_newline" 2>/dev/null
 then
 	test_set_prereq FUNNYNAMES
 else
@@ -107,7 +107,7 @@ test_expect_success 'prompt - describe detached head - contains' '
 '
 
 test_expect_success 'prompt - describe detached head - branch' '
-	printf " ((b1~1))" >expected &&
+	printf " ((tags/t2~1))" >expected &&
 	git checkout b1^ &&
 	test_when_finished "git checkout master" &&
 	(

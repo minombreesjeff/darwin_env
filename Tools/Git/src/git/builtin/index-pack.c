@@ -1250,7 +1250,9 @@ static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned cha
 		       nr_unresolved * sizeof(*objects));
 		f = sha1fd(output_fd, curr_pack);
 		fix_unresolved_deltas(f);
-		strbuf_addf(&msg, _("completed with %d local objects"),
+		strbuf_addf(&msg, Q_("completed with %d local object",
+				     "completed with %d local objects",
+				     nr_objects - nr_objects_initial),
 			    nr_objects - nr_objects_initial);
 		stop_progress_msg(&progress, msg.buf);
 		strbuf_release(&msg);
@@ -1599,6 +1601,18 @@ static void show_pack_info(int stat_only)
 	}
 }
 
+static const char *derive_filename(const char *pack_name, const char *suffix,
+				   struct strbuf *buf)
+{
+	size_t len;
+	if (!strip_suffix(pack_name, ".pack", &len))
+		die(_("packfile name '%s' does not end with '.pack'"),
+		    pack_name);
+	strbuf_add(buf, pack_name, len);
+	strbuf_addstr(buf, suffix);
+	return buf->buf;
+}
+
 int cmd_index_pack(int argc, const char **argv, const char *prefix)
 {
 	int i, fix_thin_pack = 0, verify = 0, stat_only = 0;
@@ -1707,24 +1721,11 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 		usage(index_pack_usage);
 	if (fix_thin_pack && !from_stdin)
 		die(_("--fix-thin cannot be used without --stdin"));
-	if (!index_name && pack_name) {
-		size_t len;
-		if (!strip_suffix(pack_name, ".pack", &len))
-			die(_("packfile name '%s' does not end with '.pack'"),
-			    pack_name);
-		strbuf_add(&index_name_buf, pack_name, len);
-		strbuf_addstr(&index_name_buf, ".idx");
-		index_name = index_name_buf.buf;
-	}
-	if (keep_msg && !keep_name && pack_name) {
-		size_t len;
-		if (!strip_suffix(pack_name, ".pack", &len))
-			die(_("packfile name '%s' does not end with '.pack'"),
-			    pack_name);
-		strbuf_add(&keep_name_buf, pack_name, len);
-		strbuf_addstr(&keep_name_buf, ".idx");
-		keep_name = keep_name_buf.buf;
-	}
+	if (!index_name && pack_name)
+		index_name = derive_filename(pack_name, ".idx", &index_name_buf);
+	if (keep_msg && !keep_name && pack_name)
+		keep_name = derive_filename(pack_name, ".keep", &keep_name_buf);
+
 	if (verify) {
 		if (!index_name)
 			die(_("--verify with no packfile name given"));
