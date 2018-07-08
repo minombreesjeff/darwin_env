@@ -803,12 +803,13 @@ static OSStatus cameraNameLookup(DeviceDescriptionPtr pDeviceDescription, UInt8 
 	
 			// first long is number of vendor id's stored in resource
 			guidCount = **((UInt32 **) h);
-
+			guidCount = EndianU32_BtoN( guidCount );
+			
 			pGuid = *((UInt32 **) h);
 			pGuid++;
 	
 			for (i = 0, index = 1; i < guidCount; i++, index++) {
-				if (pGuid[i] == vendorID) {
+				if (EndianU32_BtoN(pGuid[i]) == vendorID) {
 					// found device, get its name
                     GetIndString(cameraName, -20775, index);
 					if (cameraName[0]) {
