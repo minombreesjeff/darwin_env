@@ -1829,18 +1829,6 @@ static int read_ancestry(const char *graft_file)
 }
 
 /*
- * How many columns do we need to show line numbers in decimal?
- */
-static int lineno_width(int lines)
-{
-	int i, width;
-
-	for (width = 1, i = 10; i <= lines; width++)
-		i *= 10;
-	return width;
-}
-
-/*
  * How many columns do we need to show line numbers, authors,
  * and filenames?
  */
@@ -1880,9 +1868,9 @@ static void find_alignment(struct scoreboard *sb, int *option)
 		if (largest_score < ent_score(sb, e))
 			largest_score = ent_score(sb, e);
 	}
-	max_orig_digits = lineno_width(longest_src_lines);
-	max_digits = lineno_width(longest_dst_lines);
-	max_score_digits = lineno_width(largest_score);
+	max_orig_digits = decimal_width(longest_src_lines);
+	max_digits = decimal_width(longest_dst_lines);
+	max_score_digits = decimal_width(largest_score);
 }
 
 /*
@@ -2050,14 +2038,8 @@ static int git_blame_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
-	switch (userdiff_config(var, value)) {
-	case 0:
-		break;
-	case -1:
+	if (userdiff_config(var, value) < 0)
 		return -1;
-	default:
-		return 0;
-	}
 
 	return git_default_config(var, value, cb);
 }
@@ -2320,6 +2302,7 @@ int cmd_blame(int argc, const char **argv, const char *prefix)
 		OPT_BIT('s', NULL, &output_option, "Suppress author name and timestamp (Default: off)", OUTPUT_NO_AUTHOR),
 		OPT_BIT('e', "show-email", &output_option, "Show author email instead of name (Default: off)", OUTPUT_SHOW_EMAIL),
 		OPT_BIT('w', NULL, &xdl_opts, "Ignore whitespace differences", XDF_IGNORE_WHITESPACE),
+		OPT_BIT(0, "minimal", &xdl_opts, "Spend extra cycles to find better match", XDF_NEED_MINIMAL),
 		OPT_STRING('S', NULL, &revs_file, "file", "Use revisions from <file> instead of calling git-rev-list"),
 		OPT_STRING(0, "contents", &contents_from, "file", "Use <file>'s contents as the final image"),
 		{ OPTION_CALLBACK, 'C', NULL, &opt, "score", "Find line copies within and across files", PARSE_OPT_OPTARG, blame_copy_callback },

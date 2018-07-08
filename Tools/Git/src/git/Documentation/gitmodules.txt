@@ -28,7 +28,7 @@ submodule.<name>.path::
 	be unique within the .gitmodules file.
 
 submodule.<name>.url::
-	Defines an url from where the submodule repository can be cloned.
+	Defines a URL from which the submodule repository can be cloned.
 	This may be either an absolute URL ready to be passed to
 	linkgit:git-clone[1] or (if it begins with ./ or ../) a location
 	relative to the superproject's origin repository.
@@ -41,8 +41,11 @@ submodule.<name>.update::
 	the commit specified in the superproject. If 'merge', the commit
 	specified in the superproject will be merged into the current branch
 	in the submodule.
+	If 'none', the submodule with name `$name` will not be updated
+	by default.
+
 	This config option is overridden if 'git submodule update' is given
-	the '--merge' or '--rebase' options.
+	the '--merge', '--rebase' or '--checkout' options.
 
 submodule.<name>.fetchRecurseSubmodules::
 	This option can be used to control recursive fetching of this
@@ -84,7 +87,7 @@ Consider the following .gitmodules file:
 
 This defines two submodules, `libfoo` and `libbar`. These are expected to
 be checked out in the paths 'include/foo' and 'include/bar', and for both
-submodules an url is specified which can be used for cloning the submodules.
+submodules a URL is specified which can be used for cloning the submodules.
 
 SEE ALSO
 --------

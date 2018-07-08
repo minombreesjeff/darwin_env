@@ -713,8 +713,11 @@ you use <em>--global</em> option without $HOME being properly set (ret=128).
 </dt>
 <dd>
 <p>
-        Like --get-all, but interprets the name as a regular expression.
-        Also outputs the key names.
+        Like --get-all, but interprets the name as a regular expression and
+        writes out the key names.  Regular expression matching is currently
+        case-sensitive and done against a canonicalized version of the key
+        in which section and variable names are lowercased, but subsection
+        names are not.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -887,6 +890,18 @@ rather than from all available files.</p></div>
 <p>
         Opens an editor to modify the specified config file; either
         <em>--system</em>, <em>--global</em>, or repository (default).
+</p>
+</dd>
+<dt class="hdlist1">
+--includes
+</dt>
+<dt class="hdlist1">
+--no-includes
+</dt>
+<dd>
+<p>
+        Respect <tt>include.*</tt> directives in config files when looking up
+        values. Defaults to on.
 </p>
 </dd>
 </dl></div>
@@ -1069,8 +1084,9 @@ can be used to store a system-wide default configuration.</p></div>
 and the porcelains. The variables are divided into sections, wherein
 the fully qualified variable name of the variable itself is the last
 dot-separated segment and the section name is everything before the last
-dot. The variable names are case-insensitive and only alphanumeric
-characters are allowed. Some variables may appear multiple times.</p></div>
+dot. The variable names are case-insensitive, allow only alphanumeric
+characters and <tt>-</tt>, and must start with an alphabetic character.  Some
+variables may appear multiple times.</p></div>
 <h3 id="_syntax">Syntax</h3><div style="clear:left"></div>
 <div class="paragraph"><p>The syntax is fairly flexible and permissive; whitespaces are mostly
 ignored.  The <em>#</em> and <em>;</em> characters begin comments to the end of line,
@@ -1102,9 +1118,10 @@ restrictions as section names.</p></div>
 header) are recognized as setting variables, in the form
 <em>name = value</em>.  If there is no equal sign on the line, the entire line
 is taken as <em>name</em> and the variable is recognized as boolean "true".
-The variable names are case-insensitive and only alphanumeric
-characters and <tt>-</tt> are allowed.  There can be more than one value
-for a given variable; we say then that variable is multivalued.</p></div>
+The variable names are case-insensitive, allow only alphanumeric characters
+and <tt>-</tt>, and must start with an alphabetic character.  There can be more
+than one value for a given variable; we say then that the variable is
+multivalued.</p></div>
 <div class="paragraph"><p>Leading and trailing whitespace in a variable value is discarded.
 Internal whitespace within a variable value is retained verbatim.</p></div>
 <div class="paragraph"><p>The values following the equals sign in variable assign are all either
@@ -1125,6 +1142,14 @@ char sequences are valid.</p></div>
 <div class="paragraph"><p>Variable values ending in a <tt>\</tt> are continued on the next line in the
 customary UNIX fashion.</p></div>
 <div class="paragraph"><p>Some variables may require a special value format.</p></div>
+<h3 id="_includes">Includes</h3><div style="clear:left"></div>
+<div class="paragraph"><p>You can include one config file from another by setting the special
+<tt>include.path</tt> variable to the name of the file to be included. The
+included file is expanded immediately, as if its contents had been
+found at the location of the include directive. If the value of the
+<tt>include.path</tt> variable is a relative path, the path is considered to be
+relative to the configuration file in which the include directive was
+found. See below for examples.</p></div>
 <h3 id="_example">Example</h3><div style="clear:left"></div>
 <div class="literalblock">
 <div class="content">
@@ -1152,6 +1177,12 @@ customary UNIX fashion.</p></div>
 [core]
         gitProxy="ssh" for "kernel.org"
         gitProxy=default-proxy ; for the rest</tt></pre>
+</div></div>
+<div class="literalblock">
+<div class="content">
+<pre><tt>[include]
+        path = /path/to/foo.inc ; include by absolute path
+        path = foo ; expand "foo" relative to the current file</tt></pre>
 </div></div>
 <h3 id="_variables">Variables</h3><div style="clear:left"></div>
 <div class="paragraph"><p>Note that this list is non-comprehensive and not necessarily complete.
@@ -2432,6 +2463,15 @@ and accumulating child directory counts in the parent directories:
 <tt>files,10,cumulative</tt>.</p></div>
 </dd>
 <dt class="hdlist1">
+diff.statGraphWidth
+</dt>
+<dd>
+<p>
+        Limit the width of the graph part in --stat output. If set, applies
+        to all commands generating --stat outuput except format-patch.
+</p>
+</dd>
+<dt class="hdlist1">
 diff.external
 </dt>
 <dd>
@@ -3381,9 +3421,10 @@ http.proxy
 </dt>
 <dd>
 <p>
-        Override the HTTP proxy, normally configured using the <em>http_proxy</em>
-        environment variable (see <a href="curl.html">curl(1)</a>).  This can be overridden
-        on a per-remote basis; see remote.&lt;name&gt;.proxy
+        Override the HTTP proxy, normally configured using the <em>http_proxy</em>,
+        <em>https_proxy</em>, and <em>all_proxy</em> environment variables (see
+        <tt>curl(1)</tt>).  This can be overridden on a per-remote basis; see
+        remote.&lt;name&gt;.proxy
 </p>
 </dd>
 <dt class="hdlist1">
@@ -4826,7 +4867,7 @@ web.browser
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-11-15 13:45:02 PDT
+Last updated 2012-03-02 11:52:01 PDT
 </div>
 </div>
 </body>

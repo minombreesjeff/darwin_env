@@ -2,12 +2,12 @@
 .\"     Title: git
 .\"    Author: [see the "Authors" section]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 02/22/2012
+.\"      Date: 04/06/2012
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.9.2.234.gf1f1b
+.\"    Source: Git 1.7.10
 .\"  Language: English
 .\"
-.TH "GIT" "1" "02/22/2012" "Git 1\&.7\&.9\&.2\&.234\&.gf1f" "Git Manual"
+.TH "GIT" "1" "04/06/2012" "Git 1\&.7\&.10" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -1119,6 +1119,19 @@ option in
 \fBgit-config\fR(1)\&.
 .RE
 .PP
+\fIGIT_EDITOR\fR
+.RS 4
+This environment variable overrides
+$EDITOR
+and
+$VISUAL\&. It is used by several git comands when, on interactive mode, an editor is to be launched\&. See also
+\fBgit-var\fR(1)
+and the
+core\&.editor
+option in
+\fBgit-config\fR(1)\&.
+.RE
+.PP
 \fIGIT_SSH\fR
 .RS 4
 If this environment variable is set then
@@ -1203,27 +1216,27 @@ Part of the \fBgit\fR(1) suite
 .IP " 1." 4
 Everyday Git
 .RS 4
-\%http://www.kernel.org/pub/software/scm/git/docs/everyday.html
+\%git-htmldocs/everyday.html
 .RE
 .IP " 2." 4
 Git User\(cqs Manual
 .RS 4
-\%http://www.kernel.org/pub/software/scm/git/docs/user-manual.html
+\%git-htmldocs/user-manual.html
 .RE
 .IP " 3." 4
 git concepts chapter of the user-manual
 .RS 4
-\%http://www.kernel.org/pub/software/scm/git/docs/user-manual.html#git-concepts
+\%git-htmldocs/user-manual.html#git-concepts
 .RE
 .IP " 4." 4
 howto
 .RS 4
-\%http://www.kernel.org/pub/software/scm/git/docs/howto-index.html
+\%git-htmldocs/howto-index.html
 .RE
 .IP " 5." 4
 GIT API documentation
 .RS 4
-\%http://www.kernel.org/pub/software/scm/git/docs/technical/api-index.html
+\%git-htmldocs/technical/api-index.html
 .RE
 .IP " 6." 4
 git@vger.kernel.org

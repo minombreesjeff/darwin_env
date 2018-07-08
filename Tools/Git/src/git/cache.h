@@ -10,7 +10,7 @@
 
 #include SHA1_HEADER
 #ifndef git_SHA_CTX
-#ifdef USE_COMMONCRYPTO_SHA1
+#ifdef USE_COMMONCRYPTO
 #define git_SHA_CTX	CC_SHA1_CTX
 #define git_SHA1_Init	CC_SHA1_Init
 #define git_SHA1_Update	CC_SHA1_Update
@@ -632,7 +632,8 @@ enum push_default_type {
 	PUSH_DEFAULT_NOTHING = 0,
 	PUSH_DEFAULT_MATCHING,
 	PUSH_DEFAULT_UPSTREAM,
-	PUSH_DEFAULT_CURRENT
+	PUSH_DEFAULT_CURRENT,
+	PUSH_DEFAULT_UNSPECIFIED
 };
 
 extern enum branch_track git_branch_track;
@@ -714,6 +715,19 @@ static inline void hashclr(unsigned char *hash)
 	 "\xe5\x4b\xf8\xd6\x92\x88\xfb\xee\x49\x04"
 #define EMPTY_TREE_SHA1_BIN \
 	 ((const unsigned char *) EMPTY_TREE_SHA1_BIN_LITERAL)
+
+#define EMPTY_BLOB_SHA1_HEX \
+	"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+#define EMPTY_BLOB_SHA1_BIN_LITERAL \
+	"\xe6\x9d\xe2\x9b\xb2\xd1\xd6\x43\x4b\x8b" \
+	"\x29\xae\x77\x5a\xd8\xc2\xe4\x8c\x53\x91"
+#define EMPTY_BLOB_SHA1_BIN \
+	((const unsigned char *) EMPTY_BLOB_SHA1_BIN_LITERAL)
+
+static inline int is_empty_blob_sha1(const unsigned char *sha1)
+{
+	return !hashcmp(sha1, EMPTY_BLOB_SHA1_BIN);
+}
 
 int git_mkstemp(char *path, size_t n, const char *template);
 
@@ -935,6 +949,22 @@ extern const char *fmt_name(const char *name, const char *email);
 extern const char *git_editor(void);
 extern const char *git_pager(int stdout_is_tty);
 
+struct ident_split {
+	const char *name_begin;
+	const char *name_end;
+	const char *mail_begin;
+	const char *mail_end;
+	const char *date_begin;
+	const char *date_end;
+	const char *tz_begin;
+	const char *tz_end;
+};
+/*
+ * Signals an success with 0, but time part of the result may be NULL
+ * if the input lacks timestamp and zone
+ */
+extern int split_ident_line(struct ident_split *, const char *, int);
+
 struct checkout {
 	const char *base_dir;
 	int base_dir_len;
@@ -957,7 +987,9 @@ struct cache_def {
 extern int has_symlink_leading_path(const char *name, int len);
 extern int threaded_has_symlink_leading_path(struct cache_def *, const char *, int);
 extern int check_leading_path(const char *name, int len);
+extern int threaded_check_leading_path(struct cache_def *cache, const char *name, int len);
 extern int has_dirs_only_path(const char *name, int len, int prefix_len);
+extern int threaded_has_dirs_only_path(struct cache_def *cache, const char *name, int len, int prefix_len);
 extern void schedule_dir_for_removal(const char *name, int len);
 extern void remove_scheduled_dirs(void);
 
@@ -1122,6 +1154,8 @@ extern int git_config_from_file(config_fn_t fn, const char *, void *);
 extern void git_config_push_parameter(const char *text);
 extern int git_config_from_parameters(config_fn_t fn, void *data);
 extern int git_config(config_fn_t fn, void *);
+extern int git_config_with_options(config_fn_t fn, void *,
+				   const char *filename, int respect_includes);
 extern int git_config_early(config_fn_t fn, void *, const char *repo_config);
 extern int git_parse_ulong(const char *, unsigned long *);
 extern int git_config_int(const char *, const char *);
@@ -1137,6 +1171,7 @@ extern int git_config_parse_key(const char *, char **, int *);
 extern int git_config_set_multivar(const char *, const char *, const char *, int);
 extern int git_config_set_multivar_in_file(const char *, const char *, const char *, const char *, int);
 extern int git_config_rename_section(const char *, const char *);
+extern int git_config_rename_section_in_file(const char *, const char *, const char *);
 extern const char *git_etc_gitconfig(void);
 extern int check_repository_format_version(const char *var, const char *value, void *cb);
 extern int git_env_bool(const char *, int);
@@ -1147,7 +1182,13 @@ extern const char *get_commit_output_encoding(void);
 
 extern int git_config_parse_parameter(const char *, config_fn_t fn, void *data);
 
-extern const char *config_exclusive_filename;
+struct config_include_data {
+	int depth;
+	config_fn_t fn;
+	void *data;
+};
+#define CONFIG_INCLUDE_INIT { 0 }
+extern int git_config_include(const char *name, const char *value, void *data);
 
 #define MAX_GITNAME (1000)
 extern char git_default_email[MAX_GITNAME];
@@ -1185,6 +1226,7 @@ extern const char *pager_program;
 extern int pager_in_use(void);
 extern int pager_use_color;
 extern int term_columns(void);
+extern int decimal_width(int);
 
 extern const char *editor_program;
 extern const char *askpass_program;
@@ -1270,5 +1312,7 @@ extern struct startup_info *startup_info;
 
 /* builtin/merge.c */
 int checkout_fast_forward(const unsigned char *from, const unsigned char *to);
+
+int sane_execvp(const char *file, char *const argv[]);
 
 #endif /* CACHE_H */

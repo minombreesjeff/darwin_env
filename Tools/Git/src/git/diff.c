@@ -31,6 +31,7 @@ static const char *external_diff_cmd_cfg;
 int diff_auto_refresh_index = 1;
 static int diff_mnemonic_prefix;
 static int diff_no_prefix;
+static int diff_stat_graph_width;
 static int diff_dirstat_permille_default = 30;
 static struct diff_options default_diff_options;
 
@@ -156,6 +157,10 @@ int git_diff_ui_config(const char *var, const char *value, void *cb)
 		diff_no_prefix = git_config_bool(var, value);
 		return 0;
 	}
+	if (!strcmp(var, "diff.statgraphwidth")) {
+		diff_stat_graph_width = git_config_int(var, value);
+		return 0;
+	}
 	if (!strcmp(var, "diff.external"))
 		return git_config_string(&external_diff_cmd_cfg, var, value);
 	if (!strcmp(var, "diff.wordregex"))
@@ -177,11 +182,8 @@ int git_diff_basic_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
-	switch (userdiff_config(var, value)) {
-		case 0: break;
-		case -1: return -1;
-		default: return 0;
-	}
+	if (userdiff_config(var, value) < 0)
+		return -1;
 
 	if (!prefixcmp(var, "diff.color.") || !prefixcmp(var, "color.diff.")) {
 		int slot = parse_diff_color_slot(var, 11);
@@ -987,10 +989,74 @@ static void diff_words_flush(struct emit_callback *ecbdata)
 		diff_words_show(ecbdata->diff_words);
 }
 
+static void diff_filespec_load_driver(struct diff_filespec *one)
+{
+	/* Use already-loaded driver */
+	if (one->driver)
+		return;
+
+	if (S_ISREG(one->mode))
+		one->driver = userdiff_find_by_path(one->path);
+
+	/* Fallback to default settings */
+	if (!one->driver)
+		one->driver = userdiff_find_by_name("default");
+}
+
+static const char *userdiff_word_regex(struct diff_filespec *one)
+{
+	diff_filespec_load_driver(one);
+	return one->driver->word_regex;
+}
+
+static void init_diff_words_data(struct emit_callback *ecbdata,
+				 struct diff_options *orig_opts,
+				 struct diff_filespec *one,
+				 struct diff_filespec *two)
+{
+	int i;
+	struct diff_options *o = xmalloc(sizeof(struct diff_options));
+	memcpy(o, orig_opts, sizeof(struct diff_options));
+
+	ecbdata->diff_words =
+		xcalloc(1, sizeof(struct diff_words_data));
+	ecbdata->diff_words->type = o->word_diff;
+	ecbdata->diff_words->opt = o;
+	if (!o->word_regex)
+		o->word_regex = userdiff_word_regex(one);
+	if (!o->word_regex)
+		o->word_regex = userdiff_word_regex(two);
+	if (!o->word_regex)
+		o->word_regex = diff_word_regex_cfg;
+	if (o->word_regex) {
+		ecbdata->diff_words->word_regex = (regex_t *)
+			xmalloc(sizeof(regex_t));
+		if (regcomp(ecbdata->diff_words->word_regex,
+			    o->word_regex,
+			    REG_EXTENDED | REG_NEWLINE))
+			die ("Invalid regular expression: %s",
+			     o->word_regex);
+	}
+	for (i = 0; i < ARRAY_SIZE(diff_words_styles); i++) {
+		if (o->word_diff == diff_words_styles[i].type) {
+			ecbdata->diff_words->style =
+				&diff_words_styles[i];
+			break;
+		}
+	}
+	if (want_color(o->use_color)) {
+		struct diff_words_style *st = ecbdata->diff_words->style;
+		st->old.color = diff_get_color_opt(o, DIFF_FILE_OLD);
+		st->new.color = diff_get_color_opt(o, DIFF_FILE_NEW);
+		st->ctx.color = diff_get_color_opt(o, DIFF_PLAIN);
+	}
+}
+
 static void free_diff_words_data(struct emit_callback *ecbdata)
 {
 	if (ecbdata->diff_words) {
 		diff_words_flush(ecbdata);
+		free (ecbdata->diff_words->opt);
 		free (ecbdata->diff_words->minus.text.ptr);
 		free (ecbdata->diff_words->minus.orig);
 		free (ecbdata->diff_words->plus.text.ptr);
@@ -1378,7 +1444,7 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 	int i, len, add, del, adds = 0, dels = 0;
 	uintmax_t max_change = 0, max_len = 0;
 	int total_files = data->nr;
-	int width, name_width, count;
+	int width, name_width, graph_width, number_width = 4, count;
 	const char *reset, *add_c, *del_c;
 	const char *line_prefix = "";
 	int extra_shown = 0;
@@ -1392,25 +1458,15 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 		line_prefix = msg->buf;
 	}
 
-	width = options->stat_width ? options->stat_width : 80;
-	name_width = options->stat_name_width ? options->stat_name_width : 50;
 	count = options->stat_count ? options->stat_count : data->nr;
 
-	/* Sanity: give at least 5 columns to the graph,
-	 * but leave at least 10 columns for the name.
-	 */
-	if (width < 25)
-		width = 25;
-	if (name_width < 10)
-		name_width = 10;
-	else if (width < name_width + 15)
-		name_width = width - 15;
-
-	/* Find the longest filename and max number of changes */
 	reset = diff_get_color_opt(options, DIFF_RESET);
 	add_c = diff_get_color_opt(options, DIFF_FILE_NEW);
 	del_c = diff_get_color_opt(options, DIFF_FILE_OLD);
 
+	/*
+	 * Find the longest filename and max number of changes
+	 */
 	for (i = 0; (i < count) && (i < data->nr); i++) {
 		struct diffstat_file *file = data->files[i];
 		uintmax_t change = file->added + file->deleted;
@@ -1431,19 +1487,76 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 	}
 	count = i; /* min(count, data->nr) */
 
-	/* Compute the width of the graph part;
-	 * 10 is for one blank at the beginning of the line plus
-	 * " | count " between the name and the graph.
+	/*
+	 * We have width = stat_width or term_columns() columns total.
+	 * We want a maximum of min(max_len, stat_name_width) for the name part.
+	 * We want a maximum of min(max_change, stat_graph_width) for the +- part.
+	 * We also need 1 for " " and 4 + decimal_width(max_change)
+	 * for " | NNNN " and one the empty column at the end, altogether
+	 * 6 + decimal_width(max_change).
 	 *
-	 * From here on, name_width is the width of the name area,
-	 * and width is the width of the graph area.
+	 * If there's not enough space, we will use the smaller of
+	 * stat_name_width (if set) and 5/8*width for the filename,
+	 * and the rest for constant elements + graph part, but no more
+	 * than stat_graph_width for the graph part.
+	 * (5/8 gives 50 for filename and 30 for the constant parts + graph
+	 * for the standard terminal size).
+	 *
+	 * In other words: stat_width limits the maximum width, and
+	 * stat_name_width fixes the maximum width of the filename,
+	 * and is also used to divide available columns if there
+	 * aren't enough.
 	 */
-	name_width = (name_width < max_len) ? name_width : max_len;
-	if (width < (name_width + 10) + max_change)
-		width = width - (name_width + 10);
-	else
-		width = max_change;
 
+	if (options->stat_width == -1)
+		width = term_columns() - options->output_prefix_length;
+	else
+		width = options->stat_width ? options->stat_width : 80;
+
+	if (options->stat_graph_width == -1)
+		options->stat_graph_width = diff_stat_graph_width;
+
+	/*
+	 * Guarantee 3/8*16==6 for the graph part
+	 * and 5/8*16==10 for the filename part
+	 */
+	if (width < 16 + 6 + number_width)
+		width = 16 + 6 + number_width;
+
+	/*
+	 * First assign sizes that are wanted, ignoring available width.
+	 */
+	graph_width = (options->stat_graph_width &&
+		       options->stat_graph_width < max_change) ?
+		options->stat_graph_width : max_change;
+	name_width = (options->stat_name_width > 0 &&
+		      options->stat_name_width < max_len) ?
+		options->stat_name_width : max_len;
+
+	/*
+	 * Adjust adjustable widths not to exceed maximum width
+	 */
+	if (name_width + number_width + 6 + graph_width > width) {
+		if (graph_width > width * 3/8 - number_width - 6) {
+			graph_width = width * 3/8 - number_width - 6;
+			if (graph_width < 6)
+				graph_width = 6;
+		}
+
+		if (options->stat_graph_width &&
+		    graph_width > options->stat_graph_width)
+			graph_width = options->stat_graph_width;
+		if (name_width > width - number_width - 6 - graph_width)
+			name_width = width - number_width - 6 - graph_width;
+		else
+			graph_width = width - number_width - 6 - name_width;
+	}
+
+	/*
+	 * From here name_width is the width of the name area,
+	 * and graph_width is the width of the graph area.
+	 * max_change is used to scale graph properly.
+	 */
 	for (i = 0; i < count; i++) {
 		const char *prefix = "";
 		char *name = data->files[i]->print_name;
@@ -1499,18 +1612,18 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 		adds += add;
 		dels += del;
 
-		if (width <= max_change) {
+		if (graph_width <= max_change) {
 			int total = add + del;
 
-			total = scale_linear(add + del, width, max_change);
+			total = scale_linear(add + del, graph_width, max_change);
 			if (total < 2 && add && del)
 				/* width >= 2 due to the sanity check */
 				total = 2;
 			if (add < del) {
-				add = scale_linear(add, width, max_change);
+				add = scale_linear(add, graph_width, max_change);
 				del = total - add;
 			} else {
-				del = scale_linear(del, width, max_change);
+				del = scale_linear(del, graph_width, max_change);
 				add = total - del;
 			}
 		}
@@ -2016,20 +2129,6 @@ static void emit_binary_diff(FILE *file, mmfile_t *one, mmfile_t *two, char *pre
 	emit_binary_diff_body(file, two, one, prefix);
 }
 
-static void diff_filespec_load_driver(struct diff_filespec *one)
-{
-	/* Use already-loaded driver */
-	if (one->driver)
-		return;
-
-	if (S_ISREG(one->mode))
-		one->driver = userdiff_find_by_path(one->path);
-
-	/* Fallback to default settings */
-	if (!one->driver)
-		one->driver = userdiff_find_by_name("default");
-}
-
 int diff_filespec_is_binary(struct diff_filespec *one)
 {
 	if (one->is_binary == -1) {
@@ -2053,12 +2152,6 @@ static const struct userdiff_funcname *diff_funcname_pattern(struct diff_filespe
 {
 	diff_filespec_load_driver(one);
 	return one->driver->funcname.pattern ? &one->driver->funcname : NULL;
-}
-
-static const char *userdiff_word_regex(struct diff_filespec *one)
-{
-	diff_filespec_load_driver(one);
-	return one->driver->word_regex;
 }
 
 void diff_set_mnemonic_prefix(struct diff_options *options, const char *a, const char *b)
@@ -2247,42 +2340,8 @@ static void builtin_diff(const char *name_a,
 			xecfg.ctxlen = strtoul(diffopts + 10, NULL, 10);
 		else if (!prefixcmp(diffopts, "-u"))
 			xecfg.ctxlen = strtoul(diffopts + 2, NULL, 10);
-		if (o->word_diff) {
-			int i;
-
-			ecbdata.diff_words =
-				xcalloc(1, sizeof(struct diff_words_data));
-			ecbdata.diff_words->type = o->word_diff;
-			ecbdata.diff_words->opt = o;
-			if (!o->word_regex)
-				o->word_regex = userdiff_word_regex(one);
-			if (!o->word_regex)
-				o->word_regex = userdiff_word_regex(two);
-			if (!o->word_regex)
-				o->word_regex = diff_word_regex_cfg;
-			if (o->word_regex) {
-				ecbdata.diff_words->word_regex = (regex_t *)
-					xmalloc(sizeof(regex_t));
-				if (regcomp(ecbdata.diff_words->word_regex,
-						o->word_regex,
-						REG_EXTENDED | REG_NEWLINE))
-					die ("Invalid regular expression: %s",
-							o->word_regex);
-			}
-			for (i = 0; i < ARRAY_SIZE(diff_words_styles); i++) {
-				if (o->word_diff == diff_words_styles[i].type) {
-					ecbdata.diff_words->style =
-						&diff_words_styles[i];
-					break;
-				}
-			}
-			if (want_color(o->use_color)) {
-				struct diff_words_style *st = ecbdata.diff_words->style;
-				st->old.color = diff_get_color_opt(o, DIFF_FILE_OLD);
-				st->new.color = diff_get_color_opt(o, DIFF_FILE_NEW);
-				st->ctx.color = diff_get_color_opt(o, DIFF_PLAIN);
-			}
-		}
+		if (o->word_diff)
+			init_diff_words_data(&ecbdata, o, one, two);
 		xdi_diff_outf(&mf1, &mf2, fn_out_consume, &ecbdata,
 			      &xpp, &xecfg);
 		if (o->word_diff)
@@ -3091,6 +3150,7 @@ void diff_setup(struct diff_options *options)
 	options->rename_limit = -1;
 	options->dirstat_permille = diff_dirstat_permille_default;
 	options->context = 3;
+	DIFF_OPT_SET(options, RENAME_EMPTY);
 
 	options->change = diff_change;
 	options->add_remove = diff_addremove;
@@ -3302,6 +3362,7 @@ static int stat_opt(struct diff_options *options, const char **av)
 	char *end;
 	int width = options->stat_width;
 	int name_width = options->stat_name_width;
+	int graph_width = options->stat_graph_width;
 	int count = options->stat_count;
 	int argcount = 1;
 
@@ -3330,6 +3391,16 @@ static int stat_opt(struct diff_options *options, const char **av)
 				name_width = strtoul(av[1], &end, 10);
 				argcount = 2;
 			}
+		} else if (!prefixcmp(arg, "-graph-width")) {
+			arg += strlen("-graph-width");
+			if (*arg == '=')
+				graph_width = strtoul(arg + 1, &end, 10);
+			else if (!*arg && !av[1])
+				die("Option '--stat-graph-width' requires a value");
+			else if (!*arg) {
+				graph_width = strtoul(av[1], &end, 10);
+				argcount = 2;
+			}
 		} else if (!prefixcmp(arg, "-count")) {
 			arg += strlen("-count");
 			if (*arg == '=')
@@ -3355,6 +3426,7 @@ static int stat_opt(struct diff_options *options, const char **av)
 		return 0;
 	options->output_format |= DIFF_FORMAT_DIFFSTAT;
 	options->stat_name_width = name_width;
+	options->stat_graph_width = graph_width;
 	options->stat_width = width;
 	options->stat_count = count;
 	return argcount;
@@ -3449,6 +3521,10 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 	}
 	else if (!strcmp(arg, "--no-renames"))
 		options->detect_rename = 0;
+	else if (!strcmp(arg, "--rename-empty"))
+		DIFF_OPT_SET(options, RENAME_EMPTY);
+	else if (!strcmp(arg, "--no-rename-empty"))
+		DIFF_OPT_CLR(options, RENAME_EMPTY);
 	else if (!strcmp(arg, "--relative"))
 		DIFF_OPT_SET(options, RELATIVE_NAME);
 	else if (!prefixcmp(arg, "--relative=")) {
@@ -3468,9 +3544,9 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 	else if (!strcmp(arg, "--ignore-space-at-eol"))
 		DIFF_XDL_SET(options, IGNORE_WHITESPACE_AT_EOL);
 	else if (!strcmp(arg, "--patience"))
-		DIFF_XDL_SET(options, PATIENCE_DIFF);
+		options->xdl_opts = DIFF_WITH_ALG(options, PATIENCE_DIFF);
 	else if (!strcmp(arg, "--histogram"))
-		DIFF_XDL_SET(options, HISTOGRAM_DIFF);
+		options->xdl_opts = DIFF_WITH_ALG(options, HISTOGRAM_DIFF);
 
 	/* flags options */
 	else if (!strcmp(arg, "--binary")) {
@@ -4342,6 +4418,12 @@ void diff_flush(struct diff_options *options)
 
 	if (output_format & DIFF_FORMAT_PATCH) {
 		if (separator) {
+			if (options->output_prefix) {
+				struct strbuf *msg = NULL;
+				msg = options->output_prefix(options,
+					options->output_prefix_data);
+				fwrite(msg->buf, msg->len, 1, stdout);
+			}
 			putc(options->line_termination, options->file);
 			if (options->stat_sep) {
 				/* attach patch instead of inline */

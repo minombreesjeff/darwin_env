@@ -37,7 +37,7 @@ static const char * const builtin_clone_usage[] = {
 	NULL
 };
 
-static int option_no_checkout, option_bare, option_mirror;
+static int option_no_checkout, option_bare, option_mirror, option_single_branch = -1;
 static int option_local, option_no_hardlinks, option_shared, option_recursive;
 static char *option_template, *option_depth;
 static char *option_origin = NULL;
@@ -92,6 +92,8 @@ static struct option builtin_clone_options[] = {
 		   "path to git-upload-pack on the remote"),
 	OPT_STRING(0, "depth", &option_depth, "depth",
 		    "create a shallow clone of that depth"),
+	OPT_BOOL(0, "single-branch", &option_single_branch,
+		    "clone only one branch, HEAD or --branch"),
 	OPT_STRING(0, "separate-git-dir", &real_git_dir, "gitdir",
 		   "separate git dir from working tree"),
 	OPT_STRING_LIST('c', "config", &option_config, "key=value",
@@ -230,9 +232,6 @@ static int add_one_reference(struct string_list_item *item, void *cb_data)
 {
 	char *ref_git;
 	struct strbuf alternate = STRBUF_INIT;
-	struct remote *remote;
-	struct transport *transport;
-	const struct ref *extra;
 
 	/* Beware: real_path() and mkpath() return static buffer */
 	ref_git = xstrdup(real_path(item->string));
@@ -247,14 +246,6 @@ static int add_one_reference(struct string_list_item *item, void *cb_data)
 	strbuf_addf(&alternate, "%s/objects", ref_git);
 	add_to_alternates_file(alternate.buf);
 	strbuf_release(&alternate);
-
-	remote = remote_get(ref_git);
-	transport = transport_get(remote, ref_git);
-	for (extra = transport_get_remote_refs(transport); extra;
-	     extra = extra->next)
-		add_extra_ref(extra->name, extra->old_sha1, 0);
-
-	transport_disconnect(transport);
 	free(ref_git);
 	return 0;
 }
@@ -361,13 +352,8 @@ static void copy_or_link_directory(struct strbuf *src, struct strbuf *dest,
 	closedir(dir);
 }
 
-static const struct ref *clone_local(const char *src_repo,
-				     const char *dest_repo)
+static void clone_local(const char *src_repo, const char *dest_repo)
 {
-	const struct ref *ret;
-	struct remote *remote;
-	struct transport *transport;
-
 	if (option_shared) {
 		struct strbuf alt = STRBUF_INIT;
 		strbuf_addf(&alt, "%s/objects", src_repo);
@@ -383,13 +369,8 @@ static const struct ref *clone_local(const char *src_repo,
 		strbuf_release(&dest);
 	}
 
-	remote = remote_get(src_repo);
-	transport = transport_get(remote, src_repo);
-	ret = transport_get_remote_refs(transport);
-	transport_disconnect(transport);
 	if (0 <= option_verbosity)
 		printf(_("done.\n"));
-	return ret;
 }
 
 static const char *junk_work_tree;
@@ -420,6 +401,26 @@ static void remove_junk_on_signal(int signo)
 	raise(signo);
 }
 
+static struct ref *find_remote_branch(const struct ref *refs, const char *branch)
+{
+	struct ref *ref;
+	struct strbuf head = STRBUF_INIT;
+	strbuf_addstr(&head, "refs/heads/");
+	strbuf_addstr(&head, branch);
+	ref = find_ref_by_name(refs, head.buf);
+	strbuf_release(&head);
+
+	if (ref)
+		return ref;
+
+	strbuf_addstr(&head, "refs/tags/");
+	strbuf_addstr(&head, branch);
+	ref = find_ref_by_name(refs, head.buf);
+	strbuf_release(&head);
+
+	return ref;
+}
+
 static struct ref *wanted_peer_refs(const struct ref *refs,
 		struct refspec *refspec)
 {
@@ -427,8 +428,27 @@ static struct ref *wanted_peer_refs(const struct ref *refs,
 	struct ref *local_refs = head;
 	struct ref **tail = head ? &head->next : &local_refs;
 
-	get_fetch_map(refs, refspec, &tail, 0);
-	if (!option_mirror)
+	if (option_single_branch) {
+		struct ref *remote_head = NULL;
+
+		if (!option_branch)
+			remote_head = guess_remote_head(head, refs, 0);
+		else
+			remote_head = find_remote_branch(refs, option_branch);
+
+		if (!remote_head && option_branch)
+			warning(_("Could not find remote branch %s to clone."),
+				option_branch);
+		else {
+			get_fetch_map(remote_head, refspec, &tail, 0);
+
+			/* if --branch=tag, pull the requested tag explicitly */
+			get_fetch_map(remote_head, tag_refspec, &tail, 0);
+		}
+	} else
+		get_fetch_map(refs, refspec, &tail, 0);
+
+	if (!option_mirror && !option_single_branch)
 		get_fetch_map(refs, tag_refspec, &tail, 0);
 
 	return local_refs;
@@ -441,11 +461,134 @@ static void write_remote_refs(const struct ref *local_refs)
 	for (r = local_refs; r; r = r->next) {
 		if (!r->peer_ref)
 			continue;
-		add_extra_ref(r->peer_ref->name, r->old_sha1, 0);
+		add_packed_ref(r->peer_ref->name, r->old_sha1);
 	}
 
 	pack_refs(PACK_REFS_ALL);
-	clear_extra_refs();
+}
+
+static void write_followtags(const struct ref *refs, const char *msg)
+{
+	const struct ref *ref;
+	for (ref = refs; ref; ref = ref->next) {
+		if (prefixcmp(ref->name, "refs/tags/"))
+			continue;
+		if (!suffixcmp(ref->name, "^{}"))
+			continue;
+		if (!has_sha1_file(ref->old_sha1))
+			continue;
+		update_ref(msg, ref->name, ref->old_sha1,
+			   NULL, 0, DIE_ON_ERR);
+	}
+}
+
+static void update_remote_refs(const struct ref *refs,
+			       const struct ref *mapped_refs,
+			       const struct ref *remote_head_points_at,
+			       const char *branch_top,
+			       const char *msg)
+{
+	if (refs) {
+		write_remote_refs(mapped_refs);
+		if (option_single_branch)
+			write_followtags(refs, msg);
+	}
+
+	if (remote_head_points_at && !option_bare) {
+		struct strbuf head_ref = STRBUF_INIT;
+		strbuf_addstr(&head_ref, branch_top);
+		strbuf_addstr(&head_ref, "HEAD");
+		create_symref(head_ref.buf,
+			      remote_head_points_at->peer_ref->name,
+			      msg);
+	}
+}
+
+static void update_head(const struct ref *our, const struct ref *remote,
+			const char *msg)
+{
+	if (our && !prefixcmp(our->name, "refs/heads/")) {
+		/* Local default branch link */
+		create_symref("HEAD", our->name, NULL);
+		if (!option_bare) {
+			const char *head = skip_prefix(our->name, "refs/heads/");
+			update_ref(msg, "HEAD", our->old_sha1, NULL, 0, DIE_ON_ERR);
+			install_branch_config(0, head, option_origin, our->name);
+		}
+	} else if (our) {
+		struct commit *c = lookup_commit_reference(our->old_sha1);
+		/* --branch specifies a non-branch (i.e. tags), detach HEAD */
+		update_ref(msg, "HEAD", c->object.sha1,
+			   NULL, REF_NODEREF, DIE_ON_ERR);
+	} else if (remote) {
+		/*
+		 * We know remote HEAD points to a non-branch, or
+		 * HEAD points to a branch but we don't know which one.
+		 * Detach HEAD in all these cases.
+		 */
+		update_ref(msg, "HEAD", remote->old_sha1,
+			   NULL, REF_NODEREF, DIE_ON_ERR);
+	}
+}
+
+static int checkout(void)
+{
+	unsigned char sha1[20];
+	char *head;
+	struct lock_file *lock_file;
+	struct unpack_trees_options opts;
+	struct tree *tree;
+	struct tree_desc t;
+	int err = 0, fd;
+
+	if (option_no_checkout)
+		return 0;
+
+	head = resolve_refdup("HEAD", sha1, 1, NULL);
+	if (!head) {
+		warning(_("remote HEAD refers to nonexistent ref, "
+			  "unable to checkout.\n"));
+		return 0;
+	}
+	if (!strcmp(head, "HEAD")) {
+		if (advice_detached_head)
+			detach_advice(sha1_to_hex(sha1));
+	} else {
+		if (prefixcmp(head, "refs/heads/"))
+			die(_("HEAD not found below refs/heads!"));
+	}
+	free(head);
+
+	/* We need to be in the new work tree for the checkout */
+	setup_work_tree();
+
+	lock_file = xcalloc(1, sizeof(struct lock_file));
+	fd = hold_locked_index(lock_file, 1);
+
+	memset(&opts, 0, sizeof opts);
+	opts.update = 1;
+	opts.merge = 1;
+	opts.fn = oneway_merge;
+	opts.verbose_update = (option_verbosity > 0);
+	opts.src_index = &the_index;
+	opts.dst_index = &the_index;
+
+	tree = parse_tree_indirect(sha1);
+	parse_tree(tree);
+	init_tree_desc(&t, tree->buffer, tree->size);
+	unpack_trees(1, &t, &opts);
+
+	if (write_cache(fd, active_cache, active_nr) ||
+	    commit_locked_index(lock_file))
+		die(_("unable to write new index file"));
+
+	err |= run_hook(NULL, "post-checkout", sha1_to_hex(null_sha1),
+			sha1_to_hex(sha1), "1", NULL);
+
+	if (!err && option_recursive)
+		err = run_command_v_opt(argv_submodule, RUN_GIT_CMD);
+
+	return err;
 }
 
 static int write_one_config(const char *key, const char *value, void *data)
@@ -475,11 +618,13 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	const struct ref *remote_head_points_at;
 	const struct ref *our_head_points_at;
 	struct ref *mapped_refs;
+	const struct ref *ref;
 	struct strbuf key = STRBUF_INIT, value = STRBUF_INIT;
 	struct strbuf branch_top = STRBUF_INIT, reflog_msg = STRBUF_INIT;
 	struct transport *transport = NULL;
-	char *src_ref_prefix = "refs/heads/";
-	int err = 0;
+	const char *src_ref_prefix = "refs/heads/";
+	struct remote *remote;
+	int err = 0, complete_refs_before_fetch = 1;
 
 	struct refspec *refspec;
 	const char *fetch_pattern;
@@ -497,6 +642,9 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 	if (argc == 0)
 		usage_msg_opt(_("You must specify a repository to clone."),
 			builtin_clone_usage, builtin_clone_options);
+
+	if (option_single_branch == -1)
+		option_single_branch = option_depth ? 1 : 0;
 
 	if (option_mirror)
 		option_bare = 1;
@@ -630,13 +778,10 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 
 	strbuf_reset(&value);
 
-	if (is_local) {
-		refs = clone_local(path, git_dir);
-		mapped_refs = wanted_peer_refs(refs, refspec);
-	} else {
-		struct remote *remote = remote_get(option_origin);
-		transport = transport_get(remote, remote->url[0]);
+	remote = remote_get(option_origin);
+	transport = transport_get(remote, remote->url[0]);
 
+	if (!is_local) {
 		if (!transport->get_refs_list || !transport->fetch)
 			die(_("Don't know how to clone %s"), transport->url);
 
@@ -645,49 +790,57 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		if (option_depth)
 			transport_set_option(transport, TRANS_OPT_DEPTH,
 					     option_depth);
+		if (option_single_branch)
+			transport_set_option(transport, TRANS_OPT_FOLLOWTAGS, "1");
 
 		transport_set_verbosity(transport, option_verbosity, option_progress);
 
 		if (option_upload_pack)
 			transport_set_option(transport, TRANS_OPT_UPLOADPACK,
 					     option_upload_pack);
-
-		refs = transport_get_remote_refs(transport);
-		if (refs) {
-			mapped_refs = wanted_peer_refs(refs, refspec);
-			transport_fetch_refs(transport, mapped_refs);
-		}
 	}
 
-	if (refs) {
-		clear_extra_refs();
+	refs = transport_get_remote_refs(transport);
 
-		write_remote_refs(mapped_refs);
+	if (refs) {
+		mapped_refs = wanted_peer_refs(refs, refspec);
+		/*
+		 * transport_get_remote_refs() may return refs with null sha-1
+		 * in mapped_refs (see struct transport->get_refs_list
+		 * comment). In that case we need fetch it early because
+		 * remote_head code below relies on it.
+		 *
+		 * for normal clones, transport_get_remote_refs() should
+		 * return reliable ref set, we can delay cloning until after
+		 * remote HEAD check.
+		 */
+		for (ref = refs; ref; ref = ref->next)
+			if (is_null_sha1(ref->old_sha1)) {
+				complete_refs_before_fetch = 0;
+				break;
+			}
+
+		if (!is_local && !complete_refs_before_fetch)
+			transport_fetch_refs(transport, mapped_refs);
 
 		remote_head = find_ref_by_name(refs, "HEAD");
 		remote_head_points_at =
 			guess_remote_head(remote_head, mapped_refs, 0);
 
 		if (option_branch) {
-			struct strbuf head = STRBUF_INIT;
-			strbuf_addstr(&head, src_ref_prefix);
-			strbuf_addstr(&head, option_branch);
 			our_head_points_at =
-				find_ref_by_name(mapped_refs, head.buf);
-			strbuf_release(&head);
+				find_remote_branch(mapped_refs, option_branch);
 
-			if (!our_head_points_at) {
-				warning(_("Remote branch %s not found in "
-					"upstream %s, using HEAD instead"),
-					option_branch, option_origin);
-				our_head_points_at = remote_head_points_at;
-			}
+			if (!our_head_points_at)
+				die(_("Remote branch %s not found in upstream %s"),
+				    option_branch, option_origin);
 		}
 		else
 			our_head_points_at = remote_head_points_at;
 	}
 	else {
 		warning(_("You appear to have cloned an empty repository."));
+		mapped_refs = NULL;
 		our_head_points_at = NULL;
 		remote_head_points_at = NULL;
 		remote_head = NULL;
@@ -697,84 +850,20 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 					      "refs/heads/master");
 	}
 
-	if (remote_head_points_at && !option_bare) {
-		struct strbuf head_ref = STRBUF_INIT;
-		strbuf_addstr(&head_ref, branch_top.buf);
-		strbuf_addstr(&head_ref, "HEAD");
-		create_symref(head_ref.buf,
-			      remote_head_points_at->peer_ref->name,
-			      reflog_msg.buf);
-	}
+	if (is_local)
+		clone_local(path, git_dir);
+	else if (refs && complete_refs_before_fetch)
+		transport_fetch_refs(transport, mapped_refs);
 
-	if (our_head_points_at) {
-		/* Local default branch link */
-		create_symref("HEAD", our_head_points_at->name, NULL);
-		if (!option_bare) {
-			const char *head = skip_prefix(our_head_points_at->name,
-						       "refs/heads/");
-			update_ref(reflog_msg.buf, "HEAD",
-				   our_head_points_at->old_sha1,
-				   NULL, 0, DIE_ON_ERR);
-			install_branch_config(0, head, option_origin,
-					      our_head_points_at->name);
-		}
-	} else if (remote_head) {
-		/* Source had detached HEAD pointing somewhere. */
-		if (!option_bare) {
-			update_ref(reflog_msg.buf, "HEAD",
-				   remote_head->old_sha1,
-				   NULL, REF_NODEREF, DIE_ON_ERR);
-			our_head_points_at = remote_head;
-		}
-	} else {
-		/* Nothing to checkout out */
-		if (!option_no_checkout)
-			warning(_("remote HEAD refers to nonexistent ref, "
-				"unable to checkout.\n"));
-		option_no_checkout = 1;
-	}
+	update_remote_refs(refs, mapped_refs, remote_head_points_at,
+			   branch_top.buf, reflog_msg.buf);
 
-	if (transport) {
-		transport_unlock_pack(transport);
-		transport_disconnect(transport);
-	}
+	update_head(our_head_points_at, remote_head, reflog_msg.buf);
 
-	if (!option_no_checkout) {
-		struct lock_file *lock_file = xcalloc(1, sizeof(struct lock_file));
-		struct unpack_trees_options opts;
-		struct tree *tree;
-		struct tree_desc t;
-		int fd;
+	transport_unlock_pack(transport);
+	transport_disconnect(transport);
 
-		/* We need to be in the new work tree for the checkout */
-		setup_work_tree();
-
-		fd = hold_locked_index(lock_file, 1);
-
-		memset(&opts, 0, sizeof opts);
-		opts.update = 1;
-		opts.merge = 1;
-		opts.fn = oneway_merge;
-		opts.verbose_update = (option_verbosity > 0);
-		opts.src_index = &the_index;
-		opts.dst_index = &the_index;
-
-		tree = parse_tree_indirect(our_head_points_at->old_sha1);
-		parse_tree(tree);
-		init_tree_desc(&t, tree->buffer, tree->size);
-		unpack_trees(1, &t, &opts);
-
-		if (write_cache(fd, active_cache, active_nr) ||
-		    commit_locked_index(lock_file))
-			die(_("unable to write new index file"));
-
-		err |= run_hook(NULL, "post-checkout", sha1_to_hex(null_sha1),
-				sha1_to_hex(our_head_points_at->old_sha1), "1",
-				NULL);
-
-		if (!err && option_recursive)
-			err = run_command_v_opt(argv_submodule, RUN_GIT_CMD);
-	}
+	err = checkout();
 
 	strbuf_release(&reflog_msg);
 	strbuf_release(&branch_top);

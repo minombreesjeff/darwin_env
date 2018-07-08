@@ -120,9 +120,9 @@ static int add_ref_decoration(const char *refname, const unsigned char *sha1, in
 		type = DECORATION_REF_REMOTE;
 	else if (!prefixcmp(refname, "refs/tags/"))
 		type = DECORATION_REF_TAG;
-	else if (!prefixcmp(refname, "refs/stash"))
+	else if (!strcmp(refname, "refs/stash"))
 		type = DECORATION_REF_STASH;
-	else if (!prefixcmp(refname, "HEAD"))
+	else if (!strcmp(refname, "HEAD"))
 		type = DECORATION_REF_HEAD;
 
 	if (!cb_data || *(int *)cb_data == DECORATE_SHORT_REFS)
@@ -711,13 +711,14 @@ int log_tree_diff_flush(struct rev_info *opt)
 		    opt->verbose_header &&
 		    opt->commit_format != CMIT_FMT_ONELINE) {
 			int pch = DIFF_FORMAT_DIFFSTAT | DIFF_FORMAT_PATCH;
-			if ((pch & opt->diffopt.output_format) == pch)
-				printf("---");
 			if (opt->diffopt.output_prefix) {
 				struct strbuf *msg = NULL;
 				msg = opt->diffopt.output_prefix(&opt->diffopt,
 					opt->diffopt.output_prefix_data);
 				fwrite(msg->buf, msg->len, 1, stdout);
+			}
+			if ((pch & opt->diffopt.output_format) == pch) {
+				printf("---");
 			}
 			putchar('\n');
 		}

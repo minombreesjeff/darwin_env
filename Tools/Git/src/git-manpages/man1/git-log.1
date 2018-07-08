@@ -2,12 +2,12 @@
 .\"     Title: git-log
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 01/27/2012
+.\"      Date: 04/06/2012
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.9
+.\"    Source: Git 1.7.10
 .\"  Language: English
 .\"
-.TH "GIT\-LOG" "1" "01/27/2012" "Git 1\&.7\&.9" "Git Manual"
+.TH "GIT\-LOG" "1" "04/06/2012" "Git 1\&.7\&.10" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -224,7 +224,9 @@ are listed on the command line as
 \fI<pattern>\fR
 is given, limit branches to ones matching given shell glob\&. If pattern lacks
 \fI?\fR,
-\fI\fR\fI, or \fR\fI\fI[\fR\fR\fI, \fR\fI\fI/\fR\fR
+\fI*\fR, or
+\fI[\fR,
+\fI/*\fR
 at the end is implied\&.
 .RE
 .PP
@@ -237,7 +239,9 @@ are listed on the command line as
 \fI<pattern>\fR
 is given, limit tags to ones matching given shell glob\&. If pattern lacks
 \fI?\fR,
-\fI\fR\fI, or \fR\fI\fI[\fR\fR\fI, \fR\fI\fI/\fR\fR
+\fI*\fR, or
+\fI[\fR,
+\fI/*\fR
 at the end is implied\&.
 .RE
 .PP
@@ -250,7 +254,9 @@ are listed on the command line as
 \fI<pattern>\fR
 is given, limit remote\-tracking branches to ones matching given shell glob\&. If pattern lacks
 \fI?\fR,
-\fI\fR\fI, or \fR\fI\fI[\fR\fR\fI, \fR\fI\fI/\fR\fR
+\fI*\fR, or
+\fI[\fR,
+\fI/*\fR
 at the end is implied\&.
 .RE
 .PP
@@ -262,7 +268,9 @@ are listed on the command line as
 \fI<commit>\fR\&. Leading
 \fIrefs/\fR, is automatically prepended if missing\&. If pattern lacks
 \fI?\fR,
-\fI\fR\fI, or \fR\fI\fI[\fR\fR\fI, \fR\fI\fI/\fR\fR
+\fI*\fR, or
+\fI[\fR,
+\fI/*\fR
 at the end is implied\&.
 .RE
 .PP
@@ -2153,10 +2161,22 @@ Spend extra time to make sure the smallest possible diff is produced\&.
 Generate a diff using the "patience diff" algorithm\&.
 .RE
 .PP
+\-\-histogram
+.RS 4
+Generate a diff using the "histogram diff" algorithm\&.
+.RE
+.PP
 \-\-stat[=<width>[,<name\-width>[,<count>]]]
 .RS 4
-Generate a diffstat\&. You can override the default output width for 80\-column terminal by
-\-\-stat=<width>\&. The width of the filename part can be controlled by giving another width to it separated by a comma\&. By giving a third parameter
+Generate a diffstat\&. By default, as much space as necessary will be used for the filename part, and the rest for the graph part\&. Maximum width defaults to terminal width, or 80 columns if not connected to a terminal, and can be overriden by
+<width>\&. The width of the filename part can be limited by giving another width
+<name\-width>
+after a comma\&. The width of the graph part can be limited by using
+\-\-stat\-graph\-width=<width>
+(affects all commands generating a stat graph) or by setting
+diff\&.statGraphWidth=<width>
+(does not affect
+git format\-patch)\&. By giving a third parameter
 <count>, you can limit the output to the first
 <count>
 lines, followed by
@@ -2277,18 +2297,21 @@ option on what the status letters mean\&.
 .PP
 \-\-submodule[=<format>]
 .RS 4
-Chose the output format for submodule differences\&. <format> can be one of
-\fIshort\fR
-and
-\fIlog\fR\&.
-\fIshort\fR
-just shows pairs of commit names, this format is used when this option is not given\&.
+Specify how differences in submodules are shown\&. When
+\-\-submodule
+or
+\-\-submodule=log
+is given, the
 \fIlog\fR
-is the default value for this option and lists the commits in that commit range like the
-\fIsummary\fR
-option of
+format is used\&. This format lists the commits in the range like
 \fBgit-submodule\fR(1)
-does\&.
+summary
+does\&. Omitting the
+\-\-submodule
+option or specifying
+\-\-submodule=short, uses the
+\fIshort\fR
+format\&. This format just shows the names of the commits at the beginning and end of the range\&.
 .RE
 .PP
 \-\-color[=<when>]

@@ -33,6 +33,10 @@ typedef void *SSL;
 #include <openssl/hmac.h>
 #endif
 
+#ifdef USE_COMMONCRYPTO
+#include <CommonCrypto/CommonCrypto.h>
+#endif
+
 struct store_conf {
 	char *name;
 	const char *path; /* should this be here? its interpretation is driver-specific */
@@ -963,7 +967,11 @@ static char hexchar(unsigned int b)
 static char *cram(const char *challenge_64, const char *user, const char *pass)
 {
 	int i, resp_len, encoded_len, decoded_len;
+#ifdef USE_COMMONCRYPTO
+	CCHmacContext hmac;
+#else
 	HMAC_CTX hmac;
+#endif
 	unsigned char hash[16];
 	char hex[33];
 	char *response, *response_64, *challenge;
@@ -978,10 +986,17 @@ static char *cram(const char *challenge_64, const char *user, const char *pass)
 				      (unsigned char *)challenge_64, encoded_len);
 	if (decoded_len < 0)
 		die("invalid challenge %s", challenge_64);
+
+#ifdef USE_COMMONCRYPTO
+	CCHmacInit(&hmac, kCCHmacAlgMD5, pass, strlen(pass));
+	CCHmacUpdate(&hmac, challenge, decoded_len);
+	CCHmacFinal(&hmac, hash);
+#else
 	HMAC_Init(&hmac, (unsigned char *)pass, strlen(pass), EVP_md5());
 	HMAC_Update(&hmac, (unsigned char *)challenge, decoded_len);
 	HMAC_Final(&hmac, hash, NULL);
 	HMAC_CTX_cleanup(&hmac);
+#endif
 
 	hex[32] = 0;
 	for (i = 0; i < 16; i++) {

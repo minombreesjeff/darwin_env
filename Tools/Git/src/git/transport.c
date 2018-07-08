@@ -721,6 +721,10 @@ void transport_print_push_status(const char *dest, struct ref *refs,
 {
 	struct ref *ref;
 	int n = 0;
+	unsigned char head_sha1[20];
+	char *head;
+
+	head = resolve_refdup("HEAD", head_sha1, 1, NULL);
 
 	if (verbose) {
 		for (ref = refs; ref; ref = ref->next)
@@ -738,8 +742,13 @@ void transport_print_push_status(const char *dest, struct ref *refs,
 		    ref->status != REF_STATUS_UPTODATE &&
 		    ref->status != REF_STATUS_OK)
 			n += print_one_push_status(ref, dest, n, porcelain);
-		if (ref->status == REF_STATUS_REJECT_NONFASTFORWARD)
-			*nonfastforward = 1;
+		if (ref->status == REF_STATUS_REJECT_NONFASTFORWARD &&
+		    *nonfastforward != NON_FF_HEAD) {
+			if (!strcmp(head, ref->name))
+				*nonfastforward = NON_FF_HEAD;
+			else
+				*nonfastforward = NON_FF_OTHER;
+		}
 	}
 }
 
@@ -1032,6 +1041,8 @@ int transport_push(struct transport *transport,
 			match_flags |= MATCH_REFS_ALL;
 		if (flags & TRANSPORT_PUSH_MIRROR)
 			match_flags |= MATCH_REFS_MIRROR;
+		if (flags & TRANSPORT_PUSH_PRUNE)
+			match_flags |= MATCH_REFS_PRUNE;
 
 		if (match_push_refs(local_refs, &remote_refs,
 				    refspec_nr, refspec, match_flags)) {
@@ -1152,7 +1163,7 @@ int transport_disconnect(struct transport *transport)
 }
 
 /*
- * Strip username (and password) from an url and return
+ * Strip username (and password) from a URL and return
  * it in a newly allocated string.
  */
 char *transport_anonymize_url(const char *url)

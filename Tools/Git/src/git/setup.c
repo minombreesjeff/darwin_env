@@ -577,13 +577,15 @@ static const char *setup_nongit(const char *cwd, int *nongit_ok)
 	return NULL;
 }
 
-static dev_t get_device_or_die(const char *path, const char *prefix)
+static dev_t get_device_or_die(const char *path, const char *prefix, int prefix_len)
 {
 	struct stat buf;
-	if (stat(path, &buf))
-		die_errno("failed to stat '%s%s%s'",
+	if (stat(path, &buf)) {
+		die_errno("failed to stat '%*s%s%s'",
+				prefix_len,
 				prefix ? prefix : "",
 				prefix ? "/" : "", path);
+	}
 	return buf.st_dev;
 }
 
@@ -597,7 +599,7 @@ static const char *setup_git_directory_gently_1(int *nongit_ok)
 	static char cwd[PATH_MAX+1];
 	const char *gitdirenv, *ret;
 	char *gitfile;
-	int len, offset, ceil_offset;
+	int len, offset, offset_parent, ceil_offset;
 	dev_t current_device = 0;
 	int one_filesystem = 1;
 
@@ -639,7 +641,7 @@ static const char *setup_git_directory_gently_1(int *nongit_ok)
 	 */
 	one_filesystem = !git_env_bool("GIT_DISCOVERY_ACROSS_FILESYSTEM", 0);
 	if (one_filesystem)
-		current_device = get_device_or_die(".", NULL);
+		current_device = get_device_or_die(".", NULL, 0);
 	for (;;) {
 		gitfile = (char*)read_gitfile(DEFAULT_GIT_DIR_ENVIRONMENT);
 		if (gitfile)
@@ -661,11 +663,12 @@ static const char *setup_git_directory_gently_1(int *nongit_ok)
 		if (is_git_directory("."))
 			return setup_bare_git_dir(cwd, offset, len, nongit_ok);
 
-		while (--offset > ceil_offset && cwd[offset] != '/');
-		if (offset <= ceil_offset)
+		offset_parent = offset;
+		while (--offset_parent > ceil_offset && cwd[offset_parent] != '/');
+		if (offset_parent <= ceil_offset)
 			return setup_nongit(cwd, nongit_ok);
 		if (one_filesystem) {
-			dev_t parent_device = get_device_or_die("..", cwd);
+			dev_t parent_device = get_device_or_die("..", cwd, offset);
 			if (parent_device != current_device) {
 				if (nongit_ok) {
 					if (chdir(cwd))
@@ -674,7 +677,7 @@ static const char *setup_git_directory_gently_1(int *nongit_ok)
 					return NULL;
 				}
 				cwd[offset] = '\0';
-				die("Not a git repository (or any parent up to mount parent %s)\n"
+				die("Not a git repository (or any parent up to mount point %s)\n"
 				"Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).", cwd);
 			}
 		}
@@ -682,6 +685,7 @@ static const char *setup_git_directory_gently_1(int *nongit_ok)
 			cwd[offset] = '\0';
 			die_errno("Cannot change to '%s/..'", cwd);
 		}
+		offset = offset_parent;
 	}
 }
 

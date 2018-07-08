@@ -44,16 +44,26 @@ unreleased) version of git, that is available from 'master'
 branch of the `git.git` repository.
 Documentation for older releases are available here:
 
-* link:v1.7.9.2/git.html[documentation for release 1.7.9.2]
+* link:v1.7.10/git.html[documentation for release 1.7.10]
 
 * release notes for
+  link:RelNotes/1.7.10.txt[1.7.10].
+
+* link:v1.7.9.6/git.html[documentation for release 1.7.9.6]
+
+* release notes for
+  link:RelNotes/1.7.9.6.txt[1.7.9.6],
+  link:RelNotes/1.7.9.5.txt[1.7.9.5],
+  link:RelNotes/1.7.9.4.txt[1.7.9.4],
+  link:RelNotes/1.7.9.3.txt[1.7.9.3],
   link:RelNotes/1.7.9.2.txt[1.7.9.2],
   link:RelNotes/1.7.9.1.txt[1.7.9.1],
   link:RelNotes/1.7.9.txt[1.7.9].
 
-* link:v1.7.8.4/git.html[documentation for release 1.7.8.4]
+* link:v1.7.8.5/git.html[documentation for release 1.7.8.5]
 
 * release notes for
+  link:RelNotes/1.7.8.5.txt[1.7.8.5],
   link:RelNotes/1.7.8.4.txt[1.7.8.4],
   link:RelNotes/1.7.8.3.txt[1.7.8.3],
   link:RelNotes/1.7.8.2.txt[1.7.8.2],
@@ -708,6 +718,12 @@ other
 	to an empty string or to the value "cat", git will not launch
 	a pager.  See also the `core.pager` option in
 	linkgit:git-config[1].
+
+'GIT_EDITOR'::
+	This environment variable overrides `$EDITOR` and `$VISUAL`.
+	It is used by several git comands when, on interactive mode,
+	an editor is to be launched. See also linkgit:git-var[1]
+	and the `core.editor` option in linkgit:git-config[1].
 
 'GIT_SSH'::
 	If this environment variable is set then 'git fetch'
