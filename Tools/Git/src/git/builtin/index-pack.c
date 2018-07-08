@@ -172,10 +172,10 @@ static const char *open_pack_file(const char *pack_name)
 	if (from_stdin) {
 		input_fd = 0;
 		if (!pack_name) {
-			static char tmpfile[PATH_MAX];
-			output_fd = odb_mkstemp(tmpfile, sizeof(tmpfile),
+			static char tmp_file[PATH_MAX];
+			output_fd = odb_mkstemp(tmp_file, sizeof(tmp_file),
 						"pack/tmp_pack_XXXXXX");
-			pack_name = xstrdup(tmpfile);
+			pack_name = xstrdup(tmp_file);
 		} else
 			output_fd = open(pack_name, O_CREAT|O_EXCL|O_RDWR, 0600);
 		if (output_fd < 0)
@@ -1122,8 +1122,10 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 		if (!index_name)
 			die("--verify with no packfile name given");
 		read_idx_option(&opts, index_name);
-		opts.flags |= WRITE_IDX_VERIFY;
+		opts.flags |= WRITE_IDX_VERIFY | WRITE_IDX_STRICT;
 	}
+	if (strict)
+		opts.flags |= WRITE_IDX_STRICT;
 
 	curr_pack = open_pack_file(pack_name);
 	parse_pack_header();

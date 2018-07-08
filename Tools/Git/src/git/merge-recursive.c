@@ -38,16 +38,15 @@ static struct tree *shift_tree_object(struct tree *one, struct tree *two,
 	return lookup_tree(shifted);
 }
 
-/*
- * A virtual commit has (const char *)commit->util set to the name.
- */
-
 static struct commit *make_virtual_commit(struct tree *tree, const char *comment)
 {
 	struct commit *commit = xcalloc(1, sizeof(struct commit));
+	struct merge_remote_desc *desc = xmalloc(sizeof(*desc));
+
+	desc->name = comment;
+	desc->obj = (struct object *)commit;
 	commit->tree = tree;
-	commit->util = (void*)comment;
-	/* avoid warnings */
+	commit->util = desc;
 	commit->object.parsed = 1;
 	return commit;
 }
@@ -184,7 +183,7 @@ static void output_commit_title(struct merge_options *o, struct commit *commit)
 	for (i = o->call_depth; i--;)
 		fputs("  ", stdout);
 	if (commit->util)
-		printf("virtual %s\n", (char *)commit->util);
+		printf("virtual %s\n", merge_remote_util(commit)->name);
 	else {
 		printf("%s ", find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV));
 		if (parse_commit(commit) != 0)
@@ -265,7 +264,7 @@ struct tree *write_tree_from_memory(struct merge_options *o)
 
 	if (!cache_tree_fully_valid(active_cache_tree) &&
 	    cache_tree_update(active_cache_tree,
-			      active_cache, active_nr, 0, 0) < 0)
+			      active_cache, active_nr, 0, 0, 0) < 0)
 		die("error building trees");
 
 	result = lookup_tree(active_cache_tree->sha1);
@@ -946,8 +945,10 @@ static struct merge_file_info merge_file_1(struct merge_options *o,
 			free(result_buf.ptr);
 			result.clean = (merge_status == 0);
 		} else if (S_ISGITLINK(a->mode)) {
-			result.clean = merge_submodule(result.sha, one->path, one->sha1,
-						       a->sha1, b->sha1);
+			result.clean = merge_submodule(result.sha,
+						       one->path, one->sha1,
+						       a->sha1, b->sha1,
+						       !o->call_depth);
 		} else if (S_ISLNK(a->mode)) {
 			hashcpy(result.sha, a->sha1);
 

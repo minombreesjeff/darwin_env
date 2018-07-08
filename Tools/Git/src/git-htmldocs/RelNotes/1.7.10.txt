@@ -1,0 +1,86 @@
+Git v1.7.10 Release Notes
+=========================
+
+Updates since v1.7.9
+--------------------
+
+UI, Workflows & Features
+
+ * Improved handling of views, labels and branches in git-p4 (in contrib).
+
+ * "vcs-svn"/"svn-fe" learned to read dumps with svn-deltas and
+   support incremental imports.
+
+ * "git am" learned to pass "-b" option to underlying "git mailinfo", so
+   that bracketed string other than "PATCH" at the beginning can be kept.
+
+ * "git clone" learned "--single-branch" option to limit cloning to a
+   single branch (surprise!).
+
+ * "git clone" learned to detach the HEAD in the resulting repository
+   when the source repository's HEAD does not point to a branch.
+
+ * When showing a patch while ignoring whitespace changes, the context
+   lines are taken from the postimage, in order to make it easier to
+   view the output.
+
+ * "diff-highlight" filter (in contrib/) was updated to produce more
+   aesthetically pleasing output.
+
+ * "git tag --list" can be given "--points-at <object>" to limit its
+   output to those that point at the given object.
+
+ * "git merge" in an interactive session learned to spawn the editor
+   by default to let the user edit the auto-generated merge message,
+   to encourage people to explain their merges better. Legacy scripts
+   can export MERGE_AUTOEDIT=no to retain the historical behaviour.
+   Both "git merge" and "git pull" can be given --no-edit from the
+   command line to accept the auto-generated merge message.
+
+ * "gitweb" allows intermediate entries in the directory hierarchy
+   that leads to a projects to be clicked, which in turn shows the
+   list of projects inside that directory.
+
+Performance
+
+ * During "git upload-pack" in respose to "git fetch", unnecessary calls
+   to parse_object() have been eliminated, to help performance in
+   repositories with excessive number of refs.
+
+Internal Implementation (please report possible regressions)
+
+ * Recursive call chains in "git index-pack" to deal with long delta
+   chains have been flattened, to reduce the stack footprint.
+
+ * Use of add_extra_ref() API is now gone, to make it possible to
+   cleanly restructure the overall refs API.
+
+ * The command line parser of "git pack-objects" now uses parse-options
+   API.
+
+ * The test suite supports the new "test_pause" helper function.
+
+ * t/Makefile is adjusted to prevent newer versions of GNU make from
+   running tests in seemingly random order.
+
+Also contains minor documentation updates and code clean-ups.
+
+
+Fixes since v1.7.9
+------------------
+
+Unless otherwise noted, all the fixes since v1.7.9 in the maintenance
+releases are contained in this release (see release notes to them for
+details).
+
+ * "gitweb" used to drop warnings in the log file when "heads" view is
+   accessed in a repository whose HEAD does not point at a valid
+   branch.
+
+---
+exec >/var/tmp/1
+O=v1.7.9.1-289-g5609586
+echo O=$(git describe)
+git log --first-parent --oneline ^maint $O..
+echo
+git shortlog --no-merges ^maint $O..

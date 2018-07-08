@@ -90,7 +90,7 @@ $LONG_USAGE"
 	fi
 
 	case "$1" in
-		-h|--h|--he|--hel|--help)
+		-h)
 		echo "$LONG_USAGE"
 		exit
 	esac
@@ -200,7 +200,7 @@ get_author_ident_from_commit () {
 		s/.*/GIT_AUTHOR_EMAIL='\''&'\''/p
 
 		g
-		s/^author [^<]* <[^>]*> \(.*\)$/\1/
+		s/^author [^<]* <[^>]*> \(.*\)$/@\1/
 		s/.*/GIT_AUTHOR_DATE='\''&'\''/p
 
 		q

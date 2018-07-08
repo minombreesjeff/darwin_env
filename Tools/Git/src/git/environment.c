@@ -9,6 +9,7 @@
  */
 #include "cache.h"
 #include "refs.h"
+#include "fmt-merge-msg.h"
 
 char git_default_email[MAX_GITNAME];
 char git_default_name[MAX_GITNAME];
@@ -59,7 +60,9 @@ enum object_creation_mode object_creation_mode = OBJECT_CREATION_MODE;
 char *notes_ref_name;
 int grafts_replace_parents = 1;
 int core_apply_sparse_checkout;
+int merge_log_config = -1;
 struct startup_info *startup_info;
+unsigned long pack_size_limit_cfg;
 
 /* Parallel index stat data preload? */
 int core_preload_index = 0;
@@ -107,7 +110,7 @@ static char *expand_namespace(const char *raw_namespace)
 		if (strcmp((*c)->buf, "/") != 0)
 			strbuf_addf(&buf, "refs/namespaces/%s", (*c)->buf);
 	strbuf_list_free(components);
-	if (check_ref_format(buf.buf) != CHECK_REF_FORMAT_OK)
+	if (check_refname_format(buf.buf, 0))
 		die("bad git namespace path \"%s\"", raw_namespace);
 	strbuf_addch(&buf, '/');
 	return strbuf_detach(&buf, NULL);

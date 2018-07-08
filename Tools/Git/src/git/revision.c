@@ -40,6 +40,47 @@ char *path_name(const struct name_path *path, const char *name)
 	return n;
 }
 
+static int show_path_component_truncated(FILE *out, const char *name, int len)
+{
+	int cnt;
+	for (cnt = 0; cnt < len; cnt++) {
+		int ch = name[cnt];
+		if (!ch || ch == '\n')
+			return -1;
+		fputc(ch, out);
+	}
+	return len;
+}
+
+static int show_path_truncated(FILE *out, const struct name_path *path)
+{
+	int emitted, ours;
+
+	if (!path)
+		return 0;
+	emitted = show_path_truncated(out, path->up);
+	if (emitted < 0)
+		return emitted;
+	if (emitted)
+		fputc('/', out);
+	ours = show_path_component_truncated(out, path->elem, path->elem_len);
+	if (ours < 0)
+		return ours;
+	return ours || emitted;
+}
+
+void show_object_with_name(FILE *out, struct object *obj, const struct name_path *path, const char *component)
+{
+	struct name_path leaf;
+	leaf.up = (struct name_path *)path;
+	leaf.elem = component;
+	leaf.elem_len = strlen(component);
+
+	fprintf(out, "%s ", sha1_to_hex(obj->sha1));
+	show_path_truncated(out, &leaf);
+	fputc('\n', out);
+}
+
 void add_object(struct object *obj,
 		struct object_array *p,
 		struct name_path *path,
@@ -183,6 +224,13 @@ static struct object *get_reference(struct rev_info *revs, const char *name, con
 	}
 	object->flags |= flags;
 	return object;
+}
+
+void add_pending_sha1(struct rev_info *revs, const char *name,
+		      const unsigned char *sha1, unsigned int flags)
+{
+	struct object *object = get_reference(revs, name, sha1, flags);
+	add_pending_object(revs, object, name);
 }
 
 static struct commit *handle_commit(struct rev_info *revs, struct object *object, const char *name)
@@ -368,7 +416,7 @@ static int rev_same_tree_as_empty(struct rev_info *revs, struct commit *commit)
 static void try_to_simplify_commit(struct rev_info *revs, struct commit *commit)
 {
 	struct commit_list **pp, *parent;
-	int tree_changed = 0, tree_same = 0;
+	int tree_changed = 0, tree_same = 0, nth_parent = 0;
 
 	/*
 	 * If we don't do pruning, everything is interesting
@@ -396,6 +444,14 @@ static void try_to_simplify_commit(struct rev_info *revs, struct commit *commit)
 	while ((parent = *pp) != NULL) {
 		struct commit *p = parent->item;
 
+		/*
+		 * Do not compare with later parents when we care only about
+		 * the first parent chain, in order to avoid derailing the
+		 * traversal to follow a side branch that brought everything
+		 * in the path we are limited to by the pathspec.
+		 */
+		if (revs->first_parent_only && nth_parent++)
+			break;
 		if (parse_commit(p) < 0)
 			die("cannot simplify commit %s (because of %s)",
 			    sha1_to_hex(commit->object.sha1),
@@ -856,7 +912,7 @@ static int handle_one_ref(const char *path, const unsigned char *sha1, int flag,
 	struct object *object = get_reference(cb->all_revs, path, sha1,
 					      cb->all_flags);
 	add_rev_cmdline(cb->all_revs, object, path, REV_CMD_REF, cb->all_flags);
-	add_pending_object(cb->all_revs, object, path);
+	add_pending_sha1(cb->all_revs, path, sha1, cb->all_flags);
 	return 0;
 }
 
@@ -1377,6 +1433,11 @@ static int handle_revision_opt(struct rev_info *revs, int argc, const char **arg
 		revs->tree_objects = 1;
 		revs->blob_objects = 1;
 		revs->edge_hint = 1;
+	} else if (!strcmp(arg, "--verify-objects")) {
+		revs->tag_objects = 1;
+		revs->tree_objects = 1;
+		revs->blob_objects = 1;
+		revs->verify_objects = 1;
 	} else if (!strcmp(arg, "--unpacked")) {
 		revs->unpacked = 1;
 	} else if (!prefixcmp(arg, "--unpacked=")) {
@@ -1416,6 +1477,8 @@ static int handle_revision_opt(struct rev_info *revs, int argc, const char **arg
 		revs->show_notes = 1;
 		revs->show_notes_given = 1;
 		revs->notes_opt.use_default_notes = 1;
+	} else if (!strcmp(arg, "--show-signature")) {
+		revs->show_signature = 1;
 	} else if (!prefixcmp(arg, "--show-notes=") ||
 		   !prefixcmp(arg, "--notes=")) {
 		struct strbuf buf = STRBUF_INIT;
@@ -2004,7 +2067,8 @@ int prepare_revision_walk(struct rev_info *revs)
 		}
 		e++;
 	}
-	free(list);
+	if (!revs->leak_pending)
+		free(list);
 
 	if (revs->no_walk)
 		return 0;
@@ -2072,7 +2136,6 @@ static int commit_match(struct commit *commit, struct rev_info *opt)
 	if (!opt->grep_filter.pattern_list && !opt->grep_filter.header_list)
 		return 1;
 	return grep_buffer(&opt->grep_filter,
-			   NULL, /* we say nothing, not even filename */
 			   commit->buffer, strlen(commit->buffer));
 }
 

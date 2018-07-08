@@ -12,8 +12,9 @@ The configuration variables are used by both the git plumbing
 and the porcelains. The variables are divided into sections, wherein
 the fully qualified variable name of the variable itself is the last
 dot-separated segment and the section name is everything before the last
-dot. The variable names are case-insensitive and only alphanumeric
-characters are allowed. Some variables may appear multiple times.
+dot. The variable names are case-insensitive, allow only alphanumeric
+characters and `-`, and must start with an alphabetic character.  Some
+variables may appear multiple times.
 
 Syntax
 ~~~~~~
@@ -45,17 +46,19 @@ lines.  Variables may belong directly to a section or to a given subsection.
 You can have `[section]` if you have `[section "subsection"]`, but you
 don't need to.
 
-There is also a case insensitive alternative `[section.subsection]` syntax.
-In this syntax, subsection names follow the same restrictions as for section
-names.
+There is also a deprecated `[section.subsection]` syntax. With this
+syntax, the subsection name is converted to lower-case and is also
+compared case sensitively. These subsection names follow the same
+restrictions as section names.
 
 All the other lines (and the remainder of the line after the section
 header) are recognized as setting variables, in the form
 'name = value'.  If there is no equal sign on the line, the entire line
 is taken as 'name' and the variable is recognized as boolean "true".
-The variable names are case-insensitive and only alphanumeric
-characters and `-` are allowed.  There can be more than one value
-for a given variable; we say then that variable is multivalued.
+The variable names are case-insensitive, allow only alphanumeric characters
+and `-`, and must start with an alphabetic character.  There can be more
+than one value for a given variable; we say then that the variable is
+multivalued.
 
 Leading and trailing whitespace in a variable value is discarded.
 Internal whitespace within a variable value is retained verbatim.
@@ -114,35 +117,32 @@ in the appropriate manual page. You will find a description of non-core
 porcelain configuration variables in the respective porcelain documentation.
 
 advice.*::
-	When set to 'true', display the given optional help message.
-	When set to 'false', do not display. The configuration variables
-	are:
+	These variables control various optional help messages designed to
+	aid new users. All 'advice.*' variables default to 'true', and you
+	can tell Git that you do not need help by setting these to 'false':
 +
 --
 	pushNonFastForward::
 		Advice shown when linkgit:git-push[1] refuses
-		non-fast-forward refs. Default: true.
+		non-fast-forward refs.
 	statusHints::
 		Directions on how to stage/unstage/add shown in the
 		output of linkgit:git-status[1] and the template shown
-		when writing commit messages. Default: true.
+		when writing commit messages.
 	commitBeforeMerge::
 		Advice shown when linkgit:git-merge[1] refuses to
 		merge to avoid overwriting local changes.
-		Default: true.
 	resolveConflict::
 		Advices shown by various commands when conflicts
 		prevent the operation from being performed.
-		Default: true.
 	implicitIdentity::
 		Advice on how to set your identity configuration when
 		your information is guessed from the system username and
-		domain name. Default: true.
-
+		domain name.
 	detachedHead::
-		Advice shown when you used linkgit::git-checkout[1] to
+		Advice shown when you used linkgit:git-checkout[1] to
 		move to the detach HEAD state, to instruct how to create
-		a local branch after the fact.  Default: true.
+		a local branch after the fact.
 --
 
 core.fileMode::
@@ -473,6 +473,12 @@ core.editor::
 	variable when it is set, and the environment variable
 	`GIT_EDITOR` is not set.  See linkgit:git-var[1].
 
+sequence.editor::
+	Text editor used by `git rebase -i` for editing the rebase insn file.
+	The value is meant to be interpreted by the shell when it is used.
+	It can be overridden by the `GIT_SEQUENCE_EDITOR` environment variable.
+	When not configured the default commit message editor is used instead.
+
 core.pager::
 	The command that git will use to paginate output.  Can
 	be overridden with the `GIT_PAGER` environment
@@ -670,10 +676,12 @@ branch.<name>.mergeoptions::
 branch.<name>.rebase::
 	When true, rebase the branch <name> on top of the fetched branch,
 	instead of merging the default branch from the default remote when
-	"git pull" is run.
-	*NOTE*: this is a possibly dangerous operation; do *not* use
-	it unless you understand the implications (see linkgit:git-rebase[1]
-	for details).
+	"git pull" is run. See "pull.rebase" for doing this in a non
+	branch-specific manner.
++
+*NOTE*: this is a possibly dangerous operation; do *not* use
+it unless you understand the implications (see linkgit:git-rebase[1]
+for details).
 
 browser.<tool>.cmd::
 	Specify the command to invoke the specified browser. The
@@ -825,6 +833,29 @@ commit.template::
 	"{tilde}/" is expanded to the value of `$HOME` and "{tilde}user/" to the
 	specified user's home directory.
 
+credential.helper::
+	Specify an external helper to be called when a username or
+	password credential is needed; the helper may consult external
+	storage to avoid prompting the user for the credentials. See
+	linkgit:gitcredentials[7] for details.
+
+credential.useHttpPath::
+	When acquiring credentials, consider the "path" component of an http
+	or https URL to be important. Defaults to false. See
+	linkgit:gitcredentials[7] for more information.
+
+credential.username::
+	If no username is set for a network authentication, use this username
+	by default. See credential.<context>.* below, and
+	linkgit:gitcredentials[7].
+
+credential.<url>.*::
+	Any of the credential.* options above can be applied selectively to
+	some credentials. For example "credential.https://example.com.username"
+	would set the default username only for https connections to
+	example.com. See linkgit:gitcredentials[7] for details on how URLs are
+	matched.
+
 include::diff-config.txt[]
 
 difftool.<tool>.path::
@@ -856,6 +887,13 @@ fetch.recurseSubmodules::
 	value), fetch and pull will only recurse into a populated submodule
 	when its superproject retrieves a commit that updates the submodule's
 	reference.
+
+fetch.fsckObjects::
+	If it is set to true, git-fetch-pack will check all fetched
+	objects. It will abort in the case of a malformed object or a
+	broken link. The result of an abort are only dangling objects.
+	Defaults to false. If not set, the value of `transfer.fsckObjects`
+	is used instead.
 
 fetch.unpackLimit::
 	If the number of objects fetched over the git native
@@ -1064,11 +1102,39 @@ All gitcvs variables except for 'gitcvs.usecrlfattr' and
 is one of "ext" and "pserver") to make them apply only for the given
 access method.
 
+gitweb.category::
+gitweb.description::
+gitweb.owner::
+gitweb.url::
+	See linkgit:gitweb[1] for description.
+
+gitweb.avatar::
+gitweb.blame::
+gitweb.grep::
+gitweb.highlight::
+gitweb.patches::
+gitweb.pickaxe::
+gitweb.remote_heads::
+gitweb.showsizes::
+gitweb.snapshot::
+	See linkgit:gitweb.conf[5] for description.
+
 grep.lineNumber::
 	If set to true, enable '-n' option by default.
 
 grep.extendedRegexp::
 	If set to true, enable '--extended-regexp' option by default.
+
+gpg.program::
+	Use this custom program instead of "gpg" found on $PATH when
+	making or verifying a PGP signature. The program must support the
+	same command line interface as GPG, namely, to verify a detached
+	signature, "gpg --verify $file - <$signature" is run, and the
+	program is expected to signal a good signature by exiting with
+	code 0, and to generate an ascii-armored detached signature, the
+	standard input of "gpg -bsau $key" is fed with the contents to be
+	signed, and the program is expected to send the result to its
+	standard output.
 
 gui.commitmsgwidth::
 	Defines how wide the commit message window is in the
@@ -1194,9 +1260,10 @@ help.autocorrect::
 	This is the default.
 
 http.proxy::
-	Override the HTTP proxy, normally configured using the 'http_proxy'
-	environment variable (see linkgit:curl[1]).  This can be overridden
-	on a per-remote basis; see remote.<name>.proxy
+	Override the HTTP proxy, normally configured using the 'http_proxy',
+	'https_proxy', and 'all_proxy' environment variables (see
+	`curl(1)`).  This can be overridden on a per-remote basis; see
+	remote.<name>.proxy
 
 http.cookiefile::
 	File containing previously stored cookie lines which should be used
@@ -1559,6 +1626,16 @@ pretty.<name>::
 	Note that an alias with the same name as a built-in format
 	will be silently ignored.
 
+pull.rebase::
+	When true, rebase branches on top of the fetched branch, instead
+	of merging the default branch from the default remote when "git
+	pull" is run. See "branch.<name>.rebase" for setting this on a
+	per-branch basis.
++
+*NOTE*: this is a possibly dangerous operation; do *not* use
+it unless you understand the implications (see linkgit:git-rebase[1]
+for details).
+
 pull.octopus::
 	The default merge strategy to use when pulling multiple branches
 	at once.
@@ -1596,7 +1673,8 @@ receive.fsckObjects::
 	If it is set to true, git-receive-pack will check all received
 	objects. It will abort in the case of a malformed object or a
 	broken link. The result of an abort are only dangling objects.
-	Defaults to false.
+	Defaults to false. If not set, the value of `transfer.fsckObjects`
+	is used instead.
 
 receive.unpackLimit::
 	If the number of objects received in a push is below this
@@ -1708,10 +1786,11 @@ rerere.autoupdate::
 
 rerere.enabled::
 	Activate recording of resolved conflicts, so that identical
-	conflict hunks can be resolved automatically, should they
-	be encountered again.  linkgit:git-rerere[1] command is by
-	default enabled if you create `rr-cache` directory under
-	`$GIT_DIR`, but can be disabled by setting this option to false.
+	conflict hunks can be resolved automatically, should they be
+	encountered again.  By default, linkgit:git-rerere[1] is
+	enabled if there is an `rr-cache` directory under the
+	`$GIT_DIR`, e.g. if "rerere" was previously used in the
+	repository.
 
 sendemail.identity::
 	A configuration identity. When given, causes values in the
@@ -1830,6 +1909,11 @@ tar.umask::
 	world write bit.  The special value "user" indicates that the
 	archiving user's umask will be used instead.  See umask(2) and
 	linkgit:git-archive[1].
+
+transfer.fsckObjects::
+	When `fetch.fsckObjects` or `receive.fsckObjects` are
+	not set, the value of this variable is used instead.
+	Defaults to false.
 
 transfer.unpackLimit::
 	When `fetch.unpackLimit` or `receive.unpackLimit` are

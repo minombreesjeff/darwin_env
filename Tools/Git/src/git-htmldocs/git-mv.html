@@ -592,8 +592,8 @@ git-mv(1) Manual Page
 <div class="paragraph"><p>This script is used to move or rename a file, directory or symlink.</p></div>
 <div class="literalblock">
 <div class="content">
-<pre><tt>git mv [-f] [-n] &lt;source&gt; &lt;destination&gt;
-git mv [-f] [-n] [-k] &lt;source&gt; ... &lt;destination directory&gt;</tt></pre>
+<pre><tt>git mv [-v] [-f] [-n] [-k] &lt;source&gt; &lt;destination&gt;
+git mv [-v] [-f] [-n] [-k] &lt;source&gt; ... &lt;destination directory&gt;</tt></pre>
 </div></div>
 <div class="paragraph"><p>In the first form, it renames &lt;source&gt;, which must exist and be either
 a file, symlink or directory, to &lt;destination&gt;.
@@ -638,6 +638,17 @@ committed.</p></div>
         Do nothing; only show what would happen
 </p>
 </dd>
+<dt class="hdlist1">
+-v
+</dt>
+<dt class="hdlist1">
+--verbose
+</dt>
+<dd>
+<p>
+        Report the names of files as they are moved.
+</p>
+</dd>
 </dl></div>
 </div>
 <h2 id="_git">GIT</h2>
@@ -648,7 +659,7 @@ committed.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-11-15 13:45:02 PDT
+Last updated 2011-12-21 14:30:17 PDT
 </div>
 </div>
 </body>

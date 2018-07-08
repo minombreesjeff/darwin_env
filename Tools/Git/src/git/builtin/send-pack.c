@@ -58,7 +58,7 @@ static int pack_objects(int fd, struct ref *refs, struct extra_have_objects *ext
 		argv[i++] = "--thin";
 	if (args->use_ofs_delta)
 		argv[i++] = "--delta-base-offset";
-	if (args->quiet)
+	if (args->quiet || !args->progress)
 		argv[i++] = "-q";
 	if (args->progress)
 		argv[i++] = "--progress";
@@ -250,6 +250,7 @@ int send_pack(struct send_pack_args *args,
 	int allow_deleting_refs = 0;
 	int status_report = 0;
 	int use_sideband = 0;
+	int quiet_supported = 0;
 	unsigned cmds_sent = 0;
 	int ret;
 	struct async demux;
@@ -263,6 +264,8 @@ int send_pack(struct send_pack_args *args,
 		args->use_ofs_delta = 1;
 	if (server_supports("side-band-64k"))
 		use_sideband = 1;
+	if (server_supports("quiet"))
+		quiet_supported = 1;
 
 	if (!remote_refs) {
 		fprintf(stderr, "No refs in common and none specified; doing nothing.\n"
@@ -300,16 +303,18 @@ int send_pack(struct send_pack_args *args,
 		} else {
 			char *old_hex = sha1_to_hex(ref->old_sha1);
 			char *new_hex = sha1_to_hex(ref->new_sha1);
+			int quiet = quiet_supported && (args->quiet || !args->progress);
 
-			if (!cmds_sent && (status_report || use_sideband)) {
-				packet_buf_write(&req_buf, "%s %s %s%c%s%s",
-					old_hex, new_hex, ref->name, 0,
-					status_report ? " report-status" : "",
-					use_sideband ? " side-band-64k" : "");
+			if (!cmds_sent && (status_report || use_sideband || args->quiet)) {
+				packet_buf_write(&req_buf, "%s %s %s%c%s%s%s",
+						 old_hex, new_hex, ref->name, 0,
+						 status_report ? " report-status" : "",
+						 use_sideband ? " side-band-64k" : "",
+						 quiet ? " quiet" : "");
 			}
 			else
 				packet_buf_write(&req_buf, "%s %s %s",
-					old_hex, new_hex, ref->name);
+						 old_hex, new_hex, ref->name);
 			ref->status = status_report ?
 				REF_STATUS_EXPECTING_REPORT :
 				REF_STATUS_OK;
@@ -334,7 +339,7 @@ int send_pack(struct send_pack_args *args,
 		demux.data = fd;
 		demux.out = -1;
 		if (start_async(&demux))
-			die("receive-pack: unable to fork off sideband demultiplexer");
+			die("send-pack: unable to fork off sideband demultiplexer");
 		in = demux.out;
 	}
 
@@ -439,6 +444,10 @@ int cmd_send_pack(int argc, const char **argv, const char *prefix)
 				args.force_update = 1;
 				continue;
 			}
+			if (!strcmp(arg, "--quiet")) {
+				args.quiet = 1;
+				continue;
+			}
 			if (!strcmp(arg, "--verbose")) {
 				args.verbose = 1;
 				continue;
@@ -494,8 +503,7 @@ int cmd_send_pack(int argc, const char **argv, const char *prefix)
 
 	memset(&extra_have, 0, sizeof(extra_have));
 
-	get_remote_heads(fd[0], &remote_refs, 0, NULL, REF_NORMAL,
-			 &extra_have);
+	get_remote_heads(fd[0], &remote_refs, REF_NORMAL, &extra_have);
 
 	transport_verify_remote_names(nr_refspecs, refspecs);
 
@@ -509,7 +517,7 @@ int cmd_send_pack(int argc, const char **argv, const char *prefix)
 		flags |= MATCH_REFS_MIRROR;
 
 	/* match them up */
-	if (match_refs(local_refs, &remote_refs, nr_refspecs, refspecs, flags))
+	if (match_push_refs(local_refs, &remote_refs, nr_refspecs, refspecs, flags))
 		return -1;
 
 	set_ref_status_for_push(remote_refs, args.send_mirror,

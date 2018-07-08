@@ -13,7 +13,8 @@
  * branch for (if any).
  */
 void create_branch(const char *head, const char *name, const char *start_name,
-		   int force, int reflog, enum branch_track track);
+		   int force, int reflog,
+		   int clobber_head, enum branch_track track);
 
 /*
  * Validates that the requested branch may be created, returning the
@@ -45,5 +46,10 @@ void remove_branch_state(void);
  */
 #define BRANCH_CONFIG_VERBOSE 01
 extern void install_branch_config(int flag, const char *local, const char *origin, const char *remote);
+
+/*
+ * Read branch description
+ */
+extern int read_branch_desc(struct strbuf *, const char *branch_name);
 
 #endif

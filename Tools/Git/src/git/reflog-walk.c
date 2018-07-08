@@ -50,9 +50,13 @@ static struct complete_reflogs *read_complete_reflog(const char *ref)
 	for_each_reflog_ent(ref, read_one_reflog, reflogs);
 	if (reflogs->nr == 0) {
 		unsigned char sha1[20];
-		const char *name = resolve_ref(ref, sha1, 1, NULL);
-		if (name)
+		const char *name;
+		void *name_to_free;
+		name = name_to_free = resolve_refdup(ref, sha1, 1, NULL);
+		if (name) {
 			for_each_reflog_ent(name, read_one_reflog, reflogs);
+			free(name_to_free);
+		}
 	}
 	if (reflogs->nr == 0) {
 		int len = strlen(ref);
@@ -168,11 +172,11 @@ int add_reflog_for_walk(struct reflog_walk_info *info,
 	else {
 		if (*branch == '\0') {
 			unsigned char sha1[20];
-			const char *head = resolve_ref("HEAD", sha1, 0, NULL);
-			if (!head)
-				die ("No current branch");
 			free(branch);
-			branch = xstrdup(head);
+			branch = resolve_refdup("HEAD", sha1, 0, NULL);
+			if (!branch)
+				die ("No current branch");
+
 		}
 		reflogs = read_complete_reflog(branch);
 		if (!reflogs || reflogs->nr == 0) {
@@ -289,6 +293,18 @@ void get_reflog_message(struct strbuf *sb,
 	if (len > 0)
 		len--; /* strip away trailing newline */
 	strbuf_add(sb, info->message, len);
+}
+
+const char *get_reflog_ident(struct reflog_walk_info *reflog_info)
+{
+	struct commit_reflog *commit_reflog = reflog_info->last_commit_reflog;
+	struct reflog_info *info;
+
+	if (!commit_reflog)
+		return NULL;
+
+	info = &commit_reflog->reflogs->items[commit_reflog->recno+1];
+	return info->email;
 }
 
 void show_reflog_message(struct reflog_walk_info *reflog_info, int oneline,

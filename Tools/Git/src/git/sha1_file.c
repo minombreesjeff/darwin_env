@@ -18,6 +18,7 @@
 #include "refs.h"
 #include "pack-revindex.h"
 #include "sha1-lookup.h"
+#include "bulk-checkin.h"
 
 #ifndef O_NOATIME
 #if defined(__linux__) && (defined(__i386__) || defined(__PPC__))
@@ -52,6 +53,8 @@ static struct cached_object empty_tree = {
 	"",
 	0
 };
+
+static struct packed_git *last_found_pack;
 
 static struct cached_object *find_cached_object(const unsigned char *sha1)
 {
@@ -248,27 +251,30 @@ static int link_alt_odb_entry(const char * entry, int len, const char * relative
 	const char *objdir = get_object_directory();
 	struct alternate_object_database *ent;
 	struct alternate_object_database *alt;
-	/* 43 = 40-byte + 2 '/' + terminating NUL */
-	int pfxlen = len;
-	int entlen = pfxlen + 43;
-	int base_len = -1;
+	int pfxlen, entlen;
+	struct strbuf pathbuf = STRBUF_INIT;
 
 	if (!is_absolute_path(entry) && relative_base) {
-		/* Relative alt-odb */
-		if (base_len < 0)
-			base_len = strlen(relative_base) + 1;
-		entlen += base_len;
-		pfxlen += base_len;
+		strbuf_addstr(&pathbuf, real_path(relative_base));
+		strbuf_addch(&pathbuf, '/');
 	}
+	strbuf_add(&pathbuf, entry, len);
+
+	normalize_path_copy(pathbuf.buf, pathbuf.buf);
+
+	pfxlen = strlen(pathbuf.buf);
+
+	/*
+	 * The trailing slash after the directory name is given by
+	 * this function at the end. Remove duplicates.
+	 */
+	while (pfxlen && pathbuf.buf[pfxlen-1] == '/')
+		pfxlen -= 1;
+
+	entlen = pfxlen + 43; /* '/' + 2 hex + '/' + 38 hex + NUL */
 	ent = xmalloc(sizeof(*ent) + entlen);
-
-	if (!is_absolute_path(entry) && relative_base) {
-		memcpy(ent->base, relative_base, base_len - 1);
-		ent->base[base_len - 1] = '/';
-		memcpy(ent->base + base_len, entry, len);
-	}
-	else
-		memcpy(ent->base, entry, pfxlen);
+	memcpy(ent->base, pathbuf.buf, pfxlen);
+	strbuf_release(&pathbuf);
 
 	ent->name = ent->base + pfxlen + 1;
 	ent->base[pfxlen + 3] = '/';
@@ -716,6 +722,8 @@ void free_pack_by_name(const char *pack_name)
 			close_pack_index(p);
 			free(p->bad_object_sha1);
 			*pp = p->next;
+			if (last_found_pack == p)
+				last_found_pack = NULL;
 			free(p);
 			return;
 		}
@@ -1198,6 +1206,11 @@ void *map_sha1_file(const unsigned char *sha1, unsigned long *size)
 
 		if (!fstat(fd, &st)) {
 			*size = xsize_t(st.st_size);
+			if (!*size) {
+				/* mmap() is forbidden on empty files */
+				error("object file %s is empty", sha1_file_name(sha1));
+				return NULL;
+			}
 			map = xmmap(NULL, *size, PROT_READ, MAP_PRIVATE, fd, 0);
 		}
 		close(fd);
@@ -1264,7 +1277,8 @@ unsigned long unpack_object_header_buffer(const unsigned char *buf,
 	while (c & 0x80) {
 		if (len <= used || bitsizeof(long) <= shift) {
 			error("bad object header");
-			return 0;
+			size = used = 0;
+			break;
 		}
 		c = buf[used++];
 		size += (c & 0x7f) << shift;
@@ -1984,7 +1998,7 @@ off_t find_pack_entry_one(const unsigned char *sha1,
 	return 0;
 }
 
-static int is_pack_valid(struct packed_git *p)
+int is_pack_valid(struct packed_git *p)
 {
 	/* An already open pack is known to be valid. */
 	if (p->pack_fd != -1)
@@ -2005,54 +2019,58 @@ static int is_pack_valid(struct packed_git *p)
 	return !open_packed_git(p);
 }
 
+static int fill_pack_entry(const unsigned char *sha1,
+			   struct pack_entry *e,
+			   struct packed_git *p)
+{
+	off_t offset;
+
+	if (p->num_bad_objects) {
+		unsigned i;
+		for (i = 0; i < p->num_bad_objects; i++)
+			if (!hashcmp(sha1, p->bad_object_sha1 + 20 * i))
+				return 0;
+	}
+
+	offset = find_pack_entry_one(sha1, p);
+	if (!offset)
+		return 0;
+
+	/*
+	 * We are about to tell the caller where they can locate the
+	 * requested object.  We better make sure the packfile is
+	 * still here and can be accessed before supplying that
+	 * answer, as it may have been deleted since the index was
+	 * loaded!
+	 */
+	if (!is_pack_valid(p)) {
+		warning("packfile %s cannot be accessed", p->pack_name);
+		return 0;
+	}
+	e->offset = offset;
+	e->p = p;
+	hashcpy(e->sha1, sha1);
+	return 1;
+}
+
 static int find_pack_entry(const unsigned char *sha1, struct pack_entry *e)
 {
-	static struct packed_git *last_found = (void *)1;
 	struct packed_git *p;
-	off_t offset;
 
 	prepare_packed_git();
 	if (!packed_git)
 		return 0;
-	p = (last_found == (void *)1) ? packed_git : last_found;
 
-	do {
-		if (p->num_bad_objects) {
-			unsigned i;
-			for (i = 0; i < p->num_bad_objects; i++)
-				if (!hashcmp(sha1, p->bad_object_sha1 + 20 * i))
-					goto next;
-		}
+	if (last_found_pack && fill_pack_entry(sha1, e, last_found_pack))
+		return 1;
 
-		offset = find_pack_entry_one(sha1, p);
-		if (offset) {
-			/*
-			 * We are about to tell the caller where they can
-			 * locate the requested object.  We better make
-			 * sure the packfile is still here and can be
-			 * accessed before supplying that answer, as
-			 * it may have been deleted since the index
-			 * was loaded!
-			 */
-			if (!is_pack_valid(p)) {
-				error("packfile %s cannot be accessed", p->pack_name);
-				goto next;
-			}
-			e->offset = offset;
-			e->p = p;
-			hashcpy(e->sha1, sha1);
-			last_found = p;
-			return 1;
-		}
+	for (p = packed_git; p; p = p->next) {
+		if (p == last_found_pack || !fill_pack_entry(sha1, e, p))
+			continue;
 
-		next:
-		if (p == last_found)
-			p = packed_git;
-		else
-			p = p->next;
-		if (p == last_found)
-			p = p->next;
-	} while (p);
+		last_found_pack = p;
+		return 1;
+	}
 	return 0;
 }
 
@@ -2447,15 +2465,15 @@ static int write_loose_object(const unsigned char *sha1, char *hdr, int hdrlen,
 	git_SHA_CTX c;
 	unsigned char parano_sha1[20];
 	char *filename;
-	static char tmpfile[PATH_MAX];
+	static char tmp_file[PATH_MAX];
 
 	filename = sha1_file_name(sha1);
-	fd = create_tmpfile(tmpfile, sizeof(tmpfile), filename);
+	fd = create_tmpfile(tmp_file, sizeof(tmp_file), filename);
 	if (fd < 0) {
 		if (errno == EACCES)
 			return error("insufficient permission for adding an object to repository database %s\n", get_object_directory());
 		else
-			return error("unable to create temporary sha1 filename %s: %s\n", tmpfile, strerror(errno));
+			return error("unable to create temporary sha1 filename %s: %s\n", tmp_file, strerror(errno));
 	}
 
 	/* Set it up */
@@ -2500,12 +2518,12 @@ static int write_loose_object(const unsigned char *sha1, char *hdr, int hdrlen,
 		struct utimbuf utb;
 		utb.actime = mtime;
 		utb.modtime = mtime;
-		if (utime(tmpfile, &utb) < 0)
+		if (utime(tmp_file, &utb) < 0)
 			warning("failed utime() on %s: %s",
-				tmpfile, strerror(errno));
+				tmp_file, strerror(errno));
 	}
 
-	return move_temp_to_file(tmpfile, filename);
+	return move_temp_to_file(tmp_file, filename);
 }
 
 int write_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *returnsha1)
@@ -2613,7 +2631,7 @@ static int index_mem(unsigned char *sha1, void *buf, size_t size,
 	if ((type == OBJ_BLOB) && path) {
 		struct strbuf nbuf = STRBUF_INIT;
 		if (convert_to_git(path, buf, size, &nbuf,
-		                   write_object ? safe_crlf : 0)) {
+				   write_object ? safe_crlf : SAFE_CRLF_FALSE)) {
 			buf = strbuf_detach(&nbuf, &size);
 			re_allocated = 1;
 		}
@@ -2676,82 +2694,25 @@ static int index_core(unsigned char *sha1, int fd, size_t size,
 }
 
 /*
- * This creates one packfile per large blob, because the caller
- * immediately wants the result sha1, and fast-import can report the
- * object name via marks mechanism only by closing the created
- * packfile.
+ * This creates one packfile per large blob unless bulk-checkin
+ * machinery is "plugged".
  *
  * This also bypasses the usual "convert-to-git" dance, and that is on
  * purpose. We could write a streaming version of the converting
  * functions and insert that before feeding the data to fast-import
- * (or equivalent in-core API described above), but the primary
- * motivation for trying to stream from the working tree file and to
- * avoid mmaping it in core is to deal with large binary blobs, and
- * by definition they do _not_ want to get any conversion.
+ * (or equivalent in-core API described above). However, that is
+ * somewhat complicated, as we do not know the size of the filter
+ * result, which we need to know beforehand when writing a git object.
+ * Since the primary motivation for trying to stream from the working
+ * tree file and to avoid mmaping it in core is to deal with large
+ * binary blobs, they generally do not want to get any conversion, and
+ * callers should avoid this code path when filters are requested.
  */
 static int index_stream(unsigned char *sha1, int fd, size_t size,
 			enum object_type type, const char *path,
 			unsigned flags)
 {
-	struct child_process fast_import;
-	char export_marks[512];
-	const char *argv[] = { "fast-import", "--quiet", export_marks, NULL };
-	char tmpfile[512];
-	char fast_import_cmd[512];
-	char buf[512];
-	int len, tmpfd;
-
-	strcpy(tmpfile, git_path("hashstream_XXXXXX"));
-	tmpfd = git_mkstemp_mode(tmpfile, 0600);
-	if (tmpfd < 0)
-		die_errno("cannot create tempfile: %s", tmpfile);
-	if (close(tmpfd))
-		die_errno("cannot close tempfile: %s", tmpfile);
-	sprintf(export_marks, "--export-marks=%s", tmpfile);
-
-	memset(&fast_import, 0, sizeof(fast_import));
-	fast_import.in = -1;
-	fast_import.argv = argv;
-	fast_import.git_cmd = 1;
-	if (start_command(&fast_import))
-		die_errno("index-stream: git fast-import failed");
-
-	len = sprintf(fast_import_cmd, "blob\nmark :1\ndata %lu\n",
-		      (unsigned long) size);
-	write_or_whine(fast_import.in, fast_import_cmd, len,
-		       "index-stream: feeding fast-import");
-	while (size) {
-		char buf[10240];
-		size_t sz = size < sizeof(buf) ? size : sizeof(buf);
-		ssize_t actual;
-
-		actual = read_in_full(fd, buf, sz);
-		if (actual < 0)
-			die_errno("index-stream: reading input");
-		if (write_in_full(fast_import.in, buf, actual) != actual)
-			die_errno("index-stream: feeding fast-import");
-		size -= actual;
-	}
-	if (close(fast_import.in))
-		die_errno("index-stream: closing fast-import");
-	if (finish_command(&fast_import))
-		die_errno("index-stream: finishing fast-import");
-
-	tmpfd = open(tmpfile, O_RDONLY);
-	if (tmpfd < 0)
-		die_errno("index-stream: cannot open fast-import mark");
-	len = read(tmpfd, buf, sizeof(buf));
-	if (len < 0)
-		die_errno("index-stream: reading fast-import mark");
-	if (close(tmpfd) < 0)
-		die_errno("index-stream: closing fast-import mark");
-	if (unlink(tmpfile))
-		die_errno("index-stream: unlinking fast-import mark");
-	if (len != 44 ||
-	    memcmp(":1 ", buf, 3) ||
-	    get_sha1_hex(buf + 3, sha1))
-		die_errno("index-stream: unexpected fast-import mark: <%s>", buf);
-	return 0;
+	return index_bulk_checkin(sha1, fd, size, type, path, flags);
 }
 
 int index_fd(unsigned char *sha1, int fd, struct stat *st,
@@ -2762,7 +2723,8 @@ int index_fd(unsigned char *sha1, int fd, struct stat *st,
 
 	if (!S_ISREG(st->st_mode))
 		ret = index_pipe(sha1, fd, type, path, flags);
-	else if (size <= big_file_threshold || type != OBJ_BLOB)
+	else if (size <= big_file_threshold || type != OBJ_BLOB ||
+		 (path && would_convert_to_git(path, NULL, 0, 0)))
 		ret = index_core(sha1, fd, size, type, path, flags);
 	else
 		ret = index_stream(sha1, fd, size, type, path, flags);

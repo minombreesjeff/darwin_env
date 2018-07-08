@@ -52,6 +52,9 @@ endif::git-format-patch[]
 --patience::
 	Generate a diff using the "patience diff" algorithm.
 
+--histogram::
+	Generate a diff using the "histogram diff" algorithm.
+
 --stat[=<width>[,<name-width>[,<count>]]]::
 	Generate a diffstat.  You can override the default
 	output width for 80-column terminal by `--stat=<width>`.
@@ -407,6 +410,10 @@ endif::git-format-patch[]
 --inter-hunk-context=<lines>::
 	Show the context between diff hunks, up to the specified number
 	of lines, thereby fusing hunks that are close to each other.
+
+-W::
+--function-context::
+	Show whole surrounding functions of changes.
 
 ifndef::git-format-patch[]
 ifndef::git-log[]

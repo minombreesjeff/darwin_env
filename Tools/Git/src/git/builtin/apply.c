@@ -14,6 +14,7 @@
 #include "builtin.h"
 #include "string-list.h"
 #include "dir.h"
+#include "diff.h"
 #include "parse-options.h"
 
 /*
@@ -3241,7 +3242,7 @@ static void stat_patch_list(struct patch *patch)
 		show_stats(patch);
 	}
 
-	printf(" %d files changed, %d insertions(+), %d deletions(-)\n", files, adds, dels);
+	print_stat_summary(stdout, files, adds, dels);
 }
 
 static void numstat_patch_list(struct patch *patch)
@@ -3587,14 +3588,11 @@ static int write_out_one_reject(struct patch *patch)
 	return -1;
 }
 
-static int write_out_results(struct patch *list, int skipped_patch)
+static int write_out_results(struct patch *list)
 {
 	int phase;
 	int errs = 0;
 	struct patch *l;
-
-	if (!list && !skipped_patch)
-		return error("No changes");
 
 	for (phase = 0; phase < 2; phase++) {
 		l = list;
@@ -3721,6 +3719,9 @@ static int apply_patch(int fd, const char *filename, int options)
 		offset += nr;
 	}
 
+	if (!list && !skipped_patch)
+		die("unrecognized input");
+
 	if (whitespace_error && (ws_error_action == die_on_ws_error))
 		apply = 0;
 
@@ -3738,7 +3739,7 @@ static int apply_patch(int fd, const char *filename, int options)
 	    !apply_with_reject)
 		exit(1);
 
-	if (apply && write_out_results(list, skipped_patch))
+	if (apply && write_out_results(list))
 		exit(1);
 
 	if (fake_ancestor)
@@ -3838,7 +3839,6 @@ int cmd_apply(int argc, const char **argv, const char *prefix_)
 	int i;
 	int errs = 0;
 	int is_not_gitdir = !startup_info->have_repository;
-	int binary;
 	int force_apply = 0;
 
 	const char *whitespace_option = NULL;
@@ -3857,12 +3857,8 @@ int cmd_apply(int argc, const char **argv, const char *prefix_)
 			"ignore additions made by the patch"),
 		OPT_BOOLEAN(0, "stat", &diffstat,
 			"instead of applying the patch, output diffstat for the input"),
-		{ OPTION_BOOLEAN, 0, "allow-binary-replacement", &binary,
-		  NULL, "old option, now no-op",
-		  PARSE_OPT_HIDDEN | PARSE_OPT_NOARG },
-		{ OPTION_BOOLEAN, 0, "binary", &binary,
-		  NULL, "old option, now no-op",
-		  PARSE_OPT_HIDDEN | PARSE_OPT_NOARG },
+		OPT_NOOP_NOARG(0, "allow-binary-replacement"),
+		OPT_NOOP_NOARG(0, "binary"),
 		OPT_BOOLEAN(0, "numstat", &numstat,
 			"shows number of added and deleted lines in decimal notation"),
 		OPT_BOOLEAN(0, "summary", &summary,

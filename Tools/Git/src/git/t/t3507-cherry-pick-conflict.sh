@@ -77,6 +77,21 @@ test_expect_success 'cherry-pick --no-commit does not set CHERRY_PICK_HEAD' '
 	test_must_fail git rev-parse --verify CHERRY_PICK_HEAD
 '
 
+test_expect_success 'cherry-pick w/dirty tree does not set CHERRY_PICK_HEAD' '
+	pristine_detach initial &&
+	echo foo > foo &&
+	test_must_fail git cherry-pick base &&
+	test_must_fail git rev-parse --verify CHERRY_PICK_HEAD
+'
+
+test_expect_success \
+	'cherry-pick --strategy=resolve w/dirty tree does not set CHERRY_PICK_HEAD' '
+	pristine_detach initial &&
+	echo foo > foo &&
+	test_must_fail git cherry-pick --strategy=resolve base &&
+	test_must_fail git rev-parse --verify CHERRY_PICK_HEAD
+'
+
 test_expect_success 'GIT_CHERRY_PICK_HELP suppresses CHERRY_PICK_HEAD' '
 	pristine_detach initial &&
 	(
@@ -236,6 +251,60 @@ test_expect_success 'revert also handles conflicts sanely' '
 	test_cmp expected-stages actual-stages &&
 	sed "s/[a-f0-9]*\.\.\./objid/" foo > actual &&
 	test_cmp expected actual
+'
+
+test_expect_success 'failed revert sets REVERT_HEAD' '
+	pristine_detach initial &&
+	test_must_fail git revert picked &&
+	test_cmp_rev picked REVERT_HEAD
+'
+
+test_expect_success 'successful revert does not set REVERT_HEAD' '
+	pristine_detach base &&
+	git revert base &&
+	test_must_fail git rev-parse --verify CHERRY_PICK_HEAD &&
+	test_must_fail git rev-parse --verify REVERT_HEAD
+'
+
+test_expect_success 'revert --no-commit sets REVERT_HEAD' '
+	pristine_detach base &&
+	git revert --no-commit base &&
+	test_must_fail git rev-parse --verify CHERRY_PICK_HEAD &&
+	test_cmp_rev base REVERT_HEAD
+'
+
+test_expect_success 'revert w/dirty tree does not set REVERT_HEAD' '
+	pristine_detach base &&
+	echo foo > foo &&
+	test_must_fail git revert base &&
+	test_must_fail git rev-parse --verify CHERRY_PICK_HEAD &&
+	test_must_fail git rev-parse --verify REVERT_HEAD
+'
+
+test_expect_success 'GIT_CHERRY_PICK_HELP does not suppress REVERT_HEAD' '
+	pristine_detach initial &&
+	(
+		GIT_CHERRY_PICK_HELP="and then do something else" &&
+		GIT_REVERT_HELP="and then do something else, again" &&
+		export GIT_CHERRY_PICK_HELP GIT_REVERT_HELP &&
+		test_must_fail git revert picked
+	) &&
+	test_must_fail git rev-parse --verify CHERRY_PICK_HEAD &&
+	test_cmp_rev picked REVERT_HEAD
+'
+
+test_expect_success 'git reset clears REVERT_HEAD' '
+	pristine_detach initial &&
+	test_must_fail git revert picked &&
+	git reset &&
+	test_must_fail git rev-parse --verify REVERT_HEAD
+'
+
+test_expect_success 'failed commit does not clear REVERT_HEAD' '
+	pristine_detach initial &&
+	test_must_fail git revert picked &&
+	test_must_fail git commit &&
+	test_cmp_rev picked REVERT_HEAD
 '
 
 test_expect_success 'revert conflict, diff3 -m style' '

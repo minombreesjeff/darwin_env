@@ -150,7 +150,7 @@ void cache_tree_invalidate_path(struct cache_tree *it, const char *path)
 }
 
 static int verify_cache(struct cache_entry **cache,
-			int entries)
+			int entries, int silent)
 {
 	int i, funny;
 
@@ -158,7 +158,9 @@ static int verify_cache(struct cache_entry **cache,
 	funny = 0;
 	for (i = 0; i < entries; i++) {
 		struct cache_entry *ce = cache[i];
-		if (ce_stage(ce) || (ce->ce_flags & CE_INTENT_TO_ADD)) {
+		if (ce_stage(ce)) {
+			if (silent)
+				return -1;
 			if (10 < ++funny) {
 				fprintf(stderr, "...\n");
 				break;
@@ -336,8 +338,8 @@ static int update_one(struct cache_tree *it,
 				mode, sha1_to_hex(sha1), entlen+baselen, path);
 		}
 
-		if (ce->ce_flags & CE_REMOVE)
-			continue; /* entry being removed */
+		if (ce->ce_flags & (CE_REMOVE | CE_INTENT_TO_ADD))
+			continue; /* entry being removed or placeholder */
 
 		strbuf_grow(&buffer, entlen + 100);
 		strbuf_addf(&buffer, "%o %.*s%c", mode, entlen, path + baselen, '\0');
@@ -370,10 +372,11 @@ int cache_tree_update(struct cache_tree *it,
 		      struct cache_entry **cache,
 		      int entries,
 		      int missing_ok,
-		      int dryrun)
+		      int dryrun,
+		      int silent)
 {
 	int i;
-	i = verify_cache(cache, entries);
+	i = verify_cache(cache, entries, silent);
 	if (i)
 		return i;
 	i = update_one(it, cache, entries, "", 0, missing_ok, dryrun);
@@ -573,7 +576,7 @@ int write_cache_as_tree(unsigned char *sha1, int flags, const char *prefix)
 
 		if (cache_tree_update(active_cache_tree,
 				      active_cache, active_nr,
-				      missing_ok, 0) < 0)
+				      missing_ok, 0, 0) < 0)
 			return WRITE_TREE_UNMERGED_INDEX;
 		if (0 <= newfd) {
 			if (!write_cache(newfd, active_cache, active_nr) &&
@@ -667,4 +670,12 @@ int cache_tree_matches_traversal(struct cache_tree *root,
 	if (it && it->entry_count > 0 && !hashcmp(ent->sha1, it->sha1))
 		return it->entry_count;
 	return 0;
+}
+
+int update_main_cache_tree (int silent)
+{
+	if (!the_index.cache_tree)
+		the_index.cache_tree = cache_tree();
+	return cache_tree_update(the_index.cache_tree,
+				 the_index.cache, the_index.cache_nr, 0, 0, silent);
 }

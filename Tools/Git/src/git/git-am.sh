@@ -127,15 +127,18 @@ fall_back_3way () {
     mkdir "$dotest/patch-merge-tmp-dir"
 
     # First see if the patch records the index info that we can use.
-    git apply --build-fake-ancestor "$dotest/patch-merge-tmp-index" \
-	"$dotest/patch" &&
+    cmd="git apply $git_apply_opt --build-fake-ancestor" &&
+    cmd="$cmd "'"$dotest/patch-merge-tmp-index" "$dotest/patch"' &&
+    eval "$cmd" &&
     GIT_INDEX_FILE="$dotest/patch-merge-tmp-index" \
     git write-tree >"$dotest/patch-merge-base+" ||
     cannot_fallback "$(gettext "Repository lacks necessary blobs to fall back on 3-way merge.")"
 
     say Using index info to reconstruct a base tree...
-    if GIT_INDEX_FILE="$dotest/patch-merge-tmp-index" \
-	git apply --cached <"$dotest/patch"
+
+    cmd='GIT_INDEX_FILE="$dotest/patch-merge-tmp-index"'
+    cmd="$cmd git apply --cached $git_apply_opt"' <"$dotest/patch"'
+    if eval "$cmd"
     then
 	mv "$dotest/patch-merge-base+" "$dotest/patch-merge-base"
 	mv "$dotest/patch-merge-tmp-index" "$dotest/patch-merge-index"
@@ -201,7 +204,7 @@ check_patch_format () {
 		l1=
 		while test -z "$l1"
 		do
-			read l1
+			read l1 || break
 		done
 		read l2
 		read l3
@@ -308,6 +311,40 @@ split_patches () {
 			' < "$stgit" > "$dotest/$msgnum" || clean_abort
 		done
 		echo "$this" > "$dotest/last"
+		this=
+		msgnum=
+		;;
+	hg)
+		this=0
+		for hg in "$@"
+		do
+			this=$(( $this + 1 ))
+			msgnum=$(printf "%0${prec}d" $this)
+			# hg stores changeset metadata in #-commented lines preceding
+			# the commit message and diff(s). The only metadata we care about
+			# are the User and Date (Node ID and Parent are hashes which are
+			# only relevant to the hg repository and thus not useful to us)
+			# Since we cannot guarantee that the commit message is in
+			# git-friendly format, we put no Subject: line and just consume
+			# all of the message as the body
+			perl -M'POSIX qw(strftime)' -ne 'BEGIN { $subject = 0 }
+				if ($subject) { print ; }
+				elsif (/^\# User /) { s/\# User/From:/ ; print ; }
+				elsif (/^\# Date /) {
+					my ($hashsign, $str, $time, $tz) = split ;
+					$tz = sprintf "%+05d", (0-$tz)/36;
+					print "Date: " .
+					      strftime("%a, %d %b %Y %H:%M:%S ",
+						       localtime($time))
+					      . "$tz\n";
+				} elsif (/^\# /) { next ; }
+				else {
+					print "\n", $_ ;
+					$subject = 1;
+				}
+			' <"$hg" >"$dotest/$msgnum" || clean_abort
+		done
+		echo "$this" >"$dotest/last"
 		this=
 		msgnum=
 		;;

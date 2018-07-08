@@ -135,8 +135,10 @@ static char *parse_value(void)
 	for (;;) {
 		int c = get_next_char();
 		if (c == '\n') {
-			if (quote)
+			if (quote) {
+				cf->linenr--;
 				return NULL;
+			}
 			return cf->value.buf;
 		}
 		if (comment)
@@ -226,7 +228,7 @@ static int get_extended_base_var(char *name, int baselen, int c)
 {
 	do {
 		if (c == '\n')
-			return -1;
+			goto error_incomplete_line;
 		c = get_next_char();
 	} while (isspace(c));
 
@@ -238,13 +240,13 @@ static int get_extended_base_var(char *name, int baselen, int c)
 	for (;;) {
 		int c = get_next_char();
 		if (c == '\n')
-			return -1;
+			goto error_incomplete_line;
 		if (c == '"')
 			break;
 		if (c == '\\') {
 			c = get_next_char();
 			if (c == '\n')
-				return -1;
+				goto error_incomplete_line;
 		}
 		name[baselen++] = c;
 		if (baselen > MAXNAME / 2)
@@ -255,6 +257,9 @@ static int get_extended_base_var(char *name, int baselen, int c)
 	if (get_next_char() != ']')
 		return -1;
 	return baselen;
+error_incomplete_line:
+	cf->linenr--;
+	return -1;
 }
 
 static int get_base_var(char *name)
@@ -333,7 +338,7 @@ static int git_parse_file(config_fn_t fn, void *data)
 	die("bad config file line %d in %s", cf->linenr, cf->name);
 }
 
-static int parse_unit_factor(const char *end, unsigned long *val)
+static int parse_unit_factor(const char *end, uintmax_t *val)
 {
 	if (!*end)
 		return 1;
@@ -356,11 +361,23 @@ static int git_parse_long(const char *value, long *ret)
 {
 	if (value && *value) {
 		char *end;
-		long val = strtol(value, &end, 0);
-		unsigned long factor = 1;
+		intmax_t val;
+		uintmax_t uval;
+		uintmax_t factor = 1;
+
+		errno = 0;
+		val = strtoimax(value, &end, 0);
+		if (errno == ERANGE)
+			return 0;
 		if (!parse_unit_factor(end, &factor))
 			return 0;
-		*ret = val * factor;
+		uval = abs(val);
+		uval *= factor;
+		if ((uval > maximum_signed_value_of_type(long)) ||
+		    (abs(val) > uval))
+			return 0;
+		val *= factor;
+		*ret = val;
 		return 1;
 	}
 	return 0;
@@ -370,8 +387,18 @@ int git_parse_ulong(const char *value, unsigned long *ret)
 {
 	if (value && *value) {
 		char *end;
-		unsigned long val = strtoul(value, &end, 0);
+		uintmax_t val;
+		uintmax_t oldval;
+
+		errno = 0;
+		val = strtoumax(value, &end, 0);
+		if (errno == ERANGE)
+			return 0;
+		oldval = val;
 		if (!parse_unit_factor(end, &val))
+			return 0;
+		if ((val > maximum_unsigned_value_of_type(long)) ||
+		    (oldval > val))
 			return 0;
 		*ret = val;
 		return 1;
@@ -553,7 +580,7 @@ static int git_default_core_config(const char *var, const char *value)
 
 	if (!strcmp(var, "core.packedgitwindowsize")) {
 		int pgsz_x2 = getpagesize() * 2;
-		packed_git_window_size = git_config_int(var, value);
+		packed_git_window_size = git_config_ulong(var, value);
 
 		/* This value must be multiple of (pagesize * 2) */
 		packed_git_window_size /= pgsz_x2;
@@ -564,18 +591,17 @@ static int git_default_core_config(const char *var, const char *value)
 	}
 
 	if (!strcmp(var, "core.bigfilethreshold")) {
-		long n = git_config_int(var, value);
-		big_file_threshold = 0 < n ? n : 0;
+		big_file_threshold = git_config_ulong(var, value);
 		return 0;
 	}
 
 	if (!strcmp(var, "core.packedgitlimit")) {
-		packed_git_limit = git_config_int(var, value);
+		packed_git_limit = git_config_ulong(var, value);
 		return 0;
 	}
 
 	if (!strcmp(var, "core.deltabasecachelimit")) {
-		delta_base_cache_limit = git_config_int(var, value);
+		delta_base_cache_limit = git_config_ulong(var, value);
 		return 0;
 	}
 
@@ -797,6 +823,10 @@ int git_default_config(const char *var, const char *value, void *dummy)
 		return 0;
 	}
 
+	if (!strcmp(var, "pack.packsizelimit")) {
+		pack_size_limit_cfg = git_config_ulong(var, value);
+		return 0;
+	}
 	/* Add other config variables here and to Documentation/config.txt. */
 	return 0;
 }
@@ -865,12 +895,12 @@ int git_config_early(config_fn_t fn, void *data, const char *repo_config)
 
 	home = getenv("HOME");
 	if (home) {
-		char *user_config = xstrdup(mkpath("%s/.gitconfig", home));
+		char buf[PATH_MAX];
+		char *user_config = mksnpath(buf, sizeof(buf), "%s/.gitconfig", home);
 		if (!access(user_config, R_OK)) {
 			ret += git_config_from_file(fn, user_config, data);
 			found += 1;
 		}
-		free(user_config);
 	}
 
 	if (repo_config && !access(repo_config, R_OK)) {
@@ -1098,6 +1128,12 @@ contline:
 	return offset;
 }
 
+int git_config_set_in_file(const char *config_filename,
+			const char *key, const char *value)
+{
+	return git_config_set_multivar_in_file(config_filename, key, value, NULL, 0);
+}
+
 int git_config_set(const char *key, const char *value)
 {
 	return git_config_set_multivar(key, value, NULL, 0);
@@ -1195,18 +1231,13 @@ out_free_ret_1:
  * - the config file is removed and the lock file rename()d to it.
  *
  */
-int git_config_set_multivar(const char *key, const char *value,
-	const char *value_regex, int multi_replace)
+int git_config_set_multivar_in_file(const char *config_filename,
+				const char *key, const char *value,
+				const char *value_regex, int multi_replace)
 {
 	int fd = -1, in_fd;
 	int ret;
-	char *config_filename;
 	struct lock_file *lock = NULL;
-
-	if (config_exclusive_filename)
-		config_filename = xstrdup(config_exclusive_filename);
-	else
-		config_filename = git_pathdup("config");
 
 	/* parse-key returns negative; flip the sign to feed exit(3) */
 	ret = 0 - git_config_parse_key(key, &store.key, &store.baselen);
@@ -1384,13 +1415,30 @@ int git_config_set_multivar(const char *key, const char *value,
 out_free:
 	if (lock)
 		rollback_lock_file(lock);
-	free(config_filename);
 	return ret;
 
 write_err_out:
 	ret = write_error(lock->filename);
 	goto out_free;
 
+}
+
+int git_config_set_multivar(const char *key, const char *value,
+			const char *value_regex, int multi_replace)
+{
+	const char *config_filename;
+	char *buf = NULL;
+	int ret;
+
+	if (config_exclusive_filename)
+		config_filename = config_exclusive_filename;
+	else
+		config_filename = buf = git_pathdup("config");
+
+	ret = git_config_set_multivar_in_file(config_filename, key, value,
+					value_regex, multi_replace);
+	free(buf);
+	return ret;
 }
 
 static int section_name_match (const char *buf, const char *name)

@@ -19,9 +19,9 @@ then
     test_done
 fi
 
-CVSROOT=$(pwd)/cvsroot
-CVSWORK=$(pwd)/cvswork
-GIT_DIR=$(pwd)/.git
+CVSROOT=$PWD/cvsroot
+CVSWORK=$PWD/cvswork
+GIT_DIR=$PWD/.git
 export CVSROOT CVSWORK GIT_DIR
 
 rm -rf "$CVSROOT" "$CVSWORK"
@@ -321,7 +321,7 @@ test_expect_success 'use the same checkout for Git and CVS' '
 
 	(mkdir shared &&
 	 cd shared &&
-	 unset GIT_DIR &&
+	 sane_unset GIT_DIR &&
 	 cvs co . &&
 	 git init &&
 	 git add " space" &&

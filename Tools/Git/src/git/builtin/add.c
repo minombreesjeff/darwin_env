@@ -13,6 +13,7 @@
 #include "diff.h"
 #include "diffcore.h"
 #include "revision.h"
+#include "bulk-checkin.h"
 
 static const char * const builtin_add_usage[] = {
 	"git add [options] [--] <filepattern>...",
@@ -279,6 +280,7 @@ static int edit_patch(int argc, const char **argv, const char *prefix)
 
 	argc = setup_revisions(argc, argv, &rev, NULL);
 	rev.diffopt.output_format = DIFF_FORMAT_PATCH;
+	DIFF_OPT_SET(&rev.diffopt, IGNORE_DIRTY_SUBMODULES);
 	out = open(file, O_CREAT | O_WRONLY, 0644);
 	if (out < 0)
 		die (_("Could not open '%s' for writing."), file);
@@ -458,10 +460,14 @@ int cmd_add(int argc, const char **argv, const char *prefix)
 		free(seen);
 	}
 
+	plug_bulk_checkin();
+
 	exit_status |= add_files_to_cache(prefix, pathspec, flags);
 
 	if (add_new_files)
 		exit_status |= add_files(&dir, flags);
+
+	unplug_bulk_checkin();
 
  finish:
 	if (active_cache_changed) {

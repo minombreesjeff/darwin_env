@@ -383,6 +383,22 @@ int strbuf_getline(struct strbuf *sb, FILE *fp, int term)
 	return 0;
 }
 
+int strbuf_getwholeline_fd(struct strbuf *sb, int fd, int term)
+{
+	strbuf_reset(sb);
+
+	while (1) {
+		char ch;
+		ssize_t len = xread(fd, &ch, 1);
+		if (len <= 0)
+			return EOF;
+		strbuf_addch(sb, ch);
+		if (ch == term)
+			break;
+	}
+	return 0;
+}
+
 int strbuf_read_file(struct strbuf *sb, const char *path, size_t hint)
 {
 	int fd, len;
@@ -396,4 +412,55 @@ int strbuf_read_file(struct strbuf *sb, const char *path, size_t hint)
 		return -1;
 
 	return len;
+}
+
+void strbuf_add_lines(struct strbuf *out, const char *prefix,
+		      const char *buf, size_t size)
+{
+	while (size) {
+		const char *next = memchr(buf, '\n', size);
+		next = next ? (next + 1) : (buf + size);
+		strbuf_addstr(out, prefix);
+		strbuf_add(out, buf, next - buf);
+		size -= next - buf;
+		buf = next;
+	}
+	strbuf_complete_line(out);
+}
+
+static int is_rfc3986_reserved(char ch)
+{
+	switch (ch) {
+		case '!': case '*': case '\'': case '(': case ')': case ';':
+		case ':': case '@': case '&': case '=': case '+': case '$':
+		case ',': case '/': case '?': case '#': case '[': case ']':
+			return 1;
+	}
+	return 0;
+}
+
+static int is_rfc3986_unreserved(char ch)
+{
+	return isalnum(ch) ||
+		ch == '-' || ch == '_' || ch == '.' || ch == '~';
+}
+
+void strbuf_add_urlencode(struct strbuf *sb, const char *s, size_t len,
+			  int reserved)
+{
+	strbuf_grow(sb, len);
+	while (len--) {
+		char ch = *s++;
+		if (is_rfc3986_unreserved(ch) ||
+		    (!reserved && is_rfc3986_reserved(ch)))
+			strbuf_addch(sb, ch);
+		else
+			strbuf_addf(sb, "%%%02x", ch);
+	}
+}
+
+void strbuf_addstr_urlencode(struct strbuf *sb, const char *s,
+			     int reserved)
+{
+	strbuf_add_urlencode(sb, s, strlen(s), reserved);
 }

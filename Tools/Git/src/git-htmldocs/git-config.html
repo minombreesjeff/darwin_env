@@ -1164,9 +1164,9 @@ advice.*
 </dt>
 <dd>
 <p>
-        When set to <em>true</em>, display the given optional help message.
-        When set to <em>false</em>, do not display. The configuration variables
-        are:
+        These variables control various optional help messages designed to
+        aid new users. All <em>advice.*</em> variables default to <em>true</em>, and you
+        can tell Git that you do not need help by setting these to <em>false</em>:
 </p>
 <div class="dlist"><dl>
 <dt class="hdlist1">
@@ -1175,7 +1175,7 @@ pushNonFastForward
 <dd>
 <p>
                 Advice shown when <a href="git-push.html">git-push(1)</a> refuses
-                non-fast-forward refs. Default: true.
+                non-fast-forward refs.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1185,7 +1185,7 @@ statusHints
 <p>
                 Directions on how to stage/unstage/add shown in the
                 output of <a href="git-status.html">git-status(1)</a> and the template shown
-                when writing commit messages. Default: true.
+                when writing commit messages.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1195,7 +1195,6 @@ commitBeforeMerge
 <p>
                 Advice shown when <a href="git-merge.html">git-merge(1)</a> refuses to
                 merge to avoid overwriting local changes.
-                Default: true.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1205,7 +1204,6 @@ resolveConflict
 <p>
                 Advices shown by various commands when conflicts
                 prevent the operation from being performed.
-                Default: true.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1215,7 +1213,7 @@ implicitIdentity
 <p>
                 Advice on how to set your identity configuration when
                 your information is guessed from the system username and
-                domain name. Default: true.
+                domain name.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1223,9 +1221,9 @@ detachedHead
 </dt>
 <dd>
 <p>
-                Advice shown when you used <a href=":git-checkout.html">:git-checkout(1)</a> to
+                Advice shown when you used <a href="git-checkout.html">git-checkout(1)</a> to
                 move to the detach HEAD state, to instruct how to create
-                a local branch after the fact.  Default: true.
+                a local branch after the fact.
 </p>
 </dd>
 </dl></div>
@@ -2299,6 +2297,49 @@ commit.template
 </p>
 </dd>
 <dt class="hdlist1">
+credential.helper
+</dt>
+<dd>
+<p>
+        Specify an external helper to be called when a username or
+        password credential is needed; the helper may consult external
+        storage to avoid prompting the user for the credentials. See
+        <a href="gitcredentials.html">gitcredentials(7)</a> for details.
+</p>
+</dd>
+<dt class="hdlist1">
+credential.useHttpPath
+</dt>
+<dd>
+<p>
+        When acquiring credentials, consider the "path" component of an http
+        or https URL to be important. Defaults to false. See
+        <a href="gitcredentials.html">gitcredentials(7)</a> for more information.
+</p>
+</dd>
+<dt class="hdlist1">
+credential.username
+</dt>
+<dd>
+<p>
+        If no username is set for a network authentication, use this username
+        by default. See credential.&lt;context&gt;.* below, and
+        <a href="gitcredentials.html">gitcredentials(7)</a>.
+</p>
+</dd>
+<dt class="hdlist1">
+credential.&lt;url&gt;.*
+</dt>
+<dd>
+<p>
+        Any of the credential.* options above can be applied selectively to
+        some credentials. For example "credential.https://example.com.username"
+        would set the default username only for https connections to
+        example.com. See <a href="gitcredentials.html">gitcredentials(7)</a> for details on how URLs are
+        matched.
+</p>
+</dd>
+<dt class="hdlist1">
 diff.autorefreshindex
 </dt>
 <dd>
@@ -3074,6 +3115,22 @@ grep.extendedRegexp
 <dd>
 <p>
         If set to true, enable <em>--extended-regexp</em> option by default.
+</p>
+</dd>
+<dt class="hdlist1">
+gpg.program
+</dt>
+<dd>
+<p>
+        Use this custom program instead of "gpg" found on $PATH when
+        making or verifying a PGP signature. The program must support the
+        same command line interface as GPG, namely, to verify a detached
+        signature, "gpg --verify $file - &lt;$signature" is run, and the
+        program is expected to signal a good signature by exiting with
+        code 0, and to generate an ascii-armored detached signature, the
+        standard input of "gpg -bsau $key" is fed with the contents to be
+        signed, and the program is expected to send the result to its
+        standard output.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -4412,10 +4469,11 @@ rerere.enabled
 <dd>
 <p>
         Activate recording of resolved conflicts, so that identical
-        conflict hunks can be resolved automatically, should they
-        be encountered again.  <a href="git-rerere.html">git-rerere(1)</a> command is by
-        default enabled if you create <tt>rr-cache</tt> directory under
-        <tt>$GIT_DIR</tt>, but can be disabled by setting this option to false.
+        conflict hunks can be resolved automatically, should they be
+        encountered again.  By default, <a href="git-rerere.html">git-rerere(1)</a> is
+        enabled if there is an <tt>rr-cache</tt> directory under the
+        <tt>$GIT_DIR</tt>, e.g. if "rerere" was previously used in the
+        repository.
 </p>
 </dd>
 <dt class="hdlist1">

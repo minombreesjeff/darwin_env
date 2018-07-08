@@ -22,6 +22,7 @@ field w_asim     ; # text column: annotations (simple computation)
 field w_file     ; # text column: actual file data
 field w_cviewer  ; # pane showing commit message
 field finder     ; # find mini-dialog frame
+field gotoline   ; # line goto mini-dialog frame
 field status     ; # status mega-widget instance
 field old_height ; # last known height of $w.file_pane
 
@@ -218,7 +219,8 @@ constructor new {i_commit i_path i_jump} {
 	eval grid $w_columns $w.file_pane.out.sby -sticky nsew
 	grid conf \
 		$w.file_pane.out.sbx \
-		-column [expr {[llength $w_columns] - 1}] \
+		-column 0 \
+		-columnspan [expr {[llength $w_columns] + 1}] \
 		-sticky we
 	grid columnconfigure \
 		$w.file_pane.out \
@@ -228,7 +230,14 @@ constructor new {i_commit i_path i_jump} {
 
 	set finder [::searchbar::new \
 		$w.file_pane.out.ff $w_file \
-		-column [expr {[llength $w_columns] - 1}] \
+		-column 0 \
+		-columnspan [expr {[llength $w_columns] + 1}] \
+		]
+
+	set gotoline [::linebar::new \
+		$w.file_pane.out.lf $w_file \
+		-column 0 \
+		-columnspan [expr {[llength $w_columns] + 1}] \
 		]
 
 	set w_cviewer $w.file_pane.cm.t
@@ -274,7 +283,11 @@ constructor new {i_commit i_path i_jump} {
 	$w.ctxm add command \
 		-label [mc "Find Text..."] \
 		-accelerator F7 \
-		-command [list searchbar::show $finder]
+		-command [cb _show_finder]
+	$w.ctxm add command \
+		-label [mc "Goto Line..."] \
+		-accelerator "Ctrl-G" \
+		-command [cb _show_linebar]
 	menu $w.ctxm.enc
 	build_encoding_menu $w.ctxm.enc [cb _setencoding]
 	$w.ctxm add cascade \
@@ -341,10 +354,13 @@ constructor new {i_commit i_path i_jump} {
 	bind $w_cviewer <Tab>       "[list focus $w_file];break"
 	bind $w_cviewer <Button-1>   [list focus $w_cviewer]
 	bind $w_file    <Visibility> [cb _focus_search $w_file]
-	bind $top       <F7>         [list searchbar::show $finder]
+	bind $top       <F7>         [cb _show_finder]
+	bind $top       <Key-slash>  [cb _show_finder]
+	bind $top    <Control-Key-s> [cb _show_finder]
 	bind $top       <Escape>     [list searchbar::hide $finder]
 	bind $top       <F3>         [list searchbar::find_next $finder]
 	bind $top       <Shift-F3>   [list searchbar::find_prev $finder]
+	bind $top    <Control-Key-g> [cb _show_linebar]
 	catch { bind $top <Shift-Key-XF86_Switch_VT_3> [list searchbar::find_prev $finder] }
 
 	grid configure $w.header -sticky ew
@@ -460,14 +476,7 @@ method _load {jump} {
 	}
 	if {$commit eq {}} {
 		if {$do_textconv ne 0} {
-			# Run textconv with sh -c "..." to allow it to
-			# contain command + arguments. On windows, just
-			# call the filter command.
-			if {![file executable [shellpath]]} {
-				set fd [open |[linsert $textconv end $path] r]
-			} else {
-				set fd [open |[list [shellpath] -c "$textconv \"\$0\"" $path] r]
-			}
+			set fd [open_cmd_pipe $textconv $path]
 		} else {
 			set fd [open $path r]
 		}
@@ -559,7 +568,11 @@ method _read_file {fd jump} {
 	foreach i $w_columns {$i conf -state disabled}
 
 	if {[eof $fd]} {
-		close $fd
+		fconfigure $fd -blocking 1; # enable error reporting on close
+		if {[catch {close $fd} err]} {
+			tk_messageBox -icon error -title [mc Error] \
+				-message $err
+		}
 
 		# If we don't force Tk to update the widgets *right now*
 		# none of our jump commands will cause a change in the UI.
@@ -1049,7 +1062,7 @@ method _gitkcommit {} {
 		set radius [get_config gui.blamehistoryctx]
 		set cmdline [list --select-commit=$cmit]
 
-                if {$radius > 0} {
+		if {$radius > 0} {
 			set author_time {}
 			set committer_time {}
 
@@ -1157,7 +1170,7 @@ method _read_diff_load_commit {fd cparent new_path tline} {
 	}
 
 	if {[eof $fd]} {
-		close $fd;
+		close $fd
 		set current_fd {}
 
 		_load_new_commit $this  \
@@ -1188,6 +1201,7 @@ method _open_tooltip {cur_w} {
 		_hide_tooltip $this
 
 		set tooltip_wm [toplevel $cur_w.tooltip -borderwidth 1]
+		catch {wm attributes $tooltip_wm -type tooltip}
 		wm overrideredirect $tooltip_wm 1
 		wm transient $tooltip_wm [winfo toplevel $cur_w]
 		set tooltip_t $tooltip_wm.label
@@ -1298,9 +1312,9 @@ method _position_tooltip {} {
 	set pos_y [expr {[winfo pointery .] + 10}]
 
 	set g "${req_w}x${req_h}"
-	if {$pos_x >= 0} {append g +}
+	if {[tk windowingsystem] eq "win32" || $pos_x >= 0} {append g +}
 	append g $pos_x
-	if {$pos_y >= 0} {append g +}
+	if {[tk windowingsystem] eq "win32" || $pos_y >= 0} {append g +}
 	append g $pos_y
 
 	wm geometry $tooltip_wm $g
@@ -1334,6 +1348,16 @@ method _resize {new_height} {
 	$w.file_pane sash place 0 $ox $oy
 
 	set old_height $new_height
+}
+
+method _show_finder {} {
+	linebar::hide $gotoline
+	searchbar::show $finder
+}
+
+method _show_linebar {} {
+	searchbar::hide $finder
+	linebar::show $gotoline
 }
 
 }

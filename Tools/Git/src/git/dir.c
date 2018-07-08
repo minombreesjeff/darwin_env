@@ -34,49 +34,54 @@ int fnmatch_icase(const char *pattern, const char *string, int flags)
 	return fnmatch(pattern, string, flags | (ignore_case ? FNM_CASEFOLD : 0));
 }
 
-static int common_prefix(const char **pathspec)
+static size_t common_prefix_len(const char **pathspec)
 {
-	const char *path, *slash, *next;
-	int prefix;
+	const char *n, *first;
+	size_t max = 0;
 
 	if (!pathspec)
-		return 0;
+		return max;
 
-	path = *pathspec;
-	slash = strrchr(path, '/');
-	if (!slash)
-		return 0;
-
-	/*
-	 * The first 'prefix' characters of 'path' are common leading
-	 * path components among the pathspecs we have seen so far,
-	 * including the trailing slash.
-	 */
-	prefix = slash - path + 1;
-	while ((next = *++pathspec) != NULL) {
-		int len, last_matching_slash = -1;
-		for (len = 0; len < prefix && next[len] == path[len]; len++)
-			if (next[len] == '/')
-				last_matching_slash = len;
-		if (len == prefix)
-			continue;
-		if (last_matching_slash < 0)
-			return 0;
-		prefix = last_matching_slash + 1;
+	first = *pathspec;
+	while ((n = *pathspec++)) {
+		size_t i, len = 0;
+		for (i = 0; first == n || i < max; i++) {
+			char c = n[i];
+			if (!c || c != first[i] || is_glob_special(c))
+				break;
+			if (c == '/')
+				len = i + 1;
+		}
+		if (first == n || len < max) {
+			max = len;
+			if (!max)
+				break;
+		}
 	}
-	return prefix;
+	return max;
+}
+
+/*
+ * Returns a copy of the longest leading path common among all
+ * pathspecs.
+ */
+char *common_prefix(const char **pathspec)
+{
+	unsigned long len = common_prefix_len(pathspec);
+
+	return len ? xmemdupz(*pathspec, len) : NULL;
 }
 
 int fill_directory(struct dir_struct *dir, const char **pathspec)
 {
 	const char *path;
-	int len;
+	size_t len;
 
 	/*
 	 * Calculate common prefix for the pathspec, and
 	 * use that to optimize the directory walk
 	 */
-	len = common_prefix(pathspec);
+	len = common_prefix_len(pathspec);
 	path = "";
 
 	if (len)
@@ -84,6 +89,8 @@ int fill_directory(struct dir_struct *dir, const char **pathspec)
 
 	/* Read the directory and prune it */
 	read_directory(dir, path, len, pathspec);
+	if (*path)
+		free((char *)path);
 	return len;
 }
 
@@ -961,34 +968,34 @@ static int read_directory_recursive(struct dir_struct *dir,
 {
 	DIR *fdir = opendir(*base ? base : ".");
 	int contents = 0;
+	struct dirent *de;
+	char path[PATH_MAX + 1];
 
-	if (fdir) {
-		struct dirent *de;
-		char path[PATH_MAX + 1];
-		memcpy(path, base, baselen);
+	if (!fdir)
+		return 0;
 
-		while ((de = readdir(fdir)) != NULL) {
-			int len;
-			switch (treat_path(dir, de, path, sizeof(path),
-					   baselen, simplify, &len)) {
-			case path_recurse:
-				contents += read_directory_recursive
-					(dir, path, len, 0, simplify);
-				continue;
-			case path_ignored:
-				continue;
-			case path_handled:
-				break;
-			}
-			contents++;
-			if (check_only)
-				goto exit_early;
-			else
-				dir_add_name(dir, path, len);
+	memcpy(path, base, baselen);
+
+	while ((de = readdir(fdir)) != NULL) {
+		int len;
+		switch (treat_path(dir, de, path, sizeof(path),
+				   baselen, simplify, &len)) {
+		case path_recurse:
+			contents += read_directory_recursive(dir, path, len, 0, simplify);
+			continue;
+		case path_ignored:
+			continue;
+		case path_handled:
+			break;
 		}
-exit_early:
-		closedir(fdir);
+		contents++;
+		if (check_only)
+			goto exit_early;
+		else
+			dir_add_name(dir, path, len);
 	}
+exit_early:
+	closedir(fdir);
 
 	return contents;
 }

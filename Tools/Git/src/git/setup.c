@@ -244,38 +244,6 @@ const char **get_pathspec(const char *prefix, const char **pathspec)
 	return pathspec;
 }
 
-const char *pathspec_prefix(const char *prefix, const char **pathspec)
-{
-	const char **p, *n, *prev;
-	unsigned long max;
-
-	if (!pathspec)
-		return prefix ? xmemdupz(prefix, strlen(prefix)) : NULL;
-
-	prev = NULL;
-	max = PATH_MAX;
-	for (p = pathspec; (n = *p) != NULL; p++) {
-		int i, len = 0;
-		for (i = 0; i < max; i++) {
-			char c = n[i];
-			if (prev && prev[i] != c)
-				break;
-			if (!c || c == '*' || c == '?')
-				break;
-			if (c == '/')
-				len = i+1;
-		}
-		prev = n;
-		if (len < max) {
-			max = len;
-			if (!max)
-				break;
-		}
-	}
-
-	return max ? xmemdupz(prev, max) : NULL;
-}
-
 /*
  * Test if it looks like we're at a git directory.
  * We want to see:
@@ -287,7 +255,7 @@ const char *pathspec_prefix(const char *prefix, const char **pathspec)
  *    a proper "ref:", or a regular file HEAD that has a properly
  *    formatted sha1 object name.
  */
-static int is_git_directory(const char *suspect)
+int is_git_directory(const char *suspect)
 {
 	char path[PATH_MAX];
 	size_t len = strlen(suspect);
@@ -819,4 +787,11 @@ int check_repository_format(void)
 const char *setup_git_directory(void)
 {
 	return setup_git_directory_gently(NULL);
+}
+
+const char *resolve_gitdir(const char *suspect)
+{
+	if (is_git_directory(suspect))
+		return suspect;
+	return read_gitfile(suspect);
 }

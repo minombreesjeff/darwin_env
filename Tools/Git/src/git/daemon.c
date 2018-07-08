@@ -20,6 +20,7 @@
 static int log_syslog;
 static int verbose;
 static int reuseaddr;
+static int informative_errors;
 
 static const char daemon_usage[] =
 "git daemon [--verbose] [--syslog] [--export-all]\n"
@@ -108,11 +109,11 @@ static void NORETURN daemon_die(const char *err, va_list params)
 	exit(1);
 }
 
-static char *path_ok(char *directory)
+static const char *path_ok(char *directory)
 {
 	static char rpath[PATH_MAX];
 	static char interp_path[PATH_MAX];
-	char *path;
+	const char *path;
 	char *dir;
 
 	dir = directory;
@@ -247,6 +248,14 @@ static int git_daemon_config(const char *var, const char *value, void *cb)
 	return 0;
 }
 
+static int daemon_error(const char *dir, const char *msg)
+{
+	if (!informative_errors)
+		msg = "access denied or repository not exported";
+	packet_write(1, "ERR %s: %s", msg, dir);
+	return -1;
+}
+
 static int run_service(char *dir, struct daemon_service *service)
 {
 	const char *path;
@@ -257,11 +266,11 @@ static int run_service(char *dir, struct daemon_service *service)
 	if (!enabled && !service->overridable) {
 		logerror("'%s': service not enabled.", service->name);
 		errno = EACCES;
-		return -1;
+		return daemon_error(dir, "service not enabled");
 	}
 
 	if (!(path = path_ok(dir)))
-		return -1;
+		return daemon_error(dir, "no such repository");
 
 	/*
 	 * Security on the cheap.
@@ -277,7 +286,7 @@ static int run_service(char *dir, struct daemon_service *service)
 	if (!export_all_trees && access("git-daemon-export-ok", F_OK)) {
 		logerror("'%s': repository not exported.", path);
 		errno = EACCES;
-		return -1;
+		return daemon_error(dir, "repository not exported");
 	}
 
 	if (service->overridable) {
@@ -291,7 +300,7 @@ static int run_service(char *dir, struct daemon_service *service)
 		logerror("'%s': service not enabled for '%s'",
 			 service->name, path);
 		errno = EACCES;
-		return -1;
+		return daemon_error(dir, "service not enabled");
 	}
 
 	/*
@@ -734,6 +743,29 @@ struct socketlist {
 	size_t alloc;
 };
 
+static const char *ip2str(int family, struct sockaddr *sin, socklen_t len)
+{
+#ifdef NO_IPV6
+	static char ip[INET_ADDRSTRLEN];
+#else
+	static char ip[INET6_ADDRSTRLEN];
+#endif
+
+	switch (family) {
+#ifndef NO_IPV6
+	case AF_INET6:
+		inet_ntop(family, &((struct sockaddr_in6*)sin)->sin6_addr, ip, len);
+		break;
+#endif
+	case AF_INET:
+		inet_ntop(family, &((struct sockaddr_in*)sin)->sin_addr, ip, len);
+		break;
+	default:
+		strcpy(ip, "<unknown>");
+	}
+	return ip;
+}
+
 #ifndef NO_IPV6
 
 static int setup_named_sock(char *listen_addr, int listen_port, struct socketlist *socklist)
@@ -780,15 +812,22 @@ static int setup_named_sock(char *listen_addr, int listen_port, struct socketlis
 #endif
 
 		if (set_reuse_addr(sockfd)) {
+			logerror("Could not set SO_REUSEADDR: %s", strerror(errno));
 			close(sockfd);
 			continue;
 		}
 
 		if (bind(sockfd, ai->ai_addr, ai->ai_addrlen) < 0) {
+			logerror("Could not bind to %s: %s",
+				 ip2str(ai->ai_family, ai->ai_addr, ai->ai_addrlen),
+				 strerror(errno));
 			close(sockfd);
 			continue;	/* not fatal */
 		}
 		if (listen(sockfd, 5) < 0) {
+			logerror("Could not listen to %s: %s",
+				 ip2str(ai->ai_family, ai->ai_addr, ai->ai_addrlen),
+				 strerror(errno));
 			close(sockfd);
 			continue;	/* not fatal */
 		}
@@ -835,16 +874,23 @@ static int setup_named_sock(char *listen_addr, int listen_port, struct socketlis
 		return 0;
 
 	if (set_reuse_addr(sockfd)) {
+		logerror("Could not set SO_REUSEADDR: %s", strerror(errno));
 		close(sockfd);
 		return 0;
 	}
 
 	if ( bind(sockfd, (struct sockaddr *)&sin, sizeof sin) < 0 ) {
+		logerror("Could not listen to %s: %s",
+			 ip2str(AF_INET, (struct sockaddr *)&sin, sizeof(sin)),
+			 strerror(errno));
 		close(sockfd);
 		return 0;
 	}
 
 	if (listen(sockfd, 5) < 0) {
+		logerror("Could not listen to %s: %s",
+			 ip2str(AF_INET, (struct sockaddr *)&sin, sizeof(sin)),
+			 strerror(errno));
 		close(sockfd);
 		return 0;
 	}
@@ -1053,6 +1099,8 @@ int main(int argc, char **argv)
 	struct credentials *cred = NULL;
 	int i;
 
+	git_setup_gettext();
+
 	git_extract_argv0_path(argv[0]);
 
 	for (i = 1; i < argc; i++) {
@@ -1165,6 +1213,14 @@ int main(int argc, char **argv)
 		}
 		if (!prefixcmp(arg, "--forbid-override=")) {
 			make_service_overridable(arg + 18, 0);
+			continue;
+		}
+		if (!prefixcmp(arg, "--informative-errors")) {
+			informative_errors = 1;
+			continue;
+		}
+		if (!prefixcmp(arg, "--no-informative-errors")) {
+			informative_errors = 0;
 			continue;
 		}
 		if (!strcmp(arg, "--")) {

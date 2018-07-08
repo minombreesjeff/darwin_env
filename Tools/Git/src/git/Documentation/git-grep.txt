@@ -20,10 +20,12 @@ SYNOPSIS
 	   [-c | --count] [--all-match] [-q | --quiet]
 	   [--max-depth <depth>]
 	   [--color[=<when>] | --no-color]
+	   [--break] [--heading] [-p | --show-function]
 	   [-A <post-context>] [-B <pre-context>] [-C <context>]
+	   [-W | --function-context]
 	   [-f <file>] [-e] <pattern>
 	   [--and|--or|--not|(|)|-e <pattern>...]
-	   [--cached | --no-index | <tree>...]
+	   [ [--exclude-standard] [--cached | --no-index | --untracked] | <tree>...]
 	   [--] [<pathspec>...]
 
 DESCRIPTION
@@ -49,7 +51,20 @@ OPTIONS
 	blobs registered in the index file.
 
 --no-index::
-	Search files in the current directory, not just those tracked by git.
+	Search files in the current directory that is not managed by git.
+
+--untracked::
+	In addition to searching in the tracked files in the working
+	tree, search also in untracked files.
+
+--no-exclude-standard::
+	Also search in ignored files by not honoring the `.gitignore`
+	mechanism. Only useful with `--untracked`.
+
+--exclude-standard::
+	Do not pay attention to ignored files specified via the	`.gitignore`
+	mechanism.  Only useful when searching files in the current directory
+	with `--no-index`.
 
 -a::
 --text::
@@ -66,6 +81,9 @@ OPTIONS
 --max-depth <depth>::
 	For each <pathspec> given on command line, descend at most <depth>
 	levels of directories. A negative value means no limit.
+	This option is ignored if <pathspec> contains active wildcards.
+	In other words if "a*" matches a directory named "a*",
+	"*" is matched literally so --max-depth is still effective.
 
 -w::
 --word-regexp::

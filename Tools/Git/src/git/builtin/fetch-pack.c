@@ -15,7 +15,9 @@ static int transfer_unpack_limit = -1;
 static int fetch_unpack_limit = -1;
 static int unpack_limit = 100;
 static int prefer_ofs_delta = 1;
-static int no_done = 0;
+static int no_done;
+static int fetch_fsck_objects = -1;
+static int transfer_fsck_objects = -1;
 static struct fetch_pack_args args = {
 	/* .uploadpack = */ "git-upload-pack",
 };
@@ -544,7 +546,7 @@ static void filter_refs(struct ref **refs, int nr_match, char **match)
 	for (ref = *refs; ref; ref = next) {
 		next = ref->next;
 		if (!memcmp(ref->name, "refs/", 5) &&
-		    check_ref_format(ref->name + 5))
+		    check_refname_format(ref->name + 5, 0))
 			; /* trash */
 		else if (args.fetch_all &&
 			 (!args.depth || prefixcmp(ref->name, "refs/tags/") )) {
@@ -554,11 +556,16 @@ static void filter_refs(struct ref **refs, int nr_match, char **match)
 			continue;
 		}
 		else {
-			int order = path_match(ref->name, nr_match, match);
-			if (order) {
-				return_refs[order-1] = ref;
-				continue; /* we will link it later */
+			int i;
+			for (i = 0; i < nr_match; i++) {
+				if (!strcmp(ref->name, match[i])) {
+					match[i][0] = '\0';
+					return_refs[i] = ref;
+					break;
+				}
 			}
+			if (i < nr_match)
+				continue; /* we will link it later */
 		}
 		free(ref);
 	}
@@ -729,11 +736,17 @@ static int get_pack(int xd[2], char **pack_lockfile)
 	}
 	else {
 		*av++ = "unpack-objects";
-		if (args.quiet)
+		if (args.quiet || args.no_progress)
 			*av++ = "-q";
 	}
 	if (*hdr_arg)
 		*av++ = hdr_arg;
+	if (fetch_fsck_objects >= 0
+	    ? fetch_fsck_objects
+	    : transfer_fsck_objects >= 0
+	    ? transfer_fsck_objects
+	    : 0)
+		*av++ = "--strict";
 	*av++ = NULL;
 
 	cmd.in = demux.out;
@@ -853,6 +866,16 @@ static int fetch_pack_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
+	if (!strcmp(var, "fetch.fsckobjects")) {
+		fetch_fsck_objects = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "transfer.fsckobjects")) {
+		transfer_fsck_objects = git_config_bool(var, value);
+		return 0;
+	}
+
 	return git_default_config(var, value, cb);
 }
 
@@ -958,7 +981,7 @@ int cmd_fetch_pack(int argc, const char **argv, const char *prefix)
 				   args.verbose ? CONNECT_VERBOSE : 0);
 	}
 
-	get_remote_heads(fd[0], &ref, 0, NULL, 0, NULL);
+	get_remote_heads(fd[0], &ref, 0, NULL);
 
 	ref = fetch_pack(&args, fd, conn, ref, dest,
 		nr_heads, heads, pack_lockfile_ptr);

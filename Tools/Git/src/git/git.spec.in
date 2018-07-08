@@ -134,6 +134,7 @@ find $RPM_BUILD_ROOT -type f -name perllocal.pod -exec rm -f {} ';'
 %else
 rm -rf $RPM_BUILD_ROOT%{_mandir}
 %endif
+rm -rf $RPM_BUILD_ROOT%{_datadir}/locale
 
 mkdir -p $RPM_BUILD_ROOT%{_sysconfdir}/bash_completion.d
 install -m 644 -T contrib/completion/git-completion.bash $RPM_BUILD_ROOT%{_sysconfdir}/bash_completion.d/git
@@ -199,7 +200,11 @@ rm -rf $RPM_BUILD_ROOT
 
 %files -n gitweb
 %defattr(-,root,root)
+%doc gitweb/README gitweb/INSTALL Documentation/*gitweb*.txt
 %{_datadir}/gitweb
+%{!?_without_docs: %{_mandir}/man1/*gitweb*.1*}
+%{!?_without_docs: %{_mandir}/man5/*gitweb*.5*}
+%{!?_without_docs: %doc Documentation/*gitweb*.html }
 
 %files -n perl-Git -f perl-files
 %defattr(-,root,root)
@@ -208,6 +213,9 @@ rm -rf $RPM_BUILD_ROOT
 # No files for you!
 
 %changelog
+* Sun Sep 18 2011 Jakub Narebski <jnareb@gmail.com>
+- Add gitweb manpages to 'gitweb' subpackage
+
 * Wed Jun 30 2010 Junio C Hamano <gitster@pobox.com>
 - Add 'gitweb' subpackage.
 

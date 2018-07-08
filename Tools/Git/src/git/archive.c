@@ -247,7 +247,8 @@ static void parse_pathspec_arg(const char **pathspec,
 }
 
 static void parse_treeish_arg(const char **argv,
-		struct archiver_args *ar_args, const char *prefix)
+		struct archiver_args *ar_args, const char *prefix,
+		int remote)
 {
 	const char *name = argv[0];
 	const unsigned char *commit_sha1;
@@ -255,6 +256,24 @@ static void parse_treeish_arg(const char **argv,
 	struct tree *tree;
 	const struct commit *commit;
 	unsigned char sha1[20];
+
+	/* Remotes are only allowed to fetch actual refs */
+	if (remote) {
+		char *ref = NULL;
+		const char *refname, *colon = NULL;
+
+		colon = strchr(name, ':');
+		if (colon)
+			refname = xstrndup(name, colon - name);
+		else
+			refname = name;
+
+		if (!dwim_ref(refname, strlen(refname), sha1, &ref))
+			die("no such ref: %s", refname);
+		if (refname != name)
+			free((void *)refname);
+		free(ref);
+	}
 
 	if (get_sha1(name, sha1))
 		die("Not a valid object name");
@@ -318,7 +337,7 @@ static int parse_archive_args(int argc, const char **argv,
 			"prepend prefix to each pathname in the archive"),
 		OPT_STRING('o', "output", &output, "file",
 			"write the archive to this file"),
-		OPT_BOOLEAN(0, "worktree-attributes", &worktree_attributes,
+		OPT_BOOL(0, "worktree-attributes", &worktree_attributes,
 			"read .gitattributes in working directory"),
 		OPT__VERBOSE(&verbose, "report archived files on stderr"),
 		OPT__COMPR('0', &compression_level, "store only", 0),
@@ -332,7 +351,7 @@ static int parse_archive_args(int argc, const char **argv,
 		OPT__COMPR_HIDDEN('8', &compression_level, 8),
 		OPT__COMPR('9', &compression_level, "compress better", 9),
 		OPT_GROUP(""),
-		OPT_BOOLEAN('l', "list", &list,
+		OPT_BOOL('l', "list", &list,
 			"list supported archive formats"),
 		OPT_GROUP(""),
 		OPT_STRING(0, "remote", &remote, "repo",
@@ -414,7 +433,7 @@ int write_archive(int argc, const char **argv, const char *prefix,
 		setup_git_directory();
 	}
 
-	parse_treeish_arg(argv, &args, prefix);
+	parse_treeish_arg(argv, &args, prefix, remote);
 	parse_pathspec_arg(argv + 1, &args);
 
 	return ar->write_archive(ar, &args);

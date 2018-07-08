@@ -820,6 +820,18 @@ test_expect_success \
 	'test 1 = `git rev-list J | wc -l` &&
 	 test 0 = `git ls-tree J | wc -l`'
 
+cat >input <<INPUT_END
+reset refs/heads/J2
+
+tag wrong_tag
+from refs/heads/J2
+data <<EOF
+Tag branch that was reset.
+EOF
+INPUT_END
+test_expect_success \
+	'J: tag must fail on empty branch' \
+	'test_must_fail git fast-import <input'
 ###
 ### series K
 ###
@@ -1292,6 +1304,45 @@ test_expect_success \
 
 	from refs/heads/branch^0
 	M 040000 $subdir file3/
+	INPUT_END'
+
+test_expect_success \
+	'N: reject foo/ syntax in copy source' \
+	'test_must_fail git fast-import <<-INPUT_END
+	commit refs/heads/N5C
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	copy with invalid syntax
+	COMMIT
+
+	from refs/heads/branch^0
+	C file2/ file3
+	INPUT_END'
+
+test_expect_success \
+	'N: reject foo/ syntax in rename source' \
+	'test_must_fail git fast-import <<-INPUT_END
+	commit refs/heads/N5D
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	rename with invalid syntax
+	COMMIT
+
+	from refs/heads/branch^0
+	R file2/ file3
+	INPUT_END'
+
+test_expect_success \
+	'N: reject foo/ syntax in ls argument' \
+	'test_must_fail git fast-import <<-INPUT_END
+	commit refs/heads/N5E
+	committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+	data <<COMMIT
+	copy with invalid syntax
+	COMMIT
+
+	from refs/heads/branch^0
+	ls "file2/"
 	INPUT_END'
 
 test_expect_success \
@@ -1975,6 +2026,23 @@ test_expect_success \
 	'Q: verify second note for second commit' \
 	'git cat-file blob refs/notes/foobar:$commit2 >actual && test_cmp expect actual'
 
+cat >input <<EOF
+reset refs/heads/Q0
+
+commit refs/heads/note-Q0
+committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
+data <<COMMIT
+Note for an empty branch.
+COMMIT
+
+N inline refs/heads/Q0
+data <<NOTE
+some note
+NOTE
+EOF
+test_expect_success \
+	'Q: deny note on empty branch' \
+	'test_must_fail git fast-import <input'
 ###
 ### series R (feature and option)
 ###
@@ -2208,7 +2276,7 @@ test_expect_success 'R: cat-blob-fd must be a nonnegative integer' '
 	test_must_fail git fast-import --cat-blob-fd=-1 </dev/null
 '
 
-test_expect_success 'R: print old blob' '
+test_expect_success NOT_MINGW 'R: print old blob' '
 	blob=$(echo "yes it can" | git hash-object -w --stdin) &&
 	cat >expect <<-EOF &&
 	${blob} blob 11
@@ -2220,7 +2288,7 @@ test_expect_success 'R: print old blob' '
 	test_cmp expect actual
 '
 
-test_expect_success 'R: in-stream cat-blob-fd not respected' '
+test_expect_success NOT_MINGW 'R: in-stream cat-blob-fd not respected' '
 	echo hello >greeting &&
 	blob=$(git hash-object -w greeting) &&
 	cat >expect <<-EOF &&
@@ -2241,7 +2309,7 @@ test_expect_success 'R: in-stream cat-blob-fd not respected' '
 	test_cmp expect actual.1
 '
 
-test_expect_success 'R: print new blob' '
+test_expect_success NOT_MINGW 'R: print new blob' '
 	blob=$(echo "yep yep yep" | git hash-object --stdin) &&
 	cat >expect <<-EOF &&
 	${blob} blob 12
@@ -2259,7 +2327,7 @@ test_expect_success 'R: print new blob' '
 	test_cmp expect actual
 '
 
-test_expect_success 'R: print new blob by sha1' '
+test_expect_success NOT_MINGW 'R: print new blob by sha1' '
 	blob=$(echo "a new blob named by sha1" | git hash-object --stdin) &&
 	cat >expect <<-EOF &&
 	${blob} blob 25

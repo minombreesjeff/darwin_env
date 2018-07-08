@@ -10,8 +10,9 @@ struct ref_lock {
 	int force_write;
 };
 
-#define REF_ISSYMREF 01
-#define REF_ISPACKED 02
+#define REF_ISSYMREF 0x01
+#define REF_ISPACKED 0x02
+#define REF_ISBROKEN 0x04
 
 /*
  * Calls the specified function for each ref file until it returns nonzero,
@@ -57,16 +58,18 @@ extern void warn_dangling_symref(FILE *fp, const char *msg_fmt, const char *refn
  */
 extern void add_extra_ref(const char *refname, const unsigned char *sha1, int flags);
 extern void clear_extra_refs(void);
-extern int ref_exists(char *);
+extern int ref_exists(const char *);
 
-extern int peel_ref(const char *, unsigned char *);
+extern int peel_ref(const char *refname, unsigned char *sha1);
 
 /** Locks a "refs/" ref returning the lock on success and NULL on failure. **/
-extern struct ref_lock *lock_ref_sha1(const char *ref, const unsigned char *old_sha1);
+extern struct ref_lock *lock_ref_sha1(const char *refname, const unsigned char *old_sha1);
 
 /** Locks any ref (for 'HEAD' type refs). */
 #define REF_NODEREF	0x01
-extern struct ref_lock *lock_any_ref_for_update(const char *ref, const unsigned char *old_sha1, int flags);
+extern struct ref_lock *lock_any_ref_for_update(const char *refname,
+						const unsigned char *old_sha1,
+						int flags);
 
 /** Close the file descriptor owned by a lock and return the status */
 extern int close_ref(struct ref_lock *lock);
@@ -80,16 +83,26 @@ extern void unlock_ref(struct ref_lock *lock);
 /** Writes sha1 into the ref specified by the lock. **/
 extern int write_ref_sha1(struct ref_lock *lock, const unsigned char *sha1, const char *msg);
 
+/*
+ * Invalidate the reference cache for the specified submodule.  Use
+ * submodule=NULL to invalidate the cache for the main module.  This
+ * function must be called if references are changed via a mechanism
+ * other than the refs API.
+ */
+extern void invalidate_ref_cache(const char *submodule);
+
 /** Setup reflog before using. **/
 int log_ref_setup(const char *ref_name, char *logfile, int bufsize);
 
 /** Reads log for the value of ref during at_time. **/
-extern int read_ref_at(const char *ref, unsigned long at_time, int cnt, unsigned char *sha1, char **msg, unsigned long *cutoff_time, int *cutoff_tz, int *cutoff_cnt);
+extern int read_ref_at(const char *refname, unsigned long at_time, int cnt,
+		       unsigned char *sha1, char **msg,
+		       unsigned long *cutoff_time, int *cutoff_tz, int *cutoff_cnt);
 
 /* iterate over reflog entries */
 typedef int each_reflog_ent_fn(unsigned char *osha1, unsigned char *nsha1, const char *, unsigned long, int, const char *, void *);
-int for_each_reflog_ent(const char *ref, each_reflog_ent_fn fn, void *cb_data);
-int for_each_recent_reflog_ent(const char *ref, each_reflog_ent_fn fn, long, void *cb_data);
+int for_each_reflog_ent(const char *refname, each_reflog_ent_fn fn, void *cb_data);
+int for_each_recent_reflog_ent(const char *refname, each_reflog_ent_fn fn, long, void *cb_data);
 
 /*
  * Calls the specified function for each reflog file until it returns nonzero,
@@ -97,20 +110,35 @@ int for_each_recent_reflog_ent(const char *ref, each_reflog_ent_fn fn, long, voi
  */
 extern int for_each_reflog(each_ref_fn, void *);
 
-#define CHECK_REF_FORMAT_OK 0
-#define CHECK_REF_FORMAT_ERROR (-1)
-#define CHECK_REF_FORMAT_ONELEVEL (-2)
-#define CHECK_REF_FORMAT_WILDCARD (-3)
-extern int check_ref_format(const char *target);
+#define REFNAME_ALLOW_ONELEVEL 1
+#define REFNAME_REFSPEC_PATTERN 2
+#define REFNAME_DOT_COMPONENT 4
+
+/*
+ * Return 0 iff refname has the correct format for a refname according
+ * to the rules described in Documentation/git-check-ref-format.txt.
+ * If REFNAME_ALLOW_ONELEVEL is set in flags, then accept one-level
+ * reference names.  If REFNAME_REFSPEC_PATTERN is set in flags, then
+ * allow a "*" wildcard character in place of one of the name
+ * components.  No leading or repeated slashes are accepted.  If
+ * REFNAME_DOT_COMPONENT is set in flags, then allow refname
+ * components to start with "." (but not a whole component equal to
+ * "." or "..").
+ */
+extern int check_refname_format(const char *refname, int flags);
 
 extern const char *prettify_refname(const char *refname);
-extern char *shorten_unambiguous_ref(const char *ref, int strict);
+extern char *shorten_unambiguous_ref(const char *refname, int strict);
 
 /** rename ref, return 0 on success **/
 extern int rename_ref(const char *oldref, const char *newref, const char *logmsg);
 
-/** resolve ref in nested "gitlink" repository */
-extern int resolve_gitlink_ref(const char *name, const char *refname, unsigned char *result);
+/**
+ * Resolve refname in the nested "gitlink" repository that is located
+ * at path.  If the resolution is successful, return 0 and set sha1 to
+ * the name of the object; otherwise, return a non-zero value.
+ */
+extern int resolve_gitlink_ref(const char *path, const char *refname, unsigned char *sha1);
 
 /** lock a ref and then write its file */
 enum action_on_err { MSG_ON_ERR, DIE_ON_ERR, QUIET_ON_ERR };

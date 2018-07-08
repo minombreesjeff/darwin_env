@@ -27,6 +27,7 @@ Testing basic merge operations/option parsing.
 '
 
 . ./test-lib.sh
+. "$TEST_DIRECTORY"/lib-gpg.sh
 
 printf '%s\n' 1 2 3 4 5 6 7 8 9 >file
 printf '%s\n' '1 X' 2 3 4 5 6 7 8 9 >file.1
@@ -38,8 +39,8 @@ printf '%s\n' '1 X' 2 3 4 '5 X' 6 7 8 '9 X' >result.1-5-9
 >empty
 
 create_merge_msgs () {
-	echo "Merge commit 'c2'" >msg.1-5 &&
-	echo "Merge commit 'c2'; commit 'c3'" >msg.1-5-9 &&
+	echo "Merge tag 'c2'" >msg.1-5 &&
+	echo "Merge tags 'c2' and 'c3'" >msg.1-5-9 &&
 	{
 		echo "Squashed commit of the following:" &&
 		echo &&
@@ -57,7 +58,7 @@ create_merge_msgs () {
 	} >squash.1-5-9 &&
 	echo >msg.nolog &&
 	{
-		echo "* commit 'c3':" &&
+		echo "* tag 'c3':" &&
 		echo "  commit 3" &&
 		echo
 	} >msg.log
@@ -96,7 +97,11 @@ verify_parents () {
 
 verify_mergeheads () {
 	printf '%s\n' "$@" >mergehead.expected &&
-	test_cmp mergehead.expected .git/MERGE_HEAD
+	while read sha1 rest
+	do
+		git rev-parse $sha1
+	done <.git/MERGE_HEAD >mergehead.actual &&
+	test_cmp mergehead.expected mergehead.actual
 }
 
 verify_no_mergehead () {
@@ -642,5 +647,52 @@ test_expect_success 'amending no-ff merge commit' '
 '
 
 test_debug 'git log --graph --decorate --oneline --all'
+
+cat >editor <<\EOF
+#!/bin/sh
+# Add a new message string that was not in the template
+(
+	echo "Merge work done on the side branch c1"
+	echo
+	cat <"$1"
+) >"$1.tmp" && mv "$1.tmp" "$1"
+# strip comments and blank lines from end of message
+sed -e '/^#/d' < "$1" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > expected
+EOF
+chmod 755 editor
+
+test_expect_success 'merge --no-ff --edit' '
+	git reset --hard c0 &&
+	EDITOR=./editor git merge --no-ff --edit c1 &&
+	verify_parents $c0 $c1 &&
+	git cat-file commit HEAD >raw &&
+	grep "work done on the side branch" raw &&
+	sed "1,/^$/d" >actual raw &&
+	test_cmp actual expected
+'
+
+test_expect_success GPG 'merge --ff-only tag' '
+	git reset --hard c0 &&
+	git commit --allow-empty -m "A newer commit" &&
+	git tag -s -m "A newer commit" signed &&
+	git reset --hard c0 &&
+
+	git merge --ff-only signed &&
+	git rev-parse signed^0 >expect &&
+	git rev-parse HEAD >actual &&
+	test_cmp actual expect
+'
+
+test_expect_success GPG 'merge --no-edit tag should skip editor' '
+	git reset --hard c0 &&
+	git commit --allow-empty -m "A newer commit" &&
+	git tag -f -s -m "A newer commit" signed &&
+	git reset --hard c0 &&
+
+	EDITOR=false git merge --no-edit signed &&
+	git rev-parse signed^0 >expect &&
+	git rev-parse HEAD^2 >actual &&
+	test_cmp actual expect
+'
 
 test_done

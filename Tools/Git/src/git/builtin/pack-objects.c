@@ -76,7 +76,7 @@ static struct pack_idx_option pack_idx_opts;
 static const char *base_name;
 static int progress = 1;
 static int window = 10;
-static unsigned long pack_size_limit, pack_size_limit_cfg;
+static unsigned long pack_size_limit;
 static int depth = 50;
 static int delta_search_threads;
 static int pack_to_stdout;
@@ -409,25 +409,56 @@ static unsigned long write_object(struct sha1file *f,
 	return hdrlen + datalen;
 }
 
-static int write_one(struct sha1file *f,
-			       struct object_entry *e,
-			       off_t *offset)
+enum write_one_status {
+	WRITE_ONE_SKIP = -1, /* already written */
+	WRITE_ONE_BREAK = 0, /* writing this will bust the limit; not written */
+	WRITE_ONE_WRITTEN = 1, /* normal */
+	WRITE_ONE_RECURSIVE = 2 /* already scheduled to be written */
+};
+
+static enum write_one_status write_one(struct sha1file *f,
+				       struct object_entry *e,
+				       off_t *offset)
 {
 	unsigned long size;
+	int recursing;
 
-	/* offset is non zero if object is written already. */
-	if (e->idx.offset || e->preferred_base)
-		return -1;
+	/*
+	 * we set offset to 1 (which is an impossible value) to mark
+	 * the fact that this object is involved in "write its base
+	 * first before writing a deltified object" recursion.
+	 */
+	recursing = (e->idx.offset == 1);
+	if (recursing) {
+		warning("recursive delta detected for object %s",
+			sha1_to_hex(e->idx.sha1));
+		return WRITE_ONE_RECURSIVE;
+	} else if (e->idx.offset || e->preferred_base) {
+		/* offset is non zero if object is written already. */
+		return WRITE_ONE_SKIP;
+	}
 
 	/* if we are deltified, write out base object first. */
-	if (e->delta && !write_one(f, e->delta, offset))
-		return 0;
+	if (e->delta) {
+		e->idx.offset = 1; /* now recurse */
+		switch (write_one(f, e->delta, offset)) {
+		case WRITE_ONE_RECURSIVE:
+			/* we cannot depend on this one */
+			e->delta = NULL;
+			break;
+		default:
+			break;
+		case WRITE_ONE_BREAK:
+			e->idx.offset = recursing;
+			return WRITE_ONE_BREAK;
+		}
+	}
 
 	e->idx.offset = *offset;
 	size = write_object(f, e, *offset);
 	if (!size) {
-		e->idx.offset = 0;
-		return 0;
+		e->idx.offset = recursing;
+		return WRITE_ONE_BREAK;
 	}
 	written_list[nr_written++] = &e->idx;
 
@@ -435,7 +466,7 @@ static int write_one(struct sha1file *f,
 	if (signed_add_overflows(*offset, size))
 		die("pack too large for current definition of off_t");
 	*offset += size;
-	return 1;
+	return WRITE_ONE_WRITTEN;
 }
 
 static int mark_tagged(const char *path, const unsigned char *sha1, int flag,
@@ -607,7 +638,6 @@ static void write_pack_file(void)
 	uint32_t i = 0, j;
 	struct sha1file *f;
 	off_t offset;
-	struct pack_header hdr;
 	uint32_t nr_remaining = nr_result;
 	time_t last_mtime = 0;
 	struct object_entry **write_order;
@@ -621,26 +651,18 @@ static void write_pack_file(void)
 		unsigned char sha1[20];
 		char *pack_tmp_name = NULL;
 
-		if (pack_to_stdout) {
+		if (pack_to_stdout)
 			f = sha1fd_throughput(1, "<stdout>", progress_state);
-		} else {
-			char tmpname[PATH_MAX];
-			int fd;
-			fd = odb_mkstemp(tmpname, sizeof(tmpname),
-					 "pack/tmp_pack_XXXXXX");
-			pack_tmp_name = xstrdup(tmpname);
-			f = sha1fd(fd, pack_tmp_name);
-		}
+		else
+			f = create_tmp_packfile(&pack_tmp_name);
 
-		hdr.hdr_signature = htonl(PACK_SIGNATURE);
-		hdr.hdr_version = htonl(PACK_VERSION);
-		hdr.hdr_entries = htonl(nr_remaining);
-		sha1write(f, &hdr, sizeof(hdr));
-		offset = sizeof(hdr);
+		offset = write_pack_header(f, nr_remaining);
+		if (!offset)
+			die_errno("unable to write pack header");
 		nr_written = 0;
 		for (; i < nr_objects; i++) {
 			struct object_entry *e = write_order[i];
-			if (!write_one(f, e, &offset))
+			if (write_one(f, e, &offset) == WRITE_ONE_BREAK)
 				break;
 			display_progress(progress_state, written);
 		}
@@ -662,19 +684,7 @@ static void write_pack_file(void)
 
 		if (!pack_to_stdout) {
 			struct stat st;
-			const char *idx_tmp_name;
 			char tmpname[PATH_MAX];
-
-			idx_tmp_name = write_idx_file(NULL, written_list, nr_written,
-						      &pack_idx_opts, sha1);
-
-			snprintf(tmpname, sizeof(tmpname), "%s-%s.pack",
-				 base_name, sha1_to_hex(sha1));
-			free_pack_by_name(tmpname);
-			if (adjust_shared_perm(pack_tmp_name))
-				die_errno("unable to make temporary pack file readable");
-			if (rename(pack_tmp_name, tmpname))
-				die_errno("unable to rename temporary pack file");
 
 			/*
 			 * Packs are runtime accessed in their mtime
@@ -683,28 +693,27 @@ static void write_pack_file(void)
 			 * packs then we should modify the mtime of later ones
 			 * to preserve this property.
 			 */
-			if (stat(tmpname, &st) < 0) {
+			if (stat(pack_tmp_name, &st) < 0) {
 				warning("failed to stat %s: %s",
-					tmpname, strerror(errno));
+					pack_tmp_name, strerror(errno));
 			} else if (!last_mtime) {
 				last_mtime = st.st_mtime;
 			} else {
 				struct utimbuf utb;
 				utb.actime = st.st_atime;
 				utb.modtime = --last_mtime;
-				if (utime(tmpname, &utb) < 0)
+				if (utime(pack_tmp_name, &utb) < 0)
 					warning("failed utime() on %s: %s",
 						tmpname, strerror(errno));
 			}
 
-			snprintf(tmpname, sizeof(tmpname), "%s-%s.idx",
-				 base_name, sha1_to_hex(sha1));
-			if (adjust_shared_perm(idx_tmp_name))
-				die_errno("unable to make temporary index file readable");
-			if (rename(idx_tmp_name, tmpname))
-				die_errno("unable to rename temporary index file");
-
-			free((void *) idx_tmp_name);
+			/* Enough space for "-<sha-1>.pack"? */
+			if (sizeof(tmpname) <= strlen(base_name) + 50)
+				die("pack base name '%s' too long", base_name);
+			snprintf(tmpname, sizeof(tmpname), "%s-", base_name);
+			finish_tmp_packfile(tmpname, pack_tmp_name,
+					    written_list, nr_written,
+					    &pack_idx_opts, sha1);
 			free(pack_tmp_name);
 			puts(sha1_to_hex(sha1));
 		}
@@ -840,6 +849,10 @@ static int add_object_entry(const unsigned char *sha1, enum object_type type,
 		off_t offset = find_pack_entry_one(sha1, p);
 		if (offset) {
 			if (!found_pack) {
+				if (!is_pack_valid(p)) {
+					warning("packfile %s cannot be accessed", p->pack_name);
+					continue;
+				}
 				found_offset = offset;
 				found_pack = p;
 			}
@@ -1011,7 +1024,7 @@ static void add_pbase_object(struct tree_desc *tree,
 	while (tree_entry(tree,&entry)) {
 		if (S_ISGITLINK(entry.mode))
 			continue;
-		cmp = tree_entry_len(entry.path, entry.sha1) != cmplen ? 1 :
+		cmp = tree_entry_len(&entry) != cmplen ? 1 :
 		      memcmp(name, entry.path, cmplen);
 		if (cmp > 0)
 			continue;
@@ -1421,11 +1434,16 @@ static int try_delta(struct unpacked *trg, struct unpacked *src,
 		return -1;
 
 	/*
-	 * We do not bother to try a delta that we discarded
-	 * on an earlier try, but only when reusing delta data.
+	 * We do not bother to try a delta that we discarded on an
+	 * earlier try, but only when reusing delta data.  Note that
+	 * src_entry that is marked as the preferred_base should always
+	 * be considered, as even if we produce a suboptimal delta against
+	 * it, we will still save the transfer cost, as we already know
+	 * the other side has it and we won't send src_entry at all.
 	 */
 	if (reuse_delta && trg_entry->in_pack &&
 	    trg_entry->in_pack == src_entry->in_pack &&
+	    !src_entry->preferred_base &&
 	    trg_entry->in_pack_type != OBJ_REF_DELTA &&
 	    trg_entry->in_pack_type != OBJ_OFS_DELTA)
 		return 0;
@@ -2063,10 +2081,6 @@ static int git_pack_config(const char *k, const char *v, void *cb)
 			    pack_idx_opts.version);
 		return 0;
 	}
-	if (!strcmp(k, "pack.packsizelimit")) {
-		pack_size_limit_cfg = git_config_ulong(k, v);
-		return 0;
-	}
 	return git_default_config(k, v, cb);
 }
 
@@ -2109,7 +2123,9 @@ static void show_commit(struct commit *commit, void *data)
 	commit->object.flags |= OBJECT_ADDED;
 }
 
-static void show_object(struct object *obj, const struct name_path *path, const char *last)
+static void show_object(struct object *obj,
+			const struct name_path *path, const char *last,
+			void *data)
 {
 	char *name = path_name(path, last);
 

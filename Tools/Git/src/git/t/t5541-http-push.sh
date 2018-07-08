@@ -14,6 +14,7 @@ fi
 ROOT_PATH="$PWD"
 LIB_HTTPD_PORT=${LIB_HTTPD_PORT-'5541'}
 . "$TEST_DIRECTORY"/lib-httpd.sh
+. "$TEST_DIRECTORY"/lib-terminal.sh
 start_httpd
 
 test_expect_success 'setup remote repository' '
@@ -95,6 +96,32 @@ test_expect_success 'create and delete remote branch' '
 	test_must_fail git show-ref --verify refs/remotes/origin/dev
 '
 
+cat >"$HTTPD_DOCUMENT_ROOT_PATH/test_repo.git/hooks/update" <<EOF
+#!/bin/sh
+exit 1
+EOF
+chmod a+x "$HTTPD_DOCUMENT_ROOT_PATH/test_repo.git/hooks/update"
+
+cat >exp <<EOF
+remote: error: hook declined to update refs/heads/dev2
+To http://127.0.0.1:$LIB_HTTPD_PORT/smart/test_repo.git
+ ! [remote rejected] dev2 -> dev2 (hook declined)
+error: failed to push some refs to 'http://127.0.0.1:$LIB_HTTPD_PORT/smart/test_repo.git'
+EOF
+
+test_expect_success 'rejected update prints status' '
+	cd "$ROOT_PATH"/test_repo_clone &&
+	git checkout -b dev2 &&
+	: >path4 &&
+	git add path4 &&
+	test_tick &&
+	git commit -m dev2 &&
+	test_must_fail git push origin dev2 2>act &&
+	sed -e "/^remote: /s/ *$//" <act >cmp &&
+	test_cmp exp cmp
+'
+rm -f "$HTTPD_DOCUMENT_ROOT_PATH/test_repo.git/hooks/update"
+
 cat >exp <<EOF
 
 GET  /smart/test_repo.git/info/refs?service=git-upload-pack HTTP/1.1 200
@@ -102,6 +129,8 @@ POST /smart/test_repo.git/git-upload-pack HTTP/1.1 200
 GET  /smart/test_repo.git/info/refs?service=git-receive-pack HTTP/1.1 200
 POST /smart/test_repo.git/git-receive-pack HTTP/1.1 200
 GET  /smart/test_repo.git/info/refs?service=git-receive-pack HTTP/1.1 200
+GET  /smart/test_repo.git/info/refs?service=git-receive-pack HTTP/1.1 200
+POST /smart/test_repo.git/git-receive-pack HTTP/1.1 200
 GET  /smart/test_repo.git/info/refs?service=git-receive-pack HTTP/1.1 200
 POST /smart/test_repo.git/git-receive-pack HTTP/1.1 200
 GET  /smart/test_repo.git/info/refs?service=git-receive-pack HTTP/1.1 200
@@ -152,6 +181,45 @@ test_expect_success 'push (chunked)' '
 	grep "POST git-receive-pack (chunked)" err &&
 	(cd "$HTTPD_DOCUMENT_ROOT_PATH"/test_repo.git &&
 	 test $HEAD = $(git rev-parse --verify HEAD))
+'
+
+test_expect_success 'push --all can push to empty repo' '
+	d=$HTTPD_DOCUMENT_ROOT_PATH/empty-all.git &&
+	git init --bare "$d" &&
+	git --git-dir="$d" config http.receivepack true &&
+	git push --all "$HTTPD_URL"/smart/empty-all.git
+'
+
+test_expect_success 'push --mirror can push to empty repo' '
+	d=$HTTPD_DOCUMENT_ROOT_PATH/empty-mirror.git &&
+	git init --bare "$d" &&
+	git --git-dir="$d" config http.receivepack true &&
+	git push --mirror "$HTTPD_URL"/smart/empty-mirror.git
+'
+
+test_expect_success 'push --all to repo with alternates' '
+	s=$HTTPD_DOCUMENT_ROOT_PATH/test_repo.git &&
+	d=$HTTPD_DOCUMENT_ROOT_PATH/alternates-all.git &&
+	git clone --bare --shared "$s" "$d" &&
+	git --git-dir="$d" config http.receivepack true &&
+	git --git-dir="$d" repack -adl &&
+	git push --all "$HTTPD_URL"/smart/alternates-all.git
+'
+
+test_expect_success 'push --mirror to repo with alternates' '
+	s=$HTTPD_DOCUMENT_ROOT_PATH/test_repo.git &&
+	d=$HTTPD_DOCUMENT_ROOT_PATH/alternates-mirror.git &&
+	git clone --bare --shared "$s" "$d" &&
+	git --git-dir="$d" config http.receivepack true &&
+	git --git-dir="$d" repack -adl &&
+	git push --mirror "$HTTPD_URL"/smart/alternates-mirror.git
+'
+
+test_expect_success TTY 'quiet push' '
+	cd "$ROOT_PATH"/test_repo_clone &&
+	test_commit quiet &&
+	test_terminal git push --quiet --no-progress 2>&1 | tee output &&
+	test_cmp /dev/null output
 '
 
 stop_httpd

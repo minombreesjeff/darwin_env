@@ -10,11 +10,12 @@ find_blame() {
 cat >helper <<'EOF'
 #!/bin/sh
 grep -q '^bin: ' "$1" || { echo "E: $1 is not \"binary\" file" 1>&2; exit 1; }
-sed 's/^bin: /converted: /' "$1"
+perl -p -e 's/^bin: /converted: /' "$1"
 EOF
 chmod +x helper
 
 test_expect_success 'setup ' '
+	echo "bin: test number 0" >zero.bin &&
 	echo "bin: test 1" >one.bin &&
 	echo "bin: test number 2" >two.bin &&
 	if test_have_prereq SYMLINKS; then
@@ -43,6 +44,7 @@ test_expect_success 'no filter specified' '
 
 test_expect_success 'setup textconv filters' '
 	echo "*.bin diff=test" >.gitattributes &&
+	echo "zero.bin eol=crlf" >>.gitattributes &&
 	git config diff.test.textconv ./helper &&
 	git config diff.test.cachetextconv false
 '
@@ -72,6 +74,15 @@ test_expect_success 'blame --textconv going through revisions' '
 	git blame --textconv two.bin >blame &&
 	find_blame <blame >result &&
 	test_cmp expected result
+'
+
+test_expect_success 'blame --textconv with local changes' '
+	test_when_finished "git checkout zero.bin" &&
+	printf "bin: updated number 0\015" >zero.bin &&
+	git blame --textconv zero.bin >blame &&
+	expect="(Not Committed Yet ....-..-.. ..:..:.. +0000 1)" &&
+	expect="$expect converted: updated number 0" &&
+	expr "$(find_blame <blame)" : "^$expect"
 '
 
 test_expect_success 'setup +cachetextconv' '

@@ -7,14 +7,34 @@ With --no-commit perform the merge but pretend the merge
 failed and do not autocommit, to give the user a chance to
 inspect and further tweak the merge result before committing.
 
---ff::
---no-ff::
-	Do not generate a merge commit if the merge resolved as
-	a fast-forward, only update the branch pointer. This is
-	the default behavior of git-merge.
+--edit::
+--no-edit::
+	Invoke editor before committing successful merge to further
+	edit the default merge message. The `--no-edit` option can be
+	used to accept the auto-generated message (this is generally
+	discouraged) when merging an annotated tag, in which case
+	`git merge` automatically spawns the editor so that the result
+	of the GPG verification of the tag can be seen.
 +
-With --no-ff Generate a merge commit even if the merge
-resolved as a fast-forward.
+Older scripts may depend on the historical behaviour of not allowing the
+user to edit the merge log message. They will see an editor opened when
+they run `git merge` to merge an annotated tag. To make it easier to adjust
+such scripts to the updated behaviour, the environment variable
+`GIT_MERGE_AUTOEDIT` can be set to `no` at the beginning of them.
+
+--ff::
+	When the merge resolves as a fast-forward, only update the branch
+	pointer, without creating a merge commit.  This is the default
+	behavior.
+
+--no-ff::
+	Create a merge commit even when the merge resolves as a
+	fast-forward.
+
+--ff-only::
+	Refuse to merge and exit with a non-zero status unless the
+	current `HEAD` is already up-to-date or the merge can be
+	resolved as a fast-forward.
 
 --log[=<n>]::
 --no-log::
@@ -48,11 +68,6 @@ merge.
 +
 With --no-squash perform the merge and commit the result. This
 option can be used to override --squash.
-
---ff-only::
-	Refuse to merge and exit with a non-zero status unless the
-	current `HEAD` is already up-to-date or the merge can be
-	resolved as a fast-forward.
 
 -s <strategy>::
 --strategy=<strategy>::

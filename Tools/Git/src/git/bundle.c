@@ -23,50 +23,85 @@ static void add_to_ref_list(const unsigned char *sha1, const char *name,
 	list->nr++;
 }
 
-/* returns an fd */
+static int parse_bundle_header(int fd, struct bundle_header *header,
+			       const char *report_path)
+{
+	struct strbuf buf = STRBUF_INIT;
+	int status = 0;
+
+	/* The bundle header begins with the signature */
+	if (strbuf_getwholeline_fd(&buf, fd, '\n') ||
+	    strcmp(buf.buf, bundle_signature)) {
+		if (report_path)
+			error("'%s' does not look like a v2 bundle file",
+			      report_path);
+		status = -1;
+		goto abort;
+	}
+
+	/* The bundle header ends with an empty line */
+	while (!strbuf_getwholeline_fd(&buf, fd, '\n') &&
+	       buf.len && buf.buf[0] != '\n') {
+		unsigned char sha1[20];
+		int is_prereq = 0;
+
+		if (*buf.buf == '-') {
+			is_prereq = 1;
+			strbuf_remove(&buf, 0, 1);
+		}
+		strbuf_rtrim(&buf);
+
+		/*
+		 * Tip lines have object name, SP, and refname.
+		 * Prerequisites have object name that is optionally
+		 * followed by SP and subject line.
+		 */
+		if (get_sha1_hex(buf.buf, sha1) ||
+		    (40 <= buf.len && !isspace(buf.buf[40])) ||
+		    (!is_prereq && buf.len <= 40)) {
+			if (report_path)
+				error("unrecognized header: %s%s (%d)",
+				      (is_prereq ? "-" : ""), buf.buf, (int)buf.len);
+			status = -1;
+			break;
+		} else {
+			if (is_prereq)
+				add_to_ref_list(sha1, "", &header->prerequisites);
+			else
+				add_to_ref_list(sha1, buf.buf + 41, &header->references);
+		}
+	}
+
+ abort:
+	if (status) {
+		close(fd);
+		fd = -1;
+	}
+	strbuf_release(&buf);
+	return fd;
+}
+
 int read_bundle_header(const char *path, struct bundle_header *header)
 {
-	char buffer[1024];
-	int fd;
-	long fpos;
-	FILE *ffd = fopen(path, "rb");
+	int fd = open(path, O_RDONLY);
 
-	if (!ffd)
-		return error("could not open '%s'", path);
-	if (!fgets(buffer, sizeof(buffer), ffd) ||
-			strcmp(buffer, bundle_signature)) {
-		fclose(ffd);
-		return error("'%s' does not look like a v2 bundle file", path);
-	}
-	while (fgets(buffer, sizeof(buffer), ffd)
-			&& buffer[0] != '\n') {
-		int is_prereq = buffer[0] == '-';
-		int offset = is_prereq ? 1 : 0;
-		int len = strlen(buffer);
-		unsigned char sha1[20];
-		struct ref_list *list = is_prereq ? &header->prerequisites
-			: &header->references;
-		char delim;
-
-		if (len && buffer[len - 1] == '\n')
-			buffer[len - 1] = '\0';
-		if (get_sha1_hex(buffer + offset, sha1)) {
-			warning("unrecognized header: %s", buffer);
-			continue;
-		}
-		delim = buffer[40 + offset];
-		if (!isspace(delim) && (delim != '\0' || !is_prereq))
-			die ("invalid header: %s", buffer);
-		add_to_ref_list(sha1, isspace(delim) ?
-				buffer + 41 + offset : "", list);
-	}
-	fpos = ftell(ffd);
-	fclose(ffd);
-	fd = open(path, O_RDONLY);
 	if (fd < 0)
 		return error("could not open '%s'", path);
-	lseek(fd, fpos, SEEK_SET);
-	return fd;
+	return parse_bundle_header(fd, header, path);
+}
+
+int is_bundle(const char *path, int quiet)
+{
+	struct bundle_header header;
+	int fd = open(path, O_RDONLY);
+
+	if (fd < 0)
+		return 0;
+	memset(&header, 0, sizeof(header));
+	fd = parse_bundle_header(fd, &header, quiet ? NULL : path);
+	if (fd >= 0)
+		close(fd);
+	return (fd >= 0);
 }
 
 static int list_refs(struct ref_list *r, int argc, const char **argv)
@@ -122,11 +157,8 @@ int verify_bundle(struct bundle_header *header, int verbose)
 	req_nr = revs.pending.nr;
 	setup_revisions(2, argv, &revs, NULL);
 
-	memset(&refs, 0, sizeof(struct object_array));
-	for (i = 0; i < revs.pending.nr; i++) {
-		struct object_array_entry *e = revs.pending.objects + i;
-		add_object_array(e->item, e->name, &refs);
-	}
+	refs = revs.pending;
+	revs.leak_pending = 1;
 
 	if (prepare_revision_walk(&revs))
 		die("revision walk setup failed");
@@ -144,8 +176,8 @@ int verify_bundle(struct bundle_header *header, int verbose)
 				refs.objects[i].name);
 		}
 
-	for (i = 0; i < refs.nr; i++)
-		clear_commit_marks((struct commit *)refs.objects[i].item, -1);
+	clear_commit_marks_for_object_array(&refs, ALL_REV_FLAGS);
+	free(refs.objects);
 
 	if (verbose) {
 		struct ref_list *r;
@@ -202,7 +234,7 @@ int create_bundle(struct bundle_header *header, const char *path,
 	const char **argv_boundary = xmalloc((argc + 4) * sizeof(const char *));
 	const char **argv_pack = xmalloc(6 * sizeof(const char *));
 	int i, ref_count = 0;
-	char buffer[1024];
+	struct strbuf buf = STRBUF_INIT;
 	struct rev_info revs;
 	struct child_process rls;
 	FILE *rls_fout;
@@ -234,20 +266,21 @@ int create_bundle(struct bundle_header *header, const char *path,
 	if (start_command(&rls))
 		return -1;
 	rls_fout = xfdopen(rls.out, "r");
-	while (fgets(buffer, sizeof(buffer), rls_fout)) {
+	while (strbuf_getwholeline(&buf, rls_fout, '\n') != EOF) {
 		unsigned char sha1[20];
-		if (buffer[0] == '-') {
-			write_or_die(bundle_fd, buffer, strlen(buffer));
-			if (!get_sha1_hex(buffer + 1, sha1)) {
+		if (buf.len > 0 && buf.buf[0] == '-') {
+			write_or_die(bundle_fd, buf.buf, buf.len);
+			if (!get_sha1_hex(buf.buf + 1, sha1)) {
 				struct object *object = parse_object(sha1);
 				object->flags |= UNINTERESTING;
-				add_pending_object(&revs, object, buffer);
+				add_pending_object(&revs, object, xstrdup(buf.buf));
 			}
-		} else if (!get_sha1_hex(buffer, sha1)) {
+		} else if (!get_sha1_hex(buf.buf, sha1)) {
 			struct object *object = parse_object(sha1);
 			object->flags |= SHOWN;
 		}
 	}
+	strbuf_release(&buf);
 	fclose(rls_fout);
 	if (finish_command(&rls))
 		return error("rev-list died");
@@ -271,7 +304,7 @@ int create_bundle(struct bundle_header *header, const char *path,
 			continue;
 		if (dwim_ref(e->name, strlen(e->name), sha1, &ref) != 1)
 			continue;
-		if (!resolve_ref(e->name, sha1, 1, &flag))
+		if (read_ref_full(e->name, sha1, 1, &flag))
 			flag = 0;
 		display_ref = (flag & REF_ISSYMREF) ? e->name : ref;
 

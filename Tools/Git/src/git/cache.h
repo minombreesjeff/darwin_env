@@ -42,6 +42,7 @@ int git_inflate(git_zstream *, int flush);
 void git_deflate_init(git_zstream *, int level);
 void git_deflate_init_gzip(git_zstream *, int level);
 void git_deflate_end(git_zstream *);
+int git_deflate_abort(git_zstream *);
 int git_deflate_end_gently(git_zstream *);
 int git_deflate(git_zstream *, int flush);
 unsigned long git_deflate_bound(git_zstream *, unsigned long);
@@ -175,6 +176,7 @@ struct cache_entry {
 	unsigned int ce_flags;
 	unsigned char sha1[20];
 	struct cache_entry *next;
+	struct cache_entry *dir_next;
 	char name[FLEX_ARRAY]; /* more */
 };
 
@@ -312,7 +314,7 @@ static inline unsigned int canon_mode(unsigned int mode)
 }
 
 #define flexible_size(STRUCT,len) ((offsetof(struct STRUCT,name) + (len) + 8) & ~7)
-#define cache_entry_size(len) flexible_size(cache_entry,len)
+#define cache_entry_size(len) (offsetof(struct cache_entry,name) + (len) + 1)
 #define ondisk_cache_entry_size(len) flexible_size(ondisk_cache_entry,len)
 #define ondisk_cache_entry_extended_size(len) flexible_size(ondisk_cache_entry_extended,len)
 
@@ -322,7 +324,6 @@ struct index_state {
 	struct string_list *resolve_undo;
 	struct cache_tree *cache_tree;
 	struct cache_time timestamp;
-	void *alloc;
 	unsigned name_hash_initialized : 1,
 		 initialized : 1;
 	struct hash_table name_hash;
@@ -438,6 +439,7 @@ extern char *git_work_tree_cfg;
 extern int is_inside_work_tree(void);
 extern int have_git_dir(void);
 extern const char *get_git_dir(void);
+extern int is_git_directory(const char *path);
 extern char *get_object_directory(void);
 extern char *get_index_file(void);
 extern char *get_graft_file(void);
@@ -446,12 +448,12 @@ extern const char *get_git_namespace(void);
 extern const char *strip_namespace(const char *namespaced_ref);
 extern const char *get_git_work_tree(void);
 extern const char *read_gitfile(const char *path);
+extern const char *resolve_gitdir(const char *suspect);
 extern void set_git_work_tree(const char *tree);
 
 #define ALTERNATE_DB_ENVIRONMENT "GIT_ALTERNATE_OBJECT_DIRECTORIES"
 
 extern const char **get_pathspec(const char *prefix, const char **pathspec);
-extern const char *pathspec_prefix(const char *prefix, const char **pathspec);
 extern void setup_work_tree(void);
 extern const char *setup_git_directory_gently(int *);
 extern const char *setup_git_directory(void);
@@ -604,6 +606,7 @@ extern size_t packed_git_window_size;
 extern size_t packed_git_limit;
 extern size_t delta_base_cache_limit;
 extern unsigned long big_file_threshold;
+extern unsigned long pack_size_limit_cfg;
 extern int read_replace_refs;
 extern int fsync_object_files;
 extern int core_preload_index;
@@ -742,7 +745,7 @@ int safe_create_leading_directories(char *path);
 int safe_create_leading_directories_const(const char *path);
 int mkdir_in_gitdir(const char *path);
 extern char *expand_user_path(const char *path);
-char *enter_repo(char *path, int strict);
+const char *enter_repo(const char *path, int strict);
 static inline int is_absolute_path(const char *path)
 {
 	return is_dir_sep(path[0]) || has_dos_drive_prefix(path);
@@ -827,10 +830,54 @@ static inline int get_sha1_with_context(const char *str, unsigned char *sha1, st
 {
 	return get_sha1_with_context_1(str, sha1, orc, 0, NULL);
 }
+
+/*
+ * Try to read a SHA1 in hexadecimal format from the 40 characters
+ * starting at hex.  Write the 20-byte result to sha1 in binary form.
+ * Return 0 on success.  Reading stops if a NUL is encountered in the
+ * input, so it is safe to pass this function an arbitrary
+ * null-terminated string.
+ */
 extern int get_sha1_hex(const char *hex, unsigned char *sha1);
+
 extern char *sha1_to_hex(const unsigned char *sha1);	/* static buffer result! */
-extern int read_ref(const char *filename, unsigned char *sha1);
-extern const char *resolve_ref(const char *path, unsigned char *sha1, int, int *);
+extern int read_ref_full(const char *refname, unsigned char *sha1,
+			 int reading, int *flags);
+extern int read_ref(const char *refname, unsigned char *sha1);
+
+/*
+ * Resolve a reference, recursively following symbolic refererences.
+ *
+ * Store the referred-to object's name in sha1 and return the name of
+ * the non-symbolic reference that ultimately pointed at it.  The
+ * return value, if not NULL, is a pointer into either a static buffer
+ * or the input ref.
+ *
+ * If the reference cannot be resolved to an object, the behavior
+ * depends on the "reading" argument:
+ *
+ * - If reading is set, return NULL.
+ *
+ * - If reading is not set, clear sha1 and return the name of the last
+ *   reference name in the chain, which will either be a non-symbolic
+ *   reference or an undefined reference.  If this is a prelude to
+ *   "writing" to the ref, the return value is the name of the ref
+ *   that will actually be created or changed.
+ *
+ * If flag is non-NULL, set the value that it points to the
+ * combination of REF_ISPACKED (if the reference was found among the
+ * packed references) and REF_ISSYMREF (if the initial reference was a
+ * symbolic reference).
+ *
+ * If ref is not a properly-formatted, normalized reference, return
+ * NULL.  If more than MAXDEPTH recursive symbolic lookups are needed,
+ * give up and return NULL.
+ *
+ * errno is sometimes set on errors, but not always.
+ */
+extern const char *resolve_ref_unsafe(const char *ref, unsigned char *sha1, int reading, int *flag);
+extern char *resolve_refdup(const char *ref, unsigned char *sha1, int reading, int *flag);
+
 extern int dwim_ref(const char *str, int len, unsigned char *sha1, char **ref);
 extern int dwim_log(const char *str, int len, unsigned char *sha1, char **ref);
 extern int interpret_branch_name(const char *str, struct strbuf *);
@@ -838,7 +885,7 @@ extern int get_sha1_mb(const char *str, unsigned char *sha1);
 
 extern int refname_match(const char *abbrev_name, const char *full_name, const char **rules);
 extern const char *ref_rev_parse_rules[];
-extern const char *ref_fetch_rules[];
+#define ref_fetch_rules ref_rev_parse_rules
 
 extern int create_symref(const char *ref, const char *refs_heads_master, const char *logmsg);
 extern int validate_headref(const char *ref);
@@ -989,17 +1036,16 @@ struct ref {
 extern struct ref *find_ref_by_name(const struct ref *list, const char *name);
 
 #define CONNECT_VERBOSE       (1u << 0)
-extern char *git_getpass(const char *prompt);
 extern struct child_process *git_connect(int fd[2], const char *url, const char *prog, int flags);
 extern int finish_connect(struct child_process *conn);
 extern int git_connection_is_socket(struct child_process *conn);
-extern int path_match(const char *path, int nr, char **match);
 struct extra_have_objects {
 	int nr, alloc;
 	unsigned char (*array)[20];
 };
-extern struct ref **get_remote_heads(int in, struct ref **list, int nr_match, char **match, unsigned int flags, struct extra_have_objects *);
+extern struct ref **get_remote_heads(int in, struct ref **list, unsigned int flags, struct extra_have_objects *);
 extern int server_supports(const char *feature);
+extern const char *parse_feature_request(const char *features, const char *feature);
 
 extern struct packed_git *parse_pack_index(unsigned char *sha1, const char *idx_path);
 
@@ -1022,6 +1068,7 @@ extern struct packed_git *add_packed_git(const char *, int, int);
 extern const unsigned char *nth_packed_object_sha1(struct packed_git *, uint32_t);
 extern off_t nth_packed_object_offset(const struct packed_git *, uint32_t);
 extern off_t find_pack_entry_one(const unsigned char *, struct packed_git *);
+extern int is_pack_valid(struct packed_git *);
 extern void *unpack_entry(struct packed_git *, off_t, enum object_type *, unsigned long *);
 extern unsigned long unpack_object_header_buffer(const unsigned char *buf, unsigned long len, enum object_type *type, unsigned long *sizep);
 extern unsigned long get_size_from_delta(struct packed_git *, struct pack_window **, off_t);
@@ -1084,9 +1131,11 @@ extern int git_config_bool(const char *, const char *);
 extern int git_config_maybe_bool(const char *, const char *);
 extern int git_config_string(const char **, const char *, const char *);
 extern int git_config_pathname(const char **, const char *, const char *);
+extern int git_config_set_in_file(const char *, const char *, const char *);
 extern int git_config_set(const char *, const char *);
 extern int git_config_parse_key(const char *, char **, int *);
 extern int git_config_set_multivar(const char *, const char *, const char *, int);
+extern int git_config_set_multivar_in_file(const char *, const char *, const char *, const char *, int);
 extern int git_config_rename_section(const char *, const char *);
 extern const char *git_etc_gitconfig(void);
 extern int check_repository_format_version(const char *var, const char *value, void *cb);
@@ -1135,6 +1184,7 @@ extern void setup_pager(void);
 extern const char *pager_program;
 extern int pager_in_use(void);
 extern int pager_use_color;
+extern int term_columns(void);
 
 extern const char *editor_program;
 extern const char *askpass_program;

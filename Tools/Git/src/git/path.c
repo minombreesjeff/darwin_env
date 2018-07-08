@@ -283,7 +283,7 @@ return_null:
  * links.  User relative paths are also returned as they are given,
  * except DWIM suffixing.
  */
-char *enter_repo(char *path, int strict)
+const char *enter_repo(const char *path, int strict)
 {
 	static char used_path[PATH_MAX];
 	static char validated_path[PATH_MAX];
@@ -293,18 +293,21 @@ char *enter_repo(char *path, int strict)
 
 	if (!strict) {
 		static const char *suffix[] = {
-			".git/.git", "/.git", ".git", "", NULL,
+			"/.git", "", ".git/.git", ".git", NULL,
 		};
+		const char *gitfile;
 		int len = strlen(path);
 		int i;
-		while ((1 < len) && (path[len-1] == '/')) {
-			path[len-1] = 0;
+		while ((1 < len) && (path[len-1] == '/'))
 			len--;
-		}
+
 		if (PATH_MAX <= len)
 			return NULL;
-		if (path[0] == '~') {
-			char *newpath = expand_user_path(path);
+		strncpy(used_path, path, len); used_path[len] = 0 ;
+		strcpy(validated_path, used_path);
+
+		if (used_path[0] == '~') {
+			char *newpath = expand_user_path(used_path);
 			if (!newpath || (PATH_MAX - 10 < strlen(newpath))) {
 				free(newpath);
 				return NULL;
@@ -316,24 +319,26 @@ char *enter_repo(char *path, int strict)
 			 * anyway.
 			 */
 			strcpy(used_path, newpath); free(newpath);
-			strcpy(validated_path, path);
-			path = used_path;
 		}
 		else if (PATH_MAX - 10 < len)
 			return NULL;
-		else {
-			path = strcpy(used_path, path);
-			strcpy(validated_path, path);
-		}
-		len = strlen(path);
+		len = strlen(used_path);
 		for (i = 0; suffix[i]; i++) {
-			strcpy(path + len, suffix[i]);
-			if (!access(path, F_OK)) {
+			struct stat st;
+			strcpy(used_path + len, suffix[i]);
+			if (!stat(used_path, &st) &&
+			    (S_ISREG(st.st_mode) ||
+			    (S_ISDIR(st.st_mode) && is_git_directory(used_path)))) {
 				strcat(validated_path, suffix[i]);
 				break;
 			}
 		}
-		if (!suffix[i] || chdir(path))
+		if (!suffix[i])
+			return NULL;
+		gitfile = read_gitfile(used_path) ;
+		if (gitfile)
+			strcpy(used_path, gitfile);
+		if (chdir(used_path))
 			return NULL;
 		path = validated_path;
 	}

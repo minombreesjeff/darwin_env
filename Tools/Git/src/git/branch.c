@@ -135,6 +135,37 @@ static int setup_tracking(const char *new_ref, const char *orig_ref,
 	return 0;
 }
 
+struct branch_desc_cb {
+	const char *config_name;
+	const char *value;
+};
+
+static int read_branch_desc_cb(const char *var, const char *value, void *cb)
+{
+	struct branch_desc_cb *desc = cb;
+	if (strcmp(desc->config_name, var))
+		return 0;
+	free((char *)desc->value);
+	return git_config_string(&desc->value, var, value);
+}
+
+int read_branch_desc(struct strbuf *buf, const char *branch_name)
+{
+	struct branch_desc_cb cb;
+	struct strbuf name = STRBUF_INIT;
+	strbuf_addf(&name, "branch.%s.description", branch_name);
+	cb.config_name = name.buf;
+	cb.value = NULL;
+	if (git_config(read_branch_desc_cb, &cb) < 0) {
+		strbuf_release(&name);
+		return -1;
+	}
+	if (cb.value)
+		strbuf_addstr(buf, cb.value);
+	strbuf_release(&name);
+	return 0;
+}
+
 int validate_new_branchname(const char *name, struct strbuf *ref,
 			    int force, int attr_only)
 {
@@ -150,7 +181,7 @@ int validate_new_branchname(const char *name, struct strbuf *ref,
 		const char *head;
 		unsigned char sha1[20];
 
-		head = resolve_ref("HEAD", sha1, 0, NULL);
+		head = resolve_ref_unsafe("HEAD", sha1, 0, NULL);
 		if (!is_bare_repository() && head && !strcmp(head, ref->buf))
 			die("Cannot force update the current branch.");
 	}
@@ -159,7 +190,8 @@ int validate_new_branchname(const char *name, struct strbuf *ref,
 
 void create_branch(const char *head,
 		   const char *name, const char *start_name,
-		   int force, int reflog, enum branch_track track)
+		   int force, int reflog, int clobber_head,
+		   enum branch_track track)
 {
 	struct ref_lock *lock = NULL;
 	struct commit *commit;
@@ -174,7 +206,8 @@ void create_branch(const char *head,
 		explicit_tracking = 1;
 
 	if (validate_new_branchname(name, &ref, force,
-				    track == BRANCH_TRACK_OVERRIDE)) {
+				    track == BRANCH_TRACK_OVERRIDE ||
+				    clobber_head)) {
 		if (!force)
 			dont_change_ref = 1;
 		else
@@ -240,6 +273,7 @@ void create_branch(const char *head,
 void remove_branch_state(void)
 {
 	unlink(git_path("CHERRY_PICK_HEAD"));
+	unlink(git_path("REVERT_HEAD"));
 	unlink(git_path("MERGE_HEAD"));
 	unlink(git_path("MERGE_RR"));
 	unlink(git_path("MERGE_MSG"));

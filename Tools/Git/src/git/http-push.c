@@ -1747,7 +1747,8 @@ int main(int argc, char **argv)
 	int i;
 	int new_refs;
 	struct ref *ref, *local_refs;
-	struct remote *remote;
+
+	git_setup_gettext();
 
 	git_extract_argv0_path(argv[0]);
 
@@ -1821,14 +1822,7 @@ int main(int argc, char **argv)
 
 	memset(remote_dir_exists, -1, 256);
 
-	/*
-	 * Create a minimum remote by hand to give to http_init(),
-	 * primarily to allow it to look at the URL.
-	 */
-	remote = xcalloc(sizeof(*remote), 1);
-	ALLOC_GROW(remote->url, remote->url_nr + 1, remote->url_alloc);
-	remote->url[remote->url_nr++] = repo->url;
-	http_init(remote);
+	http_init(NULL, repo->url, 1);
 
 #ifdef USE_CURL_MULTI
 	is_running_queue = 0;
@@ -1877,8 +1871,8 @@ int main(int argc, char **argv)
 	}
 
 	/* match them up */
-	if (match_refs(local_refs, &remote_refs,
-		       nr_refspec, (const char **) refspec, push_all)) {
+	if (match_push_refs(local_refs, &remote_refs,
+			    nr_refspec, (const char **) refspec, push_all)) {
 		rc = -1;
 		goto cleanup;
 	}

@@ -38,27 +38,34 @@ created (i.e. a lightweight tag).
 A GnuPG signed tag object will be created when `-s` or `-u
 <key-id>` is used.  When `-u <key-id>` is not used, the
 committer identity for the current user is used to find the
-GnuPG key for signing.
+GnuPG key for signing. 	The configuration variable `gpg.program`
+is used to specify custom GnuPG binary.
+
 
 OPTIONS
 -------
 -a::
+--annotate::
 	Make an unsigned, annotated tag object
 
 -s::
-	Make a GPG-signed tag, using the default e-mail address's key
+--sign::
+	Make a GPG-signed tag, using the default e-mail address's key.
 
 -u <key-id>::
-	Make a GPG-signed tag, using the given key
+--local-user=<key-id>::
+	Make a GPG-signed tag, using the given key.
 
 -f::
 --force::
 	Replace an existing tag with the given name (instead of failing)
 
 -d::
+--delete::
 	Delete existing tags with the given names.
 
 -v::
+--verify::
 	Verify the gpg signature of the given tag names.
 
 -n<num>::
@@ -69,6 +76,7 @@ OPTIONS
 	If the tag is not annotated, the commit message is displayed instead.
 
 -l <pattern>::
+--list <pattern>::
 	List tags with names that match the given pattern (or all if no
 	pattern is given).  Running "git tag" without arguments also
 	lists all tags. The pattern is a shell wildcard (i.e., matched
@@ -79,6 +87,7 @@ OPTIONS
 	Only list tags which contain the specified commit.
 
 -m <msg>::
+--message=<msg>::
 	Use the given tag message (instead of prompting).
 	If multiple `-m` options are given, their values are
 	concatenated as separate paragraphs.
@@ -86,10 +95,18 @@ OPTIONS
 	is given.
 
 -F <file>::
+--file=<file>::
 	Take the tag message from the given file.  Use '-' to
 	read the message from the standard input.
 	Implies `-a` if none of `-a`, `-s`, or `-u <key-id>`
 	is given.
+
+--cleanup=<mode>::
+	This option sets how the tag message is cleaned up.
+	The  '<mode>' can be one of 'verbatim', 'whitespace' and 'strip'.  The
+	'strip' mode is default. The 'verbatim' mode does not change message at
+	all, 'whitespace' removes just leading/trailing whitespace lines and
+	'strip' removes both whitespace and commentary.
 
 <tagname>::
 	The name of the tag to create, delete, or describe.

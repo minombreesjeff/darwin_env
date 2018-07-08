@@ -444,7 +444,7 @@ test_expect_success 'stash show - stashes on stack, stash-like argument' '
 	git reset --hard &&
 	cat >expected <<-EOF &&
 	 file |    1 +
-	 1 files changed, 1 insertions(+), 0 deletions(-)
+	 1 file changed, 1 insertion(+)
 	EOF
 	git stash show ${STASH_ID} >actual &&
 	test_cmp expected actual
@@ -482,7 +482,7 @@ test_expect_success 'stash show - no stashes on stack, stash-like argument' '
 	git reset --hard &&
 	cat >expected <<-EOF &&
 	 file |    1 +
-	 1 files changed, 1 insertions(+), 0 deletions(-)
+	 1 file changed, 1 insertion(+)
 	EOF
 	git stash show ${STASH_ID} >actual &&
 	test_cmp expected actual
@@ -599,6 +599,30 @@ test_expect_success 'stash apply shows status same as git status (relative to cu
 	) |
 	sed -e 1,2d >actual && # drop "Saved..." and "HEAD is now..."
 	test_cmp expect actual
+'
+
+cat > expect << EOF
+diff --git a/HEAD b/HEAD
+new file mode 100644
+index 0000000..fe0cbee
+--- /dev/null
++++ b/HEAD
+@@ -0,0 +1 @@
++file-not-a-ref
+EOF
+
+test_expect_success 'stash where working directory contains "HEAD" file' '
+	git stash clear &&
+	git reset --hard &&
+	echo file-not-a-ref > HEAD &&
+	git add HEAD &&
+	test_tick &&
+	git stash &&
+	git diff-files --quiet &&
+	git diff-index --cached --quiet HEAD &&
+	test "$(git rev-parse stash^)" = "$(git rev-parse HEAD)" &&
+	git diff stash^..stash > output &&
+	test_cmp output expect
 '
 
 test_done

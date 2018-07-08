@@ -9,6 +9,7 @@
 #include "notes.h"
 #include "color.h"
 #include "reflog-walk.h"
+#include "gpg-interface.h"
 
 static char *user_format;
 static struct cmt_fmt_map {
@@ -640,6 +641,12 @@ struct format_commit_context {
 	const struct pretty_print_context *pretty_ctx;
 	unsigned commit_header_parsed:1;
 	unsigned commit_message_parsed:1;
+	unsigned commit_signature_parsed:1;
+	struct {
+		char *gpg_output;
+		char good_bad;
+		char *signer;
+	} signature;
 	char *message;
 	size_t width, indent1, indent2;
 
@@ -822,6 +829,76 @@ static void rewrap_message_tail(struct strbuf *sb,
 	c->indent2 = new_indent2;
 }
 
+static struct {
+	char result;
+	const char *check;
+} signature_check[] = {
+	{ 'G', ": Good signature from " },
+	{ 'B', ": BAD signature from " },
+};
+
+static void parse_signature_lines(struct format_commit_context *ctx)
+{
+	const char *buf = ctx->signature.gpg_output;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(signature_check); i++) {
+		const char *found = strstr(buf, signature_check[i].check);
+		const char *next;
+		if (!found)
+			continue;
+		ctx->signature.good_bad = signature_check[i].result;
+		found += strlen(signature_check[i].check);
+		next = strchrnul(found, '\n');
+		ctx->signature.signer = xmemdupz(found, next - found);
+		break;
+	}
+}
+
+static void parse_commit_signature(struct format_commit_context *ctx)
+{
+	struct strbuf payload = STRBUF_INIT;
+	struct strbuf signature = STRBUF_INIT;
+	struct strbuf gpg_output = STRBUF_INIT;
+	int status;
+
+	ctx->commit_signature_parsed = 1;
+
+	if (parse_signed_commit(ctx->commit->object.sha1,
+				&payload, &signature) <= 0)
+		goto out;
+	status = verify_signed_buffer(payload.buf, payload.len,
+				      signature.buf, signature.len,
+				      &gpg_output);
+	if (status && !gpg_output.len)
+		goto out;
+	ctx->signature.gpg_output = strbuf_detach(&gpg_output, NULL);
+	parse_signature_lines(ctx);
+
+ out:
+	strbuf_release(&gpg_output);
+	strbuf_release(&payload);
+	strbuf_release(&signature);
+}
+
+
+static int format_reflog_person(struct strbuf *sb,
+				char part,
+				struct reflog_walk_info *log,
+				enum date_mode dmode)
+{
+	const char *ident;
+
+	if (!log)
+		return 2;
+
+	ident = get_reflog_ident(log);
+	if (!ident)
+		return 2;
+
+	return format_person_part(sb, part, ident, strlen(ident), dmode);
+}
+
 static size_t format_commit_one(struct strbuf *sb, const char *placeholder,
 				void *context)
 {
@@ -963,6 +1040,14 @@ static size_t format_commit_one(struct strbuf *sb, const char *placeholder,
 			if (c->pretty_ctx->reflog_info)
 				get_reflog_message(sb, c->pretty_ctx->reflog_info);
 			return 2;
+		case 'n':
+		case 'N':
+		case 'e':
+		case 'E':
+			return format_reflog_person(sb,
+						    placeholder[1],
+						    c->pretty_ctx->reflog_info,
+						    c->pretty_ctx->date_mode);
 		}
 		return 0;	/* unknown %g placeholder */
 	case 'N':
@@ -973,6 +1058,30 @@ static size_t format_commit_one(struct strbuf *sb, const char *placeholder,
 		}
 		return 0;
 	}
+
+	if (placeholder[0] == 'G') {
+		if (!c->commit_signature_parsed)
+			parse_commit_signature(c);
+		switch (placeholder[1]) {
+		case 'G':
+			if (c->signature.gpg_output)
+				strbuf_addstr(sb, c->signature.gpg_output);
+			break;
+		case '?':
+			switch (c->signature.good_bad) {
+			case 'G':
+			case 'B':
+				strbuf_addch(sb, c->signature.good_bad);
+			}
+			break;
+		case 'S':
+			if (c->signature.signer)
+				strbuf_addstr(sb, c->signature.signer);
+			break;
+		}
+		return 2;
+	}
+
 
 	/* For the rest we have to parse the commit header. */
 	if (!c->commit_header_parsed)
@@ -1094,7 +1203,6 @@ void format_commit_message(const struct commit *commit,
 {
 	struct format_commit_context context;
 	static const char utf8[] = "UTF-8";
-	const char *enc;
 	const char *output_enc = pretty_ctx->output_encoding;
 
 	memset(&context, 0, sizeof(context));
@@ -1103,10 +1211,13 @@ void format_commit_message(const struct commit *commit,
 	context.wrap_start = sb->len;
 	context.message = commit->buffer;
 	if (output_enc) {
-		enc = get_header(commit, "encoding");
-		enc = enc ? enc : utf8;
-		if (strcmp(enc, output_enc))
+		char *enc = get_header(commit, "encoding");
+		if (strcmp(enc ? enc : utf8, output_enc)) {
 			context.message = logmsg_reencode(commit, output_enc);
+			if (!context.message)
+				context.message = commit->buffer;
+		}
+		free(enc);
 	}
 
 	strbuf_expand(sb, format, format_commit_item, &context);
@@ -1114,6 +1225,8 @@ void format_commit_message(const struct commit *commit,
 
 	if (context.message != commit->buffer)
 		free(context.message);
+	free(context.signature.gpg_output);
+	free(context.signature.signer);
 }
 
 static void pp_header(const struct pretty_print_context *pp,

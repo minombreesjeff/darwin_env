@@ -52,7 +52,7 @@ sub evaluate_uri {
 	# as base URL.
 	# Therefore, if we needed to strip PATH_INFO, then we know that we have
 	# to build the base URL ourselves:
-	our $path_info = $ENV{"PATH_INFO"};
+	our $path_info = decode_utf8($ENV{"PATH_INFO"});
 	if ($path_info) {
 		if ($my_url =~ s,\Q$path_info\E$,, &&
 		    $my_uri =~ s,\Q$path_info\E$,, &&
@@ -85,6 +85,8 @@ our $home_link_str = "++GITWEB_HOME_LINK_STR++";
 our $site_name = "++GITWEB_SITENAME++"
                  || ($ENV{'SERVER_NAME'} || "Untitled") . " Git";
 
+# html snippet to include in the <head> section of each page
+our $site_html_head_string = "++GITWEB_SITE_HTML_HEAD_STRING++";
 # filename of html text to include at top of each page
 our $site_header = "++GITWEB_SITE_HEADER++";
 # html text to include at home page
@@ -757,6 +759,7 @@ our @cgi_param_mapping = (
 	extra_options => "opt",
 	search_use_regexp => "sr",
 	ctag => "by_tag",
+	diff_style => "ds",
 	# this must be last entry (for manipulation from JavaScript)
 	javascript => "js"
 );
@@ -813,9 +816,9 @@ sub evaluate_query_params {
 
 	while (my ($name, $symbol) = each %cgi_param_mapping) {
 		if ($symbol eq 'opt') {
-			$input_params{$name} = [ $cgi->param($symbol) ];
+			$input_params{$name} = [ map { decode_utf8($_) } $cgi->param($symbol) ];
 		} else {
-			$input_params{$name} = $cgi->param($symbol);
+			$input_params{$name} = decode_utf8($cgi->param($symbol));
 		}
 	}
 }
@@ -1070,7 +1073,16 @@ sub evaluate_and_validate_params {
 		if (length($searchtext) < 2) {
 			die_error(403, "At least two characters are required for search parameter");
 		}
-		$search_regexp = $search_use_regexp ? $searchtext : quotemeta $searchtext;
+		if ($search_use_regexp) {
+			$search_regexp = $searchtext;
+			if (!eval { qr/$search_regexp/; 1; }) {
+				(my $error = $@) =~ s/ at \S+ line \d+.*\n?//;
+				die_error(400, "Invalid search regexp '$search_regexp'",
+				          esc_html($error));
+			}
+		} else {
+			$search_regexp = quotemeta $searchtext;
+		}
 	}
 }
 
@@ -1120,8 +1132,10 @@ sub dispatch {
 	if (!defined $action) {
 		if (defined $hash) {
 			$action = git_get_type($hash);
+			$action or die_error(404, "Object does not exist");
 		} elsif (defined $hash_base && defined $file_name) {
 			$action = git_get_type("$hash_base:$file_name");
+			$action or die_error(404, "File or directory does not exist");
 		} elsif (defined $project) {
 			$action = 'summary';
 		} else {
@@ -1440,8 +1454,8 @@ sub validate_refname {
 sub to_utf8 {
 	my $str = shift;
 	return undef unless defined $str;
-	if (utf8::valid($str)) {
-		utf8::decode($str);
+
+	if (utf8::is_utf8($str) || utf8::decode($str)) {
 		return $str;
 	} else {
 		return decode($fallback_encoding, $str, Encode::FB_DEFAULT);
@@ -1693,6 +1707,7 @@ sub chop_and_escape_str {
 	my ($str) = @_;
 
 	my $chopped = chop_str(@_);
+	$str = to_utf8($str);
 	if ($chopped eq $str) {
 		return esc_html($chopped);
 	} else {
@@ -2223,93 +2238,119 @@ sub format_diff_cc_simplified {
 	return $result;
 }
 
-# format patch (diff) line (not to be used for diff headers)
-sub format_diff_line {
+sub diff_line_class {
+	my ($line, $from, $to) = @_;
+
+	# ordinary diff
+	my $num_sign = 1;
+	# combined diff
+	if ($from && $to && ref($from->{'href'}) eq "ARRAY") {
+		$num_sign = scalar @{$from->{'href'}};
+	}
+
+	my @diff_line_classifier = (
+		{ regexp => qr/^\@\@{$num_sign} /, class => "chunk_header"},
+		{ regexp => qr/^\\/,               class => "incomplete"  },
+		{ regexp => qr/^ {$num_sign}/,     class => "ctx" },
+		# classifier for context must come before classifier add/rem,
+		# or we would have to use more complicated regexp, for example
+		# qr/(?= {0,$m}\+)[+ ]{$num_sign}/, where $m = $num_sign - 1;
+		{ regexp => qr/^[+ ]{$num_sign}/,   class => "add" },
+		{ regexp => qr/^[- ]{$num_sign}/,   class => "rem" },
+	);
+	for my $clsfy (@diff_line_classifier) {
+		return $clsfy->{'class'}
+			if ($line =~ $clsfy->{'regexp'});
+	}
+
+	# fallback
+	return "";
+}
+
+# assumes that $from and $to are defined and correctly filled,
+# and that $line holds a line of chunk header for unified diff
+sub format_unidiff_chunk_header {
+	my ($line, $from, $to) = @_;
+
+	my ($from_text, $from_start, $from_lines, $to_text, $to_start, $to_lines, $section) =
+		$line =~ m/^\@{2} (-(\d+)(?:,(\d+))?) (\+(\d+)(?:,(\d+))?) \@{2}(.*)$/;
+
+	$from_lines = 0 unless defined $from_lines;
+	$to_lines   = 0 unless defined $to_lines;
+
+	if ($from->{'href'}) {
+		$from_text = $cgi->a({-href=>"$from->{'href'}#l$from_start",
+		                     -class=>"list"}, $from_text);
+	}
+	if ($to->{'href'}) {
+		$to_text   = $cgi->a({-href=>"$to->{'href'}#l$to_start",
+		                     -class=>"list"}, $to_text);
+	}
+	$line = "<span class=\"chunk_info\">@@ $from_text $to_text @@</span>" .
+	        "<span class=\"section\">" . esc_html($section, -nbsp=>1) . "</span>";
+	return $line;
+}
+
+# assumes that $from and $to are defined and correctly filled,
+# and that $line holds a line of chunk header for combined diff
+sub format_cc_diff_chunk_header {
+	my ($line, $from, $to) = @_;
+
+	my ($prefix, $ranges, $section) = $line =~ m/^(\@+) (.*?) \@+(.*)$/;
+	my (@from_text, @from_start, @from_nlines, $to_text, $to_start, $to_nlines);
+
+	@from_text = split(' ', $ranges);
+	for (my $i = 0; $i < @from_text; ++$i) {
+		($from_start[$i], $from_nlines[$i]) =
+			(split(',', substr($from_text[$i], 1)), 0);
+	}
+
+	$to_text   = pop @from_text;
+	$to_start  = pop @from_start;
+	$to_nlines = pop @from_nlines;
+
+	$line = "<span class=\"chunk_info\">$prefix ";
+	for (my $i = 0; $i < @from_text; ++$i) {
+		if ($from->{'href'}[$i]) {
+			$line .= $cgi->a({-href=>"$from->{'href'}[$i]#l$from_start[$i]",
+			                  -class=>"list"}, $from_text[$i]);
+		} else {
+			$line .= $from_text[$i];
+		}
+		$line .= " ";
+	}
+	if ($to->{'href'}) {
+		$line .= $cgi->a({-href=>"$to->{'href'}#l$to_start",
+		                  -class=>"list"}, $to_text);
+	} else {
+		$line .= $to_text;
+	}
+	$line .= " $prefix</span>" .
+	         "<span class=\"section\">" . esc_html($section, -nbsp=>1) . "</span>";
+	return $line;
+}
+
+# process patch (diff) line (not to be used for diff headers),
+# returning class and HTML-formatted (but not wrapped) line
+sub process_diff_line {
 	my $line = shift;
 	my ($from, $to) = @_;
-	my $diff_class = "";
+
+	my $diff_class = diff_line_class($line, $from, $to);
 
 	chomp $line;
-
-	if ($from && $to && ref($from->{'href'}) eq "ARRAY") {
-		# combined diff
-		my $prefix = substr($line, 0, scalar @{$from->{'href'}});
-		if ($line =~ m/^\@{3}/) {
-			$diff_class = " chunk_header";
-		} elsif ($line =~ m/^\\/) {
-			$diff_class = " incomplete";
-		} elsif ($prefix =~ tr/+/+/) {
-			$diff_class = " add";
-		} elsif ($prefix =~ tr/-/-/) {
-			$diff_class = " rem";
-		}
-	} else {
-		# assume ordinary diff
-		my $char = substr($line, 0, 1);
-		if ($char eq '+') {
-			$diff_class = " add";
-		} elsif ($char eq '-') {
-			$diff_class = " rem";
-		} elsif ($char eq '@') {
-			$diff_class = " chunk_header";
-		} elsif ($char eq "\\") {
-			$diff_class = " incomplete";
-		}
-	}
 	$line = untabify($line);
+
 	if ($from && $to && $line =~ m/^\@{2} /) {
-		my ($from_text, $from_start, $from_lines, $to_text, $to_start, $to_lines, $section) =
-			$line =~ m/^\@{2} (-(\d+)(?:,(\d+))?) (\+(\d+)(?:,(\d+))?) \@{2}(.*)$/;
+		$line = format_unidiff_chunk_header($line, $from, $to);
+		return $diff_class, $line;
 
-		$from_lines = 0 unless defined $from_lines;
-		$to_lines   = 0 unless defined $to_lines;
-
-		if ($from->{'href'}) {
-			$from_text = $cgi->a({-href=>"$from->{'href'}#l$from_start",
-			                     -class=>"list"}, $from_text);
-		}
-		if ($to->{'href'}) {
-			$to_text   = $cgi->a({-href=>"$to->{'href'}#l$to_start",
-			                     -class=>"list"}, $to_text);
-		}
-		$line = "<span class=\"chunk_info\">@@ $from_text $to_text @@</span>" .
-		        "<span class=\"section\">" . esc_html($section, -nbsp=>1) . "</span>";
-		return "<div class=\"diff$diff_class\">$line</div>\n";
 	} elsif ($from && $to && $line =~ m/^\@{3}/) {
-		my ($prefix, $ranges, $section) = $line =~ m/^(\@+) (.*?) \@+(.*)$/;
-		my (@from_text, @from_start, @from_nlines, $to_text, $to_start, $to_nlines);
+		$line = format_cc_diff_chunk_header($line, $from, $to);
+		return $diff_class, $line;
 
-		@from_text = split(' ', $ranges);
-		for (my $i = 0; $i < @from_text; ++$i) {
-			($from_start[$i], $from_nlines[$i]) =
-				(split(',', substr($from_text[$i], 1)), 0);
-		}
-
-		$to_text   = pop @from_text;
-		$to_start  = pop @from_start;
-		$to_nlines = pop @from_nlines;
-
-		$line = "<span class=\"chunk_info\">$prefix ";
-		for (my $i = 0; $i < @from_text; ++$i) {
-			if ($from->{'href'}[$i]) {
-				$line .= $cgi->a({-href=>"$from->{'href'}[$i]#l$from_start[$i]",
-				                  -class=>"list"}, $from_text[$i]);
-			} else {
-				$line .= $from_text[$i];
-			}
-			$line .= " ";
-		}
-		if ($to->{'href'}) {
-			$line .= $cgi->a({-href=>"$to->{'href'}#l$to_start",
-			                  -class=>"list"}, $to_text);
-		} else {
-			$line .= $to_text;
-		}
-		$line .= " $prefix</span>" .
-		         "<span class=\"section\">" . esc_html($section, -nbsp=>1) . "</span>";
-		return "<div class=\"diff$diff_class\">$line</div>\n";
 	}
-	return "<div class=\"diff$diff_class\">" . esc_html($line, -nbsp=>1) . "</div>\n";
+	return $diff_class, esc_html($line, -nbsp=>1);
 }
 
 # Generates undef or something like "_snapshot_" or "snapshot (_tbz2_ _zip_)",
@@ -2361,7 +2402,7 @@ sub get_feed_info {
 	return unless (defined $project);
 	# some views should link to OPML, or to generic project feed,
 	# or don't have specific feed yet (so they should use generic)
-	return if ($action =~ /^(?:tags|heads|forks|tag|search)$/x);
+	return if (!$action || $action =~ /^(?:tags|heads|forks|tag|search)$/x);
 
 	my $branch;
 	# branches refs uses 'refs/heads/' prefix (fullname) to differentiate
@@ -2735,7 +2776,7 @@ sub git_populate_project_tagcloud {
 	}
 
 	my $cloud;
-	my $matched = $cgi->param('by_tag');
+	my $matched = $input_params{'ctag'};
 	if (eval { require HTML::TagCloud; 1; }) {
 		$cloud = HTML::TagCloud->new;
 		foreach my $ctag (sort keys %ctags_lc) {
@@ -2806,8 +2847,8 @@ sub git_get_projects_list {
 		my $dir = $projects_list;
 		# remove the trailing "/"
 		$dir =~ s!/+$!!;
-		my $pfxlen = length("$projects_list");
-		my $pfxdepth = ($projects_list =~ tr!/!!);
+		my $pfxlen = length("$dir");
+		my $pfxdepth = ($dir =~ tr!/!!);
 		# when filtering, search only given subdirectory
 		if ($filter) {
 			$dir .= "/$filter";
@@ -2939,10 +2980,10 @@ sub filter_forks_from_projects_list {
 sub search_projects_list {
 	my ($projlist, %opts) = @_;
 	my $tagfilter  = $opts{'tagfilter'};
-	my $searchtext = $opts{'searchtext'};
+	my $search_re = $opts{'search_regexp'};
 
 	return @$projlist
-		unless ($tagfilter || $searchtext);
+		unless ($tagfilter || $search_re);
 
 	my @projects;
  PROJECT:
@@ -2954,10 +2995,10 @@ sub search_projects_list {
 				grep { lc($_) eq lc($tagfilter) } keys %{$pr->{'ctags'}};
 		}
 
-		if ($searchtext) {
+		if ($search_re) {
 			next unless
-				$pr->{'path'} =~ /$searchtext/ ||
-				$pr->{'descr_long'} =~ /$searchtext/;
+				$pr->{'path'} =~ /$search_re/ ||
+				$pr->{'descr_long'} =~ /$search_re/;
 		}
 
 		push @projects, $pr;
@@ -3841,7 +3882,7 @@ sub print_search_form {
 	                       -values => ['commit', 'grep', 'author', 'committer', 'pickaxe']) .
 	      $cgi->sup($cgi->a({-href => href(action=>"search_help")}, "?")) .
 	      " search:\n",
-	      $cgi->textfield(-name => "s", -value => $searchtext) . "\n" .
+	      $cgi->textfield(-name => "s", -value => $searchtext, -override => 1) . "\n" .
 	      "<span title=\"Extended regular expression\">" .
 	      $cgi->checkbox(-name => 'sr', -value => 1, -label => 're',
 	                     -checked => $search_use_regexp) .
@@ -3879,6 +3920,11 @@ EOF
 		print "<base href=\"".esc_url($base_url)."\" />\n";
 	}
 	print_header_links($status);
+
+	if (defined $site_html_head_string) {
+		print to_utf8($site_html_head_string);
+	}
+
 	print "</head>\n" .
 	      "<body>\n";
 
@@ -4826,8 +4872,97 @@ sub git_difftree_body {
 	print "</table>\n";
 }
 
+sub print_sidebyside_diff_chunk {
+	my @chunk = @_;
+	my (@ctx, @rem, @add);
+
+	return unless @chunk;
+
+	# incomplete last line might be among removed or added lines,
+	# or both, or among context lines: find which
+	for (my $i = 1; $i < @chunk; $i++) {
+		if ($chunk[$i][0] eq 'incomplete') {
+			$chunk[$i][0] = $chunk[$i-1][0];
+		}
+	}
+
+	# guardian
+	push @chunk, ["", ""];
+
+	foreach my $line_info (@chunk) {
+		my ($class, $line) = @$line_info;
+
+		# print chunk headers
+		if ($class && $class eq 'chunk_header') {
+			print $line;
+			next;
+		}
+
+		## print from accumulator when type of class of lines change
+		# empty contents block on start rem/add block, or end of chunk
+		if (@ctx && (!$class || $class eq 'rem' || $class eq 'add')) {
+			print join '',
+				'<div class="chunk_block ctx">',
+					'<div class="old">',
+					@ctx,
+					'</div>',
+					'<div class="new">',
+					@ctx,
+					'</div>',
+				'</div>';
+			@ctx = ();
+		}
+		# empty add/rem block on start context block, or end of chunk
+		if ((@rem || @add) && (!$class || $class eq 'ctx')) {
+			if (!@add) {
+				# pure removal
+				print join '',
+					'<div class="chunk_block rem">',
+						'<div class="old">',
+						@rem,
+						'</div>',
+					'</div>';
+			} elsif (!@rem) {
+				# pure addition
+				print join '',
+					'<div class="chunk_block add">',
+						'<div class="new">',
+						@add,
+						'</div>',
+					'</div>';
+			} else {
+				# assume that it is change
+				print join '',
+					'<div class="chunk_block chg">',
+						'<div class="old">',
+						@rem,
+						'</div>',
+						'<div class="new">',
+						@add,
+						'</div>',
+					'</div>';
+			}
+			@rem = @add = ();
+		}
+
+		## adding lines to accumulator
+		# guardian value
+		last unless $line;
+		# rem, add or change
+		if ($class eq 'rem') {
+			push @rem, $line;
+		} elsif ($class eq 'add') {
+			push @add, $line;
+		}
+		# context line
+		if ($class eq 'ctx') {
+			push @ctx, $line;
+		}
+	}
+}
+
 sub git_patchset_body {
-	my ($fd, $difftree, $hash, @hash_parents) = @_;
+	my ($fd, $diff_style, $difftree, $hash, @hash_parents) = @_;
 	my ($hash_parent) = $hash_parents[0];
 
 	my $is_combined = (@hash_parents > 1);
@@ -4837,6 +4972,7 @@ sub git_patchset_body {
 	my $diffinfo;
 	my $to_name;
 	my (%from, %to);
+	my @chunk; # for side-by-side diff
 
 	print "<div class=\"patchset\">\n";
 
@@ -4943,10 +5079,29 @@ sub git_patchset_body {
 
 			next PATCH if ($patch_line =~ m/^diff /);
 
-			print format_diff_line($patch_line, \%from, \%to);
+			my ($class, $line) = process_diff_line($patch_line, \%from, \%to);
+			my $diff_classes = "diff";
+			$diff_classes .= " $class" if ($class);
+			$line = "<div class=\"$diff_classes\">$line</div>\n";
+
+			if ($diff_style eq 'sidebyside' && !$is_combined) {
+				if ($class eq 'chunk_header') {
+					print_sidebyside_diff_chunk(@chunk);
+					@chunk = ( [ $class, $line ] );
+				} else {
+					push @chunk, [ $class, $line ];
+				}
+			} else {
+				# default 'inline' style and unknown styles
+				print $line;
+			}
 		}
 
 	} continue {
+		if (@chunk) {
+			print_sidebyside_diff_chunk(@chunk);
+			@chunk = ();
+		}
 		print "</div>\n"; # class="patch"
 	}
 
@@ -5136,9 +5291,9 @@ sub git_project_list_body {
 
 	my $check_forks = gitweb_check_feature('forks');
 	my $show_ctags  = gitweb_check_feature('ctags');
-	my $tagfilter = $show_ctags ? $cgi->param('by_tag') : undef;
+	my $tagfilter = $show_ctags ? $input_params{'ctag'} : undef;
 	$check_forks = undef
-		if ($tagfilter || $searchtext);
+		if ($tagfilter || $search_regexp);
 
 	# filtering out forks before filling info allows to do less work
 	@projects = filter_forks_from_projects_list(\@projects)
@@ -5146,9 +5301,9 @@ sub git_project_list_body {
 	@projects = fill_project_list_info(\@projects);
 	# searching projects require filling to be run before it
 	@projects = search_projects_list(\@projects,
-	                                 'searchtext' => $searchtext,
+	                                 'search_regexp' => $search_regexp,
 	                                 'tagfilter'  => $tagfilter)
-		if ($tagfilter || $searchtext);
+		if ($tagfilter || $search_regexp);
 
 	$order ||= $default_projects_order;
 	$from = 0 unless defined $from;
@@ -5424,7 +5579,7 @@ sub git_tags_body {
 
 sub git_heads_body {
 	# uses global variable $project
-	my ($headlist, $head, $from, $to, $extra) = @_;
+	my ($headlist, $head_at, $from, $to, $extra) = @_;
 	$from = 0 unless defined $from;
 	$to = $#{$headlist} if (!defined $to || $#{$headlist} < $to);
 
@@ -5433,7 +5588,7 @@ sub git_heads_body {
 	for (my $i = $from; $i <= $to; $i++) {
 		my $entry = $headlist->[$i];
 		my %ref = %$entry;
-		my $curr = $ref{'id'} eq $head;
+		my $curr = defined $head_at && $ref{'id'} eq $head_at;
 		if ($alternate) {
 			print "<tr class=\"dark\">\n";
 		} else {
@@ -5692,7 +5847,7 @@ sub git_search_files {
 	my %co = @_;
 
 	local $/ = "\n";
-	open my $fd, "-|", git_cmd(), 'grep', '-n',
+	open my $fd, "-|", git_cmd(), 'grep', '-n', '-z',
 		$search_use_regexp ? ('-E', '-i') : '-F',
 		$searchtext, $co{'tree'}
 			or die_error(500, "Open git-grep failed");
@@ -5706,6 +5861,7 @@ sub git_search_files {
 	my $alternate = 1;
 	my $matches = 0;
 	my $lastfile = '';
+	my $file_href;
 	while (my $line = <$fd>) {
 		chomp $line;
 		my ($file, $lno, $ltext, $binary);
@@ -5714,7 +5870,8 @@ sub git_search_files {
 			$file = $1;
 			$binary = 1;
 		} else {
-			(undef, $file, $lno, $ltext) = split(/:/, $line, 4);
+			($file, $lno, $ltext) = split(/\0/, $line, 3);
+			$file =~ s/^$co{'tree'}://;
 		}
 		if ($file ne $lastfile) {
 			$lastfile and print "</td></tr>\n";
@@ -5723,10 +5880,10 @@ sub git_search_files {
 			} else {
 				print "<tr class=\"light\">\n";
 			}
+			$file_href = href(action=>"blob", hash_base=>$co{'id'},
+			                  file_name=>$file);
 			print "<td class=\"list\">".
-				$cgi->a({-href => href(action=>"blob", hash=>$co{'hash'},
-						       file_name=>"$file"),
-					-class => "list"}, esc_path($file));
+				$cgi->a({-href => $file_href, -class => "list"}, esc_path($file));
 			print "</td><td>\n";
 			$lastfile = $file;
 		}
@@ -5744,10 +5901,9 @@ sub git_search_files {
 				$ltext = esc_html($ltext, -nbsp=>1);
 			}
 			print "<div class=\"pre\">" .
-				$cgi->a({-href => href(action=>"blob", hash=>$co{'hash'},
-						       file_name=>"$file").'#l'.$lno,
-					-class => "linenr"}, sprintf('%4i', $lno))
-				. ' ' .  $ltext . "</div>\n";
+				$cgi->a({-href => $file_href.'#l'.$lno,
+				        -class => "linenr"}, sprintf('%4i', $lno)) .
+				' ' .  $ltext . "</div>\n";
 		}
 	}
 	if ($lastfile) {
@@ -5848,7 +6004,7 @@ sub git_project_list {
 	}
 	print $cgi->startform(-method => "get") .
 	      "<p class=\"projsearch\">Search:\n" .
-	      $cgi->textfield(-name => "s", -value => $searchtext) . "\n" .
+	      $cgi->textfield(-name => "s", -value => $searchtext, -override => 1) . "\n" .
 	      "</p>" .
 	      $cgi->end_form() . "\n";
 	git_project_list_body(\@list, $order);
@@ -6051,7 +6207,7 @@ sub git_tag {
 
 sub git_blame_common {
 	my $format = shift || 'porcelain';
-	if ($format eq 'porcelain' && $cgi->param('js')) {
+	if ($format eq 'porcelain' && $input_params{'javascript'}) {
 		$format = 'incremental';
 		$action = 'blame_incremental'; # for page title etc
 	}
@@ -6100,7 +6256,9 @@ sub git_blame_common {
 			-type=>"text/plain", -charset => "utf-8",
 			-status=> "200 OK");
 		local $| = 1; # output autoflush
-		print while <$fd>;
+		while (my $line = <$fd>) {
+			print to_utf8($line);
+		}
 		close $fd
 			or print "ERROR $!\n";
 
@@ -6942,6 +7100,7 @@ sub git_object {
 
 sub git_blobdiff {
 	my $format = shift || 'html';
+	my $diff_style = $input_params{'diff_style'} || 'inline';
 
 	my $fd;
 	my @difftree;
@@ -7020,6 +7179,7 @@ sub git_blobdiff {
 		my $formats_nav =
 			$cgi->a({-href => href(action=>"blobdiff_plain", -replay=>1)},
 			        "raw");
+		$formats_nav .= diff_style_nav($diff_style);
 		git_header_html(undef, $expires);
 		if (defined $hash_base && (my %co = parse_commit($hash_base))) {
 			git_print_page_nav('','', $hash_base,$co{'tree'},$hash_base, $formats_nav);
@@ -7051,7 +7211,8 @@ sub git_blobdiff {
 	if ($format eq 'html') {
 		print "<div class=\"page_body\">\n";
 
-		git_patchset_body($fd, [ \%diffinfo ], $hash_base, $hash_parent_base);
+		git_patchset_body($fd, $diff_style,
+		                  [ \%diffinfo ], $hash_base, $hash_parent_base);
 		close $fd;
 
 		print "</div>\n"; # class="page_body"
@@ -7076,9 +7237,31 @@ sub git_blobdiff_plain {
 	git_blobdiff('plain');
 }
 
+# assumes that it is added as later part of already existing navigation,
+# so it returns "| foo | bar" rather than just "foo | bar"
+sub diff_style_nav {
+	my ($diff_style, $is_combined) = @_;
+	$diff_style ||= 'inline';
+
+	return "" if ($is_combined);
+
+	my @styles = (inline => 'inline', 'sidebyside' => 'side by side');
+	my %styles = @styles;
+	@styles =
+		@styles[ map { $_ * 2 } 0..$#styles/2 ];
+
+	return join '',
+		map { " | ".$_ }
+		map {
+			$_ eq $diff_style ? $styles{$_} :
+			$cgi->a({-href => href(-replay=>1, diff_style => $_)}, $styles{$_})
+		} @styles;
+}
+
 sub git_commitdiff {
 	my %params = @_;
 	my $format = $params{-format} || 'html';
+	my $diff_style = $input_params{'diff_style'} || 'inline';
 
 	my ($patch_max) = gitweb_get_feature('patches');
 	if ($format eq 'patch') {
@@ -7104,6 +7287,7 @@ sub git_commitdiff {
 				$cgi->a({-href => href(action=>"patch", -replay=>1)},
 					"patch");
 		}
+		$formats_nav .= diff_style_nav($diff_style, @{$co{'parents'}} > 1);
 
 		if (defined $hash_parent &&
 		    $hash_parent ne '-c' && $hash_parent ne '--cc') {
@@ -7121,8 +7305,8 @@ sub git_commitdiff {
 				}
 			}
 			$formats_nav .= ': ' .
-				$cgi->a({-href => href(action=>"commitdiff",
-				                       hash=>$hash_parent)},
+				$cgi->a({-href => href(-replay=>1,
+				                       hash=>$hash_parent, hash_base=>undef)},
 				        esc_html($hash_parent_short)) .
 				')';
 		} elsif (!$co{'parent'}) {
@@ -7132,28 +7316,28 @@ sub git_commitdiff {
 			# single parent commit
 			$formats_nav .=
 				' (parent: ' .
-				$cgi->a({-href => href(action=>"commitdiff",
-				                       hash=>$co{'parent'})},
+				$cgi->a({-href => href(-replay=>1,
+				                       hash=>$co{'parent'}, hash_base=>undef)},
 				        esc_html(substr($co{'parent'}, 0, 7))) .
 				')';
 		} else {
 			# merge commit
 			if ($hash_parent eq '--cc') {
 				$formats_nav .= ' | ' .
-					$cgi->a({-href => href(action=>"commitdiff",
+					$cgi->a({-href => href(-replay=>1,
 					                       hash=>$hash, hash_parent=>'-c')},
 					        'combined');
 			} else { # $hash_parent eq '-c'
 				$formats_nav .= ' | ' .
-					$cgi->a({-href => href(action=>"commitdiff",
+					$cgi->a({-href => href(-replay=>1,
 					                       hash=>$hash, hash_parent=>'--cc')},
 					        'compact');
 			}
 			$formats_nav .=
 				' (merge: ' .
 				join(' ', map {
-					$cgi->a({-href => href(action=>"commitdiff",
-					                       hash=>$_)},
+					$cgi->a({-href => href(-replay=>1,
+					                       hash=>$_, hash_base=>undef)},
 					        esc_html(substr($_, 0, 7)));
 				} @{$co{'parents'}} ) .
 				')';
@@ -7282,7 +7466,8 @@ sub git_commitdiff {
 		                  $use_parents ? @{$co{'parents'}} : $hash_parent);
 		print "<br/>\n";
 
-		git_patchset_body($fd, \@difftree, $hash,
+		git_patchset_body($fd, $diff_style,
+		                  \@difftree, $hash,
 		                  $use_parents ? @{$co{'parents'}} : $hash_parent);
 		close $fd;
 		print "</div>\n"; # class="page_body"
@@ -7692,11 +7877,12 @@ sub git_opml {
 		-charset => 'utf-8',
 		-content_disposition => 'inline; filename="opml.xml"');
 
+	my $title = esc_html($site_name);
 	print <<XML;
 <?xml version="1.0" encoding="utf-8"?>
 <opml version="1.0">
 <head>
-  <title>$site_name OPML Export</title>
+  <title>$title OPML Export</title>
 </head>
 <body>
 <outline text="git RSS feeds">

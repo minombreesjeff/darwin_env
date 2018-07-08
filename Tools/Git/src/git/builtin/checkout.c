@@ -34,6 +34,7 @@ struct checkout_opts {
 	int force_detach;
 	int writeout_stage;
 	int writeout_error;
+	int overwrite_ignore;
 
 	/* not set by parse_options */
 	int branch_exists;
@@ -114,16 +115,21 @@ static int check_stage(int stage, struct cache_entry *ce, int pos)
 		return error(_("path '%s' does not have their version"), ce->name);
 }
 
-static int check_all_stages(struct cache_entry *ce, int pos)
+static int check_stages(unsigned stages, struct cache_entry *ce, int pos)
 {
-	if (ce_stage(ce) != 1 ||
-	    active_nr <= pos + 2 ||
-	    strcmp(active_cache[pos+1]->name, ce->name) ||
-	    ce_stage(active_cache[pos+1]) != 2 ||
-	    strcmp(active_cache[pos+2]->name, ce->name) ||
-	    ce_stage(active_cache[pos+2]) != 3)
-		return error(_("path '%s' does not have all three versions"),
-			     ce->name);
+	unsigned seen = 0;
+	const char *name = ce->name;
+
+	while (pos < active_nr) {
+		ce = active_cache[pos];
+		if (strcmp(name, ce->name))
+			break;
+		seen |= (1 << ce_stage(ce));
+		pos++;
+	}
+	if ((stages & seen) != stages)
+		return error(_("path '%s' does not have all necessary versions"),
+			     name);
 	return 0;
 }
 
@@ -150,18 +156,27 @@ static int checkout_merged(int pos, struct checkout *state)
 	int status;
 	unsigned char sha1[20];
 	mmbuffer_t result_buf;
+	unsigned char threeway[3][20];
+	unsigned mode = 0;
 
-	if (ce_stage(ce) != 1 ||
-	    active_nr <= pos + 2 ||
-	    strcmp(active_cache[pos+1]->name, path) ||
-	    ce_stage(active_cache[pos+1]) != 2 ||
-	    strcmp(active_cache[pos+2]->name, path) ||
-	    ce_stage(active_cache[pos+2]) != 3)
-		return error(_("path '%s' does not have all 3 versions"), path);
+	memset(threeway, 0, sizeof(threeway));
+	while (pos < active_nr) {
+		int stage;
+		stage = ce_stage(ce);
+		if (!stage || strcmp(path, ce->name))
+			break;
+		hashcpy(threeway[stage - 1], ce->sha1);
+		if (stage == 2)
+			mode = create_ce_mode(ce->ce_mode);
+		pos++;
+		ce = active_cache[pos];
+	}
+	if (is_null_sha1(threeway[1]) || is_null_sha1(threeway[2]))
+		return error(_("path '%s' does not have necessary versions"), path);
 
-	read_mmblob(&ancestor, active_cache[pos]->sha1);
-	read_mmblob(&ours, active_cache[pos+1]->sha1);
-	read_mmblob(&theirs, active_cache[pos+2]->sha1);
+	read_mmblob(&ancestor, threeway[0]);
+	read_mmblob(&ours, threeway[1]);
+	read_mmblob(&theirs, threeway[2]);
 
 	/*
 	 * NEEDSWORK: re-create conflicts from merges with
@@ -192,9 +207,7 @@ static int checkout_merged(int pos, struct checkout *state)
 	if (write_sha1_file(result_buf.ptr, result_buf.size,
 			    blob_type, sha1))
 		die(_("Unable to add merge result for '%s'"), path);
-	ce = make_cache_entry(create_ce_mode(active_cache[pos+1]->ce_mode),
-			      sha1,
-			      path, 2, 0);
+	ce = make_cache_entry(mode, sha1, path, 2, 0);
 	if (!ce)
 		die(_("make_cache_entry failed for path '%s'"), path);
 	status = checkout_entry(ce, state, NULL);
@@ -252,7 +265,7 @@ static int checkout_paths(struct tree *source_tree, const char **pathspec,
 			} else if (stage) {
 				errs |= check_stage(stage, ce, pos);
 			} else if (opts->merge) {
-				errs |= check_all_stages(ce, pos);
+				errs |= check_stages((1<<2) | (1<<3), ce, pos);
 			} else {
 				errs = 1;
 				error(_("path '%s' is unmerged"), ce->name);
@@ -288,7 +301,7 @@ static int checkout_paths(struct tree *source_tree, const char **pathspec,
 	    commit_locked_index(lock_file))
 		die(_("unable to write new index file"));
 
-	resolve_ref("HEAD", rev, 0, &flag);
+	read_ref_full("HEAD", rev, 0, &flag);
 	head = lookup_commit_reference_gently(rev, 1);
 
 	errs |= post_checkout_hook(head, head, 0);
@@ -409,9 +422,11 @@ static int merge_working_tree(struct checkout_opts *opts,
 		topts.gently = opts->merge && old->commit;
 		topts.verbose_update = !opts->quiet;
 		topts.fn = twoway_merge;
-		topts.dir = xcalloc(1, sizeof(*topts.dir));
-		topts.dir->flags |= DIR_SHOW_IGNORED;
-		setup_standard_excludes(topts.dir);
+		if (opts->overwrite_ignore) {
+			topts.dir = xcalloc(1, sizeof(*topts.dir));
+			topts.dir->flags |= DIR_SHOW_IGNORED;
+			setup_standard_excludes(topts.dir);
+		}
 		tree = parse_tree_indirect(old->commit ?
 					   old->commit->object.sha1 :
 					   EMPTY_TREE_SHA1_BIN);
@@ -540,7 +555,9 @@ static void update_refs_for_switch(struct checkout_opts *opts,
 		else
 			create_branch(old->name, opts->new_branch, new->name,
 				      opts->new_branch_force ? 1 : 0,
-				      opts->new_branch_log, opts->track);
+				      opts->new_branch_log,
+				      opts->new_branch_force ? 1 : 0,
+				      opts->track);
 		new->name = opts->new_branch;
 		setup_branch_path(new);
 	}
@@ -565,8 +582,12 @@ static void update_refs_for_switch(struct checkout_opts *opts,
 		create_symref("HEAD", new->path, msg.buf);
 		if (!opts->quiet) {
 			if (old->path && !strcmp(new->path, old->path)) {
-				fprintf(stderr, _("Already on '%s'\n"),
-					new->name);
+				if (opts->new_branch_force)
+					fprintf(stderr, _("Reset branch '%s'\n"),
+						new->name);
+				else
+					fprintf(stderr, _("Already on '%s'\n"),
+						new->name);
 			} else if (opts->new_branch) {
 				if (opts->branch_exists)
 					fprintf(stderr, _("Switched to and reset branch '%s'\n"), new->name);
@@ -593,23 +614,11 @@ static void update_refs_for_switch(struct checkout_opts *opts,
 		report_tracking(new);
 }
 
-static int add_one_ref_to_rev_list_arg(const char *refname,
-				       const unsigned char *sha1,
-				       int flags,
-				       void *cb_data)
+static int add_pending_uninteresting_ref(const char *refname,
+					 const unsigned char *sha1,
+					 int flags, void *cb_data)
 {
-	argv_array_push(cb_data, refname);
-	return 0;
-}
-
-static int clear_commit_marks_from_one_ref(const char *refname,
-				      const unsigned char *sha1,
-				      int flags,
-				      void *cb_data)
-{
-	struct commit *commit = lookup_commit_reference_gently(sha1, 1);
-	if (commit)
-		clear_commit_marks(commit, -1);
+	add_pending_sha1(cb_data, refname, sha1, flags | UNINTERESTING);
 	return 0;
 }
 
@@ -678,18 +687,21 @@ static void suggest_reattach(struct commit *commit, struct rev_info *revs)
  */
 static void orphaned_commit_warning(struct commit *commit)
 {
-	struct argv_array args = ARGV_ARRAY_INIT;
 	struct rev_info revs;
-
-	argv_array_push(&args, "(internal)");
-	argv_array_push(&args, sha1_to_hex(commit->object.sha1));
-	argv_array_push(&args, "--not");
-	for_each_ref(add_one_ref_to_rev_list_arg, &args);
-	argv_array_push(&args, "--");
+	struct object *object = &commit->object;
+	struct object_array refs;
 
 	init_revisions(&revs, NULL);
-	if (setup_revisions(args.argc - 1, args.argv, &revs, NULL) != 1)
-		die(_("internal error: only -- alone should have been left"));
+	setup_revisions(0, NULL, &revs, NULL);
+
+	object->flags &= ~UNINTERESTING;
+	add_pending_object(&revs, object, sha1_to_hex(object->sha1));
+
+	for_each_ref(add_pending_uninteresting_ref, &revs);
+
+	refs = revs.pending;
+	revs.leak_pending = 1;
+
 	if (prepare_revision_walk(&revs))
 		die(_("internal error in revision walk"));
 	if (!(commit->object.flags & UNINTERESTING))
@@ -697,24 +709,22 @@ static void orphaned_commit_warning(struct commit *commit)
 	else
 		describe_detached_head(_("Previous HEAD position was"), commit);
 
-	argv_array_clear(&args);
-	clear_commit_marks(commit, -1);
-	for_each_ref(clear_commit_marks_from_one_ref, NULL);
+	clear_commit_marks_for_object_array(&refs, ALL_REV_FLAGS);
+	free(refs.objects);
 }
 
 static int switch_branches(struct checkout_opts *opts, struct branch_info *new)
 {
 	int ret = 0;
 	struct branch_info old;
+	void *path_to_free;
 	unsigned char rev[20];
 	int flag;
 	memset(&old, 0, sizeof(old));
-	old.path = xstrdup(resolve_ref("HEAD", rev, 0, &flag));
+	old.path = path_to_free = resolve_refdup("HEAD", rev, 0, &flag);
 	old.commit = lookup_commit_reference_gently(rev, 1);
-	if (!(flag & REF_ISSYMREF)) {
-		free((char *)old.path);
+	if (!(flag & REF_ISSYMREF))
 		old.path = NULL;
-	}
 
 	if (old.path && !prefixcmp(old.path, "refs/heads/"))
 		old.name = old.path + strlen("refs/heads/");
@@ -728,8 +738,10 @@ static int switch_branches(struct checkout_opts *opts, struct branch_info *new)
 	}
 
 	ret = merge_working_tree(opts, &old, new);
-	if (ret)
+	if (ret) {
+		free(path_to_free);
 		return ret;
+	}
 
 	if (!opts->quiet && !old.path && old.commit && new->commit != old.commit)
 		orphaned_commit_warning(old.commit);
@@ -737,7 +749,7 @@ static int switch_branches(struct checkout_opts *opts, struct branch_info *new)
 	update_refs_for_switch(opts, &old, new);
 
 	ret = post_checkout_hook(old.commit, new->commit, 1);
-	free((char *)old.path);
+	free(path_to_free);
 	return ret || opts->writeout_error;
 }
 
@@ -875,8 +887,8 @@ static int parse_branchname_arg(int argc, const char **argv,
 	new->name = arg;
 	setup_branch_path(new);
 
-	if (check_ref_format(new->path) == CHECK_REF_FORMAT_OK &&
-	    resolve_ref(new->path, branch_rev, 1, NULL))
+	if (!check_refname_format(new->path, 0) &&
+	    !read_ref(new->path, branch_rev))
 		hashcpy(rev, branch_rev);
 	else
 		new->path = NULL; /* not an existing branch */
@@ -910,6 +922,17 @@ static int parse_branchname_arg(int argc, const char **argv,
 	return argcount;
 }
 
+static int switch_unborn_to_new_branch(struct checkout_opts *opts)
+{
+	int status;
+	struct strbuf branch_ref = STRBUF_INIT;
+
+	strbuf_addf(&branch_ref, "refs/heads/%s", opts->new_branch);
+	status = create_symref("HEAD", branch_ref.buf, "checkout -b");
+	strbuf_release(&branch_ref);
+	return status;
+}
+
 int cmd_checkout(int argc, const char **argv, const char *prefix)
 {
 	struct checkout_opts opts;
@@ -936,6 +959,7 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 			    3),
 		OPT__FORCE(&opts.force, "force checkout (throw away local modifications)"),
 		OPT_BOOLEAN('m', "merge", &opts.merge, "perform a 3-way merge with the new branch"),
+		OPT_BOOLEAN(0, "overwrite-ignore", &opts.overwrite_ignore, "update ignored files (default)"),
 		OPT_STRING(0, "conflict", &conflict_style, "style",
 			   "conflict style (merge or diff3)"),
 		OPT_BOOLEAN('p', "patch", &patch_mode, "select hunks interactively"),
@@ -947,6 +971,7 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 
 	memset(&opts, 0, sizeof(opts));
 	memset(&new, 0, sizeof(new));
+	opts.overwrite_ignore = 1;
 
 	gitmodules_config();
 	git_config(git_checkout_config, &opts);
@@ -1067,7 +1092,8 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 		struct strbuf buf = STRBUF_INIT;
 
 		opts.branch_exists = validate_new_branchname(opts.new_branch, &buf,
-							     !!opts.new_branch_force, 0);
+							     !!opts.new_branch_force,
+							     !!opts.new_branch_force);
 
 		strbuf_release(&buf);
 	}
@@ -1078,5 +1104,13 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 	if (opts.writeout_stage)
 		die(_("--ours/--theirs is incompatible with switching branches."));
 
+	if (!new.commit) {
+		unsigned char rev[20];
+		int flag;
+
+		if (!read_ref_full("HEAD", rev, 0, &flag) &&
+		    (flag & REF_ISSYMREF) && is_null_sha1(rev))
+			return switch_unborn_to_new_branch(&opts);
+	}
 	return switch_branches(&opts, &new);
 }

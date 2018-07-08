@@ -145,7 +145,7 @@ static int exclude_existing(const char *match)
 			if (strncmp(ref, match, matchlen))
 				continue;
 		}
-		if (check_ref_format(ref)) {
+		if (check_refname_format(ref, 0)) {
 			warning("ref '%s' ignored", ref);
 			continue;
 		}
@@ -225,7 +225,7 @@ int cmd_show_ref(int argc, const char **argv, const char *prefix)
 			unsigned char sha1[20];
 
 			if (!prefixcmp(*pattern, "refs/") &&
-			    resolve_ref(*pattern, sha1, 1, NULL)) {
+			    !read_ref(*pattern, sha1)) {
 				if (!quiet)
 					show_one(*pattern, sha1);
 			}

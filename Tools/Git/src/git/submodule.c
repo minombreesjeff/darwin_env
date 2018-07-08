@@ -371,27 +371,15 @@ static void collect_submodules_from_diff(struct diff_queue_struct *q,
 }
 
 
-static void commit_need_pushing(struct commit *commit, struct commit_list *parent, int *needs_pushing)
+static void commit_need_pushing(struct commit *commit, int *needs_pushing)
 {
-	const unsigned char (*parents)[20];
-	unsigned int i, n;
 	struct rev_info rev;
-
-	n = commit_list_count(parent);
-	parents = xmalloc(n * sizeof(*parents));
-
-	for (i = 0; i < n; i++) {
-		hashcpy((unsigned char *)(parents + i), parent->item->object.sha1);
-		parent = parent->next;
-	}
 
 	init_revisions(&rev, NULL);
 	rev.diffopt.output_format |= DIFF_FORMAT_CALLBACK;
 	rev.diffopt.format_callback = collect_submodules_from_diff;
 	rev.diffopt.format_callback_data = needs_pushing;
-	diff_tree_combined(commit->object.sha1, parents, n, 1, &rev);
-
-	free((void *)parents);
+	diff_tree_combined_merge(commit, 1, &rev);
 }
 
 int check_submodule_needs_pushing(unsigned char new_sha1[20], const char *remotes_name)
@@ -414,7 +402,7 @@ int check_submodule_needs_pushing(unsigned char new_sha1[20], const char *remote
 		die("revision walk setup failed");
 
 	while ((commit = get_revision(&rev)) && !needs_pushing)
-		commit_need_pushing(commit, commit->parents, &needs_pushing);
+		commit_need_pushing(commit, &needs_pushing);
 
 	free(sha1_copy);
 	strbuf_release(&remotes_arg);
@@ -689,7 +677,7 @@ unsigned is_submodule_modified(const char *path, int ignore_untracked)
 	cp.out = -1;
 	cp.dir = path;
 	if (start_command(&cp))
-		die("Could not run git status --porcelain");
+		die("Could not run 'git status --porcelain' in submodule %s", path);
 
 	len = strbuf_read(&buf, cp.out, 1024);
 	line = buf.buf;
@@ -714,7 +702,7 @@ unsigned is_submodule_modified(const char *path, int ignore_untracked)
 	close(cp.out);
 
 	if (finish_command(&cp))
-		die("git status --porcelain failed");
+		die("'git status --porcelain' failed in submodule %s", path);
 
 	strbuf_release(&buf);
 	return dirty_submodule;
@@ -794,7 +782,7 @@ static void print_commit(struct commit *commit)
 
 int merge_submodule(unsigned char result[20], const char *path,
 		    const unsigned char base[20], const unsigned char a[20],
-		    const unsigned char b[20])
+		    const unsigned char b[20], int search)
 {
 	struct commit *commit_base, *commit_a, *commit_b;
 	int parent_count;
@@ -848,6 +836,10 @@ int merge_submodule(unsigned char result[20], const char *path,
 	 * suggestion to the user, but leave it marked unmerged so the
 	 * user needs to confirm the resolution.
 	 */
+
+	/* Skip the search if makes no sense to the calling context.  */
+	if (!search)
+		return 0;
 
 	/* find commit which merges them */
 	parent_count = find_first_merges(&merges, path, commit_a, commit_b);

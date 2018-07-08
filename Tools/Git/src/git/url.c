@@ -18,35 +18,15 @@ int is_urlschemechar(int first_flag, int ch)
 
 int is_url(const char *url)
 {
-	const char *url2, *first_slash;
-
-	if (!url)
+	/* Is "scheme" part reasonable? */
+	if (!url || !is_urlschemechar(1, *url++))
 		return 0;
-	url2 = url;
-	first_slash = strchr(url, '/');
-
-	/* Input with no slash at all or slash first can't be URL. */
-	if (!first_slash || first_slash == url)
-		return 0;
-	/* Character before must be : and next must be /. */
-	if (first_slash[-1] != ':' || first_slash[1] != '/')
-		return 0;
-	/* There must be something before the :// */
-	if (first_slash == url + 1)
-		return 0;
-	/*
-	 * Check all characters up to first slash - 1. Only alphanum
-	 * is allowed.
-	 */
-	url2 = url;
-	while (url2 < first_slash - 1) {
-		if (!is_urlschemechar(url2 == url, (unsigned char)*url2))
+	while (*url && *url != ':') {
+		if (!is_urlschemechar(0, *url++))
 			return 0;
-		url2++;
 	}
-
-	/* Valid enough. */
-	return 1;
+	/* We've seen "scheme"; we want colon-slash-slash */
+	return (url[0] == ':' && url[1] == '/' && url[2] == '/');
 }
 
 static int url_decode_char(const char *q)
@@ -68,18 +48,20 @@ static int url_decode_char(const char *q)
 	return val;
 }
 
-static char *url_decode_internal(const char **query, const char *stop_at,
-				 struct strbuf *out, int decode_plus)
+static char *url_decode_internal(const char **query, int len,
+				 const char *stop_at, struct strbuf *out,
+				 int decode_plus)
 {
 	const char *q = *query;
 
-	do {
+	while (len) {
 		unsigned char c = *q;
 
 		if (!c)
 			break;
 		if (stop_at && strchr(stop_at, c)) {
 			q++;
+			len--;
 			break;
 		}
 
@@ -88,6 +70,7 @@ static char *url_decode_internal(const char **query, const char *stop_at,
 			if (0 <= val) {
 				strbuf_addch(out, val);
 				q += 3;
+				len -= 3;
 				continue;
 			}
 		}
@@ -97,34 +80,41 @@ static char *url_decode_internal(const char **query, const char *stop_at,
 		else
 			strbuf_addch(out, c);
 		q++;
-	} while (1);
+		len--;
+	}
 	*query = q;
 	return strbuf_detach(out, NULL);
 }
 
 char *url_decode(const char *url)
 {
+	return url_decode_mem(url, strlen(url));
+}
+
+char *url_decode_mem(const char *url, int len)
+{
 	struct strbuf out = STRBUF_INIT;
-	const char *colon = strchr(url, ':');
+	const char *colon = memchr(url, ':', len);
 
 	/* Skip protocol part if present */
 	if (colon && url < colon) {
 		strbuf_add(&out, url, colon - url);
+		len -= colon - url;
 		url = colon;
 	}
-	return url_decode_internal(&url, NULL, &out, 0);
+	return url_decode_internal(&url, len, NULL, &out, 0);
 }
 
 char *url_decode_parameter_name(const char **query)
 {
 	struct strbuf out = STRBUF_INIT;
-	return url_decode_internal(query, "&=", &out, 1);
+	return url_decode_internal(query, -1, "&=", &out, 1);
 }
 
 char *url_decode_parameter_value(const char **query)
 {
 	struct strbuf out = STRBUF_INIT;
-	return url_decode_internal(query, "&", &out, 1);
+	return url_decode_internal(query, -1, "&", &out, 1);
 }
 
 void end_url_with_slash(struct strbuf *buf, const char *url)

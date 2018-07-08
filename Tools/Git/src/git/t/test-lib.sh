@@ -42,9 +42,11 @@ TZ=UTC
 TERM=dumb
 export LANG LC_ALL PAGER TERM TZ
 EDITOR=:
-unset VISUAL
-unset EMAIL
-unset $(perl -e '
+# A call to "unset" with no arguments causes at least Solaris 10
+# /usr/xpg4/bin/sh and /bin/ksh to bail out.  So keep the unsets
+# deriving from the command substitution clustered with the other
+# ones.
+unset VISUAL EMAIL LANGUAGE $(perl -e '
 	my @env = keys %ENV;
 	my $ok = join("|", qw(
 		TRACE
@@ -191,6 +193,7 @@ then
 fi
 
 exec 5>&1
+exec 6<&0
 if test "$verbose" = "t"
 then
 	exec 4>&2 3>&1
@@ -379,6 +382,20 @@ test_config () {
 	git config "$@"
 }
 
+
+test_config_global () {
+	test_when_finished "test_unconfig --global '$1'" &&
+	git config --global "$@"
+}
+
+write_script () {
+	{
+		echo "#!${2-"$SHELL_PATH"}" &&
+		cat
+	} >"$1" &&
+	chmod +x "$1"
+}
+
 # Use test_set_prereq to tell that a particular prerequisite is available.
 # The prerequisite can later be checked for in two ways:
 #
@@ -469,7 +486,7 @@ test_debug () {
 test_eval_ () {
 	# This is a separate function because some tests use
 	# "return" to end a test_expect_success block early.
-	eval >&3 2>&4 "$*"
+	eval </dev/null >&3 2>&4 "$*"
 }
 
 test_run_ () {
@@ -1113,12 +1130,14 @@ esac
 test -z "$NO_PERL" && test_set_prereq PERL
 test -z "$NO_PYTHON" && test_set_prereq PYTHON
 test -n "$USE_LIBPCRE" && test_set_prereq LIBPCRE
+test -z "$NO_GETTEXT" && test_set_prereq GETTEXT
 
 # Can we rely on git's output in the C locale?
 if test -n "$GETTEXT_POISON"
 then
 	GIT_GETTEXT_POISON=YesPlease
 	export GIT_GETTEXT_POISON
+	test_set_prereq GETTEXT_POISON
 else
 	test_set_prereq C_LOCALE_OUTPUT
 fi

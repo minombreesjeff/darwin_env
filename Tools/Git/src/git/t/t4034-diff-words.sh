@@ -299,6 +299,7 @@ test_language_driver csharp
 test_language_driver fortran
 test_language_driver html
 test_language_driver java
+test_language_driver matlab
 test_language_driver objc
 test_language_driver pascal
 test_language_driver perl
@@ -330,6 +331,20 @@ test_expect_success 'word-diff with diff.sbe' '
 	EOF
 	test_when_finished "git config --unset diff.suppress-blank-empty" &&
 	git config diff.suppress-blank-empty true &&
+	word_diff --word-diff=plain
+'
+
+test_expect_success 'word-diff with no newline at EOF' '
+	cat >expect <<-\EOF &&
+	diff --git a/pre b/post
+	index 7bf316e..3dd0303 100644
+	--- a/pre
+	+++ b/post
+	@@ -1 +1 @@
+	a a [-a-]{+ab+} a a
+	EOF
+	printf "%s" "a a a a a" >pre &&
+	printf "%s" "a a ab a a" >post &&
 	word_diff --word-diff=plain
 '
 

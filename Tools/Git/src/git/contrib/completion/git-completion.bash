@@ -60,18 +60,6 @@
 #       per-repository basis by setting the bash.showUpstream config
 #       variable.
 #
-#
-# To submit patches:
-#
-#    *) Read Documentation/SubmittingPatches
-#    *) Send all patches to the current maintainer:
-#
-#       "Shawn O. Pearce" <spearce@spearce.org>
-#
-#    *) Always CC the Git mailing list:
-#
-#       git@vger.kernel.org
-#
 
 if [[ -n ${ZSH_VERSION-} ]]; then
 	autoload -U +X bashcompinit && bashcompinit
@@ -110,7 +98,8 @@ __git_ps1_show_upstream ()
 	local upstream=git legacy="" verbose=""
 
 	# get some config options from git-config
-	while read key value; do
+	local output="$(git config -z --get-regexp '^(svn-remote\..*\.url|bash\.showupstream)$' 2>/dev/null | tr '\0\n' '\n ')"
+	while read -r key value; do
 		case "$key" in
 		bash.showupstream)
 			GIT_PS1_SHOWUPSTREAM="$value"
@@ -125,7 +114,7 @@ __git_ps1_show_upstream ()
 			upstream=svn+git # default upstream is SVN if available, else git
 			;;
 		esac
-	done < <(git config -z --get-regexp '^(svn-remote\..*\.url|bash\.showupstream)$' 2>/dev/null | tr '\0\n' '\n ')
+	done <<< "$output"
 
 	# parse configuration values
 	for option in ${GIT_PS1_SHOWUPSTREAM}; do
@@ -297,13 +286,13 @@ __git_ps1 ()
 				fi
 			fi
 			if [ -n "${GIT_PS1_SHOWSTASHSTATE-}" ]; then
-			        git rev-parse --verify refs/stash >/dev/null 2>&1 && s="$"
+				git rev-parse --verify refs/stash >/dev/null 2>&1 && s="$"
 			fi
 
 			if [ -n "${GIT_PS1_SHOWUNTRACKEDFILES-}" ]; then
-			   if [ -n "$(git ls-files --others --exclude-standard)" ]; then
-			      u="%"
-			   fi
+				if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+					u="%"
+				fi
 			fi
 
 			if [ -n "${GIT_PS1_SHOWUPSTREAM-}" ]; then
@@ -312,7 +301,7 @@ __git_ps1 ()
 		fi
 
 		local f="$w$i$s$u"
-		printf "${1:- (%s)}" "$c${b##refs/heads/}${f:+ $f}$r$p"
+		printf -- "${1:- (%s)}" "$c${b##refs/heads/}${f:+ $f}$r$p"
 	fi
 }
 
@@ -485,15 +474,17 @@ _get_comp_words_by_ref ()
 fi
 fi
 
-# __gitcomp accepts 1, 2, 3, or 4 arguments
-# generates completion reply with compgen
+# Generates completion reply with compgen, appending a space to possible
+# completion words, if necessary.
+# It accepts 1 to 4 arguments:
+# 1: List of possible completion words.
+# 2: A prefix to be added to each possible completion word (optional).
+# 3: Generate possible completion matches for this word (optional).
+# 4: A suffix to be appended to each possible completion word (optional).
 __gitcomp ()
 {
-	local cur_="$cur"
+	local cur_="${3-$cur}"
 
-	if [ $# -gt 2 ]; then
-		cur_="$3"
-	fi
 	case "$cur_" in
 	--*=)
 		COMPREPLY=()
@@ -507,42 +498,39 @@ __gitcomp ()
 	esac
 }
 
-# __git_heads accepts 0 or 1 arguments (to pass to __gitdir)
+# Generates completion reply with compgen from newline-separated possible
+# completion words by appending a space to all of them.
+# It accepts 1 to 4 arguments:
+# 1: List of possible completion words, separated by a single newline.
+# 2: A prefix to be added to each possible completion word (optional).
+# 3: Generate possible completion matches for this word (optional).
+# 4: A suffix to be appended to each possible completion word instead of
+#    the default space (optional).  If specified but empty, nothing is
+#    appended.
+__gitcomp_nl ()
+{
+	local IFS=$'\n'
+	COMPREPLY=($(compgen -P "${2-}" -S "${4- }" -W "$1" -- "${3-$cur}"))
+}
+
 __git_heads ()
 {
-	local cmd i is_hash=y dir="$(__gitdir "${1-}")"
+	local dir="$(__gitdir)"
 	if [ -d "$dir" ]; then
 		git --git-dir="$dir" for-each-ref --format='%(refname:short)' \
 			refs/heads
 		return
 	fi
-	for i in $(git ls-remote "${1-}" 2>/dev/null); do
-		case "$is_hash,$i" in
-		y,*) is_hash=n ;;
-		n,*^{}) is_hash=y ;;
-		n,refs/heads/*) is_hash=y; echo "${i#refs/heads/}" ;;
-		n,*) is_hash=y; echo "$i" ;;
-		esac
-	done
 }
 
-# __git_tags accepts 0 or 1 arguments (to pass to __gitdir)
 __git_tags ()
 {
-	local cmd i is_hash=y dir="$(__gitdir "${1-}")"
+	local dir="$(__gitdir)"
 	if [ -d "$dir" ]; then
 		git --git-dir="$dir" for-each-ref --format='%(refname:short)' \
 			refs/tags
 		return
 	fi
-	for i in $(git ls-remote "${1-}" 2>/dev/null); do
-		case "$is_hash,$i" in
-		y,*) is_hash=n ;;
-		n,*^{}) is_hash=y ;;
-		n,refs/tags/*) is_hash=y; echo "${i#refs/tags/}" ;;
-		n,*) is_hash=y; echo "$i" ;;
-		esac
-	done
 }
 
 # __git_refs accepts 0, 1 (to pass to __gitdir), or 2 arguments
@@ -550,7 +538,7 @@ __git_tags ()
 # by checkout for tracking branches
 __git_refs ()
 {
-	local i is_hash=y dir="$(__gitdir "${1-}")" track="${2-}"
+	local i hash dir="$(__gitdir "${1-}")" track="${2-}"
 	local format refs
 	if [ -d "$dir" ]; then
 		case "$cur" in
@@ -576,7 +564,7 @@ __git_refs ()
 			local ref entry
 			git --git-dir="$dir" for-each-ref --shell --format="ref=%(refname:short)" \
 				"refs/remotes/" | \
-			while read entry; do
+			while read -r entry; do
 				eval "$entry"
 				ref="${ref#*/}"
 				if [[ "$ref" == "$cur"* ]]; then
@@ -586,16 +574,27 @@ __git_refs ()
 		fi
 		return
 	fi
-	for i in $(git ls-remote "$dir" 2>/dev/null); do
-		case "$is_hash,$i" in
-		y,*) is_hash=n ;;
-		n,*^{}) is_hash=y ;;
-		n,refs/tags/*) is_hash=y; echo "${i#refs/tags/}" ;;
-		n,refs/heads/*) is_hash=y; echo "${i#refs/heads/}" ;;
-		n,refs/remotes/*) is_hash=y; echo "${i#refs/remotes/}" ;;
-		n,*) is_hash=y; echo "$i" ;;
-		esac
-	done
+	case "$cur" in
+	refs|refs/*)
+		git ls-remote "$dir" "$cur*" 2>/dev/null | \
+		while read -r hash i; do
+			case "$i" in
+			*^{}) ;;
+			*) echo "$i" ;;
+			esac
+		done
+		;;
+	*)
+		git ls-remote "$dir" HEAD ORIG_HEAD 'refs/tags/*' 'refs/heads/*' 'refs/remotes/*' 2>/dev/null | \
+		while read -r hash i; do
+			case "$i" in
+			*^{}) ;;
+			refs/*) echo "${i#refs/*/}" ;;
+			*) echo "$i" ;;
+			esac
+		done
+		;;
+	esac
 }
 
 # __git_refs2 requires 1 argument (to pass to __git_refs)
@@ -610,30 +609,17 @@ __git_refs2 ()
 # __git_refs_remotes requires 1 argument (to pass to ls-remote)
 __git_refs_remotes ()
 {
-	local cmd i is_hash=y
-	for i in $(git ls-remote "$1" 2>/dev/null); do
-		case "$is_hash,$i" in
-		n,refs/heads/*)
-			is_hash=y
-			echo "$i:refs/remotes/$1/${i#refs/heads/}"
-			;;
-		y,*) is_hash=n ;;
-		n,*^{}) is_hash=y ;;
-		n,refs/tags/*) is_hash=y;;
-		n,*) is_hash=y; ;;
-		esac
+	local i hash
+	git ls-remote "$1" 'refs/heads/*' 2>/dev/null | \
+	while read -r hash i; do
+		echo "$i:refs/remotes/$1/${i#refs/heads/}"
 	done
 }
 
 __git_remotes ()
 {
-	local i ngoff IFS=$'\n' d="$(__gitdir)"
-	__git_shopt -q nullglob || ngoff=1
-	__git_shopt -s nullglob
-	for i in "$d/remotes"/*; do
-		echo ${i#$d/remotes/}
-	done
-	[ "$ngoff" ] && __git_shopt -u nullglob
+	local i IFS=$'\n' d="$(__gitdir)"
+	test -d "$d/remotes" && ls -1 "$d/remotes"
 	for i in $(git --git-dir="$d" config --get-regexp 'remote\..*\.url' 2>/dev/null); do
 		i="${i#remote.}"
 		echo "${i/.url*/}"
@@ -660,7 +646,8 @@ __git_merge_strategies=
 # is needed.
 __git_compute_merge_strategies ()
 {
-	: ${__git_merge_strategies:=$(__git_list_merge_strategies)}
+	test -n "$__git_merge_strategies" ||
+	__git_merge_strategies=$(__git_list_merge_strategies)
 }
 
 __git_complete_revlist_file ()
@@ -711,15 +698,15 @@ __git_complete_revlist_file ()
 	*...*)
 		pfx="${cur_%...*}..."
 		cur_="${cur_#*...}"
-		__gitcomp "$(__git_refs)" "$pfx" "$cur_"
+		__gitcomp_nl "$(__git_refs)" "$pfx" "$cur_"
 		;;
 	*..*)
 		pfx="${cur_%..*}.."
 		cur_="${cur_#*..}"
-		__gitcomp "$(__git_refs)" "$pfx" "$cur_"
+		__gitcomp_nl "$(__git_refs)" "$pfx" "$cur_"
 		;;
 	*)
-		__gitcomp "$(__git_refs)"
+		__gitcomp_nl "$(__git_refs)"
 		;;
 	esac
 }
@@ -759,7 +746,7 @@ __git_complete_remote_or_refspec ()
 		c=$((++c))
 	done
 	if [ -z "$remote" ]; then
-		__gitcomp "$(__git_remotes)"
+		__gitcomp_nl "$(__git_remotes)"
 		return
 	fi
 	if [ $no_complete_refspec = 1 ]; then
@@ -784,23 +771,23 @@ __git_complete_remote_or_refspec ()
 	case "$cmd" in
 	fetch)
 		if [ $lhs = 1 ]; then
-			__gitcomp "$(__git_refs2 "$remote")" "$pfx" "$cur_"
+			__gitcomp_nl "$(__git_refs2 "$remote")" "$pfx" "$cur_"
 		else
-			__gitcomp "$(__git_refs)" "$pfx" "$cur_"
+			__gitcomp_nl "$(__git_refs)" "$pfx" "$cur_"
 		fi
 		;;
 	pull)
 		if [ $lhs = 1 ]; then
-			__gitcomp "$(__git_refs "$remote")" "$pfx" "$cur_"
+			__gitcomp_nl "$(__git_refs "$remote")" "$pfx" "$cur_"
 		else
-			__gitcomp "$(__git_refs)" "$pfx" "$cur_"
+			__gitcomp_nl "$(__git_refs)" "$pfx" "$cur_"
 		fi
 		;;
 	push)
 		if [ $lhs = 1 ]; then
-			__gitcomp "$(__git_refs)" "$pfx" "$cur_"
+			__gitcomp_nl "$(__git_refs)" "$pfx" "$cur_"
 		else
-			__gitcomp "$(__git_refs "$remote")" "$pfx" "$cur_"
+			__gitcomp_nl "$(__git_refs "$remote")" "$pfx" "$cur_"
 		fi
 		;;
 	esac
@@ -838,7 +825,8 @@ __git_list_all_commands ()
 __git_all_commands=
 __git_compute_all_commands ()
 {
-	: ${__git_all_commands:=$(__git_list_all_commands)}
+	test -n "$__git_all_commands" ||
+	__git_all_commands=$(__git_list_all_commands)
 }
 
 __git_list_porcelain_commands ()
@@ -931,7 +919,8 @@ __git_porcelain_commands=
 __git_compute_porcelain_commands ()
 {
 	__git_compute_all_commands
-	: ${__git_porcelain_commands:=$(__git_list_porcelain_commands)}
+	test -n "$__git_porcelain_commands" ||
+	__git_porcelain_commands=$(__git_list_porcelain_commands)
 }
 
 __git_pretty_aliases ()
@@ -1079,7 +1068,7 @@ _git_archive ()
 		return
 		;;
 	--remote=*)
-		__gitcomp "$(__git_remotes)" "" "${cur##--remote=}"
+		__gitcomp_nl "$(__git_remotes)" "" "${cur##--remote=}"
 		return
 		;;
 	--*)
@@ -1110,7 +1099,7 @@ _git_bisect ()
 
 	case "$subcommand" in
 	bad|good|reset|skip|start)
-		__gitcomp "$(__git_refs)"
+		__gitcomp_nl "$(__git_refs)"
 		;;
 	*)
 		COMPREPLY=()
@@ -1136,14 +1125,14 @@ _git_branch ()
 		__gitcomp "
 			--color --no-color --verbose --abbrev= --no-abbrev
 			--track --no-track --contains --merged --no-merged
-			--set-upstream
+			--set-upstream --edit-description --list
 			"
 		;;
 	*)
 		if [ $only_local_ref = "y" -a $has_r = "n" ]; then
-			__gitcomp "$(__git_heads)"
+			__gitcomp_nl "$(__git_heads)"
 		else
-			__gitcomp "$(__git_refs)"
+			__gitcomp_nl "$(__git_refs)"
 		fi
 		;;
 	esac
@@ -1190,7 +1179,7 @@ _git_checkout ()
 		if [ -n "$(__git_find_on_cmdline "$flags")" ]; then
 			track=''
 		fi
-		__gitcomp "$(__git_refs '' $track)"
+		__gitcomp_nl "$(__git_refs '' $track)"
 		;;
 	esac
 }
@@ -1207,7 +1196,7 @@ _git_cherry_pick ()
 		__gitcomp "--edit --no-commit"
 		;;
 	*)
-		__gitcomp "$(__git_refs)"
+		__gitcomp_nl "$(__git_refs)"
 		;;
 	esac
 }
@@ -1259,12 +1248,9 @@ _git_commit ()
 			" "" "${cur##--cleanup=}"
 		return
 		;;
-	--reuse-message=*)
-		__gitcomp "$(__git_refs)" "" "${cur##--reuse-message=}"
-		return
-		;;
-	--reedit-message=*)
-		__gitcomp "$(__git_refs)" "" "${cur##--reedit-message=}"
+	--reuse-message=*|--reedit-message=*|\
+	--fixup=*|--squash=*)
+		__gitcomp_nl "$(__git_refs)" "" "${cur#*=}"
 		return
 		;;
 	--untracked-files=*)
@@ -1278,7 +1264,7 @@ _git_commit ()
 			--dry-run --reuse-message= --reedit-message=
 			--reset-author --file= --message= --template=
 			--cleanup= --untracked-files --untracked-files=
-			--verbose --quiet
+			--verbose --quiet --fixup= --squash=
 			"
 		return
 	esac
@@ -1295,7 +1281,7 @@ _git_describe ()
 			"
 		return
 	esac
-	__gitcomp "$(__git_refs)"
+	__gitcomp_nl "$(__git_refs)"
 }
 
 __git_diff_common_options="--stat --numstat --shortstat --summary
@@ -1432,6 +1418,10 @@ _git_gitk ()
 	_gitk
 }
 
+__git_match_ctag() {
+	awk "/^${1////\\/}/ { print \$1 }" "$2"
+}
+
 _git_grep ()
 {
 	__git_has_doubledash && return
@@ -1454,7 +1444,16 @@ _git_grep ()
 		;;
 	esac
 
-	__gitcomp "$(__git_refs)"
+	case "$cword,$prev" in
+	2,*|*,-*)
+		if test -r tags; then
+			__gitcomp_nl "$(__git_match_ctag "$cur" tags)"
+			return
+		fi
+		;;
+	esac
+
+	__gitcomp_nl "$(__git_refs)"
 }
 
 _git_help ()
@@ -1512,7 +1511,7 @@ _git_ls_files ()
 
 _git_ls_remote ()
 {
-	__gitcomp "$(__git_remotes)"
+	__gitcomp_nl "$(__git_remotes)"
 }
 
 _git_ls_tree ()
@@ -1556,14 +1555,9 @@ _git_log ()
 		merge="--merge"
 	fi
 	case "$cur" in
-	--pretty=*)
+	--pretty=*|--format=*)
 		__gitcomp "$__git_log_pretty_formats $(__git_pretty_aliases)
-			" "" "${cur##--pretty=}"
-		return
-		;;
-	--format=*)
-		__gitcomp "$__git_log_pretty_formats $(__git_pretty_aliases)
-			" "" "${cur##--format=}"
+			" "" "${cur#*=}"
 		return
 		;;
 	--date=*)
@@ -1601,7 +1595,7 @@ _git_log ()
 
 __git_merge_options="
 	--no-commit --no-stat --log --no-log --squash --strategy
-	--commit --stat --no-squash --ff --no-ff --ff-only
+	--commit --stat --no-squash --ff --no-ff --ff-only --edit --no-edit
 "
 
 _git_merge ()
@@ -1613,7 +1607,7 @@ _git_merge ()
 		__gitcomp "$__git_merge_options"
 		return
 	esac
-	__gitcomp "$(__git_refs)"
+	__gitcomp_nl "$(__git_refs)"
 }
 
 _git_mergetool ()
@@ -1633,7 +1627,7 @@ _git_mergetool ()
 
 _git_merge_base ()
 {
-	__gitcomp "$(__git_refs)"
+	__gitcomp_nl "$(__git_refs)"
 }
 
 _git_mv ()
@@ -1664,18 +1658,16 @@ _git_notes ()
 	,*)
 		case "${words[cword-1]}" in
 		--ref)
-			__gitcomp "$(__git_refs)"
+			__gitcomp_nl "$(__git_refs)"
 			;;
 		*)
 			__gitcomp "$subcommands --ref"
 			;;
 		esac
 		;;
-	add,--reuse-message=*|append,--reuse-message=*)
-		__gitcomp "$(__git_refs)" "" "${cur##--reuse-message=}"
-		;;
+	add,--reuse-message=*|append,--reuse-message=*|\
 	add,--reedit-message=*|append,--reedit-message=*)
-		__gitcomp "$(__git_refs)" "" "${cur##--reedit-message=}"
+		__gitcomp_nl "$(__git_refs)" "" "${cur#*=}"
 		;;
 	add,--*|append,--*)
 		__gitcomp '--file= --message= --reedit-message=
@@ -1694,7 +1686,7 @@ _git_notes ()
 		-m|-F)
 			;;
 		*)
-			__gitcomp "$(__git_refs)"
+			__gitcomp_nl "$(__git_refs)"
 			;;
 		esac
 		;;
@@ -1722,18 +1714,18 @@ _git_push ()
 {
 	case "$prev" in
 	--repo)
-		__gitcomp "$(__git_remotes)"
+		__gitcomp_nl "$(__git_remotes)"
 		return
 	esac
 	case "$cur" in
 	--repo=*)
-		__gitcomp "$(__git_remotes)" "" "${cur##--repo=}"
+		__gitcomp_nl "$(__git_remotes)" "" "${cur##--repo=}"
 		return
 		;;
 	--*)
 		__gitcomp "
 			--all --mirror --tags --dry-run --force --verbose
-			--receive-pack= --repo=
+			--receive-pack= --repo= --set-upstream
 		"
 		return
 		;;
@@ -1765,7 +1757,7 @@ _git_rebase ()
 
 		return
 	esac
-	__gitcomp "$(__git_refs)"
+	__gitcomp_nl "$(__git_refs)"
 }
 
 _git_reflog ()
@@ -1776,7 +1768,7 @@ _git_reflog ()
 	if [ -z "$subcommand" ]; then
 		__gitcomp "$subcommands"
 	else
-		__gitcomp "$(__git_refs)"
+		__gitcomp_nl "$(__git_refs)"
 	fi
 }
 
@@ -1844,7 +1836,7 @@ __git_config_get_set_variables ()
 	done
 
 	git --git-dir="$(__gitdir)" config $config_file --list 2>/dev/null |
-	while read line
+	while read -r line
 	do
 		case "$line" in
 		*.*=*)
@@ -1858,23 +1850,27 @@ _git_config ()
 {
 	case "$prev" in
 	branch.*.remote)
-		__gitcomp "$(__git_remotes)"
+		__gitcomp_nl "$(__git_remotes)"
 		return
 		;;
 	branch.*.merge)
-		__gitcomp "$(__git_refs)"
+		__gitcomp_nl "$(__git_refs)"
 		return
 		;;
 	remote.*.fetch)
 		local remote="${prev#remote.}"
 		remote="${remote%.fetch}"
-		__gitcomp "$(__git_refs_remotes "$remote")"
+		if [ -z "$cur" ]; then
+			COMPREPLY=("refs/heads/")
+			return
+		fi
+		__gitcomp_nl "$(__git_refs_remotes "$remote")"
 		return
 		;;
 	remote.*.push)
 		local remote="${prev#remote.}"
 		remote="${remote%.push}"
-		__gitcomp "$(git --git-dir="$(__gitdir)" \
+		__gitcomp_nl "$(git --git-dir="$(__gitdir)" \
 			for-each-ref --format='%(refname):%(refname)' \
 			refs/heads)"
 		return
@@ -1921,7 +1917,7 @@ _git_config ()
 		return
 		;;
 	--get|--get-all|--unset|--unset-all)
-		__gitcomp "$(__git_config_get_set_variables)"
+		__gitcomp_nl "$(__git_config_get_set_variables)"
 		return
 		;;
 	*.*)
@@ -1947,7 +1943,7 @@ _git_config ()
 		;;
 	branch.*)
 		local pfx="${cur%.*}." cur_="${cur#*.}"
-		__gitcomp "$(__git_heads)" "$pfx" "$cur_" "."
+		__gitcomp_nl "$(__git_heads)" "$pfx" "$cur_" "."
 		return
 		;;
 	guitool.*.*)
@@ -1976,7 +1972,7 @@ _git_config ()
 	pager.*)
 		local pfx="${cur%.*}." cur_="${cur#*.}"
 		__git_compute_all_commands
-		__gitcomp "$__git_all_commands" "$pfx" "$cur_"
+		__gitcomp_nl "$__git_all_commands" "$pfx" "$cur_"
 		return
 		;;
 	remote.*.*)
@@ -1989,7 +1985,7 @@ _git_config ()
 		;;
 	remote.*)
 		local pfx="${cur%.*}." cur_="${cur#*.}"
-		__gitcomp "$(__git_remotes)" "$pfx" "$cur_" "."
+		__gitcomp_nl "$(__git_remotes)" "$pfx" "$cur_" "."
 		return
 		;;
 	url.*.*)
@@ -2290,7 +2286,7 @@ _git_remote ()
 
 	case "$subcommand" in
 	rename|rm|show|prune)
-		__gitcomp "$(__git_remotes)"
+		__gitcomp_nl "$(__git_remotes)"
 		;;
 	update)
 		local i c='' IFS=$'\n'
@@ -2308,7 +2304,7 @@ _git_remote ()
 
 _git_replace ()
 {
-	__gitcomp "$(__git_refs)"
+	__gitcomp_nl "$(__git_refs)"
 }
 
 _git_reset ()
@@ -2321,7 +2317,7 @@ _git_reset ()
 		return
 		;;
 	esac
-	__gitcomp "$(__git_refs)"
+	__gitcomp_nl "$(__git_refs)"
 }
 
 _git_revert ()
@@ -2332,7 +2328,7 @@ _git_revert ()
 		return
 		;;
 	esac
-	__gitcomp "$(__git_refs)"
+	__gitcomp_nl "$(__git_refs)"
 }
 
 _git_rm ()
@@ -2370,14 +2366,9 @@ _git_show ()
 	__git_has_doubledash && return
 
 	case "$cur" in
-	--pretty=*)
+	--pretty=*|--format=*)
 		__gitcomp "$__git_log_pretty_formats $(__git_pretty_aliases)
-			" "" "${cur##--pretty=}"
-		return
-		;;
-	--format=*)
-		__gitcomp "$__git_log_pretty_formats $(__git_pretty_aliases)
-			" "" "${cur##--format=}"
+			" "" "${cur#*=}"
 		return
 		;;
 	--*)
@@ -2436,7 +2427,7 @@ _git_stash ()
 			COMPREPLY=()
 			;;
 		show,*|apply,*|drop,*|pop,*|branch,*)
-			__gitcomp "$(git --git-dir="$(__gitdir)" stash list \
+			__gitcomp_nl "$(git --git-dir="$(__gitdir)" stash list \
 					| sed -n -e 's/:.*//p')"
 			;;
 		*)
@@ -2570,7 +2561,7 @@ _git_tag ()
 		i="${words[c]}"
 		case "$i" in
 		-d|-v)
-			__gitcomp "$(__git_tags)"
+			__gitcomp_nl "$(__git_tags)"
 			return
 			;;
 		-f)
@@ -2586,13 +2577,13 @@ _git_tag ()
 		;;
 	-*|tag)
 		if [ $f = 1 ]; then
-			__gitcomp "$(__git_tags)"
+			__gitcomp_nl "$(__git_tags)"
 		else
 			COMPREPLY=()
 		fi
 		;;
 	*)
-		__gitcomp "$(__git_refs)"
+		__gitcomp_nl "$(__git_refs)"
 		;;
 	esac
 }
@@ -2613,6 +2604,10 @@ _git ()
 		# workaround zsh's bug that leaves 'words' as a special
 		# variable in versions < 4.3.12
 		typeset -h words
+
+		# workaround zsh's bug that quotes spaces in the COMPREPLY
+		# array if IFS doesn't contain spaces.
+		typeset -h IFS
 	fi
 
 	local cur words cword prev
@@ -2669,6 +2664,10 @@ _gitk ()
 		# workaround zsh's bug that leaves 'words' as a special
 		# variable in versions < 4.3.12
 		typeset -h words
+
+		# workaround zsh's bug that quotes spaces in the COMPREPLY
+		# array if IFS doesn't contain spaces.
+		typeset -h IFS
 	fi
 
 	local cur words cword prev
@@ -2706,34 +2705,4 @@ complete -o bashdefault -o default -o nospace -F _gitk gitk 2>/dev/null \
 if [ Cygwin = "$(uname -o 2>/dev/null)" ]; then
 complete -o bashdefault -o default -o nospace -F _git git.exe 2>/dev/null \
 	|| complete -o default -o nospace -F _git git.exe
-fi
-
-if [[ -n ${ZSH_VERSION-} ]]; then
-	__git_shopt () {
-		local option
-		if [ $# -ne 2 ]; then
-			echo "USAGE: $0 (-q|-s|-u) <option>" >&2
-			return 1
-		fi
-		case "$2" in
-		nullglob)
-			option="$2"
-			;;
-		*)
-			echo "$0: invalid option: $2" >&2
-			return 1
-		esac
-		case "$1" in
-		-q)	setopt | grep -q "$option" ;;
-		-u)	unsetopt "$option" ;;
-		-s)	setopt "$option" ;;
-		*)
-			echo "$0: invalid flag: $1" >&2
-			return 1
-		esac
-	}
-else
-	__git_shopt () {
-		shopt "$@"
-	}
 fi

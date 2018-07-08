@@ -101,11 +101,19 @@ test_expect_success TTY 'push -q suppresses progress' '
 	! grep "Writing objects" err
 '
 
-test_expect_failure TTY 'push --no-progress suppresses progress' '
+test_expect_success TTY 'push --no-progress suppresses progress' '
 	ensure_fresh_upstream &&
 
 	test_terminal git push -u --no-progress upstream master >out 2>err &&
+	! grep "Unpacking objects" err &&
 	! grep "Writing objects" err
+'
+
+test_expect_success TTY 'quiet push' '
+	ensure_fresh_upstream &&
+
+	test_terminal git push --quiet --no-progress upstream master 2>&1 | tee output &&
+	test_cmp /dev/null output
 '
 
 test_done

@@ -45,7 +45,7 @@ static char *option_branch = NULL;
 static const char *real_git_dir;
 static char *option_upload_pack = "git-upload-pack";
 static int option_verbosity;
-static int option_progress;
+static int option_progress = -1;
 static struct string_list option_config;
 static struct string_list option_reference;
 
@@ -60,8 +60,8 @@ static int opt_parse_reference(const struct option *opt, const char *arg, int un
 
 static struct option builtin_clone_options[] = {
 	OPT__VERBOSITY(&option_verbosity),
-	OPT_BOOLEAN(0, "progress", &option_progress,
-			"force progress reporting"),
+	OPT_BOOL(0, "progress", &option_progress,
+		 "force progress reporting"),
 	OPT_BOOLEAN('n', "no-checkout", &option_no_checkout,
 		    "don't create a checkout"),
 	OPT_BOOLEAN(0, "bare", &option_bare, "create a bare repository"),
@@ -84,8 +84,8 @@ static struct option builtin_clone_options[] = {
 		   "directory from which templates will be used"),
 	OPT_CALLBACK(0 , "reference", &option_reference, "repo",
 		     "reference repository", &opt_parse_reference),
-	OPT_STRING('o', "origin", &option_origin, "branch",
-		   "use <branch> instead of 'origin' to track upstream"),
+	OPT_STRING('o', "origin", &option_origin, "name",
+		   "use <name> instead of 'origin' to track upstream"),
 	OPT_STRING('b', "branch", &option_branch, "branch",
 		   "checkout <branch> instead of the remote's HEAD"),
 	OPT_STRING('u', "upload-pack", &option_upload_pack, "path",
@@ -105,7 +105,7 @@ static const char *argv_submodule[] = {
 
 static char *get_repo_path(const char *repo, int *is_bundle)
 {
-	static char *suffix[] = { "/.git", ".git", "" };
+	static char *suffix[] = { "/.git", "", ".git/.git", ".git" };
 	static char *bundle_suffix[] = { ".bundle", "" };
 	struct stat st;
 	int i;
@@ -115,7 +115,7 @@ static char *get_repo_path(const char *repo, int *is_bundle)
 		path = mkpath("%s%s", repo, suffix[i]);
 		if (stat(path, &st))
 			continue;
-		if (S_ISDIR(st.st_mode)) {
+		if (S_ISDIR(st.st_mode) && is_git_directory(path)) {
 			*is_bundle = 0;
 			return xstrdup(absolute_path(path));
 		} else if (S_ISREG(st.st_mode) && st.st_size > 8) {

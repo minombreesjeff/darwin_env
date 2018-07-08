@@ -13,6 +13,7 @@
 #include "sigchain.h"
 #include "transport.h"
 #include "submodule.h"
+#include "connected.h"
 
 static const char * const builtin_fetch_usage[] = {
 	"git fetch [<options>] [<repository> [<refspec>...]]",
@@ -29,7 +30,7 @@ enum {
 };
 
 static int all, append, dry_run, force, keep, multiple, prune, update_head_ok, verbosity;
-static int progress, recurse_submodules = RECURSE_SUBMODULES_DEFAULT;
+static int progress = -1, recurse_submodules = RECURSE_SUBMODULES_DEFAULT;
 static int tags = TAGS_DEFAULT;
 static const char *depth;
 static const char *upload_pack;
@@ -77,7 +78,7 @@ static struct option builtin_fetch_options[] = {
 	OPT_BOOLEAN('k', "keep", &keep, "keep downloaded pack"),
 	OPT_BOOLEAN('u', "update-head-ok", &update_head_ok,
 		    "allow updating of HEAD ref"),
-	OPT_BOOLEAN(0, "progress", &progress, "force progress reporting"),
+	OPT_BOOL(0, "progress", &progress, "force progress reporting"),
 	OPT_STRING(0, "depth", &depth, "depth",
 		   "deepen history of shallow clone"),
 	{ OPTION_STRING, 0, "submodule-prefix", &submodule_prefix, "dir",
@@ -354,6 +355,18 @@ static int update_local_ref(struct ref *ref,
 	}
 }
 
+static int iterate_ref_map(void *cb_data, unsigned char sha1[20])
+{
+	struct ref **rm = cb_data;
+	struct ref *ref = *rm;
+
+	if (!ref)
+		return -1; /* end of the list */
+	*rm = ref->next;
+	hashcpy(sha1, ref->old_sha1);
+	return 0;
+}
+
 static int store_updated_refs(const char *raw_url, const char *remote_name,
 		struct ref *ref_map)
 {
@@ -364,6 +377,7 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 	const char *what, *kind;
 	struct ref *rm;
 	char *url, *filename = dry_run ? "/dev/null" : git_path("FETCH_HEAD");
+	int want_merge;
 
 	fp = fopen(filename, "a");
 	if (!fp)
@@ -373,94 +387,114 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
 		url = transport_anonymize_url(raw_url);
 	else
 		url = xstrdup("foreign");
-	for (rm = ref_map; rm; rm = rm->next) {
-		struct ref *ref = NULL;
 
-		if (rm->peer_ref) {
-			ref = xcalloc(1, sizeof(*ref) + strlen(rm->peer_ref->name) + 1);
-			strcpy(ref->name, rm->peer_ref->name);
-			hashcpy(ref->old_sha1, rm->peer_ref->old_sha1);
-			hashcpy(ref->new_sha1, rm->old_sha1);
-			ref->force = rm->peer_ref->force;
-		}
+	rm = ref_map;
+	if (check_everything_connected(iterate_ref_map, 0, &rm)) {
+		rc = error(_("%s did not send all necessary objects\n"), url);
+		goto abort;
+	}
 
-		commit = lookup_commit_reference_gently(rm->old_sha1, 1);
-		if (!commit)
-			rm->merge = 0;
+	/*
+	 * The first pass writes objects to be merged and then the
+	 * second pass writes the rest, in order to allow using
+	 * FETCH_HEAD as a refname to refer to the ref to be merged.
+	 */
+	for (want_merge = 1; 0 <= want_merge; want_merge--) {
+		for (rm = ref_map; rm; rm = rm->next) {
+			struct ref *ref = NULL;
 
-		if (!strcmp(rm->name, "HEAD")) {
-			kind = "";
-			what = "";
-		}
-		else if (!prefixcmp(rm->name, "refs/heads/")) {
-			kind = "branch";
-			what = rm->name + 11;
-		}
-		else if (!prefixcmp(rm->name, "refs/tags/")) {
-			kind = "tag";
-			what = rm->name + 10;
-		}
-		else if (!prefixcmp(rm->name, "refs/remotes/")) {
-			kind = "remote-tracking branch";
-			what = rm->name + 13;
-		}
-		else {
-			kind = "";
-			what = rm->name;
-		}
+			commit = lookup_commit_reference_gently(rm->old_sha1, 1);
+			if (!commit)
+				rm->merge = 0;
 
-		url_len = strlen(url);
-		for (i = url_len - 1; url[i] == '/' && 0 <= i; i--)
-			;
-		url_len = i + 1;
-		if (4 < i && !strncmp(".git", url + i - 3, 4))
-			url_len = i - 3;
+			if (rm->merge != want_merge)
+				continue;
 
-		strbuf_reset(&note);
-		if (*what) {
-			if (*kind)
-				strbuf_addf(&note, "%s ", kind);
-			strbuf_addf(&note, "'%s' of ", what);
-		}
-		fprintf(fp, "%s\t%s\t%s",
-			sha1_to_hex(commit ? commit->object.sha1 :
-				    rm->old_sha1),
-			rm->merge ? "" : "not-for-merge",
-			note.buf);
-		for (i = 0; i < url_len; ++i)
-			if ('\n' == url[i])
-				fputs("\\n", fp);
-			else
-				fputc(url[i], fp);
-		fputc('\n', fp);
-
-		strbuf_reset(&note);
-		if (ref) {
-			rc |= update_local_ref(ref, what, &note);
-			free(ref);
-		} else
-			strbuf_addf(&note, "* %-*s %-*s -> FETCH_HEAD",
-				    TRANSPORT_SUMMARY_WIDTH,
-				    *kind ? kind : "branch",
-				    REFCOL_WIDTH,
-				    *what ? what : "HEAD");
-		if (note.len) {
-			if (verbosity >= 0 && !shown_url) {
-				fprintf(stderr, _("From %.*s\n"),
-						url_len, url);
-				shown_url = 1;
+			if (rm->peer_ref) {
+				ref = xcalloc(1, sizeof(*ref) + strlen(rm->peer_ref->name) + 1);
+				strcpy(ref->name, rm->peer_ref->name);
+				hashcpy(ref->old_sha1, rm->peer_ref->old_sha1);
+				hashcpy(ref->new_sha1, rm->old_sha1);
+				ref->force = rm->peer_ref->force;
 			}
-			if (verbosity >= 0)
-				fprintf(stderr, " %s\n", note.buf);
+
+
+			if (!strcmp(rm->name, "HEAD")) {
+				kind = "";
+				what = "";
+			}
+			else if (!prefixcmp(rm->name, "refs/heads/")) {
+				kind = "branch";
+				what = rm->name + 11;
+			}
+			else if (!prefixcmp(rm->name, "refs/tags/")) {
+				kind = "tag";
+				what = rm->name + 10;
+			}
+			else if (!prefixcmp(rm->name, "refs/remotes/")) {
+				kind = "remote-tracking branch";
+				what = rm->name + 13;
+			}
+			else {
+				kind = "";
+				what = rm->name;
+			}
+
+			url_len = strlen(url);
+			for (i = url_len - 1; url[i] == '/' && 0 <= i; i--)
+				;
+			url_len = i + 1;
+			if (4 < i && !strncmp(".git", url + i - 3, 4))
+				url_len = i - 3;
+
+			strbuf_reset(&note);
+			if (*what) {
+				if (*kind)
+					strbuf_addf(&note, "%s ", kind);
+				strbuf_addf(&note, "'%s' of ", what);
+			}
+			fprintf(fp, "%s\t%s\t%s",
+				sha1_to_hex(rm->old_sha1),
+				rm->merge ? "" : "not-for-merge",
+				note.buf);
+			for (i = 0; i < url_len; ++i)
+				if ('\n' == url[i])
+					fputs("\\n", fp);
+				else
+					fputc(url[i], fp);
+			fputc('\n', fp);
+
+			strbuf_reset(&note);
+			if (ref) {
+				rc |= update_local_ref(ref, what, &note);
+				free(ref);
+			} else
+				strbuf_addf(&note, "* %-*s %-*s -> FETCH_HEAD",
+					    TRANSPORT_SUMMARY_WIDTH,
+					    *kind ? kind : "branch",
+					    REFCOL_WIDTH,
+					    *what ? what : "HEAD");
+			if (note.len) {
+				if (verbosity >= 0 && !shown_url) {
+					fprintf(stderr, _("From %.*s\n"),
+							url_len, url);
+					shown_url = 1;
+				}
+				if (verbosity >= 0)
+					fprintf(stderr, " %s\n", note.buf);
+			}
 		}
 	}
-	free(url);
-	fclose(fp);
+
 	if (rc & STORE_REF_ERROR_DF_CONFLICT)
 		error(_("some local refs could not be updated; try running\n"
 		      " 'git remote prune %s' to remove any old, conflicting "
 		      "branches"), remote_name);
+
+ abort:
 	strbuf_release(&note);
+	free(url);
+	fclose(fp);
 	return rc;
 }
 
@@ -468,23 +502,10 @@ static int store_updated_refs(const char *raw_url, const char *remote_name,
  * We would want to bypass the object transfer altogether if
  * everything we are going to fetch already exists and is connected
  * locally.
- *
- * The refs we are going to fetch are in ref_map.  If running
- *
- *  $ git rev-list --objects --stdin --not --all
- *
- * (feeding all the refs in ref_map on its standard input)
- * does not error out, that means everything reachable from the
- * refs we are going to fetch exists and is connected to some of
- * our existing refs.
  */
 static int quickfetch(struct ref *ref_map)
 {
-	struct child_process revlist;
-	struct ref *ref;
-	int err;
-	const char *argv[] = {"rev-list",
-		"--quiet", "--objects", "--stdin", "--not", "--all", NULL};
+	struct ref *rm = ref_map;
 
 	/*
 	 * If we are deepening a shallow clone we already have these
@@ -495,47 +516,7 @@ static int quickfetch(struct ref *ref_map)
 	 */
 	if (depth)
 		return -1;
-
-	if (!ref_map)
-		return 0;
-
-	memset(&revlist, 0, sizeof(revlist));
-	revlist.argv = argv;
-	revlist.git_cmd = 1;
-	revlist.no_stdout = 1;
-	revlist.no_stderr = 1;
-	revlist.in = -1;
-
-	err = start_command(&revlist);
-	if (err) {
-		error(_("could not run rev-list"));
-		return err;
-	}
-
-	/*
-	 * If rev-list --stdin encounters an unknown commit, it terminates,
-	 * which will cause SIGPIPE in the write loop below.
-	 */
-	sigchain_push(SIGPIPE, SIG_IGN);
-
-	for (ref = ref_map; ref; ref = ref->next) {
-		if (write_in_full(revlist.in, sha1_to_hex(ref->old_sha1), 40) < 0 ||
-		    write_str_in_full(revlist.in, "\n") < 0) {
-			if (errno != EPIPE && errno != EINVAL)
-				error(_("failed write to rev-list: %s"), strerror(errno));
-			err = -1;
-			break;
-		}
-	}
-
-	if (close(revlist.in)) {
-		error(_("failed to close rev-list's stdin: %s"), strerror(errno));
-		err = -1;
-	}
-
-	sigchain_pop(SIGPIPE);
-
-	return finish_command(&revlist) || err;
+	return check_everything_connected(iterate_ref_map, 1, &rm);
 }
 
 static int fetch_refs(struct transport *transport, struct ref *ref_map)
