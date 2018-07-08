@@ -340,16 +340,14 @@ nextsection.nonewline=wow2 for me
 version.1.2.3eX.alpha=beta
 EOF
 
-# Fails due to expectations being in conflict with Xcode.app-bundled gitconfig
-test_expect_failure 'working --list' '
+test_expect_success 'working --list' '
 	git config --list > output &&
 	test_cmp expect output
 '
 cat > expect << EOF
 EOF
 
-# Fails due to expectations being in conflict with Xcode.app-bundled gitconfig
-test_expect_failure '--list without repo produces empty output' '
+test_expect_success '--list without repo produces empty output' '
 	git --git-dir=nonexistent config --list >output &&
 	test_cmp expect output
 '
@@ -361,8 +359,7 @@ nextsection.nonewline
 version.1.2.3eX.alpha
 EOF
 
-# Fails due to expectations being in conflict with Xcode.app-bundled gitconfig
-test_expect_failure '--name-only --list' '
+test_expect_success '--name-only --list' '
 	git config --name-only --list >output &&
 	test_cmp expect output
 '
@@ -889,7 +886,7 @@ test_expect_success !MINGW 'get --path copes with unset $HOME' '
 		git config --get --path path.normal >>result &&
 		git config --get --path path.trailingtilde >>result
 	) &&
-	grep "[Ff]ailed to expand.*~/" msg &&
+	test_i18ngrep "[Ff]ailed to expand.*~/" msg &&
 	test_cmp expect result
 '
 
@@ -937,8 +934,7 @@ section.noncont=not continued
 section.quotecont=cont;inued
 EOF
 
-# Fails due to expectations being in conflict with Xcode.app-bundled gitconfig
-test_expect_failure 'value continued on next line' '
+test_expect_success 'value continued on next line' '
 	git config --list > result &&
 	test_cmp result expect
 '
@@ -962,9 +958,7 @@ barQsection.sub=section.val3
 Qsection.sub=section.val4
 Qsection.sub=section.val5Q
 EOF
-
-# Fails due to expectations being in conflict with Xcode.app-bundled gitconfig
-test_expect_failure '--null --list' '
+test_expect_success '--null --list' '
 	git config --null --list >result.raw &&
 	nul_to_q <result.raw >result &&
 	echo >>result &&
@@ -1132,7 +1126,7 @@ test_expect_success 'barf on syntax error' '
 	key garbage
 	EOF
 	test_must_fail git config --get section.key >actual 2>error &&
-	grep " line 3 " error
+	test_i18ngrep " line 3 " error
 '
 
 test_expect_success 'barf on incomplete section header' '
@@ -1142,7 +1136,7 @@ test_expect_success 'barf on incomplete section header' '
 	key = value
 	EOF
 	test_must_fail git config --get section.key >actual 2>error &&
-	grep " line 2 " error
+	test_i18ngrep " line 2 " error
 '
 
 test_expect_success 'barf on incomplete string' '
@@ -1152,7 +1146,7 @@ test_expect_success 'barf on incomplete string' '
 	key = "value string
 	EOF
 	test_must_fail git config --get section.key >actual 2>error &&
-	grep " line 3 " error
+	test_i18ngrep " line 3 " error
 '
 
 test_expect_success 'urlmatch' '
@@ -1258,8 +1252,7 @@ test_expect_success 'set up --show-origin tests' '
 	EOF
 '
 
-# Fails due to expectations being in conflict with Xcode.app-bundled gitconfig
-test_expect_failure '--show-origin with --list' '
+test_expect_success '--show-origin with --list' '
 	cat >expect <<-EOF &&
 		file:$HOME/.gitconfig	user.global=true
 		file:$HOME/.gitconfig	user.override=global
@@ -1275,8 +1268,7 @@ test_expect_failure '--show-origin with --list' '
 	test_cmp expect output
 '
 
-# Fails due to expectations being in conflict with Xcode.app-bundled gitconfig
-test_expect_failure '--show-origin with --list --null' '
+test_expect_success '--show-origin with --list --null' '
 	cat >expect <<-EOF &&
 		file:$HOME/.gitconfigQuser.global
 		trueQfile:$HOME/.gitconfigQuser.override

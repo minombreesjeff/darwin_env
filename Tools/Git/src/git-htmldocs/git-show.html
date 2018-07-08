@@ -823,7 +823,7 @@ people using 80-column terminals.</p></div>
 <p>
         Show the full 40-byte hexadecimal commit object name. This negates
         <code>--abbrev-commit</code> and those options which imply it such as
-        "--oneline". It also overrides the <em>log.abbrevCommit</em> variable.
+        "--oneline". It also overrides the <code>log.abbrevCommit</code> variable.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -884,7 +884,7 @@ and <em>fuller</em>).</p></div>
         on the command line.
 </p>
 <div class="paragraph"><p>By default, the notes shown are from the notes refs listed in the
-<em>core.notesRef</em> and <em>notes.displayRef</em> variables (or corresponding
+<code>core.notesRef</code> and <code>notes.displayRef</code> variables (or corresponding
 environment overrides). See <a href="git-config.html">git-config(1)</a> for more details.</p></div>
 <div class="paragraph"><p>With an optional <em>&lt;treeish&gt;</em> argument, use the treeish to find the notes
 to display.  The treeish can specify the full refname when it begins
@@ -1277,12 +1277,18 @@ The title was &gt;&gt;t4119: test autocomputing -p&lt;n&gt; for traditional diff
 </li>
 <li>
 <p>
-<em>%gD</em>: reflog selector, e.g., <code>refs/stash@{1}</code>
+<em>%gD</em>: reflog selector, e.g., <code>refs/stash@{1}</code> or
+  <code>refs/stash@{2 minutes ago</code>}; the format follows the rules described
+  for the <code>-g</code> option. The portion before the <code>@</code> is the refname as
+  given on the command line (so <code>git log -g refs/heads/master</code> would
+  yield <code>refs/heads/master@{0}</code>).
 </p>
 </li>
 <li>
 <p>
-<em>%gd</em>: shortened reflog selector, e.g., <code>stash@{1}</code>
+<em>%gd</em>: shortened reflog selector; same as <code>%gD</code>, but the refname
+  portion is shortened for human readability (so <code>refs/heads/master</code>
+  becomes just <code>master</code>).
 </p>
 </li>
 <li>
@@ -2102,6 +2108,8 @@ of a delete/create pair.</p></div>
         other criteria in the comparison; if there is no file
         that matches other criteria, nothing is selected.
 </p>
+<div class="paragraph"><p>Also, these upper-case letters can be downcased to exclude.  E.g.
+<code>--diff-filter=ad</code> excludes added and deleted paths.</p></div>
 </dd>
 <dt class="hdlist1">
 -S&lt;string&gt;
@@ -2354,11 +2362,11 @@ information.</p></div>
 <h2 id="_generating_patches_with_p">Generating patches with -p</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>When "git-diff-index", "git-diff-tree", or "git-diff-files" are run
-with a <em>-p</em> option, "git diff" without the <em>--raw</em> option, or
+with a <code>-p</code> option, "git diff" without the <code>--raw</code> option, or
 "git log" with the "-p" option, they
 do not produce the output described above; instead they produce a
 patch file.  You can customize the creation of such patches via the
-GIT_EXTERNAL_DIFF and the GIT_DIFF_OPTS environment variables.</p></div>
+<code>GIT_EXTERNAL_DIFF</code> and the <code>GIT_DIFF_OPTS</code> environment variables.</p></div>
 <div class="paragraph"><p>What the -p option produces is slightly different from the traditional
 diff format:</p></div>
 <div class="olist arabic"><ol class="arabic">
@@ -2480,13 +2488,13 @@ index fabadb8,cc95eb0..4866510
 <li>
 <p>
 It is preceded with a "git diff" header, that looks like
-     this (when <em>-c</em> option is used):
+     this (when <code>-c</code> option is used):
 </p>
 <div class="literalblock">
 <div class="content">
 <pre><code>diff --combined file</code></pre>
 </div></div>
-<div class="paragraph"><p>or like this (when <em>--cc</em> option is used):</p></div>
+<div class="paragraph"><p>or like this (when <code>--cc</code> option is used):</p></div>
 <div class="literalblock">
 <div class="content">
 <pre><code>diff --cc file</code></pre>

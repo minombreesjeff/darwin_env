@@ -436,6 +436,7 @@ static inline int const_error(void)
 	return -1;
 }
 #define error(...) (error(__VA_ARGS__), const_error())
+#define error_errno(...) (error_errno(__VA_ARGS__), const_error())
 #endif
 
 extern void set_die_routine(NORETURN_PTR void (*routine)(const char *err, va_list params));
@@ -470,6 +471,23 @@ static inline int skip_prefix(const char *str, const char *prefix,
 			return 1;
 		}
 	} while (*str++ == *prefix++);
+	return 0;
+}
+
+/*
+ * Like skip_prefix, but promises never to read past "len" bytes of the input
+ * buffer, and returns the remaining number of bytes in "out" via "outlen".
+ */
+static inline int skip_prefix_mem(const char *buf, size_t len,
+				  const char *prefix,
+				  const char **out, size_t *outlen)
+{
+	size_t prefix_len = strlen(prefix);
+	if (prefix_len <= len && !memcmp(buf, prefix, prefix_len)) {
+		*out = buf + prefix_len;
+		*outlen = len - prefix_len;
+		return 1;
+	}
 	return 0;
 }
 
@@ -646,8 +664,20 @@ void *gitmemmem(const void *haystack, size_t haystacklen,
                 const void *needle, size_t needlelen);
 #endif
 
+#ifdef OVERRIDE_STRDUP
+#ifdef strdup
+#undef strdup
+#endif
+#define strdup gitstrdup
+char *gitstrdup(const char *s);
+#endif
+
 #ifdef NO_GETPAGESIZE
 #define getpagesize() sysconf(_SC_PAGESIZE)
+#endif
+
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
 #endif
 
 #ifdef FREAD_READS_DIRECTORIES
@@ -798,7 +828,7 @@ extern FILE *fopen_for_writing(const char *path);
  * you can do:
  *
  *   struct foo *f;
- *   FLEX_ALLOC_STR(f, name, src);
+ *   FLEXPTR_ALLOC_STR(f, name, src);
  *
  * and "name" will point to a block of memory after the struct, which will be
  * freed along with the struct (but the pointer can be repointed anywhere).
@@ -944,6 +974,19 @@ void git_qsort(void *base, size_t nmemb, size_t size,
 #define qsort git_qsort
 #endif
 
+#ifndef REG_STARTEND
+#error "Git requires REG_STARTEND support. Compile with NO_REGEX=NeedsStartEnd"
+#endif
+
+static inline int regexec_buf(const regex_t *preg, const char *buf, size_t size,
+			      size_t nmatch, regmatch_t pmatch[], int eflags)
+{
+	assert(nmatch > 0 && pmatch);
+	pmatch[0].rm_so = 0;
+	pmatch[0].rm_eo = size;
+	return regexec(preg, buf, nmatch, pmatch, eflags | REG_STARTEND);
+}
+
 #ifndef DIR_HAS_BSD_GROUP_SEMANTICS
 # define FORCE_DIR_SET_GID S_ISGID
 #else
@@ -1045,3 +1088,5 @@ struct tm *git_gmtime_r(const time_t *, struct tm *);
 #endif
 
 #endif
+
+extern int cmd_main(int, const char **);

@@ -296,7 +296,13 @@ all::
 # Define USE_NED_ALLOCATOR if you want to replace the platforms default
 # memory allocators with the nedmalloc allocator written by Niall Douglas.
 #
-# Define NO_REGEX if you have no or inferior regex support in your C library.
+# Define OVERRIDE_STRDUP to override the libc version of strdup(3).
+# This is necessary when using a custom allocator in order to avoid
+# crashes due to allocation and free working on different 'heaps'.
+# It's defined automatically if USE_NED_ALLOCATOR is set.
+#
+# Define NO_REGEX if your C library lacks regex support with REG_STARTEND
+# feature.
 #
 # Define HAVE_DEV_TTY if your system can open /dev/tty to interact with the
 # user.
@@ -351,9 +357,12 @@ all::
 # Define GMTIME_UNRELIABLE_ERRORS if your gmtime() function does not
 # return NULL when it receives a bogus time_t.
 #
-# Define HAVE_CLOCK_GETTIME if your platform has clock_gettime in librt.
+# Define HAVE_CLOCK_GETTIME if your platform has clock_gettime.
 #
-# Define HAVE_CLOCK_MONOTONIC if your platform has CLOCK_MONOTONIC in librt.
+# Define HAVE_CLOCK_MONOTONIC if your platform has CLOCK_MONOTONIC.
+#
+# Define NEEDS_LIBRT if your platform requires linking with librt (glibc version
+# before 2.17) for clock_gettime and CLOCK_MONOTONIC.
 #
 # Define USE_PARENS_AROUND_GETTEXT_N to "yes" if your compiler happily
 # compiles the following initialization:
@@ -367,6 +376,14 @@ all::
 # Define HAVE_BSD_SYSCTL if your platform has a BSD-compatible sysctl function.
 #
 # Define HAVE_GETDELIM if your system has the getdelim() function.
+#
+# Define PAGER_ENV to a SP separated VAR=VAL pairs to define
+# default environment variables to be passed when a pager is spawned, e.g.
+#
+#    PAGER_ENV = LESS=FRX LV=-c
+#
+# to say "export LESS=FRX (and LV=-c) if the environment variable
+# LESS (and LV) is not set, respectively".
 
 GIT-VERSION-FILE: FORCE
 	@$(SHELL_PATH) ./GIT-VERSION-GEN
@@ -718,6 +735,7 @@ LIB_OBJS += diff-lib.o
 LIB_OBJS += diff-no-index.o
 LIB_OBJS += diff.o
 LIB_OBJS += dir.o
+LIB_OBJS += dir-iterator.o
 LIB_OBJS += editor.o
 LIB_OBJS += entry.o
 LIB_OBJS += environment.o
@@ -751,6 +769,7 @@ LIB_OBJS += merge.o
 LIB_OBJS += merge-blobs.o
 LIB_OBJS += merge-recursive.o
 LIB_OBJS += mergesort.o
+LIB_OBJS += mru.o
 LIB_OBJS += name-hash.o
 LIB_OBJS += notes.o
 LIB_OBJS += notes-cache.o
@@ -782,6 +801,7 @@ LIB_OBJS += read-cache.o
 LIB_OBJS += reflog-walk.o
 LIB_OBJS += refs.o
 LIB_OBJS += refs/files-backend.o
+LIB_OBJS += refs/iterator.o
 LIB_OBJS += ref-filter.o
 LIB_OBJS += remote.o
 LIB_OBJS += replace_object.o
@@ -939,7 +959,7 @@ BUILTIN_OBJS += builtin/verify-tag.o
 BUILTIN_OBJS += builtin/worktree.o
 BUILTIN_OBJS += builtin/write-tree.o
 
-GITLIBS = $(LIB_FILE) $(XDIFF_LIB)
+GITLIBS = common-main.o $(LIB_FILE) $(XDIFF_LIB)
 EXTLIBS =
 
 GIT_USER_AGENT = git/$(GIT_VERSION)
@@ -1442,8 +1462,14 @@ ifdef NATIVE_CRLF
 endif
 
 ifdef USE_NED_ALLOCATOR
-       COMPAT_CFLAGS += -Icompat/nedmalloc
-       COMPAT_OBJS += compat/nedmalloc/nedmalloc.o
+	COMPAT_CFLAGS += -Icompat/nedmalloc
+	COMPAT_OBJS += compat/nedmalloc/nedmalloc.o
+	OVERRIDE_STRDUP = YesPlease
+endif
+
+ifdef OVERRIDE_STRDUP
+	COMPAT_CFLAGS += -DOVERRIDE_STRDUP
+	COMPAT_OBJS += compat/strdup.o
 endif
 
 ifdef GIT_TEST_CMP_USE_COPIED_CONTEXT
@@ -1465,11 +1491,14 @@ endif
 
 ifdef HAVE_CLOCK_GETTIME
 	BASIC_CFLAGS += -DHAVE_CLOCK_GETTIME
-	EXTLIBS += -lrt
 endif
 
 ifdef HAVE_CLOCK_MONOTONIC
 	BASIC_CFLAGS += -DHAVE_CLOCK_MONOTONIC
+endif
+
+ifdef NEEDS_LIBRT
+	EXTLIBS += -lrt
 endif
 
 ifdef HAVE_BSD_SYSCTL
@@ -1490,6 +1519,10 @@ endif
 
 ifeq ($(PYTHON_PATH),)
 NO_PYTHON = NoThanks
+endif
+
+ifndef PAGER_ENV
+PAGER_ENV = LESS=FRX LV=-c
 endif
 
 QUIET_SUBDIR0  = +$(MAKE) -C # space to separate -C and subdir
@@ -1572,7 +1605,15 @@ TCLTK_PATH_SQ = $(subst ','\'',$(TCLTK_PATH))
 DIFF_SQ = $(subst ','\'',$(DIFF))
 PERLLIB_EXTRA_SQ = $(subst ','\'',$(PERLLIB_EXTRA))
 
-LIBS = $(GITLIBS) $(EXTLIBS)
+# We must filter out any object files from $(GITLIBS),
+# as it is typically used like:
+#
+#   foo: foo.o $(GITLIBS)
+#	$(CC) $(filter %.o,$^) $(LIBS)
+#
+# where we use it as a dependency. Since we also pull object files
+# from the dependency list, that would make each entry appear twice.
+LIBS = $(filter-out %.o, $(GITLIBS)) $(EXTLIBS)
 
 BASIC_CFLAGS += -DSHA1_HEADER='$(SHA1_HEADER_SQ)' \
 	$(COMPAT_CFLAGS)
@@ -1612,6 +1653,11 @@ GIT-USER-AGENT: FORCE
 ifdef DEFAULT_HELP_FORMAT
 BASIC_CFLAGS += -DDEFAULT_HELP_FORMAT='"$(DEFAULT_HELP_FORMAT)"'
 endif
+
+PAGER_ENV_SQ = $(subst ','\'',$(PAGER_ENV))
+PAGER_ENV_CQ = "$(subst ",\",$(subst \,\\,$(PAGER_ENV)))"
+PAGER_ENV_CQ_SQ = $(subst ','\'',$(PAGER_ENV_CQ))
+BASIC_CFLAGS += -DPAGER_ENV='$(PAGER_ENV_CQ_SQ)'
 
 ALL_CFLAGS += $(BASIC_CFLAGS)
 ALL_LDFLAGS += $(BASIC_LDFLAGS)
@@ -1708,8 +1754,8 @@ git.sp git.s git.o: EXTRA_CPPFLAGS = \
 	'-DGIT_INFO_PATH="$(infodir_relative_SQ)"'
 
 git$X: git.o GIT-LDFLAGS $(BUILTIN_OBJS) $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) git.o \
-		$(BUILTIN_OBJS) $(LIBS)
+	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) \
+		$(filter %.o,$^) $(LIBS)
 
 help.sp help.s help.o: common-cmds.h
 
@@ -1734,7 +1780,7 @@ common-cmds.h: $(wildcard Documentation/git-*.txt)
 
 SCRIPT_DEFINES = $(SHELL_PATH_SQ):$(DIFF_SQ):$(GIT_VERSION):\
 	$(localedir_SQ):$(NO_CURL):$(USE_GETTEXT_SCHEME):$(SANE_TOOL_PATH_SQ):\
-	$(gitwebdir_SQ):$(PERL_PATH_SQ):$(SANE_TEXT_GREP)
+	$(gitwebdir_SQ):$(PERL_PATH_SQ):$(SANE_TEXT_GREP):$(PAGER_ENV)
 define cmd_munge_script
 $(RM) $@ $@+ && \
 sed -e '1s|#!.*/sh|#!$(SHELL_PATH_SQ)|' \
@@ -1747,6 +1793,7 @@ sed -e '1s|#!.*/sh|#!$(SHELL_PATH_SQ)|' \
     -e 's|@@GITWEBDIR@@|$(gitwebdir_SQ)|g' \
     -e 's|@@PERL@@|$(PERL_PATH_SQ)|g' \
     -e 's|@@SANE_TEXT_GREP@@|$(SANE_TEXT_GREP)|g' \
+    -e 's|@@PAGER_ENV@@|$(PAGER_ENV_SQ)|g' \
     $@.sh >$@+
 endef
 
@@ -1944,6 +1991,7 @@ TEST_OBJS := $(patsubst %$X,%.o,$(TEST_PROGRAMS))
 OBJECTS := $(LIB_OBJS) $(BUILTIN_OBJS) $(PROGRAM_OBJS) $(TEST_OBJS) \
 	$(XDIFF_OBJS) \
 	$(VCSSVN_OBJS) \
+	common-main.o \
 	git.o
 ifndef NO_CURL
 	OBJECTS += http.o http-walker.o remote-curl.o
@@ -2035,7 +2083,7 @@ endif
 
 ifdef USE_NED_ALLOCATOR
 compat/nedmalloc/nedmalloc.sp compat/nedmalloc/nedmalloc.o: EXTRA_CPPFLAGS = \
-	-DNDEBUG -DOVERRIDE_STRDUP -DREPLACE_SYSTEM_ALLOCATOR
+	-DNDEBUG -DREPLACE_SYSTEM_ALLOCATOR
 compat/nedmalloc/nedmalloc.sp: SPARSE_FLAGS += -Wno-non-pointer-null
 endif
 
@@ -2104,7 +2152,10 @@ XGETTEXT_FLAGS_SH = $(XGETTEXT_FLAGS) --language=Shell \
 	--keyword=gettextln --keyword=eval_gettextln
 XGETTEXT_FLAGS_PERL = $(XGETTEXT_FLAGS) --keyword=__ --language=Perl
 LOCALIZED_C = $(C_OBJ:o=c) $(LIB_H) $(GENERATED_H)
-LOCALIZED_SH = $(SCRIPT_SH) git-parse-remote.sh
+LOCALIZED_SH = $(SCRIPT_SH)
+LOCALIZED_SH += git-parse-remote.sh
+LOCALIZED_SH += git-rebase--interactive.sh
+LOCALIZED_SH += git-sh-setup.sh
 LOCALIZED_PERL = $(SCRIPT_PERL)
 
 ifdef XGETTEXT_INCLUDE_TESTS
@@ -2194,6 +2245,7 @@ GIT-BUILD-OPTIONS: FORCE
 	@echo NO_PERL=\''$(subst ','\'',$(subst ','\'',$(NO_PERL)))'\' >>$@+
 	@echo NO_PYTHON=\''$(subst ','\'',$(subst ','\'',$(NO_PYTHON)))'\' >>$@+
 	@echo NO_UNIX_SOCKETS=\''$(subst ','\'',$(subst ','\'',$(NO_UNIX_SOCKETS)))'\' >>$@+
+	@echo PAGER_ENV=\''$(subst ','\'',$(subst ','\'',$(PAGER_ENV)))'\' >>$@+
 ifdef TEST_OUTPUT_DIRECTORY
 	@echo TEST_OUTPUT_DIRECTORY=\''$(subst ','\'',$(subst ','\'',$(TEST_OUTPUT_DIRECTORY)))'\' >>$@+
 endif

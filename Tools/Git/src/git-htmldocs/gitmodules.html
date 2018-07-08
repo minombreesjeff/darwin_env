@@ -758,7 +758,7 @@ working tree, is a text file with a syntax matching the requirements
 of <a href="git-config.html">git-config(1)</a>.</p></div>
 <div class="paragraph"><p>The file contains one subsection per submodule, and the subsection value
 is the name of the submodule. The name is set to the path where the
-submodule has been added unless it was customized with the <em>--name</em>
+submodule has been added unless it was customized with the <code>--name</code>
 option of <em>git submodule add</em>. Each submodule section also contains the
 following required keys:</p></div>
 <div class="dlist"><dl>
@@ -849,6 +849,16 @@ submodule.&lt;name&gt;.ignore
         affected by this setting.
 </p>
 </dd>
+<dt class="hdlist1">
+submodule.&lt;name&gt;.shallow
+</dt>
+<dd>
+<p>
+        When set to true, a clone of this submodule will be performed as a
+        shallow clone unless the user explicitly asks for a non-shallow
+        clone.
+</p>
+</dd>
 </dl></div>
 </div>
 </div>
@@ -889,7 +899,7 @@ submodules a URL is specified which can be used for cloning the submodules.</p><
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2015-03-06 15:45:51 PST
+Last updated 2016-08-12 12:42:02 PDT
 </div>
 </div>
 </body>

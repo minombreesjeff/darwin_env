@@ -785,7 +785,7 @@ arguments. The first argument specifies a remote repository as in Git;
 it is either the name of a configured remote or a URL. The second
 argument specifies a URL; it is usually of the form
 <em>&lt;transport&gt;://&lt;address&gt;</em>, but any arbitrary string is possible.
-The <em>GIT_DIR</em> environment variable is set up for the remote helper
+The <code>GIT_DIR</code> environment variable is set up for the remote helper
 and can be used to determine where to store additional data or from
 which directory to invoke auxiliary Git commands.</p></div>
 <div class="paragraph"><p>When Git encounters a URL of the form <em>&lt;transport&gt;://&lt;address&gt;</em>, where
@@ -800,10 +800,10 @@ invoke <em>git remote-&lt;transport&gt;</em> with <em>&lt;address&gt;</em> as th
 argument. If such a URL is encountered directly on the command line,
 the first argument is <em>&lt;address&gt;</em>, and if it is encountered in a
 configured remote, the first argument is the name of that remote.</p></div>
-<div class="paragraph"><p>Additionally, when a configured remote has <em>remote.&lt;name&gt;.vcs</em> set to
+<div class="paragraph"><p>Additionally, when a configured remote has <code>remote.&lt;name&gt;.vcs</code> set to
 <em>&lt;transport&gt;</em>, Git explicitly invokes <em>git remote-&lt;transport&gt;</em> with
 <em>&lt;name&gt;</em> as the first argument. If set, the second argument is
-<em>remote.&lt;name&gt;.url</em>; otherwise, the second argument is omitted.</p></div>
+<code>remote.&lt;name&gt;.url</code>; otherwise, the second argument is omitted.</p></div>
 </div>
 </div>
 <div class="sect1">
@@ -1000,7 +1000,7 @@ the remote repository.</p></div>
 <p>
         This modifies the <em>export</em> capability, instructing Git to dump the
         internal marks table to &lt;file&gt; when complete. For details,
-        read up on <em>--export-marks=&lt;file&gt;</em> in <a href="git-fast-export.html">git-fast-export(1)</a>.
+        read up on <code>--export-marks=&lt;file&gt;</code> in <a href="git-fast-export.html">git-fast-export(1)</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1010,7 +1010,7 @@ the remote repository.</p></div>
 <p>
         This modifies the <em>export</em> capability, instructing Git to load the
         marks specified in &lt;file&gt; before processing any input. For details,
-        read up on <em>--import-marks=&lt;file&gt;</em> in <a href="git-fast-export.html">git-fast-export(1)</a>.
+        read up on <code>--import-marks=&lt;file&gt;</code> in <a href="git-fast-export.html">git-fast-export(1)</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1019,8 +1019,8 @@ the remote repository.</p></div>
 <dd>
 <p>
         This modifies the <em>export</em> capability, instructing Git to pass
-        <em>--signed-tags=verbatim</em> to <a href="git-fast-export.html">git-fast-export(1)</a>.  In the
-        absence of this capability, Git will use <em>--signed-tags=warn-strip</em>.
+        <code>--signed-tags=verbatim</code> to <a href="git-fast-export.html">git-fast-export(1)</a>.  In the
+        absence of this capability, Git will use <code>--signed-tags=warn-strip</code>.
 </p>
 </dd>
 </dl></div>
@@ -1122,7 +1122,7 @@ suitably updated.</p></div>
         is followed by a blank line). For example, the following would
         be two batches of <em>push</em>, the first asking the remote-helper
         to push the local ref <em>master</em> to the remote ref <em>master</em> and
-        the local <em>HEAD</em> to the remote <em>branch</em>, and the second
+        the local <code>HEAD</code> to the remote <em>branch</em>, and the second
         asking to push ref <em>foo</em> to ref <em>bar</em> (forced update requested
         by the <em>+</em>).
 </p>
@@ -1363,7 +1363,7 @@ set by Git if the remote helper has the <em>option</em> capability.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2015-08-31 16:04:31 PDT
+Last updated 2016-07-13 14:58:50 PDT
 </div>
 </div>
 </body>

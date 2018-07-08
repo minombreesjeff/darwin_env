@@ -2,7 +2,7 @@
 #include "submodule-config.h"
 #include "submodule.h"
 
-static void die_usage(int argc, char **argv, const char *msg)
+static void die_usage(int argc, const char **argv, const char *msg)
 {
 	fprintf(stderr, "%s\n", msg);
 	fprintf(stderr, "Usage: %s [<commit> <submodulepath>] ...\n", argv[0]);
@@ -14,9 +14,9 @@ static int git_test_config(const char *var, const char *value, void *cb)
 	return parse_submodule_config_option(var, value);
 }
 
-int main(int argc, char **argv)
+int cmd_main(int argc, const char **argv)
 {
-	char **arg = argv;
+	const char **arg = argv;
 	int my_argc = argc;
 	int output_url = 0;
 	int lookup_name = 0;
@@ -49,7 +49,7 @@ int main(int argc, char **argv)
 		path_or_name = arg[1];
 
 		if (commit[0] == '\0')
-			hashcpy(commit_sha1, null_sha1);
+			hashclr(commit_sha1);
 		else if (get_sha1(commit, commit_sha1) < 0)
 			die_usage(argc, argv, "Commit not found.");
 

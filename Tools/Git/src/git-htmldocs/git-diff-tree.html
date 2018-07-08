@@ -1397,6 +1397,8 @@ of a delete/create pair.</p></div>
         other criteria in the comparison; if there is no file
         that matches other criteria, nothing is selected.
 </p>
+<div class="paragraph"><p>Also, these upper-case letters can be downcased to exclude.  E.g.
+<code>--diff-filter=ad</code> excludes added and deleted paths.</p></div>
 </dd>
 <dt class="hdlist1">
 -S&lt;string&gt;
@@ -1703,7 +1705,7 @@ information.</p></div>
 </dt>
 <dd>
 <p>
-        When <em>--root</em> is specified the initial commit will be shown as a big
+        When <code>--root</code> is specified the initial commit will be shown as a big
         creation event. This is equivalent to a diff against the NULL tree.
 </p>
 </dd>
@@ -1712,7 +1714,7 @@ information.</p></div>
 </dt>
 <dd>
 <p>
-        When <em>--stdin</em> is specified, the command does not take
+        When <code>--stdin</code> is specified, the command does not take
         &lt;tree-ish&gt; arguments from the command line.  Instead, it
         reads lines containing either two &lt;tree&gt;, one &lt;commit&gt;, or a
         list of &lt;commit&gt; from its standard input.  (Use a single space
@@ -1737,7 +1739,7 @@ commits (but not trees).</p></div>
         By default, <em>git diff-tree --stdin</em> does not show
         differences for merge commits.  With this flag, it shows
         differences to that commit from all of its parents. See
-        also <em>-c</em>.
+        also <code>-c</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1746,9 +1748,9 @@ commits (but not trees).</p></div>
 <dd>
 <p>
         By default, <em>git diff-tree --stdin</em> shows differences,
-        either in machine-readable form (without <em>-p</em>) or in patch
-        form (with <em>-p</em>).  This output can be suppressed.  It is
-        only useful with <em>-v</em> flag.
+        either in machine-readable form (without <code>-p</code>) or in patch
+        form (with <code>-p</code>).  This output can be suppressed.  It is
+        only useful with <code>-v</code> flag.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1800,7 +1802,7 @@ people using 80-column terminals.</p></div>
 <p>
         Show the full 40-byte hexadecimal commit object name. This negates
         <code>--abbrev-commit</code> and those options which imply it such as
-        "--oneline". It also overrides the <em>log.abbrevCommit</em> variable.
+        "--oneline". It also overrides the <code>log.abbrevCommit</code> variable.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1861,7 +1863,7 @@ and <em>fuller</em>).</p></div>
         on the command line.
 </p>
 <div class="paragraph"><p>By default, the notes shown are from the notes refs listed in the
-<em>core.notesRef</em> and <em>notes.displayRef</em> variables (or corresponding
+<code>core.notesRef</code> and <code>notes.displayRef</code> variables (or corresponding
 environment overrides). See <a href="git-config.html">git-config(1)</a> for more details.</p></div>
 <div class="paragraph"><p>With an optional <em>&lt;treeish&gt;</em> argument, use the treeish to find the notes
 to display.  The treeish can specify the full refname when it begins
@@ -1921,10 +1923,10 @@ being displayed. Examples: "--notes=foo" will show only notes from
 <p>
         This flag changes the way a merge commit is displayed
         (which means it is useful only when the command is given
-        one &lt;tree-ish&gt;, or <em>--stdin</em>).  It shows the differences
+        one &lt;tree-ish&gt;, or <code>--stdin</code>).  It shows the differences
         from each of the parents to the merge result simultaneously
         instead of showing pairwise diff between a parent and the
-        result one at a time (which is what the <em>-m</em> option does).
+        result one at a time (which is what the <code>-m</code> option does).
         Furthermore, it lists only files which were modified
         from all parents.
 </p>
@@ -1935,8 +1937,8 @@ being displayed. Examples: "--notes=foo" will show only notes from
 <dd>
 <p>
         This flag changes the way a merge commit patch is displayed,
-        in a similar way to the <em>-c</em> option. It implies the <em>-c</em>
-        and <em>-p</em> options and further compresses the patch output
+        in a similar way to the <code>-c</code> option. It implies the <code>-c</code>
+        and <code>-p</code> options and further compresses the patch output
         by omitting uninteresting hunks whose the contents in the parents
         have only two variants and the merge result picks one of them
         without modification.  When all hunks are uninteresting, the commit
@@ -2302,12 +2304,18 @@ The title was &gt;&gt;t4119: test autocomputing -p&lt;n&gt; for traditional diff
 </li>
 <li>
 <p>
-<em>%gD</em>: reflog selector, e.g., <code>refs/stash@{1}</code>
+<em>%gD</em>: reflog selector, e.g., <code>refs/stash@{1}</code> or
+  <code>refs/stash@{2 minutes ago</code>}; the format follows the rules described
+  for the <code>-g</code> option. The portion before the <code>@</code> is the refname as
+  given on the command line (so <code>git log -g refs/heads/master</code> would
+  yield <code>refs/heads/master@{0}</code>).
 </p>
 </li>
 <li>
 <p>
-<em>%gd</em>: shortened reflog selector, e.g., <code>stash@{1}</code>
+<em>%gd</em>: shortened reflog selector; same as <code>%gD</code>, but the refname
+  portion is shortened for human readability (so <code>refs/heads/master</code>
+  becomes just <code>master</code>).
 </p>
 </li>
 <li>
@@ -2640,7 +2648,7 @@ status, followed by optional "score" number.
 </li>
 <li>
 <p>
-a tab or a NUL when <em>-z</em> option is used.
+a tab or a NUL when <code>-z</code> option is used.
 </p>
 </li>
 <li>
@@ -2650,7 +2658,7 @@ path for "src"
 </li>
 <li>
 <p>
-a tab or a NUL when <em>-z</em> option is used; only exists for C or R.
+a tab or a NUL when <code>-z</code> option is used; only exists for C or R.
 </p>
 </li>
 <li>
@@ -2660,7 +2668,7 @@ path for "dst"; only exists for C or R.
 </li>
 <li>
 <p>
-an LF or a NUL when <em>-z</em> option is used, to terminate the record.
+an LF or a NUL when <code>-z</code> option is used, to terminate the record.
 </p>
 </li>
 </ol></div>
@@ -2728,7 +2736,7 @@ respectively.</p></div>
 <h2 id="_diff_format_for_merges">diff format for merges</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>"git-diff-tree", "git-diff-files" and "git-diff --raw"
-can take <em>-c</em> or <em>--cc</em> option
+can take <code>-c</code> or <code>--cc</code> option
 to generate diff output also for merge commits.  The output differs
 from the format described above in the following way:</p></div>
 <div class="olist arabic"><ol class="arabic">
@@ -2771,11 +2779,11 @@ all parents.</p></div>
 <h2 id="_generating_patches_with_p">Generating patches with -p</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>When "git-diff-index", "git-diff-tree", or "git-diff-files" are run
-with a <em>-p</em> option, "git diff" without the <em>--raw</em> option, or
+with a <code>-p</code> option, "git diff" without the <code>--raw</code> option, or
 "git log" with the "-p" option, they
 do not produce the output described above; instead they produce a
 patch file.  You can customize the creation of such patches via the
-GIT_EXTERNAL_DIFF and the GIT_DIFF_OPTS environment variables.</p></div>
+<code>GIT_EXTERNAL_DIFF</code> and the <code>GIT_DIFF_OPTS</code> environment variables.</p></div>
 <div class="paragraph"><p>What the -p option produces is slightly different from the traditional
 diff format:</p></div>
 <div class="olist arabic"><ol class="arabic">
@@ -2897,13 +2905,13 @@ index fabadb8,cc95eb0..4866510
 <li>
 <p>
 It is preceded with a "git diff" header, that looks like
-     this (when <em>-c</em> option is used):
+     this (when <code>-c</code> option is used):
 </p>
 <div class="literalblock">
 <div class="content">
 <pre><code>diff --combined file</code></pre>
 </div></div>
-<div class="paragraph"><p>or like this (when <em>--cc</em> option is used):</p></div>
+<div class="paragraph"><p>or like this (when <code>--cc</code> option is used):</p></div>
 <div class="literalblock">
 <div class="content">
 <pre><code>diff --cc file</code></pre>
@@ -3108,7 +3116,7 @@ the pathname, but if that is <code>NUL</code>, the record will show two paths.</
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2013-08-20 08:40:27 PDT
+Last updated 2016-07-13 14:58:50 PDT
 </div>
 </div>
 </body>

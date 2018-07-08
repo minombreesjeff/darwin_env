@@ -45,8 +45,7 @@ test_expect_success 'include options can still be examined' '
 	test_cmp expect actual
 '
 
-# Fails due to expectations being in conflict with Xcode.app-bundled gitconfig
-test_expect_failure 'listing includes option and expansion' '
+test_expect_success 'listing includes option and expansion' '
 	echo "[test]one = 1" >one &&
 	echo "[include]path = one" >.gitconfig &&
 	cat >expect <<-\EOF &&

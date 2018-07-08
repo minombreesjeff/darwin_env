@@ -1,7 +1,2 @@
-[core]
-	# Turn off trustctime because it can cause issues with processes that crawl or monitor the working tree.
-	# This is especially problematic with 'git rebase'.
-	# See http://trac.webkit.org/wiki/UsingGitWithWebKit or <rdar://problem/10413043>
-	trustctime = false
 [credential]
 	helper = osxkeychain

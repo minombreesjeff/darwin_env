@@ -22,15 +22,6 @@
 
 #include "xinclude.h"
 
-
-
-
-static long xdl_get_rec(xdfile_t *xdf, long ri, char const **rec);
-static int xdl_emit_record(xdfile_t *xdf, long ri, char const *pre, xdemitcb_t *ecb);
-
-
-
-
 static long xdl_get_rec(xdfile_t *xdf, long ri, char const **rec) {
 
 	*rec = xdf->recs[ri]->ptr;
@@ -248,7 +239,7 @@ int xdl_emit_diff(xdfenv_t *xe, xdchange_t *xscr, xdemitcb_t *ecb,
 			if (xche->next) {
 				long l = XDL_MIN(xche->next->i1,
 						 xe->xdf1.nrec - 1);
-				if (l <= e1 ||
+				if (l - xecfg->ctxlen <= e1 ||
 				    get_func_line(xe, xecfg, NULL, l, e1) < 0) {
 					xche = xche->next;
 					goto post_context_calculation;

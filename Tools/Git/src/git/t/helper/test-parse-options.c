@@ -12,7 +12,7 @@ static int dry_run = 0, quiet = 0;
 static char *string = NULL;
 static char *file = NULL;
 static int ambiguous;
-static struct string_list list;
+static struct string_list list = STRING_LIST_INIT_NODUP;
 
 static struct {
 	int called;
@@ -94,7 +94,7 @@ static void show(struct string_list *expect, int *status, const char *fmt, ...)
 	strbuf_release(&buf);
 }
 
-int main(int argc, char **argv)
+int cmd_main(int argc, const char **argv)
 {
 	const char *prefix = "prefix/";
 	const char *usage[] = {

@@ -693,10 +693,10 @@ static struct grep_expr *prep_header_patterns(struct grep_opt *opt)
 
 	for (p = opt->header_list; p; p = p->next) {
 		if (p->token != GREP_PATTERN_HEAD)
-			die("bug: a non-header pattern in grep header list.");
+			die("BUG: a non-header pattern in grep header list.");
 		if (p->field < GREP_HEADER_FIELD_MIN ||
 		    GREP_HEADER_FIELD_MAX <= p->field)
-			die("bug: unknown header field %d", p->field);
+			die("BUG: unknown header field %d", p->field);
 		compile_regexp(p, opt);
 	}
 
@@ -709,7 +709,7 @@ static struct grep_expr *prep_header_patterns(struct grep_opt *opt)
 
 		h = compile_pattern_atom(&pp);
 		if (!h || pp != p->next)
-			die("bug: malformed header expr");
+			die("BUG: malformed header expr");
 		if (!header_group[p->field]) {
 			header_group[p->field] = h;
 			continue;
@@ -898,17 +898,6 @@ static int fixmatch(struct grep_pat *p, char *line, char *eol,
 	}
 }
 
-static int regmatch(const regex_t *preg, char *line, char *eol,
-		    regmatch_t *match, int eflags)
-{
-#ifdef REG_STARTEND
-	match->rm_so = 0;
-	match->rm_eo = eol - line;
-	eflags |= REG_STARTEND;
-#endif
-	return regexec(preg, line, 1, match, eflags);
-}
-
 static int patmatch(struct grep_pat *p, char *line, char *eol,
 		    regmatch_t *match, int eflags)
 {
@@ -919,7 +908,8 @@ static int patmatch(struct grep_pat *p, char *line, char *eol,
 	else if (p->pcre_regexp)
 		hit = !pcrematch(p, line, eol, match, eflags);
 	else
-		hit = !regmatch(&p->regexp, line, eol, match, eflags);
+		hit = !regexec_buf(&p->regexp, line, eol - line, 1, match,
+				   eflags);
 
 	return hit;
 }
@@ -1514,7 +1504,7 @@ static int grep_source_1(struct grep_opt *opt, struct grep_source *gs, int colle
 		case GREP_BINARY_TEXT:
 			break;
 		default:
-			die("bug: unknown binary handling mode");
+			die("BUG: unknown binary handling mode");
 		}
 	}
 

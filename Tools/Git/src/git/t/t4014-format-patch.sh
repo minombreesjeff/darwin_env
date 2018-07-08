@@ -229,6 +229,46 @@ check_patch () {
 	grep -e "^Subject:" "$1"
 }
 
+test_expect_success 'format.from=false' '
+
+	git -c format.from=false format-patch --stdout master..side |
+	sed -e "/^\$/q" >patch &&
+	check_patch patch &&
+	! grep "^From: C O Mitter <committer@example.com>\$" patch
+'
+
+test_expect_success 'format.from=true' '
+
+	git -c format.from=true format-patch --stdout master..side |
+	sed -e "/^\$/q" >patch &&
+	check_patch patch &&
+	grep "^From: C O Mitter <committer@example.com>\$" patch
+'
+
+test_expect_success 'format.from with address' '
+
+	git -c format.from="F R Om <from@example.com>" format-patch --stdout master..side |
+	sed -e "/^\$/q" >patch &&
+	check_patch patch &&
+	grep "^From: F R Om <from@example.com>\$" patch
+'
+
+test_expect_success '--no-from overrides format.from' '
+
+	git -c format.from="F R Om <from@example.com>" format-patch --no-from --stdout master..side |
+	sed -e "/^\$/q" >patch &&
+	check_patch patch &&
+	! grep "^From: F R Om <from@example.com>\$" patch
+'
+
+test_expect_success '--from overrides format.from' '
+
+	git -c format.from="F R Om <from@example.com>" format-patch --from --stdout master..side |
+	sed -e "/^\$/q" >patch &&
+	check_patch patch &&
+	! grep "^From: F R Om <from@example.com>\$" patch
+'
+
 test_expect_success '--no-to overrides config.to' '
 
 	git config --replace-all format.to \
@@ -714,9 +754,22 @@ test_expect_success 'format-patch --ignore-if-in-upstream HEAD' '
 	git format-patch --ignore-if-in-upstream HEAD
 '
 
+git_version="$(git --version | sed "s/git version //")"
+
+signature() {
+	printf "%s\n%s\n\n" "-- " "${1:-$git_version}"
+}
+
+test_expect_success 'format-patch default signature' '
+	git format-patch --stdout -1 | tail -n 3 >output &&
+	signature >expect &&
+	test_cmp expect output
+'
+
 test_expect_success 'format-patch --signature' '
-	git format-patch --stdout --signature="my sig" -1 >output &&
-	grep "my sig" output
+	git format-patch --stdout --signature="my sig" -1 | tail -n 3 >output &&
+	signature "my sig" >expect &&
+	test_cmp expect output
 '
 
 test_expect_success 'format-patch with format.signature config' '
@@ -1462,12 +1515,12 @@ test_expect_success 'format-patch -o overrides format.outputDirectory' '
 
 test_expect_success 'format-patch --base' '
 	git checkout side &&
-	git format-patch --stdout --base=HEAD~3 -1 >patch &&
-	grep "^base-commit:" patch >actual &&
-	grep "^prerequisite-patch-id:" patch >>actual &&
-	echo "base-commit: $(git rev-parse HEAD~3)" >expected &&
+	git format-patch --stdout --base=HEAD~3 -1 | tail -n 7 >actual &&
+	echo >expected &&
+	echo "base-commit: $(git rev-parse HEAD~3)" >>expected &&
 	echo "prerequisite-patch-id: $(git show --patch HEAD~2 | git patch-id --stable | awk "{print \$1}")" >>expected &&
 	echo "prerequisite-patch-id: $(git show --patch HEAD~1 | git patch-id --stable | awk "{print \$1}")" >>expected &&
+	signature >> expected &&
 	test_cmp expected actual
 '
 
@@ -1563,6 +1616,55 @@ test_expect_success 'format-patch --base overrides format.useAutoBase' '
 	grep "^base-commit:" patch >actual &&
 	echo "base-commit: $(git rev-parse HEAD~1)" >expected &&
 	test_cmp expected actual
+'
+
+test_expect_success 'format-patch --base with --attach' '
+	git format-patch --attach=mimemime --stdout --base=HEAD~ -1 >patch &&
+	sed -n -e "/^base-commit:/s/.*/1/p" -e "/^---*mimemime--$/s/.*/2/p" \
+		patch >actual &&
+	test_write_lines 1 2 >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'format-patch --pretty=mboxrd' '
+	sp=" " &&
+	cat >msg <<-INPUT_END &&
+	mboxrd should escape the body
+
+	From could trip up a loose mbox parser
+	>From extra escape for reversibility
+	>>From extra escape for reversibility 2
+	from lower case not escaped
+	Fromm bad speling not escaped
+	 From with leading space not escaped
+
+	F
+	From
+	From$sp
+	From    $sp
+	From	$sp
+	INPUT_END
+
+	cat >expect <<-INPUT_END &&
+	>From could trip up a loose mbox parser
+	>>From extra escape for reversibility
+	>>>From extra escape for reversibility 2
+	from lower case not escaped
+	Fromm bad speling not escaped
+	 From with leading space not escaped
+
+	F
+	From
+	From
+	From
+	From
+	INPUT_END
+
+	C=$(git commit-tree HEAD^^{tree} -p HEAD <msg) &&
+	git format-patch --pretty=mboxrd --stdout -1 $C~1..$C >patch &&
+	git grep -h --no-index -A11 \
+		"^>From could trip up a loose mbox parser" patch >actual &&
+	test_cmp expect actual
 '
 
 test_done

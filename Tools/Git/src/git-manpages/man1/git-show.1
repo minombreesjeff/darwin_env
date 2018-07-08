@@ -2,12 +2,12 @@
 .\"     Title: git-show
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 06/13/2016
+.\"      Date: 09/02/2016
 .\"    Manual: Git Manual
-.\"    Source: Git 2.9.0
+.\"    Source: Git 2.10.0
 .\"  Language: English
 .\"
-.TH "GIT\-SHOW" "1" "06/13/2016" "Git 2\&.9\&.0" "Git Manual"
+.TH "GIT\-SHOW" "1" "09/02/2016" "Git 2\&.10\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -101,7 +101,7 @@ This should make "\-\-pretty=oneline" a whole lot more readable for people using
 Show the full 40\-byte hexadecimal commit object name\&. This negates
 \fB\-\-abbrev\-commit\fR
 and those options which imply it such as "\-\-oneline"\&. It also overrides the
-\fIlog\&.abbrevCommit\fR
+\fBlog\&.abbrevCommit\fR
 variable\&.
 .RE
 .PP
@@ -150,9 +150,9 @@ commands when there is no
 option given on the command line\&.
 .sp
 By default, the notes shown are from the notes refs listed in the
-\fIcore\&.notesRef\fR
+\fBcore\&.notesRef\fR
 and
-\fInotes\&.displayRef\fR
+\fBnotes\&.displayRef\fR
 variables (or corresponding environment overrides)\&. See
 \fBgit-config\fR(1)
 for more details\&.
@@ -908,6 +908,15 @@ or
 .\}
 \fI%gD\fR: reflog selector, e\&.g\&.,
 \fBrefs/stash@{1}\fR
+or
+\fBrefs/stash@{2 minutes ago\fR}; the format follows the rules described for the
+\fB\-g\fR
+option\&. The portion before the
+\fB@\fR
+is the refname as given on the command line (so
+\fBgit log \-g refs/heads/master\fR
+would yield
+\fBrefs/heads/master@{0}\fR)\&.
 .RE
 .sp
 .RS 4
@@ -918,8 +927,11 @@ or
 .sp -1
 .IP \(bu 2.3
 .\}
-\fI%gd\fR: shortened reflog selector, e\&.g\&.,
-\fBstash@{1}\fR
+\fI%gd\fR: shortened reflog selector; same as
+\fB%gD\fR, but the refname portion is shortened for human readability (so
+\fBrefs/heads/master\fR
+becomes just
+\fBmaster\fR)\&.
 .RE
 .sp
 .RS 4
@@ -1691,6 +1703,10 @@ options require O(n^2) processing time where n is the number of potential rename
 Select only files that are Added (\fBA\fR), Copied (\fBC\fR), Deleted (\fBD\fR), Modified (\fBM\fR), Renamed (\fBR\fR), have their type (i\&.e\&. regular file, symlink, submodule, \&...) changed (\fBT\fR), are Unmerged (\fBU\fR), are Unknown (\fBX\fR), or have had their pairing Broken (\fBB\fR)\&. Any combination of the filter characters (including none) can be used\&. When
 \fB*\fR
 (All\-or\-none) is added to the combination, all paths are selected if there is any file that matches other criteria in the comparison; if there is no file that matches other criteria, nothing is selected\&.
+.sp
+Also, these upper\-case letters can be downcased to exclude\&. E\&.g\&.
+\fB\-\-diff\-filter=ad\fR
+excludes added and deleted paths\&.
 .RE
 .PP
 \-S<string>
@@ -1859,7 +1875,7 @@ Do not show any source or destination prefix\&.
 For more detailed explanation on these common options, see also \fBgitdiffcore\fR(7)\&.
 .SH "GENERATING PATCHES WITH -P"
 .sp
-When "git\-diff\-index", "git\-diff\-tree", or "git\-diff\-files" are run with a \fI\-p\fR option, "git diff" without the \fI\-\-raw\fR option, or "git log" with the "\-p" option, they do not produce the output described above; instead they produce a patch file\&. You can customize the creation of such patches via the GIT_EXTERNAL_DIFF and the GIT_DIFF_OPTS environment variables\&.
+When "git\-diff\-index", "git\-diff\-tree", or "git\-diff\-files" are run with a \fB\-p\fR option, "git diff" without the \fB\-\-raw\fR option, or "git log" with the "\-p" option, they do not produce the output described above; instead they produce a patch file\&. You can customize the creation of such patches via the \fBGIT_EXTERNAL_DIFF\fR and the \fBGIT_DIFF_OPTS\fR environment variables\&.
 .sp
 What the \-p option produces is slightly different from the traditional diff format:
 .sp
@@ -2045,7 +2061,7 @@ index fabadb8,cc95eb0\&.\&.4866510
 .IP "  1." 4.2
 .\}
 It is preceded with a "git diff" header, that looks like this (when
-\fI\-c\fR
+\fB\-c\fR
 option is used):
 .sp
 .if n \{\
@@ -2059,7 +2075,7 @@ diff \-\-combined file
 .\}
 .sp
 or like this (when
-\fI\-\-cc\fR
+\fB\-\-cc\fR
 option is used):
 .sp
 .if n \{\

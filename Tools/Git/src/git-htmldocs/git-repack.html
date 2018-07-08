@@ -779,7 +779,7 @@ engines, disk storage, etc.</p></div>
         pack everything referenced into a single pack.
         Especially useful when packing a repository that is used
         for private development. Use
-        with <em>-d</em>.  This will clean up the objects that <code>git prune</code>
+        with <code>-d</code>.  This will clean up the objects that <code>git prune</code>
         leaves behind, but <code>git fsck --full --dangling</code> shows as
         dangling.
 </p>
@@ -792,7 +792,7 @@ other objects in that pack they already have locally.</p></div>
 </dt>
 <dd>
 <p>
-        Same as <code>-a</code>, unless <em>-d</em> is used.  Then any unreachable
+        Same as <code>-a</code>, unless <code>-d</code> is used.  Then any unreachable
         objects in a previous pack become loose, unpacked objects,
         instead of being left in the old pack.  Unreachable objects
         are never intentionally added to a pack, even when repacking.
@@ -892,8 +892,10 @@ other objects in that pack they already have locally.</p></div>
         out of memory with a large window, but still be able to take
         advantage of the large window for the smaller objects.  The
         size can be suffixed with "k", "m", or "g".
-        <code>--window-memory=0</code> makes memory usage unlimited, which is the
-        default.
+        <code>--window-memory=0</code> makes memory usage unlimited.  The default
+        is taken from the <code>pack.windowMemory</code> configuration variable.
+        Note that the actual memory usage will be the limit multiplied
+        by the number of threads used by <a href="git-pack-objects.html">git-pack-objects(1)</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -938,6 +940,31 @@ other objects in that pack they already have locally.</p></div>
         bitmapped packfile has the necessary objects.
 </p>
 </dd>
+<dt class="hdlist1">
+--unpack-unreachable=&lt;when&gt;
+</dt>
+<dd>
+<p>
+        When loosening unreachable objects, do not bother loosening any
+        objects older than <code>&lt;when&gt;</code>. This can be used to optimize out
+        the write of any objects that would be immediately pruned by
+        a follow-up <code>git prune</code>.
+</p>
+</dd>
+<dt class="hdlist1">
+-k
+</dt>
+<dt class="hdlist1">
+--keep-unreachable
+</dt>
+<dd>
+<p>
+        When used with <code>-ad</code>, any unreachable objects from existing
+        packs will be appended to the end of the packfile instead of
+        being removed. In addition, any unreachable loose objects will
+        be packed (and their loose counterparts removed).
+</p>
+</dd>
 </dl></div>
 </div>
 </div>
@@ -972,7 +999,7 @@ as needed in that case.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2016-05-10 14:23:36 PDT
+Last updated 2016-08-12 12:42:02 PDT
 </div>
 </div>
 </body>

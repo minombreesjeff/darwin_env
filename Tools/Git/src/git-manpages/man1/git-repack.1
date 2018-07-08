@@ -2,12 +2,12 @@
 .\"     Title: git-repack
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 06/13/2016
+.\"      Date: 09/02/2016
 .\"    Manual: Git Manual
-.\"    Source: Git 2.9.0
+.\"    Source: Git 2.10.0
 .\"  Language: English
 .\"
-.TH "GIT\-REPACK" "1" "06/13/2016" "Git 2\&.9\&.0" "Git Manual"
+.TH "GIT\-REPACK" "1" "09/02/2016" "Git 2\&.10\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -47,7 +47,7 @@ Packs are used to reduce the load on mirror systems, backup engines, disk storag
 \-a
 .RS 4
 Instead of incrementally packing the unpacked objects, pack everything referenced into a single pack\&. Especially useful when packing a repository that is used for private development\&. Use with
-\fI\-d\fR\&. This will clean up the objects that
+\fB\-d\fR\&. This will clean up the objects that
 \fBgit prune\fR
 leaves behind, but
 \fBgit fsck \-\-full \-\-dangling\fR
@@ -60,7 +60,7 @@ Note that users fetching over dumb protocols will have to fetch the whole new pa
 .RS 4
 Same as
 \fB\-a\fR, unless
-\fI\-d\fR
+\fB\-d\fR
 is used\&. Then any unreachable objects in a previous pack become loose, unpacked objects, instead of being left in the old pack\&. Unreachable objects are never intentionally added to a pack, even when repacking\&. This option prevents unreachable objects from being immediately deleted by way of being left in the old pack and then removed\&. Instead, the loose unreachable objects will be pruned according to normal expiry rules with the next
 \fIgit gc\fR
 invocation\&. See
@@ -133,7 +133,10 @@ This option provides an additional limit on top of
 \fI<n>\fR
 bytes in memory\&. This is useful in repositories with a mix of large and small objects to not run out of memory with a large window, but still be able to take advantage of the large window for the smaller objects\&. The size can be suffixed with "k", "m", or "g"\&.
 \fB\-\-window\-memory=0\fR
-makes memory usage unlimited, which is the default\&.
+makes memory usage unlimited\&. The default is taken from the
+\fBpack\&.windowMemory\fR
+configuration variable\&. Note that the actual memory usage will be the limit multiplied by the number of threads used by
+\fBgit-pack-objects\fR(1)\&.
 .RE
 .PP
 \-\-max\-pack\-size=<n>
@@ -164,6 +167,19 @@ finishes\&. This means that we may duplicate objects, but this makes the option 
 \fB\-b\fR
 or
 \fBrepack\&.writeBitmaps\fR, as it ensures that the bitmapped packfile has the necessary objects\&.
+.RE
+.PP
+\-\-unpack\-unreachable=<when>
+.RS 4
+When loosening unreachable objects, do not bother loosening any objects older than
+\fB<when>\fR\&. This can be used to optimize out the write of any objects that would be immediately pruned by a follow\-up
+\fBgit prune\fR\&.
+.RE
+.PP
+\-k, \-\-keep\-unreachable
+.RS 4
+When used with
+\fB\-ad\fR, any unreachable objects from existing packs will be appended to the end of the packfile instead of being removed\&. In addition, any unreachable loose objects will be packed (and their loose counterparts removed)\&.
 .RE
 .SH "CONFIGURATION"
 .sp

@@ -1576,6 +1576,15 @@ int commit_tree_extended(const char *msg, size_t msg_len,
 	return result;
 }
 
+void set_merge_remote_desc(struct commit *commit,
+			   const char *name, struct object *obj)
+{
+	struct merge_remote_desc *desc;
+	FLEX_ALLOC_STR(desc, name, name);
+	desc->obj = obj;
+	commit->util = desc;
+}
+
 struct commit *get_merge_parent(const char *name)
 {
 	struct object *obj;
@@ -1585,13 +1594,8 @@ struct commit *get_merge_parent(const char *name)
 		return NULL;
 	obj = parse_object(oid.hash);
 	commit = (struct commit *)peel_to_type(name, 0, obj, OBJ_COMMIT);
-	if (commit && !commit->util) {
-		struct merge_remote_desc *desc;
-		desc = xmalloc(sizeof(*desc));
-		desc->obj = obj;
-		desc->name = strdup(name);
-		commit->util = desc;
-	}
+	if (commit && !commit->util)
+		set_merge_remote_desc(commit, name, obj);
 	return commit;
 }
 
@@ -1620,16 +1624,6 @@ struct commit_list **commit_list_append(struct commit *commit,
 	*next = new;
 	new->next = NULL;
 	return &new->next;
-}
-
-void print_commit_list(struct commit_list *list,
-		       const char *format_cur,
-		       const char *format_last)
-{
-	for ( ; list; list = list->next) {
-		const char *format = list->next ? format_cur : format_last;
-		printf(format, oid_to_hex(&list->item->object.oid));
-	}
 }
 
 const char *find_commit_header(const char *msg, const char *key, size_t *out_len)

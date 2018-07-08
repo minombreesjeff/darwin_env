@@ -92,6 +92,7 @@ static void setup_commit_formats(void)
 		{ "medium",	CMIT_FMT_MEDIUM,	0,	8 },
 		{ "short",	CMIT_FMT_SHORT,		0,	0 },
 		{ "email",	CMIT_FMT_EMAIL,		0,	0 },
+		{ "mboxrd",	CMIT_FMT_MBOXRD,	0,	0 },
 		{ "fuller",	CMIT_FMT_FULLER,	0,	8 },
 		{ "full",	CMIT_FMT_FULL,		0,	8 },
 		{ "oneline",	CMIT_FMT_ONELINE,	1,	0 }
@@ -444,7 +445,7 @@ void pp_user_info(struct pretty_print_context *pp,
 	if (pp->mailmap)
 		map_user(pp->mailmap, &mailbuf, &maillen, &namebuf, &namelen);
 
-	if (pp->fmt == CMIT_FMT_EMAIL) {
+	if (cmit_fmt_is_mail(pp->fmt)) {
 		if (pp->from_ident && ident_cmp(pp->from_ident, &ident)) {
 			struct strbuf buf = STRBUF_INIT;
 
@@ -494,6 +495,7 @@ void pp_user_info(struct pretty_print_context *pp,
 			    show_ident_date(&ident, &pp->date_mode));
 		break;
 	case CMIT_FMT_EMAIL:
+	case CMIT_FMT_MBOXRD:
 		strbuf_addf(sb, "Date: %s\n",
 			    show_ident_date(&ident, DATE_MODE(RFC2822)));
 		break;
@@ -535,7 +537,7 @@ static void add_merge_info(const struct pretty_print_context *pp,
 {
 	struct commit_list *parent = commit->parents;
 
-	if ((pp->fmt == CMIT_FMT_ONELINE) || (pp->fmt == CMIT_FMT_EMAIL) ||
+	if ((pp->fmt == CMIT_FMT_ONELINE) || (cmit_fmt_is_mail(pp->fmt)) ||
 	    !parent || !parent->next)
 		return;
 
@@ -1063,7 +1065,7 @@ static size_t format_commit_one(struct strbuf *sb, /* in UTF-8 */
 	const struct commit *commit = c->commit;
 	const char *msg = c->message;
 	struct commit_list *p;
-	int h1, h2;
+	int ch;
 
 	/* these are independent of the commit */
 	switch (placeholder[0]) {
@@ -1087,14 +1089,11 @@ static size_t format_commit_one(struct strbuf *sb, /* in UTF-8 */
 		return 1;
 	case 'x':
 		/* %x00 == NUL, %x0a == LF, etc. */
-		if (0 <= (h1 = hexval_table[0xff & placeholder[1]]) &&
-		    h1 <= 16 &&
-		    0 <= (h2 = hexval_table[0xff & placeholder[2]]) &&
-		    h2 <= 16) {
-			strbuf_addch(sb, (h1<<4)|h2);
-			return 3;
-		} else
+		ch = hex2chr(placeholder + 1);
+		if (ch < 0)
 			return 0;
+		strbuf_addch(sb, ch);
+		return 3;
 	case 'w':
 		if (placeholder[1] == '(') {
 			unsigned long width = 0, indent1 = 0, indent2 = 0;
@@ -1141,8 +1140,8 @@ static size_t format_commit_one(struct strbuf *sb, /* in UTF-8 */
 			strbuf_addstr(sb, diff_get_color(c->auto_color, DIFF_RESET));
 			return 1;
 		}
-		strbuf_addstr(sb, find_unique_abbrev(commit->object.oid.hash,
-						     c->pretty_ctx->abbrev));
+		strbuf_add_unique_abbrev(sb, commit->object.oid.hash,
+					 c->pretty_ctx->abbrev);
 		strbuf_addstr(sb, diff_get_color(c->auto_color, DIFF_RESET));
 		c->abbrev_commit_hash.len = sb->len - c->abbrev_commit_hash.off;
 		return 1;
@@ -1152,8 +1151,8 @@ static size_t format_commit_one(struct strbuf *sb, /* in UTF-8 */
 	case 't':		/* abbreviated tree hash */
 		if (add_again(sb, &c->abbrev_tree_hash))
 			return 1;
-		strbuf_addstr(sb, find_unique_abbrev(commit->tree->object.oid.hash,
-						     c->pretty_ctx->abbrev));
+		strbuf_add_unique_abbrev(sb, commit->tree->object.oid.hash,
+					 c->pretty_ctx->abbrev);
 		c->abbrev_tree_hash.len = sb->len - c->abbrev_tree_hash.off;
 		return 1;
 	case 'P':		/* parent hashes */
@@ -1169,9 +1168,8 @@ static size_t format_commit_one(struct strbuf *sb, /* in UTF-8 */
 		for (p = commit->parents; p; p = p->next) {
 			if (p != commit->parents)
 				strbuf_addch(sb, ' ');
-			strbuf_addstr(sb, find_unique_abbrev(
-					p->item->object.oid.hash,
-					c->pretty_ctx->abbrev));
+			strbuf_add_unique_abbrev(sb, p->item->object.oid.hash,
+						 c->pretty_ctx->abbrev);
 		}
 		c->abbrev_parent_hashes.len = sb->len -
 		                              c->abbrev_parent_hashes.off;
@@ -1621,7 +1619,7 @@ void pp_title_line(struct pretty_print_context *pp,
 	if (pp->after_subject) {
 		strbuf_addstr(sb, pp->after_subject);
 	}
-	if (pp->fmt == CMIT_FMT_EMAIL) {
+	if (cmit_fmt_is_mail(pp->fmt)) {
 		strbuf_addch(sb, '\n');
 	}
 
@@ -1704,6 +1702,16 @@ static void pp_handle_indent(struct pretty_print_context *pp,
 		strbuf_add(sb, line, linelen);
 }
 
+static int is_mboxrd_from(const char *line, int len)
+{
+	/*
+	 * a line matching /^From $/ here would only have len == 4
+	 * at this point because is_empty_line would've trimmed all
+	 * trailing space
+	 */
+	return len > 4 && starts_with(line + strspn(line, ">"), "From ");
+}
+
 void pp_remainder(struct pretty_print_context *pp,
 		  const char **msg_p,
 		  struct strbuf *sb,
@@ -1732,8 +1740,13 @@ void pp_remainder(struct pretty_print_context *pp,
 		else if (pp->expand_tabs_in_log)
 			strbuf_add_tabexpand(sb, pp->expand_tabs_in_log,
 					     line, linelen);
-		else
+		else {
+			if (pp->fmt == CMIT_FMT_MBOXRD &&
+					is_mboxrd_from(line, linelen))
+				strbuf_addch(sb, '>');
+
 			strbuf_add(sb, line, linelen);
+		}
 		strbuf_addch(sb, '\n');
 	}
 }
@@ -1757,14 +1770,14 @@ void pretty_print_commit(struct pretty_print_context *pp,
 	encoding = get_log_output_encoding();
 	msg = reencoded = logmsg_reencode(commit, NULL, encoding);
 
-	if (pp->fmt == CMIT_FMT_ONELINE || pp->fmt == CMIT_FMT_EMAIL)
+	if (pp->fmt == CMIT_FMT_ONELINE || cmit_fmt_is_mail(pp->fmt))
 		indent = 0;
 
 	/*
 	 * We need to check and emit Content-type: to mark it
 	 * as 8-bit if we haven't done so.
 	 */
-	if (pp->fmt == CMIT_FMT_EMAIL && need_8bit_cte == 0) {
+	if (cmit_fmt_is_mail(pp->fmt) && need_8bit_cte == 0) {
 		int i, ch, in_body;
 
 		for (in_body = i = 0; (ch = msg[i]); i++) {
@@ -1792,7 +1805,7 @@ void pretty_print_commit(struct pretty_print_context *pp,
 	msg = skip_blank_lines(msg);
 
 	/* These formats treat the title line specially. */
-	if (pp->fmt == CMIT_FMT_ONELINE || pp->fmt == CMIT_FMT_EMAIL)
+	if (pp->fmt == CMIT_FMT_ONELINE || cmit_fmt_is_mail(pp->fmt))
 		pp_title_line(pp, &msg, sb, encoding, need_8bit_cte);
 
 	beginning_of_body = sb->len;
@@ -1809,7 +1822,7 @@ void pretty_print_commit(struct pretty_print_context *pp,
 	 * format.  Make sure we did not strip the blank line
 	 * between the header and the body.
 	 */
-	if (pp->fmt == CMIT_FMT_EMAIL && sb->len <= beginning_of_body)
+	if (cmit_fmt_is_mail(pp->fmt) && sb->len <= beginning_of_body)
 		strbuf_addch(sb, '\n');
 
 	unuse_commit_buffer(commit, reencoded);

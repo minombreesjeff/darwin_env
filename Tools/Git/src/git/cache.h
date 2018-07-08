@@ -367,8 +367,9 @@ extern void free_name_hash(struct index_state *istate);
 #define rename_cache_entry_at(pos, new_name) rename_index_entry_at(&the_index, (pos), (new_name))
 #define remove_cache_entry_at(pos) remove_index_entry_at(&the_index, (pos))
 #define remove_file_from_cache(path) remove_file_from_index(&the_index, (path))
-#define add_to_cache(path, st, flags) add_to_index(&the_index, (path), (st), (flags), 0)
-#define add_file_to_cache(path, flags) add_file_to_index(&the_index, (path), (flags), 0)
+#define add_to_cache(path, st, flags) add_to_index(&the_index, (path), (st), (flags))
+#define add_file_to_cache(path, flags) add_file_to_index(&the_index, (path), (flags))
+#define chmod_cache_entry(ce, flip) chmod_index_entry(&the_index, (ce), (flip))
 #define refresh_cache(flags) refresh_index(&the_index, (flags), NULL, NULL, NULL)
 #define ce_match_stat(ce, st, options) ie_match_stat(&the_index, (ce), (st), (options))
 #define ce_modified(ce, st, options) ie_modified(&the_index, (ce), (st), (options))
@@ -581,9 +582,10 @@ extern int remove_file_from_index(struct index_state *, const char *path);
 #define ADD_CACHE_IGNORE_ERRORS	4
 #define ADD_CACHE_IGNORE_REMOVAL 8
 #define ADD_CACHE_INTENT 16
-extern int add_to_index(struct index_state *, const char *path, struct stat *, int flags, int force_mode);
-extern int add_file_to_index(struct index_state *, const char *path, int flags, int force_mode);
+extern int add_to_index(struct index_state *, const char *path, struct stat *, int flags);
+extern int add_file_to_index(struct index_state *, const char *path, int flags);
 extern struct cache_entry *make_cache_entry(unsigned int mode, const unsigned char *sha1, const char *path, int stage, unsigned int refresh_options);
+extern int chmod_index_entry(struct index_state *, struct cache_entry *ce, char flip);
 extern int ce_same_name(const struct cache_entry *a, const struct cache_entry *b);
 extern void set_object_name_for_intent_to_add_entry(struct cache_entry *ce);
 extern int index_name_is_other(const struct index_state *, const char *, int);
@@ -632,6 +634,7 @@ extern void fill_stat_cache_info(struct cache_entry *ce, struct stat *st);
 #define REFRESH_IGNORE_SUBMODULES	0x0010	/* ignore submodules */
 #define REFRESH_IN_PORCELAIN	0x0020	/* user friendly output, not "needs update" */
 extern int refresh_index(struct index_state *, unsigned int flags, const struct pathspec *pathspec, char *seen, const char *header_msg);
+extern struct cache_entry *refresh_cache_entry(struct cache_entry *, unsigned int);
 
 extern void update_index_if_able(struct index_state *, struct lock_file *);
 
@@ -1003,6 +1006,11 @@ int adjust_shared_perm(const char *path);
  * directory while we were working.  To be robust against this kind of
  * race, callers might want to try invoking the function again when it
  * returns SCLD_VANISHED.
+ *
+ * safe_create_leading_directories() temporarily changes path while it
+ * is working but restores it before returning.
+ * safe_create_leading_directories_const() doesn't modify path, even
+ * temporarily.
  */
 enum scld_error {
 	SCLD_OK = 0,
@@ -1133,6 +1141,16 @@ static inline unsigned int hexval(unsigned char c)
 	return hexval_table[c];
 }
 
+/*
+ * Convert two consecutive hexadecimal digits into a char.  Return a
+ * negative value on error.  Don't run over the end of short strings.
+ */
+static inline int hex2chr(const char *s)
+{
+	int val = hexval(s[0]);
+	return (val < 0) ? val : (val << 4) | hexval(s[1]);
+}
+
 /* Convert to/from hex/sha1 representation */
 #define MINIMUM_ABBREV minimum_abbrev
 #define DEFAULT_ABBREV default_abbrev
@@ -1193,6 +1211,7 @@ extern int get_oid_hex(const char *hex, struct object_id *sha1);
  *   printf("%s -> %s", sha1_to_hex(one), sha1_to_hex(two));
  */
 extern char *sha1_to_hex_r(char *out, const unsigned char *sha1);
+extern char *oid_to_hex_r(char *out, const struct object_id *oid);
 extern char *sha1_to_hex(const unsigned char *sha1);	/* static buffer result! */
 extern char *oid_to_hex(const struct object_id *oid);	/* same static buffer as sha1_to_hex */
 
@@ -1223,7 +1242,8 @@ struct date_mode {
 		DATE_ISO8601_STRICT,
 		DATE_RFC2822,
 		DATE_STRFTIME,
-		DATE_RAW
+		DATE_RAW,
+		DATE_UNIX
 	} type;
 	const char *strftime_fmt;
 	int local;
@@ -1371,6 +1391,13 @@ extern struct packed_git {
 	char pack_name[FLEX_ARRAY]; /* more */
 } *packed_git;
 
+/*
+ * A most-recently-used ordered version of the packed_git list, which can
+ * be iterated instead of packed_git (and marked via mru_mark).
+ */
+struct mru;
+extern struct mru *packed_git_mru;
+
 struct pack_entry {
 	off_t offset;
 	unsigned char sha1[20];
@@ -1410,7 +1437,6 @@ extern unsigned char *use_pack(struct packed_git *, struct pack_window **, off_t
 extern void close_pack_windows(struct packed_git *);
 extern void close_all_packs(void);
 extern void unuse_pack(struct pack_window **);
-extern void free_pack_by_name(const char *);
 extern void clear_delta_base_cache(void);
 extern struct packed_git *add_packed_git(const char *path, size_t path_len, int local);
 
@@ -1560,10 +1586,18 @@ struct git_config_source {
 	const char *blob;
 };
 
+enum config_origin_type {
+	CONFIG_ORIGIN_BLOB,
+	CONFIG_ORIGIN_FILE,
+	CONFIG_ORIGIN_STDIN,
+	CONFIG_ORIGIN_SUBMODULE_BLOB,
+	CONFIG_ORIGIN_CMDLINE
+};
+
 typedef int (*config_fn_t)(const char *, const char *, void *);
 extern int git_default_config(const char *, const char *, void *);
 extern int git_config_from_file(config_fn_t fn, const char *, void *);
-extern int git_config_from_mem(config_fn_t fn, const char *origin_type,
+extern int git_config_from_mem(config_fn_t fn, const enum config_origin_type,
 					const char *name, const char *buf, size_t len, void *data);
 extern void git_config_push_parameter(const char *text);
 extern int git_config_from_parameters(config_fn_t fn, void *data);
@@ -1606,6 +1640,17 @@ extern const char *get_log_output_encoding(void);
 extern const char *get_commit_output_encoding(void);
 
 extern int git_config_parse_parameter(const char *, config_fn_t fn, void *data);
+
+enum config_scope {
+	CONFIG_SCOPE_UNKNOWN = 0,
+	CONFIG_SCOPE_SYSTEM,
+	CONFIG_SCOPE_GLOBAL,
+	CONFIG_SCOPE_REPO,
+	CONFIG_SCOPE_CMDLINE,
+	CONFIG_SCOPE_XCODE,
+};
+
+extern enum config_scope current_config_scope(void);
 extern const char *current_config_origin_type(void);
 extern const char *current_config_name(void);
 
@@ -1698,6 +1743,8 @@ extern int ignore_untracked_cache_config;
 struct key_value_info {
 	const char *filename;
 	int linenr;
+	enum config_origin_type origin_type;
+	enum config_scope scope;
 };
 
 extern NORETURN void git_die_config(const char *key, const char *err, ...) __attribute__((format(printf, 2, 3)));
@@ -1723,7 +1770,6 @@ extern int copy_file(const char *dst, const char *src, int mode);
 extern int copy_file_with_time(const char *dst, const char *src, int mode);
 
 extern void write_or_die(int fd, const void *buf, size_t count);
-extern int write_or_whine_pipe(int fd, const void *buf, size_t count, const char *msg);
 extern void fsync_or_die(int fd, const char *);
 
 extern ssize_t read_in_full(int fd, void *buf, size_t count);
@@ -1735,8 +1781,21 @@ static inline ssize_t write_str_in_full(int fd, const char *str)
 	return write_in_full(fd, str, strlen(str));
 }
 
-extern int write_file(const char *path, const char *fmt, ...);
-extern int write_file_gently(const char *path, const char *fmt, ...);
+/**
+ * Open (and truncate) the file at path, write the contents of buf to it,
+ * and close it. Dies if any errors are encountered.
+ */
+extern void write_file_buf(const char *path, const char *buf, size_t len);
+
+/**
+ * Like write_file_buf(), but format the contents into a buffer first.
+ * Additionally, write_file() will append a newline if one is not already
+ * present, making it convenient to write text files:
+ *
+ *   write_file(path, "counter: %d", ctr);
+ */
+__attribute__((format (printf, 2, 3)))
+extern void write_file(const char *path, const char *fmt, ...);
 
 /* pager.c */
 extern void setup_pager(void);
@@ -1773,7 +1832,7 @@ void packet_trace_identity(const char *prog);
  * return 0 if success, 1 - if addition of a file failed and
  * ADD_FILES_IGNORE_ERRORS was specified in flags
  */
-int add_files_to_cache(const char *prefix, const struct pathspec *pathspec, int flags, int force_mode);
+int add_files_to_cache(const char *prefix, const struct pathspec *pathspec, int flags);
 
 /* diff.c */
 extern int diff_auto_refresh_index;

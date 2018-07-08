@@ -511,7 +511,7 @@ static int nfsnprintf(char *buf, int blen, const char *fmt, ...)
 
 	va_start(va, fmt);
 	if (blen <= 0 || (unsigned)(ret = vsnprintf(buf, blen, fmt, va)) >= (unsigned)blen)
-		die("Fatal: buffer too small. Please report a bug.");
+		die("BUG: buffer too small. Please report a bug.");
 	va_end(va);
 	return ret;
 }
@@ -1443,6 +1443,7 @@ static CURL *setup_curl(struct imap_server_conf *srvc)
 
 	if (0 < verbosity || getenv("GIT_CURL_VERBOSE"))
 		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+	setup_curl_trace(curl);
 
 	return curl;
 }
@@ -1494,15 +1495,11 @@ static int curl_append_msgs_to_imap(struct imap_server_conf *server,
 }
 #endif
 
-int main(int argc, char **argv)
+int cmd_main(int argc, const char **argv)
 {
 	struct strbuf all_msgs = STRBUF_INIT;
 	int total;
 	int nongit_ok;
-
-	git_extract_argv0_path(argv[0]);
-
-	git_setup_gettext();
 
 	setup_git_directory_gently(&nongit_ok);
 	git_imap_config();

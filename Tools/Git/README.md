@@ -35,8 +35,8 @@ Unfortunately, the generated man pages and html documentation are not tagged.
 Check `git log upstream-manpages/master` and `git log upstream-htmldocs/master`
 for relevant commit hashes and merge them into the tree:
 
-    git merge -X subtree=src/git-manpages <man pages hash>
     git merge -X subtree=src/git-htmldocs <htmldocs hash>
+    git merge -X subtree=src/git-manpages <man pages hash>
 
 ## Testing
 
