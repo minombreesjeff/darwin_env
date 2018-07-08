@@ -2,6 +2,7 @@
 
 test_description='git filter-branch'
 . ./test-lib.sh
+. "$TEST_DIRECTORY/lib-gpg.sh"
 
 test_expect_success 'setup' '
 	test_commit A &&
@@ -292,6 +293,19 @@ test_expect_success 'Tag name filtering strips gpg signature' '
 	test_cmp expect actual
 '
 
+test_expect_success GPG 'Filtering retains message of gpg signed commit' '
+	mkdir gpg &&
+	touch gpg/foo &&
+	git add gpg &&
+	test_tick &&
+	git commit -S -m "Adding gpg" &&
+
+	git log -1 --format="%s" > expect &&
+	git filter-branch -f --msg-filter "cat" &&
+	git log -1 --format="%s" > actual &&
+	test_cmp expect actual
+'
+
 test_expect_success 'Tag name filtering allows slashes in tag names' '
 	git tag -m tag-with-slash X/1 &&
 	git cat-file tag X/1 | sed -e s,X/1,X/2, > expect &&
@@ -402,6 +416,13 @@ test_expect_success 'filter commit message without trailing newline' '
 	echo $commit >expect &&
 	git rev-parse refs/heads/no-newline >actual &&
 	test_cmp expect actual
+'
+
+test_expect_success 'tree-filter deals with object name vs pathname ambiguity' '
+	test_when_finished "git reset --hard original" &&
+	ambiguous=$(git rev-list -1 HEAD) &&
+	git filter-branch --tree-filter "mv file.t $ambiguous" HEAD^.. &&
+	git show HEAD:$ambiguous
 '
 
 test_done

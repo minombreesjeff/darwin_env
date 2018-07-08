@@ -98,7 +98,7 @@ static const char *common_list[] = {
 	NULL
 };
 
-static void update_common_dir(struct strbuf *buf, int git_dir_len)
+static void update_common_dir(struct strbuf *buf, int git_dir_len, const char *common_dir)
 {
 	char *base = buf->buf + git_dir_len;
 	const char **p;
@@ -115,12 +115,16 @@ static void update_common_dir(struct strbuf *buf, int git_dir_len)
 			path++;
 			is_dir = 1;
 		}
+
+		if (!common_dir)
+			common_dir = get_git_common_dir();
+
 		if (is_dir && dir_prefix(base, path)) {
-			replace_dir(buf, git_dir_len, get_git_common_dir());
+			replace_dir(buf, git_dir_len, common_dir);
 			return;
 		}
 		if (!is_dir && !strcmp(base, path)) {
-			replace_dir(buf, git_dir_len, get_git_common_dir());
+			replace_dir(buf, git_dir_len, common_dir);
 			return;
 		}
 	}
@@ -143,7 +147,7 @@ void report_linked_checkout_garbage(void)
 		strbuf_setlen(&sb, len);
 		strbuf_addstr(&sb, path);
 		if (file_exists(sb.buf))
-			report_garbage("unused in linked checkout", sb.buf);
+			report_garbage(PACKDIR_FILE_GARBAGE, sb.buf);
 	}
 	strbuf_release(&sb);
 }
@@ -160,7 +164,7 @@ static void adjust_git_path(struct strbuf *buf, int git_dir_len)
 	else if (git_db_env && dir_prefix(base, "objects"))
 		replace_dir(buf, git_dir_len + 7, get_object_directory());
 	else if (git_common_dir_env)
-		update_common_dir(buf, git_dir_len);
+		update_common_dir(buf, git_dir_len, NULL);
 }
 
 static void do_git_path(struct strbuf *buf, const char *fmt, va_list args)
@@ -224,11 +228,12 @@ const char *mkpath(const char *fmt, ...)
 	return cleanup_path(pathname->buf);
 }
 
-const char *git_path_submodule(const char *path, const char *fmt, ...)
+static void do_submodule_path(struct strbuf *buf, const char *path,
+			      const char *fmt, va_list args)
 {
-	struct strbuf *buf = get_pathname();
 	const char *git_dir;
-	va_list args;
+	struct strbuf git_submodule_common_dir = STRBUF_INIT;
+	struct strbuf git_submodule_dir = STRBUF_INIT;
 
 	strbuf_addstr(buf, path);
 	if (buf->len && buf->buf[buf->len - 1] != '/')
@@ -241,12 +246,36 @@ const char *git_path_submodule(const char *path, const char *fmt, ...)
 		strbuf_addstr(buf, git_dir);
 	}
 	strbuf_addch(buf, '/');
+	strbuf_addstr(&git_submodule_dir, buf->buf);
 
-	va_start(args, fmt);
 	strbuf_vaddf(buf, fmt, args);
-	va_end(args);
+
+	if (get_common_dir_noenv(&git_submodule_common_dir, git_submodule_dir.buf))
+		update_common_dir(buf, git_submodule_dir.len, git_submodule_common_dir.buf);
+
 	strbuf_cleanup_path(buf);
-	return buf->buf;
+
+	strbuf_release(&git_submodule_dir);
+	strbuf_release(&git_submodule_common_dir);
+}
+
+char *git_pathdup_submodule(const char *path, const char *fmt, ...)
+{
+	va_list args;
+	struct strbuf buf = STRBUF_INIT;
+	va_start(args, fmt);
+	do_submodule_path(&buf, path, fmt, args);
+	va_end(args);
+	return strbuf_detach(&buf, NULL);
+}
+
+void strbuf_git_path_submodule(struct strbuf *buf, const char *path,
+			       const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	do_submodule_path(buf, path, fmt, args);
+	va_end(args);
 }
 
 int validate_headref(const char *path)
@@ -416,18 +445,22 @@ const char *enter_repo(const char *path, int strict)
 		}
 		if (!suffix[i])
 			return NULL;
-		gitfile = read_gitfile(used_path) ;
+		gitfile = read_gitfile(used_path);
 		if (gitfile)
 			strcpy(used_path, gitfile);
 		if (chdir(used_path))
 			return NULL;
 		path = validated_path;
 	}
-	else if (chdir(path))
-		return NULL;
+	else {
+		const char *gitfile = read_gitfile(path);
+		if (gitfile)
+			path = gitfile;
+		if (chdir(path))
+			return NULL;
+	}
 
-	if (access("objects", X_OK) == 0 && access("refs", X_OK) == 0 &&
-	    validate_headref("HEAD") == 0) {
+	if (is_git_directory(".")) {
 		set_git_dir(".");
 		check_repository_format();
 		return path;
@@ -661,6 +694,11 @@ const char *remove_leading_path(const char *in, const char *prefix)
  * normalized, any time "../" eats up to the prefix_len part,
  * prefix_len is reduced. In the end prefix_len is the remaining
  * prefix that has not been overridden by user pathspec.
+ *
+ * NEEDSWORK: This function doesn't perform normalization w.r.t. trailing '/'.
+ * For everything but the root folder itself, the normalized path should not
+ * end with a '/', then the callers need to be fixed up accordingly.
+ *
  */
 int normalize_path_copy_len(char *dst, const char *src, int *prefix_len)
 {
@@ -918,3 +956,13 @@ char *xdg_config_home(const char *filename)
 		return mkpathdup("%s/.config/git/%s", home, filename);
 	return NULL;
 }
+
+GIT_PATH_FUNC(git_path_cherry_pick_head, "CHERRY_PICK_HEAD")
+GIT_PATH_FUNC(git_path_revert_head, "REVERT_HEAD")
+GIT_PATH_FUNC(git_path_squash_msg, "SQUASH_MSG")
+GIT_PATH_FUNC(git_path_merge_msg, "MERGE_MSG")
+GIT_PATH_FUNC(git_path_merge_rr, "MERGE_RR")
+GIT_PATH_FUNC(git_path_merge_mode, "MERGE_MODE")
+GIT_PATH_FUNC(git_path_merge_head, "MERGE_HEAD")
+GIT_PATH_FUNC(git_path_fetch_head, "FETCH_HEAD")
+GIT_PATH_FUNC(git_path_shallow, "shallow")

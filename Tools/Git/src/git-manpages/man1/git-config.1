@@ -2,12 +2,12 @@
 .\"     Title: git-config
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 07/27/2015
+.\"      Date: 09/28/2015
 .\"    Manual: Git Manual
-.\"    Source: Git 2.5.0
+.\"    Source: Git 2.6.0
 .\"  Language: English
 .\"
-.TH "GIT\-CONFIG" "1" "07/27/2015" "Git 2\&.5\&.0" "Git Manual"
+.TH "GIT\-CONFIG" "1" "09/28/2015" "Git 2\&.6\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -37,13 +37,13 @@ git-config \- Get and set repository or global options
 \fIgit config\fR [<file\-option>] [type] \-\-replace\-all name value [value_regex]
 \fIgit config\fR [<file\-option>] [type] [\-z|\-\-null] \-\-get name [value_regex]
 \fIgit config\fR [<file\-option>] [type] [\-z|\-\-null] \-\-get\-all name [value_regex]
-\fIgit config\fR [<file\-option>] [type] [\-z|\-\-null] \-\-get\-regexp name_regex [value_regex]
+\fIgit config\fR [<file\-option>] [type] [\-z|\-\-null] [\-\-name\-only] \-\-get\-regexp name_regex [value_regex]
 \fIgit config\fR [<file\-option>] [type] [\-z|\-\-null] \-\-get\-urlmatch name URL
 \fIgit config\fR [<file\-option>] \-\-unset name [value_regex]
 \fIgit config\fR [<file\-option>] \-\-unset\-all name [value_regex]
 \fIgit config\fR [<file\-option>] \-\-rename\-section old_name new_name
 \fIgit config\fR [<file\-option>] \-\-remove\-section name
-\fIgit config\fR [<file\-option>] [\-z|\-\-null] \-l | \-\-list
+\fIgit config\fR [<file\-option>] [\-z|\-\-null] [\-\-name\-only] \-l | \-\-list
 \fIgit config\fR [<file\-option>] \-\-get\-color name [default]
 \fIgit config\fR [<file\-option>] \-\-get\-colorbool name [stdout\-is\-tty]
 \fIgit config\fR [<file\-option>] \-e | \-\-edit
@@ -266,7 +266,7 @@ Remove all lines matching the key from config file\&.
 .PP
 \-l, \-\-list
 .RS 4
-List all variables set in config file\&.
+List all variables set in config file, along with their values\&.
 .RE
 .PP
 \-\-bool
@@ -307,6 +307,14 @@ from the command line to let your shell do the expansion)\&.
 \-z, \-\-null
 .RS 4
 For all options that output values and/or keys, always end values with the null character (instead of a newline)\&. Use newline instead as a delimiter between key and value\&. This allows for secure parsing of the output without getting confused e\&.g\&. by values that contain line breaks\&.
+.RE
+.PP
+\-\-name\-only
+.RS 4
+Output only the names of config variables for
+\-\-list
+or
+\-\-get\-regexp\&.
 .RE
 .PP
 \-\-get\-colorbool name [stdout\-is\-tty]
@@ -1612,6 +1620,19 @@ from the command line\&. See
 \fBgit-mailsplit\fR(1)\&.
 .RE
 .PP
+am\&.threeWay
+.RS 4
+By default,
+git am
+will fail if the patch does not apply cleanly\&. When set to true, this setting tells
+git am
+to fall back on 3\-way merge if the patch records the identity of blobs it is supposed to apply to and we have those blobs available locally (equivalent to giving the
+\-\-3way
+option from the command line)\&. Defaults to
+false\&. See
+\fBgit-am\fR(1)\&.
+.RE
+.PP
 apply\&.ignoreWhitespace
 .RS 4
 When set to
@@ -1726,17 +1747,12 @@ branch\&.<name>\&.rebase
 .RS 4
 When true, rebase the branch <name> on top of the fetched branch, instead of merging the default branch from the default remote when "git pull" is run\&. See "pull\&.rebase" for doing this in a non branch\-specific manner\&.
 .sp
-.if n \{\
-.RS 4
-.\}
-.nf
-When preserve, also pass `\-\-preserve\-merges` along to \(aqgit rebase\(aq
-so that locally committed merge commits will not be flattened
-by running \(aqgit pull\(aq\&.
-.fi
-.if n \{\
-.RE
-.\}
+When preserve, also pass
+\-\-preserve\-merges
+along to
+\fIgit rebase\fR
+so that locally committed merge commits will not be flattened by running
+\fIgit pull\fR\&.
 .sp
 \fBNOTE\fR: this is a possibly dangerous operation; do
 \fBnot\fR
@@ -2861,6 +2877,23 @@ The command which is used to convert the content of a blob object to a worktree 
 for details\&.
 .RE
 .PP
+fsck\&.<msg\-id>
+.RS 4
+Allows overriding the message type (error, warn or ignore) of a specific message ID such as
+missingEmail\&.
+.sp
+For convenience, fsck prefixes the error/warning with the message ID, e\&.g\&. "missingEmail: invalid author/committer line \- missing email" means that setting
+fsck\&.missingEmail = ignore
+will hide that issue\&.
+.sp
+This feature is intended to support working with legacy repositories which cannot be repaired without disruptive changes\&.
+.RE
+.PP
+fsck\&.skipList
+.RS 4
+The path to a sorted list of object names (i\&.e\&. one SHA\-1 per line) that are known to be broken in a non\-fatal way and should be ignored\&. This feature is useful when an established project should be accepted despite early commits containing errors that can be safely ignored such as invalid committer email addresses\&. Note: corrupt objects cannot be skipped with this setting\&.
+.RE
+.PP
 gc\&.aggressiveDepth
 .RS 4
 The depth parameter used in the delta compression algorithm used by
@@ -2914,27 +2947,27 @@ gc\&.pruneExpire
 When
 \fIgit gc\fR
 is run, it will call
-\fIprune \-\-expire 2\&.weeks\&.ago\fR\&. Override the grace period with this config variable\&. The value "now" may be used to disable this grace period and always prune unreachable objects immediately\&.
+\fIprune \-\-expire 2\&.weeks\&.ago\fR\&. Override the grace period with this config variable\&. The value "now" may be used to disable this grace period and always prune unreachable objects immediately, or "never" may be used to suppress pruning\&.
 .RE
 .PP
-gc\&.pruneWorktreesExpire
+gc\&.worktreePruneExpire
 .RS 4
 When
 \fIgit gc\fR
-is run, it will call
-\fIprune \-\-worktrees \-\-expire 3\&.months\&.ago\fR\&. Override the grace period with this config variable\&. The value "now" may be used to disable the grace period and prune $GIT_DIR/worktrees immediately\&.
+is run, it calls
+\fIgit worktree prune \-\-expire 3\&.months\&.ago\fR\&. This config variable can be used to set a different grace period\&. The value "now" may be used to disable the grace period and prune $GIT_DIR/worktrees immediately, or "never" may be used to suppress pruning\&.
 .RE
 .PP
 gc\&.reflogExpire, gc\&.<pattern>\&.reflogExpire
 .RS 4
 \fIgit reflog expire\fR
-removes reflog entries older than this time; defaults to 90 days\&. With "<pattern>" (e\&.g\&. "refs/stash") in the middle the setting applies only to the refs that match the <pattern>\&.
+removes reflog entries older than this time; defaults to 90 days\&. The value "now" expires all entries immediately, and "never" suppresses expiration altogether\&. With "<pattern>" (e\&.g\&. "refs/stash") in the middle the setting applies only to the refs that match the <pattern>\&.
 .RE
 .PP
-gc\&.reflogExpireUnreachable, gc\&.<ref>\&.reflogExpireUnreachable
+gc\&.reflogExpireUnreachable, gc\&.<pattern>\&.reflogExpireUnreachable
 .RS 4
 \fIgit reflog expire\fR
-removes reflog entries older than this time and are not reachable from the current tip; defaults to 30 days\&. With "<pattern>" (e\&.g\&. "refs/stash") in the middle, the setting applies only to the refs that match the <pattern>\&.
+removes reflog entries older than this time and are not reachable from the current tip; defaults to 30 days\&. The value "now" expires all entries immediately, and "never" suppresses expiration altogether\&. With "<pattern>" (e\&.g\&. "refs/stash") in the middle, the setting applies only to the refs that match the <pattern>\&.
 .RE
 .PP
 gc\&.rerereResolved
@@ -3312,6 +3345,85 @@ File containing previously stored cookie lines which should be used in the Git h
 http\&.saveCookies
 .RS 4
 If set, store cookies received during requests to the file specified by http\&.cookieFile\&. Has no effect if http\&.cookieFile is unset\&.
+.RE
+.PP
+http\&.sslVersion
+.RS 4
+The SSL version to use when negotiating an SSL connection, if you want to force the default\&. The available and default version depend on whether libcurl was built against NSS or OpenSSL and the particular configuration of the crypto library in use\&. Internally this sets the
+\fICURLOPT_SSL_VERSION\fR
+option; see the libcurl documentation for more details on the format of this option and for the ssl version supported\&. Actually the possible values of this option are:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+sslv2
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+sslv3
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+tlsv1
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+tlsv1\&.0
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+tlsv1\&.1
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+tlsv1\&.2
+.RE
+.sp
+Can be overridden by the
+\fIGIT_SSL_VERSION\fR
+environment variable\&. To force git to use libcurl\(cqs default ssl version and ignore any explicit http\&.sslversion option, set
+\fIGIT_SSL_VERSION\fR
+to the empty string\&.
 .RE
 .PP
 http\&.sslCipherList
@@ -4133,6 +4245,26 @@ mergetool\&.prompt
 Prompt before each invocation of the merge resolution program\&.
 .RE
 .PP
+notes\&.mergeStrategy
+.RS 4
+Which merge strategy to choose by default when resolving notes conflicts\&. Must be one of
+manual,
+ours,
+theirs,
+union, or
+cat_sort_uniq\&. Defaults to
+manual\&. See "NOTES MERGE STRATEGIES" section of
+\fBgit-notes\fR(1)
+for more information on each strategy\&.
+.RE
+.PP
+notes\&.<name>\&.mergeStrategy
+.RS 4
+Which merge strategy to choose when doing a notes merge into refs/notes/<name>\&. This overrides the more general "notes\&.mergeStrategy"\&. See the "NOTES MERGE STRATEGIES" section in
+\fBgit-notes\fR(1)
+for more information on the available strategies\&.
+.RE
+.PP
 notes\&.displayRef
 .RS 4
 The (fully qualified) refname from which to show notes when showing commit messages\&. The value of this variable can be set to a glob, in which case notes from all matching refs will be shown\&. You may also specify this configuration variable several times\&. A warning will be issued for refs that do not exist, but a glob that does not match any refs is silently ignored\&.
@@ -4158,7 +4290,8 @@ notes\&.rewriteMode
 .RS 4
 When copying notes during a rewrite (see the "notes\&.rewrite\&.<command>" option), determines what to do if the target commit already has a note\&. Must be one of
 overwrite,
-concatenate, or
+concatenate,
+cat_sort_uniq, or
 ignore\&. Defaults to
 concatenate\&.
 .sp
@@ -4319,17 +4452,12 @@ pull\&.rebase
 .RS 4
 When true, rebase branches on top of the fetched branch, instead of merging the default branch from the default remote when "git pull" is run\&. See "branch\&.<name>\&.rebase" for setting this on a per\-branch basis\&.
 .sp
-.if n \{\
-.RS 4
-.\}
-.nf
-When preserve, also pass `\-\-preserve\-merges` along to \(aqgit rebase\(aq
-so that locally committed merge commits will not be flattened
-by running \(aqgit pull\(aq\&.
-.fi
-.if n \{\
-.RE
-.\}
+When preserve, also pass
+\-\-preserve\-merges
+along to
+\fIgit rebase\fR
+so that locally committed merge commits will not be flattened by running
+\fIgit pull\fR\&.
 .sp
 \fBNOTE\fR: this is a possibly dangerous operation; do
 \fBnot\fR
@@ -4449,6 +4577,20 @@ option by default\&. You may override this configuration at time of push by spec
 \fI\-\-no\-follow\-tags\fR\&.
 .RE
 .PP
+push\&.gpgSign
+.RS 4
+May be set to a boolean value, or the string
+\fIif\-asked\fR\&. A true value causes all pushes to be GPG signed, as if
+\fI\-\-signed\fR
+is passed to
+\fBgit-push\fR(1)\&. The string
+\fIif\-asked\fR
+causes pushes to be signed if the server supports it, as if
+\fI\-\-signed=if\-asked\fR
+is passed to
+\fIgit push\fR\&. A false value may override a value from a lower\-priority config file\&. An explicit command\-line flag always overrides this config option\&.
+.RE
+.PP
 rebase\&.stat
 .RS 4
 Whether to show a diffstat of what changed upstream since the last rebase\&. False by default\&.
@@ -4465,6 +4607,17 @@ rebase\&.autoStash
 .RS 4
 When set to true, automatically create a temporary stash before the operation begins, and apply it after the operation ends\&. This means that you can run rebase on a dirty worktree\&. However, use with care: the final stash application after a successful rebase might result in non\-trivial conflicts\&. Defaults to false\&.
 .RE
+.PP
+rebase\&.missingCommitsCheck
+.RS 4
+If set to "warn", git rebase \-i will print a warning if some commits are removed (e\&.g\&. a line was deleted), however the rebase will still proceed\&. If set to "error", it will print the previous warning and stop the rebase,
+\fIgit rebase \-\-edit\-todo\fR
+can then be used to correct the error\&. If set to "ignore", no checking is done\&. To drop a commit without warning or error, use the
+drop
+command in the todo\-list\&. Defaults to "ignore"\&.
+.RE
+.sp
+rebase\&.instructionFormat A format string, as specified in \fBgit-log\fR(1), to be used for the instruction list during an interactive rebase\&. The format will automatically have the long commit hash prepended to the format\&.
 .PP
 receive\&.advertiseAtomic
 .RS 4
@@ -4510,6 +4663,31 @@ transfer\&.fsckObjects
 is used instead\&.
 .RE
 .PP
+receive\&.fsck\&.<msg\-id>
+.RS 4
+When
+receive\&.fsckObjects
+is set to true, errors can be switched to warnings and vice versa by configuring the
+receive\&.fsck\&.<msg\-id>
+setting where the
+<msg\-id>
+is the fsck message ID and the value is one of
+error,
+warn
+or
+ignore\&. For convenience, fsck prefixes the error/warning with the message ID, e\&.g\&. "missingEmail: invalid author/committer line \- missing email" means that setting
+receive\&.fsck\&.missingEmail = ignore
+will hide that issue\&.
+.sp
+This feature is intended to support working with legacy repositories which would not pass pushing when
+receive\&.fsckObjects = true, allowing the host to accept repositories with certain known issues but still catch other issues\&.
+.RE
+.PP
+receive\&.fsck\&.skipList
+.RS 4
+The path to a sorted list of object names (i\&.e\&. one SHA\-1 per line) that are known to be broken in a non\-fatal way and should be ignored\&. This feature is useful when an established project should be accepted despite early commits containing errors that can be safely ignored such as invalid committer email addresses\&. Note: corrupt objects cannot be skipped with this setting\&.
+.RE
+.PP
 receive\&.unpackLimit
 .RS 4
 If the number of objects received in a push is below this limit then the objects will be unpacked into loose object files\&. However if the number of received objects equals or exceeds this limit then the received pack will be stored as a pack, after adding any missing delta bases\&. Storing the pack from a push can make the push operation complete faster, especially on slow filesystems\&. If not set, the value of
@@ -4546,10 +4724,10 @@ If set to true, git\-receive\-pack will deny a ref update which is not a fast\-f
 .PP
 receive\&.hideRefs
 .RS 4
-String(s)
+This variable is the same as
+transfer\&.hideRefs, but applies only to
 receive\-pack
-uses to decide which refs to omit from its initial advertisement\&. Use more than one definitions to specify multiple prefix strings\&. A ref that are under the hierarchies listed on the value of this variable is excluded, and is hidden when responding to
-git push, and an attempt to update or delete a hidden ref by
+(and so affects pushes, but not fetches)\&. An attempt to update or delete a hidden ref by
 git push
 is rejected\&.
 .RE
@@ -4948,11 +5126,22 @@ are not set, the value of this variable is used instead\&. Defaults to false\&.
 .PP
 transfer\&.hideRefs
 .RS 4
-This variable can be used to set both
+String(s)
+receive\-pack
+and
+upload\-pack
+use to decide which refs to omit from their initial advertisements\&. Use more than one definition to specify multiple prefix strings\&. A ref that is under the hierarchies listed in the value of this variable is excluded, and is hidden when responding to
+git push
+or
+git fetch\&. See
 receive\&.hideRefs
 and
 uploadpack\&.hideRefs
-at the same time to the same values\&. See entries for these other variables\&.
+for program\-specific versions of this config\&.
+.sp
+You may also include a
+!
+in front of the ref name to negate the entry, explicitly exposing it, even if an earlier entry marked it as hidden\&. If you have multiple hideRefs values, later entries override earlier ones (and entries in more\-specific config files override less\-specific ones)\&.
 .RE
 .PP
 transfer\&.unpackLimit
@@ -4978,11 +5167,10 @@ false\&.
 .PP
 uploadpack\&.hideRefs
 .RS 4
-String(s)
+This variable is the same as
+transfer\&.hideRefs, but applies only to
 upload\-pack
-uses to decide which refs to omit from its initial advertisement\&. Use more than one definitions to specify multiple prefix strings\&. A ref that are under the hierarchies listed on the value of this variable is excluded, and is hidden from
-git ls\-remote,
-git fetch, etc\&. An attempt to fetch a hidden ref by
+(and so affects only fetches, not pushes)\&. An attempt to fetch a hidden ref by
 git fetch
 will fail\&. See also
 uploadpack\&.allowTipSHA1InWant\&.

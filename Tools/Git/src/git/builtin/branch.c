@@ -160,7 +160,7 @@ static int branch_merged(int kind, const char *name,
 }
 
 static int check_branch_commit(const char *branchname, const char *refname,
-			       unsigned char *sha1, struct commit *head_rev,
+			       const unsigned char *sha1, struct commit *head_rev,
 			       int kinds, int force)
 {
 	struct commit *rev = lookup_commit_reference(sha1);
@@ -253,7 +253,8 @@ static int delete_branches(int argc, const char **argv, int force, int kinds,
 			continue;
 		}
 
-		if (delete_ref(name, sha1, REF_NODEREF)) {
+		if (delete_ref(name, is_null_sha1(sha1) ? NULL : sha1,
+			       REF_NODEREF)) {
 			error(remote_branch
 			      ? _("Error deleting remote-tracking branch '%s'")
 			      : _("Error deleting branch '%s'"),
@@ -775,7 +776,7 @@ static int edit_branch_description(const char *branch_name)
 		    "  %s\n"
 		    "Lines starting with '%c' will be stripped.\n",
 		    branch_name, comment_line_char);
-	if (write_file(git_path(edit_description), 0, "%s", buf.buf)) {
+	if (write_file_gently(git_path(edit_description), "%s", buf.buf)) {
 		strbuf_release(&buf);
 		return error(_("could not write branch description template: %s"),
 			     strerror(errno));
@@ -785,7 +786,7 @@ static int edit_branch_description(const char *branch_name)
 		strbuf_release(&buf);
 		return -1;
 	}
-	stripspace(&buf, 1);
+	strbuf_stripspace(&buf, 1);
 
 	strbuf_addf(&name, "branch.%s.description", branch_name);
 	status = git_config_set(name.buf, buf.len ? buf.buf : NULL);

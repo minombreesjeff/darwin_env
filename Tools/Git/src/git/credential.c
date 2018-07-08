@@ -9,9 +9,6 @@ void credential_init(struct credential *c)
 {
 	memset(c, 0, sizeof(*c));
 	c->helpers.strdup_strings = 1;
-
-	/* <rdar://problem/12266645> */
-	string_list_append(&c->helpers, "osxkeychain");
 }
 
 void credential_clear(struct credential *c)

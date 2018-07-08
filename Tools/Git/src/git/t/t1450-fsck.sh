@@ -77,9 +77,29 @@ test_expect_success 'object with bad sha1' '
 test_expect_success 'branch pointing to non-commit' '
 	git rev-parse HEAD^{tree} >.git/refs/heads/invalid &&
 	test_when_finished "git update-ref -d refs/heads/invalid" &&
-	git fsck 2>out &&
+	test_must_fail git fsck 2>out &&
 	cat out &&
 	grep "not a commit" out
+'
+
+test_expect_success 'HEAD link pointing at a funny object' '
+	test_when_finished "mv .git/SAVED_HEAD .git/HEAD" &&
+	mv .git/HEAD .git/SAVED_HEAD &&
+	echo 0000000000000000000000000000000000000000 >.git/HEAD &&
+	# avoid corrupt/broken HEAD from interfering with repo discovery
+	test_must_fail env GIT_DIR=.git git fsck 2>out &&
+	cat out &&
+	grep "detached HEAD points" out
+'
+
+test_expect_success 'HEAD link pointing at a funny place' '
+	test_when_finished "mv .git/SAVED_HEAD .git/HEAD" &&
+	mv .git/HEAD .git/SAVED_HEAD &&
+	echo "ref: refs/funny/place" >.git/HEAD &&
+	# avoid corrupt/broken HEAD from interfering with repo discovery
+	test_must_fail env GIT_DIR=.git git fsck 2>out &&
+	cat out &&
+	grep "HEAD points to something strange" out
 '
 
 test_expect_success 'email without @ is okay' '
@@ -231,8 +251,8 @@ test_expect_success 'tag with incorrect tag name & missing tagger' '
 	git fsck --tags 2>out &&
 
 	cat >expect <<-EOF &&
-	warning in tag $tag: invalid '\''tag'\'' name: wrong name format
-	warning in tag $tag: invalid format - expected '\''tagger'\'' line
+	warning in tag $tag: badTagName: invalid '\''tag'\'' name: wrong name format
+	warning in tag $tag: missingTaggerEntry: invalid format - expected '\''tagger'\'' line
 	EOF
 	test_cmp expect out
 '
@@ -285,6 +305,17 @@ test_expect_success 'rev-list --verify-objects with bad sha1' '
 	test_might_fail git rev-list --verify-objects refs/heads/bogus >/dev/null 2>out &&
 	cat out &&
 	grep -q "error: sha1 mismatch 63ffffffffffffffffffffffffffffffffffffff" out
+'
+
+test_expect_success 'force fsck to ignore double author' '
+	git cat-file commit HEAD >basis &&
+	sed "s/^author .*/&,&/" <basis | tr , \\n >multiple-authors &&
+	new=$(git hash-object -t commit -w --stdin <multiple-authors) &&
+	test_when_finished "remove_object $new" &&
+	git update-ref refs/heads/bogus "$new" &&
+	test_when_finished "git update-ref -d refs/heads/bogus" &&
+	test_must_fail git fsck &&
+	git -c fsck.multipleAuthors=ignore fsck
 '
 
 _bz='\0'
@@ -418,6 +449,28 @@ test_expect_success 'fsck notices ref pointing to missing commit' '
 test_expect_success 'fsck notices ref pointing to missing tag' '
 	create_repo_missing tag &&
 	test_must_fail git -C missing fsck
+'
+
+test_expect_success 'fsck --connectivity-only' '
+	rm -rf connectivity-only &&
+	git init connectivity-only &&
+	(
+		cd connectivity-only &&
+		touch empty &&
+		git add empty &&
+		test_commit empty &&
+		empty=.git/objects/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391 &&
+		rm -f $empty &&
+		echo invalid >$empty &&
+		test_must_fail git fsck --strict &&
+		git fsck --strict --connectivity-only &&
+		tree=$(git rev-parse HEAD:) &&
+		suffix=${tree#??} &&
+		tree=.git/objects/${tree%$suffix}/$suffix &&
+		rm -f $tree &&
+		echo invalid >$tree &&
+		test_must_fail git fsck --strict --connectivity-only
+	)
 '
 
 test_done

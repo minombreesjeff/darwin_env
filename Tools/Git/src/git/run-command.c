@@ -11,6 +11,12 @@ void child_process_init(struct child_process *child)
 	argv_array_init(&child->env_array);
 }
 
+void child_process_clear(struct child_process *child)
+{
+	argv_array_clear(&child->args);
+	argv_array_clear(&child->env_array);
+}
+
 struct child_to_clean {
 	pid_t pid;
 	struct child_to_clean *next;
@@ -18,26 +24,27 @@ struct child_to_clean {
 static struct child_to_clean *children_to_clean;
 static int installed_child_cleanup_handler;
 
-static void cleanup_children(int sig)
+static void cleanup_children(int sig, int in_signal)
 {
 	while (children_to_clean) {
 		struct child_to_clean *p = children_to_clean;
 		children_to_clean = p->next;
 		kill(p->pid, sig);
-		free(p);
+		if (!in_signal)
+			free(p);
 	}
 }
 
 static void cleanup_children_on_signal(int sig)
 {
-	cleanup_children(sig);
+	cleanup_children(sig, 1);
 	sigchain_pop(sig);
 	raise(sig);
 }
 
 static void cleanup_children_on_exit(void)
 {
-	cleanup_children(SIGTERM);
+	cleanup_children(SIGTERM, 0);
 }
 
 static void mark_child_for_cleanup(pid_t pid)
@@ -220,7 +227,7 @@ static inline void set_cloexec(int fd)
 		fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
 }
 
-static int wait_or_whine(pid_t pid, const char *argv0)
+static int wait_or_whine(pid_t pid, const char *argv0, int in_signal)
 {
 	int status, code = -1;
 	pid_t waiting;
@@ -228,6 +235,8 @@ static int wait_or_whine(pid_t pid, const char *argv0)
 
 	while ((waiting = waitpid(pid, &status, 0)) < 0 && errno == EINTR)
 		;	/* nothing */
+	if (in_signal)
+		return 0;
 
 	if (waiting < 0) {
 		failed_errno = errno;
@@ -324,8 +333,7 @@ int start_command(struct child_process *cmd)
 fail_pipe:
 			error("cannot create %s pipe for %s: %s",
 				str, cmd->argv[0], strerror(failed_errno));
-			argv_array_clear(&cmd->args);
-			argv_array_clear(&cmd->env_array);
+			child_process_clear(cmd);
 			errno = failed_errno;
 			return -1;
 		}
@@ -437,7 +445,7 @@ fail_pipe:
 		 * At this point we know that fork() succeeded, but execvp()
 		 * failed. Errors have been reported to our stderr.
 		 */
-		wait_or_whine(cmd->pid, cmd->argv[0]);
+		wait_or_whine(cmd->pid, cmd->argv[0], 0);
 		failed_errno = errno;
 		cmd->pid = -1;
 	}
@@ -510,8 +518,7 @@ fail_pipe:
 			close_pair(fderr);
 		else if (cmd->err)
 			close(cmd->err);
-		argv_array_clear(&cmd->args);
-		argv_array_clear(&cmd->env_array);
+		child_process_clear(cmd);
 		errno = failed_errno;
 		return -1;
 	}
@@ -536,11 +543,16 @@ fail_pipe:
 
 int finish_command(struct child_process *cmd)
 {
-	int ret = wait_or_whine(cmd->pid, cmd->argv[0]);
-	argv_array_clear(&cmd->args);
-	argv_array_clear(&cmd->env_array);
+	int ret = wait_or_whine(cmd->pid, cmd->argv[0], 0);
+	child_process_clear(cmd);
 	return ret;
 }
+
+int finish_command_in_signal(struct child_process *cmd)
+{
+	return wait_or_whine(cmd->pid, cmd->argv[0], 1);
+}
+
 
 int run_command(struct child_process *cmd)
 {
@@ -772,7 +784,7 @@ error:
 int finish_async(struct async *async)
 {
 #ifdef NO_PTHREADS
-	return wait_or_whine(async->pid, "child process");
+	return wait_or_whine(async->pid, "child process", 0);
 #else
 	void *ret = (void *)(intptr_t)(-1);
 
@@ -784,11 +796,13 @@ int finish_async(struct async *async)
 
 const char *find_hook(const char *name)
 {
-	const char *path = git_path("hooks/%s", name);
-	if (access(path, X_OK) < 0)
-		path = NULL;
+	static struct strbuf path = STRBUF_INIT;
 
-	return path;
+	strbuf_reset(&path);
+	strbuf_git_path(&path, "hooks/%s", name);
+	if (access(path.buf, X_OK) < 0)
+		return NULL;
+	return path.buf;
 }
 
 int run_hook_ve(const char *const *env, const char *name, va_list args)

@@ -345,6 +345,11 @@ __attribute__((format (printf,2,0)))
 extern void strbuf_vaddf(struct strbuf *sb, const char *fmt, va_list ap);
 
 /**
+ * Add the time specified by `tm`, as formatted by `strftime`.
+ */
+extern void strbuf_addftime(struct strbuf *sb, const char *fmt, const struct tm *tm);
+
+/**
  * Read a given size of data from a FILE* pointer to the buffer.
  *
  * NOTE: The buffer is rewound if the read fails. If -1 is returned,
@@ -413,7 +418,16 @@ extern void strbuf_add_absolute_path(struct strbuf *sb, const char *path);
  * Strip whitespace from a buffer. The second parameter controls if
  * comments are considered contents to be removed or not.
  */
-extern void stripspace(struct strbuf *buf, int skip_comments);
+extern void strbuf_stripspace(struct strbuf *buf, int skip_comments);
+
+/**
+ * Temporary alias until all topic branches have switched to use
+ * strbuf_stripspace directly.
+ */
+static inline void stripspace(struct strbuf *buf, int skip_comments)
+{
+	strbuf_stripspace(buf, skip_comments);
+}
 
 static inline int strbuf_strip_suffix(struct strbuf *sb, const char *suffix)
 {

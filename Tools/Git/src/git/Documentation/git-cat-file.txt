@@ -10,7 +10,7 @@ SYNOPSIS
 --------
 [verse]
 'git cat-file' (-t [--allow-unknown-type]| -s [--allow-unknown-type]| -e | -p | <type> | --textconv ) <object>
-'git cat-file' (--batch | --batch-check) [--follow-symlinks] < <list-of-objects>
+'git cat-file' (--batch | --batch-check) [--follow-symlinks]
 
 DESCRIPTION
 -----------
@@ -68,6 +68,20 @@ OPTIONS
 	Print object information for each object provided on stdin.  May
 	not be combined with any other options or arguments.  See the
 	section `BATCH OUTPUT` below for details.
+
+--batch-all-objects::
+	Instead of reading a list of objects on stdin, perform the
+	requested batch operation on all objects in the repository and
+	any alternate object stores (not just reachable objects).
+	Requires `--batch` or `--batch-check` be specified. Note that
+	the objects are visited in order sorted by their hashes.
+
+--buffer::
+	Normally batch output is flushed after each object is output, so
+	that a process can interactively read and write from
+	`cat-file`. With this option, the output uses normal stdio
+	buffering; this is much more efficient when invoking
+	`--batch-check` on a large number of objects.
 
 --allow-unknown-type::
 	Allow -s or -t to query broken/corrupt objects of unknown type.

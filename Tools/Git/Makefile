@@ -53,6 +53,7 @@ LDFLAGS = -sectcreate __TEXT __info_plist $(OBJROOT)/Info.plist
 
 STRIP := strip -S
 submakevars := -j`sysctl -n hw.activecpu` prefix=$(PREFIX) \
+  ETC_GITCONFIG=/etc/gitconfig \
   PYTHON_PATH='MACOSX_DEPLOYMENT_TARGET="" /usr/bin/python' \
   PYTHON_PATH_SQ='/usr/bin/python' \
   NO_GETTEXT=YesPlease NO_INSTALL_HARDLINKS=YesPlease \
@@ -92,6 +93,7 @@ install: install-bin install-man install-contrib
 	rm -rf "$(DSTROOT)$(PREFIX)/share/man/man3"
 	install -d -o root -g wheel -m 0755 $(DSTROOT)$(PREFIX)/local/OpenSourceVersions
 	install -o root -g wheel -m 0644 $(SRCROOT)/Git.plist $(DSTROOT)$(PREFIX)/local/OpenSourceVersions
+	install -o root -g wheel -m 0644 $(SRCROOT)/gitconfig $(DSTROOT)$(PREFIX)/share/git-core
 
 install-contrib:
 	install -d -o root -g wheel -m 0755 $(DSTROOT)$(PREFIX)/share/git-core
