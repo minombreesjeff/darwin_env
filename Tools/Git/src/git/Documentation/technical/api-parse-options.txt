@@ -1,7 +1,7 @@
 parse-options API
 =================
 
-The parse-options API is used to parse and massage options in git
+The parse-options API is used to parse and massage options in Git
 and to provide a usage help with consistent look.
 
 Basics
@@ -269,10 +269,10 @@ Examples
 --------
 
 See `test-parse-options.c` and
-`builtin-add.c`,
-`builtin-clone.c`,
-`builtin-commit.c`,
-`builtin-fetch.c`,
-`builtin-fsck.c`,
-`builtin-rm.c`
+`builtin/add.c`,
+`builtin/clone.c`,
+`builtin/commit.c`,
+`builtin/fetch.c`,
+`builtin/fsck.c`,
+`builtin/rm.c`
 for real-world examples.

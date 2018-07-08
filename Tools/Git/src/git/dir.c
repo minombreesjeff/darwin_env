@@ -2,19 +2,36 @@
  * This handles recursive filename detection with exclude
  * files, index knowledge etc..
  *
+ * See Documentation/technical/api-directory-listing.txt
+ *
  * Copyright (C) Linus Torvalds, 2005-2006
  *		 Junio Hamano, 2005-2006
  */
 #include "cache.h"
 #include "dir.h"
 #include "refs.h"
+#include "wildmatch.h"
 
 struct path_simplify {
 	int len;
 	const char *path;
 };
 
-static int read_directory_recursive(struct dir_struct *dir, const char *path, int len,
+/*
+ * Tells read_directory_recursive how a file or directory should be treated.
+ * Values are ordered by significance, e.g. if a directory contains both
+ * excluded and untracked files, it is listed as untracked because
+ * path_untracked > path_excluded.
+ */
+enum path_treatment {
+	path_none = 0,
+	path_recurse,
+	path_excluded,
+	path_untracked
+};
+
+static enum path_treatment read_directory_recursive(struct dir_struct *dir,
+	const char *path, int len,
 	int check_only, const struct path_simplify *simplify);
 static int get_dtype(struct dirent *de, const char *path, int len);
 
@@ -34,10 +51,62 @@ int fnmatch_icase(const char *pattern, const char *string, int flags)
 	return fnmatch(pattern, string, flags | (ignore_case ? FNM_CASEFOLD : 0));
 }
 
+inline int git_fnmatch(const char *pattern, const char *string,
+		       int flags, int prefix)
+{
+	int fnm_flags = 0;
+	if (flags & GFNM_PATHNAME)
+		fnm_flags |= FNM_PATHNAME;
+	if (prefix > 0) {
+		if (strncmp(pattern, string, prefix))
+			return FNM_NOMATCH;
+		pattern += prefix;
+		string += prefix;
+	}
+	if (flags & GFNM_ONESTAR) {
+		int pattern_len = strlen(++pattern);
+		int string_len = strlen(string);
+		return string_len < pattern_len ||
+		       strcmp(pattern,
+			      string + string_len - pattern_len);
+	}
+	return fnmatch(pattern, string, fnm_flags);
+}
+
+static int fnmatch_icase_mem(const char *pattern, int patternlen,
+			     const char *string, int stringlen,
+			     int flags)
+{
+	int match_status;
+	struct strbuf pat_buf = STRBUF_INIT;
+	struct strbuf str_buf = STRBUF_INIT;
+	const char *use_pat = pattern;
+	const char *use_str = string;
+
+	if (pattern[patternlen]) {
+		strbuf_add(&pat_buf, pattern, patternlen);
+		use_pat = pat_buf.buf;
+	}
+	if (string[stringlen]) {
+		strbuf_add(&str_buf, string, stringlen);
+		use_str = str_buf.buf;
+	}
+
+	if (ignore_case)
+		flags |= WM_CASEFOLD;
+	match_status = wildmatch(use_pat, use_str, flags, NULL);
+
+	strbuf_release(&pat_buf);
+	strbuf_release(&str_buf);
+
+	return match_status;
+}
+
 static size_t common_prefix_len(const char **pathspec)
 {
 	const char *n, *first;
 	size_t max = 0;
+	int literal = limit_pathspec_to_literal();
 
 	if (!pathspec)
 		return max;
@@ -47,7 +116,7 @@ static size_t common_prefix_len(const char **pathspec)
 		size_t i, len = 0;
 		for (i = 0; first == n || i < max; i++) {
 			char c = n[i];
-			if (!c || c != first[i] || is_glob_special(c))
+			if (!c || c != first[i] || (!literal && is_glob_special(c)))
 				break;
 			if (c == '/')
 				len = i + 1;
@@ -117,6 +186,7 @@ int within_depth(const char *name, int namelen,
 static int match_one(const char *match, const char *name, int namelen)
 {
 	int matchlen;
+	int literal = limit_pathspec_to_literal();
 
 	/* If the match was just the prefix, we matched */
 	if (!*match)
@@ -126,7 +196,7 @@ static int match_one(const char *match, const char *name, int namelen)
 		for (;;) {
 			unsigned char c1 = tolower(*match);
 			unsigned char c2 = tolower(*name);
-			if (c1 == '\0' || is_glob_special(c1))
+			if (c1 == '\0' || (!literal && is_glob_special(c1)))
 				break;
 			if (c1 != c2)
 				return 0;
@@ -138,7 +208,7 @@ static int match_one(const char *match, const char *name, int namelen)
 		for (;;) {
 			unsigned char c1 = *match;
 			unsigned char c2 = *name;
-			if (c1 == '\0' || is_glob_special(c1))
+			if (c1 == '\0' || (!literal && is_glob_special(c1)))
 				break;
 			if (c1 != c2)
 				return 0;
@@ -148,14 +218,16 @@ static int match_one(const char *match, const char *name, int namelen)
 		}
 	}
 
-
 	/*
 	 * If we don't match the matchstring exactly,
 	 * we need to match by fnmatch
 	 */
 	matchlen = strlen(match);
-	if (strncmp_icase(match, name, matchlen))
+	if (strncmp_icase(match, name, matchlen)) {
+		if (literal)
+			return 0;
 		return !fnmatch_icase(match, name, 0) ? MATCHED_FNMATCH : 0;
+	}
 
 	if (namelen == matchlen)
 		return MATCHED_EXACTLY;
@@ -165,12 +237,19 @@ static int match_one(const char *match, const char *name, int namelen)
 }
 
 /*
- * Given a name and a list of pathspecs, see if the name matches
- * any of the pathspecs.  The caller is also interested in seeing
- * all pathspec matches some names it calls this function with
- * (otherwise the user could have mistyped the unmatched pathspec),
- * and a mark is left in seen[] array for pathspec element that
- * actually matched anything.
+ * Given a name and a list of pathspecs, returns the nature of the
+ * closest (i.e. most specific) match of the name to any of the
+ * pathspecs.
+ *
+ * The caller typically calls this multiple times with the same
+ * pathspec and seen[] array but with different name/namelen
+ * (e.g. entries from the index) and is interested in seeing if and
+ * how each pathspec matches all the names it calls this function
+ * with.  A mark is left in the seen[] array for each pathspec element
+ * indicating the closest type of match that element achieved, so if
+ * seen[n] remains zero after multiple invocations, that means the nth
+ * pathspec did not match any names, which could indicate that the
+ * user mistyped the nth pathspec.
  */
 int match_pathspec(const char **pathspec, const char *name, int namelen,
 		int prefix, char *seen)
@@ -230,19 +309,29 @@ static int match_pathspec_item(const struct pathspec_item *item, int prefix,
 			return MATCHED_RECURSIVELY;
 	}
 
-	if (item->use_wildcard && !fnmatch(match, name, 0))
+	if (item->nowildcard_len < item->len &&
+	    !git_fnmatch(match, name,
+			 item->flags & PATHSPEC_ONESTAR ? GFNM_ONESTAR : 0,
+			 item->nowildcard_len - prefix))
 		return MATCHED_FNMATCH;
 
 	return 0;
 }
 
 /*
- * Given a name and a list of pathspecs, see if the name matches
- * any of the pathspecs.  The caller is also interested in seeing
- * all pathspec matches some names it calls this function with
- * (otherwise the user could have mistyped the unmatched pathspec),
- * and a mark is left in seen[] array for pathspec element that
- * actually matched anything.
+ * Given a name and a list of pathspecs, returns the nature of the
+ * closest (i.e. most specific) match of the name to any of the
+ * pathspecs.
+ *
+ * The caller typically calls this multiple times with the same
+ * pathspec and seen[] array but with different name/namelen
+ * (e.g. entries from the index) and is interested in seeing if and
+ * how each pathspec matches all the names it calls this function
+ * with.  A mark is left in the seen[] array for each pathspec element
+ * indicating the closest type of match that element achieved, so if
+ * seen[n] remains zero after multiple invocations, that means the nth
+ * pathspec did not match any names, which could indicate that the
+ * user mistyped the nth pathspec.
  */
 int match_pathspec_depth(const struct pathspec *ps,
 			 const char *name, int namelen,
@@ -308,44 +397,73 @@ static int no_wildcard(const char *string)
 	return string[simple_length(string)] == '\0';
 }
 
+void parse_exclude_pattern(const char **pattern,
+			   int *patternlen,
+			   int *flags,
+			   int *nowildcardlen)
+{
+	const char *p = *pattern;
+	size_t i, len;
+
+	*flags = 0;
+	if (*p == '!') {
+		*flags |= EXC_FLAG_NEGATIVE;
+		p++;
+	}
+	len = strlen(p);
+	if (len && p[len - 1] == '/') {
+		len--;
+		*flags |= EXC_FLAG_MUSTBEDIR;
+	}
+	for (i = 0; i < len; i++) {
+		if (p[i] == '/')
+			break;
+	}
+	if (i == len)
+		*flags |= EXC_FLAG_NODIR;
+	*nowildcardlen = simple_length(p);
+	/*
+	 * we should have excluded the trailing slash from 'p' too,
+	 * but that's one more allocation. Instead just make sure
+	 * nowildcardlen does not exceed real patternlen
+	 */
+	if (*nowildcardlen > len)
+		*nowildcardlen = len;
+	if (*p == '*' && no_wildcard(p + 1))
+		*flags |= EXC_FLAG_ENDSWITH;
+	*pattern = p;
+	*patternlen = len;
+}
+
 void add_exclude(const char *string, const char *base,
-		 int baselen, struct exclude_list *which)
+		 int baselen, struct exclude_list *el, int srcpos)
 {
 	struct exclude *x;
-	size_t len;
-	int to_exclude = 1;
-	int flags = 0;
+	int patternlen;
+	int flags;
+	int nowildcardlen;
 
-	if (*string == '!') {
-		to_exclude = 0;
-		string++;
-	}
-	len = strlen(string);
-	if (len && string[len - 1] == '/') {
+	parse_exclude_pattern(&string, &patternlen, &flags, &nowildcardlen);
+	if (flags & EXC_FLAG_MUSTBEDIR) {
 		char *s;
-		x = xmalloc(sizeof(*x) + len);
+		x = xmalloc(sizeof(*x) + patternlen + 1);
 		s = (char *)(x+1);
-		memcpy(s, string, len - 1);
-		s[len - 1] = '\0';
-		string = s;
+		memcpy(s, string, patternlen);
+		s[patternlen] = '\0';
 		x->pattern = s;
-		flags = EXC_FLAG_MUSTBEDIR;
 	} else {
 		x = xmalloc(sizeof(*x));
 		x->pattern = string;
 	}
-	x->to_exclude = to_exclude;
-	x->patternlen = strlen(string);
+	x->patternlen = patternlen;
+	x->nowildcardlen = nowildcardlen;
 	x->base = base;
 	x->baselen = baselen;
 	x->flags = flags;
-	if (!strchr(string, '/'))
-		x->flags |= EXC_FLAG_NODIR;
-	x->nowildcardlen = simple_length(string);
-	if (*string == '*' && no_wildcard(string+1))
-		x->flags |= EXC_FLAG_ENDSWITH;
-	ALLOC_GROW(which->excludes, which->nr + 1, which->alloc);
-	which->excludes[which->nr++] = x;
+	x->srcpos = srcpos;
+	ALLOC_GROW(el->excludes, el->nr + 1, el->alloc);
+	el->excludes[el->nr++] = x;
+	x->el = el;
 }
 
 static void *read_skip_worktree_file_from_index(const char *path, size_t *size)
@@ -371,27 +489,32 @@ static void *read_skip_worktree_file_from_index(const char *path, size_t *size)
 	return data;
 }
 
-void free_excludes(struct exclude_list *el)
+/*
+ * Frees memory within el which was allocated for exclude patterns and
+ * the file buffer.  Does not free el itself.
+ */
+void clear_exclude_list(struct exclude_list *el)
 {
 	int i;
 
 	for (i = 0; i < el->nr; i++)
 		free(el->excludes[i]);
 	free(el->excludes);
+	free(el->filebuf);
 
 	el->nr = 0;
 	el->excludes = NULL;
+	el->filebuf = NULL;
 }
 
 int add_excludes_from_file_to_list(const char *fname,
 				   const char *base,
 				   int baselen,
-				   char **buf_p,
-				   struct exclude_list *which,
+				   struct exclude_list *el,
 				   int check_index)
 {
 	struct stat st;
-	int fd, i;
+	int fd, i, lineno = 1;
 	size_t size = 0;
 	char *buf, *entry;
 
@@ -429,50 +552,243 @@ int add_excludes_from_file_to_list(const char *fname,
 		close(fd);
 	}
 
-	if (buf_p)
-		*buf_p = buf;
+	el->filebuf = buf;
 	entry = buf;
 	for (i = 0; i < size; i++) {
 		if (buf[i] == '\n') {
 			if (entry != buf + i && entry[0] != '#') {
 				buf[i - (i && buf[i-1] == '\r')] = 0;
-				add_exclude(entry, base, baselen, which);
+				add_exclude(entry, base, baselen, el, lineno);
 			}
+			lineno++;
 			entry = buf + i + 1;
 		}
 	}
 	return 0;
 }
 
+struct exclude_list *add_exclude_list(struct dir_struct *dir,
+				      int group_type, const char *src)
+{
+	struct exclude_list *el;
+	struct exclude_list_group *group;
+
+	group = &dir->exclude_list_group[group_type];
+	ALLOC_GROW(group->el, group->nr + 1, group->alloc);
+	el = &group->el[group->nr++];
+	memset(el, 0, sizeof(*el));
+	el->src = src;
+	return el;
+}
+
+/*
+ * Used to set up core.excludesfile and .git/info/exclude lists.
+ */
 void add_excludes_from_file(struct dir_struct *dir, const char *fname)
 {
-	if (add_excludes_from_file_to_list(fname, "", 0, NULL,
-					   &dir->exclude_list[EXC_FILE], 0) < 0)
+	struct exclude_list *el;
+	el = add_exclude_list(dir, EXC_FILE, fname);
+	if (add_excludes_from_file_to_list(fname, "", 0, el, 0) < 0)
 		die("cannot use %s as an exclude file", fname);
 }
 
+int match_basename(const char *basename, int basenamelen,
+		   const char *pattern, int prefix, int patternlen,
+		   int flags)
+{
+	if (prefix == patternlen) {
+		if (patternlen == basenamelen &&
+		    !strncmp_icase(pattern, basename, basenamelen))
+			return 1;
+	} else if (flags & EXC_FLAG_ENDSWITH) {
+		/* "*literal" matching against "fooliteral" */
+		if (patternlen - 1 <= basenamelen &&
+		    !strncmp_icase(pattern + 1,
+				   basename + basenamelen - (patternlen - 1),
+				   patternlen - 1))
+			return 1;
+	} else {
+		if (fnmatch_icase_mem(pattern, patternlen,
+				      basename, basenamelen,
+				      0) == 0)
+			return 1;
+	}
+	return 0;
+}
+
+int match_pathname(const char *pathname, int pathlen,
+		   const char *base, int baselen,
+		   const char *pattern, int prefix, int patternlen,
+		   int flags)
+{
+	const char *name;
+	int namelen;
+
+	/*
+	 * match with FNM_PATHNAME; the pattern has base implicitly
+	 * in front of it.
+	 */
+	if (*pattern == '/') {
+		pattern++;
+		patternlen--;
+		prefix--;
+	}
+
+	/*
+	 * baselen does not count the trailing slash. base[] may or
+	 * may not end with a trailing slash though.
+	 */
+	if (pathlen < baselen + 1 ||
+	    (baselen && pathname[baselen] != '/') ||
+	    strncmp_icase(pathname, base, baselen))
+		return 0;
+
+	namelen = baselen ? pathlen - baselen - 1 : pathlen;
+	name = pathname + pathlen - namelen;
+
+	if (prefix) {
+		/*
+		 * if the non-wildcard part is longer than the
+		 * remaining pathname, surely it cannot match.
+		 */
+		if (prefix > namelen)
+			return 0;
+
+		if (strncmp_icase(pattern, name, prefix))
+			return 0;
+		pattern += prefix;
+		patternlen -= prefix;
+		name    += prefix;
+		namelen -= prefix;
+
+		/*
+		 * If the whole pattern did not have a wildcard,
+		 * then our prefix match is all we need; we
+		 * do not need to call fnmatch at all.
+		 */
+		if (!patternlen && !namelen)
+			return 1;
+	}
+
+	return fnmatch_icase_mem(pattern, patternlen,
+				 name, namelen,
+				 WM_PATHNAME) == 0;
+}
+
+/*
+ * Scan the given exclude list in reverse to see whether pathname
+ * should be ignored.  The first match (i.e. the last on the list), if
+ * any, determines the fate.  Returns the exclude_list element which
+ * matched, or NULL for undecided.
+ */
+static struct exclude *last_exclude_matching_from_list(const char *pathname,
+						       int pathlen,
+						       const char *basename,
+						       int *dtype,
+						       struct exclude_list *el)
+{
+	int i;
+
+	if (!el->nr)
+		return NULL;	/* undefined */
+
+	for (i = el->nr - 1; 0 <= i; i--) {
+		struct exclude *x = el->excludes[i];
+		const char *exclude = x->pattern;
+		int prefix = x->nowildcardlen;
+
+		if (x->flags & EXC_FLAG_MUSTBEDIR) {
+			if (*dtype == DT_UNKNOWN)
+				*dtype = get_dtype(NULL, pathname, pathlen);
+			if (*dtype != DT_DIR)
+				continue;
+		}
+
+		if (x->flags & EXC_FLAG_NODIR) {
+			if (match_basename(basename,
+					   pathlen - (basename - pathname),
+					   exclude, prefix, x->patternlen,
+					   x->flags))
+				return x;
+			continue;
+		}
+
+		assert(x->baselen == 0 || x->base[x->baselen - 1] == '/');
+		if (match_pathname(pathname, pathlen,
+				   x->base, x->baselen ? x->baselen - 1 : 0,
+				   exclude, prefix, x->patternlen, x->flags))
+			return x;
+	}
+	return NULL; /* undecided */
+}
+
+/*
+ * Scan the list and let the last match determine the fate.
+ * Return 1 for exclude, 0 for include and -1 for undecided.
+ */
+int is_excluded_from_list(const char *pathname,
+			  int pathlen, const char *basename, int *dtype,
+			  struct exclude_list *el)
+{
+	struct exclude *exclude;
+	exclude = last_exclude_matching_from_list(pathname, pathlen, basename, dtype, el);
+	if (exclude)
+		return exclude->flags & EXC_FLAG_NEGATIVE ? 0 : 1;
+	return -1; /* undecided */
+}
+
+static struct exclude *last_exclude_matching_from_lists(struct dir_struct *dir,
+		const char *pathname, int pathlen, const char *basename,
+		int *dtype_p)
+{
+	int i, j;
+	struct exclude_list_group *group;
+	struct exclude *exclude;
+	for (i = EXC_CMDL; i <= EXC_FILE; i++) {
+		group = &dir->exclude_list_group[i];
+		for (j = group->nr - 1; j >= 0; j--) {
+			exclude = last_exclude_matching_from_list(
+				pathname, pathlen, basename, dtype_p,
+				&group->el[j]);
+			if (exclude)
+				return exclude;
+		}
+	}
+	return NULL;
+}
+
+/*
+ * Loads the per-directory exclude list for the substring of base
+ * which has a char length of baselen.
+ */
 static void prep_exclude(struct dir_struct *dir, const char *base, int baselen)
 {
+	struct exclude_list_group *group;
 	struct exclude_list *el;
 	struct exclude_stack *stk = NULL;
 	int current;
 
-	if ((!dir->exclude_per_dir) ||
-	    (baselen + strlen(dir->exclude_per_dir) >= PATH_MAX))
-		return; /* too long a path -- ignore */
+	group = &dir->exclude_list_group[EXC_DIRS];
 
-	/* Pop the ones that are not the prefix of the path being checked. */
-	el = &dir->exclude_list[EXC_DIRS];
+	/* Pop the exclude lists from the EXCL_DIRS exclude_list_group
+	 * which originate from directories not in the prefix of the
+	 * path being checked. */
 	while ((stk = dir->exclude_stack) != NULL) {
 		if (stk->baselen <= baselen &&
 		    !strncmp(dir->basebuf, base, stk->baselen))
 			break;
+		el = &group->el[dir->exclude_stack->exclude_ix];
 		dir->exclude_stack = stk->prev;
-		while (stk->exclude_ix < el->nr)
-			free(el->excludes[--el->nr]);
-		free(stk->filebuf);
+		dir->exclude = NULL;
+		free((char *)el->src); /* see strdup() below */
+		clear_exclude_list(el);
 		free(stk);
+		group->nr--;
 	}
+
+	/* Skip traversing into sub directories if the parent is excluded */
+	if (dir->exclude)
+		return;
 
 	/* Read from the parent directories and push them down. */
 	current = stk ? stk->baselen : -1;
@@ -492,171 +808,87 @@ static void prep_exclude(struct dir_struct *dir, const char *base, int baselen)
 		}
 		stk->prev = dir->exclude_stack;
 		stk->baselen = cp - base;
-		stk->exclude_ix = el->nr;
+		stk->exclude_ix = group->nr;
+		el = add_exclude_list(dir, EXC_DIRS, NULL);
 		memcpy(dir->basebuf + current, base + current,
 		       stk->baselen - current);
-		strcpy(dir->basebuf + stk->baselen, dir->exclude_per_dir);
-		add_excludes_from_file_to_list(dir->basebuf,
-					       dir->basebuf, stk->baselen,
-					       &stk->filebuf, el, 1);
+
+		/* Abort if the directory is excluded */
+		if (stk->baselen) {
+			int dt = DT_DIR;
+			dir->basebuf[stk->baselen - 1] = 0;
+			dir->exclude = last_exclude_matching_from_lists(dir,
+				dir->basebuf, stk->baselen - 1,
+				dir->basebuf + current, &dt);
+			dir->basebuf[stk->baselen - 1] = '/';
+			if (dir->exclude &&
+			    dir->exclude->flags & EXC_FLAG_NEGATIVE)
+				dir->exclude = NULL;
+			if (dir->exclude) {
+				dir->basebuf[stk->baselen] = 0;
+				dir->exclude_stack = stk;
+				return;
+			}
+		}
+
+		/* Try to read per-directory file unless path is too long */
+		if (dir->exclude_per_dir &&
+		    stk->baselen + strlen(dir->exclude_per_dir) < PATH_MAX) {
+			strcpy(dir->basebuf + stk->baselen,
+					dir->exclude_per_dir);
+			/*
+			 * dir->basebuf gets reused by the traversal, but we
+			 * need fname to remain unchanged to ensure the src
+			 * member of each struct exclude correctly
+			 * back-references its source file.  Other invocations
+			 * of add_exclude_list provide stable strings, so we
+			 * strdup() and free() here in the caller.
+			 */
+			el->src = strdup(dir->basebuf);
+			add_excludes_from_file_to_list(dir->basebuf,
+					dir->basebuf, stk->baselen, el, 1);
+		}
 		dir->exclude_stack = stk;
 		current = stk->baselen;
 	}
 	dir->basebuf[baselen] = '\0';
 }
 
-/* Scan the list and let the last match determine the fate.
- * Return 1 for exclude, 0 for include and -1 for undecided.
+/*
+ * Loads the exclude lists for the directory containing pathname, then
+ * scans all exclude lists to determine whether pathname is excluded.
+ * Returns the exclude_list element which matched, or NULL for
+ * undecided.
  */
-int excluded_from_list(const char *pathname,
-		       int pathlen, const char *basename, int *dtype,
-		       struct exclude_list *el)
-{
-	int i;
-
-	if (!el->nr)
-		return -1;	/* undefined */
-
-	for (i = el->nr - 1; 0 <= i; i--) {
-		struct exclude *x = el->excludes[i];
-		const char *name, *exclude = x->pattern;
-		int to_exclude = x->to_exclude;
-		int namelen, prefix = x->nowildcardlen;
-
-		if (x->flags & EXC_FLAG_MUSTBEDIR) {
-			if (*dtype == DT_UNKNOWN)
-				*dtype = get_dtype(NULL, pathname, pathlen);
-			if (*dtype != DT_DIR)
-				continue;
-		}
-
-		if (x->flags & EXC_FLAG_NODIR) {
-			/* match basename */
-			if (prefix == x->patternlen) {
-				if (!strcmp_icase(exclude, basename))
-					return to_exclude;
-			} else if (x->flags & EXC_FLAG_ENDSWITH) {
-				if (x->patternlen - 1 <= pathlen &&
-				    !strcmp_icase(exclude + 1, pathname + pathlen - x->patternlen + 1))
-					return to_exclude;
-			} else {
-				if (fnmatch_icase(exclude, basename, 0) == 0)
-					return to_exclude;
-			}
-			continue;
-		}
-
-		/* match with FNM_PATHNAME:
-		 * exclude has base (baselen long) implicitly in front of it.
-		 */
-		if (*exclude == '/') {
-			exclude++;
-			prefix--;
-		}
-
-		if (pathlen < x->baselen ||
-		    (x->baselen && pathname[x->baselen-1] != '/') ||
-		    strncmp_icase(pathname, x->base, x->baselen))
-			continue;
-
-		namelen = x->baselen ? pathlen - x->baselen : pathlen;
-		name = pathname + pathlen  - namelen;
-
-		/* if the non-wildcard part is longer than the
-		   remaining pathname, surely it cannot match */
-		if (prefix > namelen)
-			continue;
-
-		if (prefix) {
-			if (strncmp_icase(exclude, name, prefix))
-				continue;
-			exclude += prefix;
-			name    += prefix;
-			namelen -= prefix;
-		}
-
-		if (!namelen || !fnmatch_icase(exclude, name, FNM_PATHNAME))
-			return to_exclude;
-	}
-	return -1; /* undecided */
-}
-
-static int excluded(struct dir_struct *dir, const char *pathname, int *dtype_p)
+struct exclude *last_exclude_matching(struct dir_struct *dir,
+					     const char *pathname,
+					     int *dtype_p)
 {
 	int pathlen = strlen(pathname);
-	int st;
 	const char *basename = strrchr(pathname, '/');
 	basename = (basename) ? basename+1 : pathname;
 
 	prep_exclude(dir, pathname, basename-pathname);
-	for (st = EXC_CMDL; st <= EXC_FILE; st++) {
-		switch (excluded_from_list(pathname, pathlen, basename,
-					   dtype_p, &dir->exclude_list[st])) {
-		case 0:
-			return 0;
-		case 1:
-			return 1;
-		}
-	}
-	return 0;
-}
 
-void path_exclude_check_init(struct path_exclude_check *check,
-			     struct dir_struct *dir)
-{
-	check->dir = dir;
-	strbuf_init(&check->path, 256);
-}
+	if (dir->exclude)
+		return dir->exclude;
 
-void path_exclude_check_clear(struct path_exclude_check *check)
-{
-	strbuf_release(&check->path);
+	return last_exclude_matching_from_lists(dir, pathname, pathlen,
+			basename, dtype_p);
 }
 
 /*
- * Is this name excluded?  This is for a caller like show_files() that
- * do not honor directory hierarchy and iterate through paths that are
- * possibly in an ignored directory.
- *
- * A path to a directory known to be excluded is left in check->path to
- * optimize for repeated checks for files in the same excluded directory.
+ * Loads the exclude lists for the directory containing pathname, then
+ * scans all exclude lists to determine whether pathname is excluded.
+ * Returns 1 if true, otherwise 0.
  */
-int path_excluded(struct path_exclude_check *check,
-		  const char *name, int namelen, int *dtype)
+int is_excluded(struct dir_struct *dir, const char *pathname, int *dtype_p)
 {
-	int i;
-	struct strbuf *path = &check->path;
-
-	/*
-	 * we allow the caller to pass namelen as an optimization; it
-	 * must match the length of the name, as we eventually call
-	 * excluded() on the whole name string.
-	 */
-	if (namelen < 0)
-		namelen = strlen(name);
-
-	if (path->len &&
-	    path->len <= namelen &&
-	    !memcmp(name, path->buf, path->len) &&
-	    (!name[path->len] || name[path->len] == '/'))
-		return 1;
-
-	strbuf_setlen(path, 0);
-	for (i = 0; name[i]; i++) {
-		int ch = name[i];
-
-		if (ch == '/') {
-			int dt = DT_DIR;
-			if (excluded(check->dir, path->buf, &dt))
-				return 1;
-		}
-		strbuf_addch(path, ch);
-	}
-
-	/* An entry in the index; cannot be a directory with subentries */
-	strbuf_setlen(path, 0);
-
-	return excluded(check->dir, name, dtype);
+	struct exclude *exclude =
+		last_exclude_matching(dir, pathname, dtype_p);
+	if (exclude)
+		return exclude->flags & EXC_FLAG_NEGATIVE ? 0 : 1;
+	return 0;
 }
 
 static struct dir_entry *dir_entry_new(const char *pathname, int len)
@@ -787,32 +1019,26 @@ static enum exist_status directory_exists_in_index(const char *dirname, int len)
  *
  *  (a) if "show_other_directories" is true, we show it as
  *      just a directory, unless "hide_empty_directories" is
- *      also true and the directory is empty, in which case
- *      we just ignore it entirely.
+ *      also true, in which case we need to check if it contains any
+ *      untracked and / or ignored files.
  *  (b) if it looks like a git directory, and we don't have
  *      'no_gitlinks' set we treat it as a gitlink, and show it
  *      as a directory.
  *  (c) otherwise, we recurse into it.
  */
-enum directory_treatment {
-	show_directory,
-	ignore_directory,
-	recurse_into_directory
-};
-
-static enum directory_treatment treat_directory(struct dir_struct *dir,
-	const char *dirname, int len,
+static enum path_treatment treat_directory(struct dir_struct *dir,
+	const char *dirname, int len, int exclude,
 	const struct path_simplify *simplify)
 {
 	/* The "len-1" is to strip the final '/' */
 	switch (directory_exists_in_index(dirname, len-1)) {
 	case index_directory:
-		return recurse_into_directory;
+		return path_recurse;
 
 	case index_gitdir:
 		if (dir->flags & DIR_SHOW_OTHER_DIRECTORIES)
-			return ignore_directory;
-		return show_directory;
+			return path_none;
+		return path_untracked;
 
 	case index_nonexistent:
 		if (dir->flags & DIR_SHOW_OTHER_DIRECTORIES)
@@ -820,17 +1046,17 @@ static enum directory_treatment treat_directory(struct dir_struct *dir,
 		if (!(dir->flags & DIR_NO_GITLINKS)) {
 			unsigned char sha1[20];
 			if (resolve_gitlink_ref(dirname, "HEAD", sha1) == 0)
-				return show_directory;
+				return path_untracked;
 		}
-		return recurse_into_directory;
+		return path_recurse;
 	}
 
 	/* This is the "show_other_directories" case */
+
 	if (!(dir->flags & DIR_HIDE_EMPTY_DIRECTORIES))
-		return show_directory;
-	if (!read_directory_recursive(dir, dirname, len, 1, simplify))
-		return ignore_directory;
-	return show_directory;
+		return exclude ? path_excluded : path_untracked;
+
+	return read_directory_recursive(dir, dirname, len, 1, simplify);
 }
 
 /*
@@ -945,65 +1171,40 @@ static int get_dtype(struct dirent *de, const char *path, int len)
 	return dtype;
 }
 
-enum path_treatment {
-	path_ignored,
-	path_handled,
-	path_recurse
-};
-
 static enum path_treatment treat_one_path(struct dir_struct *dir,
 					  struct strbuf *path,
 					  const struct path_simplify *simplify,
 					  int dtype, struct dirent *de)
 {
-	int exclude = excluded(dir, path->buf, &dtype);
-	if (exclude && (dir->flags & DIR_COLLECT_IGNORED)
-	    && exclude_matches_pathspec(path->buf, path->len, simplify))
-		dir_add_ignored(dir, path->buf, path->len);
+	int exclude;
+	if (dtype == DT_UNKNOWN)
+		dtype = get_dtype(de, path->buf, path->len);
+
+	/* Always exclude indexed files */
+	if (dtype != DT_DIR &&
+	    cache_name_exists(path->buf, path->len, ignore_case))
+		return path_none;
+
+	exclude = is_excluded(dir, path->buf, &dtype);
 
 	/*
 	 * Excluded? If we don't explicitly want to show
 	 * ignored files, ignore it
 	 */
-	if (exclude && !(dir->flags & DIR_SHOW_IGNORED))
-		return path_ignored;
-
-	if (dtype == DT_UNKNOWN)
-		dtype = get_dtype(de, path->buf, path->len);
-
-	/*
-	 * Do we want to see just the ignored files?
-	 * We still need to recurse into directories,
-	 * even if we don't ignore them, since the
-	 * directory may contain files that we do..
-	 */
-	if (!exclude && (dir->flags & DIR_SHOW_IGNORED)) {
-		if (dtype != DT_DIR)
-			return path_ignored;
-	}
+	if (exclude && !(dir->flags & (DIR_SHOW_IGNORED|DIR_SHOW_IGNORED_TOO)))
+		return path_excluded;
 
 	switch (dtype) {
 	default:
-		return path_ignored;
+		return path_none;
 	case DT_DIR:
 		strbuf_addch(path, '/');
-		switch (treat_directory(dir, path->buf, path->len, simplify)) {
-		case show_directory:
-			if (exclude != !!(dir->flags
-					  & DIR_SHOW_IGNORED))
-				return path_ignored;
-			break;
-		case recurse_into_directory:
-			return path_recurse;
-		case ignore_directory:
-			return path_ignored;
-		}
-		break;
+		return treat_directory(dir, path->buf, path->len, exclude,
+			simplify);
 	case DT_REG:
 	case DT_LNK:
-		break;
+		return exclude ? path_excluded : path_untracked;
 	}
-	return path_handled;
 }
 
 static enum path_treatment treat_path(struct dir_struct *dir,
@@ -1015,11 +1216,11 @@ static enum path_treatment treat_path(struct dir_struct *dir,
 	int dtype;
 
 	if (is_dot_or_dotdot(de->d_name) || !strcmp(de->d_name, ".git"))
-		return path_ignored;
+		return path_none;
 	strbuf_setlen(path, baselen);
 	strbuf_addstr(path, de->d_name);
 	if (simplify_away(path->buf, path->len, simplify))
-		return path_ignored;
+		return path_none;
 
 	dtype = DTYPE(de);
 	return treat_one_path(dir, path, simplify, dtype, de);
@@ -1033,14 +1234,16 @@ static enum path_treatment treat_path(struct dir_struct *dir,
  *
  * Also, we ignore the name ".git" (even if it is not a directory).
  * That likely will not change.
+ *
+ * Returns the most significant path_treatment value encountered in the scan.
  */
-static int read_directory_recursive(struct dir_struct *dir,
+static enum path_treatment read_directory_recursive(struct dir_struct *dir,
 				    const char *base, int baselen,
 				    int check_only,
 				    const struct path_simplify *simplify)
 {
 	DIR *fdir;
-	int contents = 0;
+	enum path_treatment state, subdir_state, dir_state = path_none;
 	struct dirent *de;
 	struct strbuf path = STRBUF_INIT;
 
@@ -1051,27 +1254,53 @@ static int read_directory_recursive(struct dir_struct *dir,
 		goto out;
 
 	while ((de = readdir(fdir)) != NULL) {
-		switch (treat_path(dir, de, &path, baselen, simplify)) {
-		case path_recurse:
-			contents += read_directory_recursive(dir, path.buf,
-							     path.len, 0,
-							     simplify);
+		/* check how the file or directory should be treated */
+		state = treat_path(dir, de, &path, baselen, simplify);
+		if (state > dir_state)
+			dir_state = state;
+
+		/* recurse into subdir if instructed by treat_path */
+		if (state == path_recurse) {
+			subdir_state = read_directory_recursive(dir, path.buf,
+				path.len, check_only, simplify);
+			if (subdir_state > dir_state)
+				dir_state = subdir_state;
+		}
+
+		if (check_only) {
+			/* abort early if maximum state has been reached */
+			if (dir_state == path_untracked)
+				break;
+			/* skip the dir_add_* part */
 			continue;
-		case path_ignored:
-			continue;
-		case path_handled:
+		}
+
+		/* add the path to the appropriate result list */
+		switch (state) {
+		case path_excluded:
+			if (dir->flags & DIR_SHOW_IGNORED)
+				dir_add_name(dir, path.buf, path.len);
+			else if ((dir->flags & DIR_SHOW_IGNORED_TOO) ||
+				((dir->flags & DIR_COLLECT_IGNORED) &&
+				exclude_matches_pathspec(path.buf, path.len,
+					simplify)))
+				dir_add_ignored(dir, path.buf, path.len);
+			break;
+
+		case path_untracked:
+			if (!(dir->flags & DIR_SHOW_IGNORED))
+				dir_add_name(dir, path.buf, path.len);
+			break;
+
+		default:
 			break;
 		}
-		contents++;
-		if (check_only)
-			break;
-		dir_add_name(dir, path.buf, path.len);
 	}
 	closedir(fdir);
  out:
 	strbuf_release(&path);
 
-	return contents;
+	return dir_state;
 }
 
 static int cmp_name(const void *p1, const void *p2)
@@ -1120,12 +1349,14 @@ static int treat_leading_path(struct dir_struct *dir,
 	struct strbuf sb = STRBUF_INIT;
 	int baselen, rc = 0;
 	const char *cp;
+	int old_flags = dir->flags;
 
 	while (len && path[len - 1] == '/')
 		len--;
 	if (!len)
 		return 1;
 	baselen = 0;
+	dir->flags &= ~DIR_SHOW_OTHER_DIRECTORIES;
 	while (1) {
 		cp = path + baselen + !!baselen;
 		cp = memchr(cp, '/', path + len - cp);
@@ -1140,7 +1371,7 @@ static int treat_leading_path(struct dir_struct *dir,
 		if (simplify_away(sb.buf, sb.len, simplify))
 			break;
 		if (treat_one_path(dir, &sb, simplify,
-				   DT_DIR, NULL) == path_ignored)
+				   DT_DIR, NULL) == path_none)
 			break; /* do not recurse into it */
 		if (len <= baselen) {
 			rc = 1;
@@ -1148,6 +1379,7 @@ static int treat_leading_path(struct dir_struct *dir,
 		}
 	}
 	strbuf_release(&sb);
+	dir->flags = old_flags;
 	return rc;
 }
 
@@ -1313,9 +1545,9 @@ void setup_standard_excludes(struct dir_struct *dir)
 		home_config_paths(NULL, &xdg_path, "ignore");
 		excludes_file = xdg_path;
 	}
-	if (!access_or_warn(path, R_OK))
+	if (!access_or_warn(path, R_OK, 0))
 		add_excludes_from_file(dir, path);
-	if (excludes_file && !access_or_warn(excludes_file, R_OK))
+	if (excludes_file && !access_or_warn(excludes_file, R_OK, 0))
 		add_excludes_from_file(dir, excludes_file);
 }
 
@@ -1323,7 +1555,7 @@ int remove_path(const char *name)
 {
 	char *slash;
 
-	if (unlink(name) && errno != ENOENT)
+	if (unlink(name) && errno != ENOENT && errno != ENOTDIR)
 		return -1;
 
 	slash = strrchr(name, '/');
@@ -1369,9 +1601,18 @@ int init_pathspec(struct pathspec *pathspec, const char **paths)
 
 		item->match = path;
 		item->len = strlen(path);
-		item->use_wildcard = !no_wildcard(path);
-		if (item->use_wildcard)
-			pathspec->has_wildcard = 1;
+		item->flags = 0;
+		if (limit_pathspec_to_literal()) {
+			item->nowildcard_len = item->len;
+		} else {
+			item->nowildcard_len = simple_length(path);
+			if (item->nowildcard_len < item->len) {
+				pathspec->has_wildcard = 1;
+				if (path[item->nowildcard_len] == '*' &&
+				    no_wildcard(path + item->nowildcard_len + 1))
+					item->flags |= PATHSPEC_ONESTAR;
+			}
+		}
 	}
 
 	qsort(pathspec->items, pathspec->nr,
@@ -1384,4 +1625,42 @@ void free_pathspec(struct pathspec *pathspec)
 {
 	free(pathspec->items);
 	pathspec->items = NULL;
+}
+
+int limit_pathspec_to_literal(void)
+{
+	static int flag = -1;
+	if (flag < 0)
+		flag = git_env_bool(GIT_LITERAL_PATHSPECS_ENVIRONMENT, 0);
+	return flag;
+}
+
+/*
+ * Frees memory within dir which was allocated for exclude lists and
+ * the exclude_stack.  Does not free dir itself.
+ */
+void clear_directory(struct dir_struct *dir)
+{
+	int i, j;
+	struct exclude_list_group *group;
+	struct exclude_list *el;
+	struct exclude_stack *stk;
+
+	for (i = EXC_CMDL; i <= EXC_FILE; i++) {
+		group = &dir->exclude_list_group[i];
+		for (j = 0; j < group->nr; j++) {
+			el = &group->el[j];
+			if (i == EXC_DIRS)
+				free((char *)el->src);
+			clear_exclude_list(el);
+		}
+		free(group->el);
+	}
+
+	stk = dir->exclude_stack;
+	while (stk) {
+		struct exclude_stack *prev = stk->prev;
+		free(stk);
+		stk = prev;
+	}
 }

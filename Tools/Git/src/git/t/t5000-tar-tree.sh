@@ -25,36 +25,81 @@ commit id embedding:
 '
 
 . ./test-lib.sh
-UNZIP=${UNZIP:-unzip}
 GZIP=${GZIP:-gzip}
 GUNZIP=${GUNZIP:-gzip -d}
 
 SUBSTFORMAT=%H%n
 
-check_zip() {
-	zipfile=$1.zip
+test_lazy_prereq TAR_NEEDS_PAX_FALLBACK '
+	(
+		mkdir pax &&
+		cd pax &&
+		"$TAR" xf "$TEST_DIRECTORY"/t5000/pax.tar &&
+		test -f PaxHeaders.1791/file
+	)
+'
+
+get_pax_header() {
+	file=$1
+	header=$2=
+
+	while read len rest
+	do
+		if test "$len" = $(echo "$len $rest" | wc -c)
+		then
+			case "$rest" in
+			$header*)
+				echo "${rest#$header}"
+				;;
+			esac
+		fi
+	done <"$file"
+}
+
+check_tar() {
+	tarfile=$1.tar
 	listfile=$1.lst
 	dir=$1
 	dir_with_prefix=$dir/$2
 
-	test_expect_success UNZIP " extract ZIP archive" "
-		(mkdir $dir && cd $dir && $UNZIP ../$zipfile)
-	"
+	test_expect_success ' extract tar archive' '
+		(mkdir $dir && cd $dir && "$TAR" xf -) <$tarfile
+	'
 
-	test_expect_success UNZIP " validate filenames" "
+	test_expect_success TAR_NEEDS_PAX_FALLBACK ' interpret pax headers' '
+		(
+			cd $dir &&
+			for header in *.paxheader
+			do
+				data=${header%.paxheader}.data &&
+				if test -h $data -o -e $data
+				then
+					path=$(get_pax_header $header path) &&
+					if test -n "$path"
+					then
+						mv "$data" "$path"
+					fi
+				fi
+			done
+		)
+	'
+
+	test_expect_success ' validate filenames' '
 		(cd ${dir_with_prefix}a && find .) | sort >$listfile &&
 		test_cmp a.lst $listfile
-	"
+	'
 
-	test_expect_success UNZIP " validate file contents" "
+	test_expect_success ' validate file contents' '
 		diff -r a ${dir_with_prefix}a
-	"
+	'
 }
 
 test_expect_success \
     'populate workdir' \
-    'mkdir a b c &&
+    'mkdir a &&
      echo simple textfile >a/a &&
+     ten=0123456789 && hundred=$ten$ten$ten$ten$ten$ten$ten$ten$ten$ten &&
+     echo long filename >a/four$hundred &&
      mkdir a/bin &&
      cp /bin/sh a/bin &&
      printf "A\$Format:%s\$O" "$SUBSTFORMAT" >a/substfile1 &&
@@ -83,6 +128,12 @@ test_expect_success \
      git update-ref HEAD $(TZ=GMT GIT_COMMITTER_DATE="2005-05-27 22:00:00" \
      git commit-tree $treeid </dev/null)'
 
+test_expect_success 'setup export-subst' '
+	echo "substfile?" export-subst >>.git/info/attributes &&
+	git log --max-count=1 "--pretty=format:A${SUBSTFORMAT}O" HEAD \
+		>a/substfile1
+'
+
 test_expect_success \
     'create bare clone' \
     'git clone --bare . bare.git &&
@@ -96,13 +147,19 @@ test_expect_success \
     'git archive' \
     'git archive HEAD >b.tar'
 
-test_expect_success \
-    'git tar-tree' \
-    'git tar-tree HEAD >b2.tar'
+check_tar b
 
-test_expect_success \
-    'git archive vs. git tar-tree' \
-    'test_cmp b.tar b2.tar'
+test_expect_success 'git archive --prefix=prefix/' '
+	git archive --prefix=prefix/ HEAD >with_prefix.tar
+'
+
+check_tar with_prefix prefix/
+
+test_expect_success 'git-archive --prefix=olde-' '
+	git archive --prefix=olde- HEAD >with_olde-prefix.tar
+'
+
+check_tar with_olde-prefix olde-
 
 test_expect_success 'git archive on large files' '
     test_config core.bigfilethreshold 1 &&
@@ -139,122 +196,20 @@ test_expect_success \
     'git get-tar-commit-id <b.tar >b.commitid &&
      test_cmp .git/$(git symbolic-ref HEAD) b.commitid'
 
-test_expect_success \
-    'extract tar archive' \
-    '(cd b && "$TAR" xf -) <b.tar'
-
-test_expect_success \
-    'validate filenames' \
-    '(cd b/a && find .) | sort >b.lst &&
-     test_cmp a.lst b.lst'
-
-test_expect_success \
-    'validate file contents' \
-    'diff -r a b/a'
-
-test_expect_success \
-    'git tar-tree with prefix' \
-    'git tar-tree HEAD prefix >c.tar'
-
-test_expect_success \
-    'extract tar archive with prefix' \
-    '(cd c && "$TAR" xf -) <c.tar'
-
-test_expect_success \
-    'validate filenames with prefix' \
-    '(cd c/prefix/a && find .) | sort >c.lst &&
-     test_cmp a.lst c.lst'
-
-test_expect_success \
-    'validate file contents with prefix' \
-    'diff -r a c/prefix/a'
-
-test_expect_success \
-    'create archives with substfiles' \
-    'cp .git/info/attributes .git/info/attributes.before &&
-     echo "substfile?" export-subst >>.git/info/attributes &&
-     git archive HEAD >f.tar &&
-     git archive --prefix=prefix/ HEAD >g.tar &&
-     mv .git/info/attributes.before .git/info/attributes'
-
-test_expect_success \
-    'extract substfiles' \
-    '(mkdir f && cd f && "$TAR" xf -) <f.tar'
-
-test_expect_success \
-     'validate substfile contents' \
-     'git log --max-count=1 "--pretty=format:A${SUBSTFORMAT}O" HEAD \
-      >f/a/substfile1.expected &&
-      test_cmp f/a/substfile1.expected f/a/substfile1 &&
-      test_cmp a/substfile2 f/a/substfile2
+test_expect_success 'git tar-tree' '
+	git tar-tree HEAD >tar-tree.tar &&
+	test_cmp b.tar tar-tree.tar
 '
 
-test_expect_success \
-    'extract substfiles from archive with prefix' \
-    '(mkdir g && cd g && "$TAR" xf -) <g.tar'
-
-test_expect_success \
-     'validate substfile contents from archive with prefix' \
-     'git log --max-count=1 "--pretty=format:A${SUBSTFORMAT}O" HEAD \
-      >g/prefix/a/substfile1.expected &&
-      test_cmp g/prefix/a/substfile1.expected g/prefix/a/substfile1 &&
-      test_cmp a/substfile2 g/prefix/a/substfile2
-'
-
-$UNZIP -v >/dev/null 2>&1
-if [ $? -eq 127 ]; then
-	say "Skipping ZIP tests, because unzip was not found"
-else
-	test_set_prereq UNZIP
-fi
-
-test_expect_success \
-    'git archive --format=zip' \
-    'git archive --format=zip HEAD >d.zip'
-
-check_zip d
-
-test_expect_success \
-    'git archive --format=zip in a bare repo' \
-    '(cd bare.git && git archive --format=zip HEAD) >d1.zip'
-
-test_expect_success \
-    'git archive --format=zip vs. the same in a bare repo' \
-    'test_cmp d.zip d1.zip'
-
-test_expect_success 'git archive --format=zip with --output' \
-    'git archive --format=zip --output=d2.zip HEAD &&
-    test_cmp d.zip d2.zip'
-
-test_expect_success 'git archive with --output, inferring format' '
-	git archive --output=d3.zip HEAD &&
-	test_cmp d.zip d3.zip
+test_expect_success 'git tar-tree with prefix' '
+	git tar-tree HEAD prefix >tar-tree_with_prefix.tar &&
+	test_cmp with_prefix.tar tar-tree_with_prefix.tar
 '
 
 test_expect_success 'git archive with --output, override inferred format' '
 	git archive --format=tar --output=d4.zip HEAD &&
 	test_cmp b.tar d4.zip
 '
-
-test_expect_success \
-    'git archive --format=zip with prefix' \
-    'git archive --format=zip --prefix=prefix/ HEAD >e.zip'
-
-check_zip e prefix/
-
-test_expect_success 'git archive -0 --format=zip on large files' '
-	test_config core.bigfilethreshold 1 &&
-	git archive -0 --format=zip HEAD >large.zip
-'
-
-check_zip large
-
-test_expect_success 'git archive --format=zip on large files' '
-	test_config core.bigfilethreshold 1 &&
-	git archive --format=zip HEAD >large-compressed.zip
-'
-
-check_zip large-compressed
 
 test_expect_success \
     'git archive --list outside of a git repo' \
@@ -268,22 +223,11 @@ test_expect_success 'clients cannot access unreachable commits' '
 	test_must_fail git archive --remote=. $sha1 >remote.tar
 '
 
-test_expect_success 'git-archive --prefix=olde-' '
-	git archive --prefix=olde- >h.tar HEAD &&
-	(
-		mkdir h &&
-		cd h &&
-		"$TAR" xf - <../h.tar
-	) &&
-	test -d h/olde-a &&
-	test -d h/olde-a/bin &&
-	test -f h/olde-a/bin/sh
-'
-
 test_expect_success 'setup tar filters' '
 	git config tar.tar.foo.command "tr ab ba" &&
 	git config tar.bar.command "tr ab ba" &&
-	git config tar.bar.remote true
+	git config tar.bar.remote true &&
+	git config tar.invalid baz
 '
 
 test_expect_success 'archive --list mentions user filter' '

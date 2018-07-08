@@ -10,7 +10,9 @@ SYNOPSIS
 --------
 [verse]
 'git commit-tree' <tree> [(-p <parent>)...] < changelog
-'git commit-tree' [(-p <parent>)...] [(-m <message>)...] [(-F <file>)...] <tree>
+'git commit-tree' [(-p <parent>)...] [-S[<keyid>]] [(-m <message>)...]
+		  [(-F <file>)...] <tree>
+
 
 DESCRIPTION
 -----------
@@ -30,7 +32,7 @@ While a tree represents a particular directory state of a working
 directory, a commit represents that state in "time", and explains how
 to get there.
 
-Normally a commit would identify a new "HEAD" state, and while git
+Normally a commit would identify a new "HEAD" state, and while Git
 doesn't care where you save the note about that state, in practice we
 tend to just write the result to the file that is pointed at by
 `.git/HEAD`, so that we can always see what the last committed
@@ -52,6 +54,9 @@ OPTIONS
 	Read the commit log message from the given file. Use `-` to read
 	from the standard input.
 
+-S[<keyid>]::
+	GPG-sign commit.
+
 
 Commit Information
 ------------------
@@ -72,13 +77,13 @@ if set:
 	GIT_COMMITTER_NAME
 	GIT_COMMITTER_EMAIL
 	GIT_COMMITTER_DATE
-	EMAIL
 
 (nb "<", ">" and "\n"s are stripped)
 
 In case (some of) these environment variables are not set, the information
 is taken from the configuration items user.name and user.email, or, if not
-present, system user name and the hostname used for outgoing mail (taken
+present, the environment variable EMAIL, or, if that is not set,
+system user name and the hostname used for outgoing mail (taken
 from `/etc/mailname` and falling back to the fully qualified hostname when
 that file does not exist).
 

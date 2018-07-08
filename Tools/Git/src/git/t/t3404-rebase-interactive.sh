@@ -29,12 +29,6 @@ Initial setup:
 
 . "$TEST_DIRECTORY"/lib-rebase.sh
 
-test_cmp_rev () {
-	git rev-parse --verify "$1" >expect.rev &&
-	git rev-parse --verify "$2" >actual.rev &&
-	test_cmp expect.rev actual.rev
-}
-
 set_fake_editor
 
 # WARNING: Modifications to the initial repository can change the SHA ID used
@@ -116,6 +110,17 @@ test_expect_success 'rebase -i with the exec command checks tree cleanness' '
 	test_cmp_rev master^ HEAD &&
 	git reset --hard &&
 	git rebase --continue
+'
+
+test_expect_success 'rebase -i with exec of inexistent command' '
+	git checkout master &&
+	test_when_finished "git rebase --abort" &&
+	(
+	FAKE_LINES="exec_this-command-does-not-exist 1" &&
+	export FAKE_LINES &&
+	test_must_fail git rebase -i HEAD^ >actual 2>&1
+	) &&
+	! grep "Maybe git-rebase is broken" actual
 '
 
 test_expect_success 'no changes are a nop' '
@@ -909,6 +914,37 @@ test_expect_success 'rebase -i --root fixup root commit' '
 	test A = $(git cat-file commit HEAD | sed -ne \$p) &&
 	test B = $(git show HEAD:file1) &&
 	test 0 = $(git cat-file commit HEAD | grep -c ^parent\ )
+'
+
+test_expect_success 'rebase --edit-todo does not works on non-interactive rebase' '
+	git reset --hard &&
+	git checkout conflict-branch &&
+	test_must_fail git rebase --onto HEAD~2 HEAD~ &&
+	test_must_fail git rebase --edit-todo &&
+	git rebase --abort
+'
+
+test_expect_success 'rebase --edit-todo can be used to modify todo' '
+	git reset --hard &&
+	git checkout no-conflict-branch^0 &&
+	FAKE_LINES="edit 1 2 3" git rebase -i HEAD~3 &&
+	FAKE_LINES="2 1" git rebase --edit-todo &&
+	git rebase --continue
+	test M = $(git cat-file commit HEAD^ | sed -ne \$p) &&
+	test L = $(git cat-file commit HEAD | sed -ne \$p)
+'
+
+test_expect_success 'rebase -i respects core.commentchar' '
+	git reset --hard &&
+	git checkout E^0 &&
+	test_config core.commentchar "\\" &&
+	write_script remove-all-but-first.sh <<-\EOF &&
+	sed -e "2,\$s/^/\\\\/" "$1" >"$1.tmp" &&
+	mv "$1.tmp" "$1"
+	EOF
+	test_set_editor "$(pwd)/remove-all-but-first.sh" &&
+	git rebase -i B &&
+	test B = $(git cat-file commit HEAD^ | sed -ne \$p)
 '
 
 test_done

@@ -57,6 +57,35 @@ test_expect_success 'pulling into void does not overwrite untracked files' '
 	)
 '
 
+test_expect_success 'pulling into void does not overwrite staged files' '
+	git init cloned-staged-colliding &&
+	(
+		cd cloned-staged-colliding &&
+		echo "alternate content" >file &&
+		git add file &&
+		test_must_fail git pull .. master &&
+		echo "alternate content" >expect &&
+		test_cmp expect file &&
+		git cat-file blob :file >file.index &&
+		test_cmp expect file.index
+	)
+'
+
+
+test_expect_success 'pulling into void does not remove new staged files' '
+	git init cloned-staged-new &&
+	(
+		cd cloned-staged-new &&
+		echo "new tracked file" >newfile &&
+		git add newfile &&
+		git pull .. master &&
+		echo "new tracked file" >expect &&
+		test_cmp expect newfile &&
+		git cat-file blob :newfile >newfile.index &&
+		test_cmp expect newfile.index
+	)
+'
+
 test_expect_success 'test . as a remote' '
 
 	git branch copy master &&
@@ -96,8 +125,7 @@ test_expect_success '--rebase' '
 '
 test_expect_success 'pull.rebase' '
 	git reset --hard before-rebase &&
-	git config --bool pull.rebase true &&
-	test_when_finished "git config --unset pull.rebase" &&
+	test_config pull.rebase true &&
 	git pull . copy &&
 	test $(git rev-parse HEAD^) = $(git rev-parse copy) &&
 	test new = $(git show HEAD:file2)
@@ -105,8 +133,7 @@ test_expect_success 'pull.rebase' '
 
 test_expect_success 'branch.to-rebase.rebase' '
 	git reset --hard before-rebase &&
-	git config --bool branch.to-rebase.rebase true &&
-	test_when_finished "git config --unset branch.to-rebase.rebase" &&
+	test_config branch.to-rebase.rebase true &&
 	git pull . copy &&
 	test $(git rev-parse HEAD^) = $(git rev-parse copy) &&
 	test new = $(git show HEAD:file2)
@@ -114,10 +141,8 @@ test_expect_success 'branch.to-rebase.rebase' '
 
 test_expect_success 'branch.to-rebase.rebase should override pull.rebase' '
 	git reset --hard before-rebase &&
-	git config --bool pull.rebase true &&
-	test_when_finished "git config --unset pull.rebase" &&
-	git config --bool branch.to-rebase.rebase false &&
-	test_when_finished "git config --unset branch.to-rebase.rebase" &&
+	test_config pull.rebase true &&
+	test_config branch.to-rebase.rebase false &&
 	git pull . copy &&
 	test $(git rev-parse HEAD^) != $(git rev-parse copy) &&
 	test new = $(git show HEAD:file2)
@@ -171,9 +196,9 @@ test_expect_success 'pull --rebase dies early with dirty working directory' '
 	git update-ref refs/remotes/me/copy copy^ &&
 	COPY=$(git rev-parse --verify me/copy) &&
 	git rebase --onto $COPY copy &&
-	git config branch.to-rebase.remote me &&
-	git config branch.to-rebase.merge refs/heads/copy &&
-	git config branch.to-rebase.rebase true &&
+	test_config branch.to-rebase.remote me &&
+	test_config branch.to-rebase.merge refs/heads/copy &&
+	test_config branch.to-rebase.rebase true &&
 	echo dirty >> file &&
 	git add file &&
 	test_must_fail git pull &&

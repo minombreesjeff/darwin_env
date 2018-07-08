@@ -2,12 +2,12 @@
 .\"     Title: git-patch-id
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-PATCH\-ID" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-PATCH\-ID" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -37,7 +37,7 @@ git-patch-id \- Compute unique ID for a patch
 .sp
 .SH "DESCRIPTION"
 .sp
-A "patch ID" is nothing but a SHA1 of the diff associated with a patch, with whitespace and line numbers ignored\&. As such, it\(cqs "reasonably stable", but at the same time also reasonably unique, i\&.e\&., two patches that have the same "patch ID" are almost guaranteed to be the same thing\&.
+A "patch ID" is nothing but a SHA\-1 of the diff associated with a patch, with whitespace and line numbers ignored\&. As such, it\(cqs "reasonably stable", but at the same time also reasonably unique, i\&.e\&., two patches that have the same "patch ID" are almost guaranteed to be the same thing\&.
 .sp
 IOW, you can use this thing to look for likely duplicate commits\&.
 .sp

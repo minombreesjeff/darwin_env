@@ -174,6 +174,9 @@ const char *diff_get_color(int diff_use_color, enum color_diff ix);
 	diff_get_color((o)->use_color, ix)
 
 
+const char *diff_line_prefix(struct diff_options *);
+
+
 extern const char mime_boundary_leader[];
 
 extern void diff_tree_setup_paths(const char **paths, struct diff_options *);
@@ -243,7 +246,6 @@ extern int parse_long_opt(const char *opt, const char **argv,
 
 extern int git_diff_basic_config(const char *var, const char *value, void *cb);
 extern int git_diff_ui_config(const char *var, const char *value, void *cb);
-extern int diff_use_color_default;
 extern void diff_setup(struct diff_options *);
 extern int diff_opt_parse(struct diff_options *, const char **, int);
 extern void diff_setup_done(struct diff_options *);
@@ -334,7 +336,10 @@ extern struct userdiff_driver *get_textconv(struct diff_filespec *one);
 
 extern int parse_rename_score(const char **cp_p);
 
+extern long parse_algorithm_value(const char *value);
+
 extern int print_stat_summary(FILE *fp, int files,
 			      int insertions, int deletions);
+extern void setup_diff_pager(struct diff_options *);
 
 #endif /* DIFF_H */

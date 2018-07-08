@@ -5,6 +5,7 @@
 #include "url.h"
 #include "credential.h"
 #include "version.h"
+#include "pkt-line.h"
 
 int active_requests;
 int http_is_verbose;
@@ -30,6 +31,7 @@ static CURL *curl_default;
 char curl_errorstr[CURL_ERROR_SIZE];
 
 static int curl_ssl_verify = -1;
+static int curl_ssl_try;
 static const char *ssl_cert;
 #if LIBCURL_VERSION_NUM >= 0x070903
 static const char *ssl_key;
@@ -162,6 +164,10 @@ static int http_options(const char *var, const char *value, void *cb)
 			ssl_cert_password_required = 1;
 		return 0;
 	}
+	if (!strcmp("http.ssltry", var)) {
+		curl_ssl_try = git_config_bool(var, value);
+		return 0;
+	}
 	if (!strcmp("http.minsessions", var)) {
 		min_curl_sessions = git_config_int(var, value);
 #ifndef USE_CURL_MULTI
@@ -222,9 +228,15 @@ static void init_curl_http_auth(CURL *result)
 #else
 	{
 		static struct strbuf up = STRBUF_INIT;
-		strbuf_reset(&up);
-		strbuf_addf(&up, "%s:%s",
-			    http_auth.username, http_auth.password);
+		/*
+		 * Note that we assume we only ever have a single set of
+		 * credentials in a given program run, so we do not have
+		 * to worry about updating this buffer, only setting its
+		 * initial value.
+		 */
+		if (!up.len)
+			strbuf_addf(&up, "%s:%s",
+				http_auth.username, http_auth.password);
 		curl_easy_setopt(result, CURLOPT_USERPWD, up.buf);
 	}
 #endif
@@ -236,6 +248,7 @@ static int has_cert_password(void)
 		return 0;
 	if (!cert_auth.password) {
 		cert_auth.protocol = xstrdup("cert");
+		cert_auth.username = xstrdup("");
 		cert_auth.path = xstrdup(ssl_cert);
 		credential_fill(&cert_auth);
 	}
@@ -280,7 +293,6 @@ static CURL *get_curl_handle(void)
 #endif
 	if (ssl_cainfo != NULL)
 		curl_easy_setopt(result, CURLOPT_CAINFO, ssl_cainfo);
-	curl_easy_setopt(result, CURLOPT_FAILONERROR, 1);
 
 	if (curl_low_speed_limit > 0 && curl_low_speed_time > 0) {
 		curl_easy_setopt(result, CURLOPT_LOW_SPEED_LIMIT,
@@ -304,6 +316,11 @@ static CURL *get_curl_handle(void)
 
 	if (curl_ftp_no_epsv)
 		curl_easy_setopt(result, CURLOPT_FTP_USE_EPSV, 0);
+
+#ifdef CURLOPT_USE_SSL
+	if (curl_ssl_try)
+		curl_easy_setopt(result, CURLOPT_USE_SSL, CURLUSESSL_TRY);
+#endif
 
 	if (curl_http_proxy) {
 		curl_easy_setopt(result, CURLOPT_PROXY, curl_http_proxy);
@@ -504,6 +521,7 @@ struct active_request_slot *get_active_slot(void)
 	curl_easy_setopt(slot->curl, CURLOPT_POSTFIELDS, NULL);
 	curl_easy_setopt(slot->curl, CURLOPT_UPLOAD, 0);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPGET, 1);
+	curl_easy_setopt(slot->curl, CURLOPT_FAILONERROR, 1);
 	if (http_auth.password)
 		init_curl_http_auth(slot->curl);
 
@@ -631,6 +649,18 @@ void run_active_slot(struct active_request_slot *slot)
 			FD_ZERO(&excfds);
 			curl_multi_fdset(curlm, &readfds, &writefds, &excfds, &max_fd);
 
+			/*
+			 * It can happen that curl_multi_timeout returns a pathologically
+			 * long timeout when curl_multi_fdset returns no file descriptors
+			 * to read.  See commit message for more details.
+			 */
+			if (max_fd < 0 &&
+			    (select_timeout.tv_sec > 0 ||
+			     select_timeout.tv_usec > 50000)) {
+				select_timeout.tv_sec  = 0;
+				select_timeout.tv_usec = 50000;
+			}
+
 			select(max_fd+1, &readfds, &writefds, &excfds, &select_timeout);
 		}
 	}
@@ -745,9 +775,27 @@ char *get_remote_object_url(const char *url, const char *hex,
 	return strbuf_detach(&buf, NULL);
 }
 
-int handle_curl_result(struct active_request_slot *slot,
-		       struct slot_results *results)
+int handle_curl_result(struct slot_results *results)
 {
+	/*
+	 * If we see a failing http code with CURLE_OK, we have turned off
+	 * FAILONERROR (to keep the server's custom error response), and should
+	 * translate the code into failure here.
+	 */
+	if (results->curl_result == CURLE_OK &&
+	    results->http_code >= 400) {
+		results->curl_result = CURLE_HTTP_RETURNED_ERROR;
+		/*
+		 * Normally curl will already have put the "reason phrase"
+		 * from the server into curl_errorstr; unfortunately without
+		 * FAILONERROR it is lost, so we can give only the numeric
+		 * status code.
+		 */
+		snprintf(curl_errorstr, sizeof(curl_errorstr),
+			 "The requested URL returned error: %ld",
+			 results->http_code);
+	}
+
 	if (results->curl_result == CURLE_OK) {
 		credential_approve(&http_auth);
 		return HTTP_OK;
@@ -759,7 +807,6 @@ int handle_curl_result(struct active_request_slot *slot,
 			return HTTP_NOAUTH;
 		} else {
 			credential_fill(&http_auth);
-			init_curl_http_auth(slot->curl);
 			return HTTP_REAUTH;
 		}
 	} else {
@@ -777,7 +824,8 @@ int handle_curl_result(struct active_request_slot *slot,
 #define HTTP_REQUEST_STRBUF	0
 #define HTTP_REQUEST_FILE	1
 
-static int http_request(const char *url, void *result, int target, int options)
+static int http_request(const char *url, struct strbuf *type,
+			void *result, int target, int options)
 {
 	struct active_request_slot *slot;
 	struct slot_results results;
@@ -812,6 +860,8 @@ static int http_request(const char *url, void *result, int target, int options)
 	strbuf_addstr(&buf, "Pragma:");
 	if (options & HTTP_NO_CACHE)
 		strbuf_addstr(&buf, " no-cache");
+	if (options & HTTP_KEEP_ERROR)
+		curl_easy_setopt(slot->curl, CURLOPT_FAILONERROR, 0);
 
 	headers = curl_slist_append(headers, buf.buf);
 
@@ -821,10 +871,19 @@ static int http_request(const char *url, void *result, int target, int options)
 
 	if (start_active_slot(slot)) {
 		run_active_slot(slot);
-		ret = handle_curl_result(slot, &results);
+		ret = handle_curl_result(&results);
 	} else {
-		error("Unable to start HTTP request for %s", url);
+		snprintf(curl_errorstr, sizeof(curl_errorstr),
+			 "failed to start HTTP request");
 		ret = HTTP_START_FAILED;
+	}
+
+	if (type) {
+		char *t;
+		strbuf_reset(type);
+		curl_easy_getinfo(slot->curl, CURLINFO_CONTENT_TYPE, &t);
+		if (t)
+			strbuf_addstr(type, t);
 	}
 
 	curl_slist_free_all(headers);
@@ -833,18 +892,39 @@ static int http_request(const char *url, void *result, int target, int options)
 	return ret;
 }
 
-static int http_request_reauth(const char *url, void *result, int target,
+static int http_request_reauth(const char *url,
+			       struct strbuf *type,
+			       void *result, int target,
 			       int options)
 {
-	int ret = http_request(url, result, target, options);
+	int ret = http_request(url, type, result, target, options);
 	if (ret != HTTP_REAUTH)
 		return ret;
-	return http_request(url, result, target, options);
+
+	/*
+	 * If we are using KEEP_ERROR, the previous request may have
+	 * put cruft into our output stream; we should clear it out before
+	 * making our next request. We only know how to do this for
+	 * the strbuf case, but that is enough to satisfy current callers.
+	 */
+	if (options & HTTP_KEEP_ERROR) {
+		switch (target) {
+		case HTTP_REQUEST_STRBUF:
+			strbuf_reset(result);
+			break;
+		default:
+			die("BUG: HTTP_KEEP_ERROR is only supported with strbufs");
+		}
+	}
+	return http_request(url, type, result, target, options);
 }
 
-int http_get_strbuf(const char *url, struct strbuf *result, int options)
+int http_get_strbuf(const char *url,
+		    struct strbuf *type,
+		    struct strbuf *result, int options)
 {
-	return http_request_reauth(url, result, HTTP_REQUEST_STRBUF, options);
+	return http_request_reauth(url, type, result,
+				   HTTP_REQUEST_STRBUF, options);
 }
 
 /*
@@ -867,22 +947,13 @@ static int http_get_file(const char *url, const char *filename, int options)
 		goto cleanup;
 	}
 
-	ret = http_request_reauth(url, result, HTTP_REQUEST_FILE, options);
+	ret = http_request_reauth(url, NULL, result, HTTP_REQUEST_FILE, options);
 	fclose(result);
 
 	if ((ret == HTTP_OK) && move_temp_to_file(tmpfile.buf, filename))
 		ret = HTTP_ERROR;
 cleanup:
 	strbuf_release(&tmpfile);
-	return ret;
-}
-
-int http_error(const char *url, int ret)
-{
-	/* http_request has already handled HTTP_START_FAILED. */
-	if (ret != HTTP_START_FAILED)
-		error("%s while accessing %s", curl_errorstr, url);
-
 	return ret;
 }
 
@@ -893,7 +964,7 @@ int http_fetch_ref(const char *base, struct ref *ref)
 	int ret = -1;
 
 	url = quote_ref_url(base, ref->name);
-	if (http_get_strbuf(url, &buffer, HTTP_NO_CACHE) == HTTP_OK) {
+	if (http_get_strbuf(url, NULL, &buffer, HTTP_NO_CACHE) == HTTP_OK) {
 		strbuf_rtrim(&buffer);
 		if (buffer.len == 40)
 			ret = get_sha1_hex(buffer.buf, ref->old_sha1);
@@ -986,7 +1057,7 @@ int http_get_info_packs(const char *base_url, struct packed_git **packs_head)
 	strbuf_addstr(&buf, "objects/info/packs");
 	url = strbuf_detach(&buf, NULL);
 
-	ret = http_get_strbuf(url, &buf, HTTP_NO_CACHE);
+	ret = http_get_strbuf(url, NULL, &buf, HTTP_NO_CACHE);
 	if (ret != HTTP_OK)
 		goto cleanup;
 

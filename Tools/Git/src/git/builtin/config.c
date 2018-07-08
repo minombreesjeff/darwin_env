@@ -4,7 +4,7 @@
 #include "parse-options.h"
 
 static const char *const builtin_config_usage[] = {
-	"git config [options]",
+	N_("git config [options]"),
 	NULL
 };
 
@@ -15,7 +15,6 @@ static int show_keys;
 static int use_key_regexp;
 static int do_all;
 static int do_not_match;
-static int seen;
 static char delim = '=';
 static char key_delim = ' ';
 static char term = '\n';
@@ -49,33 +48,33 @@ static int respect_includes = -1;
 #define TYPE_PATH (1<<3)
 
 static struct option builtin_config_options[] = {
-	OPT_GROUP("Config file location"),
-	OPT_BOOLEAN(0, "global", &use_global_config, "use global config file"),
-	OPT_BOOLEAN(0, "system", &use_system_config, "use system config file"),
-	OPT_BOOLEAN(0, "local", &use_local_config, "use repository config file"),
-	OPT_STRING('f', "file", &given_config_file, "file", "use given config file"),
-	OPT_GROUP("Action"),
-	OPT_BIT(0, "get", &actions, "get value: name [value-regex]", ACTION_GET),
-	OPT_BIT(0, "get-all", &actions, "get all values: key [value-regex]", ACTION_GET_ALL),
-	OPT_BIT(0, "get-regexp", &actions, "get values for regexp: name-regex [value-regex]", ACTION_GET_REGEXP),
-	OPT_BIT(0, "replace-all", &actions, "replace all matching variables: name value [value_regex]", ACTION_REPLACE_ALL),
-	OPT_BIT(0, "add", &actions, "adds a new variable: name value", ACTION_ADD),
-	OPT_BIT(0, "unset", &actions, "removes a variable: name [value-regex]", ACTION_UNSET),
-	OPT_BIT(0, "unset-all", &actions, "removes all matches: name [value-regex]", ACTION_UNSET_ALL),
-	OPT_BIT(0, "rename-section", &actions, "rename section: old-name new-name", ACTION_RENAME_SECTION),
-	OPT_BIT(0, "remove-section", &actions, "remove a section: name", ACTION_REMOVE_SECTION),
-	OPT_BIT('l', "list", &actions, "list all", ACTION_LIST),
-	OPT_BIT('e', "edit", &actions, "opens an editor", ACTION_EDIT),
-	OPT_STRING(0, "get-color", &get_color_slot, "slot", "find the color configured: [default]"),
-	OPT_STRING(0, "get-colorbool", &get_colorbool_slot, "slot", "find the color setting: [stdout-is-tty]"),
-	OPT_GROUP("Type"),
-	OPT_BIT(0, "bool", &types, "value is \"true\" or \"false\"", TYPE_BOOL),
-	OPT_BIT(0, "int", &types, "value is decimal number", TYPE_INT),
-	OPT_BIT(0, "bool-or-int", &types, "value is --bool or --int", TYPE_BOOL_OR_INT),
-	OPT_BIT(0, "path", &types, "value is a path (file or directory name)", TYPE_PATH),
-	OPT_GROUP("Other"),
-	OPT_BOOLEAN('z', "null", &end_null, "terminate values with NUL byte"),
-	OPT_BOOL(0, "includes", &respect_includes, "respect include directives on lookup"),
+	OPT_GROUP(N_("Config file location")),
+	OPT_BOOLEAN(0, "global", &use_global_config, N_("use global config file")),
+	OPT_BOOLEAN(0, "system", &use_system_config, N_("use system config file")),
+	OPT_BOOLEAN(0, "local", &use_local_config, N_("use repository config file")),
+	OPT_STRING('f', "file", &given_config_file, N_("file"), N_("use given config file")),
+	OPT_GROUP(N_("Action")),
+	OPT_BIT(0, "get", &actions, N_("get value: name [value-regex]"), ACTION_GET),
+	OPT_BIT(0, "get-all", &actions, N_("get all values: key [value-regex]"), ACTION_GET_ALL),
+	OPT_BIT(0, "get-regexp", &actions, N_("get values for regexp: name-regex [value-regex]"), ACTION_GET_REGEXP),
+	OPT_BIT(0, "replace-all", &actions, N_("replace all matching variables: name value [value_regex]"), ACTION_REPLACE_ALL),
+	OPT_BIT(0, "add", &actions, N_("add a new variable: name value"), ACTION_ADD),
+	OPT_BIT(0, "unset", &actions, N_("remove a variable: name [value-regex]"), ACTION_UNSET),
+	OPT_BIT(0, "unset-all", &actions, N_("remove all matches: name [value-regex]"), ACTION_UNSET_ALL),
+	OPT_BIT(0, "rename-section", &actions, N_("rename section: old-name new-name"), ACTION_RENAME_SECTION),
+	OPT_BIT(0, "remove-section", &actions, N_("remove a section: name"), ACTION_REMOVE_SECTION),
+	OPT_BIT('l', "list", &actions, N_("list all"), ACTION_LIST),
+	OPT_BIT('e', "edit", &actions, N_("open an editor"), ACTION_EDIT),
+	OPT_STRING(0, "get-color", &get_color_slot, N_("slot"), N_("find the color configured: [default]")),
+	OPT_STRING(0, "get-colorbool", &get_colorbool_slot, N_("slot"), N_("find the color setting: [stdout-is-tty]")),
+	OPT_GROUP(N_("Type")),
+	OPT_BIT(0, "bool", &types, N_("value is \"true\" or \"false\""), TYPE_BOOL),
+	OPT_BIT(0, "int", &types, N_("value is decimal number"), TYPE_INT),
+	OPT_BIT(0, "bool-or-int", &types, N_("value is --bool or --int"), TYPE_BOOL_OR_INT),
+	OPT_BIT(0, "path", &types, N_("value is a path (file or directory name)"), TYPE_PATH),
+	OPT_GROUP(N_("Other")),
+	OPT_BOOLEAN('z', "null", &end_null, N_("terminate values with NUL byte")),
+	OPT_BOOL(0, "includes", &respect_includes, N_("respect include directives on lookup")),
 	OPT_END(),
 };
 
@@ -95,12 +94,19 @@ static int show_all_config(const char *key_, const char *value_, void *cb)
 	return 0;
 }
 
-static int show_config(const char *key_, const char *value_, void *cb)
+struct strbuf_list {
+	struct strbuf *items;
+	int nr;
+	int alloc;
+};
+
+static int collect_config(const char *key_, const char *value_, void *cb)
 {
+	struct strbuf_list *values = cb;
+	struct strbuf *buf;
 	char value[256];
 	const char *vptr = value;
 	int must_free_vptr = 0;
-	int dup_error = 0;
 	int must_print_delim = 0;
 
 	if (!use_key_regexp && strcmp(key_, key))
@@ -111,12 +117,14 @@ static int show_config(const char *key_, const char *value_, void *cb)
 	    (do_not_match ^ !!regexec(regexp, (value_?value_:""), 0, NULL, 0)))
 		return 0;
 
+	ALLOC_GROW(values->items, values->nr + 1, values->alloc);
+	buf = &values->items[values->nr++];
+	strbuf_init(buf, 0);
+
 	if (show_keys) {
-		printf("%s", key_);
+		strbuf_addstr(buf, key_);
 		must_print_delim = 1;
 	}
-	if (seen && !do_all)
-		dup_error = 1;
 	if (types == TYPE_INT)
 		sprintf(value, "%d", git_config_int(key_, value_?value_:""));
 	else if (types == TYPE_BOOL)
@@ -129,7 +137,8 @@ static int show_config(const char *key_, const char *value_, void *cb)
 		else
 			sprintf(value, "%d", v);
 	} else if (types == TYPE_PATH) {
-		git_config_pathname(&vptr, key_, value_);
+		if (git_config_pathname(&vptr, key_, value_) < 0)
+			return -1;
 		must_free_vptr = 1;
 	} else if (value_) {
 		vptr = value_;
@@ -138,16 +147,12 @@ static int show_config(const char *key_, const char *value_, void *cb)
 		vptr = "";
 		must_print_delim = 0;
 	}
-	seen++;
-	if (dup_error) {
-		error("More than one value for the key %s: %s",
-				key_, vptr);
-	}
-	else {
-		if (must_print_delim)
-			printf("%c", key_delim);
-		printf("%s%c", vptr, term);
-	}
+
+	if (must_print_delim)
+		strbuf_addch(buf, key_delim);
+	strbuf_addstr(buf, vptr);
+	strbuf_addch(buf, term);
+
 	if (must_free_vptr)
 		/* If vptr must be freed, it's a pointer to a
 		 * dynamically allocated buffer, it's safe to cast to
@@ -161,19 +166,8 @@ static int show_config(const char *key_, const char *value_, void *cb)
 static int get_value(const char *key_, const char *regex_)
 {
 	int ret = CONFIG_GENERIC_ERROR;
-	char *global = NULL, *xdg = NULL, *repo_config = NULL;
-	const char *system_wide = NULL, *local;
-	struct config_include_data inc = CONFIG_INCLUDE_INIT;
-	config_fn_t fn;
-	void *data;
-
-	local = given_config_file;
-	if (!local) {
-		local = repo_config = git_pathdup("config");
-		if (git_config_system())
-			system_wide = git_etc_gitconfig();
-		home_config_paths(&global, &xdg, "config");
-	}
+	struct strbuf_list values = {NULL};
+	int i;
 
 	if (use_key_regexp) {
 		char *tl;
@@ -195,7 +189,8 @@ static int get_value(const char *key_, const char *regex_)
 		key_regexp = (regex_t*)xmalloc(sizeof(regex_t));
 		if (regcomp(key_regexp, key, REG_EXTENDED)) {
 			fprintf(stderr, "Invalid key pattern: %s\n", key_);
-			free(key);
+			free(key_regexp);
+			key_regexp = NULL;
 			ret = CONFIG_INVALID_PATTERN;
 			goto free_strings;
 		}
@@ -215,53 +210,37 @@ static int get_value(const char *key_, const char *regex_)
 		regexp = (regex_t*)xmalloc(sizeof(regex_t));
 		if (regcomp(regexp, regex_, REG_EXTENDED)) {
 			fprintf(stderr, "Invalid pattern: %s\n", regex_);
+			free(regexp);
+			regexp = NULL;
 			ret = CONFIG_INVALID_PATTERN;
 			goto free_strings;
 		}
 	}
 
-	fn = show_config;
-	data = NULL;
-	if (respect_includes) {
-		inc.fn = fn;
-		inc.data = data;
-		fn = git_config_include;
-		data = &inc;
+	git_config_with_options(collect_config, &values,
+				given_config_file, respect_includes);
+
+	ret = !values.nr;
+
+	for (i = 0; i < values.nr; i++) {
+		struct strbuf *buf = values.items + i;
+		if (do_all || i == values.nr - 1)
+			fwrite(buf->buf, 1, buf->len, stdout);
+		strbuf_release(buf);
 	}
+	free(values.items);
 
-	if (do_all && system_wide)
-		git_config_from_file(fn, system_wide, data);
-	if (do_all && xdg)
-		git_config_from_file(fn, xdg, data);
-	if (do_all && global)
-		git_config_from_file(fn, global, data);
-	if (do_all)
-		git_config_from_file(fn, local, data);
-	git_config_from_parameters(fn, data);
-	if (!do_all && !seen)
-		git_config_from_file(fn, local, data);
-	if (!do_all && !seen && global)
-		git_config_from_file(fn, global, data);
-	if (!do_all && !seen && xdg)
-		git_config_from_file(fn, xdg, data);
-	if (!do_all && !seen && system_wide)
-		git_config_from_file(fn, system_wide, data);
-
+free_strings:
 	free(key);
+	if (key_regexp) {
+		regfree(key_regexp);
+		free(key_regexp);
+	}
 	if (regexp) {
 		regfree(regexp);
 		free(regexp);
 	}
 
-	if (do_all)
-		ret = !seen;
-	else
-		ret = (seen == 1) ? 0 : seen > 1 ? 2 : 1;
-
-free_strings:
-	free(repo_config);
-	free(global);
-	free(xdg);
 	return ret;
 }
 
@@ -400,8 +379,8 @@ int cmd_config(int argc, const char **argv, const char *prefix)
 			 */
 			die("$HOME not set");
 
-		if (access_or_warn(user_config, R_OK) &&
-		    xdg_config && !access_or_warn(xdg_config, R_OK))
+		if (access_or_warn(user_config, R_OK, 0) &&
+		    xdg_config && !access_or_warn(xdg_config, R_OK, 0))
 			given_config_file = xdg_config;
 		else
 			given_config_file = user_config;

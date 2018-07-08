@@ -1,6 +1,9 @@
 linkgit:git-check-attr[1]::
 	Display gitattributes information.
 
+linkgit:git-check-ignore[1]::
+	Debug gitignore / exclude files.
+
 linkgit:git-check-ref-format[1]::
 	Ensures that a reference name is well formed.
 
@@ -9,6 +12,12 @@ linkgit:git-column[1]::
 
 linkgit:git-credential[1]::
 	Retrieve and store user credentials.
+
+linkgit:git-credential-cache[1]::
+	Helper to temporarily store passwords in memory.
+
+linkgit:git-credential-store[1]::
+	Helper to store credentials on disk.
 
 linkgit:git-fmt-merge-msg[1]::
 	Produce a merge commit message.
@@ -28,8 +37,11 @@ linkgit:git-patch-id[1]::
 linkgit:git-peek-remote[1]::
 	(deprecated) List the references in a remote repository.
 
+linkgit:git-sh-i18n[1]::
+	Git's i18n setup code for shell scripts.
+
 linkgit:git-sh-setup[1]::
-	Common git shell script setup code.
+	Common Git shell script setup code.
 
 linkgit:git-stripspace[1]::
 	Remove unnecessary whitespace.

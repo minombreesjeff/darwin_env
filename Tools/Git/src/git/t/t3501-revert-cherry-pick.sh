@@ -47,7 +47,7 @@ test_expect_success 'cherry-pick --nonsense' '
 	git diff --exit-code HEAD &&
 	test_must_fail git cherry-pick --nonsense 2>msg &&
 	git diff --exit-code HEAD "$pos" &&
-	grep '[Uu]sage:' msg
+	test_i18ngrep '[Uu]sage:' msg
 '
 
 test_expect_success 'revert --nonsense' '
@@ -56,7 +56,7 @@ test_expect_success 'revert --nonsense' '
 	git diff --exit-code HEAD &&
 	test_must_fail git revert --nonsense 2>msg &&
 	git diff --exit-code HEAD "$pos" &&
-	grep '[Uu]sage:' msg
+	test_i18ngrep '[Uu]sage:' msg
 '
 
 test_expect_success 'cherry-pick after renaming branch' '
@@ -98,6 +98,15 @@ test_expect_success 'revert forbidden on dirty working tree' '
 	test_must_fail git revert HEAD 2>errors &&
 	test_i18ngrep "Your local changes would be overwritten by " errors
 
+'
+
+test_expect_success 'chery-pick on unborn branch' '
+	git checkout --orphan unborn &&
+	git rm --cached -r . &&
+	rm -rf * &&
+	git cherry-pick initial &&
+	git diff --quiet initial &&
+	! test_cmp_rev initial HEAD
 '
 
 test_done

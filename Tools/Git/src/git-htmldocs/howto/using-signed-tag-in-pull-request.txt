@@ -7,8 +7,8 @@ Abstract: Beginning v1.7.9, a contributor can push a signed tag to her
  later validate it.
 Content-type: text/asciidoc
 
-Using signed tag in pull requests
-=================================
+How to use a signed tag in pull requests
+========================================
 
 A typical distributed workflow using Git is for a contributor to fork a
 project, build on it, publish the result to her public repository, and ask
@@ -23,7 +23,7 @@ Earlier, a typical pull request may have started like this:
 
    Froboz 3.2 (2011-09-30 14:20:57 -0700)
 
- are available in the git repository at:
+ are available in the Git repository at:
 
    example.com:/git/froboz.git for-xyzzy
 ------------
@@ -107,7 +107,7 @@ The resulting msg.txt file begins like so:
 
    Froboz 3.2 (2011-09-30 14:20:57 -0700)
 
- are available in the git repository at:
+ are available in the Git repository at:
 
    example.com:/git/froboz.git tags/frotz-for-xyzzy
 

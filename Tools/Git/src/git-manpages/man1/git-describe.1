@@ -2,12 +2,12 @@
 .\"     Title: git-describe
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-DESCRIBE" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-DESCRIBE" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -57,13 +57,15 @@ by default) if the working tree is dirty\&.
 \-\-all
 .RS 4
 Instead of using only the annotated tags, use any ref found in
-\&.git/refs/\&. This option enables matching any known branch, remote\-tracking branch, or lightweight tag\&.
+refs/
+namespace\&. This option enables matching any known branch, remote\-tracking branch, or lightweight tag\&.
 .RE
 .PP
 \-\-tags
 .RS 4
 Instead of using only the annotated tags, use any tag found in
-\&.git/refs/tags\&. This option enables matching a lightweight (non\-annotated) tag\&.
+refs/tags
+namespace\&. This option enables matching a lightweight (non\-annotated) tag\&.
 .RE
 .PP
 \-\-contains
@@ -98,7 +100,9 @@ Always output the long format (the tag, the number of commits and the abbreviate
 .PP
 \-\-match <pattern>
 .RS 4
-Only consider tags matching the given pattern (can be used to avoid leaking private tags made from the repository)\&.
+Only consider tags matching the given
+glob(7)
+pattern, excluding the "refs/tags/" prefix\&. This can be used to avoid leaking private tags from the repository\&.
 .RE
 .PP
 \-\-always
@@ -174,12 +178,12 @@ tags/v1\&.0\&.0
 .RE
 .\}
 .sp
-Note that the suffix you get if you type these commands today may be longer than what Linus saw above when he ran these commands, as your git repository may have new commits whose object names begin with 975b that did not exist back then, and "\-g975b" suffix alone may not be sufficient to disambiguate these commits\&.
+Note that the suffix you get if you type these commands today may be longer than what Linus saw above when he ran these commands, as your Git repository may have new commits whose object names begin with 975b that did not exist back then, and "\-g975b" suffix alone may not be sufficient to disambiguate these commits\&.
 .SH "SEARCH STRATEGY"
 .sp
 For each committish supplied, \fIgit describe\fR will first look for a tag which tags exactly that commit\&. Annotated tags will always be preferred over lightweight tags, and tags with newer dates will always be preferred over tags with older dates\&. If an exact match is found, its name will be output and searching will stop\&.
 .sp
-If an exact match was not found, \fIgit describe\fR will walk back through the commit history to locate an ancestor commit which has been tagged\&. The ancestor\(cqs tag will be output along with an abbreviation of the input committish\(cqs SHA1\&.
+If an exact match was not found, \fIgit describe\fR will walk back through the commit history to locate an ancestor commit which has been tagged\&. The ancestor\(cqs tag will be output along with an abbreviation of the input committish\(cqs SHA\-1\&.
 .sp
 If multiple tags were found during the walk then the tag which has the fewest commits different from the input committish will be selected and output\&. Here fewest commits different is defined as the number of commits which would be shown by git log tag\&.\&.input will be the smallest number of commits possible\&.
 .SH "GIT"

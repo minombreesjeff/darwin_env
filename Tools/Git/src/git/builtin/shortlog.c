@@ -10,9 +10,7 @@
 #include "parse-options.h"
 
 static char const * const shortlog_usage[] = {
-	"git shortlog [-n] [-s] [-e] [-w] [rev-opts] [--] [<commit-id>... ]",
-	"",
-	"[rev-opts] are documented in git-rev-list(1)",
+	N_("git shortlog [<options>] [<revision range>] [[--] [<path>...]]"),
 	NULL
 };
 
@@ -36,52 +34,28 @@ static void insert_one_record(struct shortlog *log,
 	const char *dot3 = log->common_repo_prefix;
 	char *buffer, *p;
 	struct string_list_item *item;
-	char namebuf[1024];
-	char emailbuf[1024];
-	size_t len;
+	const char *mailbuf, *namebuf;
+	size_t namelen, maillen;
 	const char *eol;
-	const char *boemail, *eoemail;
 	struct strbuf subject = STRBUF_INIT;
+	struct strbuf namemailbuf = STRBUF_INIT;
+	struct ident_split ident;
 
-	boemail = strchr(author, '<');
-	if (!boemail)
-		return;
-	eoemail = strchr(boemail, '>');
-	if (!eoemail)
+	if (split_ident_line(&ident, author, strlen(author)))
 		return;
 
-	/* copy author name to namebuf, to support matching on both name and email */
-	memcpy(namebuf, author, boemail - author);
-	len = boemail - author;
-	while (len > 0 && isspace(namebuf[len-1]))
-		len--;
-	namebuf[len] = 0;
+	namebuf = ident.name_begin;
+	mailbuf = ident.mail_begin;
+	namelen = ident.name_end - ident.name_begin;
+	maillen = ident.mail_end - ident.mail_begin;
 
-	/* copy email name to emailbuf, to allow email replacement as well */
-	memcpy(emailbuf, boemail+1, eoemail - boemail);
-	emailbuf[eoemail - boemail - 1] = 0;
+	map_user(&log->mailmap, &mailbuf, &maillen, &namebuf, &namelen);
+	strbuf_add(&namemailbuf, namebuf, namelen);
 
-	if (!map_user(&log->mailmap, emailbuf, sizeof(emailbuf), namebuf, sizeof(namebuf))) {
-		while (author < boemail && isspace(*author))
-			author++;
-		for (len = 0;
-		     len < sizeof(namebuf) - 1 && author + len < boemail;
-		     len++)
-			namebuf[len] = author[len];
-		while (0 < len && isspace(namebuf[len-1]))
-			len--;
-		namebuf[len] = '\0';
-	}
-	else
-		len = strlen(namebuf);
+	if (log->email)
+		strbuf_addf(&namemailbuf, " <%.*s>", (int)maillen, mailbuf);
 
-	if (log->email) {
-		size_t room = sizeof(namebuf) - len - 1;
-		int maillen = strlen(emailbuf);
-		snprintf(namebuf + len, room, " <%.*s>", maillen, emailbuf);
-	}
-
-	item = string_list_insert(&log->list, namebuf);
+	item = string_list_insert(&log->list, namemailbuf.buf);
 	if (item->util == NULL)
 		item->util = xcalloc(1, sizeof(struct string_list));
 
@@ -250,13 +224,13 @@ int cmd_shortlog(int argc, const char **argv, const char *prefix)
 
 	static const struct option options[] = {
 		OPT_BOOLEAN('n', "numbered", &log.sort_by_number,
-			    "sort output according to the number of commits per author"),
+			    N_("sort output according to the number of commits per author")),
 		OPT_BOOLEAN('s', "summary", &log.summary,
-			    "Suppress commit descriptions, only provides commit count"),
+			    N_("Suppress commit descriptions, only provides commit count")),
 		OPT_BOOLEAN('e', "email", &log.email,
-			    "Show the email address of each author"),
-		{ OPTION_CALLBACK, 'w', NULL, &log, "w[,i1[,i2]]",
-			"Linewrap output", PARSE_OPT_OPTARG, &parse_wrap_args },
+			    N_("Show the email address of each author")),
+		{ OPTION_CALLBACK, 'w', NULL, &log, N_("w[,i1[,i2]]"),
+			N_("Linewrap output"), PARSE_OPT_OPTARG, &parse_wrap_args },
 		OPT_END(),
 	};
 
@@ -306,9 +280,8 @@ parse_done:
 static void add_wrapped_shortlog_msg(struct strbuf *sb, const char *s,
 				     const struct shortlog *log)
 {
-	int col = strbuf_add_wrapped_text(sb, s, log->in1, log->in2, log->wrap);
-	if (col != log->wrap)
-		strbuf_addch(sb, '\n');
+	strbuf_add_wrapped_text(sb, s, log->in1, log->in2, log->wrap);
+	strbuf_addch(sb, '\n');
 }
 
 void shortlog_output(struct shortlog *log)

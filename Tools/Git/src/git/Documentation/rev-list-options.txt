@@ -51,6 +51,14 @@ endif::git-rev-list[]
 	commits whose author matches any of the given patterns are
 	chosen (similarly for multiple `--committer=<pattern>`).
 
+--grep-reflog=<pattern>::
+
+	Limit the commits output to ones with reflog entries that
+	match the specified pattern (regular expression). With
+	more than one `--grep-reflog`, commits whose reflog message
+	matches any of the given patterns are chosen.  It is an
+	error to use this option unless `--walk-reflogs` is in use.
+
 --grep=<pattern>::
 
 	Limit the commits output to ones with log message that
@@ -58,6 +66,9 @@ endif::git-rev-list[]
 	more than one `--grep=<pattern>`, commits whose message
 	matches any of the given patterns are chosen (but see
 	`--all-match`).
++
+When `--show-notes` is in effect, the message from the notes as
+if it is part of the log message.
 
 --all-match::
 	Limit the commits output to ones that match all given --grep,
@@ -67,6 +78,11 @@ endif::git-rev-list[]
 --regexp-ignore-case::
 
 	Match the regexp limiting patterns without regard to letters case.
+
+--basic-regexp::
+
+	Consider the limiting patterns to be basic regular expressions;
+	this is the default.
 
 -E::
 --extended-regexp::
@@ -79,6 +95,11 @@ endif::git-rev-list[]
 
 	Consider the limiting patterns to be fixed strings (don't interpret
 	pattern as a regular expression).
+
+--perl-regexp::
+
+	Consider the limiting patterns to be Perl-compatible regexp.
+	Requires libpcre to be compiled in.
 
 --remove-empty::
 
@@ -628,7 +649,7 @@ together.
 Object Traversal
 ~~~~~~~~~~~~~~~~
 
-These options are mostly targeted for packing of git repositories.
+These options are mostly targeted for packing of Git repositories.
 
 --objects::
 
@@ -696,7 +717,7 @@ format, often found in E-mail messages.
 +
 `--date=short` shows only date but not time, in `YYYY-MM-DD` format.
 +
-`--date=raw` shows the date in the internal raw git format `%s %z` format.
+`--date=raw` shows the date in the internal raw Git format `%s %z` format.
 +
 `--date=default` shows timestamps in the original timezone
 (either committer's or author's).

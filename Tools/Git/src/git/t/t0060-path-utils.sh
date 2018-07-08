@@ -93,50 +93,94 @@ norm_path /d1/s1//../s2/../../d2 /d2 POSIX
 norm_path /d1/.../d2 /d1/.../d2 POSIX
 norm_path /d1/..././../d2 /d1/d2 POSIX
 
-ancestor / "" -1
 ancestor / / -1
-ancestor /foo "" -1
-ancestor /foo : -1
-ancestor /foo ::. -1
-ancestor /foo ::..:: -1
 ancestor /foo / 0
 ancestor /foo /fo -1
 ancestor /foo /foo -1
-ancestor /foo /foo/ -1
 ancestor /foo /bar -1
-ancestor /foo /bar/ -1
 ancestor /foo /foo/bar -1
-ancestor /foo /foo:/bar/ -1
-ancestor /foo /foo/:/bar/ -1
-ancestor /foo /foo::/bar/ -1
-ancestor /foo /:/foo:/bar/ 0
-ancestor /foo /foo:/:/bar/ 0
-ancestor /foo /:/bar/:/foo 0
-ancestor /foo/bar "" -1
+ancestor /foo /foo:/bar -1
+ancestor /foo /:/foo:/bar 0
+ancestor /foo /foo:/:/bar 0
+ancestor /foo /:/bar:/foo 0
 ancestor /foo/bar / 0
 ancestor /foo/bar /fo -1
-ancestor /foo/bar foo -1
 ancestor /foo/bar /foo 4
-ancestor /foo/bar /foo/ 4
 ancestor /foo/bar /foo/ba -1
 ancestor /foo/bar /:/fo 0
 ancestor /foo/bar /foo:/foo/ba 4
 ancestor /foo/bar /bar -1
-ancestor /foo/bar /bar/ -1
-ancestor /foo/bar /fo: -1
-ancestor /foo/bar :/fo -1
-ancestor /foo/bar /foo:/bar/ 4
-ancestor /foo/bar /:/foo:/bar/ 4
-ancestor /foo/bar /foo:/:/bar/ 4
-ancestor /foo/bar /:/bar/:/fo 0
-ancestor /foo/bar /:/bar/ 0
-ancestor /foo/bar .:/foo/. 4
-ancestor /foo/bar .:/foo/.:.: 4
-ancestor /foo/bar /foo/./:.:/bar 4
-ancestor /foo/bar .:/bar -1
+ancestor /foo/bar /fo -1
+ancestor /foo/bar /foo:/bar 4
+ancestor /foo/bar /:/foo:/bar 4
+ancestor /foo/bar /foo:/:/bar 4
+ancestor /foo/bar /:/bar:/fo 0
+ancestor /foo/bar /:/bar 0
+ancestor /foo/bar /foo 4
+ancestor /foo/bar /foo:/bar 4
+ancestor /foo/bar /bar -1
 
 test_expect_success 'strip_path_suffix' '
 	test c:/msysgit = $(test-path-utils strip_path_suffix \
 		c:/msysgit/libexec//git-core libexec/git-core)
 '
+
+test_expect_success 'absolute path rejects the empty string' '
+	test_must_fail test-path-utils absolute_path ""
+'
+
+test_expect_success 'real path rejects the empty string' '
+	test_must_fail test-path-utils real_path ""
+'
+
+test_expect_success POSIX 'real path works on absolute paths 1' '
+	nopath="hopefully-absent-path" &&
+	test "/" = "$(test-path-utils real_path "/")" &&
+	test "/$nopath" = "$(test-path-utils real_path "/$nopath")"
+'
+
+test_expect_success 'real path works on absolute paths 2' '
+	nopath="hopefully-absent-path" &&
+	# Find an existing top-level directory for the remaining tests:
+	d=$(pwd -P | sed -e "s|^\([^/]*/[^/]*\)/.*|\1|") &&
+	test "$d" = "$(test-path-utils real_path "$d")" &&
+	test "$d/$nopath" = "$(test-path-utils real_path "$d/$nopath")"
+'
+
+test_expect_success POSIX 'real path removes extra leading slashes' '
+	nopath="hopefully-absent-path" &&
+	test "/" = "$(test-path-utils real_path "///")" &&
+	test "/$nopath" = "$(test-path-utils real_path "///$nopath")" &&
+	# Find an existing top-level directory for the remaining tests:
+	d=$(pwd -P | sed -e "s|^\([^/]*/[^/]*\)/.*|\1|") &&
+	test "$d" = "$(test-path-utils real_path "//$d")" &&
+	test "$d/$nopath" = "$(test-path-utils real_path "//$d/$nopath")"
+'
+
+test_expect_success 'real path removes other extra slashes' '
+	nopath="hopefully-absent-path" &&
+	# Find an existing top-level directory for the remaining tests:
+	d=$(pwd -P | sed -e "s|^\([^/]*/[^/]*\)/.*|\1|") &&
+	test "$d" = "$(test-path-utils real_path "$d///")" &&
+	test "$d/$nopath" = "$(test-path-utils real_path "$d///$nopath")"
+'
+
+test_expect_success SYMLINKS 'real path works on symlinks' '
+	mkdir first &&
+	ln -s ../.git first/.git &&
+	mkdir second &&
+	ln -s ../first second/other &&
+	mkdir third &&
+	dir="$(cd .git; pwd -P)" &&
+	dir2=third/../second/other/.git &&
+	test "$dir" = "$(test-path-utils real_path $dir2)" &&
+	file="$dir"/index &&
+	test "$file" = "$(test-path-utils real_path $dir2/index)" &&
+	basename=blub &&
+	test "$dir/$basename" = "$(cd .git && test-path-utils real_path "$basename")" &&
+	ln -s ../first/file .git/syml &&
+	sym="$(cd first; pwd -P)"/file &&
+	test "$sym" = "$(test-path-utils real_path "$dir2/syml")"
+'
+
 test_done

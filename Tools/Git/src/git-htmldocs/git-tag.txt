@@ -20,11 +20,10 @@ SYNOPSIS
 DESCRIPTION
 -----------
 
-Add a tag reference in `.git/refs/tags/`, unless `-d/-l/-v` is given
+Add a tag reference in `refs/tags/`, unless `-d/-l/-v` is given
 to delete, list or verify tags.
 
-Unless `-f` is given, the tag to be created must not yet exist in the
-`.git/refs/tags/` directory.
+Unless `-f` is given, the named tag must not yet exist.
 
 If one of `-a`, `-s`, or `-u <key-id>` is passed, the command
 creates a 'tag' object, and requires a tag message.  Unless
@@ -34,7 +33,7 @@ in the tag message.
 If `-m <msg>` or `-F <file>` is given and `-a`, `-s`, and `-u <key-id>`
 are absent, `-a` is implied.
 
-Otherwise just a tag reference for the SHA1 object name of the commit object is
+Otherwise just a tag reference for the SHA-1 object name of the commit object is
 created (i.e. a lightweight tag).
 
 A GnuPG signed tag object will be created when `-s` or `-u
@@ -127,10 +126,16 @@ This option is only applicable when listing tags without annotation lines.
 	linkgit:git-check-ref-format[1].  Some of these checks
 	may restrict the characters allowed in a tag name.
 
+<commit>::
+<object>::
+	The object that the new tag will refer to, usually a commit.
+	Defaults to HEAD.
+
+
 CONFIGURATION
 -------------
 By default, 'git tag' in sign-with-default mode (-s) will use your
-committer identity (of the form "Your Name <your@email.address>") to
+committer identity (of the form "Your Name <\your@email.address>") to
 find a key.  If you want to use a different default key, you can specify
 it in the repository configuration as follows:
 
@@ -243,7 +248,7 @@ $ git pull git://git..../proj.git master
 In such a case, you do not want to automatically follow the other
 person's tags.
 
-One important aspect of git is its distributed nature, which
+One important aspect of Git is its distributed nature, which
 largely means there is no inherent "upstream" or
 "downstream" in the system.  On the face of it, the above
 example might seem to indicate that the tag namespace is owned

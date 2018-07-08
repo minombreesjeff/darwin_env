@@ -237,7 +237,7 @@ test_expect_success 'mergetool takes partial path' '
     git submodule update -N &&
     test_must_fail git merge master &&
 
-    #shouldnt need these lines
+    #should not need these lines
     #( yes "d" | git mergetool file11 >/dev/null 2>&1 ) &&
     #( yes "d" | git mergetool file12 >/dev/null 2>&1 ) &&
     #( yes "l" | git mergetool submod >/dev/null 2>&1 ) &&
@@ -506,6 +506,19 @@ test_expect_success 'file with no base' '
     git mergetool --no-prompt --tool mybase -- both &&
     >expected &&
     test_cmp both expected &&
+    git reset --hard master >/dev/null 2>&1
+'
+
+test_expect_success 'custom commands override built-ins' '
+    git checkout -b test14 branch1 &&
+    git config mergetool.defaults.cmd "cat \"\$REMOTE\" >\"\$MERGED\"" &&
+    git config mergetool.defaults.trustExitCode true &&
+    test_must_fail git merge master &&
+    git mergetool --no-prompt --tool defaults -- both &&
+    echo master both added >expected &&
+    test_cmp both expected &&
+    git config --unset mergetool.defaults.cmd &&
+    git config --unset mergetool.defaults.trustExitCode &&
     git reset --hard master >/dev/null 2>&1
 '
 

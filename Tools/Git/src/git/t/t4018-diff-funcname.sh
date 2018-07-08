@@ -93,11 +93,6 @@ sed -e '
 	s/song;/song();/
 ' <Beer.perl >Beer-correct.perl
 
-test_config () {
-	git config "$1" "$2" &&
-	test_when_finished "git config --unset $1"
-}
-
 test_expect_funcname () {
 	lang=${2-java}
 	test_expect_code 1 git diff --no-index -U1 \
@@ -105,7 +100,7 @@ test_expect_funcname () {
 	grep "^@@.*@@ $1" diff
 }
 
-for p in bibtex cpp csharp fortran html java matlab objc pascal perl php python ruby tex
+for p in ada bibtex cpp csharp fortran html java matlab objc pascal perl php python ruby tex
 do
 	test_expect_success "builtin $p pattern compiles" '
 		echo "*.java diff=$p" >.gitattributes &&

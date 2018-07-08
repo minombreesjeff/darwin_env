@@ -2,13 +2,13 @@ SPECIFYING REVISIONS
 --------------------
 
 A revision parameter '<rev>' typically, but not necessarily, names a
-commit object.  It uses what is called an 'extended SHA1'
+commit object.  It uses what is called an 'extended SHA-1'
 syntax.  Here are various ways to spell object names.  The
 ones listed near the end of this list name trees and
 blobs contained in a commit.
 
 '<sha1>', e.g. 'dae86e1950b1277e545cee180551750029cfe735', 'dae86e'::
-  The full SHA1 object name (40-byte hexadecimal string), or
+  The full SHA-1 object name (40-byte hexadecimal string), or
   a leading substring that is unique within the repository.
   E.g. dae86e1950b1277e545cee180551750029cfe735 and dae86e both
   name the same commit object if there is no other object in
@@ -23,7 +23,7 @@ blobs contained in a commit.
   A symbolic ref name.  E.g. 'master' typically means the commit
   object referenced by 'refs/heads/master'.  If you
   happen to have both 'heads/master' and 'tags/master', you can
-  explicitly say 'heads/master' to tell git which one you mean.
+  explicitly say 'heads/master' to tell Git which one you mean.
   When ambiguous, a '<refname>' is disambiguated by taking the
   first match in the following rules:
 
@@ -55,6 +55,8 @@ when you run `git cherry-pick`.
 +
 Note that any of the 'refs/*' cases above may come either from
 the '$GIT_DIR/refs' directory or from the '$GIT_DIR/packed-refs' file.
+While the ref name encoding is unspecified, UTF-8 is preferred as
+some output processing may assume ref names in UTF-8.
 
 '<refname>@\{<date>\}', e.g. 'master@\{yesterday\}', 'HEAD@\{5 minutes ago\}'::
   A ref followed by the suffix '@' with a date specification
@@ -86,10 +88,10 @@ the '$GIT_DIR/refs' directory or from the '$GIT_DIR/packed-refs' file.
   The construct '@\{-<n>\}' means the <n>th branch checked out
   before the current one.
 
-'<refname>@\{upstream\}', e.g. 'master@\{upstream\}', '@\{u\}'::
-  The suffix '@\{upstream\}' to a ref (short form '<refname>@\{u\}') refers to
-  the branch the ref is set to build on top of.  A missing ref defaults
-  to the current branch.
+'<branchname>@\{upstream\}', e.g. 'master@\{upstream\}', '@\{u\}'::
+  The suffix '@\{upstream\}' to a branchname (short form '<branchname>@\{u\}')
+  refers to the branch that the branch specified by branchname is set to build on
+  top of.  A missing branchname defaults to the current one.
 
 '<rev>{caret}', e.g. 'HEAD{caret}, v1.5.1{caret}0'::
   A suffix '{caret}' to a revision parameter means the first parent of
@@ -114,6 +116,11 @@ the '$GIT_DIR/refs' directory or from the '$GIT_DIR/packed-refs' file.
   object of that type is found or the object cannot be
   dereferenced anymore (in which case, barf).  '<rev>{caret}0'
   is a short-hand for '<rev>{caret}\{commit\}'.
++
+'rev{caret}\{object\}' can be used to make sure 'rev' names an
+object that exists, without requiring 'rev' to be a tag, and
+without dereferencing 'rev'; because a tag is already an object,
+it does not have to be dereferenced even once to get to an object.
 
 '<rev>{caret}\{\}', e.g. 'v0.99.8{caret}\{\}'::
   A suffix '{caret}' followed by an empty brace pair
@@ -213,6 +220,13 @@ of 'r1' and 'r2' and is defined as
 It is the set of commits that are reachable from either one of
 'r1' or 'r2' but not from both.
 
+In these two shorthands, you can omit one end and let it default to HEAD.
+For example, 'origin..' is a shorthand for 'origin..HEAD' and asks "What
+did I do since I forked from the origin branch?"  Similarly, '..origin'
+is a shorthand for 'HEAD..origin' and asks "What did the origin do since
+I forked from them?"  Note that '..' would mean 'HEAD..HEAD' which is an
+empty range that is both reachable and unreachable from HEAD.
+
 Two other shorthands for naming a set that is formed by a commit
 and its parent commits exist.  The 'r1{caret}@' notation means all
 parents of 'r1'.  'r1{caret}!' includes commit 'r1' but excludes
@@ -230,11 +244,13 @@ To summarize:
 
 '<rev1>..<rev2>'::
 	Include commits that are reachable from <rev2> but exclude
-	those that are reachable from <rev1>.
+	those that are reachable from <rev1>.  When either <rev1> or
+	<rev2> is omitted, it defaults to 'HEAD'.
 
 '<rev1>\...<rev2>'::
 	Include commits that are reachable from either <rev1> or
-	<rev2> but exclude those that are reachable from both.
+	<rev2> but exclude those that are reachable from both.  When
+	either <rev1> or <rev2> is omitted, it defaults to 'HEAD'.
 
 '<rev>{caret}@', e.g. 'HEAD{caret}@'::
   A suffix '{caret}' followed by an at sign is the same as listing

@@ -9,6 +9,20 @@ struct interval {
   int last;
 };
 
+size_t display_mode_esc_sequence_len(const char *s)
+{
+	const char *p = s;
+	if (*p++ != '\033')
+		return 0;
+	if (*p++ != '[')
+		return 0;
+	while (isdigit(*p) || *p == ';')
+		p++;
+	if (*p++ != 'm')
+		return 0;
+	return p - s;
+}
+
 /* auxiliary function for binary search in interval table */
 static int bisearch(ucs_char_t ucs, const struct interval *table, int max)
 {
@@ -252,18 +266,26 @@ int utf8_width(const char **start, size_t *remainder_p)
  * string, assuming that the string is utf8.  Returns strlen() instead
  * if the string does not look like a valid utf8 string.
  */
-int utf8_strwidth(const char *string)
+int utf8_strnwidth(const char *string, int len, int skip_ansi)
 {
 	int width = 0;
 	const char *orig = string;
 
-	while (1) {
-		if (!string)
-			return strlen(orig);
-		if (!*string)
-			return width;
+	if (len == -1)
+		len = strlen(string);
+	while (string && string < orig + len) {
+		int skip;
+		while (skip_ansi &&
+		       (skip = display_mode_esc_sequence_len(string)) != 0)
+			string += skip;
 		width += utf8_width(&string, NULL);
 	}
+	return string ? width : len;
+}
+
+int utf8_strwidth(const char *string)
+{
+	return utf8_strnwidth(string, -1, 0);
 }
 
 int is_utf8(const char *text)
@@ -303,27 +325,13 @@ static void strbuf_add_indented_text(struct strbuf *buf, const char *text,
 	}
 }
 
-static size_t display_mode_esc_sequence_len(const char *s)
-{
-	const char *p = s;
-	if (*p++ != '\033')
-		return 0;
-	if (*p++ != '[')
-		return 0;
-	while (isdigit(*p) || *p == ';')
-		p++;
-	if (*p++ != 'm')
-		return 0;
-	return p - s;
-}
-
 /*
  * Wrap the text, if necessary. The variable indent is the indent for the
  * first line, indent2 is the indent for all other lines.
  * If indent is negative, assume that already -indent columns have been
  * consumed (and no extra indent is necessary for the first line).
  */
-int strbuf_add_wrapped_text(struct strbuf *buf,
+void strbuf_add_wrapped_text(struct strbuf *buf,
 		const char *text, int indent1, int indent2, int width)
 {
 	int indent, w, assume_utf8 = 1;
@@ -332,7 +340,7 @@ int strbuf_add_wrapped_text(struct strbuf *buf,
 
 	if (width <= 0) {
 		strbuf_add_indented_text(buf, text, indent1, indent2);
-		return 1;
+		return;
 	}
 
 retry:
@@ -353,17 +361,17 @@ retry:
 
 		c = *text;
 		if (!c || isspace(c)) {
-			if (w < width || !space) {
+			if (w <= width || !space) {
 				const char *start = bol;
 				if (!c && text == start)
-					return w;
+					return;
 				if (space)
 					start = space;
 				else
 					strbuf_addchars(buf, ' ', indent);
 				strbuf_add(buf, start, text - start);
 				if (!c)
-					return w;
+					return;
 				space = text;
 				if (c == '\t')
 					w |= 0x07;
@@ -405,13 +413,58 @@ new_line:
 	}
 }
 
-int strbuf_add_wrapped_bytes(struct strbuf *buf, const char *data, int len,
+void strbuf_add_wrapped_bytes(struct strbuf *buf, const char *data, int len,
 			     int indent, int indent2, int width)
 {
 	char *tmp = xstrndup(data, len);
-	int r = strbuf_add_wrapped_text(buf, tmp, indent, indent2, width);
+	strbuf_add_wrapped_text(buf, tmp, indent, indent2, width);
 	free(tmp);
-	return r;
+}
+
+void strbuf_utf8_replace(struct strbuf *sb_src, int pos, int width,
+			 const char *subst)
+{
+	struct strbuf sb_dst = STRBUF_INIT;
+	char *src = sb_src->buf;
+	char *end = src + sb_src->len;
+	char *dst;
+	int w = 0, subst_len = 0;
+
+	if (subst)
+		subst_len = strlen(subst);
+	strbuf_grow(&sb_dst, sb_src->len + subst_len);
+	dst = sb_dst.buf;
+
+	while (src < end) {
+		char *old;
+		size_t n;
+
+		while ((n = display_mode_esc_sequence_len(src))) {
+			memcpy(dst, src, n);
+			src += n;
+			dst += n;
+		}
+
+		old = src;
+		n = utf8_width((const char**)&src, NULL);
+		if (!src) 	/* broken utf-8, do nothing */
+			return;
+		if (n && w >= pos && w < pos + width) {
+			if (subst) {
+				memcpy(dst, subst, subst_len);
+				dst += subst_len;
+				subst = NULL;
+			}
+			w += n;
+			continue;
+		}
+		memcpy(dst, old, src - old);
+		dst += src - old;
+		w += n;
+	}
+	strbuf_setlen(&sb_dst, dst - sb_dst.buf);
+	strbuf_swap(sb_src, &sb_dst);
+	strbuf_release(&sb_dst);
 }
 
 int is_encoding_utf8(const char *name)
@@ -421,6 +474,34 @@ int is_encoding_utf8(const char *name)
 	if (!strcasecmp(name, "utf-8") || !strcasecmp(name, "utf8"))
 		return 1;
 	return 0;
+}
+
+int same_encoding(const char *src, const char *dst)
+{
+	if (is_encoding_utf8(src) && is_encoding_utf8(dst))
+		return 1;
+	return !strcasecmp(src, dst);
+}
+
+/*
+ * Wrapper for fprintf and returns the total number of columns required
+ * for the printed string, assuming that the string is utf8.
+ */
+int utf8_fprintf(FILE *stream, const char *format, ...)
+{
+	struct strbuf buf = STRBUF_INIT;
+	va_list arg;
+	int columns;
+
+	va_start(arg, format);
+	strbuf_vaddf(&buf, format, arg);
+	va_end(arg);
+
+	columns = fputs(buf.buf, stream);
+	if (0 <= columns) /* keep the error from the I/O */
+		columns = utf8_strwidth(buf.buf);
+	strbuf_release(&buf);
+	return columns;
 }
 
 /*
@@ -433,7 +514,7 @@ int is_encoding_utf8(const char *name)
 #else
 	typedef char * iconv_ibp;
 #endif
-char *reencode_string_iconv(const char *in, size_t insz, iconv_t conv)
+char *reencode_string_iconv(const char *in, size_t insz, iconv_t conv, int *outsz_p)
 {
 	size_t outsz, outalloc;
 	char *out, *outpos;
@@ -467,24 +548,83 @@ char *reencode_string_iconv(const char *in, size_t insz, iconv_t conv)
 		}
 		else {
 			*outpos = '\0';
+			if (outsz_p)
+				*outsz_p = outpos - out;
 			break;
 		}
 	}
 	return out;
 }
 
-char *reencode_string(const char *in, const char *out_encoding, const char *in_encoding)
+char *reencode_string_len(const char *in, int insz,
+			  const char *out_encoding, const char *in_encoding,
+			  int *outsz)
 {
 	iconv_t conv;
 	char *out;
 
 	if (!in_encoding)
 		return NULL;
+
 	conv = iconv_open(out_encoding, in_encoding);
-	if (conv == (iconv_t) -1)
-		return NULL;
-	out = reencode_string_iconv(in, strlen(in), conv);
+	if (conv == (iconv_t) -1) {
+		/*
+		 * Some platforms do not have the variously spelled variants of
+		 * UTF-8, so let's fall back to trying the most official
+		 * spelling. We do so only as a fallback in case the platform
+		 * does understand the user's spelling, but not our official
+		 * one.
+		 */
+		if (is_encoding_utf8(in_encoding))
+			in_encoding = "UTF-8";
+		if (is_encoding_utf8(out_encoding))
+			out_encoding = "UTF-8";
+		conv = iconv_open(out_encoding, in_encoding);
+		if (conv == (iconv_t) -1)
+			return NULL;
+	}
+
+	out = reencode_string_iconv(in, insz, conv, outsz);
 	iconv_close(conv);
 	return out;
 }
 #endif
+
+/*
+ * Returns first character length in bytes for multi-byte `text` according to
+ * `encoding`.
+ *
+ * - The `text` pointer is updated to point at the next character.
+ * - When `remainder_p` is not NULL, on entry `*remainder_p` is how much bytes
+ *   we can consume from text, and on exit `*remainder_p` is reduced by returned
+ *   character length. Otherwise `text` is treated as limited by NUL.
+ */
+int mbs_chrlen(const char **text, size_t *remainder_p, const char *encoding)
+{
+	int chrlen;
+	const char *p = *text;
+	size_t r = (remainder_p ? *remainder_p : SIZE_MAX);
+
+	if (r < 1)
+		return 0;
+
+	if (is_encoding_utf8(encoding)) {
+		pick_one_utf8_char(&p, &r);
+
+		chrlen = p ? (p - *text)
+			   : 1 /* not valid UTF-8 -> raw byte sequence */;
+	}
+	else {
+		/*
+		 * TODO use iconv to decode one char and obtain its chrlen
+		 * for now, let's treat encodings != UTF-8 as one-byte
+		 */
+		chrlen = 1;
+	}
+
+	*text += chrlen;
+	if (remainder_p)
+		*remainder_p -= chrlen;
+
+	return chrlen;
+}

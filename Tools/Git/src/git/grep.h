@@ -28,10 +28,14 @@ enum grep_context {
 };
 
 enum grep_header_field {
-	GREP_HEADER_AUTHOR = 0,
-	GREP_HEADER_COMMITTER
+	GREP_HEADER_FIELD_MIN = 0,
+	GREP_HEADER_AUTHOR = GREP_HEADER_FIELD_MIN,
+	GREP_HEADER_COMMITTER,
+	GREP_HEADER_REFLOG,
+
+	/* Must be at the end of the enum */
+	GREP_HEADER_FIELD_MAX
 };
-#define GREP_HEADER_FIELD_MAX (GREP_HEADER_COMMITTER + 1)
 
 struct grep_pat {
 	struct grep_pat *next;
@@ -56,6 +60,14 @@ enum grep_expr_node {
 	GREP_NODE_AND,
 	GREP_NODE_TRUE,
 	GREP_NODE_OR
+};
+
+enum grep_pattern_type {
+	GREP_PATTERN_TYPE_UNSPECIFIED = 0,
+	GREP_PATTERN_TYPE_BRE,
+	GREP_PATTERN_TYPE_ERE,
+	GREP_PATTERN_TYPE_FIXED,
+	GREP_PATTERN_TYPE_PCRE
 };
 
 struct grep_expr {
@@ -96,6 +108,7 @@ struct grep_opt {
 #define GREP_BINARY_TEXT	2
 	int binary;
 	int extended;
+	int use_reflog_filter;
 	int pcre;
 	int relative;
 	int pathname;
@@ -104,6 +117,8 @@ struct grep_opt {
 	int max_depth;
 	int funcname;
 	int funcbody;
+	int extended_regexp_option;
+	int pattern_type_option;
 	char color_context[COLOR_MAXLEN];
 	char color_filename[COLOR_MAXLEN];
 	char color_function[COLOR_MAXLEN];
@@ -123,6 +138,12 @@ struct grep_opt {
 	void (*output)(struct grep_opt *opt, const void *data, size_t size);
 	void *output_priv;
 };
+
+extern void init_grep_defaults(void);
+extern int grep_config(const char *var, const char *value, void *);
+extern void grep_init(struct grep_opt *, const char *prefix);
+void grep_set_pattern_type_option(enum grep_pattern_type, struct grep_opt *opt);
+void grep_commit_pattern_type(enum grep_pattern_type, struct grep_opt *opt);
 
 extern void append_grep_pat(struct grep_opt *opt, const char *pat, size_t patlen, const char *origin, int no, enum grep_pat_token t);
 extern void append_grep_pattern(struct grep_opt *opt, const char *pat, const char *origin, int no, enum grep_pat_token t);
@@ -144,11 +165,13 @@ struct grep_source {
 	char *buf;
 	unsigned long size;
 
+	char *path; /* for attribute lookups */
 	struct userdiff_driver *driver;
 };
 
 void grep_source_init(struct grep_source *gs, enum grep_source_type type,
-		      const char *name, const void *identifier);
+		      const char *name, const char *path,
+		      const void *identifier);
 void grep_source_clear_data(struct grep_source *gs);
 void grep_source_clear(struct grep_source *gs);
 void grep_source_load_driver(struct grep_source *gs);

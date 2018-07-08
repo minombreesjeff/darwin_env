@@ -74,7 +74,7 @@ struct transport {
 		       const char *executable, int fd[2]);
 
 	/** get_refs_list(), fetch(), and push_refs() can keep
-	 * resources (such as a connection) reserved for futher
+	 * resources (such as a connection) reserved for further
 	 * use. disconnect() releases these resources.
 	 **/
 	int (*disconnect)(struct transport *connection);
@@ -104,8 +104,11 @@ struct transport {
 #define TRANSPORT_RECURSE_SUBMODULES_CHECK 64
 #define TRANSPORT_PUSH_PRUNE 128
 #define TRANSPORT_RECURSE_SUBMODULES_ON_DEMAND 256
+#define TRANSPORT_PUSH_NO_HOOK 512
+#define TRANSPORT_PUSH_FOLLOW_TAGS 1024
 
 #define TRANSPORT_SUMMARY_WIDTH (2 * DEFAULT_ABBREV + 3)
+#define TRANSPORT_SUMMARY(x) (int)(TRANSPORT_SUMMARY_WIDTH + strlen(x) - gettext_width(x)), (x)
 
 /* Returns a transport suitable for the url */
 struct transport *transport_get(struct remote *, const char *);
@@ -139,11 +142,15 @@ int transport_set_option(struct transport *transport, const char *name,
 void transport_set_verbosity(struct transport *transport, int verbosity,
 	int force_progress);
 
-#define NON_FF_HEAD 1
-#define NON_FF_OTHER 2
+#define REJECT_NON_FF_HEAD     0x01
+#define REJECT_NON_FF_OTHER    0x02
+#define REJECT_ALREADY_EXISTS  0x04
+#define REJECT_FETCH_FIRST     0x08
+#define REJECT_NEEDS_FORCE     0x10
+
 int transport_push(struct transport *connection,
 		   int refspec_nr, const char **refspec, int flags,
-		   int * nonfastforward);
+		   unsigned int * reject_reasons);
 
 const struct ref *transport_get_remote_refs(struct transport *transport);
 
@@ -161,7 +168,7 @@ int transport_connect(struct transport *transport, const char *name,
 int transport_helper_init(struct transport *transport, const char *name);
 int bidirectional_transfer_loop(int input, int output);
 
-/* common methods used by transport.c and builtin-send-pack.c */
+/* common methods used by transport.c and builtin/send-pack.c */
 void transport_verify_remote_names(int nr_heads, const char **heads);
 
 void transport_update_tracking_ref(struct remote *remote, struct ref *ref, int verbose);
@@ -169,9 +176,14 @@ void transport_update_tracking_ref(struct remote *remote, struct ref *ref, int v
 int transport_refs_pushed(struct ref *ref);
 
 void transport_print_push_status(const char *dest, struct ref *refs,
-		  int verbose, int porcelain, int *nonfastforward);
+		  int verbose, int porcelain, unsigned int *reject_reasons);
 
 typedef void alternate_ref_fn(const struct ref *, void *);
 extern void for_each_alternate_ref(alternate_ref_fn, void *);
 
+struct send_pack_args;
+extern int send_pack(struct send_pack_args *args,
+		     int fd[], struct child_process *conn,
+		     struct ref *remote_refs,
+		     struct extra_have_objects *extra_have);
 #endif

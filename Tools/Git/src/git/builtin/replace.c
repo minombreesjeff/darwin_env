@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2008 Christian Couder <chriscool@tuxfamily.org>
  *
- * Based on builtin-tag.c by Kristian Høgsberg <krh@redhat.com>
+ * Based on builtin/tag.c by Kristian Høgsberg <krh@redhat.com>
  * and Carlos Rica <jasampler@gmail.com> that was itself based on
  * git-tag.sh and mktag.c by Linus Torvalds.
  */
@@ -14,9 +14,9 @@
 #include "parse-options.h"
 
 static const char * const git_replace_usage[] = {
-	"git replace [-f] <object> <replacement>",
-	"git replace -d <object>...",
-	"git replace -l [<pattern>]",
+	N_("git replace [-f] <object> <replacement>"),
+	N_("git replace -d <object>..."),
+	N_("git replace -l [<pattern>]"),
 	NULL
 };
 
@@ -46,24 +46,27 @@ typedef int (*each_replace_name_fn)(const char *name, const char *ref,
 
 static int for_each_replace_name(const char **argv, each_replace_name_fn fn)
 {
-	const char **p;
+	const char **p, *full_hex;
 	char ref[PATH_MAX];
 	int had_error = 0;
 	unsigned char sha1[20];
 
 	for (p = argv; *p; p++) {
-		if (snprintf(ref, sizeof(ref), "refs/replace/%s", *p)
-					>= sizeof(ref)) {
-			error("replace ref name too long: %.*s...", 50, *p);
+		if (get_sha1(*p, sha1)) {
+			error("Failed to resolve '%s' as a valid ref.", *p);
 			had_error = 1;
 			continue;
 		}
+		full_hex = sha1_to_hex(sha1);
+		snprintf(ref, sizeof(ref), "refs/replace/%s", full_hex);
+		/* read_ref() may reuse the buffer */
+		full_hex = ref + strlen("refs/replace/");
 		if (read_ref(ref, sha1)) {
-			error("replace ref '%s' not found.", *p);
+			error("replace ref '%s' not found.", full_hex);
 			had_error = 1;
 			continue;
 		}
-		if (fn(*p, ref, sha1))
+		if (fn(full_hex, ref, sha1))
 			had_error = 1;
 	}
 	return had_error;
@@ -115,9 +118,9 @@ int cmd_replace(int argc, const char **argv, const char *prefix)
 {
 	int list = 0, delete = 0, force = 0;
 	struct option options[] = {
-		OPT_BOOLEAN('l', NULL, &list, "list replace refs"),
-		OPT_BOOLEAN('d', NULL, &delete, "delete replace refs"),
-		OPT_BOOLEAN('f', NULL, &force, "replace the ref if it exists"),
+		OPT_BOOLEAN('l', NULL, &list, N_("list replace refs")),
+		OPT_BOOLEAN('d', NULL, &delete, N_("delete replace refs")),
+		OPT_BOOLEAN('f', NULL, &force, N_("replace the ref if it exists")),
 		OPT_END()
 	};
 

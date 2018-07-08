@@ -33,34 +33,46 @@ the frontend program in use.
 
 OPTIONS
 -------
---date-format=<fmt>::
-	Specify the type of dates the frontend will supply to
-	fast-import within `author`, `committer` and `tagger` commands.
-	See ``Date Formats'' below for details about which formats
-	are supported, and their syntax.
 
 --force::
 	Force updating modified existing branches, even if doing
 	so would cause commits to be lost (as the new commit does
 	not contain the old commit).
 
---max-pack-size=<n>::
-	Maximum size of each output packfile.
-	The default is unlimited.
+--quiet::
+	Disable all non-fatal output, making fast-import silent when it
+	is successful.  This option disables the output shown by
+	\--stats.
 
---big-file-threshold=<n>::
-	Maximum size of a blob that fast-import will attempt to
-	create a delta for, expressed in bytes.  The default is 512m
-	(512 MiB).  Some importers may wish to lower this on systems
-	with constrained memory.
+--stats::
+	Display some basic statistics about the objects fast-import has
+	created, the packfiles they were stored into, and the
+	memory used by fast-import during this run.  Showing this output
+	is currently the default, but can be disabled with \--quiet.
 
---depth=<n>::
-	Maximum delta depth, for blob and tree deltification.
-	Default is 10.
+Options for Frontends
+~~~~~~~~~~~~~~~~~~~~~
 
---active-branches=<n>::
-	Maximum number of branches to maintain active at once.
-	See ``Memory Utilization'' below for details.  Default is 5.
+--cat-blob-fd=<fd>::
+	Write responses to `cat-blob` and `ls` queries to the
+	file descriptor <fd> instead of `stdout`.  Allows `progress`
+	output intended for the end-user to be separated from other
+	output.
+
+--date-format=<fmt>::
+	Specify the type of dates the frontend will supply to
+	fast-import within `author`, `committer` and `tagger` commands.
+	See ``Date Formats'' below for details about which formats
+	are supported, and their syntax.
+
+--done::
+	Terminate with error if there is no `done` command at the end of
+	the stream.  This option might be useful for detecting errors
+	that cause the frontend to terminate before it has started to
+	write a stream.
+
+Locations of Marks Files
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 --export-marks=<file>::
 	Dumps the internal marks table to <file> when complete.
@@ -83,31 +95,33 @@ OPTIONS
 	Like --import-marks but instead of erroring out, silently
 	skips the file if it does not exist.
 
---relative-marks::
+--[no-]relative-marks::
 	After specifying --relative-marks the paths specified
 	with --import-marks= and --export-marks= are relative
 	to an internal directory in the current repository.
 	In git-fast-import this means that the paths are relative
 	to the .git/info/fast-import directory. However, other
 	importers may use a different location.
++
+Relative and non-relative marks may be combined by interweaving
+--(no-)-relative-marks with the --(import|export)-marks= options.
 
---no-relative-marks::
-	Negates a previous --relative-marks. Allows for combining
-	relative and non-relative marks by interweaving
-	--(no-)-relative-marks with the --(import|export)-marks=
-	options.
+Performance and Compression Tuning
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
---cat-blob-fd=<fd>::
-	Write responses to `cat-blob` and `ls` queries to the
-	file descriptor <fd> instead of `stdout`.  Allows `progress`
-	output intended for the end-user to be separated from other
-	output.
+--active-branches=<n>::
+	Maximum number of branches to maintain active at once.
+	See ``Memory Utilization'' below for details.  Default is 5.
 
---done::
-	Require a `done` command at the end of the stream.
-	This option might be useful for detecting errors that
-	cause the frontend to terminate before it has started to
-	write a stream.
+--big-file-threshold=<n>::
+	Maximum size of a blob that fast-import will attempt to
+	create a delta for, expressed in bytes.  The default is 512m
+	(512 MiB).  Some importers may wish to lower this on systems
+	with constrained memory.
+
+--depth=<n>::
+	Maximum delta depth, for blob and tree deltification.
+	Default is 10.
 
 --export-pack-edges=<file>::
 	After creating a packfile, print a line of data to
@@ -118,16 +132,9 @@ OPTIONS
 	as these commits can be used as edge points during calls
 	to 'git pack-objects'.
 
---quiet::
-	Disable all non-fatal output, making fast-import silent when it
-	is successful.  This option disables the output shown by
-	\--stats.
-
---stats::
-	Display some basic statistics about the objects fast-import has
-	created, the packfiles they were stored into, and the
-	memory used by fast-import during this run.  Showing this output
-	is currently the default, but can be disabled with \--quiet.
+--max-pack-size=<n>::
+	Maximum size of each output packfile.
+	The default is unlimited.
 
 
 Performance
@@ -423,7 +430,7 @@ they made it.
 
 Here `<name>` is the person's display name (for example
 ``Com M Itter'') and `<email>` is the person's email address
-(``cm@example.com'').  `LT` and `GT` are the literal less-than (\x3c)
+(``\cm@example.com'').  `LT` and `GT` are the literal less-than (\x3c)
 and greater-than (\x3e) symbols.  These are required to delimit
 the email address from the other fields in the line.  Note that
 `<name>` and `<email>` are free-form and may contain any sequence
@@ -438,7 +445,9 @@ their syntax.
 ^^^^^^
 The `from` command is used to specify the commit to initialize
 this branch from.  This revision will be the first ancestor of the
-new commit.
+new commit.  The state of the tree built at this commit will begin
+with the state at the `from` commit, and be altered by the content
+modifications in this commit.
 
 Omitting the `from` command in the first commit of a new branch
 will cause fast-import to create that commit with no ancestor. This
@@ -488,7 +497,9 @@ existing value of the branch.
 
 `merge`
 ^^^^^^^
-Includes one additional ancestor commit.  If the `from` command is
+Includes one additional ancestor commit.  The additional ancestry
+link does not change the way the tree state is built at this commit.
+If the `from` command is
 omitted when creating a new branch, the first `merge` commit will be
 the first ancestor of the current commit, and the branch will start
 out with no files.  An unlimited number of `merge` commands per
@@ -554,8 +565,12 @@ A `<path>` string must use UNIX-style directory separators (forward
 slash `/`), may contain any byte other than `LF`, and must not
 start with double quote (`"`).
 
-If an `LF` or double quote must be encoded into `<path>` shell-style
-quoting should be used, e.g. `"path/with\n and \" in it"`.
+A path can use C-style string quoting; this is accepted in all cases
+and mandatory if the filename starts with double quote or contains
+`LF`. In C-style quoting, the complete name should be surrounded with
+double quotes, and any `LF`, backslash, or double quote characters
+must be escaped by preceding them with a backslash (e.g.,
+`"path/with\n, \\ and \" in it"`).
 
 The value of `<path>` must be in canonical form. That is it must not:
 
@@ -1047,7 +1062,9 @@ done::
 	Error out if the stream ends without a 'done' command.
 	Without this feature, errors causing the frontend to end
 	abruptly at a convenient point in the stream can go
-	undetected.
+	undetected.  This may occur, for example, if an import
+	front end dies in mid-operation without emitting SIGTERM
+	or SIGKILL at its subordinate git fast-import instance.
 
 `option`
 ~~~~~~~~

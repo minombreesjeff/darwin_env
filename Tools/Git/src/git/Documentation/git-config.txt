@@ -82,7 +82,7 @@ OPTIONS
 --get::
 	Get the value for a given key (optionally filtered by a regex
 	matching the value). Returns error code 1 if the key was not
-	found and error code 2 if multiple key values were found.
+	found and the last value if multiple key values were found.
 
 --get-all::
 	Like get, but does not fail if the number of values for the key
@@ -111,6 +111,15 @@ See also <<FILES>>.
 +
 For reading options: read only from system-wide $(prefix)/etc/gitconfig
 rather than from all available files.
++
+See also <<FILES>>.
+
+--local::
+	For writing options: write to the repository .git/config file.
+	This is	the default behavior.
++
+For reading options: read only from the repository .git/config rather than
+from all available files.
 +
 See also <<FILES>>.
 
@@ -186,8 +195,7 @@ See also <<FILES>>.
 	Opens an editor to modify the specified config file; either
 	'--system', '--global', or repository (default).
 
---includes::
---no-includes::
+--[no-]includes::
 	Respect `include.*` directives in config files when looking up
 	values. Defaults to on.
 
@@ -239,6 +247,10 @@ GIT_CONFIG::
 	Take the configuration from the given file instead of .git/config.
 	Using the "--global" option forces this to ~/.gitconfig. Using the
 	"--system" option forces this to $(prefix)/etc/gitconfig.
+
+GIT_CONFIG_NOSYSTEM::
+	Whether to skip reading settings from the system-wide
+	$(prefix)/etc/gitconfig file. See linkgit:git[1] for details.
 
 See also <<FILES>>.
 

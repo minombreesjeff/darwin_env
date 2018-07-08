@@ -2,12 +2,12 @@
 .\"     Title: git-shortlog
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-SHORTLOG" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-SHORTLOG" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -32,23 +32,18 @@ git-shortlog \- Summarize \(aqgit log\(aq output
 .SH "SYNOPSIS"
 .sp
 .nf
-git log \-\-pretty=short | \fIgit shortlog\fR [\-h] [\-n] [\-s] [\-e] [\-w]
-\fIgit shortlog\fR [\-n|\-\-numbered] [\-s|\-\-summary] [\-e|\-\-email] [\-w[<width>[,<indent1>[,<indent2>]]]] <commit>\&...
+git log \-\-pretty=short | \fIgit shortlog\fR [<options>]
+\fIgit shortlog\fR [<options>] [<revision range>] [[\-\-] <path>\&...]
 .fi
 .sp
 .SH "DESCRIPTION"
 .sp
-Summarizes \fIgit log\fR output in a format suitable for inclusion in release announcements\&. Each commit will be grouped by author and the first line of the commit message will be shown\&.
+Summarizes \fIgit log\fR output in a format suitable for inclusion in release announcements\&. Each commit will be grouped by author and title\&.
 .sp
 Additionally, "[PATCH]" will be stripped from the commit description\&.
 .sp
 If no revisions are passed on the command line and either standard input is not a terminal or there is no current branch, \fIgit shortlog\fR will output a summary of the log read from standard input, without reference to the current repository\&.
 .SH "OPTIONS"
-.PP
-\-h, \-\-help
-.RS 4
-Print a short usage message and exit\&.
-.RE
 .PP
 \-n, \-\-numbered
 .RS 4
@@ -99,12 +94,35 @@ width,
 indent1, and
 indent2
 default to 76, 6 and 9 respectively\&.
+.sp
+If width is
+0
+(zero) then indent the lines of the output without wrapping them\&.
+.RE
+.PP
+<revision range>
+.RS 4
+Show only commits in the specified revision range\&. When no <revision range> is specified, it defaults to
+HEAD
+(i\&.e\&. the whole history leading to the current commit)\&.
+origin\&.\&.HEAD
+specifies all the commits reachable from the current commit (i\&.e\&.
+HEAD), but not from
+origin\&. For a complete list of ways to spell <revision range>, see the "Specifying Ranges" section of
+\fBgitrevisions\fR(7)\&.
+.RE
+.PP
+[\-\-] <path>\&...
+.RS 4
+Consider only commits that are enough to explain how the files that match the specified paths came to be\&.
+.sp
+Paths may need to be prefixed with "\-\- " to separate them from options or the revision range, when confusion arises\&.
 .RE
 .SH "MAPPING AUTHORS"
 .sp
 The \&.mailmap feature is used to coalesce together commits by the same person in the shortlog, where their name and/or email address was spelled differently\&.
 .sp
-If the file \&.mailmap exists at the toplevel of the repository, or at the location pointed to by the mailmap\&.file configuration option, it is used to map author and committer names and email addresses to canonical real names and email addresses\&.
+If the file \&.mailmap exists at the toplevel of the repository, or at the location pointed to by the mailmap\&.file or mailmap\&.blob configuration options, it is used to map author and committer names and email addresses to canonical real names and email addresses\&.
 .sp
 In the simple form, each line in the file consists of the canonical real name of an author, whitespace, and an email address used in the commit (enclosed by \fI<\fR and \fI>\fR) to map to the name\&. For example:
 .sp
@@ -187,7 +205,7 @@ Joe R\&. Developer <joe@example\&.com>
 .\}
 .sp
 .sp
-Note how there is no need for an entry for <\m[blue]\fBjane@laptop\fR\m[]\&\s-2\u[1]\d\s+2\&.(none)>, because the real name of that author is already correct\&.
+Note how there is no need for an entry for <jane@laptop\&.(none)>, because the real name of that author is already correct\&.
 .sp
 Example 2: Your repository contains commits from the following authors:
 .sp
@@ -228,9 +246,3 @@ Use hash \fI#\fR for comments that are either on their own line, or after the em
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite
-.SH "NOTES"
-.IP " 1." 4
-jane@laptop
-.RS 4
-\%mailto:jane@laptop
-.RE

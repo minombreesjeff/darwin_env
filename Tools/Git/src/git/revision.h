@@ -35,6 +35,7 @@ struct rev_cmdline_info {
 			REV_CMD_PARENTS_ONLY,
 			REV_CMD_LEFT,
 			REV_CMD_RIGHT,
+			REV_CMD_MERGE_BASE,
 			REV_CMD_REV
 		} whence;
 		unsigned flags;
@@ -111,6 +112,7 @@ struct rev_info {
 
 	/* Format info */
 	unsigned int	shown_one:1,
+			shown_dashes:1,
 			show_merge:1,
 			show_notes:1,
 			show_notes_given:1,
@@ -134,14 +136,16 @@ struct rev_info {
 	const char	*mime_boundary;
 	const char	*patch_suffix;
 	int		numbered_files;
+	int		reroll_count;
 	char		*message_id;
 	struct string_list *ref_message_ids;
-	const char	*add_signoff;
+	int		add_signoff;
 	const char	*extra_headers;
 	const char	*log_reencode;
 	const char	*subject_prefix;
 	int		no_inline;
 	int		show_log_size;
+	struct string_list *mailmap;
 
 	/* Filter by commit log message */
 	struct grep_opt	grep_filter;

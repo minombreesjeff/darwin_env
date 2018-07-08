@@ -3,18 +3,24 @@ From: Linus Torvalds <torvalds@linux-foundation.org>
 Subject: corrupt object on git-gc
 Abstract: Some tricks to reconstruct blob objects in order to fix
  a corrupted repository.
+Content-type: text/asciidoc
 
+How to recover a corrupted blob object
+======================================
+
+-----------------------------------------------------------
 On Fri, 9 Nov 2007, Yossi Leybovich wrote:
 >
 > Did not help still the repository look for this object?
 > Any one know how can I track this object and understand which file is it
+-----------------------------------------------------------
 
-So exactly *because* the SHA1 hash is cryptographically secure, the hash
+So exactly *because* the SHA-1 hash is cryptographically secure, the hash
 itself doesn't actually tell you anything, in order to fix a corrupt
 object you basically have to find the "original source" for it.
 
 The easiest way to do that is almost always to have backups, and find the
-same object somewhere else. Backups really are a good idea, and git makes
+same object somewhere else. Backups really are a good idea, and Git makes
 it pretty easy (if nothing else, just clone the repository somewhere else,
 and make sure that you do *not* use a hard-linked clone, and preferably
 not the same disk/machine).
@@ -31,19 +37,23 @@ original object, so right now the corrupt object is useless, but it's very
 interesting for the future, in the hope that you can re-create a
 non-corrupt version.
 
+-----------------------------------------------------------
 So:
 
 > ib]$ mv .git/objects/4b/9458b3786228369c63936db65827de3cc06200 ../
+-----------------------------------------------------------
 
 This is the right thing to do, although it's usually best to save it under
-it's full SHA1 name (you just dropped the "4b" from the result ;).
+it's full SHA-1 name (you just dropped the "4b" from the result ;).
 
 Let's see what that tells us:
 
+-----------------------------------------------------------
 > ib]$ git-fsck --full
 > broken link from    tree 2d9263c6d23595e7cb2a21e5ebbb53655278dff8
 >              to    blob 4b9458b3786228369c63936db65827de3cc06200
 > missing blob 4b9458b3786228369c63936db65827de3cc06200
+-----------------------------------------------------------
 
 Ok, I removed the "dangling commit" messages, because they are just
 messages about the fact that you probably have rebased etc, so they're not
@@ -79,7 +89,7 @@ working tree, in which case fixing this problem is really simple, just do
 
 	git hash-object -w my-magic-file
 
-again, and if it outputs the missing SHA1 (4b945..) you're now all done!
+again, and if it outputs the missing SHA-1 (4b945..) you're now all done!
 
 But that's the really lucky case, so let's assume that it was some older
 version that was broken. How do you tell which version it was?
@@ -124,7 +134,7 @@ and your repository is good again!
 	git log --raw --all
 
 and just looked for the sha of the missing object (4b9458b..) in that
-whole thing. It's up to you - git does *have* a lot of information, it is
+whole thing. It's up to you - Git does *have* a lot of information, it is
 just missing one particular blob version.
 
 Trying to recreate trees and especially commits is *much* harder. So you

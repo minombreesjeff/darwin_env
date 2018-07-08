@@ -2,12 +2,12 @@
 .\"     Title: git-branch
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-BRANCH" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-BRANCH" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -37,6 +37,8 @@ git-branch \- List, create, or delete branches
         [\-\-column[=<options>] | \-\-no\-column]
         [(\-\-merged | \-\-no\-merged | \-\-contains) [<commit>]] [<pattern>\&...]
 \fIgit branch\fR [\-\-set\-upstream | \-\-track | \-\-no\-track] [\-l] [\-f] <branchname> [<start\-point>]
+\fIgit branch\fR (\-\-set\-upstream\-to=<upstream> | \-u <upstream>) [<branchname>]
+\fIgit branch\fR \-\-unset\-upstream [<branchname>]
 \fIgit branch\fR (\-m | \-M) [<oldbranch>] <newbranch>
 \fIgit branch\fR (\-d | \-D) [\-r] <branchname>\&...
 \fIgit branch\fR \-\-edit\-description [<branchname>]
@@ -44,7 +46,7 @@ git-branch \- List, create, or delete branches
 .sp
 .SH "DESCRIPTION"
 .sp
-With no arguments, existing branches are listed and the current branch will be highlighted with an asterisk\&. Option \-r causes the remote\-tracking branches to be listed, and option \-a shows both\&. This list mode is also activated by the \-\-list option (see below)\&. <pattern> restricts the output to matching branches, the pattern is a shell wildcard (i\&.e\&., matched using fnmatch(3))\&. Multiple patterns may be given; if any of them matches, the branch is shown\&.
+If \-\-list is given, or if there are no non\-option arguments, existing branches are listed; the current branch will be highlighted with an asterisk\&. Option \-r causes the remote\-tracking branches to be listed, and option \-a shows both local and remote branches\&. If a <pattern> is given, it is used as a shell wildcard to restrict the output to matching branches\&. If multiple patterns are given, a branch is shown if it matches any of the patterns\&. Note that when providing a <pattern>, you must use \-\-list; otherwise the command is interpreted as branch creation\&.
 .sp
 With \-\-contains, shows only the branches that contain the named commit (in other words, the branches whose tip commits are descendants of the named commit)\&. With \-\-merged, only branches merged into the named commit (i\&.e\&. the branches whose tip commits are reachable from the named commit) will be listed\&. With \-\-no\-merged only branches not merged into the named commit will be listed\&. If the <commit> argument is missing it defaults to \fIHEAD\fR (i\&.e\&. the tip of the current branch)\&.
 .sp
@@ -52,7 +54,7 @@ The command\(cqs second form creates a new branch head named <branchname> which 
 .sp
 Note that this will create the new branch, but it will not switch the working tree to it; use "git checkout <newbranch>" to switch to the new branch\&.
 .sp
-When a local branch is started off a remote\-tracking branch, git sets up the branch so that \fIgit pull\fR will appropriately merge from the remote\-tracking branch\&. This behavior may be changed via the global branch\&.autosetupmerge configuration flag\&. That setting can be overridden by using the \-\-track and \-\-no\-track options, and changed later using git branch \-\-set\-upstream\&.
+When a local branch is started off a remote\-tracking branch, Git sets up the branch so that \fIgit pull\fR will appropriately merge from the remote\-tracking branch\&. This behavior may be changed via the global branch\&.autosetupmerge configuration flag\&. That setting can be overridden by using the \-\-track and \-\-no\-track options, and changed later using git branch \-\-set\-upstream\-to\&.
 .sp
 With a \-m or \-M option, <oldbranch> will be renamed to <newbranch>\&. If <oldbranch> had a corresponding reflog, it is renamed to match <newbranch>, and a reflog entry is created to remember the branch renaming\&. If <newbranch> exists, \-M must be used to force the rename to happen\&.
 .sp
@@ -145,9 +147,10 @@ git branch \-\-list <pattern>
 to list matching branches\&.
 .RE
 .PP
-\-v, \-\-verbose
+\-v, \-vv, \-\-verbose
 .RS 4
-When in list mode, show sha1 and commit subject line for each head, along with relationship to upstream branch (if any)\&. If given twice, print the name of the upstream branch, as well\&.
+When in list mode, show sha1 and commit subject line for each head, along with relationship to upstream branch (if any)\&. If given twice, print the name of the upstream branch, as well (see also
+git remote show <remote>)\&.
 .RE
 .PP
 \-q, \-\-quiet
@@ -204,6 +207,16 @@ has been given, acts exactly like
 would when creating the branch, except that where branch points to is not changed\&.
 .RE
 .PP
+\-u <upstream>, \-\-set\-upstream\-to=<upstream>
+.RS 4
+Set up <branchname>\(aqs tracking information so <upstream> is considered <branchname>\(aqs upstream branch\&. If no <branchname> is specified, then it defaults to the current branch\&.
+.RE
+.PP
+\-\-unset\-upstream
+.RS 4
+Remove the upstream information for <branchname>\&. If no branch is specified it defaults to the current branch\&.
+.RE
+.PP
 \-\-edit\-description
 .RS 4
 Open an editor and edit the text to explain what the branch is for, to be used by various other commands (e\&.g\&.
@@ -212,17 +225,20 @@ request\-pull)\&.
 .PP
 \-\-contains [<commit>]
 .RS 4
-Only list branches which contain the specified commit (HEAD if not specified)\&.
+Only list branches which contain the specified commit (HEAD if not specified)\&. Implies
+\-\-list\&.
 .RE
 .PP
 \-\-merged [<commit>]
 .RS 4
-Only list branches whose tips are reachable from the specified commit (HEAD if not specified)\&.
+Only list branches whose tips are reachable from the specified commit (HEAD if not specified)\&. Implies
+\-\-list\&.
 .RE
 .PP
 \-\-no\-merged [<commit>]
 .RS 4
-Only list branches whose tips are not reachable from the specified commit (HEAD if not specified)\&.
+Only list branches whose tips are not reachable from the specified commit (HEAD if not specified)\&. Implies
+\-\-list\&.
 .RE
 .PP
 <branchname>

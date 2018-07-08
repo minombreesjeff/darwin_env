@@ -133,6 +133,7 @@ test_expect_success 'submodule add --branch' '
 	(
 		cd addtest &&
 		git submodule add -b initial "$submodurl" submod-branch &&
+		test "initial" = "$(git config -f .gitmodules submodule.submod-branch.branch)" &&
 		git submodule init
 	) &&
 
@@ -681,4 +682,205 @@ test_expect_success 'moving the superproject does not break submodules' '
 	)
 '
 
+test_expect_success 'submodule add --name allows to replace a submodule with another at the same path' '
+	(
+		cd addtest2 &&
+		(
+			cd repo &&
+			echo "$submodurl/repo" >expect &&
+			git config remote.origin.url >actual &&
+			test_cmp expect actual &&
+			echo "gitdir: ../.git/modules/repo" >expect &&
+			test_cmp expect .git
+		) &&
+		rm -rf repo &&
+		git rm repo &&
+		git submodule add -q --name repo_new "$submodurl/bare.git" repo >actual &&
+		test ! -s actual &&
+		echo "gitdir: ../.git/modules/submod" >expect &&
+		test_cmp expect submod/.git &&
+		(
+			cd repo &&
+			echo "$submodurl/bare.git" >expect &&
+			git config remote.origin.url >actual &&
+			test_cmp expect actual &&
+			echo "gitdir: ../.git/modules/repo_new" >expect &&
+			test_cmp expect .git
+		) &&
+		echo "repo" >expect &&
+		git config -f .gitmodules submodule.repo.path >actual &&
+		test_cmp expect actual &&
+		git config -f .gitmodules submodule.repo_new.path >actual &&
+		test_cmp expect actual&&
+		echo "$submodurl/repo" >expect &&
+		git config -f .gitmodules submodule.repo.url >actual &&
+		test_cmp expect actual &&
+		echo "$submodurl/bare.git" >expect &&
+		git config -f .gitmodules submodule.repo_new.url >actual &&
+		test_cmp expect actual &&
+		echo "$submodurl/repo" >expect &&
+		git config submodule.repo.url >actual &&
+		test_cmp expect actual &&
+		echo "$submodurl/bare.git" >expect &&
+		git config submodule.repo_new.url >actual &&
+		test_cmp expect actual
+	)
+'
+
+test_expect_success 'submodule add with an existing name fails unless forced' '
+	(
+		cd addtest2 &&
+		rm -rf repo &&
+		git rm repo &&
+		test_must_fail git submodule add -q --name repo_new "$submodurl/repo.git" repo &&
+		test ! -d repo &&
+		echo "repo" >expect &&
+		git config -f .gitmodules submodule.repo_new.path >actual &&
+		test_cmp expect actual&&
+		echo "$submodurl/bare.git" >expect &&
+		git config -f .gitmodules submodule.repo_new.url >actual &&
+		test_cmp expect actual &&
+		echo "$submodurl/bare.git" >expect &&
+		git config submodule.repo_new.url >actual &&
+		test_cmp expect actual &&
+		git submodule add -f -q --name repo_new "$submodurl/repo.git" repo &&
+		test -d repo &&
+		echo "repo" >expect &&
+		git config -f .gitmodules submodule.repo_new.path >actual &&
+		test_cmp expect actual&&
+		echo "$submodurl/repo.git" >expect &&
+		git config -f .gitmodules submodule.repo_new.url >actual &&
+		test_cmp expect actual &&
+		echo "$submodurl/repo.git" >expect &&
+		git config submodule.repo_new.url >actual &&
+		test_cmp expect actual
+	)
+'
+
+test_expect_success 'set up a second submodule' '
+	git submodule add ./init2 example2 &&
+	git commit -m "submodule example2 added"
+'
+
+test_expect_success 'submodule deinit should remove the whole submodule section from .git/config' '
+	git config submodule.example.foo bar &&
+	git config submodule.example2.frotz nitfol &&
+	git submodule deinit init &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test -n "$(git config --get-regexp "submodule\.example2\.")" &&
+	test -f example2/.git &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit . deinits all initialized submodules' '
+	git submodule update --init &&
+	git config submodule.example.foo bar &&
+	git config submodule.example2.frotz nitfol &&
+	test_must_fail git submodule deinit &&
+	git submodule deinit . >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test -z "$(git config --get-regexp "submodule\.example2\.")" &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	test_i18ngrep "Cleared directory .example2" actual &&
+	rmdir init example2
+'
+
+test_expect_success 'submodule deinit deinits a submodule when its work tree is missing or empty' '
+	git submodule update --init &&
+	rm -rf init example2/* example2/.git &&
+	git submodule deinit init example2 >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test -z "$(git config --get-regexp "submodule\.example2\.")" &&
+	test_i18ngrep ! "Cleared directory .init" actual &&
+	test_i18ngrep "Cleared directory .example2" actual &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit fails when the submodule contains modifications unless forced' '
+	git submodule update --init &&
+	echo X >>init/s &&
+	test_must_fail git submodule deinit init &&
+	test -n "$(git config --get-regexp "submodule\.example\.")" &&
+	test -f example2/.git &&
+	git submodule deinit -f init >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit fails when the submodule contains untracked files unless forced' '
+	git submodule update --init &&
+	echo X >>init/untracked &&
+	test_must_fail git submodule deinit init &&
+	test -n "$(git config --get-regexp "submodule\.example\.")" &&
+	test -f example2/.git &&
+	git submodule deinit -f init >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit fails when the submodule HEAD does not match unless forced' '
+	git submodule update --init &&
+	(
+		cd init &&
+		git checkout HEAD^
+	) &&
+	test_must_fail git submodule deinit init &&
+	test -n "$(git config --get-regexp "submodule\.example\.")" &&
+	test -f example2/.git &&
+	git submodule deinit -f init >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit is silent when used on an uninitialized submodule' '
+	git submodule update --init &&
+	git submodule deinit init >actual &&
+	test_i18ngrep "Submodule .example. (.*) unregistered for path .init" actual &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	git submodule deinit init >actual &&
+	test_i18ngrep ! "Submodule .example. (.*) unregistered for path .init" actual &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	git submodule deinit . >actual &&
+	test_i18ngrep ! "Submodule .example. (.*) unregistered for path .init" actual &&
+	test_i18ngrep "Submodule .example2. (.*) unregistered for path .example2" actual &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	git submodule deinit . >actual &&
+	test_i18ngrep ! "Submodule .example. (.*) unregistered for path .init" actual &&
+	test_i18ngrep ! "Submodule .example2. (.*) unregistered for path .example2" actual &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	rmdir init example2
+'
+
+test_expect_success 'submodule deinit fails when submodule has a .git directory even when forced' '
+	git submodule update --init &&
+	(
+		cd init &&
+		rm .git &&
+		cp -R ../.git/modules/example .git &&
+		GIT_WORK_TREE=. git config --unset core.worktree
+	) &&
+	test_must_fail git submodule deinit init &&
+	test_must_fail git submodule deinit -f init &&
+	test -d init/.git &&
+	test -n "$(git config --get-regexp "submodule\.example\.")"
+'
+
+test_expect_success 'submodule with UTF-8 name' '
+	svname=$(printf "\303\245 \303\244\303\266") &&
+	mkdir "$svname" &&
+	(
+		cd "$svname" &&
+		git init &&
+		>sub &&
+		git add sub &&
+		git commit -m "init sub"
+	) &&
+	test_config core.precomposeunicode true &&
+	git submodule add ./"$svname" &&
+	git submodule >&2 &&
+	test -n "$(git submodule | grep "$svname")"
+'
 test_done

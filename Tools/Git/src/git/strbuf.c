@@ -44,7 +44,9 @@ void strbuf_release(struct strbuf *sb)
 
 char *strbuf_detach(struct strbuf *sb, size_t *sz)
 {
-	char *res = sb->alloc ? sb->buf : NULL;
+	char *res;
+	strbuf_grow(sb, 0);
+	res = sb->buf;
 	if (sz)
 		*sz = sb->len;
 	strbuf_init(sb, 0);
@@ -104,35 +106,30 @@ void strbuf_ltrim(struct strbuf *sb)
 	sb->buf[sb->len] = '\0';
 }
 
-struct strbuf **strbuf_split_buf(const char *str, size_t slen, int delim, int max)
+struct strbuf **strbuf_split_buf(const char *str, size_t slen,
+				 int terminator, int max)
 {
-	int alloc = 2, pos = 0;
-	const char *n, *p;
-	struct strbuf **ret;
+	struct strbuf **ret = NULL;
+	size_t nr = 0, alloc = 0;
 	struct strbuf *t;
 
-	ret = xcalloc(alloc, sizeof(struct strbuf *));
-	p = n = str;
-	while (n < str + slen) {
-		int len;
-		if (max <= 0 || pos + 1 < max)
-			n = memchr(n, delim, slen - (n - str));
-		else
-			n = NULL;
-		if (pos + 1 >= alloc) {
-			alloc = alloc * 2;
-			ret = xrealloc(ret, sizeof(struct strbuf *) * alloc);
+	while (slen) {
+		int len = slen;
+		if (max <= 0 || nr + 1 < max) {
+			const char *end = memchr(str, terminator, slen);
+			if (end)
+				len = end - str + 1;
 		}
-		if (!n)
-			n = str + slen - 1;
-		len = n - p + 1;
 		t = xmalloc(sizeof(struct strbuf));
 		strbuf_init(t, len);
-		strbuf_add(t, p, len);
-		ret[pos] = t;
-		ret[++pos] = NULL;
-		p = ++n;
+		strbuf_add(t, str, len);
+		ALLOC_GROW(ret, nr + 2, alloc);
+		ret[nr++] = t;
+		str += len;
+		slen -= len;
 	}
+	ALLOC_GROW(ret, nr + 1, alloc); /* In case string was empty */
+	ret[nr] = NULL;
 	return ret;
 }
 
@@ -205,6 +202,54 @@ void strbuf_addf(struct strbuf *sb, const char *fmt, ...)
 	va_start(ap, fmt);
 	strbuf_vaddf(sb, fmt, ap);
 	va_end(ap);
+}
+
+static void add_lines(struct strbuf *out,
+			const char *prefix1,
+			const char *prefix2,
+			const char *buf, size_t size)
+{
+	while (size) {
+		const char *prefix;
+		const char *next = memchr(buf, '\n', size);
+		next = next ? (next + 1) : (buf + size);
+
+		prefix = (prefix2 && buf[0] == '\n') ? prefix2 : prefix1;
+		strbuf_addstr(out, prefix);
+		strbuf_add(out, buf, next - buf);
+		size -= next - buf;
+		buf = next;
+	}
+	strbuf_complete_line(out);
+}
+
+void strbuf_add_commented_lines(struct strbuf *out, const char *buf, size_t size)
+{
+	static char prefix1[3];
+	static char prefix2[2];
+
+	if (prefix1[0] != comment_line_char) {
+		sprintf(prefix1, "%c ", comment_line_char);
+		sprintf(prefix2, "%c", comment_line_char);
+	}
+	add_lines(out, prefix1, prefix2, buf, size);
+}
+
+void strbuf_commented_addf(struct strbuf *sb, const char *fmt, ...)
+{
+	va_list params;
+	struct strbuf buf = STRBUF_INIT;
+	int incomplete_line = sb->len && sb->buf[sb->len - 1] != '\n';
+
+	va_start(params, fmt);
+	strbuf_vaddf(&buf, fmt, params);
+	va_end(params);
+
+	strbuf_add_commented_lines(sb, buf.buf, buf.len);
+	if (incomplete_line)
+		sb->buf[--sb->len] = '\0';
+
+	strbuf_release(&buf);
 }
 
 void strbuf_vaddf(struct strbuf *sb, const char *fmt, va_list ap)
@@ -417,15 +462,33 @@ int strbuf_read_file(struct strbuf *sb, const char *path, size_t hint)
 void strbuf_add_lines(struct strbuf *out, const char *prefix,
 		      const char *buf, size_t size)
 {
-	while (size) {
-		const char *next = memchr(buf, '\n', size);
-		next = next ? (next + 1) : (buf + size);
-		strbuf_addstr(out, prefix);
-		strbuf_add(out, buf, next - buf);
-		size -= next - buf;
-		buf = next;
+	add_lines(out, prefix, NULL, buf, size);
+}
+
+void strbuf_addstr_xml_quoted(struct strbuf *buf, const char *s)
+{
+	while (*s) {
+		size_t len = strcspn(s, "\"<>&");
+		strbuf_add(buf, s, len);
+		s += len;
+		switch (*s) {
+		case '"':
+			strbuf_addstr(buf, "&quot;");
+			break;
+		case '<':
+			strbuf_addstr(buf, "&lt;");
+			break;
+		case '>':
+			strbuf_addstr(buf, "&gt;");
+			break;
+		case '&':
+			strbuf_addstr(buf, "&amp;");
+			break;
+		case 0:
+			return;
+		}
+		s++;
 	}
-	strbuf_complete_line(out);
 }
 
 static int is_rfc3986_reserved(char ch)
@@ -445,8 +508,8 @@ static int is_rfc3986_unreserved(char ch)
 		ch == '-' || ch == '_' || ch == '.' || ch == '~';
 }
 
-void strbuf_add_urlencode(struct strbuf *sb, const char *s, size_t len,
-			  int reserved)
+static void strbuf_add_urlencode(struct strbuf *sb, const char *s, size_t len,
+				 int reserved)
 {
 	strbuf_grow(sb, len);
 	while (len--) {
@@ -465,13 +528,23 @@ void strbuf_addstr_urlencode(struct strbuf *sb, const char *s,
 	strbuf_add_urlencode(sb, s, strlen(s), reserved);
 }
 
-void strbuf_addf_ln(struct strbuf *sb, const char *fmt, ...)
+void strbuf_humanise_bytes(struct strbuf *buf, off_t bytes)
 {
-	va_list ap;
-	va_start(ap, fmt);
-	strbuf_vaddf(sb, fmt, ap);
-	va_end(ap);
-	strbuf_addch(sb, '\n');
+	if (bytes > 1 << 30) {
+		strbuf_addf(buf, "%u.%2.2u GiB",
+			    (int)(bytes >> 30),
+			    (int)(bytes & ((1 << 30) - 1)) / 10737419);
+	} else if (bytes > 1 << 20) {
+		int x = bytes + 5243;  /* for rounding */
+		strbuf_addf(buf, "%u.%2.2u MiB",
+			    x >> 20, ((x & ((1 << 20) - 1)) * 100) >> 20);
+	} else if (bytes > 1 << 10) {
+		int x = bytes + 5;  /* for rounding */
+		strbuf_addf(buf, "%u.%2.2u KiB",
+			    x >> 10, ((x & ((1 << 10) - 1)) * 100) >> 10);
+	} else {
+		strbuf_addf(buf, "%u bytes", (int)bytes);
+	}
 }
 
 int printf_ln(const char *fmt, ...)

@@ -2,12 +2,12 @@
 .\"     Title: git-archive
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-ARCHIVE" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-ARCHIVE" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -33,7 +33,7 @@ git-archive \- Create an archive of files from a named tree
 .sp
 .nf
 \fIgit archive\fR [\-\-format=<fmt>] [\-\-list] [\-\-prefix=<prefix>/] [<extra>]
-              [\-o | \-\-output=<file>] [\-\-worktree\-attributes]
+              [\-o <file> | \-\-output=<file>] [\-\-worktree\-attributes]
               [\-\-remote=<repo> [\-\-exec=<git\-upload\-archive>]] <tree\-ish>
               [<path>\&...]
 .fi
@@ -76,7 +76,8 @@ Write the archive to <file> instead of stdout\&.
 .PP
 \-\-worktree\-attributes
 .RS 4
-Look for attributes in \&.gitattributes in working directory too\&.
+Look for attributes in \&.gitattributes files in the working tree as well (see
+the section called \(lqATTRIBUTES\(rq)\&.
 .RE
 .PP
 <extra>
@@ -156,7 +157,7 @@ for details\&.
 .PP
 export\-subst
 .RS 4
-If the attribute export\-subst is set for a file then git will expand several placeholders when adding this file to an archive\&. See
+If the attribute export\-subst is set for a file then Git will expand several placeholders when adding this file to an archive\&. See
 \fBgitattributes\fR(5)
 for details\&.
 .RE

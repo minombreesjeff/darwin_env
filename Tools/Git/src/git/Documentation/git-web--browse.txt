@@ -3,7 +3,7 @@ git-web{litdd}browse(1)
 
 NAME
 ----
-git-web--browse - git helper script to launch a web browser
+git-web--browse - Git helper script to launch a web browser
 
 SYNOPSIS
 --------
@@ -34,6 +34,7 @@ The following browsers (or commands) are currently supported:
 * dillo
 * open (this is the default under Mac OS X GUI)
 * start (this is the default under MinGW)
+* cygstart (this is the default under Cygwin)
 
 Custom commands may also be specified.
 
@@ -50,7 +51,7 @@ OPTIONS
 
 -c <conf.var>::
 --config=<conf.var>::
-	CONF.VAR is looked up in the git config files. If it's set,
+	CONF.VAR is looked up in the Git config files. If it's set,
 	then its value specifies the browser that should be used.
 
 CONFIGURATION VARIABLES

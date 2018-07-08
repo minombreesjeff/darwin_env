@@ -45,39 +45,176 @@ test_expect_failure 'pretend we have a known breakage' '
 	false
 '
 
-test_expect_success 'pretend we have fixed a known breakage (run in sub test-lib)' "
-	mkdir passing-todo &&
-	(cd passing-todo &&
-	cat >passing-todo.sh <<-EOF &&
-	#!$SHELL_PATH
+run_sub_test_lib_test () {
+	name="$1" descr="$2" # stdin is the body of the test code
+	mkdir "$name" &&
+	(
+		cd "$name" &&
+		cat >"$name.sh" <<-EOF &&
+		#!$SHELL_PATH
 
-	test_description='A passing TODO test
+		test_description='$descr (run in sub test-lib)
 
-	This is run in a sub test-lib so that we do not get incorrect
-	passing metrics
-	'
+		This is run in a sub test-lib so that we do not get incorrect
+		passing metrics
+		'
 
-	# Point to the t/test-lib.sh, which isn't in ../ as usual
-	TEST_DIRECTORY=\"$TEST_DIRECTORY\"
-	. \"\$TEST_DIRECTORY\"/test-lib.sh
+		# Point to the t/test-lib.sh, which isn't in ../ as usual
+		. "\$TEST_DIRECTORY"/test-lib.sh
+		EOF
+		cat >>"$name.sh" &&
+		chmod +x "$name.sh" &&
+		export TEST_DIRECTORY &&
+		./"$name.sh" >out 2>err
+	)
+}
 
-	test_expect_failure 'pretend we have fixed a known breakage' '
-		:
-	'
+check_sub_test_lib_test () {
+	name="$1" # stdin is the expected output from the test
+	(
+		cd "$name" &&
+		! test -s err &&
+		sed -e 's/^> //' -e 's/Z$//' >expect &&
+		test_cmp expect out
+	)
+}
 
+test_expect_success 'pretend we have a fully passing test suite' "
+	run_sub_test_lib_test full-pass '3 passing tests' <<-\\EOF &&
+	for i in 1 2 3
+	do
+		test_expect_success \"passing test #\$i\" 'true'
+	done
 	test_done
 	EOF
-	chmod +x passing-todo.sh &&
-	./passing-todo.sh >out 2>err &&
-	! test -s err &&
-	sed -e 's/^> //' >expect <<-\\EOF &&
-	> ok 1 - pretend we have fixed a known breakage # TODO known breakage
-	> # fixed 1 known breakage(s)
-	> # passed all 1 test(s)
+	check_sub_test_lib_test full-pass <<-\\EOF
+	> ok 1 - passing test #1
+	> ok 2 - passing test #2
+	> ok 3 - passing test #3
+	> # passed all 3 test(s)
+	> 1..3
+	EOF
+"
+
+test_expect_success 'pretend we have a partially passing test suite' "
+	test_must_fail run_sub_test_lib_test \
+		partial-pass '2/3 tests passing' <<-\\EOF &&
+	test_expect_success 'passing test #1' 'true'
+	test_expect_success 'failing test #2' 'false'
+	test_expect_success 'passing test #3' 'true'
+	test_done
+	EOF
+	check_sub_test_lib_test partial-pass <<-\\EOF
+	> ok 1 - passing test #1
+	> not ok 2 - failing test #2
+	#	false
+	> ok 3 - passing test #3
+	> # failed 1 among 3 test(s)
+	> 1..3
+	EOF
+"
+
+test_expect_success 'pretend we have a known breakage' "
+	run_sub_test_lib_test failing-todo 'A failing TODO test' <<-\\EOF &&
+	test_expect_success 'passing test' 'true'
+	test_expect_failure 'pretend we have a known breakage' 'false'
+	test_done
+	EOF
+	check_sub_test_lib_test failing-todo <<-\\EOF
+	> ok 1 - passing test
+	> not ok 2 - pretend we have a known breakage # TODO known breakage
+	> # still have 1 known breakage(s)
+	> # passed all remaining 1 test(s)
+	> 1..2
+	EOF
+"
+
+test_expect_success 'pretend we have fixed a known breakage' "
+	run_sub_test_lib_test passing-todo 'A passing TODO test' <<-\\EOF &&
+	test_expect_failure 'pretend we have fixed a known breakage' 'true'
+	test_done
+	EOF
+	check_sub_test_lib_test passing-todo <<-\\EOF
+	> ok 1 - pretend we have fixed a known breakage # TODO known breakage vanished
+	> # 1 known breakage(s) vanished; please update test(s)
 	> 1..1
 	EOF
-	test_cmp expect out)
 "
+
+test_expect_success 'pretend we have fixed one of two known breakages (run in sub test-lib)' "
+	run_sub_test_lib_test partially-passing-todos \
+		'2 TODO tests, one passing' <<-\\EOF &&
+	test_expect_failure 'pretend we have a known breakage' 'false'
+	test_expect_success 'pretend we have a passing test' 'true'
+	test_expect_failure 'pretend we have fixed another known breakage' 'true'
+	test_done
+	EOF
+	check_sub_test_lib_test partially-passing-todos <<-\\EOF
+	> not ok 1 - pretend we have a known breakage # TODO known breakage
+	> ok 2 - pretend we have a passing test
+	> ok 3 - pretend we have fixed another known breakage # TODO known breakage vanished
+	> # 1 known breakage(s) vanished; please update test(s)
+	> # still have 1 known breakage(s)
+	> # passed all remaining 1 test(s)
+	> 1..3
+	EOF
+"
+
+test_expect_success 'pretend we have a pass, fail, and known breakage' "
+	test_must_fail run_sub_test_lib_test \
+		mixed-results1 'mixed results #1' <<-\\EOF &&
+	test_expect_success 'passing test' 'true'
+	test_expect_success 'failing test' 'false'
+	test_expect_failure 'pretend we have a known breakage' 'false'
+	test_done
+	EOF
+	check_sub_test_lib_test mixed-results1 <<-\\EOF
+	> ok 1 - passing test
+	> not ok 2 - failing test
+	> #	false
+	> not ok 3 - pretend we have a known breakage # TODO known breakage
+	> # still have 1 known breakage(s)
+	> # failed 1 among remaining 2 test(s)
+	> 1..3
+	EOF
+"
+
+test_expect_success 'pretend we have a mix of all possible results' "
+	test_must_fail run_sub_test_lib_test \
+		mixed-results2 'mixed results #2' <<-\\EOF &&
+	test_expect_success 'passing test' 'true'
+	test_expect_success 'passing test' 'true'
+	test_expect_success 'passing test' 'true'
+	test_expect_success 'passing test' 'true'
+	test_expect_success 'failing test' 'false'
+	test_expect_success 'failing test' 'false'
+	test_expect_success 'failing test' 'false'
+	test_expect_failure 'pretend we have a known breakage' 'false'
+	test_expect_failure 'pretend we have a known breakage' 'false'
+	test_expect_failure 'pretend we have fixed a known breakage' 'true'
+	test_done
+	EOF
+	check_sub_test_lib_test mixed-results2 <<-\\EOF
+	> ok 1 - passing test
+	> ok 2 - passing test
+	> ok 3 - passing test
+	> ok 4 - passing test
+	> not ok 5 - failing test
+	> #	false
+	> not ok 6 - failing test
+	> #	false
+	> not ok 7 - failing test
+	> #	false
+	> not ok 8 - pretend we have a known breakage # TODO known breakage
+	> not ok 9 - pretend we have a known breakage # TODO known breakage
+	> ok 10 - pretend we have fixed a known breakage # TODO known breakage vanished
+	> # 1 known breakage(s) vanished; please update test(s)
+	> # still have 2 known breakage(s)
+	> # failed 3 among remaining 7 test(s)
+	> 1..10
+	EOF
+"
+
 test_set_prereq HAVEIT
 haveit=no
 test_expect_success HAVEIT 'test runs if prerequisite is satisfied' '
@@ -115,6 +252,38 @@ then
 	exit 1
 fi
 
+test_lazy_prereq LAZY_TRUE true
+havetrue=no
+test_expect_success LAZY_TRUE 'test runs if lazy prereq is satisfied' '
+	havetrue=yes
+'
+donthavetrue=yes
+test_expect_success !LAZY_TRUE 'missing lazy prereqs skip tests' '
+	donthavetrue=no
+'
+
+if test "$havetrue$donthavetrue" != yesyes
+then
+	say 'bug in test framework: lazy prerequisites do not work'
+	exit 1
+fi
+
+test_lazy_prereq LAZY_FALSE false
+nothavefalse=no
+test_expect_success !LAZY_FALSE 'negative lazy prereqs checked' '
+	nothavefalse=yes
+'
+havefalse=yes
+test_expect_success LAZY_FALSE 'missing negative lazy prereqs will skip' '
+	havefalse=no
+'
+
+if test "$nothavefalse$havefalse" != yesyes
+then
+	say 'bug in test framework: negative lazy prerequisites do not work'
+	exit 1
+fi
+
 clean=no
 test_expect_success 'tests clean up after themselves' '
 	test_when_finished clean=yes
@@ -127,19 +296,8 @@ then
 fi
 
 test_expect_success 'tests clean up even on failures' "
-	mkdir failing-cleanup &&
-	(
-	cd failing-cleanup &&
-
-	cat >failing-cleanup.sh <<-EOF &&
-	#!$SHELL_PATH
-
-	test_description='Failing tests with cleanup commands'
-
-	# Point to the t/test-lib.sh, which isn't in ../ as usual
-	TEST_DIRECTORY=\"$TEST_DIRECTORY\"
-	. \"\$TEST_DIRECTORY\"/test-lib.sh
-
+	test_must_fail run_sub_test_lib_test \
+		failing-cleanup 'Failing tests with cleanup commands' <<-\\EOF &&
 	test_expect_success 'tests clean up even after a failure' '
 		touch clean-after-failure &&
 		test_when_finished rm clean-after-failure &&
@@ -149,29 +307,21 @@ test_expect_success 'tests clean up even on failures' "
 		test_when_finished \"(exit 2)\"
 	'
 	test_done
-
 	EOF
-
-	chmod +x failing-cleanup.sh &&
-	test_must_fail ./failing-cleanup.sh >out 2>err &&
-	! test -s err &&
-	! test -f \"trash directory.failing-cleanup/clean-after-failure\" &&
-	sed -e 's/Z$//' -e 's/^> //' >expect <<-\\EOF &&
-	> not ok - 1 tests clean up even after a failure
+	check_sub_test_lib_test failing-cleanup <<-\\EOF
+	> not ok 1 - tests clean up even after a failure
 	> #	Z
 	> #	touch clean-after-failure &&
 	> #	test_when_finished rm clean-after-failure &&
 	> #	(exit 1)
 	> #	Z
-	> not ok - 2 failure to clean up causes the test to fail
+	> not ok 2 - failure to clean up causes the test to fail
 	> #	Z
 	> #	test_when_finished \"(exit 2)\"
 	> #	Z
 	> # failed 2 among 2 test(s)
 	> 1..2
 	EOF
-	test_cmp expect out
-	)
 "
 
 ################################################################
@@ -217,22 +367,6 @@ test_expect_success 'validate object ID of a known tree' '
 
 # Various types of objects
 
-# Some filesystems do not support symblic links; on such systems
-# some expected values are different
-if test_have_prereq SYMLINKS
-then
-	expectfilter=cat
-	expectedtree=087704a96baf1c2d1c869a8b084481e121c88b5b
-	expectedptree1=21ae8269cacbe57ae09138dcc3a2887f904d02b3
-	expectedptree2=3c5e5399f3a333eddecce7a9b9465b63f65f51e2
-else
-	expectfilter='grep -v sym'
-	expectedtree=8e18edf7d7edcf4371a3ac6ae5f07c2641db7c46
-	expectedptree1=cfb8591b2f65de8b8cc1020cd7d9e67e7793b325
-	expectedptree2=ce580448f0148b985a513b693fdf7d802cacb44f
-fi
-
-
 test_expect_success 'adding various types of objects with git update-index --add' '
 	mkdir path2 path3 path3/subp3 &&
 	paths="path0 path2/file2 path3/file3 path3/subp3/file3" &&
@@ -240,10 +374,7 @@ test_expect_success 'adding various types of objects with git update-index --add
 		for p in $paths
 		do
 			echo "hello $p" >$p || exit 1
-			if test_have_prereq SYMLINKS
-			then
-				ln -s "hello $p" ${p}sym || exit 1
-			fi
+			test_ln_s_add "hello $p" ${p}sym || exit 1
 		done
 	) &&
 	find path* ! -type d -print | xargs git update-index --add
@@ -255,7 +386,7 @@ test_expect_success 'showing stage with git ls-files --stage' '
 '
 
 test_expect_success 'validate git ls-files output for a known tree' '
-	$expectfilter >expected <<-\EOF &&
+	cat >expected <<-\EOF &&
 	100644 f87290f8eb2cbbea7857214459a0739927eab154 0	path0
 	120000 15a98433ae33114b085f3eb3bb03b832b3180a01 0	path0sym
 	100644 3feff949ed00a62d9f7af97c15cd8a30595e7ac7 0	path2/file2
@@ -273,14 +404,14 @@ test_expect_success 'writing tree out with git write-tree' '
 '
 
 test_expect_success 'validate object ID for a known tree' '
-	test "$tree" = "$expectedtree"
+	test "$tree" = 087704a96baf1c2d1c869a8b084481e121c88b5b
 '
 
 test_expect_success 'showing tree with git ls-tree' '
     git ls-tree $tree >current
 '
 
-test_expect_success SYMLINKS 'git ls-tree output for a known tree' '
+test_expect_success 'git ls-tree output for a known tree' '
 	cat >expected <<-\EOF &&
 	100644 blob f87290f8eb2cbbea7857214459a0739927eab154	path0
 	120000 blob 15a98433ae33114b085f3eb3bb03b832b3180a01	path0sym
@@ -297,7 +428,7 @@ test_expect_success 'showing tree with git ls-tree -r' '
 '
 
 test_expect_success 'git ls-tree -r output for a known tree' '
-	$expectfilter >expected <<-\EOF &&
+	cat >expected <<-\EOF &&
 	100644 blob f87290f8eb2cbbea7857214459a0739927eab154	path0
 	120000 blob 15a98433ae33114b085f3eb3bb03b832b3180a01	path0sym
 	100644 blob 3feff949ed00a62d9f7af97c15cd8a30595e7ac7	path2/file2
@@ -315,7 +446,7 @@ test_expect_success 'showing tree with git ls-tree -r -t' '
 	git ls-tree -r -t $tree >current
 '
 
-test_expect_success SYMLINKS 'git ls-tree -r output for a known tree' '
+test_expect_success 'git ls-tree -r output for a known tree' '
 	cat >expected <<-\EOF &&
 	100644 blob f87290f8eb2cbbea7857214459a0739927eab154	path0
 	120000 blob 15a98433ae33114b085f3eb3bb03b832b3180a01	path0sym
@@ -337,7 +468,7 @@ test_expect_success 'writing partial tree out with git write-tree --prefix' '
 '
 
 test_expect_success 'validate object ID for a known tree' '
-	test "$ptree" = "$expectedptree1"
+	test "$ptree" = 21ae8269cacbe57ae09138dcc3a2887f904d02b3
 '
 
 test_expect_success 'writing partial tree out with git write-tree --prefix' '
@@ -345,7 +476,7 @@ test_expect_success 'writing partial tree out with git write-tree --prefix' '
 '
 
 test_expect_success 'validate object ID for a known tree' '
-	test "$ptree" = "$expectedptree2"
+	test "$ptree" = 3c5e5399f3a333eddecce7a9b9465b63f65f51e2
 '
 
 test_expect_success 'put invalid objects into the index' '
@@ -379,7 +510,7 @@ test_expect_success 'git read-tree followed by write-tree should be idempotent' 
 '
 
 test_expect_success 'validate git diff-files output for a know cache/work tree state' '
-	$expectfilter >expected <<\EOF &&
+	cat >expected <<\EOF &&
 :100644 100644 f87290f8eb2cbbea7857214459a0739927eab154 0000000000000000000000000000000000000000 M	path0
 :120000 120000 15a98433ae33114b085f3eb3bb03b832b3180a01 0000000000000000000000000000000000000000 M	path0sym
 :100644 100644 3feff949ed00a62d9f7af97c15cd8a30595e7ac7 0000000000000000000000000000000000000000 M	path2/file2
@@ -403,7 +534,7 @@ test_expect_success 'no diff after checkout and git update-index --refresh' '
 '
 
 ################################################################
-P=$expectedtree
+P=087704a96baf1c2d1c869a8b084481e121c88b5b
 
 test_expect_success 'git commit-tree records the correct tree in a commit' '
 	commit0=$(echo NO | git commit-tree $P) &&
@@ -438,24 +569,6 @@ test_expect_success 'update-index D/F conflict' '
 	git update-index --add --replace path2 path0/file2 &&
 	numpath0=$(git ls-files path0 | wc -l) &&
 	test $numpath0 = 1
-'
-
-test_expect_success SYMLINKS 'real path works as expected' '
-	mkdir first &&
-	ln -s ../.git first/.git &&
-	mkdir second &&
-	ln -s ../first second/other &&
-	mkdir third &&
-	dir="$(cd .git; pwd -P)" &&
-	dir2=third/../second/other/.git &&
-	test "$dir" = "$(test-path-utils real_path $dir2)" &&
-	file="$dir"/index &&
-	test "$file" = "$(test-path-utils real_path $dir2/index)" &&
-	basename=blub &&
-	test "$dir/$basename" = "$(cd .git && test-path-utils real_path "$basename")" &&
-	ln -s ../first/file .git/syml &&
-	sym="$(cd first; pwd -P)"/file &&
-	test "$sym" = "$(test-path-utils real_path "$dir2/syml")"
 '
 
 test_expect_success 'very long name in the index handled sanely' '

@@ -256,6 +256,8 @@ int mingw_rmdir(const char *pathname)
 
 	while ((ret = rmdir(pathname)) == -1 && tries < ARRAY_SIZE(delay)) {
 		if (!is_file_in_use_error(GetLastError()))
+			errno = err_win_to_posix(GetLastError());
+		if (errno != EACCES)
 			break;
 		if (!is_dir_empty(pathname)) {
 			errno = ENOTEMPTY;
@@ -271,7 +273,7 @@ int mingw_rmdir(const char *pathname)
 		Sleep(delay[tries]);
 		tries++;
 	}
-	while (ret == -1 && is_file_in_use_error(GetLastError()) &&
+	while (ret == -1 && errno == EACCES && is_file_in_use_error(GetLastError()) &&
 	       ask_yes_no_if_possible("Deletion of directory '%s' failed. "
 			"Should I try again?", pathname))
 	       ret = rmdir(pathname);
@@ -319,6 +321,31 @@ ssize_t mingw_write(int fd, const void *buf, size_t count)
 	return write(fd, buf, min(count, 31 * 1024 * 1024));
 }
 
+static BOOL WINAPI ctrl_ignore(DWORD type)
+{
+	return TRUE;
+}
+
+#undef fgetc
+int mingw_fgetc(FILE *stream)
+{
+	int ch;
+	if (!isatty(_fileno(stream)))
+		return fgetc(stream);
+
+	SetConsoleCtrlHandler(ctrl_ignore, TRUE);
+	while (1) {
+		ch = fgetc(stream);
+		if (ch != EOF || GetLastError() != ERROR_OPERATION_ABORTED)
+			break;
+
+		/* Ctrl+C was pressed, simulate SIGINT and retry */
+		mingw_raise(SIGINT);
+	}
+	SetConsoleCtrlHandler(ctrl_ignore, FALSE);
+	return ch;
+}
+
 #undef fopen
 FILE *mingw_fopen (const char *filename, const char *otype)
 {
@@ -333,6 +360,28 @@ FILE *mingw_freopen (const char *filename, const char *otype, FILE *stream)
 	if (filename && !strcmp(filename, "/dev/null"))
 		filename = "nul";
 	return freopen(filename, otype, stream);
+}
+
+#undef fflush
+int mingw_fflush(FILE *stream)
+{
+	int ret = fflush(stream);
+
+	/*
+	 * write() is used behind the scenes of stdio output functions.
+	 * Since git code does not check for errors after each stdio write
+	 * operation, it can happen that write() is called by a later
+	 * stdio function even if an earlier write() call failed. In the
+	 * case of a pipe whose readable end was closed, only the first
+	 * call to write() reports EPIPE on Windows. Subsequent write()
+	 * calls report EINVAL. It is impossible to notice whether this
+	 * fflush invocation triggered such a case, therefore, we have to
+	 * catch all EINVAL errors whole-sale.
+	 */
+	if (ret && errno == EINVAL)
+		errno = EPIPE;
+
+	return ret;
 }
 
 /*
@@ -1524,7 +1573,7 @@ static HANDLE timer_event;
 static HANDLE timer_thread;
 static int timer_interval;
 static int one_shot;
-static sig_handler_t timer_fn = SIG_DFL;
+static sig_handler_t timer_fn = SIG_DFL, sigint_fn = SIG_DFL;
 
 /* The timer works like this:
  * The thread, ticktack(), is a trivial routine that most of the time
@@ -1538,10 +1587,7 @@ static sig_handler_t timer_fn = SIG_DFL;
 static unsigned __stdcall ticktack(void *dummy)
 {
 	while (WaitForSingleObject(timer_event, timer_interval) == WAIT_TIMEOUT) {
-		if (timer_fn == SIG_DFL)
-			die("Alarm");
-		if (timer_fn != SIG_IGN)
-			timer_fn(SIGALRM);
+		mingw_raise(SIGALRM);
 		if (one_shot)
 			break;
 	}
@@ -1631,12 +1677,51 @@ int sigaction(int sig, struct sigaction *in, struct sigaction *out)
 #undef signal
 sig_handler_t mingw_signal(int sig, sig_handler_t handler)
 {
-	sig_handler_t old = timer_fn;
-	if (sig != SIGALRM)
+	sig_handler_t old;
+
+	switch (sig) {
+	case SIGALRM:
+		old = timer_fn;
+		timer_fn = handler;
+		break;
+
+	case SIGINT:
+		old = sigint_fn;
+		sigint_fn = handler;
+		break;
+
+	default:
 		return signal(sig, handler);
-	timer_fn = handler;
+	}
+
 	return old;
 }
+
+#undef raise
+int mingw_raise(int sig)
+{
+	switch (sig) {
+	case SIGALRM:
+		if (timer_fn == SIG_DFL) {
+			if (isatty(STDERR_FILENO))
+				fputs("Alarm clock\n", stderr);
+			exit(128 + SIGALRM);
+		} else if (timer_fn != SIG_IGN)
+			timer_fn(SIGALRM);
+		return 0;
+
+	case SIGINT:
+		if (sigint_fn == SIG_DFL)
+			exit(128 + SIGINT);
+		else if (sigint_fn != SIG_IGN)
+			sigint_fn(SIGINT);
+		return 0;
+
+	default:
+		return raise(sig);
+	}
+}
+
 
 static const char *make_backslash_path(const char *path)
 {
@@ -1697,21 +1782,6 @@ int link(const char *oldpath, const char *newpath)
 		return -1;
 	}
 	return 0;
-}
-
-char *getpass(const char *prompt)
-{
-	struct strbuf buf = STRBUF_INIT;
-
-	fputs(prompt, stderr);
-	for (;;) {
-		char c = _getch();
-		if (c == '\r' || c == '\n')
-			break;
-		strbuf_addch(&buf, c);
-	}
-	fputs("\n", stderr);
-	return strbuf_detach(&buf, NULL);
 }
 
 pid_t waitpid(pid_t pid, int *status, int options)

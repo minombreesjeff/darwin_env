@@ -6,6 +6,183 @@
 static int grep_source_load(struct grep_source *gs);
 static int grep_source_is_binary(struct grep_source *gs);
 
+static struct grep_opt grep_defaults;
+
+/*
+ * Initialize the grep_defaults template with hardcoded defaults.
+ * We could let the compiler do this, but without C99 initializers
+ * the code gets unwieldy and unreadable, so...
+ */
+void init_grep_defaults(void)
+{
+	struct grep_opt *opt = &grep_defaults;
+	static int run_once;
+
+	if (run_once)
+		return;
+	run_once++;
+
+	memset(opt, 0, sizeof(*opt));
+	opt->relative = 1;
+	opt->pathname = 1;
+	opt->regflags = REG_NEWLINE;
+	opt->max_depth = -1;
+	opt->pattern_type_option = GREP_PATTERN_TYPE_UNSPECIFIED;
+	opt->extended_regexp_option = 0;
+	strcpy(opt->color_context, "");
+	strcpy(opt->color_filename, "");
+	strcpy(opt->color_function, "");
+	strcpy(opt->color_lineno, "");
+	strcpy(opt->color_match, GIT_COLOR_BOLD_RED);
+	strcpy(opt->color_selected, "");
+	strcpy(opt->color_sep, GIT_COLOR_CYAN);
+	opt->color = -1;
+}
+
+static int parse_pattern_type_arg(const char *opt, const char *arg)
+{
+	if (!strcmp(arg, "default"))
+		return GREP_PATTERN_TYPE_UNSPECIFIED;
+	else if (!strcmp(arg, "basic"))
+		return GREP_PATTERN_TYPE_BRE;
+	else if (!strcmp(arg, "extended"))
+		return GREP_PATTERN_TYPE_ERE;
+	else if (!strcmp(arg, "fixed"))
+		return GREP_PATTERN_TYPE_FIXED;
+	else if (!strcmp(arg, "perl"))
+		return GREP_PATTERN_TYPE_PCRE;
+	die("bad %s argument: %s", opt, arg);
+}
+
+/*
+ * Read the configuration file once and store it in
+ * the grep_defaults template.
+ */
+int grep_config(const char *var, const char *value, void *cb)
+{
+	struct grep_opt *opt = &grep_defaults;
+	char *color = NULL;
+
+	if (userdiff_config(var, value) < 0)
+		return -1;
+
+	if (!strcmp(var, "grep.extendedregexp")) {
+		if (git_config_bool(var, value))
+			opt->extended_regexp_option = 1;
+		else
+			opt->extended_regexp_option = 0;
+		return 0;
+	}
+
+	if (!strcmp(var, "grep.patterntype")) {
+		opt->pattern_type_option = parse_pattern_type_arg(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "grep.linenumber")) {
+		opt->linenum = git_config_bool(var, value);
+		return 0;
+	}
+
+	if (!strcmp(var, "color.grep"))
+		opt->color = git_config_colorbool(var, value);
+	else if (!strcmp(var, "color.grep.context"))
+		color = opt->color_context;
+	else if (!strcmp(var, "color.grep.filename"))
+		color = opt->color_filename;
+	else if (!strcmp(var, "color.grep.function"))
+		color = opt->color_function;
+	else if (!strcmp(var, "color.grep.linenumber"))
+		color = opt->color_lineno;
+	else if (!strcmp(var, "color.grep.match"))
+		color = opt->color_match;
+	else if (!strcmp(var, "color.grep.selected"))
+		color = opt->color_selected;
+	else if (!strcmp(var, "color.grep.separator"))
+		color = opt->color_sep;
+
+	if (color) {
+		if (!value)
+			return config_error_nonbool(var);
+		color_parse(value, var, color);
+	}
+	return 0;
+}
+
+/*
+ * Initialize one instance of grep_opt and copy the
+ * default values from the template we read the configuration
+ * information in an earlier call to git_config(grep_config).
+ */
+void grep_init(struct grep_opt *opt, const char *prefix)
+{
+	struct grep_opt *def = &grep_defaults;
+
+	memset(opt, 0, sizeof(*opt));
+	opt->prefix = prefix;
+	opt->prefix_length = (prefix && *prefix) ? strlen(prefix) : 0;
+	opt->pattern_tail = &opt->pattern_list;
+	opt->header_tail = &opt->header_list;
+
+	opt->color = def->color;
+	opt->extended_regexp_option = def->extended_regexp_option;
+	opt->pattern_type_option = def->pattern_type_option;
+	opt->linenum = def->linenum;
+	opt->max_depth = def->max_depth;
+	opt->pathname = def->pathname;
+	opt->regflags = def->regflags;
+	opt->relative = def->relative;
+
+	strcpy(opt->color_context, def->color_context);
+	strcpy(opt->color_filename, def->color_filename);
+	strcpy(opt->color_function, def->color_function);
+	strcpy(opt->color_lineno, def->color_lineno);
+	strcpy(opt->color_match, def->color_match);
+	strcpy(opt->color_selected, def->color_selected);
+	strcpy(opt->color_sep, def->color_sep);
+}
+
+void grep_commit_pattern_type(enum grep_pattern_type pattern_type, struct grep_opt *opt)
+{
+	if (pattern_type != GREP_PATTERN_TYPE_UNSPECIFIED)
+		grep_set_pattern_type_option(pattern_type, opt);
+	else if (opt->pattern_type_option != GREP_PATTERN_TYPE_UNSPECIFIED)
+		grep_set_pattern_type_option(opt->pattern_type_option, opt);
+	else if (opt->extended_regexp_option)
+		grep_set_pattern_type_option(GREP_PATTERN_TYPE_ERE, opt);
+}
+
+void grep_set_pattern_type_option(enum grep_pattern_type pattern_type, struct grep_opt *opt)
+{
+	switch (pattern_type) {
+	case GREP_PATTERN_TYPE_UNSPECIFIED:
+		/* fall through */
+
+	case GREP_PATTERN_TYPE_BRE:
+		opt->fixed = 0;
+		opt->pcre = 0;
+		opt->regflags &= ~REG_EXTENDED;
+		break;
+
+	case GREP_PATTERN_TYPE_ERE:
+		opt->fixed = 0;
+		opt->pcre = 0;
+		opt->regflags |= REG_EXTENDED;
+		break;
+
+	case GREP_PATTERN_TYPE_FIXED:
+		opt->fixed = 1;
+		opt->pcre = 0;
+		opt->regflags &= ~REG_EXTENDED;
+		break;
+
+	case GREP_PATTERN_TYPE_PCRE:
+		opt->fixed = 0;
+		opt->pcre = 1;
+		opt->regflags &= ~REG_EXTENDED;
+		break;
+	}
+}
 
 static struct grep_pat *create_grep_pat(const char *pat, size_t patlen,
 					const char *origin, int no,
@@ -64,6 +241,8 @@ void append_header_grep_pattern(struct grep_opt *opt,
 {
 	struct grep_pat *p = create_grep_pat(pat, strlen(pat), "header", 0,
 					     GREP_PATTERN_HEAD, field);
+	if (field == GREP_HEADER_REFLOG)
+		opt->use_reflog_filter = 1;
 	do_append_grep_pat(&opt->header_tail, p);
 }
 
@@ -446,7 +625,8 @@ static struct grep_expr *prep_header_patterns(struct grep_opt *opt)
 	for (p = opt->header_list; p; p = p->next) {
 		if (p->token != GREP_PATTERN_HEAD)
 			die("bug: a non-header pattern in grep header list.");
-		if (p->field < 0 || GREP_HEADER_FIELD_MAX <= p->field)
+		if (p->field < GREP_HEADER_FIELD_MIN ||
+		    GREP_HEADER_FIELD_MAX <= p->field)
 			die("bug: unknown header field %d", p->field);
 		compile_regexp(p, opt);
 	}
@@ -697,6 +877,7 @@ static struct {
 } header_field[] = {
 	{ "author ", 7 },
 	{ "committer ", 10 },
+	{ "reflog ", 7 },
 };
 
 static int match_one_pattern(struct grep_pat *p, char *bol, char *eol,
@@ -720,7 +901,14 @@ static int match_one_pattern(struct grep_pat *p, char *bol, char *eol,
 		if (strncmp(bol, field, len))
 			return 0;
 		bol += len;
-		saved_ch = strip_timestamp(bol, &eol);
+		switch (p->field) {
+		case GREP_HEADER_AUTHOR:
+		case GREP_HEADER_COMMITTER:
+			saved_ch = strip_timestamp(bol, &eol);
+			break;
+		default:
+			break;
+		}
 	}
 
  again:
@@ -1363,7 +1551,7 @@ int grep_buffer(struct grep_opt *opt, char *buf, unsigned long size)
 	struct grep_source gs;
 	int r;
 
-	grep_source_init(&gs, GREP_SOURCE_BUF, NULL, NULL);
+	grep_source_init(&gs, GREP_SOURCE_BUF, NULL, NULL, NULL);
 	gs.buf = buf;
 	gs.size = size;
 
@@ -1374,10 +1562,12 @@ int grep_buffer(struct grep_opt *opt, char *buf, unsigned long size)
 }
 
 void grep_source_init(struct grep_source *gs, enum grep_source_type type,
-		      const char *name, const void *identifier)
+		      const char *name, const char *path,
+		      const void *identifier)
 {
 	gs->type = type;
 	gs->name = name ? xstrdup(name) : NULL;
+	gs->path = path ? xstrdup(path) : NULL;
 	gs->buf = NULL;
 	gs->size = 0;
 	gs->driver = NULL;
@@ -1399,6 +1589,8 @@ void grep_source_clear(struct grep_source *gs)
 {
 	free(gs->name);
 	gs->name = NULL;
+	free(gs->path);
+	gs->path = NULL;
 	free(gs->identifier);
 	gs->identifier = NULL;
 	grep_source_clear_data(gs);
@@ -1491,7 +1683,8 @@ void grep_source_load_driver(struct grep_source *gs)
 		return;
 
 	grep_attr_lock();
-	gs->driver = userdiff_find_by_path(gs->name);
+	if (gs->path)
+		gs->driver = userdiff_find_by_path(gs->path);
 	if (!gs->driver)
 		gs->driver = userdiff_find_by_name("default");
 	grep_attr_unlock();

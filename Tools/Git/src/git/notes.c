@@ -848,15 +848,16 @@ int combine_notes_ignore(unsigned char *cur_sha1,
 	return 0;
 }
 
-static int string_list_add_note_lines(struct string_list *sort_uniq_list,
+/*
+ * Add the lines from the named object to list, with trailing
+ * newlines removed.
+ */
+static int string_list_add_note_lines(struct string_list *list,
 				      const unsigned char *sha1)
 {
 	char *data;
 	unsigned long len;
 	enum object_type t;
-	struct strbuf buf = STRBUF_INIT;
-	struct strbuf **lines = NULL;
-	int i, list_index;
 
 	if (is_null_sha1(sha1))
 		return 0;
@@ -868,24 +869,14 @@ static int string_list_add_note_lines(struct string_list *sort_uniq_list,
 		return t != OBJ_BLOB || !data;
 	}
 
-	strbuf_attach(&buf, data, len, len + 1);
-	lines = strbuf_split(&buf, '\n');
-
-	for (i = 0; lines[i]; i++) {
-		if (lines[i]->buf[lines[i]->len - 1] == '\n')
-			strbuf_setlen(lines[i], lines[i]->len - 1);
-		if (!lines[i]->len)
-			continue; /* skip empty lines */
-		list_index = string_list_find_insert_index(sort_uniq_list,
-							   lines[i]->buf, 0);
-		if (list_index < 0)
-			continue; /* skip duplicate lines */
-		string_list_insert_at_index(sort_uniq_list, list_index,
-					    lines[i]->buf);
-	}
-
-	strbuf_list_free(lines);
-	strbuf_release(&buf);
+	/*
+	 * If the last line of the file is EOL-terminated, this will
+	 * add an empty string to the list.  But it will be removed
+	 * later, along with any empty strings that came from empty
+	 * lines within the file.
+	 */
+	string_list_split(list, data, '\n', -1);
+	free(data);
 	return 0;
 }
 
@@ -901,7 +892,7 @@ static int string_list_join_lines_helper(struct string_list_item *item,
 int combine_notes_cat_sort_uniq(unsigned char *cur_sha1,
 		const unsigned char *new_sha1)
 {
-	struct string_list sort_uniq_list = { NULL, 0, 0, 1 };
+	struct string_list sort_uniq_list = STRING_LIST_INIT_DUP;
 	struct strbuf buf = STRBUF_INIT;
 	int ret = 1;
 
@@ -910,6 +901,9 @@ int combine_notes_cat_sort_uniq(unsigned char *cur_sha1,
 		goto out;
 	if (string_list_add_note_lines(&sort_uniq_list, new_sha1))
 		goto out;
+	string_list_remove_empty_items(&sort_uniq_list, 0);
+	sort_string_list(&sort_uniq_list);
+	string_list_remove_duplicates(&sort_uniq_list, 0);
 
 	/* create a new blob object from sort_uniq_list */
 	if (for_each_string_list(&sort_uniq_list,
@@ -949,23 +943,18 @@ void string_list_add_refs_by_glob(struct string_list *list, const char *glob)
 void string_list_add_refs_from_colon_sep(struct string_list *list,
 					 const char *globs)
 {
-	struct strbuf globbuf = STRBUF_INIT;
-	struct strbuf **split;
+	struct string_list split = STRING_LIST_INIT_NODUP;
+	char *globs_copy = xstrdup(globs);
 	int i;
 
-	strbuf_addstr(&globbuf, globs);
-	split = strbuf_split(&globbuf, ':');
+	string_list_split_in_place(&split, globs_copy, ':', -1);
+	string_list_remove_empty_items(&split, 0);
 
-	for (i = 0; split[i]; i++) {
-		if (!split[i]->len)
-			continue;
-		if (split[i]->buf[split[i]->len-1] == ':')
-			strbuf_setlen(split[i], split[i]->len-1);
-		string_list_add_refs_by_glob(list, split[i]->buf);
-	}
+	for (i = 0; i < split.nr; i++)
+		string_list_add_refs_by_glob(list, split.items[i].string);
 
-	strbuf_list_free(split);
-	strbuf_release(&globbuf);
+	string_list_clear(&split, 0);
+	free(globs_copy);
 }
 
 static int notes_display_config(const char *k, const char *v, void *cb)
@@ -1196,8 +1185,19 @@ void free_notes(struct notes_tree *t)
 	memset(t, 0, sizeof(struct notes_tree));
 }
 
-void format_note(struct notes_tree *t, const unsigned char *object_sha1,
-		struct strbuf *sb, const char *output_encoding, int flags)
+/*
+ * Fill the given strbuf with the notes associated with the given object.
+ *
+ * If the given notes_tree structure is not initialized, it will be auto-
+ * initialized to the default value (see documentation for init_notes() above).
+ * If the given notes_tree is NULL, the internal/default notes_tree will be
+ * used instead.
+ *
+ * (raw != 0) gives the %N userformat; otherwise, the note message is given
+ * for human consumption.
+ */
+static void format_note(struct notes_tree *t, const unsigned char *object_sha1,
+			struct strbuf *sb, const char *output_encoding, int raw)
 {
 	static const char utf8[] = "utf-8";
 	const unsigned char *sha1;
@@ -1221,7 +1221,7 @@ void format_note(struct notes_tree *t, const unsigned char *object_sha1,
 	}
 
 	if (output_encoding && *output_encoding &&
-			strcmp(utf8, output_encoding)) {
+	    !is_encoding_utf8(output_encoding)) {
 		char *reencoded = reencode_string(msg, output_encoding, utf8);
 		if (reencoded) {
 			free(msg);
@@ -1234,7 +1234,7 @@ void format_note(struct notes_tree *t, const unsigned char *object_sha1,
 	if (msglen && msg[msglen - 1] == '\n')
 		msglen--;
 
-	if (flags & NOTES_SHOW_HEADER) {
+	if (!raw) {
 		const char *ref = t->ref;
 		if (!ref || !strcmp(ref, GIT_NOTES_DEFAULT_REF)) {
 			strbuf_addstr(sb, "\nNotes:\n");
@@ -1250,7 +1250,7 @@ void format_note(struct notes_tree *t, const unsigned char *object_sha1,
 	for (msg_p = msg; msg_p < msg + msglen; msg_p += linelen + 1) {
 		linelen = strchrnul(msg_p, '\n') - msg_p;
 
-		if (flags & NOTES_INDENT)
+		if (!raw)
 			strbuf_addstr(sb, "    ");
 		strbuf_add(sb, msg_p, linelen);
 		strbuf_addch(sb, '\n');
@@ -1260,13 +1260,13 @@ void format_note(struct notes_tree *t, const unsigned char *object_sha1,
 }
 
 void format_display_notes(const unsigned char *object_sha1,
-			  struct strbuf *sb, const char *output_encoding, int flags)
+			  struct strbuf *sb, const char *output_encoding, int raw)
 {
 	int i;
 	assert(display_notes_trees);
 	for (i = 0; display_notes_trees[i]; i++)
 		format_note(display_notes_trees[i], object_sha1, sb,
-			    output_encoding, flags);
+			    output_encoding, raw);
 }
 
 int copy_note(struct notes_tree *t,

@@ -35,6 +35,7 @@ static int error_unmatch;
 static char *ps_matched;
 static const char *with_tree;
 static int exc_given;
+static int exclude_args;
 
 static const char *tag_cached = "";
 static const char *tag_unmerged = "";
@@ -200,19 +201,15 @@ static void show_ru_info(void)
 	}
 }
 
-static int ce_excluded(struct path_exclude_check *check, struct cache_entry *ce)
+static int ce_excluded(struct dir_struct *dir, struct cache_entry *ce)
 {
 	int dtype = ce_to_dtype(ce);
-	return path_excluded(check, ce->name, ce_namelen(ce), &dtype);
+	return is_excluded(dir, ce->name, &dtype);
 }
 
 static void show_files(struct dir_struct *dir)
 {
 	int i;
-	struct path_exclude_check check;
-
-	if ((dir->flags & DIR_SHOW_IGNORED))
-		path_exclude_check_init(&check, dir);
 
 	/* For cached/deleted files we don't need to even do the readdir */
 	if (show_others || show_killed) {
@@ -222,11 +219,11 @@ static void show_files(struct dir_struct *dir)
 		if (show_killed)
 			show_killed_files(dir);
 	}
-	if (show_cached | show_stage) {
+	if (show_cached || show_stage) {
 		for (i = 0; i < active_nr; i++) {
 			struct cache_entry *ce = active_cache[i];
 			if ((dir->flags & DIR_SHOW_IGNORED) &&
-			    !ce_excluded(&check, ce))
+			    !ce_excluded(dir, ce))
 				continue;
 			if (show_unmerged && !ce_stage(ce))
 				continue;
@@ -236,13 +233,13 @@ static void show_files(struct dir_struct *dir)
 				(ce_skip_worktree(ce) ? tag_skip_worktree : tag_cached), ce);
 		}
 	}
-	if (show_deleted | show_modified) {
+	if (show_deleted || show_modified) {
 		for (i = 0; i < active_nr; i++) {
 			struct cache_entry *ce = active_cache[i];
 			struct stat st;
 			int err;
 			if ((dir->flags & DIR_SHOW_IGNORED) &&
-			    !ce_excluded(&check, ce))
+			    !ce_excluded(dir, ce))
 				continue;
 			if (ce->ce_flags & CE_UPDATE)
 				continue;
@@ -255,9 +252,6 @@ static void show_files(struct dir_struct *dir)
 				show_ce_entry(tag_modified, ce);
 		}
 	}
-
-	if ((dir->flags & DIR_SHOW_IGNORED))
-		path_exclude_check_clear(&check);
 }
 
 /*
@@ -337,7 +331,7 @@ void overlay_tree_on_cache(const char *tree_name, const char *prefix)
 		matchbuf[0] = prefix;
 		matchbuf[1] = NULL;
 		init_pathspec(&pathspec, matchbuf);
-		pathspec.items[0].use_wildcard = 0;
+		pathspec.items[0].nowildcard_len = pathspec.items[0].len;
 	} else
 		init_pathspec(&pathspec, NULL);
 	if (read_tree(tree, 1, &pathspec))
@@ -405,7 +399,7 @@ int report_path_error(const char *ps_matched, const char **pathspec, const char 
 }
 
 static const char * const ls_files_usage[] = {
-	"git ls-files [options] [<file>...]",
+	N_("git ls-files [options] [<file>...]"),
 	NULL
 };
 
@@ -420,10 +414,10 @@ static int option_parse_z(const struct option *opt,
 static int option_parse_exclude(const struct option *opt,
 				const char *arg, int unset)
 {
-	struct exclude_list *list = opt->value;
+	struct string_list *exclude_list = opt->value;
 
 	exc_given = 1;
-	add_exclude(arg, "", 0, list);
+	string_list_append(exclude_list, arg);
 
 	return 0;
 }
@@ -452,62 +446,64 @@ static int option_parse_exclude_standard(const struct option *opt,
 
 int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 {
-	int require_work_tree = 0, show_tag = 0;
+	int require_work_tree = 0, show_tag = 0, i;
 	const char *max_prefix;
 	struct dir_struct dir;
+	struct exclude_list *el;
+	struct string_list exclude_list = STRING_LIST_INIT_NODUP;
 	struct option builtin_ls_files_options[] = {
 		{ OPTION_CALLBACK, 'z', NULL, NULL, NULL,
-			"paths are separated with NUL character",
+			N_("paths are separated with NUL character"),
 			PARSE_OPT_NOARG, option_parse_z },
 		OPT_BOOLEAN('t', NULL, &show_tag,
-			"identify the file status with tags"),
+			N_("identify the file status with tags")),
 		OPT_BOOLEAN('v', NULL, &show_valid_bit,
-			"use lowercase letters for 'assume unchanged' files"),
+			N_("use lowercase letters for 'assume unchanged' files")),
 		OPT_BOOLEAN('c', "cached", &show_cached,
-			"show cached files in the output (default)"),
+			N_("show cached files in the output (default)")),
 		OPT_BOOLEAN('d', "deleted", &show_deleted,
-			"show deleted files in the output"),
+			N_("show deleted files in the output")),
 		OPT_BOOLEAN('m', "modified", &show_modified,
-			"show modified files in the output"),
+			N_("show modified files in the output")),
 		OPT_BOOLEAN('o', "others", &show_others,
-			"show other files in the output"),
+			N_("show other files in the output")),
 		OPT_BIT('i', "ignored", &dir.flags,
-			"show ignored files in the output",
+			N_("show ignored files in the output"),
 			DIR_SHOW_IGNORED),
 		OPT_BOOLEAN('s', "stage", &show_stage,
-			"show staged contents' object name in the output"),
+			N_("show staged contents' object name in the output")),
 		OPT_BOOLEAN('k', "killed", &show_killed,
-			"show files on the filesystem that need to be removed"),
+			N_("show files on the filesystem that need to be removed")),
 		OPT_BIT(0, "directory", &dir.flags,
-			"show 'other' directories' name only",
+			N_("show 'other' directories' name only"),
 			DIR_SHOW_OTHER_DIRECTORIES),
 		OPT_NEGBIT(0, "empty-directory", &dir.flags,
-			"don't show empty directories",
+			N_("don't show empty directories"),
 			DIR_HIDE_EMPTY_DIRECTORIES),
 		OPT_BOOLEAN('u', "unmerged", &show_unmerged,
-			"show unmerged files in the output"),
+			N_("show unmerged files in the output")),
 		OPT_BOOLEAN(0, "resolve-undo", &show_resolve_undo,
-			    "show resolve-undo information"),
-		{ OPTION_CALLBACK, 'x', "exclude", &dir.exclude_list[EXC_CMDL], "pattern",
-			"skip files matching pattern",
+			    N_("show resolve-undo information")),
+		{ OPTION_CALLBACK, 'x', "exclude", &exclude_list, N_("pattern"),
+			N_("skip files matching pattern"),
 			0, option_parse_exclude },
-		{ OPTION_CALLBACK, 'X', "exclude-from", &dir, "file",
-			"exclude patterns are read from <file>",
+		{ OPTION_CALLBACK, 'X', "exclude-from", &dir, N_("file"),
+			N_("exclude patterns are read from <file>"),
 			0, option_parse_exclude_from },
-		OPT_STRING(0, "exclude-per-directory", &dir.exclude_per_dir, "file",
-			"read additional per-directory exclude patterns in <file>"),
+		OPT_STRING(0, "exclude-per-directory", &dir.exclude_per_dir, N_("file"),
+			N_("read additional per-directory exclude patterns in <file>")),
 		{ OPTION_CALLBACK, 0, "exclude-standard", &dir, NULL,
-			"add the standard git exclusions",
+			N_("add the standard git exclusions"),
 			PARSE_OPT_NOARG, option_parse_exclude_standard },
 		{ OPTION_SET_INT, 0, "full-name", &prefix_len, NULL,
-			"make the output relative to the project top directory",
+			N_("make the output relative to the project top directory"),
 			PARSE_OPT_NOARG | PARSE_OPT_NONEG, NULL },
 		OPT_BOOLEAN(0, "error-unmatch", &error_unmatch,
-			"if any <file> is not in the index, treat this as an error"),
-		OPT_STRING(0, "with-tree", &with_tree, "tree-ish",
-			"pretend that paths removed since <tree-ish> are still present"),
+			N_("if any <file> is not in the index, treat this as an error")),
+		OPT_STRING(0, "with-tree", &with_tree, N_("tree-ish"),
+			N_("pretend that paths removed since <tree-ish> are still present")),
 		OPT__ABBREV(&abbrev),
-		OPT_BOOLEAN(0, "debug", &debug_mode, "show debugging data"),
+		OPT_BOOLEAN(0, "debug", &debug_mode, N_("show debugging data")),
 		OPT_END()
 	};
 
@@ -525,6 +521,10 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 
 	argc = parse_options(argc, argv, prefix, builtin_ls_files_options,
 			ls_files_usage, 0);
+	el = add_exclude_list(&dir, EXC_CMDL, "--exclude option");
+	for (i = 0; i < exclude_list.nr; i++) {
+		add_exclude(exclude_list.items[i].string, "", 0, el, --exclude_args);
+	}
 	if (show_tag || show_valid_bit) {
 		tag_cached = "H ";
 		tag_unmerged = "M ";
@@ -571,8 +571,8 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 		die("ls-files --ignored needs some exclude pattern");
 
 	/* With no flags, we default to showing the cached files */
-	if (!(show_stage | show_deleted | show_others | show_unmerged |
-	      show_killed | show_modified | show_resolve_undo))
+	if (!(show_stage || show_deleted || show_others || show_unmerged ||
+	      show_killed || show_modified || show_resolve_undo))
 		show_cached = 1;
 
 	if (max_prefix)

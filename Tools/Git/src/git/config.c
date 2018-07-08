@@ -10,8 +10,6 @@
 #include "strbuf.h"
 #include "quote.h"
 
-#define MAXNAME (256)
-
 typedef struct config_file {
 	struct config_file *prev;
 	FILE *f;
@@ -19,7 +17,7 @@ typedef struct config_file {
 	int linenr;
 	int eof;
 	struct strbuf value;
-	char var[MAXNAME];
+	struct strbuf var;
 } config_file;
 
 static config_file *cf;
@@ -60,7 +58,7 @@ static int handle_path_include(const char *path, struct config_include_data *inc
 		path = buf.buf;
 	}
 
-	if (!access_or_warn(path, R_OK)) {
+	if (!access_or_die(path, R_OK, 0)) {
 		if (++inc->depth > MAX_INCLUDE_DEPTH)
 			die(include_depth_advice, MAX_INCLUDE_DEPTH, path,
 			    cf && cf->name ? cf->name : "the command line");
@@ -260,7 +258,7 @@ static inline int iskeychar(int c)
 	return isalnum(c) || c == '-';
 }
 
-static int get_value(config_fn_t fn, void *data, char *name, unsigned int len)
+static int get_value(config_fn_t fn, void *data, struct strbuf *name)
 {
 	int c;
 	char *value;
@@ -272,11 +270,9 @@ static int get_value(config_fn_t fn, void *data, char *name, unsigned int len)
 			break;
 		if (!iskeychar(c))
 			break;
-		name[len++] = tolower(c);
-		if (len >= MAXNAME)
-			return -1;
+		strbuf_addch(name, tolower(c));
 	}
-	name[len] = 0;
+
 	while (c == ' ' || c == '\t')
 		c = get_next_char();
 
@@ -288,10 +284,10 @@ static int get_value(config_fn_t fn, void *data, char *name, unsigned int len)
 		if (!value)
 			return -1;
 	}
-	return fn(name, value, data);
+	return fn(name->buf, value, data);
 }
 
-static int get_extended_base_var(char *name, int baselen, int c)
+static int get_extended_base_var(struct strbuf *name, int c)
 {
 	do {
 		if (c == '\n')
@@ -302,7 +298,7 @@ static int get_extended_base_var(char *name, int baselen, int c)
 	/* We require the format to be '[base "extension"]' */
 	if (c != '"')
 		return -1;
-	name[baselen++] = '.';
+	strbuf_addch(name, '.');
 
 	for (;;) {
 		int c = get_next_char();
@@ -315,37 +311,31 @@ static int get_extended_base_var(char *name, int baselen, int c)
 			if (c == '\n')
 				goto error_incomplete_line;
 		}
-		name[baselen++] = c;
-		if (baselen > MAXNAME / 2)
-			return -1;
+		strbuf_addch(name, c);
 	}
 
 	/* Final ']' */
 	if (get_next_char() != ']')
 		return -1;
-	return baselen;
+	return 0;
 error_incomplete_line:
 	cf->linenr--;
 	return -1;
 }
 
-static int get_base_var(char *name)
+static int get_base_var(struct strbuf *name)
 {
-	int baselen = 0;
-
 	for (;;) {
 		int c = get_next_char();
 		if (cf->eof)
 			return -1;
 		if (c == ']')
-			return baselen;
+			return 0;
 		if (isspace(c))
-			return get_extended_base_var(name, baselen, c);
+			return get_extended_base_var(name, c);
 		if (!iskeychar(c) && c != '.')
 			return -1;
-		if (baselen > MAXNAME / 2)
-			return -1;
-		name[baselen++] = tolower(c);
+		strbuf_addch(name, tolower(c));
 	}
 }
 
@@ -353,7 +343,7 @@ static int git_parse_file(config_fn_t fn, void *data)
 {
 	int comment = 0;
 	int baselen = 0;
-	char *var = cf->var;
+	struct strbuf *var = &cf->var;
 
 	/* U+FEFF Byte Order Mark in UTF8 */
 	static const unsigned char *utf8_bom = (unsigned char *) "\xef\xbb\xbf";
@@ -389,17 +379,24 @@ static int git_parse_file(config_fn_t fn, void *data)
 			continue;
 		}
 		if (c == '[') {
-			baselen = get_base_var(var);
-			if (baselen <= 0)
+			/* Reset prior to determining a new stem */
+			strbuf_reset(var);
+			if (get_base_var(var) < 0 || var->len < 1)
 				break;
-			var[baselen++] = '.';
-			var[baselen] = 0;
+			strbuf_addch(var, '.');
+			baselen = var->len;
 			continue;
 		}
 		if (!isalpha(c))
 			break;
-		var[baselen] = tolower(c);
-		if (get_value(fn, data, var, baselen+1) < 0)
+		/*
+		 * Truncate the var name back to the section header
+		 * stem prior to grabbing the suffix part of the name
+		 * and the value.
+		 */
+		strbuf_setlen(var, baselen);
+		strbuf_addch(var, tolower(c));
+		if (get_value(fn, data, var) < 0)
 			break;
 	}
 	die("bad config file line %d in %s", cf->linenr, cf->name);
@@ -569,6 +566,25 @@ static int git_default_core_config(const char *var, const char *value)
 		trust_ctime = git_config_bool(var, value);
 		return 0;
 	}
+	if (!strcmp(var, "core.statinfo") ||
+	    !strcmp(var, "core.checkstat")) {
+		/*
+		 * NEEDSWORK: statinfo was a typo in v1.8.2 that has
+		 * never been advertised.  we will remove it at Git
+		 * 2.0 boundary.
+		 */
+		if (!strcmp(var, "core.statinfo")) {
+			static int warned;
+			if (!warned++) {
+				warning("'core.statinfo' will be removed in Git 2.0; "
+					"use 'core.checkstat' instead.");
+			}
+		}
+		if (!strcasecmp(value, "default"))
+			check_stat = 1;
+		else if (!strcasecmp(value, "minimal"))
+			check_stat = 0;
+	}
 
 	if (!strcmp(var, "core.quotepath")) {
 		quote_path_fully = git_config_bool(var, value);
@@ -720,6 +736,14 @@ static int git_default_core_config(const char *var, const char *value)
 	if (!strcmp(var, "core.editor"))
 		return git_config_string(&editor_program, var, value);
 
+	if (!strcmp(var, "core.commentchar")) {
+		const char *comment;
+		int ret = git_config_string(&comment, var, value);
+		if (!ret)
+			comment_line_char = comment[0];
+		return ret;
+	}
+
 	if (!strcmp(var, "core.askpass"))
 		return git_config_string(&askpass_program, var, value);
 
@@ -842,6 +866,8 @@ static int git_default_mailmap_config(const char *var, const char *value)
 {
 	if (!strcmp(var, "mailmap.file"))
 		return git_config_string(&git_mailmap_file, var, value);
+	if (!strcmp(var, "mailmap.blob"))
+		return git_config_string(&git_mailmap_blob, var, value);
 
 	/* Add other config variables here and to Documentation/config.txt. */
 	return 0;
@@ -899,12 +925,14 @@ int git_config_from_file(config_fn_t fn, const char *filename, void *data)
 		top.linenr = 1;
 		top.eof = 0;
 		strbuf_init(&top.value, 1024);
+		strbuf_init(&top.var, 1024);
 		cf = &top;
 
 		ret = git_parse_file(fn, data);
 
 		/* pop config-file parsing state stack */
 		strbuf_release(&top.value);
+		strbuf_release(&top.var);
 		cf = top.prev;
 
 		fclose(f);
@@ -939,23 +967,23 @@ int git_config_early(config_fn_t fn, void *data, const char *repo_config)
 
 	home_config_paths(&user_config, &xdg_config, "config");
 
-	if (git_config_system() && !access_or_warn(git_etc_gitconfig(), R_OK)) {
+	if (git_config_system() && !access_or_die(git_etc_gitconfig(), R_OK, 0)) {
 		ret += git_config_from_file(fn, git_etc_gitconfig(),
 					    data);
 		found += 1;
 	}
 
-	if (xdg_config && !access_or_warn(xdg_config, R_OK)) {
+	if (xdg_config && !access_or_die(xdg_config, R_OK, ACCESS_EACCES_OK)) {
 		ret += git_config_from_file(fn, xdg_config, data);
 		found += 1;
 	}
 
-	if (user_config && !access_or_warn(user_config, R_OK)) {
+	if (user_config && !access_or_die(user_config, R_OK, ACCESS_EACCES_OK)) {
 		ret += git_config_from_file(fn, user_config, data);
 		found += 1;
 	}
 
-	if (repo_config && !access_or_warn(repo_config, R_OK)) {
+	if (repo_config && !access_or_die(repo_config, R_OK, 0)) {
 		ret += git_config_from_file(fn, repo_config, data);
 		found += 1;
 	}
@@ -1280,6 +1308,7 @@ int git_config_parse_key(const char *key, char **store_key, int *baselen_)
 
 out_free_ret_1:
 	free(*store_key);
+	*store_key = NULL;
 	return -CONFIG_INVALID_KEY;
 }
 
@@ -1660,7 +1689,41 @@ int git_config_rename_section(const char *old_name, const char *new_name)
  * Call this to report error for your variable that should not
  * get a boolean value (i.e. "[my] var" means "true").
  */
+#undef config_error_nonbool
 int config_error_nonbool(const char *var)
 {
 	return error("Missing value for '%s'", var);
+}
+
+int parse_config_key(const char *var,
+		     const char *section,
+		     const char **subsection, int *subsection_len,
+		     const char **key)
+{
+	int section_len = strlen(section);
+	const char *dot;
+
+	/* Does it start with "section." ? */
+	if (prefixcmp(var, section) || var[section_len] != '.')
+		return -1;
+
+	/*
+	 * Find the key; we don't know yet if we have a subsection, but we must
+	 * parse backwards from the end, since the subsection may have dots in
+	 * it, too.
+	 */
+	dot = strrchr(var, '.');
+	*key = dot + 1;
+
+	/* Did we have a subsection at all? */
+	if (dot == var + section_len) {
+		*subsection = NULL;
+		*subsection_len = 0;
+	}
+	else {
+		*subsection = var + section_len + 1;
+		*subsection_len = dot - *subsection;
+	}
+
+	return 0;
 }

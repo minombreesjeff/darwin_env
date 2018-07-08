@@ -2,12 +2,12 @@
 .\"     Title: git-difftool
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-DIFFTOOL" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-DIFFTOOL" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -37,7 +37,7 @@ git-difftool \- Show changes using common diff tools
 .sp
 .SH "DESCRIPTION"
 .sp
-\fIgit difftool\fR is a git command that allows you to compare and edit files between revisions using common diff tools\&. \fIgit difftool\fR is a frontend to \fIgit diff\fR and accepts the same options and arguments\&. See \fBgit-diff\fR(1)\&.
+\fIgit difftool\fR is a Git command that allows you to compare and edit files between revisions using common diff tools\&. \fIgit difftool\fR is a frontend to \fIgit diff\fR and accepts the same options and arguments\&. See \fBgit-diff\fR(1)\&.
 .SH "OPTIONS"
 .PP
 \-d, \-\-dir\-diff
@@ -105,6 +105,22 @@ $MERGED\&.
 .RS 4
 Print a list of diff tools that may be used with
 \-\-tool\&.
+.RE
+.PP
+\-\-[no\-]symlinks
+.RS 4
+
+\fIgit difftool\fR\(aqs default behavior is create symlinks to the working tree when run in
+\-\-dir\-diff
+mode and the right\-hand side of the comparison yields the same content as the file in the working tree\&.
+.sp
+Specifying
+\-\-no\-symlinks
+instructs
+\fIgit difftool\fR
+to create copies instead\&.
+\-\-no\-symlinks
+is the default on Windows\&.
 .RE
 .PP
 \-x <command>, \-\-extcmd=<command>

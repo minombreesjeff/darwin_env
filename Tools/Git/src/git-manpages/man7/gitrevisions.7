@@ -2,12 +2,12 @@
 .\"     Title: gitrevisions
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GITREVISIONS" "7" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GITREVISIONS" "7" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -28,7 +28,7 @@
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
 .SH "NAME"
-gitrevisions \- specifying revisions and ranges for git
+gitrevisions \- specifying revisions and ranges for Git
 .SH "SYNOPSIS"
 .sp
 gitrevisions
@@ -39,11 +39,11 @@ Many Git commands take revision parameters as arguments\&. Depending on the comm
 In addition, some Git commands (such as \fBgit-show\fR(1)) also take revision parameters which denote other objects than commits, e\&.g\&. blobs ("files") or trees ("directories of files")\&.
 .SH "SPECIFYING REVISIONS"
 .sp
-A revision parameter \fI<rev>\fR typically, but not necessarily, names a commit object\&. It uses what is called an \fIextended SHA1\fR syntax\&. Here are various ways to spell object names\&. The ones listed near the end of this list name trees and blobs contained in a commit\&.
+A revision parameter \fI<rev>\fR typically, but not necessarily, names a commit object\&. It uses what is called an \fIextended SHA\-1\fR syntax\&. Here are various ways to spell object names\&. The ones listed near the end of this list name trees and blobs contained in a commit\&.
 .PP
 \fI<sha1>\fR, e\&.g\&. \fIdae86e1950b1277e545cee180551750029cfe735\fR, \fIdae86e\fR
 .RS 4
-The full SHA1 object name (40\-byte hexadecimal string), or a leading substring that is unique within the repository\&. E\&.g\&. dae86e1950b1277e545cee180551750029cfe735 and dae86e both name the same commit object if there is no other object in your repository whose object name starts with dae86e\&.
+The full SHA\-1 object name (40\-byte hexadecimal string), or a leading substring that is unique within the repository\&. E\&.g\&. dae86e1950b1277e545cee180551750029cfe735 and dae86e both name the same commit object if there is no other object in your repository whose object name starts with dae86e\&.
 .RE
 .PP
 \fI<describeOutput>\fR, e\&.g\&. \fIv1\&.7\&.4\&.2\-679\-g3bee7fb\fR
@@ -63,7 +63,7 @@ typically means the commit object referenced by
 and
 \fItags/master\fR, you can explicitly say
 \fIheads/master\fR
-to tell git which one you mean\&. When ambiguous, a
+to tell Git which one you mean\&. When ambiguous, a
 \fI<refname>\fR
 is disambiguated by taking the first match in the following rules:
 .sp
@@ -175,7 +175,7 @@ cases above may come either from the
 \fI$GIT_DIR/refs\fR
 directory or from the
 \fI$GIT_DIR/packed\-refs\fR
-file\&.
+file\&. While the ref name encoding is unspecified, UTF\-8 is preferred as some output processing may assume ref names in UTF\-8\&.
 .RE
 .RE
 .PP
@@ -232,12 +232,12 @@ The construct
 means the <n>th branch checked out before the current one\&.
 .RE
 .PP
-\fI<refname>@{upstream}\fR, e\&.g\&. \fImaster@{upstream}\fR, \fI@{u}\fR
+\fI<branchname>@{upstream}\fR, e\&.g\&. \fImaster@{upstream}\fR, \fI@{u}\fR
 .RS 4
 The suffix
 \fI@{upstream}\fR
-to a ref (short form
-\fI<refname>@{u}\fR) refers to the branch the ref is set to build on top of\&. A missing ref defaults to the current branch\&.
+to a branchname (short form
+\fI<branchname>@{u}\fR) refers to the branch that the branch specified by branchname is set to build on top of\&. A missing branchname defaults to the current one\&.
 .RE
 .PP
 \fI<rev>^\fR, e\&.g\&. \fIHEAD^, v1\&.5\&.1^0\fR
@@ -276,6 +276,14 @@ followed by an object type name enclosed in brace pair means the object could be
 \fI<rev>^0\fR
 is a short\-hand for
 \fI<rev>^{commit}\fR\&.
+.sp
+\fIrev^{object}\fR
+can be used to make sure
+\fIrev\fR
+names an object that exists, without requiring
+\fIrev\fR
+to be a tag, and without dereferencing
+\fIrev\fR; because a tag is already an object, it does not have to be dereferenced even once to get to an object\&.
 .RE
 .PP
 \fI<rev>^{}\fR, e\&.g\&. \fIv0\&.99\&.8^{}\fR
@@ -374,6 +382,8 @@ This set operation appears so often that there is a shorthand for it\&. When you
 .sp
 A similar notation \fIr1\&.\&.\&.r2\fR is called symmetric difference of \fIr1\fR and \fIr2\fR and is defined as \fIr1 r2 \-\-not $(git merge\-base \-\-all r1 r2)\fR\&. It is the set of commits that are reachable from either one of \fIr1\fR or \fIr2\fR but not from both\&.
 .sp
+In these two shorthands, you can omit one end and let it default to HEAD\&. For example, \fIorigin\&.\&.\fR is a shorthand for \fIorigin\&.\&.HEAD\fR and asks "What did I do since I forked from the origin branch?" Similarly, \fI\&.\&.origin\fR is a shorthand for \fIHEAD\&.\&.origin\fR and asks "What did the origin do since I forked from them?" Note that \fI\&.\&.\fR would mean \fIHEAD\&.\&.HEAD\fR which is an empty range that is both reachable and unreachable from HEAD\&.
+.sp
 Two other shorthands for naming a set that is formed by a commit and its parent commits exist\&. The \fIr1^@\fR notation means all parents of \fIr1\fR\&. \fIr1^!\fR includes commit \fIr1\fR but excludes all of its parents\&.
 .sp
 To summarize:
@@ -390,12 +400,14 @@ Exclude commits that are reachable from (i\&.e\&. ancestors of) <rev>\&.
 .PP
 \fI<rev1>\&.\&.<rev2>\fR
 .RS 4
-Include commits that are reachable from <rev2> but exclude those that are reachable from <rev1>\&.
+Include commits that are reachable from <rev2> but exclude those that are reachable from <rev1>\&. When either <rev1> or <rev2> is omitted, it defaults to
+\fIHEAD\fR\&.
 .RE
 .PP
 \fI<rev1>\&.\&.\&.<rev2>\fR
 .RS 4
-Include commits that are reachable from either <rev1> or <rev2> but exclude those that are reachable from both\&.
+Include commits that are reachable from either <rev1> or <rev2> but exclude those that are reachable from both\&. When either <rev1> or <rev2> is omitted, it defaults to
+\fIHEAD\fR\&.
 .RE
 .PP
 \fI<rev>^@\fR, e\&.g\&. \fIHEAD^@\fR

@@ -13,6 +13,7 @@
 #include "decorate.h"
 #include "log-tree.h"
 #include "string-list.h"
+#include "mailmap.h"
 
 volatile show_early_output_fn_t show_early_output;
 
@@ -708,7 +709,7 @@ static int still_interesting(struct commit_list *src, unsigned long date, int sl
 	 * Does the destination list contain entries with a date
 	 * before the source list? Definitely _not_ done.
 	 */
-	if (date < src->item->date)
+	if (date <= src->item->date)
 		return SLOP;
 
 	/*
@@ -914,6 +915,19 @@ static void add_rev_cmdline(struct rev_info *revs,
 	info->nr++;
 }
 
+static void add_rev_cmdline_list(struct rev_info *revs,
+				 struct commit_list *commit_list,
+				 int whence,
+				 unsigned flags)
+{
+	while (commit_list) {
+		struct object *object = &commit_list->item->object;
+		add_rev_cmdline(revs, object, sha1_to_hex(object->sha1),
+				whence, flags);
+		commit_list = commit_list->next;
+	}
+}
+
 struct all_refs_cb {
 	int all_flags;
 	int warned_bad_reflog;
@@ -1048,9 +1062,9 @@ void init_revisions(struct rev_info *revs, const char *prefix)
 
 	revs->commit_format = CMIT_FMT_DEFAULT;
 
+	init_grep_defaults();
+	grep_init(&revs->grep_filter, prefix);
 	revs->grep_filter.status_only = 1;
-	revs->grep_filter.pattern_tail = &(revs->grep_filter.pattern_list);
-	revs->grep_filter.header_tail = &(revs->grep_filter.header_list);
 	revs->grep_filter.regflags = REG_NEWLINE;
 
 	diff_setup(&revs->diffopt);
@@ -1091,6 +1105,7 @@ static void prepare_show_merge(struct rev_info *revs)
 	add_pending_object(revs, &head->object, "HEAD");
 	add_pending_object(revs, &other->object, "MERGE_HEAD");
 	bases = get_merge_bases(head, other, 1);
+	add_rev_cmdline_list(revs, bases, REV_CMD_MERGE_BASE, UNINTERESTING);
 	add_pending_commit_list(revs, bases, UNINTERESTING);
 	free_commit_list(bases);
 	head->object.flags |= SYMMETRIC_LEFT;
@@ -1178,6 +1193,9 @@ int handle_revision_arg(const char *arg_, struct rev_info *revs, int flags, unsi
 
 			if (symmetric) {
 				exclude = get_merge_bases(a, b, 1);
+				add_rev_cmdline_list(revs, exclude,
+						     REV_CMD_MERGE_BASE,
+						     flags_exclude);
 				add_pending_commit_list(revs, exclude,
 							flags_exclude);
 				free_commit_list(exclude);
@@ -1275,7 +1293,8 @@ static void read_revisions_from_stdin(struct rev_info *revs,
 			}
 			die("options not supported in --stdin mode");
 		}
-		if (handle_revision_arg(sb.buf, revs, 0, REVARG_CANNOT_BE_FILENAME))
+		if (handle_revision_arg(xstrdup(sb.buf), revs, 0,
+					REVARG_CANNOT_BE_FILENAME))
 			die("bad revision '%s'", sb.buf);
 	}
 	if (seen_dashdash)
@@ -1595,18 +1614,25 @@ static int handle_revision_opt(struct rev_info *revs, int argc, const char **arg
 	} else if ((argcount = parse_long_opt("committer", argv, &optarg))) {
 		add_header_grep(revs, GREP_HEADER_COMMITTER, optarg);
 		return argcount;
+	} else if ((argcount = parse_long_opt("grep-reflog", argv, &optarg))) {
+		add_header_grep(revs, GREP_HEADER_REFLOG, optarg);
+		return argcount;
 	} else if ((argcount = parse_long_opt("grep", argv, &optarg))) {
 		add_message_grep(revs, optarg);
 		return argcount;
 	} else if (!strcmp(arg, "--grep-debug")) {
 		revs->grep_filter.debug = 1;
+	} else if (!strcmp(arg, "--basic-regexp")) {
+		grep_set_pattern_type_option(GREP_PATTERN_TYPE_BRE, &revs->grep_filter);
 	} else if (!strcmp(arg, "--extended-regexp") || !strcmp(arg, "-E")) {
-		revs->grep_filter.regflags |= REG_EXTENDED;
+		grep_set_pattern_type_option(GREP_PATTERN_TYPE_ERE, &revs->grep_filter);
 	} else if (!strcmp(arg, "--regexp-ignore-case") || !strcmp(arg, "-i")) {
 		revs->grep_filter.regflags |= REG_ICASE;
 		DIFF_OPT_SET(&revs->diffopt, PICKAXE_IGNORE_CASE);
 	} else if (!strcmp(arg, "--fixed-strings") || !strcmp(arg, "-F")) {
-		revs->grep_filter.fixed = 1;
+		grep_set_pattern_type_option(GREP_PATTERN_TYPE_FIXED, &revs->grep_filter);
+	} else if (!strcmp(arg, "--perl-regexp")) {
+		grep_set_pattern_type_option(GREP_PATTERN_TYPE_PCRE, &revs->grep_filter);
 	} else if (!strcmp(arg, "--all-match")) {
 		revs->grep_filter.all_match = 1;
 	} else if ((argcount = parse_long_opt("encoding", argv, &optarg))) {
@@ -1890,6 +1916,8 @@ int setup_revisions(int argc, const char **argv, struct rev_info *revs, struct s
 	revs->diffopt.abbrev = revs->abbrev;
 	diff_setup_done(&revs->diffopt);
 
+	grep_commit_pattern_type(GREP_PATTERN_TYPE_UNSPECIFIED,
+				 &revs->grep_filter);
 	compile_grep_patterns(&revs->grep_filter);
 
 	if (revs->reverse && revs->reflog_info)
@@ -1905,6 +1933,8 @@ int setup_revisions(int argc, const char **argv, struct rev_info *revs, struct s
 
 	if (revs->reflog_info && revs->graph)
 		die("cannot combine --walk-reflogs with --graph");
+	if (!revs->reflog_info && revs->grep_filter.use_reflog_filter)
+		die("cannot use --grep-reflog without --walk-reflogs");
 
 	return left;
 }
@@ -2010,10 +2040,11 @@ static struct commit_list **simplify_one(struct rev_info *revs, struct commit *c
 		if (revs->first_parent_only)
 			break;
 	}
-	if (!revs->first_parent_only)
-		cnt = remove_duplicate_parents(commit);
-	else
+
+	if (revs->first_parent_only)
 		cnt = 1;
+	else
+		cnt = remove_duplicate_parents(commit);
 
 	/*
 	 * It is possible that we are a merge and one side branch
@@ -2208,12 +2239,106 @@ static int rewrite_parents(struct rev_info *revs, struct commit *commit)
 	return 0;
 }
 
+static int commit_rewrite_person(struct strbuf *buf, const char *what, struct string_list *mailmap)
+{
+	char *person, *endp;
+	size_t len, namelen, maillen;
+	const char *name;
+	const char *mail;
+	struct ident_split ident;
+
+	person = strstr(buf->buf, what);
+	if (!person)
+		return 0;
+
+	person += strlen(what);
+	endp = strchr(person, '\n');
+	if (!endp)
+		return 0;
+
+	len = endp - person;
+
+	if (split_ident_line(&ident, person, len))
+		return 0;
+
+	mail = ident.mail_begin;
+	maillen = ident.mail_end - ident.mail_begin;
+	name = ident.name_begin;
+	namelen = ident.name_end - ident.name_begin;
+
+	if (map_user(mailmap, &mail, &maillen, &name, &namelen)) {
+		struct strbuf namemail = STRBUF_INIT;
+
+		strbuf_addf(&namemail, "%.*s <%.*s>",
+			    (int)namelen, name, (int)maillen, mail);
+
+		strbuf_splice(buf, ident.name_begin - buf->buf,
+			      ident.mail_end - ident.name_begin + 1,
+			      namemail.buf, namemail.len);
+
+		strbuf_release(&namemail);
+
+		return 1;
+	}
+
+	return 0;
+}
+
 static int commit_match(struct commit *commit, struct rev_info *opt)
 {
+	int retval;
+	const char *encoding;
+	char *message;
+	struct strbuf buf = STRBUF_INIT;
+
 	if (!opt->grep_filter.pattern_list && !opt->grep_filter.header_list)
 		return 1;
-	return grep_buffer(&opt->grep_filter,
-			   commit->buffer, strlen(commit->buffer));
+
+	/* Prepend "fake" headers as needed */
+	if (opt->grep_filter.use_reflog_filter) {
+		strbuf_addstr(&buf, "reflog ");
+		get_reflog_message(&buf, opt->reflog_info);
+		strbuf_addch(&buf, '\n');
+	}
+
+	/*
+	 * We grep in the user's output encoding, under the assumption that it
+	 * is the encoding they are most likely to write their grep pattern
+	 * for. In addition, it means we will match the "notes" encoding below,
+	 * so we will not end up with a buffer that has two different encodings
+	 * in it.
+	 */
+	encoding = get_log_output_encoding();
+	message = logmsg_reencode(commit, NULL, encoding);
+
+	/* Copy the commit to temporary if we are using "fake" headers */
+	if (buf.len)
+		strbuf_addstr(&buf, message);
+
+	if (opt->grep_filter.header_list && opt->mailmap) {
+		if (!buf.len)
+			strbuf_addstr(&buf, message);
+
+		commit_rewrite_person(&buf, "\nauthor ", opt->mailmap);
+		commit_rewrite_person(&buf, "\ncommitter ", opt->mailmap);
+	}
+
+	/* Append "fake" message parts as needed */
+	if (opt->show_notes) {
+		if (!buf.len)
+			strbuf_addstr(&buf, message);
+		format_display_notes(commit->object.sha1, &buf, encoding, 1);
+	}
+
+	/* Find either in the original commit message, or in the temporary */
+	if (buf.len)
+		retval = grep_buffer(&opt->grep_filter, buf.buf, buf.len);
+	else
+		retval = grep_buffer(&opt->grep_filter,
+				     message, strlen(message));
+	strbuf_release(&buf);
+	logmsg_free(message, commit);
+	return retval;
 }
 
 static inline int want_ancestry(struct rev_info *revs)

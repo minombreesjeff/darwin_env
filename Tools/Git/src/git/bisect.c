@@ -525,9 +525,9 @@ struct commit_list *filter_skipped(struct commit_list *list,
  * is increased by one between each call, but that should not matter
  * for this application.
  */
-static int get_prn(int count) {
+static unsigned get_prn(unsigned count) {
 	count = count * 1103515245 + 12345;
-	return ((unsigned)(count/65536) % PRN_MODULO);
+	return (count/65536) % PRN_MODULO;
 }
 
 /*
@@ -833,7 +833,7 @@ static int check_ancestors(const char *prefix)
  */
 static void check_good_are_ancestors_of_bad(const char *prefix, int no_checkout)
 {
-	char *filename = xstrdup(git_path("BISECT_ANCESTORS_OK"));
+	char *filename = git_pathdup("BISECT_ANCESTORS_OK");
 	struct stat st;
 	int fd;
 
@@ -956,3 +956,41 @@ int bisect_next_all(const char *prefix, int no_checkout)
 	return bisect_checkout(bisect_rev_hex, no_checkout);
 }
 
+static inline int log2i(int n)
+{
+	int log2 = 0;
+
+	for (; n > 1; n >>= 1)
+		log2++;
+
+	return log2;
+}
+
+static inline int exp2i(int n)
+{
+	return 1 << n;
+}
+
+/*
+ * Estimate the number of bisect steps left (after the current step)
+ *
+ * For any x between 0 included and 2^n excluded, the probability for
+ * n - 1 steps left looks like:
+ *
+ * P(2^n + x) == (2^n - x) / (2^n + x)
+ *
+ * and P(2^n + x) < 0.5 means 2^n < 3x
+ */
+int estimate_bisect_steps(int all)
+{
+	int n, x, e;
+
+	if (all < 3)
+		return 0;
+
+	n = log2i(all);
+	e = exp2i(n);
+	x = all - e;
+
+	return (e < 3 * x) ? n : n - 1;
+}

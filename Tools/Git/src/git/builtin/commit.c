@@ -28,14 +28,15 @@
 #include "submodule.h"
 #include "gpg-interface.h"
 #include "column.h"
+#include "sequencer.h"
 
 static const char * const builtin_commit_usage[] = {
-	"git commit [options] [--] <filepattern>...",
+	N_("git commit [options] [--] <pathspec>..."),
 	NULL
 };
 
 static const char * const builtin_status_usage[] = {
-	"git status [options] [--] <filepattern>...",
+	N_("git status [options] [--] <pathspec>..."),
 	NULL
 };
 
@@ -102,28 +103,33 @@ static enum {
 	CLEANUP_NONE,
 	CLEANUP_ALL
 } cleanup_mode;
-static char *cleanup_arg;
+static const char *cleanup_arg;
 
 static enum commit_whence whence;
 static int use_editor = 1, include_status = 1;
-static int show_ignored_in_status;
+static int show_ignored_in_status, have_option_m;
 static const char *only_include_assumed;
 static struct strbuf message = STRBUF_INIT;
 
 static enum {
+	STATUS_FORMAT_NONE = 0,
 	STATUS_FORMAT_LONG,
 	STATUS_FORMAT_SHORT,
 	STATUS_FORMAT_PORCELAIN
-} status_format = STATUS_FORMAT_LONG;
+} status_format;
 
 static int opt_parse_m(const struct option *opt, const char *arg, int unset)
 {
 	struct strbuf *buf = opt->value;
-	if (unset)
+	if (unset) {
+		have_option_m = 0;
 		strbuf_setlen(buf, 0);
-	else {
+	} else {
+		have_option_m = 1;
+		if (buf->len)
+			strbuf_addch(buf, '\n');
 		strbuf_addstr(buf, arg);
-		strbuf_addstr(buf, "\n\n");
+		strbuf_complete_line(buf);
 	}
 	return 0;
 }
@@ -453,6 +459,7 @@ static int run_status(FILE *fp, const char *index_file, const char *prefix, int 
 	case STATUS_FORMAT_PORCELAIN:
 		wt_porcelain_print(s);
 		break;
+	case STATUS_FORMAT_NONE:
 	case STATUS_FORMAT_LONG:
 		wt_status_print(s);
 		break;
@@ -465,8 +472,6 @@ static int is_a_merge(const struct commit *current_head)
 {
 	return !!(current_head->parents && current_head->parents->next);
 }
-
-static const char sign_off_header[] = "Signed-off-by: ";
 
 static void export_one(const char *var, const char *s, const char *e, int hack)
 {
@@ -550,47 +555,6 @@ static void determine_author_info(struct strbuf *author_ident)
 		export_one("GIT_AUTHOR_EMAIL", author.mail_begin, author.mail_end, 0);
 		export_one("GIT_AUTHOR_DATE", author.date_begin, author.tz_end, '@');
 	}
-}
-
-static int ends_rfc2822_footer(struct strbuf *sb)
-{
-	int ch;
-	int hit = 0;
-	int i, j, k;
-	int len = sb->len;
-	int first = 1;
-	const char *buf = sb->buf;
-
-	for (i = len - 1; i > 0; i--) {
-		if (hit && buf[i] == '\n')
-			break;
-		hit = (buf[i] == '\n');
-	}
-
-	while (i < len - 1 && buf[i] == '\n')
-		i++;
-
-	for (; i < len; i = k) {
-		for (k = i; k < len && buf[k] != '\n'; k++)
-			; /* do nothing */
-		k++;
-
-		if ((buf[k] == ' ' || buf[k] == '\t') && !first)
-			continue;
-
-		first = 0;
-
-		for (j = 0; i + j < len; j++) {
-			ch = buf[i + j];
-			if (ch == ':')
-				break;
-			if (isalnum(ch) ||
-			    (ch == '-'))
-				continue;
-			return 0;
-		}
-	}
-	return 1;
 }
 
 static char *cut_ident_timestamp_part(char *string)
@@ -717,21 +681,30 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 		stripspace(&sb, 0);
 
 	if (signoff) {
-		struct strbuf sob = STRBUF_INIT;
-		int i;
+		/*
+		 * See if we have a Conflicts: block at the end. If yes, count
+		 * its size, so we can ignore it.
+		 */
+		int ignore_footer = 0;
+		int i, eol, previous = 0;
+		const char *nl;
 
-		strbuf_addstr(&sob, sign_off_header);
-		strbuf_addstr(&sob, fmt_name(getenv("GIT_COMMITTER_NAME"),
-					     getenv("GIT_COMMITTER_EMAIL")));
-		strbuf_addch(&sob, '\n');
-		for (i = sb.len - 1; i > 0 && sb.buf[i - 1] != '\n'; i--)
-			; /* do nothing */
-		if (prefixcmp(sb.buf + i, sob.buf)) {
-			if (!i || !ends_rfc2822_footer(&sb))
-				strbuf_addch(&sb, '\n');
-			strbuf_addbuf(&sb, &sob);
+		for (i = 0; i < sb.len; i++) {
+			nl = memchr(sb.buf + i, '\n', sb.len - i);
+			if (nl)
+				eol = nl - sb.buf;
+			else
+				eol = sb.len;
+			if (!prefixcmp(sb.buf + previous, "\nConflicts:\n")) {
+				ignore_footer = sb.len - previous;
+				break;
+			}
+			while (i < eol)
+				i++;
+			previous = eol;
 		}
-		strbuf_release(&sob);
+
+		append_signoff(&sb, ignore_footer, 0);
 	}
 
 	if (fwrite(sb.buf, 1, sb.len, s->fp) < sb.len)
@@ -764,15 +737,15 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 		if (cleanup_mode == CLEANUP_ALL)
 			status_printf(s, GIT_COLOR_NORMAL,
 				_("Please enter the commit message for your changes."
-				" Lines starting\nwith '#' will be ignored, and an empty"
-				" message aborts the commit.\n"));
+				  " Lines starting\nwith '%c' will be ignored, and an empty"
+				  " message aborts the commit.\n"), comment_line_char);
 		else /* CLEANUP_SPACE, that is. */
 			status_printf(s, GIT_COLOR_NORMAL,
 				_("Please enter the commit message for your changes."
-				" Lines starting\n"
-				"with '#' will be kept; you may remove them"
-				" yourself if you want to.\n"
-				"An empty message aborts the commit.\n"));
+				  " Lines starting\n"
+				  "with '%c' will be kept; you may remove them"
+				  " yourself if you want to.\n"
+				  "An empty message aborts the commit.\n"), comment_line_char);
 		if (only_include_assumed)
 			status_printf_ln(s, GIT_COLOR_NORMAL,
 					"%s", only_include_assumed);
@@ -786,7 +759,7 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 				ident_shown++ ? "" : "\n",
 				author_ident->buf);
 
-		if (!user_ident_sufficiently_given())
+		if (!committer_ident_sufficiently_given())
 			status_printf_ln(s, GIT_COLOR_NORMAL,
 				_("%s"
 				"Committer: %s"),
@@ -977,24 +950,14 @@ static void handle_untracked_files_arg(struct wt_status *s)
 
 static const char *read_commit_message(const char *name)
 {
-	const char *out_enc, *out;
+	const char *out_enc;
 	struct commit *commit;
 
 	commit = lookup_commit_reference_by_name(name);
 	if (!commit)
 		die(_("could not lookup commit %s"), name);
 	out_enc = get_commit_output_encoding();
-	out = logmsg_reencode(commit, out_enc);
-
-	/*
-	 * If we failed to reencode the buffer, just copy it
-	 * byte for byte so the user can try to fix it up.
-	 * This also handles the case where input and output
-	 * encodings are identical.
-	 */
-	if (out == NULL)
-		out = xstrdup(commit->buffer);
-	return out;
+	return logmsg_reencode(commit, NULL, out_enc);
 }
 
 static int parse_and_validate_options(int argc, const char *argv[],
@@ -1014,7 +977,7 @@ static int parse_and_validate_options(int argc, const char *argv[],
 	if (force_author && renew_authorship)
 		die(_("Using both --reset-author and --author does not make sense"));
 
-	if (logfile || message.len || use_message || fixup_message)
+	if (logfile || have_option_m || use_message || fixup_message)
 		use_editor = 0;
 	if (0 <= edit_flag)
 		use_editor = edit_flag;
@@ -1091,9 +1054,13 @@ static int parse_and_validate_options(int argc, const char *argv[],
 	if (all && argc > 0)
 		die(_("Paths with -a does not make sense."));
 
-	if (s->null_termination && status_format == STATUS_FORMAT_LONG)
-		status_format = STATUS_FORMAT_PORCELAIN;
-	if (status_format != STATUS_FORMAT_LONG)
+	if (s->null_termination) {
+		if (status_format == STATUS_FORMAT_NONE)
+			status_format = STATUS_FORMAT_PORCELAIN;
+		else if (status_format == STATUS_FORMAT_LONG)
+			die(_("--long and -z are incompatible"));
+	}
+	if (status_format != STATUS_FORMAT_NONE)
 		dry_run = 1;
 
 	return argc;
@@ -1184,26 +1151,29 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	int fd;
 	unsigned char sha1[20];
 	static struct option builtin_status_options[] = {
-		OPT__VERBOSE(&verbose, "be verbose"),
+		OPT__VERBOSE(&verbose, N_("be verbose")),
 		OPT_SET_INT('s', "short", &status_format,
-			    "show status concisely", STATUS_FORMAT_SHORT),
+			    N_("show status concisely"), STATUS_FORMAT_SHORT),
 		OPT_BOOLEAN('b', "branch", &s.show_branch,
-			    "show branch information"),
+			    N_("show branch information")),
 		OPT_SET_INT(0, "porcelain", &status_format,
-			    "machine-readable output",
+			    N_("machine-readable output"),
 			    STATUS_FORMAT_PORCELAIN),
+		OPT_SET_INT(0, "long", &status_format,
+			    N_("show status in long format (default)"),
+			    STATUS_FORMAT_LONG),
 		OPT_BOOLEAN('z', "null", &s.null_termination,
-			    "terminate entries with NUL"),
+			    N_("terminate entries with NUL")),
 		{ OPTION_STRING, 'u', "untracked-files", &untracked_files_arg,
-		  "mode",
-		  "show untracked files, optional modes: all, normal, no. (Default: all)",
+		  N_("mode"),
+		  N_("show untracked files, optional modes: all, normal, no. (Default: all)"),
 		  PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
 		OPT_BOOLEAN(0, "ignored", &show_ignored_in_status,
-			    "show ignored files"),
-		{ OPTION_STRING, 0, "ignore-submodules", &ignore_submodule_arg, "when",
-		  "ignore changes to submodules, optional when: all, dirty, untracked. (Default: all)",
+			    N_("show ignored files")),
+		{ OPTION_STRING, 0, "ignore-submodules", &ignore_submodule_arg, N_("when"),
+		  N_("ignore changes to submodules, optional when: all, dirty, untracked. (Default: all)"),
 		  PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
-		OPT_COLUMN(0, "column", &s.colopts, "list untracked files in columns"),
+		OPT_COLUMN(0, "column", &s.colopts, N_("list untracked files in columns")),
 		OPT_END(),
 	};
 
@@ -1219,8 +1189,12 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 			     builtin_status_usage, 0);
 	finalize_colopts(&s.colopts, -1);
 
-	if (s.null_termination && status_format == STATUS_FORMAT_LONG)
-		status_format = STATUS_FORMAT_PORCELAIN;
+	if (s.null_termination) {
+		if (status_format == STATUS_FORMAT_NONE)
+			status_format = STATUS_FORMAT_PORCELAIN;
+		else if (status_format == STATUS_FORMAT_LONG)
+			die(_("--long and -z are incompatible"));
+	}
 
 	handle_untracked_files_arg(&s);
 	if (show_ignored_in_status)
@@ -1249,6 +1223,7 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	case STATUS_FORMAT_PORCELAIN:
 		wt_porcelain_print(&s);
 		break;
+	case STATUS_FORMAT_NONE:
 	case STATUS_FORMAT_LONG:
 		s.verbose = verbose;
 		s.ignore_submodule_arg = ignore_submodule_arg;
@@ -1284,7 +1259,7 @@ static void print_summary(const char *prefix, const unsigned char *sha1,
 		strbuf_addstr(&format, "\n Author: ");
 		strbuf_addbuf_percentquote(&format, &author_ident);
 	}
-	if (!user_ident_sufficiently_given()) {
+	if (!committer_ident_sufficiently_given()) {
 		strbuf_addstr(&format, "\n Committer: ");
 		strbuf_addbuf_percentquote(&format, &committer_ident);
 		if (advice_implicit_identity) {
@@ -1339,14 +1314,14 @@ static int git_commit_config(const char *k, const char *v, void *cb)
 		include_status = git_config_bool(k, v);
 		return 0;
 	}
+	if (!strcmp(k, "commit.cleanup"))
+		return git_config_string(&cleanup_arg, k, v);
 
 	status = git_gpg_config(k, v, NULL);
 	if (status)
 		return status;
 	return git_status_config(k, v, s);
 }
-
-static const char post_rewrite_hook[] = "hooks/post-rewrite";
 
 static int run_rewrite_hook(const unsigned char *oldsha1,
 			    const unsigned char *newsha1)
@@ -1358,10 +1333,10 @@ static int run_rewrite_hook(const unsigned char *oldsha1,
 	int code;
 	size_t n;
 
-	if (access(git_path(post_rewrite_hook), X_OK) < 0)
+	argv[0] = find_hook("post-rewrite");
+	if (!argv[0])
 		return 0;
 
-	argv[0] = git_path(post_rewrite_hook);
 	argv[1] = "amend";
 	argv[2] = NULL;
 
@@ -1384,53 +1359,56 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 {
 	static struct wt_status s;
 	static struct option builtin_commit_options[] = {
-		OPT__QUIET(&quiet, "suppress summary after successful commit"),
-		OPT__VERBOSE(&verbose, "show diff in commit message template"),
+		OPT__QUIET(&quiet, N_("suppress summary after successful commit")),
+		OPT__VERBOSE(&verbose, N_("show diff in commit message template")),
 
-		OPT_GROUP("Commit message options"),
-		OPT_FILENAME('F', "file", &logfile, "read message from file"),
-		OPT_STRING(0, "author", &force_author, "author", "override author for commit"),
-		OPT_STRING(0, "date", &force_date, "date", "override date for commit"),
-		OPT_CALLBACK('m', "message", &message, "message", "commit message", opt_parse_m),
-		OPT_STRING('c', "reedit-message", &edit_message, "commit", "reuse and edit message from specified commit"),
-		OPT_STRING('C', "reuse-message", &use_message, "commit", "reuse message from specified commit"),
-		OPT_STRING(0, "fixup", &fixup_message, "commit", "use autosquash formatted message to fixup specified commit"),
-		OPT_STRING(0, "squash", &squash_message, "commit", "use autosquash formatted message to squash specified commit"),
-		OPT_BOOLEAN(0, "reset-author", &renew_authorship, "the commit is authored by me now (used with -C/-c/--amend)"),
-		OPT_BOOLEAN('s', "signoff", &signoff, "add Signed-off-by:"),
-		OPT_FILENAME('t', "template", &template_file, "use specified template file"),
-		OPT_BOOL('e', "edit", &edit_flag, "force edit of commit"),
-		OPT_STRING(0, "cleanup", &cleanup_arg, "default", "how to strip spaces and #comments from message"),
-		OPT_BOOLEAN(0, "status", &include_status, "include status in commit message template"),
-		{ OPTION_STRING, 'S', "gpg-sign", &sign_commit, "key id",
-		  "GPG sign commit", PARSE_OPT_OPTARG, NULL, (intptr_t) "" },
+		OPT_GROUP(N_("Commit message options")),
+		OPT_FILENAME('F', "file", &logfile, N_("read message from file")),
+		OPT_STRING(0, "author", &force_author, N_("author"), N_("override author for commit")),
+		OPT_STRING(0, "date", &force_date, N_("date"), N_("override date for commit")),
+		OPT_CALLBACK('m', "message", &message, N_("message"), N_("commit message"), opt_parse_m),
+		OPT_STRING('c', "reedit-message", &edit_message, N_("commit"), N_("reuse and edit message from specified commit")),
+		OPT_STRING('C', "reuse-message", &use_message, N_("commit"), N_("reuse message from specified commit")),
+		OPT_STRING(0, "fixup", &fixup_message, N_("commit"), N_("use autosquash formatted message to fixup specified commit")),
+		OPT_STRING(0, "squash", &squash_message, N_("commit"), N_("use autosquash formatted message to squash specified commit")),
+		OPT_BOOLEAN(0, "reset-author", &renew_authorship, N_("the commit is authored by me now (used with -C/-c/--amend)")),
+		OPT_BOOLEAN('s', "signoff", &signoff, N_("add Signed-off-by:")),
+		OPT_FILENAME('t', "template", &template_file, N_("use specified template file")),
+		OPT_BOOL('e', "edit", &edit_flag, N_("force edit of commit")),
+		OPT_STRING(0, "cleanup", &cleanup_arg, N_("default"), N_("how to strip spaces and #comments from message")),
+		OPT_BOOLEAN(0, "status", &include_status, N_("include status in commit message template")),
+		{ OPTION_STRING, 'S', "gpg-sign", &sign_commit, N_("key id"),
+		  N_("GPG sign commit"), PARSE_OPT_OPTARG, NULL, (intptr_t) "" },
 		/* end commit message options */
 
-		OPT_GROUP("Commit contents options"),
-		OPT_BOOLEAN('a', "all", &all, "commit all changed files"),
-		OPT_BOOLEAN('i', "include", &also, "add specified files to index for commit"),
-		OPT_BOOLEAN(0, "interactive", &interactive, "interactively add files"),
-		OPT_BOOLEAN('p', "patch", &patch_interactive, "interactively add changes"),
-		OPT_BOOLEAN('o', "only", &only, "commit only specified files"),
-		OPT_BOOLEAN('n', "no-verify", &no_verify, "bypass pre-commit hook"),
-		OPT_BOOLEAN(0, "dry-run", &dry_run, "show what would be committed"),
-		OPT_SET_INT(0, "short", &status_format, "show status concisely",
+		OPT_GROUP(N_("Commit contents options")),
+		OPT_BOOLEAN('a', "all", &all, N_("commit all changed files")),
+		OPT_BOOLEAN('i', "include", &also, N_("add specified files to index for commit")),
+		OPT_BOOLEAN(0, "interactive", &interactive, N_("interactively add files")),
+		OPT_BOOLEAN('p', "patch", &patch_interactive, N_("interactively add changes")),
+		OPT_BOOLEAN('o', "only", &only, N_("commit only specified files")),
+		OPT_BOOLEAN('n', "no-verify", &no_verify, N_("bypass pre-commit hook")),
+		OPT_BOOLEAN(0, "dry-run", &dry_run, N_("show what would be committed")),
+		OPT_SET_INT(0, "short", &status_format, N_("show status concisely"),
 			    STATUS_FORMAT_SHORT),
-		OPT_BOOLEAN(0, "branch", &s.show_branch, "show branch information"),
+		OPT_BOOLEAN(0, "branch", &s.show_branch, N_("show branch information")),
 		OPT_SET_INT(0, "porcelain", &status_format,
-			    "machine-readable output", STATUS_FORMAT_PORCELAIN),
+			    N_("machine-readable output"), STATUS_FORMAT_PORCELAIN),
+		OPT_SET_INT(0, "long", &status_format,
+			    N_("show status in long format (default)"),
+			    STATUS_FORMAT_LONG),
 		OPT_BOOLEAN('z', "null", &s.null_termination,
-			    "terminate entries with NUL"),
-		OPT_BOOLEAN(0, "amend", &amend, "amend previous commit"),
-		OPT_BOOLEAN(0, "no-post-rewrite", &no_post_rewrite, "bypass post-rewrite hook"),
-		{ OPTION_STRING, 'u', "untracked-files", &untracked_files_arg, "mode", "show untracked files, optional modes: all, normal, no. (Default: all)", PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
+			    N_("terminate entries with NUL")),
+		OPT_BOOLEAN(0, "amend", &amend, N_("amend previous commit")),
+		OPT_BOOLEAN(0, "no-post-rewrite", &no_post_rewrite, N_("bypass post-rewrite hook")),
+		{ OPTION_STRING, 'u', "untracked-files", &untracked_files_arg, N_("mode"), N_("show untracked files, optional modes: all, normal, no. (Default: all)"), PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
 		/* end commit contents options */
 
 		{ OPTION_BOOLEAN, 0, "allow-empty", &allow_empty, NULL,
-		  "ok to record an empty change",
+		  N_("ok to record an empty change"),
 		  PARSE_OPT_NOARG | PARSE_OPT_HIDDEN },
 		{ OPTION_BOOLEAN, 0, "allow-empty-message", &allow_empty_message, NULL,
-		  "ok to record a change with an empty message",
+		  N_("ok to record a change with an empty message"),
 		  PARSE_OPT_NOARG | PARSE_OPT_HIDDEN },
 
 		OPT_END()

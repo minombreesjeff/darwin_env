@@ -104,6 +104,18 @@ test_expect_success 'creating a tag using HEAD directly should succeed' '
 	tag_exists myhead
 '
 
+test_expect_success '--force can create a tag with the name of one existing' '
+	tag_exists mytag &&
+	git tag --force mytag &&
+	tag_exists mytag'
+
+test_expect_success '--force is moot with a non-existing tag name' '
+	git tag newtag >expect &&
+	git tag --force forcetag >actual &&
+	test_cmp expect actual
+'
+git tag -d newtag forcetag
+
 # deleting tags:
 
 test_expect_success 'trying to delete an unknown tag should fail' '
@@ -1066,12 +1078,12 @@ test_expect_success GPG \
 '
 
 # usage with rfc1991 signatures
-echo "rfc1991" > gpghome/gpg.conf
 get_tag_header rfc1991-signed-tag $commit commit $time >expect
 echo "RFC1991 signed tag" >>expect
 echo '-----BEGIN PGP MESSAGE-----' >>expect
 test_expect_success GPG \
 	'creating a signed tag with rfc1991' '
+	echo "rfc1991" >gpghome/gpg.conf &&
 	git tag -s -m "RFC1991 signed tag" rfc1991-signed-tag $commit &&
 	get_tag_msg rfc1991-signed-tag >actual &&
 	test_cmp expect actual
@@ -1085,6 +1097,7 @@ chmod +x fakeeditor
 
 test_expect_success GPG \
 	'reediting a signed tag body omits signature' '
+	echo "rfc1991" >gpghome/gpg.conf &&
 	echo "RFC1991 signed tag" >expect &&
 	GIT_EDITOR=./fakeeditor git tag -f -s rfc1991-signed-tag $commit &&
 	test_cmp expect actual
@@ -1092,11 +1105,13 @@ test_expect_success GPG \
 
 test_expect_success GPG \
 	'verifying rfc1991 signature' '
+	echo "rfc1991" >gpghome/gpg.conf &&
 	git tag -v rfc1991-signed-tag
 '
 
 test_expect_success GPG \
 	'list tag with rfc1991 signature' '
+	echo "rfc1991" >gpghome/gpg.conf &&
 	echo "rfc1991-signed-tag RFC1991 signed tag" >expect &&
 	git tag -l -n1 rfc1991-signed-tag >actual &&
 	test_cmp expect actual &&

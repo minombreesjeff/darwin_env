@@ -49,15 +49,18 @@ $(foreach arch,$(RC_ARCHS),$(eval cflags := $(subst $(cflags),-arch $(arch) ,)))
 export RC_CFLAGS := $(cflags)
 
 CFLAGS = -g3 -gdwarf-2 -Os -pipe -Wall -Wformat-security -D_FORTIFY_SOURCE=2
+LDFLAGS = -sectcreate __TEXT __info_plist $(OBJROOT)/Info.plist
 
 STRIP := strip -S
 submakevars := -j`sysctl -n hw.activecpu` prefix=$(PREFIX) \
   PYTHON_PATH='MACOSX_DEPLOYMENT_TARGET="" /usr/bin/python' \
+  PYTHON_PATH_SQ='/usr/bin/python' \
   NO_GETTEXT=YesPlease NO_INSTALL_HARDLINKS=YesPlease \
   NO_FINK=YesPlease NO_DARWIN_PORTS=YesPlease \
   RUNTIME_PREFIX=YesPlease USE_LIBPCRE=YesPlease \
   XDL_FAST_HASH=YesPlease \
   GITGUI_VERSION=0.12.2 V=1 \
+  LDFLAGS='$(LDFLAGS)' \
   CFLAGS='$(CFLAGS)'
 
 objarch   := $(foreach arch,$(RC_ARCHS),$(OBJROOT)/$(arch))
@@ -71,7 +74,7 @@ installsrc:
 else
 installsrc:
 	mkdir -p $(SRCROOT)
-	tar -cp --exclude .git --exclude .svn --exclude CVS . | tar -pox -C "$(SRCROOT)"
+	tar -cp --exclude .gitignore --exclude .git --exclude .svn --exclude CVS . | tar -pox -C "$(SRCROOT)"
 endif
 
 installhdrs:
@@ -84,7 +87,9 @@ install: install-bin install-man install-contrib
 	rm -f "$(DSTROOT)$(PREFIX)/libexec/git-core/git-gui"
 	rm -f "$(DSTROOT)$(PREFIX)/share/man/man1/git-gui.1"
 	rm -f "$(DSTROOT)$(PREFIX)/bin/gitk"
+	rm -rf "$(DSTROOT)$(PREFIX)/share/gitk"
 	rm -f "$(DSTROOT)$(PREFIX)/share/man/man1/gitk.1"
+	rm -rf "$(DSTROOT)$(PREFIX)/share/man/man3"
 	install -d -o root -g wheel -m 0755 $(DSTROOT)$(PREFIX)/local/OpenSourceVersions
 	install -o root -g wheel -m 0644 $(SRCROOT)/Git.plist $(DSTROOT)$(PREFIX)/local/OpenSourceVersions
 
@@ -92,6 +97,7 @@ install-contrib:
 	install -d -o root -g wheel -m 0755 $(DSTROOT)$(PREFIX)/share/git-core
 	install -o root -g wheel -m 0755 $(SRCROOT)/src/git/contrib/completion/git-completion.bash $(DSTROOT)$(PREFIX)/share/git-core
 	install -o root -g wheel -m 0755 $(SRCROOT)/src/git/contrib/completion/git-prompt.sh $(DSTROOT)$(PREFIX)/share/git-core
+	install -o root -g wheel -m 0755 $(SRCROOT)/src/git/contrib/subtree/git-subtree.sh $(DSTROOT)$(PREFIX)/libexec/git-core/git-subtree
 	$(CC) -c $(CFLAGS) $(RC_CFLAGS) $(SRCROOT)/src/git/contrib/credential/osxkeychain/git-credential-osxkeychain.c -o $(OBJROOT)/git-credential-osxkeychain.o
 	$(CC) -o $(DSTROOT)$(PREFIX)/libexec/git-core/git-credential-osxkeychain $(OBJROOT)/git-credential-osxkeychain.o -framework Security
 
@@ -144,6 +150,9 @@ merge:
 $(OBJROOT)/dir.timestamp $(SYMROOT)/dir.timestamp:
 	mkdir -p $(dir $@) && touch $@
 
+$(OBJROOT)/Info.plist: $(SRCROOT)/Info.plist.pp
+	sed "s:__VERSION__:$(RC_ProjectSourceVersion):g" $< > $@
+
 define each_arch
 $(OBJROOT)/$(1)/dir.timestamp:
 	mkdir -p $$(dir $$@) && touch $$@
@@ -151,7 +160,7 @@ $(OBJROOT)/$(1)/dir.timestamp:
 $(OBJROOT)/$(1)/ditto.timestamp: $(OBJROOT)/$(1)/dir.timestamp
 	ditto $$(CURDIR)/src/git $$(dir $$@) && touch $$@
 
-$(OBJROOT)/$(1)/build.timestamp: $(OBJROOT)/$(1)/ditto.timestamp
+$(OBJROOT)/$(1)/build.timestamp: $(OBJROOT)/$(1)/ditto.timestamp $(OBJROOT)/Info.plist
 	cat /dev/null > $$(OBJROOT)/$(1)/program-list
 	$$(MAKE) -C $$(dir $$@) $$(submakevars) \
 	  'CC=$$(CC) -arch $(1)' \

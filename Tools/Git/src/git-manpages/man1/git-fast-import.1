@@ -2,12 +2,12 @@
 .\"     Title: git-fast-import
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-FAST\-IMPORT" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-FAST\-IMPORT" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -44,6 +44,34 @@ fast\-import reads a mixed command/data stream from standard input and writes on
 The fast\-import backend itself can import into an empty repository (one that has already been initialized by \fIgit init\fR) or incrementally update an existing populated repository\&. Whether or not incremental imports are supported from a particular foreign source depends on the frontend program in use\&.
 .SH "OPTIONS"
 .PP
+\-\-force
+.RS 4
+Force updating modified existing branches, even if doing so would cause commits to be lost (as the new commit does not contain the old commit)\&.
+.RE
+.PP
+\-\-quiet
+.RS 4
+Disable all non\-fatal output, making fast\-import silent when it is successful\&. This option disables the output shown by \-\-stats\&.
+.RE
+.PP
+\-\-stats
+.RS 4
+Display some basic statistics about the objects fast\-import has created, the packfiles they were stored into, and the memory used by fast\-import during this run\&. Showing this output is currently the default, but can be disabled with \-\-quiet\&.
+.RE
+.SS "Options for Frontends"
+.PP
+\-\-cat\-blob\-fd=<fd>
+.RS 4
+Write responses to
+cat\-blob
+and
+ls
+queries to the file descriptor <fd> instead of
+stdout\&. Allows
+progress
+output intended for the end\-user to be separated from other output\&.
+.RE
+.PP
 \-\-date\-format=<fmt>
 .RS 4
 Specify the type of dates the frontend will supply to fast\-import within
@@ -54,30 +82,13 @@ tagger
 commands\&. See \(lqDate Formats\(rq below for details about which formats are supported, and their syntax\&.
 .RE
 .PP
-\-\-force
+\-\-done
 .RS 4
-Force updating modified existing branches, even if doing so would cause commits to be lost (as the new commit does not contain the old commit)\&.
+Terminate with error if there is no
+done
+command at the end of the stream\&. This option might be useful for detecting errors that cause the frontend to terminate before it has started to write a stream\&.
 .RE
-.PP
-\-\-max\-pack\-size=<n>
-.RS 4
-Maximum size of each output packfile\&. The default is unlimited\&.
-.RE
-.PP
-\-\-big\-file\-threshold=<n>
-.RS 4
-Maximum size of a blob that fast\-import will attempt to create a delta for, expressed in bytes\&. The default is 512m (512 MiB)\&. Some importers may wish to lower this on systems with constrained memory\&.
-.RE
-.PP
-\-\-depth=<n>
-.RS 4
-Maximum delta depth, for blob and tree deltification\&. Default is 10\&.
-.RE
-.PP
-\-\-active\-branches=<n>
-.RS 4
-Maximum number of branches to maintain active at once\&. See \(lqMemory Utilization\(rq below for details\&. Default is 5\&.
-.RE
+.SS "Locations of Marks Files"
 .PP
 \-\-export\-marks=<file>
 .RS 4
@@ -95,33 +106,27 @@ Before processing any input, load the marks specified in <file>\&. The input fil
 Like \-\-import\-marks but instead of erroring out, silently skips the file if it does not exist\&.
 .RE
 .PP
-\-\-relative\-marks
+\-\-[no\-]relative\-marks
 .RS 4
 After specifying \-\-relative\-marks the paths specified with \-\-import\-marks= and \-\-export\-marks= are relative to an internal directory in the current repository\&. In git\-fast\-import this means that the paths are relative to the \&.git/info/fast\-import directory\&. However, other importers may use a different location\&.
+.sp
+Relative and non\-relative marks may be combined by interweaving \-\-(no\-)\-relative\-marks with the \-\-(import|export)\-marks= options\&.
+.RE
+.SS "Performance and Compression Tuning"
+.PP
+\-\-active\-branches=<n>
+.RS 4
+Maximum number of branches to maintain active at once\&. See \(lqMemory Utilization\(rq below for details\&. Default is 5\&.
 .RE
 .PP
-\-\-no\-relative\-marks
+\-\-big\-file\-threshold=<n>
 .RS 4
-Negates a previous \-\-relative\-marks\&. Allows for combining relative and non\-relative marks by interweaving \-\-(no\-)\-relative\-marks with the \-\-(import|export)\-marks= options\&.
+Maximum size of a blob that fast\-import will attempt to create a delta for, expressed in bytes\&. The default is 512m (512 MiB)\&. Some importers may wish to lower this on systems with constrained memory\&.
 .RE
 .PP
-\-\-cat\-blob\-fd=<fd>
+\-\-depth=<n>
 .RS 4
-Write responses to
-cat\-blob
-and
-ls
-queries to the file descriptor <fd> instead of
-stdout\&. Allows
-progress
-output intended for the end\-user to be separated from other output\&.
-.RE
-.PP
-\-\-done
-.RS 4
-Require a
-done
-command at the end of the stream\&. This option might be useful for detecting errors that cause the frontend to terminate before it has started to write a stream\&.
+Maximum delta depth, for blob and tree deltification\&. Default is 10\&.
 .RE
 .PP
 \-\-export\-pack\-edges=<file>
@@ -130,14 +135,9 @@ After creating a packfile, print a line of data to <file> listing the filename o
 \fIgit pack\-objects\fR\&.
 .RE
 .PP
-\-\-quiet
+\-\-max\-pack\-size=<n>
 .RS 4
-Disable all non\-fatal output, making fast\-import silent when it is successful\&. This option disables the output shown by \-\-stats\&.
-.RE
-.PP
-\-\-stats
-.RS 4
-Display some basic statistics about the objects fast\-import has created, the packfiles they were stored into, and the memory used by fast\-import during this run\&. Showing this output is currently the default, but can be disabled with \-\-quiet\&.
+Maximum size of each output packfile\&. The default is unlimited\&.
 .RE
 .SH "PERFORMANCE"
 .sp
@@ -180,10 +180,11 @@ The time of the event is specified by
 <time>
 as the number of seconds since the UNIX epoch (midnight, Jan 1, 1970, UTC) and is written as an ASCII decimal integer\&.
 .sp
-The local offset is specified by \(oq<offutc>` as a positive or negative offset from UTC\&. For example EST (which is 5 hours behind UTC) would be expressed in
+The local offset is specified by
+<offutc>
+as a positive or negative offset from UTC\&. For example EST (which is 5 hours behind UTC) would be expressed in
 <tz>
-by
-`\-0500\(aq\(aq while UTC is `+0000\(cq\(aq\&. The local offset does not affect
+by \(lq\-0500\(rq while UTC is \(lq+0000\(rq\&. The local offset does not affect
 <time>; it is used only as an advisement to help formatting routines display the timestamp\&.
 .sp
 If the local offset is not available in the source material, use \(lq+0000\(rq, or the most common local offset\&. For example many organizations have a CVS repository which has only ever been accessed by users who are located in the same location and timezone\&. In this case a reasonable offset from UTC could be assumed\&.
@@ -369,7 +370,7 @@ An author command may optionally appear, if the author information might differ 
 .sp
 The committer command indicates who made this commit, and when they made it\&.
 .sp
-Here <name> is the person\(cqs display name (for example `Com M Itter\(aq\(aq) and `<email> is the person\(cqs email address (`cm@example\&.com\(aq\(aq)\&. `LT and GT are the literal less\-than (\ex3c) and greater\-than (\ex3e) symbols\&. These are required to delimit the email address from the other fields in the line\&. Note that <name> and <email> are free\-form and may contain any sequence of bytes, except LT, GT and LF\&. <name> is typically UTF\-8 encoded\&.
+Here <name> is the person\(cqs display name (for example \(lqCom M Itter\(rq) and <email> is the person\(cqs email address (\(lqcm@example\&.com\(rq)\&. LT and GT are the literal less\-than (\ex3c) and greater\-than (\ex3e) symbols\&. These are required to delimit the email address from the other fields in the line\&. Note that <name> and <email> are free\-form and may contain any sequence of bytes, except LT, GT and LF\&. <name> is typically UTF\-8 encoded\&.
 .sp
 The time of the change is specified by <when> using the date format that was selected by the \-\-date\-format=<fmt> command line option\&. See \(lqDate Formats\(rq above for the set of supported formats, and their syntax\&.
 .RE
@@ -382,7 +383,7 @@ The time of the change is specified by <when> using the date format that was sel
 \fBfrom\fR
 .RS 4
 .sp
-The from command is used to specify the commit to initialize this branch from\&. This revision will be the first ancestor of the new commit\&.
+The from command is used to specify the commit to initialize this branch from\&. This revision will be the first ancestor of the new commit\&. The state of the tree built at this commit will begin with the state at the from commit, and be altered by the content modifications in this commit\&.
 .sp
 Omitting the from command in the first commit of a new branch will cause fast\-import to create that commit with no ancestor\&. This tends to be desired only for the initial commit of a project\&. If the frontend creates all files from scratch when making a new branch, a merge command may be used instead of from to start the commit with an empty tree\&. Omitting the from command on existing branches is usually desired, as the current commit on that branch is automatically assumed to be the first ancestor of the new commit\&.
 .sp
@@ -474,7 +475,7 @@ The ^0 suffix is necessary as fast\-import does not permit a branch to start fro
 \fBmerge\fR
 .RS 4
 .sp
-Includes one additional ancestor commit\&. If the from command is omitted when creating a new branch, the first merge commit will be the first ancestor of the current commit, and the branch will start out with no files\&. An unlimited number of merge commands per commit are permitted by fast\-import, thereby establishing an n\-way merge\&. However Git\(cqs other tools never create commits with more than 15 additional ancestors (forming a 16\-way merge)\&. For this reason it is suggested that frontends do not use more than 15 merge commands per commit; 16, if starting a new, empty branch\&.
+Includes one additional ancestor commit\&. The additional ancestry link does not change the way the tree state is built at this commit\&. If the from command is omitted when creating a new branch, the first merge commit will be the first ancestor of the current commit, and the branch will start out with no files\&. An unlimited number of merge commands per commit are permitted by fast\-import, thereby establishing an n\-way merge\&. However Git\(cqs other tools never create commits with more than 15 additional ancestors (forming a 16\-way merge)\&. For this reason it is suggested that frontends do not use more than 15 merge commands per commit; 16, if starting a new, empty branch\&.
 .sp
 Here <committish> is any of the commit specification expressions also accepted by from (see above)\&.
 .RE
@@ -512,7 +513,8 @@ blob
 command, or a full 40\-byte SHA\-1 of an existing Git blob object\&. If
 <mode>
 is
-040000` then
+040000`
+then
 <dataref>
 must be the full 40\-byte SHA\-1 of an existing Git tree object or a mark reference set with
 \-\-import\-marks\&.
@@ -609,7 +611,7 @@ In both formats <path> is the complete path of the file to be added (if not alre
 .sp
 A <path> string must use UNIX\-style directory separators (forward slash /), may contain any byte other than LF, and must not start with double quote (")\&.
 .sp
-If an LF or double quote must be encoded into <path> shell\-style quoting should be used, e\&.g\&. "path/with\en and \e" in it"\&.
+A path can use C\-style string quoting; this is accepted in all cases and mandatory if the filename starts with double quote or contains LF\&. In C\-style quoting, the complete name should be surrounded with double quotes, and any LF, backslash, or double quote characters must be escaped by preceding them with a backslash (e\&.g\&., "path/with\en, \e\e and \e" in it")\&.
 .sp
 The value of <path> must be in canonical form\&. That is it must not:
 .sp
@@ -1209,7 +1211,7 @@ done
 .RS 4
 Error out if the stream ends without a
 \fIdone\fR
-command\&. Without this feature, errors causing the frontend to end abruptly at a convenient point in the stream can go undetected\&.
+command\&. Without this feature, errors causing the frontend to end abruptly at a convenient point in the stream can go undetected\&. This may occur, for example, if an import front end dies in mid\-operation without emitting SIGTERM or SIGKILL at its subordinate git fast\-import instance\&.
 .RE
 .SS "option"
 .sp
@@ -1471,7 +1473,7 @@ When importing a renamed file or directory, simply delete the old name(s) and mo
 .sp
 Some other SCM systems let the user create a tag from multiple files which are not from the same commit/changeset\&. Or to create tags which are a subset of the files available in the repository\&.
 .sp
-Importing these tags as\-is in Git is impossible without making at least one commit which `fixes up\(aq\(aq the files to match the content of the tag\&. Use fast\-import\(aqs `reset command to reset a dummy branch outside of your normal branch space to the base commit for the tag, then commit one or more file fixup commits, and finally tag the dummy branch\&.
+Importing these tags as\-is in Git is impossible without making at least one commit which \(lqfixes up\(rq the files to match the content of the tag\&. Use fast\-import\(cqs reset command to reset a dummy branch outside of your normal branch space to the base commit for the tag, then commit one or more file fixup commits, and finally tag the dummy branch\&.
 .sp
 For example since all normal branches are stored under refs/heads/ name the tag fixup branch TAG_FIXUP\&. This way it is impossible for the fixup branch used by the importer to have namespace conflicts with real branches imported from the source (the name TAG_FIXUP is not refs/heads/TAG_FIXUP)\&.
 .sp

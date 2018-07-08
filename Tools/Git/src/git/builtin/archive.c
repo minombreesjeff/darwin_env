@@ -27,8 +27,8 @@ static int run_remote_archiver(int argc, const char **argv,
 			       const char *remote, const char *exec,
 			       const char *name_hint)
 {
-	char buf[LARGE_PACKET_MAX];
-	int fd[2], i, len, rv;
+	char *buf;
+	int fd[2], i, rv;
 	struct transport *transport;
 	struct remote *_remote;
 
@@ -53,21 +53,18 @@ static int run_remote_archiver(int argc, const char **argv,
 		packet_write(fd[1], "argument %s\n", argv[i]);
 	packet_flush(fd[1]);
 
-	len = packet_read_line(fd[0], buf, sizeof(buf));
-	if (!len)
+	buf = packet_read_line(fd[0], NULL);
+	if (!buf)
 		die(_("git archive: expected ACK/NAK, got EOF"));
-	if (buf[len-1] == '\n')
-		buf[--len] = 0;
 	if (strcmp(buf, "ACK")) {
-		if (len > 5 && !prefixcmp(buf, "NACK "))
+		if (!prefixcmp(buf, "NACK "))
 			die(_("git archive: NACK %s"), buf + 5);
-		if (len > 4 && !prefixcmp(buf, "ERR "))
+		if (!prefixcmp(buf, "ERR "))
 			die(_("remote error: %s"), buf + 4);
 		die(_("git archive: protocol error"));
 	}
 
-	len = packet_read_line(fd[0], buf, sizeof(buf));
-	if (len)
+	if (packet_read_line(fd[0], NULL))
 		die(_("git archive: expected a flush"));
 
 	/* Now, start reading from fd[0] and spit it out to stdout */
@@ -88,12 +85,12 @@ int cmd_archive(int argc, const char **argv, const char *prefix)
 	const char *output = NULL;
 	const char *remote = NULL;
 	struct option local_opts[] = {
-		OPT_STRING('o', "output", &output, "file",
-			"write the archive to this file"),
-		OPT_STRING(0, "remote", &remote, "repo",
-			"retrieve the archive from remote repository <repo>"),
-		OPT_STRING(0, "exec", &exec, "cmd",
-			"path to the remote git-upload-archive command"),
+		OPT_STRING('o', "output", &output, N_("file"),
+			N_("write the archive to this file")),
+		OPT_STRING(0, "remote", &remote, N_("repo"),
+			N_("retrieve the archive from remote repository <repo>")),
+		OPT_STRING(0, "exec", &exec, N_("command"),
+			N_("path to the remote git-upload-archive command")),
 		OPT_END()
 	};
 

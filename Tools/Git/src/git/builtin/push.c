@@ -11,7 +11,7 @@
 #include "submodule.h"
 
 static const char * const push_usage[] = {
-	"git push [<options>] [<repository> [<refspec>...]]",
+	N_("git push [<options>] [<repository> [<refspec>...]]"),
 	NULL,
 };
 
@@ -113,17 +113,19 @@ static NORETURN int die_push_simple(struct branch *branch, struct remote *remote
 	    remote->name, branch->name, advice_maybe);
 }
 
+static const char message_detached_head_die[] =
+	N_("You are not currently on a branch.\n"
+	   "To push the history leading to the current (detached HEAD)\n"
+	   "state now, use\n"
+	   "\n"
+	   "    git push %s HEAD:<name-of-remote-branch>\n");
+
 static void setup_push_upstream(struct remote *remote, int simple)
 {
 	struct strbuf refspec = STRBUF_INIT;
 	struct branch *branch = branch_get(NULL);
 	if (!branch)
-		die(_("You are not currently on a branch.\n"
-		    "To push the history leading to the current (detached HEAD)\n"
-		    "state now, use\n"
-		    "\n"
-		    "    git push %s HEAD:<name-of-remote-branch>\n"),
-		    remote->name);
+		die(_(message_detached_head_die), remote->name);
 	if (!branch->merge_nr || !branch->merge || !branch->remote_name)
 		die(_("The current branch %s has no upstream branch.\n"
 		    "To push the current branch and set the remote as upstream, use\n"
@@ -147,12 +149,39 @@ static void setup_push_upstream(struct remote *remote, int simple)
 	add_refspec(refspec.buf);
 }
 
+static char warn_unspecified_push_default_msg[] =
+N_("push.default is unset; its implicit value is changing in\n"
+   "Git 2.0 from 'matching' to 'simple'. To squelch this message\n"
+   "and maintain the current behavior after the default changes, use:\n"
+   "\n"
+   "  git config --global push.default matching\n"
+   "\n"
+   "To squelch this message and adopt the new behavior now, use:\n"
+   "\n"
+   "  git config --global push.default simple\n"
+   "\n"
+   "See 'git help config' and search for 'push.default' for further information.\n"
+   "(the 'simple' mode was introduced in Git 1.7.11. Use the similar mode\n"
+   "'current' instead of 'simple' if you sometimes use older versions of Git)");
+
+static void warn_unspecified_push_default_configuration(void)
+{
+	static int warn_once;
+
+	if (warn_once++)
+		return;
+	warning("%s\n", _(warn_unspecified_push_default_msg));
+}
+
 static void setup_default_push_refspecs(struct remote *remote)
 {
+	struct branch *branch;
+
 	switch (push_default) {
 	default:
 	case PUSH_DEFAULT_UNSPECIFIED:
 		default_matching_used = 1;
+		warn_unspecified_push_default_configuration();
 		/* fallthru */
 	case PUSH_DEFAULT_MATCHING:
 		add_refspec(":");
@@ -167,7 +196,10 @@ static void setup_default_push_refspecs(struct remote *remote)
 		break;
 
 	case PUSH_DEFAULT_CURRENT:
-		add_refspec("HEAD");
+		branch = branch_get(NULL);
+		if (!branch)
+			die(_(message_detached_head_die), remote->name);
+		add_refspec(branch->name);
 		break;
 
 	case PUSH_DEFAULT_NOTHING:
@@ -186,8 +218,8 @@ static const char message_advice_pull_before_push[] =
 static const char message_advice_use_upstream[] =
 	N_("Updates were rejected because a pushed branch tip is behind its remote\n"
 	   "counterpart. If you did not intend to push that branch, you may want to\n"
-	   "specify branches to push or set the 'push.default' configuration\n"
-	   "variable to 'current' or 'upstream' to push only the current branch.");
+	   "specify branches to push or set the 'push.default' configuration variable\n"
+	   "to 'simple', 'current' or 'upstream' to push only the current branch.");
 
 static const char message_advice_checkout_pull_push[] =
 	N_("Updates were rejected because a pushed branch tip is behind its remote\n"
@@ -195,31 +227,67 @@ static const char message_advice_checkout_pull_push[] =
 	   "(e.g. 'git pull') before pushing again.\n"
 	   "See the 'Note about fast-forwards' in 'git push --help' for details.");
 
+static const char message_advice_ref_fetch_first[] =
+	N_("Updates were rejected because the remote contains work that you do\n"
+	   "not have locally. This is usually caused by another repository pushing\n"
+	   "to the same ref. You may want to first merge the remote changes (e.g.,\n"
+	   "'git pull') before pushing again.\n"
+	   "See the 'Note about fast-forwards' in 'git push --help' for details.");
+
+static const char message_advice_ref_already_exists[] =
+	N_("Updates were rejected because the tag already exists in the remote.");
+
+static const char message_advice_ref_needs_force[] =
+	N_("You cannot update a remote ref that points at a non-commit object,\n"
+	   "or update a remote ref to make it point at a non-commit object,\n"
+	   "without using the '--force' option.\n");
+
 static void advise_pull_before_push(void)
 {
-	if (!advice_push_non_ff_current || !advice_push_nonfastforward)
+	if (!advice_push_non_ff_current || !advice_push_update_rejected)
 		return;
 	advise(_(message_advice_pull_before_push));
 }
 
 static void advise_use_upstream(void)
 {
-	if (!advice_push_non_ff_default || !advice_push_nonfastforward)
+	if (!advice_push_non_ff_default || !advice_push_update_rejected)
 		return;
 	advise(_(message_advice_use_upstream));
 }
 
 static void advise_checkout_pull_push(void)
 {
-	if (!advice_push_non_ff_matching || !advice_push_nonfastforward)
+	if (!advice_push_non_ff_matching || !advice_push_update_rejected)
 		return;
 	advise(_(message_advice_checkout_pull_push));
+}
+
+static void advise_ref_already_exists(void)
+{
+	if (!advice_push_already_exists || !advice_push_update_rejected)
+		return;
+	advise(_(message_advice_ref_already_exists));
+}
+
+static void advise_ref_fetch_first(void)
+{
+	if (!advice_push_fetch_first || !advice_push_update_rejected)
+		return;
+	advise(_(message_advice_ref_fetch_first));
+}
+
+static void advise_ref_needs_force(void)
+{
+	if (!advice_push_needs_force || !advice_push_update_rejected)
+		return;
+	advise(_(message_advice_ref_needs_force));
 }
 
 static int push_with_options(struct transport *transport, int flags)
 {
 	int err;
-	int nonfastforward;
+	unsigned int reject_reasons;
 
 	transport_set_verbosity(transport, verbosity, progress);
 
@@ -232,7 +300,7 @@ static int push_with_options(struct transport *transport, int flags)
 	if (verbosity > 0)
 		fprintf(stderr, _("Pushing to %s\n"), transport->url);
 	err = transport_push(transport, refspec_nr, refspec, flags,
-			     &nonfastforward);
+			     &reject_reasons);
 	if (err != 0)
 		error(_("failed to push some refs to '%s'"), transport->url);
 
@@ -240,18 +308,19 @@ static int push_with_options(struct transport *transport, int flags)
 	if (!err)
 		return 0;
 
-	switch (nonfastforward) {
-	default:
-		break;
-	case NON_FF_HEAD:
+	if (reject_reasons & REJECT_NON_FF_HEAD) {
 		advise_pull_before_push();
-		break;
-	case NON_FF_OTHER:
+	} else if (reject_reasons & REJECT_NON_FF_OTHER) {
 		if (default_matching_used)
 			advise_use_upstream();
 		else
 			advise_checkout_pull_push();
-		break;
+	} else if (reject_reasons & REJECT_ALREADY_EXISTS) {
+		advise_ref_already_exists();
+	} else if (reject_reasons & REJECT_FETCH_FIRST) {
+		advise_ref_fetch_first();
+	} else if (reject_reasons & REJECT_NEEDS_FORCE) {
+		advise_ref_needs_force();
 	}
 
 	return 1;
@@ -260,7 +329,7 @@ static int push_with_options(struct transport *transport, int flags)
 static int do_push(const char *repo, int flags)
 {
 	int i, errs;
-	struct remote *remote = remote_get(repo);
+	struct remote *remote = pushremote_get(repo);
 	const char **url;
 	int url_nr;
 
@@ -354,26 +423,29 @@ int cmd_push(int argc, const char **argv, const char *prefix)
 	const char *repo = NULL;	/* default repository */
 	struct option options[] = {
 		OPT__VERBOSITY(&verbosity),
-		OPT_STRING( 0 , "repo", &repo, "repository", "repository"),
-		OPT_BIT( 0 , "all", &flags, "push all refs", TRANSPORT_PUSH_ALL),
-		OPT_BIT( 0 , "mirror", &flags, "mirror all refs",
+		OPT_STRING( 0 , "repo", &repo, N_("repository"), N_("repository")),
+		OPT_BIT( 0 , "all", &flags, N_("push all refs"), TRANSPORT_PUSH_ALL),
+		OPT_BIT( 0 , "mirror", &flags, N_("mirror all refs"),
 			    (TRANSPORT_PUSH_MIRROR|TRANSPORT_PUSH_FORCE)),
-		OPT_BOOLEAN( 0, "delete", &deleterefs, "delete refs"),
-		OPT_BOOLEAN( 0 , "tags", &tags, "push tags (can't be used with --all or --mirror)"),
-		OPT_BIT('n' , "dry-run", &flags, "dry run", TRANSPORT_PUSH_DRY_RUN),
-		OPT_BIT( 0,  "porcelain", &flags, "machine-readable output", TRANSPORT_PUSH_PORCELAIN),
-		OPT_BIT('f', "force", &flags, "force updates", TRANSPORT_PUSH_FORCE),
-		{ OPTION_CALLBACK, 0, "recurse-submodules", &flags, "check",
-			"controls recursive pushing of submodules",
+		OPT_BOOLEAN( 0, "delete", &deleterefs, N_("delete refs")),
+		OPT_BOOLEAN( 0 , "tags", &tags, N_("push tags (can't be used with --all or --mirror)")),
+		OPT_BIT('n' , "dry-run", &flags, N_("dry run"), TRANSPORT_PUSH_DRY_RUN),
+		OPT_BIT( 0,  "porcelain", &flags, N_("machine-readable output"), TRANSPORT_PUSH_PORCELAIN),
+		OPT_BIT('f', "force", &flags, N_("force updates"), TRANSPORT_PUSH_FORCE),
+		{ OPTION_CALLBACK, 0, "recurse-submodules", &flags, N_("check"),
+			N_("control recursive pushing of submodules"),
 			PARSE_OPT_OPTARG, option_parse_recurse_submodules },
-		OPT_BOOLEAN( 0 , "thin", &thin, "use thin pack"),
-		OPT_STRING( 0 , "receive-pack", &receivepack, "receive-pack", "receive pack program"),
-		OPT_STRING( 0 , "exec", &receivepack, "receive-pack", "receive pack program"),
-		OPT_BIT('u', "set-upstream", &flags, "set upstream for git pull/status",
+		OPT_BOOLEAN( 0 , "thin", &thin, N_("use thin pack")),
+		OPT_STRING( 0 , "receive-pack", &receivepack, "receive-pack", N_("receive pack program")),
+		OPT_STRING( 0 , "exec", &receivepack, "receive-pack", N_("receive pack program")),
+		OPT_BIT('u', "set-upstream", &flags, N_("set upstream for git pull/status"),
 			TRANSPORT_PUSH_SET_UPSTREAM),
-		OPT_BOOL(0, "progress", &progress, "force progress reporting"),
-		OPT_BIT(0, "prune", &flags, "prune locally removed refs",
+		OPT_BOOL(0, "progress", &progress, N_("force progress reporting")),
+		OPT_BIT(0, "prune", &flags, N_("prune locally removed refs"),
 			TRANSPORT_PUSH_PRUNE),
+		OPT_BIT(0, "no-verify", &flags, N_("bypass pre-push hook"), TRANSPORT_PUSH_NO_HOOK),
+		OPT_BIT(0, "follow-tags", &flags, N_("push missing but relevant tags"),
+			TRANSPORT_PUSH_FOLLOW_TAGS),
 		OPT_END()
 	};
 

@@ -2,12 +2,12 @@
 .\"     Title: git-commit-tree
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-COMMIT\-TREE" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-COMMIT\-TREE" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -33,7 +33,8 @@ git-commit-tree \- Create a new commit object
 .sp
 .nf
 \fIgit commit\-tree\fR <tree> [(\-p <parent>)\&...] < changelog
-\fIgit commit\-tree\fR [(\-p <parent>)\&...] [(\-m <message>)\&...] [(\-F <file>)\&...] <tree>
+\fIgit commit\-tree\fR [(\-p <parent>)\&...] [\-S[<keyid>]] [(\-m <message>)\&...]
+                  [(\-F <file>)\&...] <tree>
 .fi
 .sp
 .SH "DESCRIPTION"
@@ -46,7 +47,7 @@ A commit object may have any number of parents\&. With exactly one parent, it is
 .sp
 While a tree represents a particular directory state of a working directory, a commit represents that state in "time", and explains how to get there\&.
 .sp
-Normally a commit would identify a new "HEAD" state, and while git doesn\(cqt care where you save the note about that state, in practice we tend to just write the result to the file that is pointed at by \&.git/HEAD, so that we can always see what the last committed state was\&.
+Normally a commit would identify a new "HEAD" state, and while Git doesn\(cqt care where you save the note about that state, in practice we tend to just write the result to the file that is pointed at by \&.git/HEAD, so that we can always see what the last committed state was\&.
 .SH "OPTIONS"
 .PP
 <tree>
@@ -71,6 +72,11 @@ A paragraph in the commit log message\&. This can be given more than once and ea
 Read the commit log message from the given file\&. Use
 \-
 to read from the standard input\&.
+.RE
+.PP
+\-S[<keyid>]
+.RS 4
+GPG\-sign commit\&.
 .RE
 .SH "COMMIT INFORMATION"
 .sp
@@ -121,7 +127,6 @@ GIT_AUTHOR_DATE
 GIT_COMMITTER_NAME
 GIT_COMMITTER_EMAIL
 GIT_COMMITTER_DATE
-EMAIL
 .fi
 .if n \{\
 .RE
@@ -129,7 +134,7 @@ EMAIL
 .sp
 (nb "<", ">" and "\en"s are stripped)
 .sp
-In case (some of) these environment variables are not set, the information is taken from the configuration items user\&.name and user\&.email, or, if not present, system user name and the hostname used for outgoing mail (taken from /etc/mailname and falling back to the fully qualified hostname when that file does not exist)\&.
+In case (some of) these environment variables are not set, the information is taken from the configuration items user\&.name and user\&.email, or, if not present, the environment variable EMAIL, or, if that is not set, system user name and the hostname used for outgoing mail (taken from /etc/mailname and falling back to the fully qualified hostname when that file does not exist)\&.
 .sp
 A commit comment is read from stdin\&. If a changelog entry is not provided via "<" redirection, \fIgit commit\-tree\fR will just wait for one to be entered and terminated with ^D\&.
 .SH "DATE FORMATS"
@@ -181,7 +186,7 @@ DD\&.MM\&.YYYY\&.
 .RE
 .SH "DISCUSSION"
 .sp
-At the core level, git is character encoding agnostic\&.
+At the core level, Git is character encoding agnostic\&.
 .sp
 .RS 4
 .ie n \{\
@@ -191,7 +196,7 @@ At the core level, git is character encoding agnostic\&.
 .sp -1
 .IP \(bu 2.3
 .\}
-The pathnames recorded in the index and in the tree objects are treated as uninterpreted sequences of non\-NUL bytes\&. What readdir(2) returns are what are recorded and compared with the data git keeps track of, which in turn are expected to be what lstat(2) and creat(2) accepts\&. There is no such thing as pathname encoding translation\&.
+The pathnames recorded in the index and in the tree objects are treated as uninterpreted sequences of non\-NUL bytes\&. What readdir(2) returns are what are recorded and compared with the data Git keeps track of, which in turn are expected to be what lstat(2) and creat(2) accepts\&. There is no such thing as pathname encoding translation\&.
 .RE
 .sp
 .RS 4
@@ -216,7 +221,7 @@ The contents of the blob objects are uninterpreted sequences of bytes\&. There i
 The commit log messages are uninterpreted sequences of non\-NUL bytes\&.
 .RE
 .sp
-Although we encourage that the commit log messages are encoded in UTF\-8, both the core and git Porcelain are designed not to force UTF\-8 on projects\&. If all participants of a particular project find it more convenient to use legacy encodings, git does not forbid it\&. However, there are a few things to keep in mind\&.
+Although we encourage that the commit log messages are encoded in UTF\-8, both the core and Git Porcelain are designed not to force UTF\-8 on projects\&. If all participants of a particular project find it more convenient to use legacy encodings, Git does not forbid it\&. However, there are a few things to keep in mind\&.
 .sp
 .RS 4
 .ie n \{\

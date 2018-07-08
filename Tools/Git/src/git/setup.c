@@ -1,5 +1,6 @@
 #include "cache.h"
 #include "dir.h"
+#include "string-list.h"
 
 static int inside_git_dir = -1;
 static int inside_work_tree = -1;
@@ -73,7 +74,14 @@ int check_filename(const char *prefix, const char *arg)
 	const char *name;
 	struct stat st;
 
-	name = prefix ? prefix_filename(prefix, strlen(prefix), arg) : arg;
+	if (!prefixcmp(arg, ":/")) {
+		if (arg[2] == '\0') /* ":/" is root dir, always exists */
+			return 1;
+		name = arg + 2;
+	} else if (prefix)
+		name = prefix_filename(prefix, strlen(prefix), arg);
+	else
+		name = arg;
 	if (!lstat(name, &st))
 		return 1; /* file exists */
 	if (errno == ENOENT || errno == ENOTDIR)
@@ -207,10 +215,11 @@ static const char *prefix_pathspec(const char *prefix, int prefixlen, const char
 		     *copyfrom && *copyfrom != ')';
 		     copyfrom = nextat) {
 			size_t len = strcspn(copyfrom, ",)");
-			if (copyfrom[len] == ')')
-				nextat = copyfrom + len;
-			else
+			if (copyfrom[len] == ',')
 				nextat = copyfrom + len + 1;
+			else
+				/* handle ')' and '\0' */
+				nextat = copyfrom + len;
 			if (!len)
 				continue;
 			for (i = 0; i < ARRAY_SIZE(pathspec_magic); i++)
@@ -223,8 +232,9 @@ static const char *prefix_pathspec(const char *prefix, int prefixlen, const char
 				die("Invalid pathspec magic '%.*s' in '%s'",
 				    (int) len, copyfrom, elt);
 		}
-		if (*copyfrom == ')')
-			copyfrom++;
+		if (*copyfrom != ')')
+			die("Missing ')' at the end of pathspec magic in '%s'", elt);
+		copyfrom++;
 	} else {
 		/* shorthand */
 		for (copyfrom = elt + 1;
@@ -253,6 +263,25 @@ static const char *prefix_pathspec(const char *prefix, int prefixlen, const char
 		return prefix_path(prefix, prefixlen, copyfrom);
 }
 
+/*
+ * N.B. get_pathspec() is deprecated in favor of the "struct pathspec"
+ * based interface - see pathspec_magic above.
+ *
+ * Arguments:
+ *  - prefix - a path relative to the root of the working tree
+ *  - pathspec - a list of paths underneath the prefix path
+ *
+ * Iterates over pathspec, prepending each path with prefix,
+ * and return the resulting list.
+ *
+ * If pathspec is empty, return a singleton list containing prefix.
+ *
+ * If pathspec and prefix are both empty, return an empty list.
+ *
+ * This is typically used by built-in commands such as add.c, in order
+ * to normalize argv arguments provided to the built-in into a list of
+ * paths to process, all relative to the root of the working tree.
+ */
 const char **get_pathspec(const char *prefix, const char **pathspec)
 {
 	const char *entry = *pathspec;
@@ -504,6 +533,12 @@ static const char *setup_explicit_git_dir(const char *gitdirenv,
 			set_git_work_tree(core_worktree);
 		}
 	}
+	else if (!git_env_bool(GIT_IMPLICIT_WORK_TREE_ENVIRONMENT, 1)) {
+		/* #16d */
+		set_git_dir(gitdirenv);
+		free(gitfile);
+		return NULL;
+	}
 	else /* #2, #10 */
 		set_git_work_tree(".");
 
@@ -582,6 +617,8 @@ static const char *setup_bare_git_dir(char *cwd, int offset, int len, int *nongi
 	if (check_repository_format_gently(".", nongit_ok))
 		return NULL;
 
+	setenv(GIT_IMPLICIT_WORK_TREE_ENVIRONMENT, "0", 1);
+
 	/* --work-tree is set without --git-dir; use discovered one */
 	if (getenv(GIT_WORK_TREE_ENVIRONMENT) || git_work_tree_cfg) {
 		const char *gitdir;
@@ -629,16 +666,48 @@ static dev_t get_device_or_die(const char *path, const char *prefix, int prefix_
 }
 
 /*
+ * A "string_list_each_func_t" function that canonicalizes an entry
+ * from GIT_CEILING_DIRECTORIES using real_path_if_valid(), or
+ * discards it if unusable.  The presence of an empty entry in
+ * GIT_CEILING_DIRECTORIES turns off canonicalization for all
+ * subsequent entries.
+ */
+static int canonicalize_ceiling_entry(struct string_list_item *item,
+				      void *cb_data)
+{
+	int *empty_entry_found = cb_data;
+	char *ceil = item->string;
+
+	if (!*ceil) {
+		*empty_entry_found = 1;
+		return 0;
+	} else if (!is_absolute_path(ceil)) {
+		return 0;
+	} else if (*empty_entry_found) {
+		/* Keep entry but do not canonicalize it */
+		return 1;
+	} else {
+		const char *real_path = real_path_if_valid(ceil);
+		if (!real_path)
+			return 0;
+		free(item->string);
+		item->string = xstrdup(real_path);
+		return 1;
+	}
+}
+
+/*
  * We cannot decide in this function whether we are in the work tree or
  * not, since the config can only be read _after_ this function was called.
  */
 static const char *setup_git_directory_gently_1(int *nongit_ok)
 {
 	const char *env_ceiling_dirs = getenv(CEILING_DIRECTORIES_ENVIRONMENT);
+	struct string_list ceiling_dirs = STRING_LIST_INIT_DUP;
 	static char cwd[PATH_MAX+1];
 	const char *gitdirenv, *ret;
 	char *gitfile;
-	int len, offset, offset_parent, ceil_offset;
+	int len, offset, offset_parent, ceil_offset = -1;
 	dev_t current_device = 0;
 	int one_filesystem = 1;
 
@@ -663,7 +732,16 @@ static const char *setup_git_directory_gently_1(int *nongit_ok)
 	if (gitdirenv)
 		return setup_explicit_git_dir(gitdirenv, cwd, len, nongit_ok);
 
-	ceil_offset = longest_ancestor_length(cwd, env_ceiling_dirs);
+	if (env_ceiling_dirs) {
+		int empty_entry_found = 0;
+
+		string_list_split(&ceiling_dirs, env_ceiling_dirs, PATH_SEP, -1);
+		filter_string_list(&ceiling_dirs, 0,
+				   canonicalize_ceiling_entry, &empty_entry_found);
+		ceil_offset = longest_ancestor_length(cwd, &ceiling_dirs);
+		string_list_clear(&ceiling_dirs, 0);
+	}
+
 	if (ceil_offset < 0 && has_dos_drive_prefix(cwd))
 		ceil_offset = 1;
 
@@ -734,9 +812,9 @@ const char *setup_git_directory_gently(int *nongit_ok)
 
 	prefix = setup_git_directory_gently_1(nongit_ok);
 	if (prefix)
-		setenv("GIT_PREFIX", prefix, 1);
+		setenv(GIT_PREFIX_ENVIRONMENT, prefix, 1);
 	else
-		setenv("GIT_PREFIX", "", 1);
+		setenv(GIT_PREFIX_ENVIRONMENT, "", 1);
 
 	if (startup_info) {
 		startup_info->have_repository = !nongit_ok || !*nongit_ok;

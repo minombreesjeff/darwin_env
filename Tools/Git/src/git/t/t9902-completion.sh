@@ -13,6 +13,25 @@ complete ()
 	return 0
 }
 
+# Be careful when updating this list:
+#
+# (1) The build tree may have build artifact from different branch, or
+#     the user's $PATH may have a random executable that may begin
+#     with "git-check" that are not part of the subcommands this build
+#     will ship, e.g.  "check-ignore".  The tests for completion for
+#     subcommand names tests how "check" is expanded; we limit the
+#     possible candidates to "checkout" and "check-attr" to make sure
+#     "check-attr", which is known by the filter function as a
+#     subcommand to be thrown out, while excluding other random files
+#     that happen to begin with "check" to avoid letting them get in
+#     the way.
+#
+# (2) A test makes sure that common subcommands are included in the
+#     completion for "git <TAB>", and a plumbing is excluded.  "add",
+#     "filter-branch" and "ls-files" are listed for this.
+
+GIT_TESTING_COMMAND_COMPLETION='add checkout check-attr filter-branch ls-files'
+
 . "$GIT_BUILD_DIR/contrib/completion/git-completion.bash"
 
 # We don't need this function to actually join words or do anything special.
@@ -50,104 +69,147 @@ run_completion ()
 	local -a COMPREPLY _words
 	local _cword
 	_words=( $1 )
+	test "${1: -1}" = ' ' && _words+=('')
 	(( _cword = ${#_words[@]} - 1 ))
 	__git_wrap__git_main && print_comp
 }
 
+# Test high-level completion
+# Arguments are:
+# 1: typed text so far (cur)
+# 2: expected completion
 test_completion ()
 {
-	test $# -gt 1 && echo "$2" > expected
-	run_completion "$@" &&
+	if test $# -gt 1
+	then
+		printf '%s\n' "$2" >expected
+	else
+		sed -e 's/Z$//' >expected
+	fi &&
+	run_completion "$1" &&
 	test_cmp expected out
 }
 
-newline=$'\n'
+# Test __gitcomp.
+# The first argument is the typed text so far (cur); the rest are
+# passed to __gitcomp.  Expected output comes is read from the
+# standard input, like test_completion().
+test_gitcomp ()
+{
+	local -a COMPREPLY &&
+	sed -e 's/Z$//' >expected &&
+	cur="$1" &&
+	shift &&
+	__gitcomp "$@" &&
+	print_comp &&
+	test_cmp expected out
+}
+
+# Test __gitcomp_nl
+# Arguments are:
+# 1: current word (cur)
+# -: the rest are passed to __gitcomp_nl
+test_gitcomp_nl ()
+{
+	local -a COMPREPLY &&
+	sed -e 's/Z$//' >expected &&
+	cur="$1" &&
+	shift &&
+	__gitcomp_nl "$@" &&
+	print_comp &&
+	test_cmp expected out
+}
+
+invalid_variable_name='${foo.bar}'
 
 test_expect_success '__gitcomp - trailing space - options' '
-	sed -e "s/Z$//" >expected <<-\EOF &&
+	test_gitcomp "--re" "--dry-run --reuse-message= --reedit-message=
+		--reset-author" <<-EOF
 	--reuse-message=Z
 	--reedit-message=Z
 	--reset-author Z
 	EOF
-	(
-		local -a COMPREPLY &&
-		cur="--re" &&
-		__gitcomp "--dry-run --reuse-message= --reedit-message=
-				--reset-author" &&
-		IFS="$newline" &&
-		echo "${COMPREPLY[*]}" > out
-	) &&
-	test_cmp expected out
 '
 
 test_expect_success '__gitcomp - trailing space - config keys' '
-	sed -e "s/Z$//" >expected <<-\EOF &&
+	test_gitcomp "br" "branch. branch.autosetupmerge
+		branch.autosetuprebase browser." <<-\EOF
 	branch.Z
 	branch.autosetupmerge Z
 	branch.autosetuprebase Z
 	browser.Z
 	EOF
-	(
-		local -a COMPREPLY &&
-		cur="br" &&
-		__gitcomp "branch. branch.autosetupmerge
-				branch.autosetuprebase browser." &&
-		IFS="$newline" &&
-		echo "${COMPREPLY[*]}" > out
-	) &&
-	test_cmp expected out
 '
 
 test_expect_success '__gitcomp - option parameter' '
-	sed -e "s/Z$//" >expected <<-\EOF &&
+	test_gitcomp "--strategy=re" "octopus ours recursive resolve subtree" \
+		"" "re" <<-\EOF
 	recursive Z
 	resolve Z
 	EOF
-	(
-		local -a COMPREPLY &&
-		cur="--strategy=re" &&
-		__gitcomp "octopus ours recursive resolve subtree
-			" "" "re" &&
-		IFS="$newline" &&
-		echo "${COMPREPLY[*]}" > out
-	) &&
-	test_cmp expected out
 '
 
 test_expect_success '__gitcomp - prefix' '
-	sed -e "s/Z$//" >expected <<-\EOF &&
+	test_gitcomp "branch.me" "remote merge mergeoptions rebase" \
+		"branch.maint." "me" <<-\EOF
 	branch.maint.merge Z
 	branch.maint.mergeoptions Z
 	EOF
-	(
-		local -a COMPREPLY &&
-		cur="branch.me" &&
-		__gitcomp "remote merge mergeoptions rebase
-			" "branch.maint." "me" &&
-		IFS="$newline" &&
-		echo "${COMPREPLY[*]}" > out
-	) &&
-	test_cmp expected out
 '
 
 test_expect_success '__gitcomp - suffix' '
-	sed -e "s/Z$//" >expected <<-\EOF &&
+	test_gitcomp "branch.me" "master maint next pu" "branch." \
+		"ma" "." <<-\EOF
 	branch.master.Z
 	branch.maint.Z
 	EOF
-	(
-		local -a COMPREPLY &&
-		cur="branch.me" &&
-		__gitcomp "master maint next pu
-			" "branch." "ma" "." &&
-		IFS="$newline" &&
-		echo "${COMPREPLY[*]}" > out
-	) &&
-	test_cmp expected out
+'
+
+test_expect_success '__gitcomp - doesnt fail because of invalid variable name' '
+	__gitcomp "$invalid_variable_name"
+'
+
+read -r -d "" refs <<-\EOF
+maint
+master
+next
+pu
+EOF
+
+test_expect_success '__gitcomp_nl - trailing space' '
+	test_gitcomp_nl "m" "$refs" <<-EOF
+	maint Z
+	master Z
+	EOF
+'
+
+test_expect_success '__gitcomp_nl - prefix' '
+	test_gitcomp_nl "--fixup=m" "$refs" "--fixup=" "m" <<-EOF
+	--fixup=maint Z
+	--fixup=master Z
+	EOF
+'
+
+test_expect_success '__gitcomp_nl - suffix' '
+	test_gitcomp_nl "branch.ma" "$refs" "branch." "ma" "." <<-\EOF
+	branch.maint.Z
+	branch.master.Z
+	EOF
+'
+
+test_expect_success '__gitcomp_nl - no suffix' '
+	test_gitcomp_nl "ma" "$refs" "" "ma" "" <<-\EOF
+	maintZ
+	masterZ
+	EOF
+'
+
+test_expect_success '__gitcomp_nl - doesnt fail because of invalid variable name' '
+	__gitcomp_nl "$invalid_variable_name"
 '
 
 test_expect_success 'basic' '
-	run_completion "git \"\"" &&
+	run_completion "git " &&
 	# built-in
 	grep -q "^add \$" out &&
 	# script
@@ -160,7 +222,7 @@ test_expect_success 'basic' '
 '
 
 test_expect_success 'double dash "git" itself' '
-	sed -e "s/Z$//" >expected <<-\EOF &&
+	test_completion "git --" <<-\EOF
 	--paginate Z
 	--no-pager Z
 	--git-dir=
@@ -175,11 +237,10 @@ test_expect_success 'double dash "git" itself' '
 	--no-replace-objects Z
 	--help Z
 	EOF
-	test_completion "git --"
 '
 
 test_expect_success 'double dash "git checkout"' '
-	sed -e "s/Z$//" >expected <<-\EOF &&
+	test_completion "git checkout --" <<-\EOF
 	--quiet Z
 	--ours Z
 	--theirs Z
@@ -190,17 +251,15 @@ test_expect_success 'double dash "git checkout"' '
 	--orphan Z
 	--patch Z
 	EOF
-	test_completion "git checkout --"
 '
 
 test_expect_success 'general options' '
 	test_completion "git --ver" "--version " &&
 	test_completion "git --hel" "--help " &&
-	sed -e "s/Z$//" >expected <<-\EOF &&
+	test_completion "git --exe" <<-\EOF &&
 	--exec-path Z
 	--exec-path=
 	EOF
-	test_completion "git --exe" &&
 	test_completion "git --htm" "--html-path " &&
 	test_completion "git --pag" "--paginate " &&
 	test_completion "git --no-p" "--no-pager " &&
@@ -217,7 +276,6 @@ test_expect_success 'general options plus command' '
 	test_completion "git --paginate check" "checkout " &&
 	test_completion "git --git-dir=foo check" "checkout " &&
 	test_completion "git --bare check" "checkout " &&
-	test_completion "git --help des" "describe " &&
 	test_completion "git --exec-path=foo check" "checkout " &&
 	test_completion "git --html-path check" "checkout " &&
 	test_completion "git --no-pager check" "checkout " &&
@@ -226,6 +284,67 @@ test_expect_success 'general options plus command' '
 	test_completion "git --paginate check" "checkout " &&
 	test_completion "git --info-path check" "checkout " &&
 	test_completion "git --no-replace-objects check" "checkout "
+'
+
+test_expect_success 'git --help completion' '
+	test_completion "git --help ad" "add " &&
+	test_completion "git --help core" "core-tutorial "
+'
+
+test_expect_success 'setup for ref completion' '
+	echo content >file1 &&
+	echo more >file2 &&
+	git add . &&
+	git commit -m one &&
+	git branch mybranch &&
+	git tag mytag
+'
+
+test_expect_success 'checkout completes ref names' '
+	test_completion "git checkout m" <<-\EOF
+	master Z
+	mybranch Z
+	mytag Z
+	EOF
+'
+
+test_expect_success 'show completes all refs' '
+	test_completion "git show m" <<-\EOF
+	master Z
+	mybranch Z
+	mytag Z
+	EOF
+'
+
+test_expect_success '<ref>: completes paths' '
+	test_completion "git show mytag:f" <<-\EOF
+	file1 Z
+	file2 Z
+	EOF
+'
+
+test_expect_success 'complete tree filename with spaces' '
+	echo content >"name with spaces" &&
+	git add . &&
+	git commit -m spaces &&
+	test_completion "git show HEAD:nam" <<-\EOF
+	name with spaces Z
+	EOF
+'
+
+test_expect_success 'complete tree filename with metacharacters' '
+	echo content >"name with \${meta}" &&
+	git add . &&
+	git commit -m meta &&
+	test_completion "git show HEAD:nam" <<-\EOF
+	name with ${meta} Z
+	name with spaces Z
+	EOF
+'
+
+test_expect_success 'send-email' '
+	test_completion "git send-email --cov" "--cover-letter " &&
+	test_completion "git send-email ma" "master "
 '
 
 test_done

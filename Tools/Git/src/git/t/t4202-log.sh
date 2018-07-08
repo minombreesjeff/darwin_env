@@ -72,9 +72,9 @@ cat > expect << EOF
   commit.
 EOF
 
-test_expect_success 'format %w(12,1,2)' '
+test_expect_success 'format %w(11,1,2)' '
 
-	git log -2 --format="%w(12,1,2)This is the %s commit." > actual &&
+	git log -2 --format="%w(11,1,2)This is the %s commit." > actual &&
 	test_cmp expect actual
 '
 
@@ -230,6 +230,12 @@ test_expect_success 'log --grep -i' '
 	test_cmp expect actual
 '
 
+test_expect_success 'log -F -E --grep=<ere> uses ere' '
+	echo second >expect &&
+	git log -1 --pretty="tformat:%s" -F -E --grep=s.c.nd >actual &&
+	test_cmp expect actual
+'
+
 cat > expect <<EOF
 * Second
 * sixth
@@ -272,6 +278,16 @@ test_expect_success 'log --graph with merge' '
 	git log --graph --date-order --pretty=tformat:%s |
 		sed "s/ *\$//" >actual &&
 	test_cmp expect actual
+'
+
+test_expect_success 'log --raw --graph -m with merge' '
+	git log --raw --graph --oneline -m master | head -n 500 >actual &&
+	grep "initial" actual
+'
+
+test_expect_success 'diff-tree --graph' '
+	git diff-tree --graph master^ | head -n 500 >actual &&
+	grep "one" actual
 '
 
 cat > expect <<\EOF
@@ -403,8 +419,6 @@ test_expect_success 'log --graph with merge' '
 '
 
 test_expect_success 'log.decorate configuration' '
-	test_might_fail git config --unset-all log.decorate &&
-
 	git log --oneline >expect.none &&
 	git log --oneline --decorate >expect.short &&
 	git log --oneline --decorate=full >expect.full &&
@@ -413,8 +427,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline >actual &&
 	test_cmp expect.short actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate true &&
+	test_config log.decorate true &&
 	git log --oneline >actual &&
 	test_cmp expect.short actual &&
 	git log --oneline --decorate=full >actual &&
@@ -422,8 +435,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate=no >actual &&
 	test_cmp expect.none actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate no &&
+	test_config log.decorate no &&
 	git log --oneline >actual &&
 	test_cmp expect.none actual &&
 	git log --oneline --decorate >actual &&
@@ -431,8 +443,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate=full >actual &&
 	test_cmp expect.full actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate 1 &&
+	test_config log.decorate 1 &&
 	git log --oneline >actual &&
 	test_cmp expect.short actual &&
 	git log --oneline --decorate=full >actual &&
@@ -440,8 +451,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate=no >actual &&
 	test_cmp expect.none actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate short &&
+	test_config log.decorate short &&
 	git log --oneline >actual &&
 	test_cmp expect.short actual &&
 	git log --oneline --no-decorate >actual &&
@@ -449,8 +459,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate=full >actual &&
 	test_cmp expect.full actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate full &&
+	test_config log.decorate full &&
 	git log --oneline >actual &&
 	test_cmp expect.full actual &&
 	git log --oneline --no-decorate >actual &&
@@ -458,16 +467,15 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate >actual &&
 	test_cmp expect.short actual
 
-	git config --unset-all log.decorate &&
+	test_unconfig log.decorate &&
 	git log --pretty=raw >expect.raw &&
-	git config log.decorate full &&
+	test_config log.decorate full &&
 	git log --pretty=raw >actual &&
 	test_cmp expect.raw actual
 
 '
 
 test_expect_success 'reflog is expected format' '
-	test_might_fail git config --remove-section log &&
 	git log -g --abbrev-commit --pretty=oneline >expect &&
 	git reflog >actual &&
 	test_cmp expect actual
@@ -480,10 +488,6 @@ test_expect_success 'whatchanged is expected format' '
 '
 
 test_expect_success 'log.abbrevCommit configuration' '
-	test_when_finished "git config --unset log.abbrevCommit" &&
-
-	test_might_fail git config --unset log.abbrevCommit &&
-
 	git log --abbrev-commit >expect.log.abbrev &&
 	git log --no-abbrev-commit >expect.log.full &&
 	git log --pretty=raw >expect.log.raw &&
@@ -492,7 +496,7 @@ test_expect_success 'log.abbrevCommit configuration' '
 	git whatchanged --abbrev-commit >expect.whatchanged.abbrev &&
 	git whatchanged --no-abbrev-commit >expect.whatchanged.full &&
 
-	git config log.abbrevCommit true &&
+	test_config log.abbrevCommit true &&
 
 	git log >actual &&
 	test_cmp expect.log.abbrev actual &&
@@ -523,6 +527,20 @@ test_expect_success 'show added path under "--follow -M"' '
 		git log -M --follow -p foo.bar.t &&
 		git log -M --follow --stat foo.bar.t &&
 		git log -M --follow --name-only foo.bar.t
+	)
+'
+
+test_expect_success 'git log -c --follow' '
+	test_create_repo follow-c &&
+	(
+		cd follow-c &&
+		test_commit initial file original &&
+		git rm file &&
+		test_commit rename file2 original &&
+		git reset --hard initial &&
+		test_commit modify file foo &&
+		git merge -m merge rename &&
+		git log -c --follow file2
 	)
 '
 
@@ -813,7 +831,7 @@ sanitize_output () {
 test_expect_success 'log --graph with diff and stats' '
 	git log --graph --pretty=short --stat -p >actual &&
 	sanitize_output >actual.sanitized <actual &&
-	test_cmp expect actual.sanitized
+	test_i18ncmp expect actual.sanitized
 '
 
 test_expect_success 'dotdot is a parent directory' '

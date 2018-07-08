@@ -130,8 +130,6 @@ static int builtin_diff_index(struct rev_info *revs,
 			usage(builtin_diff_usage);
 		argv++; argc--;
 	}
-	if (!cached)
-		setup_work_tree();
 	/*
 	 * Make sure there is one revision (i.e. pending object),
 	 * and there is no revision filtering parameters.
@@ -140,8 +138,14 @@ static int builtin_diff_index(struct rev_info *revs,
 	    revs->max_count != -1 || revs->min_age != -1 ||
 	    revs->max_age != -1)
 		usage(builtin_diff_usage);
-	if (read_cache_preload(revs->diffopt.pathspec.raw) < 0) {
-		perror("read_cache_preload");
+	if (!cached) {
+		setup_work_tree();
+		if (read_cache_preload(revs->diffopt.pathspec.raw) < 0) {
+			perror("read_cache_preload");
+			return -1;
+		}
+	} else if (read_cache() < 0) {
+		perror("read_cache");
 		return -1;
 	}
 	return run_diff_index(revs, cached);
@@ -417,20 +421,4 @@ int cmd_diff(int argc, const char **argv, const char *prefix)
 	if (1 < rev.diffopt.skip_stat_unmatch)
 		refresh_index_quietly();
 	return result;
-}
-
-void setup_diff_pager(struct diff_options *opt)
-{
-	/*
-	 * If the user asked for our exit code, then either they want --quiet
-	 * or --exit-code. We should definitely not bother with a pager in the
-	 * former case, as we will generate no output. Since we still properly
-	 * report our exit code even when a pager is run, we _could_ run a
-	 * pager with --exit-code. But since we have not done so historically,
-	 * and because it is easy to find people oneline advising "git diff
-	 * --exit-code" in hooks and other scripts, we do not do so.
-	 */
-	if (!DIFF_OPT_TST(opt, EXIT_WITH_STATUS) &&
-	    check_pager_config("diff") != 0)
-		setup_pager();
 }

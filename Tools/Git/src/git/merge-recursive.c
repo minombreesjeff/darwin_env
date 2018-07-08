@@ -844,14 +844,14 @@ static int merge_3way(struct merge_options *o,
 	if (strcmp(a->path, b->path) ||
 	    (o->ancestor != NULL && strcmp(a->path, one->path) != 0)) {
 		base_name = o->ancestor == NULL ? NULL :
-			xstrdup(mkpath("%s:%s", o->ancestor, one->path));
-		name1 = xstrdup(mkpath("%s:%s", branch1, a->path));
-		name2 = xstrdup(mkpath("%s:%s", branch2, b->path));
+			mkpathdup("%s:%s", o->ancestor, one->path);
+		name1 = mkpathdup("%s:%s", branch1, a->path);
+		name2 = mkpathdup("%s:%s", branch2, b->path);
 	} else {
 		base_name = o->ancestor == NULL ? NULL :
-			xstrdup(mkpath("%s", o->ancestor));
-		name1 = xstrdup(mkpath("%s", branch1));
-		name2 = xstrdup(mkpath("%s", branch2));
+			mkpathdup("%s", o->ancestor);
+		name1 = mkpathdup("%s", branch1);
+		name2 = mkpathdup("%s", branch2);
 	}
 
 	read_mmblob(&orig, one->sha1);
@@ -861,6 +861,7 @@ static int merge_3way(struct merge_options *o,
 	merge_status = ll_merge(result_buf, a->path, &orig, base_name,
 				&src1, name1, &src2, name2, &ll_opts);
 
+	free(base_name);
 	free(name1);
 	free(name2);
 	free(orig.ptr);
@@ -975,7 +976,7 @@ merge_file_special_markers(struct merge_options *o,
 	return mfi;
 }
 
-static struct merge_file_info merge_file(struct merge_options *o,
+static struct merge_file_info merge_file_one(struct merge_options *o,
 					 const char *path,
 					 const unsigned char *o_sha, int o_mode,
 					 const unsigned char *a_sha, int a_mode,
@@ -1165,7 +1166,7 @@ static void conflict_rename_rename_1to2(struct merge_options *o,
 		struct merge_file_info mfi;
 		struct diff_filespec other;
 		struct diff_filespec *add;
-		mfi = merge_file(o, one->path,
+		mfi = merge_file_one(o, one->path,
 				 one->sha1, one->mode,
 				 a->sha1, a->mode,
 				 b->sha1, b->mode,
@@ -1449,7 +1450,7 @@ static int process_renames(struct merge_options *o,
 				       ren1_dst, branch2);
 				if (o->call_depth) {
 					struct merge_file_info mfi;
-					mfi = merge_file(o, ren1_dst, null_sha1, 0,
+					mfi = merge_file_one(o, ren1_dst, null_sha1, 0,
 							 ren1->pair->two->sha1, ren1->pair->two->mode,
 							 dst_other.sha1, dst_other.mode,
 							 branch1, branch2);
@@ -2067,6 +2068,15 @@ int parse_merge_opt(struct merge_options *o, const char *s)
 		o->xdl_opts = DIFF_WITH_ALG(o, PATIENCE_DIFF);
 	else if (!strcmp(s, "histogram"))
 		o->xdl_opts = DIFF_WITH_ALG(o, HISTOGRAM_DIFF);
+	else if (!strcmp(s, "diff-algorithm=")) {
+		long value = parse_algorithm_value(s+15);
+		if (value < 0)
+			return -1;
+		/* clear out previous settings */
+		DIFF_XDL_CLR(o, NEED_MINIMAL);
+		o->xdl_opts &= ~XDF_DIFF_ALGORITHM_MASK;
+		o->xdl_opts |= value;
+	}
 	else if (!strcmp(s, "ignore-space-change"))
 		o->xdl_opts |= XDF_IGNORE_WHITESPACE_CHANGE;
 	else if (!strcmp(s, "ignore-all-space"))

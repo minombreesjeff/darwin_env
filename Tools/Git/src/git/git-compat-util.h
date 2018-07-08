@@ -74,7 +74,8 @@
 # define _XOPEN_SOURCE 500
 # endif
 #elif !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__USLC__) && \
-      !defined(_M_UNIX) && !defined(__sgi) && !defined(__DragonFly__)
+      !defined(_M_UNIX) && !defined(__sgi) && !defined(__DragonFly__) && \
+      !defined(__TANDEM) && !defined(__QNX__)
 #define _XOPEN_SOURCE 600 /* glibc2 and AIX 5.3L need 500, OpenBSD needs 600 for S_ISLNK() */
 #define _XOPEN_SOURCE_EXTENDED 1 /* AIX 5.3L needs this */
 #endif
@@ -85,6 +86,9 @@
 #define _SGI_SOURCE 1
 
 #ifdef WIN32 /* Both MinGW and MSVC */
+# if defined (_MSC_VER)
+#  define _WIN32_WINNT 0x0502
+# endif
 #define WIN32_LEAN_AND_MEAN  /* stops windows.h including winsock.h */
 #include <winsock2.h>
 #include <windows.h>
@@ -98,15 +102,22 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#ifdef HAVE_STRINGS_H
+#include <strings.h> /* for strcasecmp() */
+#endif
 #include <errno.h>
 #include <limits.h>
+#ifdef NEEDS_SYS_PARAM_H
 #include <sys/param.h>
+#endif
 #include <sys/types.h>
 #include <dirent.h>
 #include <sys/time.h>
 #include <time.h>
 #include <signal.h>
+#ifndef USE_WILDMATCH
 #include <fnmatch.h>
+#endif
 #include <assert.h>
 #include <regex.h>
 #include <utime.h>
@@ -141,6 +152,18 @@
 #else
 #include <stdint.h>
 #endif
+#ifdef NO_INTPTR_T
+/*
+ * On I16LP32, ILP32 and LP64 "long" is the save bet, however
+ * on LLP86, IL33LLP64 and P64 it needs to be "long long",
+ * while on IP16 and IP16L32 it is "int" (resp. "short")
+ * Size needs to match (or exceed) 'sizeof(void *)'.
+ * We can't take "long long" here as not everybody has it.
+ */
+typedef long intptr_t;
+typedef unsigned long uintptr_t;
+#endif
+int get_st_mode_bits(const char *path, int *mode);
 #if defined(__CYGWIN__)
 #undef _XOPEN_SOURCE
 #include <grp.h>
@@ -162,6 +185,27 @@
 #define probe_utf8_pathname_composition(a,b)
 #endif
 
+#ifdef NEEDS_CLIPPED_WRITE
+ssize_t clipped_write(int fildes, const void *buf, size_t nbyte);
+#define write(x,y,z) clipped_write((x),(y),(z))
+#endif
+
+#ifdef MKDIR_WO_TRAILING_SLASH
+#define mkdir(a,b) compat_mkdir_wo_trailing_slash((a),(b))
+extern int compat_mkdir_wo_trailing_slash(const char*, mode_t);
+#endif
+
+#ifdef NO_STRUCT_ITIMERVAL
+struct itimerval {
+	struct timeval it_interval;
+	struct timeval it_value;
+}
+#endif
+
+#ifdef NO_SETITIMER
+#define setitimer(which,value,ovalue)
+#endif
+
 #ifndef NO_LIBGEN_H
 #include <libgen.h>
 #else
@@ -176,6 +220,17 @@ extern char *gitbasename(char *);
 #ifndef NO_OPENSSL
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#endif
+
+/* On most systems <netdb.h> would have given us this, but
+ * not on some systems (e.g. z/OS).
+ */
+#ifndef NI_MAXHOST
+#define NI_MAXHOST 1025
+#endif
+
+#ifndef NI_MAXSERV
+#define NI_MAXSERV 32
 #endif
 
 /* On most systems <limits.h> would have given us this, but
@@ -247,6 +302,17 @@ extern char *gitbasename(char *);
 
 #include "compat/bswap.h"
 
+#ifdef USE_WILDMATCH
+#include "wildmatch.h"
+#define FNM_PATHNAME WM_PATHNAME
+#define FNM_CASEFOLD WM_CASEFOLD
+#define FNM_NOMATCH  WM_NOMATCH
+static inline int fnmatch(const char *pattern, const char *string, int flags)
+{
+	return wildmatch(pattern, string, flags, NULL);
+}
+#endif
+
 /* General helper functions */
 extern void vreportf(const char *prefix, const char *err, va_list params);
 extern void vwritef(int fd, const char *prefix, const char *err, va_list params);
@@ -257,8 +323,20 @@ extern NORETURN void die_errno(const char *err, ...) __attribute__((format (prin
 extern int error(const char *err, ...) __attribute__((format (printf, 1, 2)));
 extern void warning(const char *err, ...) __attribute__((format (printf, 1, 2)));
 
+/*
+ * Let callers be aware of the constant return value; this can help
+ * gcc with -Wuninitialized analysis. We restrict this trick to gcc, though,
+ * because some compilers may not support variadic macros. Since we're only
+ * trying to help gcc, anyway, it's OK; other compilers will fall back to
+ * using the function as usual.
+ */
+#if defined(__GNUC__) && ! defined(__clang__)
+#define error(...) (error(__VA_ARGS__), -1)
+#endif
+
 extern void set_die_routine(NORETURN_PTR void (*routine)(const char *err, va_list params));
 extern void set_error_routine(void (*routine)(const char *err, va_list params));
+extern void set_die_is_recursing_routine(int (*routine)(void));
 
 extern int prefixcmp(const char *str, const char *prefix);
 extern int suffixcmp(const char *str, const char *suffix);
@@ -364,11 +442,6 @@ extern uintmax_t gitstrtoumax(const char *, char **, int);
 extern intmax_t gitstrtoimax(const char *, char **, int);
 #endif
 
-#ifdef NO_STRTOK_R
-#define strtok_r gitstrtok_r
-extern char *gitstrtok_r(char *s, const char *delim, char **save_ptr);
-#endif
-
 #ifdef NO_HSTRERROR
 #define hstrerror githstrerror
 extern const char *githstrerror(int herror);
@@ -378,6 +451,10 @@ extern const char *githstrerror(int herror);
 #define memmem gitmemmem
 void *gitmemmem(const void *haystack, size_t haystacklen,
                 const void *needle, size_t needlelen);
+#endif
+
+#ifdef NO_GETPAGESIZE
+#define getpagesize() sysconf(_SC_PAGESIZE)
 #endif
 
 #ifdef FREAD_READS_DIRECTORIES
@@ -475,27 +552,39 @@ extern const char tolower_trans_tbl[256];
 #undef isdigit
 #undef isalpha
 #undef isalnum
+#undef isprint
 #undef islower
 #undef isupper
 #undef tolower
 #undef toupper
-extern unsigned char sane_ctype[256];
+#undef iscntrl
+#undef ispunct
+#undef isxdigit
+
+extern const unsigned char sane_ctype[256];
 #define GIT_SPACE 0x01
 #define GIT_DIGIT 0x02
 #define GIT_ALPHA 0x04
 #define GIT_GLOB_SPECIAL 0x08
 #define GIT_REGEX_SPECIAL 0x10
 #define GIT_PATHSPEC_MAGIC 0x20
+#define GIT_CNTRL 0x40
+#define GIT_PUNCT 0x80
 #define sane_istest(x,mask) ((sane_ctype[(unsigned char)(x)] & (mask)) != 0)
 #define isascii(x) (((x) & ~0x7f) == 0)
 #define isspace(x) sane_istest(x,GIT_SPACE)
 #define isdigit(x) sane_istest(x,GIT_DIGIT)
 #define isalpha(x) sane_istest(x,GIT_ALPHA)
 #define isalnum(x) sane_istest(x,GIT_ALPHA | GIT_DIGIT)
+#define isprint(x) ((x) >= 0x20 && (x) <= 0x7e)
 #define islower(x) sane_iscase(x, 1)
 #define isupper(x) sane_iscase(x, 0)
 #define is_glob_special(x) sane_istest(x,GIT_GLOB_SPECIAL)
 #define is_regex_special(x) sane_istest(x,GIT_GLOB_SPECIAL | GIT_REGEX_SPECIAL)
+#define iscntrl(x) (sane_istest(x,GIT_CNTRL))
+#define ispunct(x) sane_istest(x, GIT_PUNCT | GIT_REGEX_SPECIAL | \
+		GIT_GLOB_SPECIAL | GIT_PATHSPEC_MAGIC)
+#define isxdigit(x) (hexval_table[x] != -1)
 #define tolower(x) sane_case((unsigned char)(x), 0x20)
 #define toupper(x) sane_case((unsigned char)(x), 0)
 #define is_pathspec_magic(x) sane_istest(x,GIT_PATHSPEC_MAGIC)
@@ -604,8 +693,13 @@ int rmdir_or_warn(const char *path);
  */
 int remove_or_warn(unsigned int mode, const char *path);
 
-/* Call access(2), but warn for any error besides ENOENT. */
-int access_or_warn(const char *path, int mode);
+/*
+ * Call access(2), but warn for any error except "missing file"
+ * (ENOENT or ENOTDIR).
+ */
+#define ACCESS_EACCES_OK (1U << 0)
+int access_or_warn(const char *path, int mode, unsigned flag);
+int access_or_die(const char *path, int mode, unsigned flag);
 
 /* Warn on an inaccessible file that ought to be accessible */
 void warn_on_inaccessible(const char *path);

@@ -12,8 +12,11 @@
 # But we protect ourselves from such a user mistake nevertheless.
 unset CDPATH
 
-# Similarly for IFS
-unset IFS
+# Similarly for IFS, but some shells (e.g. FreeBSD 7.2) are buggy and
+# do not equate an unset IFS with IFS with the default, so here is
+# an explicit SP HT LF.
+IFS=' 	
+'
 
 git_broken_path_fix () {
 	case ":$PATH:" in
@@ -81,14 +84,14 @@ if test -n "$OPTIONS_SPEC"; then
 else
 	dashless=$(basename "$0" | sed -e 's/-/ /')
 	usage() {
-		die "Usage: $dashless $USAGE"
+		die "usage: $dashless $USAGE"
 	}
 
 	if [ -z "$LONG_USAGE" ]
 	then
-		LONG_USAGE="Usage: $dashless $USAGE"
+		LONG_USAGE="usage: $dashless $USAGE"
 	else
-		LONG_USAGE="Usage: $dashless $USAGE
+		LONG_USAGE="usage: $dashless $USAGE
 
 $LONG_USAGE"
 	fi
@@ -191,28 +194,52 @@ require_clean_work_tree () {
 	fi
 }
 
+# Generate a sed script to parse identities from a commit.
+#
+# Reads the commit from stdin, which should be in raw format (e.g., from
+# cat-file or "--pretty=raw").
+#
+# The first argument specifies the ident line to parse (e.g., "author"), and
+# the second specifies the environment variable to put it in (e.g., "AUTHOR"
+# for "GIT_AUTHOR_*"). Multiple pairs can be given to parse author and
+# committer.
+pick_ident_script () {
+	while test $# -gt 0
+	do
+		lid=$1; shift
+		uid=$1; shift
+		printf '%s' "
+		/^$lid /{
+			s/'/'\\\\''/g
+			h
+			s/^$lid "'\([^<]*\) <[^>]*> .*$/\1/'"
+			s/.*/GIT_${uid}_NAME='&'/p
+
+			g
+			s/^$lid "'[^<]* <\([^>]*\)> .*$/\1/'"
+			s/.*/GIT_${uid}_EMAIL='&'/p
+
+			g
+			s/^$lid "'[^<]* <[^>]*> \(.*\)$/@\1/'"
+			s/.*/GIT_${uid}_DATE='&'/p
+		}
+		"
+	done
+	echo '/^$/q'
+}
+
+# Create a pick-script as above and feed it to sed. Stdout is suitable for
+# feeding to eval.
+parse_ident_from_commit () {
+	LANG=C LC_ALL=C sed -ne "$(pick_ident_script "$@")"
+}
+
+# Parse the author from a commit given as an argument. Stdout is suitable for
+# feeding to eval to set the usual GIT_* ident variables.
 get_author_ident_from_commit () {
-	pick_author_script='
-	/^author /{
-		s/'\''/'\''\\'\'\''/g
-		h
-		s/^author \([^<]*\) <[^>]*> .*$/\1/
-		s/.*/GIT_AUTHOR_NAME='\''&'\''/p
-
-		g
-		s/^author [^<]* <\([^>]*\)> .*$/\1/
-		s/.*/GIT_AUTHOR_EMAIL='\''&'\''/p
-
-		g
-		s/^author [^<]* <[^>]*> \(.*\)$/@\1/
-		s/.*/GIT_AUTHOR_DATE='\''&'\''/p
-
-		q
-	}
-	'
 	encoding=$(git config i18n.commitencoding || echo UTF-8)
 	git show -s --pretty=raw --encoding="$encoding" "$1" -- |
-	LANG=C LC_ALL=C sed -ne "$pick_author_script"
+	parse_ident_from_commit author AUTHOR
 }
 
 # Clear repo-local GIT_* environment variables. Useful when switching to
@@ -220,6 +247,18 @@ get_author_ident_from_commit () {
 # list in git_connect()
 clear_local_git_env() {
 	unset $(git rev-parse --local-env-vars)
+}
+
+# Generate a virtual base file for a two-file merge. Uses git apply to
+# remove lines from $1 that are not in $2, leaving only common lines.
+create_virtual_base() {
+	sz0=$(wc -c <"$1")
+	@@DIFF@@ -u -La/"$1" -Lb/"$1" "$1" "$2" | git apply --no-add
+	sz1=$(wc -c <"$1")
+
+	# If we do not have enough common material, it is not
+	# worth trying two-file merge using common subsections.
+	expr $sz0 \< $sz1 \* 2 >/dev/null || : >"$1"
 }
 
 

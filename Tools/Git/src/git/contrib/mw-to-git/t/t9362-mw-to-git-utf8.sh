@@ -139,7 +139,7 @@ test_expect_success 'character $ in file name (git -> mw) ' '
 '
 
 
-test_expect_failure 'capital at the begining of file names' '
+test_expect_failure 'capital at the beginning of file names' '
 	wiki_reset &&
 	git clone mediawiki::'"$WIKI_URL"' mw_dir_10 &&
 	(
@@ -156,7 +156,7 @@ test_expect_failure 'capital at the begining of file names' '
 '
 
 
-test_expect_failure 'special character at the begining of file name from mw to git' '
+test_expect_failure 'special character at the beginning of file name from mw to git' '
 	wiki_reset &&
 	git clone mediawiki::'"$WIKI_URL"' mw_dir_11 &&
 	wiki_editpage {char_1 "expect to be renamed {char_1" false &&
@@ -189,7 +189,7 @@ test_expect_success 'Push page with title containing ":" other than namespace se
 	wiki_page_exist NotANameSpace:Page
 '
 
-test_expect_success 'test of correct formating for file name from mw to git' '
+test_expect_success 'test of correct formatting for file name from mw to git' '
 	wiki_reset &&
 	git clone mediawiki::'"$WIKI_URL"' mw_dir_12 &&
 	wiki_editpage char_%_7b_1 "expect to be renamed char{_1" false &&
@@ -207,7 +207,7 @@ test_expect_success 'test of correct formating for file name from mw to git' '
 '
 
 
-test_expect_failure 'test of correct formating for file name begining with special character' '
+test_expect_failure 'test of correct formatting for file name beginning with special character' '
 	wiki_reset &&
 	git clone mediawiki::'"$WIKI_URL"' mw_dir_13 &&
 	(
@@ -215,7 +215,7 @@ test_expect_failure 'test of correct formating for file name begining with speci
 		echo "my new file {char_1" >\{char_1.mw &&
 		echo "my new file [char_2" >\[char_2.mw &&
 		git add . &&
-		git commit -am "commiting some exotic file name..." &&
+		git commit -am "committing some exotic file name..." &&
 		git push &&
 		git pull
 	) &&
@@ -226,7 +226,7 @@ test_expect_failure 'test of correct formating for file name begining with speci
 '
 
 
-test_expect_success 'test of correct formating for file name from git to mw' '
+test_expect_success 'test of correct formatting for file name from git to mw' '
 	wiki_reset &&
 	git clone mediawiki::'"$WIKI_URL"' mw_dir_14 &&
 	(
@@ -234,7 +234,7 @@ test_expect_success 'test of correct formating for file name from git to mw' '
 		echo "my new file char{_1" >Char\{_1.mw &&
 		echo "my new file char[_2" >Char\[_2.mw &&
 		git add . &&
-		git commit -m "commiting some exotic file name..." &&
+		git commit -m "committing some exotic file name..." &&
 		git push
 	) &&
 	wiki_getallpage ref_page_14 &&
@@ -315,6 +315,32 @@ test_expect_success 'git push with \ in format control' '
 	wiki_page_exist \\fo\\o &&
 	wiki_check_content mw_dir_20/\\fo\\o.mw \\fo\\o
 
+'
+
+
+test_expect_success 'fast-import meta-characters in page name (mw -> git)' '
+	wiki_reset &&
+	wiki_editpage \"file\"_\\_foo "expect to be called \"file\"_\\_foo" false &&
+	git clone mediawiki::'"$WIKI_URL"' mw_dir_21 &&
+	test_path_is_file mw_dir_21/\"file\"_\\_foo.mw &&
+	wiki_getallpage ref_page_21 &&
+	test_diff_directories mw_dir_21 ref_page_21
+'
+
+
+test_expect_success 'fast-import meta-characters in page name (git -> mw) ' '
+	wiki_reset &&
+	git clone mediawiki::'"$WIKI_URL"' mw_dir_22 &&
+	(
+		cd mw_dir_22 &&
+		echo "this file is called \"file\"_\\_foo.mw" >\"file\"_\\_foo &&
+		git add . &&
+		git commit -am "file \"file\"_\\_foo" &&
+		git pull &&
+		git push
+	) &&
+	wiki_getallpage ref_page_22 &&
+	test_diff_directories mw_dir_22 ref_page_22
 '
 
 

@@ -33,8 +33,9 @@ Repository:	https://github.com/nafmo/git-l10n-sv/
 Leader:		Peter Krefting <peter@softwolves.pp.se>
 
 Language:	vi (Vietnamese)
-Repository:	https://github.com/vnwildman/git.git
+Repository:	https://github.com/vnwildman/git/
 Leader:		Trần Ngọc Quân <vnwildman AT gmail.com>
+Members:	Nguyễn Thái Ngọc Duy <pclouds AT gmail.com>
 
 Language:	zh_CN (Simplified Chinese)
 Repository:	https://github.com/gotgit/git-po-zh_CN/
@@ -45,3 +46,4 @@ Members:	Riku <lu.riku AT gmail.com>
 		Yichao Yu <yyc1992 AT gmail.com>
 		ws3389 <willsmith3389 AT gmail.com>
 		Thynson <lanxingcan AT gmail.com>
+		Wang Sheng <wangsheng2008love@163.com>

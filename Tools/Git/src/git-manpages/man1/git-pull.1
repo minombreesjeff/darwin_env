@@ -2,12 +2,12 @@
 .\"     Title: git-pull
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-PULL" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-PULL" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -77,7 +77,7 @@ Then "git pull" will fetch and replay the changes from the remote master branch 
 .sp
 See \fBgit-merge\fR(1) for details, including how conflicts are presented and handled\&.
 .sp
-In git 1\&.7\&.0 or later, to cancel a conflicting merge, use git reset \-\-merge\&. \fBWarning\fR: In older versions of git, running \fIgit pull\fR with uncommitted changes is discouraged: while possible, it leaves you in a state that may be hard to back out of in the case of a conflict\&.
+In Git 1\&.7\&.0 or later, to cancel a conflicting merge, use git reset \-\-merge\&. \fBWarning\fR: In older versions of Git, running \fIgit pull\fR with uncommitted changes is discouraged: while possible, it leaves you in a state that may be hard to back out of in the case of a conflict\&.
 .sp
 If any of the remote changes overlap with local uncommitted changes, the merge will be automatically cancelled and the work tree untouched\&. It is generally best to get any local changes in working order before pulling or stash them away with \fBgit-stash\fR(1)\&.
 .SH "OPTIONS"
@@ -99,7 +99,7 @@ Pass \-\-verbose to git\-fetch and git\-merge\&.
 This option controls if new commits of all populated submodules should be fetched too (see
 \fBgit-config\fR(1)
 and
-\fBgitmodules\fR(5))\&. That might be necessary to get the data needed for merging submodule commits, a feature git learned in 1\&.7\&.3\&. Notice that the result of a merge will not be checked out in the submodule, "git submodule update" has to be called afterwards to bring the work tree up to date with the merge result\&.
+\fBgitmodules\fR(5))\&. That might be necessary to get the data needed for merging submodule commits, a feature Git learned in 1\&.7\&.3\&. Notice that the result of a merge will not be checked out in the submodule, "git submodule update" has to be called afterwards to bring the work tree up to date with the merge result\&.
 .RE
 .SS "Options related to merging"
 .PP
@@ -135,7 +135,7 @@ When the merge resolves as a fast\-forward, only update the branch pointer, with
 .PP
 \-\-no\-ff
 .RS 4
-Create a merge commit even when the merge resolves as a fast\-forward\&.
+Create a merge commit even when the merge resolves as a fast\-forward\&. This is the default behaviour when merging an annotated (and possibly signed) tag\&.
 .RE
 .PP
 \-\-ff\-only
@@ -187,6 +187,11 @@ otherwise)\&.
 Pass merge strategy specific option through to the merge strategy\&.
 .RE
 .PP
+\-\-verify\-signatures, \-\-no\-verify\-signatures
+.RS 4
+Verify that the commits being merged have good and trusted GPG signatures and abort the merge in case they do not\&.
+.RE
+.PP
 \-\-summary, \-\-no\-summary
 .RS 4
 Synonyms to \-\-stat and \-\-no\-stat; these are deprecated and will be removed in the future\&.
@@ -207,7 +212,7 @@ Be verbose\&.
 Turn progress on/off explicitly\&. If neither is specified, progress is shown if standard error is connected to a terminal\&. Note that not all merge strategies may support progress reporting\&.
 .RE
 .PP
-\-\-rebase
+\-r, \-\-rebase
 .RS 4
 Rebase the current branch on top of the upstream branch after fetching\&. If there is a remote\-tracking branch corresponding to the upstream branch and the upstream branch was rebased since last fetched, the rebase uses that information to avoid rebasing non\-local changes\&.
 .sp
@@ -267,14 +272,19 @@ will be overwritten\&.
 .PP
 \-\-depth=<depth>
 .RS 4
-Deepen the history of a
+Deepen or shorten the history of a
 \fIshallow\fR
 repository created by
 git clone
 with
 \-\-depth=<depth>
 option (see
-\fBgit-clone\fR(1)) by the specified number of commits\&.
+\fBgit-clone\fR(1)) to the specified number of commits from the tip of each remote branch history\&. Tags for the deepened commits are not fetched\&.
+.RE
+.PP
+\-\-unshallow
+.RS 4
+Convert a shallow repository to a complete one, removing all the limitations imposed by shallow repositories\&.
 .RE
 .PP
 \-f, \-\-force
@@ -448,7 +458,9 @@ A parameter <ref> without a colon is equivalent to <ref>: when pulling/fetching,
 .sp
 In general, URLs contain information about the transport protocol, the address of the remote server, and the path to the repository\&. Depending on the transport protocol, some of this information may be absent\&.
 .sp
-Git natively supports ssh, git, http, https, ftp, ftps, and rsync protocols\&. The following syntaxes may be used with them:
+Git supports ssh, git, http, and https protocols (in addition, ftp, and ftps can be used for fetching and rsync can be used for fetching and pushing, but these are inefficient and deprecated; do not use them)\&.
+.sp
+The following syntaxes may be used with them:
 .sp
 .RS 4
 .ie n \{\
@@ -553,7 +565,7 @@ git://host\&.xz[:port]/~[user]/path/to/repo\&.git/
 [user@]host\&.xz:/~[user]/path/to/repo\&.git/
 .RE
 .sp
-For local repositories, also supported by git natively, the following syntaxes may be used:
+For local repositories, also supported by Git natively, the following syntaxes may be used:
 .sp
 .RS 4
 .ie n \{\
@@ -580,7 +592,7 @@ For local repositories, also supported by git natively, the following syntaxes m
 .sp
 These two syntaxes are mostly equivalent, except when cloning, when the former implies \-\-local option\&. See \fBgit-clone\fR(1) for details\&.
 .sp
-When git doesn\(cqt know how to handle a certain transport protocol, it attempts to use the \fIremote\-<transport>\fR remote helper, if one exists\&. To explicitly request a remote helper, the following syntax may be used:
+When Git doesn\(cqt know how to handle a certain transport protocol, it attempts to use the \fIremote\-<transport>\fR remote helper, if one exists\&. To explicitly request a remote helper, the following syntax may be used:
 .sp
 .RS 4
 .ie n \{\
@@ -593,7 +605,7 @@ When git doesn\(cqt know how to handle a certain transport protocol, it attempts
 <transport>::<address>
 .RE
 .sp
-where <address> may be a path, a server and path, or an arbitrary URL\-like string recognized by the specific remote helper being invoked\&. See \fBgit-remote-helpers\fR(1) for details\&.
+where <address> may be a path, a server and path, or an arbitrary URL\-like string recognized by the specific remote helper being invoked\&. See \fBgitremote-helpers\fR(1) for details\&.
 .sp
 If there are a large number of similarly\-named remote repositories and you want to use a different format for them (such that the URLs you use will be rewritten into URLs that work), you can create a configuration section of the form:
 .sp
@@ -667,7 +679,7 @@ The name of one of the following can be used instead of a URL as <repository> ar
 .sp -1
 .IP \(bu 2.3
 .\}
-a remote in the git configuration file:
+a remote in the Git configuration file:
 $GIT_DIR/config,
 .RE
 .sp
@@ -801,7 +813,7 @@ ours
 .RS 4
 This option forces conflicting hunks to be auto\-resolved cleanly by favoring
 \fIour\fR
-version\&. Changes from the other tree that do not conflict with our side are reflected to the merge result\&.
+version\&. Changes from the other tree that do not conflict with our side are reflected to the merge result\&. For a binary file, the entire contents are taken from our side\&.
 .sp
 This should not be confused with the
 \fIours\fR
@@ -812,7 +824,7 @@ history contains all that happened in it\&.
 .PP
 theirs
 .RS 4
-This is opposite of
+This is the opposite of
 \fIours\fR\&.
 .RE
 .PP
@@ -823,6 +835,15 @@ With this option,
 spends a little extra time to avoid mismerges that sometimes occur due to unimportant matching lines (e\&.g\&., braces from distinct functions)\&. Use this when the branches to be merged have diverged wildly\&. See also
 \fBgit-diff\fR(1)
 \-\-patience\&.
+.RE
+.PP
+diff\-algorithm=[patience|minimal|histogram|myers]
+.RS 4
+Tells
+\fImerge\-recursive\fR
+to use a different diff algorithm, which can help avoid mismerges that occur due to unimportant matching lines (such as braces from distinct functions)\&. See also
+\fBgit-diff\fR(1)
+\-\-diff\-algorithm\&.
 .RE
 .PP
 ignore\-space\-change, ignore\-all\-space, ignore\-space\-at\-eol
@@ -1052,10 +1073,10 @@ $ git merge origin/next
 .sp
 .RE
 .sp
-If you tried a pull which resulted in a complex conflicts and would want to start over, you can recover with \fIgit reset\fR\&.
+If you tried a pull which resulted in complex conflicts and would want to start over, you can recover with \fIgit reset\fR\&.
 .SH "BUGS"
 .sp
-Using \-\-recurse\-submodules can only fetch new commits in already checked out submodules right now\&. When e\&.g\&. upstream added a new submodule in the just fetched commits of the superproject the submodule itself can not be fetched, making it impossible to check out that submodule later without having to do a fetch again\&. This is expected to be fixed in a future git version\&.
+Using \-\-recurse\-submodules can only fetch new commits in already checked out submodules right now\&. When e\&.g\&. upstream added a new submodule in the just fetched commits of the superproject the submodule itself can not be fetched, making it impossible to check out that submodule later without having to do a fetch again\&. This is expected to be fixed in a future Git version\&.
 .SH "SEE ALSO"
 .sp
 \fBgit-fetch\fR(1), \fBgit-merge\fR(1), \fBgit-config\fR(1)

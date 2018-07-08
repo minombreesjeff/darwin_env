@@ -177,6 +177,10 @@ extern NORETURN void usage_msg_opt(const char *msg,
 
 extern int optbug(const struct option *opt, const char *reason);
 extern int opterror(const struct option *opt, const char *reason, int flags);
+#if defined(__GNUC__) && ! defined(clang)
+#define opterror(o,r,f) (opterror((o),(r),(f)), -1)
+#endif
+
 /*----- incremental advanced APIs -----*/
 
 enum {
@@ -238,6 +242,6 @@ extern int parse_opt_noop_cb(const struct option *, const char *, int);
 #define OPT__COLOR(var, h) \
 	OPT_COLOR_FLAG(0, "color", (var), (h))
 #define OPT_COLUMN(s, l, v, h) \
-	{ OPTION_CALLBACK, (s), (l), (v), "style", (h), PARSE_OPT_OPTARG, parseopt_column_callback }
+	{ OPTION_CALLBACK, (s), (l), (v), N_("style"), (h), PARSE_OPT_OPTARG, parseopt_column_callback }
 
 #endif

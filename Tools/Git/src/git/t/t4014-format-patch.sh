@@ -110,73 +110,107 @@ test_expect_success 'replay did not screw up the log message' '
 
 test_expect_success 'extra headers' '
 
-	git config format.headers "To: R. E. Cipient <rcipient@example.com>
+	git config format.headers "To: R E Cipient <rcipient@example.com>
 " &&
-	git config --add format.headers "Cc: S. E. Cipient <scipient@example.com>
+	git config --add format.headers "Cc: S E Cipient <scipient@example.com>
 " &&
 	git format-patch --stdout master..side > patch2 &&
 	sed -e "/^\$/q" patch2 > hdrs2 &&
-	grep "^To: R. E. Cipient <rcipient@example.com>\$" hdrs2 &&
-	grep "^Cc: S. E. Cipient <scipient@example.com>\$" hdrs2
+	grep "^To: R E Cipient <rcipient@example.com>\$" hdrs2 &&
+	grep "^Cc: S E Cipient <scipient@example.com>\$" hdrs2
 
 '
 
 test_expect_success 'extra headers without newlines' '
 
-	git config --replace-all format.headers "To: R. E. Cipient <rcipient@example.com>" &&
-	git config --add format.headers "Cc: S. E. Cipient <scipient@example.com>" &&
+	git config --replace-all format.headers "To: R E Cipient <rcipient@example.com>" &&
+	git config --add format.headers "Cc: S E Cipient <scipient@example.com>" &&
 	git format-patch --stdout master..side >patch3 &&
 	sed -e "/^\$/q" patch3 > hdrs3 &&
-	grep "^To: R. E. Cipient <rcipient@example.com>\$" hdrs3 &&
-	grep "^Cc: S. E. Cipient <scipient@example.com>\$" hdrs3
+	grep "^To: R E Cipient <rcipient@example.com>\$" hdrs3 &&
+	grep "^Cc: S E Cipient <scipient@example.com>\$" hdrs3
 
 '
 
 test_expect_success 'extra headers with multiple To:s' '
 
-	git config --replace-all format.headers "To: R. E. Cipient <rcipient@example.com>" &&
-	git config --add format.headers "To: S. E. Cipient <scipient@example.com>" &&
+	git config --replace-all format.headers "To: R E Cipient <rcipient@example.com>" &&
+	git config --add format.headers "To: S E Cipient <scipient@example.com>" &&
 	git format-patch --stdout master..side > patch4 &&
 	sed -e "/^\$/q" patch4 > hdrs4 &&
-	grep "^To: R. E. Cipient <rcipient@example.com>,\$" hdrs4 &&
-	grep "^ *S. E. Cipient <scipient@example.com>\$" hdrs4
+	grep "^To: R E Cipient <rcipient@example.com>,\$" hdrs4 &&
+	grep "^ *S E Cipient <scipient@example.com>\$" hdrs4
 '
 
-test_expect_success 'additional command line cc' '
+test_expect_success 'additional command line cc (ascii)' '
 
-	git config --replace-all format.headers "Cc: R. E. Cipient <rcipient@example.com>" &&
+	git config --replace-all format.headers "Cc: R E Cipient <rcipient@example.com>" &&
+	git format-patch --cc="S E Cipient <scipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch5 &&
+	grep "^Cc: R E Cipient <rcipient@example.com>,\$" patch5 &&
+	grep "^ *S E Cipient <scipient@example.com>\$" patch5
+'
+
+test_expect_failure 'additional command line cc (rfc822)' '
+
+	git config --replace-all format.headers "Cc: R E Cipient <rcipient@example.com>" &&
 	git format-patch --cc="S. E. Cipient <scipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch5 &&
-	grep "^Cc: R. E. Cipient <rcipient@example.com>,\$" patch5 &&
-	grep "^ *S. E. Cipient <scipient@example.com>\$" patch5
+	grep "^Cc: R E Cipient <rcipient@example.com>,\$" patch5 &&
+	grep "^ *\"S. E. Cipient\" <scipient@example.com>\$" patch5
 '
 
 test_expect_success 'command line headers' '
 
 	git config --unset-all format.headers &&
-	git format-patch --add-header="Cc: R. E. Cipient <rcipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch6 &&
-	grep "^Cc: R. E. Cipient <rcipient@example.com>\$" patch6
+	git format-patch --add-header="Cc: R E Cipient <rcipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch6 &&
+	grep "^Cc: R E Cipient <rcipient@example.com>\$" patch6
 '
 
 test_expect_success 'configuration headers and command line headers' '
 
-	git config --replace-all format.headers "Cc: R. E. Cipient <rcipient@example.com>" &&
-	git format-patch --add-header="Cc: S. E. Cipient <scipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch7 &&
-	grep "^Cc: R. E. Cipient <rcipient@example.com>,\$" patch7 &&
-	grep "^ *S. E. Cipient <scipient@example.com>\$" patch7
+	git config --replace-all format.headers "Cc: R E Cipient <rcipient@example.com>" &&
+	git format-patch --add-header="Cc: S E Cipient <scipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch7 &&
+	grep "^Cc: R E Cipient <rcipient@example.com>,\$" patch7 &&
+	grep "^ *S E Cipient <scipient@example.com>\$" patch7
 '
 
-test_expect_success 'command line To: header' '
+test_expect_success 'command line To: header (ascii)' '
 
 	git config --unset-all format.headers &&
-	git format-patch --to="R. E. Cipient <rcipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch8 &&
-	grep "^To: R. E. Cipient <rcipient@example.com>\$" patch8
+	git format-patch --to="R E Cipient <rcipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch8 &&
+	grep "^To: R E Cipient <rcipient@example.com>\$" patch8
 '
 
-test_expect_success 'configuration To: header' '
+test_expect_failure 'command line To: header (rfc822)' '
+
+	git format-patch --to="R. E. Cipient <rcipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch8 &&
+	grep "^To: \"R. E. Cipient\" <rcipient@example.com>\$" patch8
+'
+
+test_expect_failure 'command line To: header (rfc2047)' '
+
+	git format-patch --to="R Ä Cipient <rcipient@example.com>" --stdout master..side | sed -e "/^\$/q" >patch8 &&
+	grep "^To: =?UTF-8?q?R=20=C3=84=20Cipient?= <rcipient@example.com>\$" patch8
+'
+
+test_expect_success 'configuration To: header (ascii)' '
+
+	git config format.to "R E Cipient <rcipient@example.com>" &&
+	git format-patch --stdout master..side | sed -e "/^\$/q" >patch9 &&
+	grep "^To: R E Cipient <rcipient@example.com>\$" patch9
+'
+
+test_expect_failure 'configuration To: header (rfc822)' '
 
 	git config format.to "R. E. Cipient <rcipient@example.com>" &&
 	git format-patch --stdout master..side | sed -e "/^\$/q" >patch9 &&
-	grep "^To: R. E. Cipient <rcipient@example.com>\$" patch9
+	grep "^To: \"R. E. Cipient\" <rcipient@example.com>\$" patch9
+'
+
+test_expect_failure 'configuration To: header (rfc2047)' '
+
+	git config format.to "R Ä Cipient <rcipient@example.com>" &&
+	git format-patch --stdout master..side | sed -e "/^\$/q" >patch9 &&
+	grep "^To: =?UTF-8?q?R=20=C3=84=20Cipient?= <rcipient@example.com>\$" patch9
 '
 
 # check_patch <patch>: Verify that <patch> looks like a half-sane
@@ -190,11 +224,11 @@ check_patch () {
 test_expect_success '--no-to overrides config.to' '
 
 	git config --replace-all format.to \
-		"R. E. Cipient <rcipient@example.com>" &&
+		"R E Cipient <rcipient@example.com>" &&
 	git format-patch --no-to --stdout master..side |
 	sed -e "/^\$/q" >patch10 &&
 	check_patch patch10 &&
-	! grep "^To: R. E. Cipient <rcipient@example.com>\$" patch10
+	! grep "^To: R E Cipient <rcipient@example.com>\$" patch10
 '
 
 test_expect_success '--no-to and --to replaces config.to' '
@@ -212,21 +246,21 @@ test_expect_success '--no-to and --to replaces config.to' '
 test_expect_success '--no-cc overrides config.cc' '
 
 	git config --replace-all format.cc \
-		"C. E. Cipient <rcipient@example.com>" &&
+		"C E Cipient <rcipient@example.com>" &&
 	git format-patch --no-cc --stdout master..side |
 	sed -e "/^\$/q" >patch12 &&
 	check_patch patch12 &&
-	! grep "^Cc: C. E. Cipient <rcipient@example.com>\$" patch12
+	! grep "^Cc: C E Cipient <rcipient@example.com>\$" patch12
 '
 
 test_expect_success '--no-add-header overrides config.headers' '
 
 	git config --replace-all format.headers \
-		"Header1: B. E. Cipient <rcipient@example.com>" &&
+		"Header1: B E Cipient <rcipient@example.com>" &&
 	git format-patch --no-add-header --stdout master..side |
 	sed -e "/^\$/q" >patch13 &&
 	check_patch patch13 &&
-	! grep "^Header1: B. E. Cipient <rcipient@example.com>\$" patch13
+	! grep "^Header1: B E Cipient <rcipient@example.com>\$" patch13
 '
 
 test_expect_success 'multiple files' '
@@ -235,6 +269,22 @@ test_expect_success 'multiple files' '
 	git checkout side &&
 	git format-patch -o patches/ master &&
 	ls patches/0001-Side-changes-1.patch patches/0002-Side-changes-2.patch patches/0003-Side-changes-3-with-n-backslash-n-in-it.patch
+'
+
+test_expect_success 'reroll count' '
+	rm -fr patches &&
+	git format-patch -o patches --cover-letter --reroll-count 4 master..side >list &&
+	! grep -v "^patches/v4-000[0-3]-" list &&
+	sed -n -e "/^Subject: /p" $(cat list) >subjects &&
+	! grep -v "^Subject: \[PATCH v4 [0-3]/3\] " subjects
+'
+
+test_expect_success 'reroll count (-v)' '
+	rm -fr patches &&
+	git format-patch -o patches --cover-letter -v4 master..side >list &&
+	! grep -v "^patches/v4-000[0-3]-" list &&
+	sed -n -e "/^Subject: /p" $(cat list) >subjects &&
+	! grep -v "^Subject: \[PATCH v4 [0-3]/3\] " subjects
 '
 
 check_threading () {
@@ -616,8 +666,19 @@ test_expect_success 'format-patch --in-reply-to' '
 '
 
 test_expect_success 'format-patch --signoff' '
-	git format-patch -1 --signoff --stdout |
-	grep "^Signed-off-by: $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL>"
+	git format-patch -1 --signoff --stdout >out &&
+	grep "^Signed-off-by: $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL>" out
+'
+
+test_expect_success 'format-patch --notes --signoff' '
+	git notes --ref test add -m "test message" HEAD &&
+	git format-patch -1 --signoff --stdout --notes=test >out &&
+	# Three dashes must come after S-o-b
+	! sed "/^Signed-off-by: /q" out | grep "test message" &&
+	sed "1,/^Signed-off-by: /d" out | grep "test message" &&
+	# Notes message must come after three dashes
+	! sed "/^---$/q" out | grep "test message" &&
+	sed "1,/^---$/d" out | grep "test message"
 '
 
 echo "fatal: --name-only does not make sense" > expect.name-only
@@ -681,21 +742,21 @@ test_expect_success 'format-patch --signature --cover-letter' '
 	test 2 = $(grep "my sig" output | wc -l)
 '
 
-test_expect_success 'format.signature="" supresses signatures' '
+test_expect_success 'format.signature="" suppresses signatures' '
 	git config format.signature "" &&
 	git format-patch --stdout -1 >output &&
 	check_patch output &&
 	! grep "^-- \$" output
 '
 
-test_expect_success 'format-patch --no-signature supresses signatures' '
+test_expect_success 'format-patch --no-signature suppresses signatures' '
 	git config --unset-all format.signature &&
 	git format-patch --stdout --no-signature -1 >output &&
 	check_patch output &&
 	! grep "^-- \$" output
 '
 
-test_expect_success 'format-patch --signature="" supresses signatures' '
+test_expect_success 'format-patch --signature="" suppresses signatures' '
 	git format-patch --stdout --signature="" -1 >output &&
 	check_patch output &&
 	! grep "^-- \$" output
@@ -752,16 +813,14 @@ M64=$M8$M8$M8$M8$M8$M8$M8$M8
 M512=$M64$M64$M64$M64$M64$M64$M64$M64
 cat >expect <<'EOF'
 Subject: [PATCH] foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo
- bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar
- foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo
- bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar
- foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo
- bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar
- foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo
- bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar
- foo bar foo bar foo bar foo bar
+ bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar
+ foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo
+ bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar
+ foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo
+ bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar
+ foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar foo bar
 EOF
-test_expect_success 'format-patch wraps extremely long headers (ascii)' '
+test_expect_success 'format-patch wraps extremely long subject (ascii)' '
 	echo content >>file &&
 	git add file &&
 	git commit -m "$M512" &&
@@ -774,30 +833,32 @@ M8="föö bar "
 M64=$M8$M8$M8$M8$M8$M8$M8$M8
 M512=$M64$M64$M64$M64$M64$M64$M64$M64
 cat >expect <<'EOF'
-Subject: [PATCH] =?UTF-8?q?f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
- =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
+Subject: [PATCH] =?UTF-8?q?f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
+ =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
+ =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
+ =?UTF-8?q?bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6?=
+ =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
+ =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
+ =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
+ =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
+ =?UTF-8?q?bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6?=
+ =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
+ =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
+ =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
+ =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
+ =?UTF-8?q?bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6?=
+ =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
+ =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
+ =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
+ =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
+ =?UTF-8?q?bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6?=
+ =?UTF-8?q?=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6?=
+ =?UTF-8?q?=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f?=
+ =?UTF-8?q?=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar?=
+ =?UTF-8?q?=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20bar=20f=C3=B6=C3=B6=20?=
+ =?UTF-8?q?bar?=
 EOF
-test_expect_success 'format-patch wraps extremely long headers (rfc2047)' '
+test_expect_success 'format-patch wraps extremely long subject (rfc2047)' '
 	rm -rf patches/ &&
 	echo content >>file &&
 	git add file &&
@@ -807,50 +868,78 @@ test_expect_success 'format-patch wraps extremely long headers (rfc2047)' '
 	test_cmp expect subject
 '
 
-M8="foo_bar_"
-M64=$M8$M8$M8$M8$M8$M8$M8$M8
-cat >expect <<EOF
-From: $M64
- <foobar@foo.bar>
-EOF
-test_expect_success 'format-patch wraps non-quotable headers' '
-	rm -rf patches/ &&
-	echo content >>file &&
-	git add file &&
-	git commit -mfoo --author "$M64 <foobar@foo.bar>" &&
-	git format-patch --stdout -1 >patch &&
-	sed -n "/^From: /p; /^ /p; /^$/q" <patch >from &&
-	test_cmp expect from
-'
-
 check_author() {
 	echo content >>file &&
 	git add file &&
 	GIT_AUTHOR_NAME=$1 git commit -m author-check &&
 	git format-patch --stdout -1 >patch &&
-	grep ^From: patch >actual &&
+	sed -n "/^From: /p; /^ /p; /^$/q" <patch >actual &&
 	test_cmp expect actual
 }
 
 cat >expect <<'EOF'
 From: "Foo B. Bar" <author@example.com>
 EOF
-test_expect_success 'format-patch quotes dot in headers' '
+test_expect_success 'format-patch quotes dot in from-headers' '
 	check_author "Foo B. Bar"
 '
 
 cat >expect <<'EOF'
 From: "Foo \"The Baz\" Bar" <author@example.com>
 EOF
-test_expect_success 'format-patch quotes double-quote in headers' '
+test_expect_success 'format-patch quotes double-quote in from-headers' '
 	check_author "Foo \"The Baz\" Bar"
 '
 
 cat >expect <<'EOF'
-From: =?UTF-8?q?"F=C3=B6o=20B.=20Bar"?= <author@example.com>
+From: =?UTF-8?q?F=C3=B6o=20Bar?= <author@example.com>
 EOF
-test_expect_success 'rfc2047-encoded headers also double-quote 822 specials' '
+test_expect_success 'format-patch uses rfc2047-encoded from-headers when necessary' '
+	check_author "Föo Bar"
+'
+
+cat >expect <<'EOF'
+From: =?UTF-8?q?F=C3=B6o=20B=2E=20Bar?= <author@example.com>
+EOF
+test_expect_success 'rfc2047-encoded from-headers leave no rfc822 specials' '
 	check_author "Föo B. Bar"
+'
+
+cat >expect <<EOF
+From: foo_bar_foo_bar_foo_bar_foo_bar_foo_bar_foo_bar_foo_bar_foo_bar_
+ <author@example.com>
+EOF
+test_expect_success 'format-patch wraps moderately long from-header (ascii)' '
+	check_author "foo_bar_foo_bar_foo_bar_foo_bar_foo_bar_foo_bar_foo_bar_foo_bar_"
+'
+
+cat >expect <<'EOF'
+From: Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar
+ Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo
+ Bar Foo Bar Foo Bar Foo Bar <author@example.com>
+EOF
+test_expect_success 'format-patch wraps extremely long from-header (ascii)' '
+	check_author "Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar"
+'
+
+cat >expect <<'EOF'
+From: "Foo.Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar
+ Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo
+ Bar Foo Bar Foo Bar Foo Bar" <author@example.com>
+EOF
+test_expect_success 'format-patch wraps extremely long from-header (rfc822)' '
+	check_author "Foo.Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar"
+'
+
+cat >expect <<'EOF'
+From: =?UTF-8?q?Fo=C3=B6=20Bar=20Foo=20Bar=20Foo=20Bar=20Foo=20Bar=20Foo?=
+ =?UTF-8?q?=20Bar=20Foo=20Bar=20Foo=20Bar=20Foo=20Bar=20Foo=20Bar=20Foo=20?=
+ =?UTF-8?q?Bar=20Foo=20Bar=20Foo=20Bar=20Foo=20Bar=20Foo=20Bar=20Foo=20Bar?=
+ =?UTF-8?q?=20Foo=20Bar=20Foo=20Bar=20Foo=20Bar=20Foo=20Bar=20Foo=20Bar=20?=
+ =?UTF-8?q?Foo=20Bar=20Foo=20Bar?= <author@example.com>
+EOF
+test_expect_success 'format-patch wraps extremely long from-header (rfc2047)' '
+	check_author "Foö Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar Foo Bar"
 '
 
 cat >expect <<'EOF'
@@ -883,12 +972,349 @@ test_expect_success 'empty subject prefix does not have extra space' '
 	test_cmp expect actual
 '
 
+append_signoff()
+{
+	C=$(git commit-tree HEAD^^{tree} -p HEAD) &&
+	git format-patch --stdout --signoff $C^..$C >append_signoff.patch &&
+	sed -n -e "1,/^---$/p" append_signoff.patch |
+		egrep -n "^Subject|Sign|^$"
+}
+
+test_expect_success 'signoff: commit with no body' '
+	append_signoff </dev/null >actual &&
+	cat <<\EOF | sed "s/EOL$//" >expected &&
+4:Subject: [PATCH] EOL
+8:
+9:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: commit with only subject' '
+	echo subject | append_signoff >actual &&
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+9:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: commit with only subject that does not end with NL' '
+	printf subject | append_signoff >actual &&
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+9:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: no existing signoffs' '
+	append_signoff <<\EOF >actual &&
+subject
+
+body
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+10:
+11:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: no existing signoffs and no trailing NL' '
+	printf "subject\n\nbody" | append_signoff >actual &&
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+10:
+11:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: some random signoff' '
+	append_signoff <<\EOF >actual &&
+subject
+
+body
+
+Signed-off-by: my@house
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+10:
+11:Signed-off-by: my@house
+12:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: misc conforming footer elements' '
+	append_signoff <<\EOF >actual &&
+subject
+
+body
+
+Signed-off-by: my@house
+(cherry picked from commit da39a3ee5e6b4b0d3255bfef95601890afd80709)
+Tested-by: Some One <someone@example.com>
+Bug: 1234
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+10:
+11:Signed-off-by: my@house
+15:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: some random signoff-alike' '
+	append_signoff <<\EOF >actual &&
+subject
+
+body
+Fooled-by-me: my@house
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+11:
+12:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: not really a signoff' '
+	append_signoff <<\EOF >actual &&
+subject
+
+I want to mention about Signed-off-by: here.
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+9:I want to mention about Signed-off-by: here.
+10:
+11:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: not really a signoff (2)' '
+	append_signoff <<\EOF >actual &&
+subject
+
+My unfortunate
+Signed-off-by: example happens to be wrapped here.
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+10:Signed-off-by: example happens to be wrapped here.
+11:
+12:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: valid S-o-b paragraph in the middle' '
+	append_signoff <<\EOF >actual &&
+subject
+
+Signed-off-by: my@house
+Signed-off-by: your@house
+
+A lot of houses.
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+9:Signed-off-by: my@house
+10:Signed-off-by: your@house
+11:
+13:
+14:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: the same signoff at the end' '
+	append_signoff <<\EOF >actual &&
+subject
+
+body
+
+Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+10:
+11:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: the same signoff at the end, no trailing NL' '
+	printf "subject\n\nSigned-off-by: C O Mitter <committer@example.com>" |
+		append_signoff >actual &&
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+9:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: the same signoff NOT at the end' '
+	append_signoff <<\EOF >actual &&
+subject
+
+body
+
+Signed-off-by: C O Mitter <committer@example.com>
+Signed-off-by: my@house
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+10:
+11:Signed-off-by: C O Mitter <committer@example.com>
+12:Signed-off-by: my@house
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: detect garbage in non-conforming footer' '
+	append_signoff <<\EOF >actual &&
+subject
+
+body
+
+Tested-by: my@house
+Some Trash
+Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+10:
+13:Signed-off-by: C O Mitter <committer@example.com>
+14:
+15:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
+test_expect_success 'signoff: footer begins with non-signoff without @ sign' '
+	append_signoff <<\EOF >actual &&
+subject
+
+body
+
+Reviewed-id: Noone
+Tested-by: my@house
+Change-id: Ideadbeef
+Signed-off-by: C O Mitter <committer@example.com>
+Bug: 1234
+EOF
+	cat >expected <<\EOF &&
+4:Subject: [PATCH] subject
+8:
+10:
+14:Signed-off-by: C O Mitter <committer@example.com>
+EOF
+	test_cmp expected actual
+'
+
 test_expect_success 'format patch ignores color.ui' '
 	test_unconfig color.ui &&
 	git format-patch --stdout -1 >expect &&
 	test_config color.ui always &&
 	git format-patch --stdout -1 >actual &&
 	test_cmp expect actual
+'
+
+test_expect_success 'cover letter using branch description (1)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter master >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (2)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter rebuild-1~2..rebuild-1 >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (3)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter ^master rebuild-1 >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (4)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter master.. >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (5)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter -2 HEAD >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter using branch description (6)' '
+	git checkout rebuild-1 &&
+	test_config branch.rebuild-1.description hello &&
+	git format-patch --stdout --cover-letter -2 >actual &&
+	grep hello actual >/dev/null
+'
+
+test_expect_success 'cover letter with nothing' '
+	git format-patch --stdout --cover-letter >actual &&
+	test_line_count = 0 actual
+'
+
+test_expect_success 'cover letter auto' '
+	mkdir -p tmp &&
+	test_when_finished "rm -rf tmp;
+		git config --unset format.coverletter" &&
+
+	git config format.coverletter auto &&
+	git format-patch -o tmp -1 >list &&
+	test_line_count = 1 list &&
+	git format-patch -o tmp -2 >list &&
+	test_line_count = 3 list
+'
+
+test_expect_success 'cover letter auto user override' '
+	mkdir -p tmp &&
+	test_when_finished "rm -rf tmp;
+		git config --unset format.coverletter" &&
+
+	git config format.coverletter auto &&
+	git format-patch -o tmp --cover-letter -1 >list &&
+	test_line_count = 2 list &&
+	git format-patch -o tmp --cover-letter -2 >list &&
+	test_line_count = 3 list &&
+	git format-patch -o tmp --no-cover-letter -1 >list &&
+	test_line_count = 1 list &&
+	git format-patch -o tmp --no-cover-letter -2 >list &&
+	test_line_count = 2 list
 '
 
 test_done

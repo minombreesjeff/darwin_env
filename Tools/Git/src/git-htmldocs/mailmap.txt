@@ -1,5 +1,6 @@
 If the file `.mailmap` exists at the toplevel of the repository, or at
-the location pointed to by the mailmap.file configuration option, it
+the location pointed to by the mailmap.file or mailmap.blob
+configuration options, it
 is used to map author and committer names and email addresses to
 canonical real names and email addresses.
 
@@ -46,7 +47,7 @@ Jane Doe         <jane@desktop.(none)>
 Joe R. Developer <joe@example.com>
 ------------
 
-Note how there is no need for an entry for <jane@laptop.(none)>, because the
+Note how there is no need for an entry for `<jane@laptop.(none)>`, because the
 real name of that author is already correct.
 
 Example 2: Your repository contains commits from the following

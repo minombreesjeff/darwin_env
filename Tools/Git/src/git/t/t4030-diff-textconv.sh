@@ -84,6 +84,30 @@ test_expect_success 'status -v produces text' '
 	git reset --soft HEAD@{1}
 '
 
+test_expect_success 'grep-diff (-G) operates on textconv data (add)' '
+	echo one >expect &&
+	git log --root --format=%s -G0 >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'grep-diff (-G) operates on textconv data (modification)' '
+	echo two >expect &&
+	git log --root --format=%s -G1 >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'pickaxe (-S) operates on textconv data (add)' '
+	echo one >expect &&
+	git log --root --format=%s -S0 >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'pickaxe (-S) operates on textconv data (modification)' '
+	echo two >expect &&
+	git log --root --format=%s -S1 >actual &&
+	test_cmp expect actual
+'
+
 cat >expect.stat <<'EOF'
  file | Bin 2 -> 4 bytes
  1 file changed, 0 insertions(+), 0 deletions(-)
@@ -115,12 +139,10 @@ index 0000000..67be421
 +frotz
 \ No newline at end of file
 EOF
-# make a symlink the hard way that works on symlink-challenged file systems
+
 test_expect_success 'textconv does not act on symlinks' '
-	printf frotz > file &&
-	git add file &&
-	git ls-files -s | sed -e s/100644/120000/ |
-		git update-index --index-info &&
+	rm -f file &&
+	test_ln_s_add frotz file &&
 	git commit -m typechange &&
 	git show >diff &&
 	find_diff <diff >actual &&

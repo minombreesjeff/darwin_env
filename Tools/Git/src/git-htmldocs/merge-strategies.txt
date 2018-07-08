@@ -32,13 +32,14 @@ ours;;
 	This option forces conflicting hunks to be auto-resolved cleanly by
 	favoring 'our' version.  Changes from the other tree that do not
 	conflict with our side are reflected to the merge result.
+	For a binary file, the entire contents are taken from our side.
 +
 This should not be confused with the 'ours' merge strategy, which does not
 even look at what the other tree contains at all.  It discards everything
 the other tree did, declaring 'our' history contains all that happened in it.
 
 theirs;;
-	This is opposite of 'ours'.
+	This is the opposite of 'ours'.
 
 patience;;
 	With this option, 'merge-recursive' spends a little extra time
@@ -46,6 +47,12 @@ patience;;
 	matching lines (e.g., braces from distinct functions).  Use
 	this when the branches to be merged have diverged wildly.
 	See also linkgit:git-diff[1] `--patience`.
+
+diff-algorithm=[patience|minimal|histogram|myers];;
+	Tells 'merge-recursive' to use a different diff algorithm, which
+	can help avoid mismerges that occur due to unimportant matching
+	lines (such as braces from distinct functions).  See also
+	linkgit:git-diff[1] `--diff-algorithm`.
 
 ignore-space-change;;
 ignore-all-space;;

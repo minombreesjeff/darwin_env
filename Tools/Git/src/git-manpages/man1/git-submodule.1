@@ -2,12 +2,12 @@
 .\"     Title: git-submodule
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-SUBMODULE" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-SUBMODULE" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -32,12 +32,14 @@ git-submodule \- Initialize, update or inspect submodules
 .SH "SYNOPSIS"
 .sp
 .nf
-\fIgit submodule\fR [\-\-quiet] add [\-b branch] [\-f|\-\-force]
+\fIgit submodule\fR [\-\-quiet] add [\-b <branch>] [\-f|\-\-force] [\-\-name <name>]
               [\-\-reference <repository>] [\-\-] <repository> [<path>]
 \fIgit submodule\fR [\-\-quiet] status [\-\-cached] [\-\-recursive] [\-\-] [<path>\&...]
 \fIgit submodule\fR [\-\-quiet] init [\-\-] [<path>\&...]
-\fIgit submodule\fR [\-\-quiet] update [\-\-init] [\-N|\-\-no\-fetch] [\-\-rebase]
-              [\-\-reference <repository>] [\-\-merge] [\-\-recursive] [\-\-] [<path>\&...]
+\fIgit submodule\fR [\-\-quiet] deinit [\-f|\-\-force] [\-\-] <path>\&...
+\fIgit submodule\fR [\-\-quiet] update [\-\-init] [\-\-remote] [\-N|\-\-no\-fetch]
+              [\-f|\-\-force] [\-\-rebase] [\-\-reference <repository>]
+              [\-\-merge] [\-\-recursive] [\-\-] [<path>\&...]
 \fIgit submodule\fR [\-\-quiet] summary [\-\-cached|\-\-files] [(\-n|\-\-summary\-limit) <n>]
               [commit] [\-\-] [<path>\&...]
 \fIgit submodule\fR [\-\-quiet] foreach [\-\-recursive] <command>
@@ -59,7 +61,9 @@ add
 .RS 4
 Add the given repository as a submodule at the given path to the changeset to be committed next to the current project: the current project is termed the "superproject"\&.
 .sp
-This requires at least one argument: <repository>\&. The optional argument <path> is the relative location for the cloned submodule to exist in the superproject\&. If <path> is not given, the "humanish" part of the source repository is used ("repo" for "/path/to/repo\&.git" and "foo" for "host\&.xz:foo/\&.git")\&.
+This requires at least one argument: <repository>\&. The optional argument <path> is the relative location for the cloned submodule to exist in the superproject\&. If <path> is not given, the "humanish" part of the source repository is used ("repo" for "/path/to/repo\&.git" and "foo" for "host\&.xz:foo/\&.git")\&. The <path> is also used as the submodule\(cqs logical name in its configuration entries unless
+\-\-name
+is used to specify a logical name\&.
 .sp
 <repository> is the URL of the new submodule\(cqs origin repository\&. This may be either an absolute URL, or (if it begins with \&./ or \&.\&./), the location relative to the superproject\(cqs origin repository (Please note that to specify a repository
 \fIfoo\&.git\fR
@@ -70,7 +74,7 @@ instead of
 \fI\&./foo\&.git\fR
 \- as one might expect when following the rules for relative URLs \- because the evaluation of relative URLs in Git is identical to that of relative directories)\&. If the superproject doesn\(cqt have an origin configured the superproject is its own authoritative upstream and the current working directory is used instead\&.
 .sp
-<path> is the relative location for the cloned submodule to exist in the superproject\&. If <path> does not exist, then the submodule is created by cloning from the named URL\&. If <path> does exist and is already a valid git repository, then this is added to the changeset without cloning\&. This second form is provided to ease creating a new submodule from scratch, and presumes the user will later push the submodule to the given URL\&.
+<path> is the relative location for the cloned submodule to exist in the superproject\&. If <path> does not exist, then the submodule is created by cloning from the named URL\&. If <path> does exist and is already a valid Git repository, then this is added to the changeset without cloning\&. This second form is provided to ease creating a new submodule from scratch, and presumes the user will later push the submodule to the given URL\&.
 .sp
 In either case, the given URL is recorded into \&.gitmodules for use by subsequent users cloning the superproject\&. If the URL is given relative to the superproject\(cqs repository, the presumption is the superproject and submodule repositories will be kept together in the same relative location, and only the superproject\(cqs URL needs to be provided: git\-submodule will correctly locate the submodule using the relative URL in \&.gitmodules\&.
 .RE
@@ -85,8 +89,7 @@ if the submodule is not initialized,
 +
 if the currently checked out submodule commit does not match the SHA\-1 found in the index of the containing repository and
 U
-if the submodule has merge conflicts\&. This command is the default command for
-\fIgit submodule\fR\&.
+if the submodule has merge conflicts\&.
 .sp
 If
 \-\-recursive
@@ -101,7 +104,7 @@ will provide that information too (and can also report changes to a submodule\(c
 .PP
 init
 .RS 4
-Initialize the submodules, i\&.e\&. register each submodule name and url found in \&.gitmodules into \&.git/config\&. It will also copy the value of
+Initialize the submodules recorded in the index (which were added and committed elsewhere) by copying submodule names and urls from \&.gitmodules to \&.git/config\&. Optional <path> arguments limit which submodules will be initialized\&. It will also copy the value of
 submodule\&.$name\&.update
 into \&.git/config\&. The key used in \&.git/config is
 submodule\&.$name\&.url\&. This command does not alter existing information in \&.git/config\&. You can then customize the submodule clone URLs in \&.git/config for your local setup and proceed to
@@ -110,6 +113,24 @@ git submodule update \-\-init
 without the explicit
 \fIinit\fR
 step if you do not intend to customize any submodule locations\&.
+.RE
+.PP
+deinit
+.RS 4
+Unregister the given submodules, i\&.e\&. remove the whole
+submodule\&.$name
+section from \&.git/config together with their work tree\&. Further calls to
+git submodule update,
+git submodule foreach
+and
+git submodule sync
+will skip any unregistered submodules until they are initialized again, so use this command if you don\(cqt want to have a local checkout of the submodule in your work tree anymore\&. If you really want to remove a submodule from the repository and commit that use
+\fBgit-rm\fR(1)
+instead\&.
+.sp
+If
+\-\-force
+is specified, the submodule\(cqs work tree will be removed even if it contains local modifications\&.
 .RE
 .PP
 update
@@ -136,6 +157,12 @@ option\&.
 If
 \-\-recursive
 is specified, this command will recurse into the registered submodules, and update any nested submodules within\&.
+.sp
+If
+\-\-force
+is specified, the submodule will be checked out (using
+git checkout \-\-force
+if appropriate), even if the commit specified in the index of the containing repository already matches the commit checked out in the submodule\&.
 .RE
 .PP
 summary
@@ -183,12 +210,17 @@ Only print error messages\&.
 .PP
 \-b, \-\-branch
 .RS 4
-Branch of repository to add as submodule\&.
+Branch of repository to add as submodule\&. The name of the branch is recorded as
+submodule\&.<path>\&.branch
+in
+\&.gitmodules
+for
+update \-\-remote\&.
 .RE
 .PP
 \-f, \-\-force
 .RS 4
-This option is only valid for add and update commands\&. When running add, allow adding an otherwise ignored submodule path\&. When running update, throw away local changes in submodules when switching to a different commit\&.
+This option is only valid for add, deinit and update commands\&. When running add, allow adding an otherwise ignored submodule path\&. When running deinit the submodule work trees will be removed even if they contain local changes\&. When running update, throw away local changes in submodules when switching to a different commit; and always run a checkout operation in the submodule, even if the commit listed in the index of the containing repository matches the commit checked out in the submodule\&.
 .RE
 .PP
 \-\-cached
@@ -204,6 +236,33 @@ This option is only valid for the summary command\&. This command compares the c
 \-n, \-\-summary\-limit
 .RS 4
 This option is only valid for the summary command\&. Limit the summary size (number of commits shown in total)\&. Giving 0 will disable the summary; a negative number means unlimited (the default)\&. This limit only applies to modified submodules\&. The size is always limited to 1 for added/deleted/typechanged submodules\&.
+.RE
+.PP
+\-\-remote
+.RS 4
+This option is only valid for the update command\&. Instead of using the superproject\(cqs recorded SHA\-1 to update the submodule, use the status of the submodule\(cqs remote tracking branch\&. The remote used is branch\(cqs remote (branch\&.<name>\&.remote), defaulting to
+origin\&. The remote branch used defaults to
+master, but the branch name may be overridden by setting the
+submodule\&.<name>\&.branch
+option in either
+\&.gitmodules
+or
+\&.git/config
+(with
+\&.git/config
+taking precedence)\&.
+.sp
+This works for any of the supported update procedures (\-\-checkout,
+\-\-rebase, etc\&.)\&. The only change is the source of the target SHA\-1\&. For example,
+submodule update \-\-remote \-\-merge
+will merge upstream submodule changes into the submodules, while
+submodule update \-\-merge
+will merge superproject gitlink changes into the submodules\&.
+.sp
+In order to ensure a current tracking branch state,
+update \-\-remote
+fetches the submodule\(cqs remote repository before calculating the SHA\-1\&. If you don\(cqt want to fetch, you should use
+submodule update \-\-remote \-\-no\-fetch\&.
 .RE
 .PP
 \-N, \-\-no\-fetch
@@ -231,6 +290,12 @@ rebase, this option is implicit\&.
 \-\-init
 .RS 4
 This option is only valid for the update command\&. Initialize all submodules for which "git submodule init" has not been called so far before updating\&.
+.RE
+.PP
+\-\-name
+.RS 4
+This option is only valid for the add command\&. It sets the submodule\(cqs name to the given string instead of defaulting to its path\&. The name must be valid as a directory name and may not end with a
+\fI/\fR\&.
 .RE
 .PP
 \-\-reference <repository>

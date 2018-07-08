@@ -230,7 +230,7 @@ test_expect_success '.gitattributes override config' '
 '
 
 test_expect_success 'setup: remove diff driver regex' '
-	test_might_fail git config --unset diff.testdriver.wordRegex
+	test_unconfig diff.testdriver.wordRegex
 '
 
 test_expect_success 'use configured regex' '
@@ -298,11 +298,12 @@ test_expect_success 'unset default driver' '
 	test_unconfig diff.wordregex
 '
 
-test_language_driver bibtex
+test_language_driver ada
+#test_language_driver bibtex
 test_language_driver cpp
 test_language_driver csharp
 test_language_driver fortran
-test_language_driver html
+#test_language_driver html
 test_language_driver java
 test_language_driver matlab
 test_language_driver objc
@@ -334,8 +335,7 @@ test_expect_success 'word-diff with diff.sbe' '
 
 	c
 	EOF
-	test_when_finished "git config --unset diff.suppress-blank-empty" &&
-	git config diff.suppress-blank-empty true &&
+	test_config diff.suppress-blank-empty true &&
 	word_diff --word-diff=plain
 '
 
@@ -367,7 +367,7 @@ test_expect_success 'setup history with two files' '
 
 test_expect_success 'wordRegex for the first file does not apply to the second' '
 	echo "*.tex diff=tex" >.gitattributes &&
-	git config diff.tex.wordRegex "[a-z]+|." &&
+	test_config diff.tex.wordRegex "[a-z]+|." &&
 	cat >expect <<-\EOF &&
 		diff --git a/a.tex b/a.tex
 		--- a/a.tex

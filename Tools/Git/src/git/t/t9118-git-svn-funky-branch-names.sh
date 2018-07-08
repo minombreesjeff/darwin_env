@@ -28,11 +28,16 @@ test_expect_success 'setup svnrepo' '
 	svn_cmd cp -m "trailing .lock" "$svnrepo/pr ject/trunk" \
 			"$svnrepo/pr ject/branches/trailing_dotlock.lock" &&
 	svn_cmd cp -m "reflog" "$svnrepo/pr ject/trunk" \
-			"$svnrepo/pr ject/branches/not-a%40{0}reflog" &&
+			"$svnrepo/pr ject/branches/not-a@{0}reflog@" &&
 	start_httpd
 	'
 
-test_expect_failure 'test clone with funky branch names' '
+# SVN 1.7 will truncate "not-a%40{0]" to just "not-a".
+# Look at what SVN wound up naming the branch and use that.
+# Be sure to escape the @ if it shows up.
+non_reflog=`svn_cmd ls "$svnrepo/pr ject/branches" | grep not-a | sed 's/\///' | sed 's/@/%40/'`
+
+test_expect_success 'test clone with funky branch names' '
 	git svn clone -s "$svnrepo/pr ject" project &&
 	(
 		cd project &&
@@ -42,7 +47,7 @@ test_expect_failure 'test clone with funky branch names' '
 		git rev-parse "refs/remotes/%2Eleading_dot" &&
 		git rev-parse "refs/remotes/trailing_dot%2E" &&
 		git rev-parse "refs/remotes/trailing_dotlock%2Elock" &&
-		git rev-parse "refs/remotes/not-a%40{0}reflog"
+		git rev-parse "refs/remotes/$non_reflog"
 	)
 	'
 

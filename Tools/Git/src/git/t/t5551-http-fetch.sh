@@ -13,6 +13,7 @@ LIB_HTTPD_PORT=${LIB_HTTPD_PORT-'5551'}
 start_httpd
 
 test_expect_success 'setup repository' '
+	git config push.default matching &&
 	echo content >file &&
 	git add file &&
 	git commit -m one
@@ -130,6 +131,62 @@ test_expect_success 'clone from auth-only-for-push repository' '
 	test_cmp expect actual
 '
 
+test_expect_success 'clone from auth-only-for-objects repository' '
+	echo two >expect &&
+	set_askpass user@host &&
+	git clone --bare "$HTTPD_URL/auth-fetch/smart/repo.git" half-auth &&
+	expect_askpass both user@host &&
+	git --git-dir=half-auth log -1 --format=%s >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'no-op half-auth fetch does not require a password' '
+	set_askpass wrong &&
+	git --git-dir=half-auth fetch &&
+	expect_askpass none
+'
+
+test_expect_success 'disable dumb http on server' '
+	git --git-dir="$HTTPD_DOCUMENT_ROOT_PATH/repo.git" \
+		config http.getanyfile false
+'
+
+test_expect_success 'GIT_SMART_HTTP can disable smart http' '
+	(GIT_SMART_HTTP=0 &&
+	 export GIT_SMART_HTTP &&
+	 cd clone &&
+	 test_must_fail git fetch)
+'
+
+test_expect_success 'invalid Content-Type rejected' '
+	test_must_fail git clone $HTTPD_URL/broken_smart/repo.git 2>actual
+	grep "not valid:" actual
+'
+
+test_expect_success 'create namespaced refs' '
+	test_commit namespaced &&
+	git push public HEAD:refs/namespaces/ns/refs/heads/master &&
+	git --git-dir="$HTTPD_DOCUMENT_ROOT_PATH/repo.git" \
+		symbolic-ref refs/namespaces/ns/HEAD refs/namespaces/ns/refs/heads/master
+'
+
+test_expect_success 'smart clone respects namespace' '
+	git clone "$HTTPD_URL/smart_namespace/repo.git" ns-smart &&
+	echo namespaced >expect &&
+	git --git-dir=ns-smart/.git log -1 --format=%s >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'dumb clone via http-backend respects namespace' '
+	git --git-dir="$HTTPD_DOCUMENT_ROOT_PATH/repo.git" \
+		config http.getanyfile true &&
+	GIT_SMART_HTTP=0 git clone \
+		"$HTTPD_URL/smart_namespace/repo.git" ns-dumb &&
+	echo namespaced >expect &&
+	git --git-dir=ns-dumb/.git log -1 --format=%s >actual &&
+	test_cmp expect actual
+'
+
 test -n "$GIT_TEST_LONG" && test_set_prereq EXPENSIVE
 
 test_expect_success EXPENSIVE 'create 50,000 tags in the repo' '
@@ -152,13 +209,17 @@ test_expect_success EXPENSIVE 'create 50,000 tags in the repo' '
 
 	# now assign tags to all the dangling commits we created above
 	tag=$("$PERL_PATH" -e "print \"bla\" x 30") &&
-	sed -e "s/^:\(.\+\) \(.\+\)$/\2 refs\/tags\/$tag-\1/" <marks >>packed-refs
+	sed -e "s|^:\([^ ]*\) \(.*\)$|\2 refs/tags/$tag-\1|" <marks >>packed-refs
 	)
 '
 
 test_expect_success EXPENSIVE 'clone the 50,000 tag repo to check OS command line overflow' '
 	git clone $HTTPD_URL/smart/repo.git too-many-refs 2>err &&
-	test_line_count = 0 err
+	test_line_count = 0 err &&
+	(
+		cd too-many-refs &&
+		test $(git for-each-ref refs/tags | wc -l) = 50000
+	)
 '
 
 stop_httpd

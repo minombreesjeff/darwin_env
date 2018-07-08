@@ -10,7 +10,7 @@
 #include "gpg-interface.h"
 
 static const char * const fmt_merge_msg_usage[] = {
-	"git fmt-merge-msg [-m <message>] [--log[=<n>]|--no-log] [--file <file>]",
+	N_("git fmt-merge-msg [-m <message>] [--log[=<n>]|--no-log] [--file <file>]"),
 	NULL
 };
 
@@ -232,8 +232,9 @@ static void record_person(int which, struct string_list *people,
 {
 	char *name_buf, *name, *name_end;
 	struct string_list_item *elem;
-	const char *field = (which == 'a') ? "\nauthor " : "\ncommitter ";
+	const char *field;
 
+	field = (which == 'a') ? "\nauthor " : "\ncommitter ";
 	name = strstr(commit->buffer, field);
 	if (!name)
 		return;
@@ -286,10 +287,10 @@ static void credit_people(struct strbuf *out,
 	const char *me;
 
 	if (kind == 'a') {
-		label = "\n# By ";
+		label = "By";
 		me = git_author_info(IDENT_NO_DATE);
 	} else {
-		label = "\n# Via ";
+		label = "Via";
 		me = git_committer_info(IDENT_NO_DATE);
 	}
 
@@ -299,7 +300,7 @@ static void credit_people(struct strbuf *out,
 	     (me = skip_prefix(me, them->items->string)) != NULL &&
 	     skip_prefix(me, " <")))
 		return;
-	strbuf_addstr(out, label);
+	strbuf_addf(out, "\n%c %s ", comment_line_char, label);
 	add_people_count(out, them);
 }
 
@@ -323,7 +324,8 @@ static void add_people_info(struct strbuf *out,
 static void shortlog(const char *name,
 		     struct origin_data *origin_data,
 		     struct commit *head,
-		     struct rev_info *rev, int limit,
+		     struct rev_info *rev,
+		     struct fmt_merge_msg_opts *opts,
 		     struct strbuf *out)
 {
 	int i, count = 0;
@@ -335,6 +337,7 @@ static void shortlog(const char *name,
 	int flags = UNINTERESTING | TREESAME | SEEN | SHOWN | ADDED;
 	struct strbuf sb = STRBUF_INIT;
 	const unsigned char *sha1 = origin_data->sha1;
+	int limit = opts->shortlog_len;
 
 	branch = deref_tag(parse_object(sha1), sha1_to_hex(sha1), 40);
 	if (!branch || branch->type != OBJ_COMMIT)
@@ -351,13 +354,15 @@ static void shortlog(const char *name,
 
 		if (commit->parents && commit->parents->next) {
 			/* do not list a merge but count committer */
-			record_person('c', &committers, commit);
+			if (opts->credit_people)
+				record_person('c', &committers, commit);
 			continue;
 		}
-		if (!count)
+		if (!count && opts->credit_people)
 			/* the 'tip' committer */
 			record_person('c', &committers, commit);
-		record_person('a', &authors, commit);
+		if (opts->credit_people)
+			record_person('a', &authors, commit);
 		count++;
 		if (subjects.nr > limit)
 			continue;
@@ -372,7 +377,8 @@ static void shortlog(const char *name,
 			string_list_append(&subjects, strbuf_detach(&sb, NULL));
 	}
 
-	add_people_info(out, &authors, &committers);
+	if (opts->credit_people)
+		add_people_info(out, &authors, &committers);
 	if (count > limit)
 		strbuf_addf(out, "\n* %s: (%d commits)\n", name, count);
 	else
@@ -464,7 +470,7 @@ static void fmt_tag_signature(struct strbuf *tagbuf,
 	strbuf_complete_line(tagbuf);
 	if (sig->len) {
 		strbuf_addch(tagbuf, '\n');
-		strbuf_add_lines(tagbuf, "# ", sig->buf, sig->len);
+		strbuf_add_commented_lines(tagbuf, sig->buf, sig->len);
 	}
 }
 
@@ -486,7 +492,7 @@ static void fmt_merge_msg_sigs(struct strbuf *out)
 
 		if (size == len)
 			; /* merely annotated */
-		else if (verify_signed_buffer(buf, len, buf + len, size - len, &sig)) {
+		else if (verify_signed_buffer(buf, len, buf + len, size - len, &sig, NULL)) {
 			if (!sig.len)
 				strbuf_addstr(&sig, "gpg verification failed.\n");
 		}
@@ -497,14 +503,18 @@ static void fmt_merge_msg_sigs(struct strbuf *out)
 		} else {
 			if (tag_number == 2) {
 				struct strbuf tagline = STRBUF_INIT;
-				strbuf_addf(&tagline, "\n# %s\n",
-					    origins.items[first_tag].string);
+				strbuf_addch(&tagline, '\n');
+				strbuf_add_commented_lines(&tagline,
+						origins.items[first_tag].string,
+						strlen(origins.items[first_tag].string));
 				strbuf_insert(&tagbuf, 0, tagline.buf,
 					      tagline.len);
 				strbuf_release(&tagline);
 			}
-			strbuf_addf(&tagbuf, "\n# %s\n",
-				    origins.items[i].string);
+			strbuf_addch(&tagbuf, '\n');
+			strbuf_add_commented_lines(&tagbuf,
+					origins.items[i].string,
+					strlen(origins.items[i].string));
 			fmt_tag_signature(&tagbuf, &sig, buf, len);
 		}
 		strbuf_release(&sig);
@@ -635,7 +645,7 @@ int fmt_merge_msg(struct strbuf *in, struct strbuf *out,
 		for (i = 0; i < origins.nr; i++)
 			shortlog(origins.items[i].string,
 				 origins.items[i].util,
-				 head, &rev, opts->shortlog_len, out);
+				 head, &rev, opts, out);
 	}
 
 	strbuf_complete_line(out);
@@ -650,16 +660,16 @@ int cmd_fmt_merge_msg(int argc, const char **argv, const char *prefix)
 	const char *message = NULL;
 	int shortlog_len = -1;
 	struct option options[] = {
-		{ OPTION_INTEGER, 0, "log", &shortlog_len, "n",
-		  "populate log with at most <n> entries from shortlog",
+		{ OPTION_INTEGER, 0, "log", &shortlog_len, N_("n"),
+		  N_("populate log with at most <n> entries from shortlog"),
 		  PARSE_OPT_OPTARG, NULL, DEFAULT_MERGE_LOG_LEN },
-		{ OPTION_INTEGER, 0, "summary", &shortlog_len, "n",
-		  "alias for --log (deprecated)",
+		{ OPTION_INTEGER, 0, "summary", &shortlog_len, N_("n"),
+		  N_("alias for --log (deprecated)"),
 		  PARSE_OPT_OPTARG | PARSE_OPT_HIDDEN, NULL,
 		  DEFAULT_MERGE_LOG_LEN },
-		OPT_STRING('m', "message", &message, "text",
-			"use <text> as start of message"),
-		OPT_FILENAME('F', "file", &inpath, "file to read from"),
+		OPT_STRING('m', "message", &message, N_("text"),
+			N_("use <text> as start of message")),
+		OPT_FILENAME('F', "file", &inpath, N_("file to read from")),
 		OPT_END()
 	};
 
@@ -690,6 +700,7 @@ int cmd_fmt_merge_msg(int argc, const char **argv, const char *prefix)
 
 	memset(&opts, 0, sizeof(opts));
 	opts.add_title = !message;
+	opts.credit_people = 1;
 	opts.shortlog_len = shortlog_len;
 
 	ret = fmt_merge_msg(&input, &output, &opts);

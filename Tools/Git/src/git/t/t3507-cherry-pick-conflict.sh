@@ -11,12 +11,6 @@ test_description='test cherry-pick and revert with conflicts
 
 . ./test-lib.sh
 
-test_cmp_rev () {
-	git rev-parse --verify "$1" >expect.rev &&
-	git rev-parse --verify "$2" >actual.rev &&
-	test_cmp expect.rev actual.rev
-}
-
 pristine_detach () {
 	git checkout -f "$1^0" &&
 	git read-tree -u --reset HEAD &&
@@ -30,6 +24,7 @@ test_expect_success setup '
 	test_commit initial foo a &&
 	test_commit base foo b &&
 	test_commit picked foo c &&
+	test_commit --signoff picked-signed foo d &&
 	git config advice.detachedhead false
 
 '
@@ -337,6 +332,37 @@ test_expect_success 'revert conflict, diff3 -m style' '
 	test_must_fail git revert picked &&
 
 	sed "s/[a-f0-9]*\.\.\./objid/" foo > actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'failed cherry-pick does not forget -s' '
+	pristine_detach initial &&
+	test_must_fail git cherry-pick -s picked &&
+	test_i18ngrep -e "Signed-off-by" .git/MERGE_MSG
+'
+
+test_expect_success 'commit after failed cherry-pick does not add duplicated -s' '
+	pristine_detach initial &&
+	test_must_fail git cherry-pick -s picked-signed &&
+	git commit -a -s &&
+	test $(git show -s |grep -c "Signed-off-by") = 1
+'
+
+test_expect_success 'commit after failed cherry-pick adds -s at the right place' '
+	pristine_detach initial &&
+	test_must_fail git cherry-pick picked &&
+	git commit -a -s &&
+	pwd &&
+	cat <<EOF > expected &&
+picked
+
+Signed-off-by: C O Mitter <committer@example.com>
+
+Conflicts:
+	foo
+EOF
+
+	git show -s --pretty=format:%B > actual &&
 	test_cmp expected actual
 '
 

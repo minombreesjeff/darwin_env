@@ -2,12 +2,12 @@
 .\"     Title: git-for-each-ref
 .\"    Author: [see the "Author" section]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-FOR\-EACH\-REF" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-FOR\-EACH\-REF" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -132,8 +132,8 @@ The object name (aka SHA\-1)\&. For a non\-ambiguous abbreviation of the object 
 .PP
 upstream
 .RS 4
-The name of a local ref which can be considered
-`upstream\(aq\(aq from the displayed ref\&. Respects `:short
+The name of a local ref which can be considered \(lqupstream\(rq from the displayed ref\&. Respects
+:short
 in the same way as
 refname
 above\&.
@@ -143,13 +143,13 @@ In addition to the above, for commit and tag objects, the header field names (tr
 .sp
 Fields that have name\-email\-date tuple as its value (author, committer, and tagger) can be suffixed with name, email, and date to extract the named component\&.
 .sp
-The complete message in a commit and tag object is contents\&. Its first line is contents:subject, the remaining lines are contents:body and the optional GPG signature is contents:signature\&.
+The complete message in a commit and tag object is contents\&. Its first line is contents:subject, where subject is the concatenation of all lines of the commit message up to the first blank line\&. The next line is \fIcontents:body\fR, where body is all of the lines after the first blank line\&. Finally, the optional GPG signature is contents:signature\&.
 .sp
 For sorting purposes, fields with numeric values sort in numeric order (objectsize, authordate, committerdate, taggerdate)\&. All other fields are used to sort in their byte\-value order\&.
 .sp
 In any case, a field name that refers to a field inapplicable to the object referred by the ref does not cause an error\&. It returns an empty string instead\&.
 .sp
-As a special case for the date\-type fields, you may specify a format for the date by adding one of :default, :relative, :short, :local, :iso8601 or :rfc2822 to the end of the fieldname; e\&.g\&. %(taggerdate:relative)\&.
+As a special case for the date\-type fields, you may specify a format for the date by adding one of :default, :relative, :short, :local, :iso8601, :rfc2822 or :raw to the end of the fieldname; e\&.g\&. %(taggerdate:relative)\&.
 .SH "EXAMPLES"
 .sp
 An example directly producing formatted text\&. Show the most recent 3 tagged commits:

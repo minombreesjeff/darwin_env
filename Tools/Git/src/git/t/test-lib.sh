@@ -85,7 +85,8 @@ unset VISUAL EMAIL LANGUAGE COLUMNS $("$PERL_PATH" -e '
 		.*_TEST
 		PROVE
 		VALGRIND
-		PERF_AGGREGATING_LATER
+		UNZIP
+		PERF_
 	));
 	my @vars = grep(/^GIT_/ && !/^GIT_($ok)/o, @env);
 	print join("\n", @vars);
@@ -102,19 +103,41 @@ export GIT_AUTHOR_EMAIL GIT_AUTHOR_NAME
 export GIT_COMMITTER_EMAIL GIT_COMMITTER_NAME
 export EDITOR
 
+# Add libc MALLOC and MALLOC_PERTURB test
+# only if we are not executing the test with valgrind
+if expr " $GIT_TEST_OPTS " : ".* --valgrind " >/dev/null ||
+   test -n "$TEST_NO_MALLOC_CHECK"
+then
+	setup_malloc_check () {
+		: nothing
+	}
+	teardown_malloc_check () {
+		: nothing
+	}
+else
+	setup_malloc_check () {
+		MALLOC_CHECK_=3	MALLOC_PERTURB_=165
+		export MALLOC_CHECK_ MALLOC_PERTURB_
+	}
+	teardown_malloc_check () {
+		unset MALLOC_CHECK_ MALLOC_PERTURB_
+	}
+fi
+
 # Protect ourselves from common misconfiguration to export
 # CDPATH into the environment
 unset CDPATH
 
 unset GREP_OPTIONS
+unset UNZIP
 
 case $(echo $GIT_TRACE |tr "[A-Z]" "[a-z]") in
-	1|2|true)
-		echo "* warning: Some tests will not work if GIT_TRACE" \
-			"is set as to trace on STDERR ! *"
-		echo "* warning: Please set GIT_TRACE to something" \
-			"other than 1, 2 or true ! *"
-		;;
+1|2|true)
+	echo "* warning: Some tests will not work if GIT_TRACE" \
+		"is set as to trace on STDERR ! *"
+	echo "* warning: Please set GIT_TRACE to something" \
+		"other than 1, 2 or true ! *"
+	;;
 esac
 
 # Convenience
@@ -170,7 +193,11 @@ do
 	--no-color)
 		color=; shift ;;
 	--va|--val|--valg|--valgr|--valgri|--valgrin|--valgrind)
-		valgrind=t; verbose=t; shift ;;
+		valgrind=memcheck
+		shift ;;
+	--valgrind=*)
+		valgrind=$(expr "z$1" : 'z[^=]*=\(.*\)')
+		shift ;;
 	--tee)
 		shift ;; # was handled already
 	--root=*)
@@ -181,17 +208,27 @@ do
 	esac
 done
 
-if test -n "$color"; then
+test -n "$valgrind" && verbose=t
+
+if test -n "$color"
+then
 	say_color () {
 		(
 		TERM=$ORIGINAL_TERM
 		export TERM
 		case "$1" in
-			error) tput bold; tput setaf 1;; # bold red
-			skip)  tput bold; tput setaf 2;; # bold green
-			pass)  tput setaf 2;;            # green
-			info)  tput setaf 3;;            # brown
-			*) test -n "$quiet" && return;;
+		error)
+			tput bold; tput setaf 1;; # bold red
+		skip)
+			tput setaf 4;; # blue
+		warn)
+			tput setaf 3;; # brown/yellow
+		pass)
+			tput setaf 2;; # green
+		info)
+			tput setaf 6;; # cyan
+		*)
+			test -n "$quiet" && return;;
 		esac
 		shift
 		printf "%s" "$*"
@@ -203,7 +240,7 @@ else
 	say_color() {
 		test -z "$1" && test -n "$quiet" && return
 		shift
-		echo "$*"
+		printf "%s\n" "$*"
 	}
 fi
 
@@ -271,7 +308,7 @@ test_ok_ () {
 
 test_failure_ () {
 	test_failure=$(($test_failure + 1))
-	say_color error "not ok - $test_count $1"
+	say_color error "not ok $test_count - $1"
 	shift
 	echo "$@" | sed -e 's/^/#	/'
 	test "$immediate" = "" || { GIT_EXIT_OK=t; exit 1; }
@@ -279,12 +316,12 @@ test_failure_ () {
 
 test_known_broken_ok_ () {
 	test_fixed=$(($test_fixed+1))
-	say_color "" "ok $test_count - $@ # TODO known breakage"
+	say_color error "ok $test_count - $@ # TODO known breakage vanished"
 }
 
 test_known_broken_failure_ () {
 	test_broken=$(($test_broken+1))
-	say_color skip "not ok $test_count - $@ # TODO known breakage"
+	say_color warn "not ok $test_count - $@ # TODO known breakage"
 }
 
 test_debug () {
@@ -305,9 +342,12 @@ test_run_ () {
 
 	if test -z "$immediate" || test $eval_ret = 0 || test -n "$expecting_failure"
 	then
+		setup_malloc_check
 		test_eval_ "$test_cleanup"
+		teardown_malloc_check
 	fi
-	if test "$verbose" = "t" && test -n "$HARNESS_ACTIVE"; then
+	if test "$verbose" = "t" && test -n "$HARNESS_ACTIVE"
+	then
 		echo ""
 	fi
 	return "$eval_ret"
@@ -355,10 +395,12 @@ test_at_end_hook_ () {
 test_done () {
 	GIT_EXIT_OK=t
 
-	if test -z "$HARNESS_ACTIVE"; then
+	if test -z "$HARNESS_ACTIVE"
+	then
 		test_results_dir="$TEST_OUTPUT_DIRECTORY/test-results"
 		mkdir -p "$test_results_dir"
-		test_results_path="$test_results_dir/${0%.sh}-$$.counts"
+		base=${0##*/}
+		test_results_path="$test_results_dir/${base%.sh}-$$.counts"
 
 		cat >>"$test_results_path" <<-EOF
 		total $test_count
@@ -372,22 +414,35 @@ test_done () {
 
 	if test "$test_fixed" != 0
 	then
-		say_color pass "# fixed $test_fixed known breakage(s)"
+		say_color error "# $test_fixed known breakage(s) vanished; please update test(s)"
 	fi
 	if test "$test_broken" != 0
 	then
-		say_color error "# still have $test_broken known breakage(s)"
-		msg="remaining $(($test_count-$test_broken)) test(s)"
+		say_color warn "# still have $test_broken known breakage(s)"
+	fi
+	if test "$test_broken" != 0 || test "$test_fixed" != 0
+	then
+		test_remaining=$(( $test_count - $test_broken - $test_fixed ))
+		msg="remaining $test_remaining test(s)"
 	else
+		test_remaining=$test_count
 		msg="$test_count test(s)"
 	fi
 	case "$test_failure" in
 	0)
 		# Maybe print SKIP message
+		if test -n "$skip_all" && test $test_count -gt 0
+		then
+			error "Can't use skip_all after running some tests"
+		fi
 		[ -z "$skip_all" ] || skip_all=" # SKIP $skip_all"
 
-		if test $test_external_has_tap -eq 0; then
-			say_color pass "# passed all $msg"
+		if test $test_external_has_tap -eq 0
+		then
+			if test $test_remaining -gt 0
+			then
+				say_color pass "# passed all $msg"
+			fi
 			say "1..$test_count$skip_all"
 		fi
 
@@ -400,7 +455,8 @@ test_done () {
 		exit 0 ;;
 
 	*)
-		if test $test_external_has_tap -eq 0; then
+		if test $test_external_has_tap -eq 0
+		then
 			say_color error "# failed $test_failure among $msg"
 			say "1..$test_count"
 		fi
@@ -480,22 +536,28 @@ then
 	PATH=$GIT_VALGRIND/bin:$PATH
 	GIT_EXEC_PATH=$GIT_VALGRIND/bin
 	export GIT_VALGRIND
-elif test -n "$GIT_TEST_INSTALLED" ; then
+	GIT_VALGRIND_MODE="$valgrind"
+	export GIT_VALGRIND_MODE
+elif test -n "$GIT_TEST_INSTALLED"
+then
 	GIT_EXEC_PATH=$($GIT_TEST_INSTALLED/git --exec-path)  ||
 	error "Cannot run git from $GIT_TEST_INSTALLED."
 	PATH=$GIT_TEST_INSTALLED:$GIT_BUILD_DIR:$PATH
 	GIT_EXEC_PATH=${GIT_TEST_EXEC_PATH:-$GIT_EXEC_PATH}
 else # normal case, use ../bin-wrappers only unless $with_dashes:
 	git_bin_dir="$GIT_BUILD_DIR/bin-wrappers"
-	if ! test -x "$git_bin_dir/git" ; then
-		if test -z "$with_dashes" ; then
+	if ! test -x "$git_bin_dir/git"
+	then
+		if test -z "$with_dashes"
+		then
 			say "$git_bin_dir/git is not executable; using GIT_EXEC_PATH"
 		fi
 		with_dashes=t
 	fi
 	PATH="$git_bin_dir:$PATH"
 	GIT_EXEC_PATH=$GIT_BUILD_DIR
-	if test -n "$with_dashes" ; then
+	if test -n "$with_dashes"
+	then
 		PATH="$GIT_BUILD_DIR:$PATH"
 	fi
 fi
@@ -531,21 +593,22 @@ then
 	}
 fi
 
-if ! test -x "$GIT_BUILD_DIR"/test-chmtime; then
+if ! test -x "$GIT_BUILD_DIR"/test-chmtime
+then
 	echo >&2 'You need to build test-chmtime:'
 	echo >&2 'Run "make test-chmtime" in the source (toplevel) directory'
 	exit 1
 fi
 
 # Test repository
-test="trash directory.$(basename "$0" .sh)"
-test -n "$root" && test="$root/$test"
-case "$test" in
-/*) TRASH_DIRECTORY="$test" ;;
- *) TRASH_DIRECTORY="$TEST_OUTPUT_DIRECTORY/$test" ;;
+TRASH_DIRECTORY="trash directory.$(basename "$0" .sh)"
+test -n "$root" && TRASH_DIRECTORY="$root/$TRASH_DIRECTORY"
+case "$TRASH_DIRECTORY" in
+/*) ;; # absolute path is good
+ *) TRASH_DIRECTORY="$TEST_OUTPUT_DIRECTORY/$TRASH_DIRECTORY" ;;
 esac
 test ! -z "$debug" || remove_trash=$TRASH_DIRECTORY
-rm -fr "$test" || {
+rm -fr "$TRASH_DIRECTORY" || {
 	GIT_EXIT_OK=t
 	echo >&5 "FATAL: Cannot prepare test area"
 	exit 1
@@ -554,14 +617,15 @@ rm -fr "$test" || {
 HOME="$TRASH_DIRECTORY"
 export HOME
 
-if test -z "$TEST_NO_CREATE_REPO"; then
-	test_create_repo "$test"
+if test -z "$TEST_NO_CREATE_REPO"
+then
+	test_create_repo "$TRASH_DIRECTORY"
 else
-	mkdir -p "$test"
+	mkdir -p "$TRASH_DIRECTORY"
 fi
 # Use -P to resolve symlinks in our working directory so that the cwd
 # in subprocesses like git equals our $PWD (for pathname comparisons).
-cd -P "$test" || exit 1
+cd -P "$TRASH_DIRECTORY" || exit 1
 
 this_test=${0##*/}
 this_test=${this_test%%-*}
@@ -569,7 +633,7 @@ for skp in $GIT_SKIP_TESTS
 do
 	case "$this_test" in
 	$skp)
-		say_color skip >&3 "skipping test $this_test altogether"
+		say_color info >&3 "skipping test $this_test altogether"
 		skip_all="skip all tests in $this_test"
 		test_done
 	esac
@@ -611,12 +675,14 @@ case $(uname -s) in
 	# backslashes in pathspec are converted to '/'
 	# exec does not inherit the PID
 	test_set_prereq MINGW
+	test_set_prereq NOT_CYGWIN
 	test_set_prereq SED_STRIPS_CR
 	;;
 *CYGWIN*)
 	test_set_prereq POSIXPERM
 	test_set_prereq EXECKEEPSPID
 	test_set_prereq NOT_MINGW
+	test_set_prereq CYGWIN
 	test_set_prereq SED_STRIPS_CR
 	;;
 *)
@@ -624,6 +690,7 @@ case $(uname -s) in
 	test_set_prereq BSLASHPSPEC
 	test_set_prereq EXECKEEPSPID
 	test_set_prereq NOT_MINGW
+	test_set_prereq NOT_CYGWIN
 	;;
 esac
 
@@ -669,6 +736,11 @@ test_i18ngrep () {
 	fi
 }
 
+test_lazy_prereq PIPE '
+	# test whether the filesystem supports FIFOs
+	rm -f testfifo && mkfifo testfifo
+'
+
 test_lazy_prereq SYMLINKS '
 	# test whether the filesystem supports symbolic links
 	ln -s x y && test -h y
@@ -693,6 +765,18 @@ test_lazy_prereq UTF8_NFD_TO_NFC '
 	esac
 '
 
+test_lazy_prereq AUTOIDENT '
+	sane_unset GIT_AUTHOR_NAME &&
+	sane_unset GIT_AUTHOR_EMAIL &&
+	git var GIT_AUTHOR_IDENT
+'
+
 # When the tests are run as root, permission tests will report that
 # things are writable when they shouldn't be.
 test -w / || test_set_prereq SANITY
+
+GIT_UNZIP=${GIT_UNZIP:-unzip}
+test_lazy_prereq UNZIP '
+	"$GIT_UNZIP" -v
+	test $? -ne 127
+'

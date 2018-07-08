@@ -19,14 +19,15 @@ then
     test_done
 fi
 
-CVSROOT=$PWD/cvsroot
+CVSROOT=$PWD/tmpcvsroot
 CVSWORK=$PWD/cvswork
 GIT_DIR=$PWD/.git
 export CVSROOT CVSWORK GIT_DIR
 
 rm -rf "$CVSROOT" "$CVSWORK"
-mkdir "$CVSROOT" &&
+
 cvs init &&
+test -d "$CVSROOT" &&
 cvs -Q co -d "$CVSWORK" . &&
 echo >empty &&
 git add empty &&

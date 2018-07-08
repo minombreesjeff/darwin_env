@@ -2,15 +2,25 @@
     "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<meta name="generator" content="AsciiDoc 8.5.2" />
+<meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8" />
+<meta name="generator" content="AsciiDoc 8.6.8" />
 <title>gitglossary(7)</title>
 <style type="text/css">
-/* Debug borders */
-p, li, dt, dd, div, pre, h1, h2, h3, h4, h5, h6 {
-/*
-  border: 1px solid red;
-*/
+/* Shared CSS for AsciiDoc xhtml11 and html5 backends */
+
+/* Default font. */
+body {
+  font-family: Georgia,serif;
+}
+
+/* Title font. */
+h1, h2, h3, h4, h5, h6,
+div.title, caption.title,
+thead, p.table.header,
+#toctitle,
+#author, #revnumber, #revdate, #revremark,
+#footer {
+  font-family: Arial,Helvetica,sans-serif;
 }
 
 body {
@@ -35,13 +45,8 @@ strong {
   color: #083194;
 }
 
-tt {
-  color: navy;
-}
-
 h1, h2, h3, h4, h5, h6 {
   color: #527bbd;
-  font-family: sans-serif;
   margin-top: 1.2em;
   margin-bottom: 0.5em;
   line-height: 1.3;
@@ -59,9 +64,11 @@ h3 {
 h3 + * {
   clear: left;
 }
+h5 {
+  font-size: 1.0em;
+}
 
 div.sectionbody {
-  font-family: serif;
   margin-left: 0;
 }
 
@@ -77,45 +84,48 @@ p {
 ul, ol, li > p {
   margin-top: 0;
 }
+ul > li     { color: #aaa; }
+ul > li > * { color: black; }
 
-pre {
+.monospaced, code, pre {
+  font-family: "Courier New", Courier, monospace;
+  font-size: inherit;
+  color: navy;
   padding: 0;
   margin: 0;
 }
 
-span#author {
+
+#author {
   color: #527bbd;
-  font-family: sans-serif;
   font-weight: bold;
   font-size: 1.1em;
 }
-span#email {
+#email {
 }
-span#revnumber, span#revdate, span#revremark {
-  font-family: sans-serif;
+#revnumber, #revdate, #revremark {
 }
 
-div#footer {
-  font-family: sans-serif;
+#footer {
   font-size: small;
   border-top: 2px solid silver;
   padding-top: 0.5em;
   margin-top: 4.0em;
 }
-div#footer-text {
+#footer-text {
   float: left;
   padding-bottom: 0.5em;
 }
-div#footer-badges {
+#footer-badges {
   float: right;
   padding-bottom: 0.5em;
 }
 
-div#preamble {
+#preamble {
   margin-top: 1.5em;
   margin-bottom: 1.5em;
 }
-div.tableblock, div.imageblock, div.exampleblock, div.verseblock,
+div.imageblock, div.exampleblock, div.verseblock,
 div.quoteblock, div.literalblock, div.listingblock, div.sidebarblock,
 div.admonitionblock {
   margin-top: 1.0em;
@@ -135,7 +145,6 @@ div.content { /* Block element content. */
 /* Block element titles. */
 div.title, caption.title {
   color: #527bbd;
-  font-family: sans-serif;
   font-weight: bold;
   text-align: left;
   margin-top: 1.0em;
@@ -157,13 +166,15 @@ div.content + div.title {
 
 div.sidebarblock > div.content {
   background: #ffffee;
-  border: 1px solid silver;
+  border: 1px solid #dddddd;
+  border-left: 4px solid #f0f0f0;
   padding: 0.5em;
 }
 
 div.listingblock > div.content {
-  border: 1px solid silver;
-  background: #f4f4f4;
+  border: 1px solid #dddddd;
+  border-left: 5px solid #f0f0f0;
+  background: #f8f8f8;
   padding: 0.5em;
 }
 
@@ -171,8 +182,8 @@ div.quoteblock, div.verseblock {
   padding-left: 1.0em;
   margin-left: 1.0em;
   margin-right: 10%;
-  border-left: 5px solid #dddddd;
-  color: #777777;
+  border-left: 5px solid #f0f0f0;
+  color: #888;
 }
 
 div.quoteblock > div.attribution {
@@ -180,8 +191,9 @@ div.quoteblock > div.attribution {
   text-align: right;
 }
 
-div.verseblock > div.content {
-  white-space: pre;
+div.verseblock > pre.content {
+  font-family: inherit;
+  font-size: inherit;
 }
 div.verseblock > div.attribution {
   padding-top: 0.75em;
@@ -254,35 +266,12 @@ div.compact div, div.compact div {
   margin-bottom: 0.1em;
 }
 
-div.tableblock > table {
-  border: 3px solid #527bbd;
-}
-thead, p.table.header {
-  font-family: sans-serif;
-  font-weight: bold;
-}
 tfoot {
   font-weight: bold;
 }
 td > div.verse {
   white-space: pre;
 }
-p.table {
-  margin-top: 0;
-}
-/* Because the table frame attribute is overriden by CSS in most browsers. */
-div.tableblock > table[frame="void"] {
-  border-style: none;
-}
-div.tableblock > table[frame="hsides"] {
-  border-left-style: none;
-  border-right-style: none;
-}
-div.tableblock > table[frame="vsides"] {
-  border-top-style: none;
-  border-bottom-style: none;
-}
-
 
 div.hdlist {
   margin-top: 0.8em;
@@ -339,25 +328,32 @@ span.footnote, span.footnoteref {
   min-width: 100px;
 }
 
-
-@media print {
-  div#footer-badges { display: none; }
+div.colist td {
+  padding-right: 0.5em;
+  padding-bottom: 0.3em;
+  vertical-align: top;
+}
+div.colist td img {
+  margin-top: 0.3em;
 }
 
-div#toc {
+@media print {
+  #footer-badges { display: none; }
+}
+
+#toc {
   margin-bottom: 2.5em;
 }
 
-div#toctitle {
+#toctitle {
   color: #527bbd;
-  font-family: sans-serif;
   font-size: 1.1em;
   font-weight: bold;
   margin-top: 1.0em;
   margin-bottom: 0.1em;
 }
 
-div.toclevel1, div.toclevel2, div.toclevel3, div.toclevel4 {
+div.toclevel0, div.toclevel1, div.toclevel2, div.toclevel3, div.toclevel4 {
   margin-top: 0;
   margin-bottom: 0;
 }
@@ -373,69 +369,173 @@ div.toclevel4 {
   margin-left: 6em;
   font-size: 0.9em;
 }
-/* Overrides for manpage documents */
-h1 {
+
+span.aqua { color: aqua; }
+span.black { color: black; }
+span.blue { color: blue; }
+span.fuchsia { color: fuchsia; }
+span.gray { color: gray; }
+span.green { color: green; }
+span.lime { color: lime; }
+span.maroon { color: maroon; }
+span.navy { color: navy; }
+span.olive { color: olive; }
+span.purple { color: purple; }
+span.red { color: red; }
+span.silver { color: silver; }
+span.teal { color: teal; }
+span.white { color: white; }
+span.yellow { color: yellow; }
+
+span.aqua-background { background: aqua; }
+span.black-background { background: black; }
+span.blue-background { background: blue; }
+span.fuchsia-background { background: fuchsia; }
+span.gray-background { background: gray; }
+span.green-background { background: green; }
+span.lime-background { background: lime; }
+span.maroon-background { background: maroon; }
+span.navy-background { background: navy; }
+span.olive-background { background: olive; }
+span.purple-background { background: purple; }
+span.red-background { background: red; }
+span.silver-background { background: silver; }
+span.teal-background { background: teal; }
+span.white-background { background: white; }
+span.yellow-background { background: yellow; }
+
+span.big { font-size: 2em; }
+span.small { font-size: 0.6em; }
+
+span.underline { text-decoration: underline; }
+span.overline { text-decoration: overline; }
+span.line-through { text-decoration: line-through; }
+
+div.unbreakable { page-break-inside: avoid; }
+
+
+/*
+ * xhtml11 specific
+ *
+ * */
+
+div.tableblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+div.tableblock > table {
+  border: 3px solid #527bbd;
+}
+thead, p.table.header {
+  font-weight: bold;
+  color: #527bbd;
+}
+p.table {
+  margin-top: 0;
+}
+/* Because the table frame attribute is overriden by CSS in most browsers. */
+div.tableblock > table[frame="void"] {
+  border-style: none;
+}
+div.tableblock > table[frame="hsides"] {
+  border-left-style: none;
+  border-right-style: none;
+}
+div.tableblock > table[frame="vsides"] {
+  border-top-style: none;
+  border-bottom-style: none;
+}
+
+
+/*
+ * html5 specific
+ *
+ * */
+
+table.tableblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+thead, p.tableblock.header {
+  font-weight: bold;
+  color: #527bbd;
+}
+p.tableblock {
+  margin-top: 0;
+}
+table.tableblock {
+  border-width: 3px;
+  border-spacing: 0px;
+  border-style: solid;
+  border-color: #527bbd;
+  border-collapse: collapse;
+}
+th.tableblock, td.tableblock {
+  border-width: 1px;
+  padding: 4px;
+  border-style: solid;
+  border-color: #527bbd;
+}
+
+table.tableblock.frame-topbot {
+  border-left-style: hidden;
+  border-right-style: hidden;
+}
+table.tableblock.frame-sides {
+  border-top-style: hidden;
+  border-bottom-style: hidden;
+}
+table.tableblock.frame-none {
+  border-style: hidden;
+}
+
+th.tableblock.halign-left, td.tableblock.halign-left {
+  text-align: left;
+}
+th.tableblock.halign-center, td.tableblock.halign-center {
+  text-align: center;
+}
+th.tableblock.halign-right, td.tableblock.halign-right {
+  text-align: right;
+}
+
+th.tableblock.valign-top, td.tableblock.valign-top {
+  vertical-align: top;
+}
+th.tableblock.valign-middle, td.tableblock.valign-middle {
+  vertical-align: middle;
+}
+th.tableblock.valign-bottom, td.tableblock.valign-bottom {
+  vertical-align: bottom;
+}
+
+
+/*
+ * manpage specific
+ *
+ * */
+
+body.manpage h1 {
   padding-top: 0.5em;
   padding-bottom: 0.5em;
   border-top: 2px solid silver;
   border-bottom: 2px solid silver;
 }
-h2 {
+body.manpage h2 {
   border-style: none;
 }
-div.sectionbody {
-  margin-left: 5%;
+body.manpage div.sectionbody {
+  margin-left: 3em;
 }
 
 @media print {
-  div#toc { display: none; }
+  body.manpage div#toc { display: none; }
 }
 
-/* Workarounds for IE6's broken and incomplete CSS2. */
 
-div.sidebar-content {
-  background: #ffffee;
-  border: 1px solid silver;
-  padding: 0.5em;
-}
-div.sidebar-title, div.image-title {
-  color: #527bbd;
-  font-family: sans-serif;
-  font-weight: bold;
-  margin-top: 0.0em;
-  margin-bottom: 0.5em;
-}
-
-div.listingblock div.content {
-  border: 1px solid silver;
-  background: #f4f4f4;
-  padding: 0.5em;
-}
-
-div.quoteblock-attribution {
-  padding-top: 0.5em;
-  text-align: right;
-}
-
-div.verseblock-content {
-  white-space: pre;
-}
-div.verseblock-attribution {
-  padding-top: 0.75em;
-  text-align: left;
-}
-
-div.exampleblock-content {
-  border-left: 3px solid #dddddd;
-  padding-left: 0.5em;
-}
-
-/* IE6 sets dynamically generated links as visited. */
-div#toc a:visited { color: blue; }
 </style>
 <script type="text/javascript">
 /*<![CDATA[*/
-window.onload = function(){asciidoc.footnotes();}
 var asciidoc = {  // Namespace.
 
 /////////////////////////////////////////////////////////////////////
@@ -477,7 +577,7 @@ toc: function (toclevels) {
 
   function tocEntries(el, toclevels) {
     var result = new Array;
-    var re = new RegExp('[hH]([2-'+(toclevels+1)+'])');
+    var re = new RegExp('[hH]([1-'+(toclevels+1)+'])');
     // Function that scans the DOM tree for header elements (the DOM2
     // nodeIterator API would be a better technique but not supported by all
     // browsers).
@@ -497,6 +597,25 @@ toc: function (toclevels) {
   }
 
   var toc = document.getElementById("toc");
+  if (!toc) {
+    return;
+  }
+
+  // Delete existing TOC entries in case we're reloading the TOC.
+  var tocEntriesToRemove = [];
+  var i;
+  for (i = 0; i < toc.childNodes.length; i++) {
+    var entry = toc.childNodes[i];
+    if (entry.nodeName.toLowerCase() == 'div'
+     && entry.getAttribute("class")
+     && entry.getAttribute("class").match(/^toclevel/))
+      tocEntriesToRemove.push(entry);
+  }
+  for (i = 0; i < tocEntriesToRemove.length; i++) {
+    toc.removeChild(tocEntriesToRemove[i]);
+  }
+
+  // Rebuild TOC entries.
   var entries = tocEntries(document.getElementById("content"), toclevels);
   for (var i = 0; i < entries.length; ++i) {
     var entry = entries[i];
@@ -524,24 +643,44 @@ toc: function (toclevels) {
  */
 
 footnotes: function () {
-  var cont = document.getElementById("content");
+  // Delete existing footnote entries in case we're reloading the footnodes.
+  var i;
   var noteholder = document.getElementById("footnotes");
+  if (!noteholder) {
+    return;
+  }
+  var entriesToRemove = [];
+  for (i = 0; i < noteholder.childNodes.length; i++) {
+    var entry = noteholder.childNodes[i];
+    if (entry.nodeName.toLowerCase() == 'div' && entry.getAttribute("class") == "footnote")
+      entriesToRemove.push(entry);
+  }
+  for (i = 0; i < entriesToRemove.length; i++) {
+    noteholder.removeChild(entriesToRemove[i]);
+  }
+
+  // Rebuild footnote entries.
+  var cont = document.getElementById("content");
   var spans = cont.getElementsByTagName("span");
   var refs = {};
   var n = 0;
   for (i=0; i<spans.length; i++) {
     if (spans[i].className == "footnote") {
       n++;
-      // Use [\s\S] in place of . so multi-line matches work.
-      // Because JavaScript has no s (dotall) regex flag.
-      note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+      var note = spans[i].getAttribute("data-note");
+      if (!note) {
+        // Use [\s\S] in place of . so multi-line matches work.
+        // Because JavaScript has no s (dotall) regex flag.
+        note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+        spans[i].innerHTML =
+          "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+        spans[i].setAttribute("data-note", note);
+      }
       noteholder.innerHTML +=
         "<div class='footnote' id='_footnote_" + n + "'>" +
         "<a href='#_footnoteref_" + n + "' title='Return to text'>" +
         n + "</a>. " + note + "</div>";
-      spans[i].innerHTML =
-        "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
-        "' title='View footnote' class='footnote'>" + n + "</a>]";
       var id =spans[i].getAttribute("id");
       if (id != null) refs["#"+id] = n;
     }
@@ -561,13 +700,36 @@ footnotes: function () {
       }
     }
   }
+},
+
+install: function(toclevels) {
+  var timerId;
+
+  function reinstall() {
+    asciidoc.footnotes();
+    if (toclevels) {
+      asciidoc.toc(toclevels);
+    }
+  }
+
+  function reinstallAndRemoveTimer() {
+    clearInterval(timerId);
+    reinstall();
+  }
+
+  timerId = setInterval(reinstall, 500);
+  if (document.addEventListener)
+    document.addEventListener("DOMContentLoaded", reinstallAndRemoveTimer, false);
+  else
+    window.onload = reinstallAndRemoveTimer;
 }
 
 }
+asciidoc.install();
 /*]]>*/
 </script>
 </head>
-<body>
+<body class="manpage">
 <div id="header">
 <h1>
 gitglossary(7) Manual Page
@@ -575,15 +737,18 @@ gitglossary(7) Manual Page
 <h2>NAME</h2>
 <div class="sectionbody">
 <p>gitglossary -
-   A GIT Glossary
+   A Git Glossary
 </p>
 </div>
 </div>
 <div id="content">
+<div class="sect1">
 <h2 id="_synopsis">SYNOPSIS</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>*</p></div>
 </div>
+</div>
+<div class="sect1">
 <h2 id="_description">DESCRIPTION</h2>
 <div class="sectionbody">
 <div class="dlist"><dl>
@@ -603,12 +768,12 @@ gitglossary(7) Manual Page
 <dd>
 <p>
         A bare repository is normally an appropriately
-        named <a href="#def_directory">directory</a> with a <tt>.git</tt> suffix that does not
+        named <a href="#def_directory">directory</a> with a <code>.git</code> suffix that does not
         have a locally checked-out copy of any of the files under
-        revision control. That is, all of the <tt>git</tt>
+        revision control. That is, all of the Git
         administrative and control files that would normally be present in the
-        hidden <tt>.git</tt> sub-directory are directly present in the
-        <tt>repository.git</tt> directory instead,
+        hidden <code>.git</code> sub-directory are directly present in the
+        <code>repository.git</code> directory instead,
         and no other files are present and checked out. Usually publishers of
         public repositories make bare repositories available.
 </p>
@@ -630,7 +795,7 @@ gitglossary(7) Manual Page
         <a href="#def_commit">commit</a> on a branch is referred to as the tip of
         that branch.  The tip of the branch is referenced by a branch
         <a href="#def_head">head</a>, which moves forward as additional development
-        is done on the branch.  A single git
+        is done on the branch.  A single Git
         <a href="#def_repository">repository</a> can track an arbitrary number of
         branches, but your <a href="#def_working_tree">working tree</a> is
         associated with just one of them (the "current" or "checked out"
@@ -660,9 +825,9 @@ gitglossary(7) Manual Page
 </dt>
 <dd>
 <p>
-        BitKeeper/cvsps speak for "<a href="#def_commit">commit</a>". Since git does not
+        BitKeeper/cvsps speak for "<a href="#def_commit">commit</a>". Since Git does not
         store changes, but states, it really does not make sense to use the term
-        "changesets" with git.
+        "changesets" with Git.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -685,7 +850,7 @@ gitglossary(7) Manual Page
 <p>
         In <a href="#def_SCM">SCM</a> jargon, "cherry pick" means to choose a subset of
         changes out of a series of changes (typically commits) and record them
-        as a new series of changes on top of a different codebase. In GIT, this is
+        as a new series of changes on top of a different codebase. In Git, this is
         performed by the "git cherry-pick" command to extract the change introduced
         by an existing <a href="#def_commit">commit</a> and to record it based on the tip
         of the current <a href="#def_branch">branch</a> as a new commit.
@@ -707,14 +872,14 @@ gitglossary(7) Manual Page
 <dd>
 <p>
         As a noun: A single point in the
-        git history; the entire history of a project is represented as a
+        Git history; the entire history of a project is represented as a
         set of interrelated commits.  The word "commit" is often
-        used by git in the same places other revision control systems
+        used by Git in the same places other revision control systems
         use the words "revision" or "version".  Also used as a short
         hand for <a href="#def_commit_object">commit object</a>.
 </p>
 <div class="paragraph"><p>As a verb: The action of storing a new snapshot of the project&#8217;s
-state in the git history, by creating a new commit representing the current
+state in the Git history, by creating a new commit representing the current
 state of the <a href="#def_index">index</a> and advancing <a href="#def_HEAD">HEAD</a>
 to point at the new commit.</p></div>
 </dd>
@@ -731,11 +896,11 @@ to point at the new commit.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
-<a id="def_core_git"></a>core git
+<a id="def_core_git"></a>core Git
 </dt>
 <dd>
 <p>
-        Fundamental data structures and utilities of git. Exposes only limited
+        Fundamental data structures and utilities of Git. Exposes only limited
         source code management tools.
 </p>
 </dd>
@@ -767,18 +932,22 @@ to point at the new commit.</p></div>
 <dd>
 <p>
         Normally the <a href="#def_HEAD">HEAD</a> stores the name of a
-        <a href="#def_branch">branch</a>.  However, git also allows you to <a href="#def_checkout">check out</a>
-        an arbitrary <a href="#def_commit">commit</a> that isn&#8217;t necessarily the tip of any
-        particular branch.  In this case HEAD is said to be "detached".
+        <a href="#def_branch">branch</a>, and commands that operate on the
+        history HEAD represents operate on the history leading to the
+        tip of the branch the HEAD points at.  However, Git also
+        allows you to <a href="#def_checkout">check out</a> an arbitrary
+        <a href="#def_commit">commit</a> that isn&#8217;t necessarily the tip of any
+        particular branch.  The HEAD in such a state is called
+        "detached".
 </p>
-</dd>
-<dt class="hdlist1">
-<a id="def_dircache"></a>dircache
-</dt>
-<dd>
-<p>
-        You are <strong>waaaaay</strong> behind. See <a href="#def_index">index</a>.
-</p>
+<div class="paragraph"><p>Note that commands that operate on the history of the current branch
+(e.g. <code>git commit</code> to build a new history on top of it) still work
+while the HEAD is detached. They update the HEAD to point at the tip
+of the updated history without affecting any branch.  Commands that
+update or inquire information <em>about</em> the current branch (e.g. <code>git
+branch --set-upstream-to</code> that sets what remote tracking branch the
+current branch integrates with) obviously do not work, as there is no
+(real) current branch to ask about in this state.</p></div>
 </dd>
 <dt class="hdlist1">
 <a id="def_directory"></a>directory
@@ -796,16 +965,6 @@ to point at the new commit.</p></div>
         A <a href="#def_working_tree">working tree</a> is said to be "dirty" if
         it contains modifications which have not been <a href="#def_commit">committed</a> to the current
         <a href="#def_branch">branch</a>.
-</p>
-</dd>
-<dt class="hdlist1">
-<a id="def_ent"></a>ent
-</dt>
-<dd>
-<p>
-        Favorite synonym to "<a href="#def_tree-ish">tree-ish</a>" by some total geeks. See
-        <a href="http://en.wikipedia.org/wiki/Ent_(Middle-earth">http://en.wikipedia.org/wiki/Ent_(Middle-earth</a>) for an in-depth
-        explanation. Avoid this term, not to confuse people.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -849,17 +1008,26 @@ to point at the new commit.</p></div>
 </dt>
 <dd>
 <p>
-        Linus Torvalds originally designed git to be a user space file system,
+        Linus Torvalds originally designed Git to be a user space file system,
         i.e. the infrastructure to hold files and directories. That ensured the
-        efficiency and speed of git.
+        efficiency and speed of Git.
 </p>
 </dd>
 <dt class="hdlist1">
-<a id="def_git_archive"></a>git archive
+<a id="def_git_archive"></a>Git archive
 </dt>
 <dd>
 <p>
         Synonym for <a href="#def_repository">repository</a> (for arch people).
+</p>
+</dd>
+<dt class="hdlist1">
+<a id="def_gitfile"></a>gitfile
+</dt>
+<dd>
+<p>
+        A plain file <code>.git</code> at the root of a working tree that
+        points at the directory that is the real repository.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -869,9 +1037,9 @@ to point at the new commit.</p></div>
 <p>
         Grafts enables two otherwise different lines of development to be joined
         together by recording fake ancestry information for commits. This way
-        you can make git pretend the set of <a href="#def_parent">parents</a> a <a href="#def_commit">commit</a> has
+        you can make Git pretend the set of <a href="#def_parent">parents</a> a <a href="#def_commit">commit</a> has
         is different from what was recorded when the commit was
-        created. Configured via the <tt>.git/info/grafts</tt> file.
+        created. Configured via the <code>.git/info/grafts</code> file.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -879,7 +1047,7 @@ to point at the new commit.</p></div>
 </dt>
 <dd>
 <p>
-        In git&#8217;s context, synonym to <a href="#def_object_name">object name</a>.
+        In Git&#8217;s context, synonym for <a href="#def_object_name">object name</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -889,7 +1057,7 @@ to point at the new commit.</p></div>
 <p>
         A <a href="#def_ref">named reference</a> to the <a href="#def_commit">commit</a> at the tip of a
         <a href="#def_branch">branch</a>.  Heads are stored in a file in
-        <tt>$GIT_DIR/refs/heads/</tt> directory, except when using packed refs. (See
+        <code>$GIT_DIR/refs/heads/</code> directory, except when using packed refs. (See
         <a href="git-pack-refs.html">git-pack-refs(1)</a>.)
 </p>
 </dd>
@@ -918,14 +1086,14 @@ to point at the new commit.</p></div>
 </dt>
 <dd>
 <p>
-        During the normal execution of several git commands, call-outs are made
+        During the normal execution of several Git commands, call-outs are made
         to optional scripts that allow a developer to add functionality or
         checking. Typically, the hooks allow for a command to be pre-verified
         and potentially aborted, and allow for a post-notification after the
         operation is done. The hook scripts are found in the
-        <tt>$GIT_DIR/hooks/</tt> directory, and are enabled by simply
-        removing the <tt>.sample</tt> suffix from the filename. In earlier versions
-        of git you had to make them executable.
+        <code>$GIT_DIR/hooks/</code> directory, and are enabled by simply
+        removing the <code>.sample</code> suffix from the filename. In earlier versions
+        of Git you had to make them executable.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -957,7 +1125,7 @@ to point at the new commit.</p></div>
 <dd>
 <p>
         The default development <a href="#def_branch">branch</a>. Whenever you
-        create a git <a href="#def_repository">repository</a>, a branch named
+        create a Git <a href="#def_repository">repository</a>, a branch named
         "master" is created, and becomes the active branch. In most
         cases, this contains the local development, though that is
         purely by convention and is not required.
@@ -993,8 +1161,8 @@ This commit is referred to as a "merge commit", or sometimes just a
 </dt>
 <dd>
 <p>
-        The unit of storage in git. It is uniquely identified by the
-        <a href="#def_SHA1">SHA1</a> of its contents. Consequently, an
+        The unit of storage in Git. It is uniquely identified by the
+        <a href="#def_SHA1">SHA-1</a> of its contents. Consequently, an
         object can not be changed.
 </p>
 </dd>
@@ -1005,7 +1173,7 @@ This commit is referred to as a "merge commit", or sometimes just a
 <p>
         Stores a set of "objects", and an individual <a href="#def_object">object</a> is
         identified by its <a href="#def_object_name">object name</a>. The objects usually
-        live in <tt>$GIT_DIR/objects/</tt>.
+        live in <code>$GIT_DIR/objects/</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1021,10 +1189,9 @@ This commit is referred to as a "merge commit", or sometimes just a
 </dt>
 <dd>
 <p>
-        The unique identifier of an <a href="#def_object">object</a>. The <a href="#def_hash">hash</a>
-        of the object&#8217;s contents using the Secure Hash Algorithm
-        1 and usually represented by the 40 character hexadecimal encoding of
-        the <a href="#def_hash">hash</a> of the object.
+        The unique identifier of an <a href="#def_object">object</a>.  The
+        object name is usually represented by a 40 character
+        hexadecimal string.  Also colloquially called <a href="#def_SHA1">SHA-1</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1043,8 +1210,7 @@ This commit is referred to as a "merge commit", or sometimes just a
 </dt>
 <dd>
 <p>
-        To <a href="#def_merge">merge</a> more than two <a href="#def_branch">branches</a>. Also denotes an
-        intelligent predator.
+        To <a href="#def_merge">merge</a> more than two <a href="#def_branch">branches</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1057,7 +1223,7 @@ This commit is referred to as a "merge commit", or sometimes just a
         <em>origin</em> is used for that purpose. New upstream updates
         will be fetched into remote <a href="#def_remote_tracking_branch">remote-tracking branches</a> named
         origin/name-of-upstream-branch, which you can see using
-        <tt>git branch -r</tt>.
+        <code>git branch -r</code>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1084,7 +1250,7 @@ This commit is referred to as a "merge commit", or sometimes just a
 </dt>
 <dd>
 <p>
-       Pattern used to specify paths.
+        Pattern used to limit paths in Git commands.
 </p>
 <div class="paragraph"><p>Pathspecs are used on the command line of "git ls-files", "git
 ls-tree", "git add", "git grep", "git diff", "git checkout",
@@ -1093,6 +1259,8 @@ limit the scope of operations to some subset of the tree or
 worktree.  See the documentation of each command for whether
 paths are relative to the current directory or toplevel.  The
 pathspec syntax is as follows:</p></div>
+<div class="openblock">
+<div class="content">
 <div class="ulist"><ul>
 <li>
 <p>
@@ -1113,39 +1281,28 @@ the rest of the pathspec is a pattern for the remainder
   prefix will be matched against that pattern using fnmatch(3);
   in particular, <em>*</em> and <em>?</em> <em>can</em> match directory separators.
 </p>
+</li>
+</ul></div>
+</div></div>
 <div class="paragraph"><p>For example, Documentation/*.jpg will match all .jpg files
 in the Documentation subtree,
 including Documentation/chapter_1/figure_1.jpg.</p></div>
-</li>
-</ul></div>
-<div class="paragraph"><p>A pathspec that begins with a colon <tt>:</tt> has special meaning.  In the
-short form, the leading colon <tt>:</tt> is followed by zero or more "magic
-signature" letters (which optionally is terminated by another colon <tt>:</tt>),
+<div class="paragraph"><p>A pathspec that begins with a colon <code>:</code> has special meaning.  In the
+short form, the leading colon <code>:</code> is followed by zero or more "magic
+signature" letters (which optionally is terminated by another colon <code>:</code>),
 and the remainder is the pattern to match against the path. The optional
 colon that terminates the "magic signature" can be omitted if the pattern
 begins with a character that cannot be a "magic signature" and is not a
 colon.</p></div>
-<div class="paragraph"><p>In the long form, the leading colon <tt>:</tt> is followed by a open
-parenthesis <tt>(</tt>, a comma-separated list of zero or more "magic words",
-and a close parentheses <tt>)</tt>, and the remainder is the pattern to match
+<div class="paragraph"><p>In the long form, the leading colon <code>:</code> is followed by a open
+parenthesis <code>(</code>, a comma-separated list of zero or more "magic words",
+and a close parentheses <code>)</code>, and the remainder is the pattern to match
 against the path.</p></div>
 <div class="paragraph"><p>The "magic signature" consists of an ASCII symbol that is not
-alphanumeric.</p></div>
-<div class="dlist"><dl>
-<dt class="hdlist1">
-top <tt>/</tt>
-</dt>
-<dd>
-<p>
-        The magic word <tt>top</tt> (mnemonic: <tt>/</tt>) makes the pattern match
-        from the root of the working tree, even when you are running
-        the command from inside a subdirectory.
-</p>
-</dd>
-</dl></div>
-<div class="paragraph"><p>Currently only the slash <tt>/</tt> is recognized as the "magic signature",
-but it is envisioned that we will support more types of magic in later
-versions of git.</p></div>
+alphanumeric. Currently only the slash <code>/</code> is recognized as a
+"magic signature": it makes the pattern match from the root of
+the working tree, even when you are running the command from
+inside a subdirectory.</p></div>
 <div class="paragraph"><p>A pathspec with only a colon means "there is no pathspec". This form
 should not be combined with other pathspec.</p></div>
 </dd>
@@ -1166,7 +1323,7 @@ should not be combined with other pathspec.</p></div>
 <p>
         The term <a href="#def_pickaxe">pickaxe</a> refers to an option to the diffcore
         routines that help select changes that add or delete a given text
-        string. With the <tt>--pickaxe-all</tt> option, it can be used to view the full
+        string. With the <code>--pickaxe-all</code> option, it can be used to view the full
         <a href="#def_changeset">changeset</a> that introduced or removed, say, a
         particular line of text. See <a href="git-diff.html">git-diff(1)</a>.
 </p>
@@ -1176,7 +1333,7 @@ should not be combined with other pathspec.</p></div>
 </dt>
 <dd>
 <p>
-        Cute name for <a href="#def_core_git">core git</a>.
+        Cute name for <a href="#def_core_git">core Git</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1185,8 +1342,8 @@ should not be combined with other pathspec.</p></div>
 <dd>
 <p>
         Cute name for programs and program suites depending on
-        <a href="#def_core_git">core git</a>, presenting a high level access to
-        core git. Porcelains expose more of a <a href="#def_SCM">SCM</a>
+        <a href="#def_core_git">core Git</a>, presenting a high level access to
+        core Git. Porcelains expose more of a <a href="#def_SCM">SCM</a>
         interface than the <a href="#def_plumbing">plumbing</a>.
 </p>
 </dd>
@@ -1246,10 +1403,10 @@ should not be combined with other pathspec.</p></div>
 </dt>
 <dd>
 <p>
-        A 40-byte hex representation of a <a href="#def_SHA1">SHA1</a> or a name that
+        A 40-byte hex representation of a <a href="#def_SHA1">SHA-1</a> or a name that
         denotes a particular <a href="#def_object">object</a>. They may be stored in
-        a file under <tt>$GIT_DIR/refs/</tt> directory, or
-        in the <tt>$GIT_DIR/packed-refs</tt> file.
+        a file under <code>$GIT_DIR/refs/</code> directory, or
+        in the <code>$GIT_DIR/packed-refs</code> file.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1270,15 +1427,7 @@ should not be combined with other pathspec.</p></div>
 <p>
         A "refspec" is used by <a href="#def_fetch">fetch</a> and
         <a href="#def_push">push</a> to describe the mapping between remote
-        <a href="#def_ref">ref</a> and local ref. They are combined with a colon in
-        the format &lt;src&gt;:&lt;dst&gt;, preceded by an optional plus sign, +.
-        For example: <tt>git fetch $URL
-        refs/heads/master:refs/heads/origin</tt> means "grab the master
-        <a href="#def_branch">branch</a> <a href="#def_head">head</a> from the $URL and store
-        it as my origin branch head". And <tt>git push
-        $URL refs/heads/master:refs/heads/to-upstream</tt> means "publish my
-        master branch head as to-upstream branch at $URL". See also
-        <a href="git-push.html">git-push(1)</a>.
+        <a href="#def_ref">ref</a> and local ref.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1286,7 +1435,7 @@ should not be combined with other pathspec.</p></div>
 </dt>
 <dd>
 <p>
-        A regular git <a href="#def_branch">branch</a> that is used to follow changes from
+        A regular Git <a href="#def_branch">branch</a> that is used to follow changes from
         another <a href="#def_repository">repository</a>. A remote-tracking
         branch should not contain direct modifications or have local commits
         made to it. A remote-tracking branch can usually be
@@ -1321,9 +1470,7 @@ should not be combined with other pathspec.</p></div>
 </dt>
 <dd>
 <p>
-        A particular state of files and directories which was stored in the
-        <a href="#def_object_database">object database</a>. It is referenced by a
-        <a href="#def_commit_object">commit object</a>.
+        Synonym for <a href="#def_commit">commit</a> (the noun).
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1344,11 +1491,12 @@ should not be combined with other pathspec.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
-<a id="def_SHA1"></a>SHA1
+<a id="def_SHA1"></a>SHA-1
 </dt>
 <dd>
 <p>
-        Synonym for <a href="#def_object_name">object name</a>.
+        "Secure Hash Algorithm 1"; a cryptographic hash function.
+        In the context of Git used as a synonym for <a href="#def_object_name">object name</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1358,11 +1506,11 @@ should not be combined with other pathspec.</p></div>
 <p>
         A shallow <a href="#def_repository">repository</a> has an incomplete
         history some of whose <a href="#def_commit">commits</a> have <a href="#def_parent">parents</a> cauterized away (in other
-        words, git is told to pretend that these commits do not have the
+        words, Git is told to pretend that these commits do not have the
         parents, even though they are recorded in the <a href="#def_commit_object">commit         object</a>). This is sometimes useful when you are interested only in the
         recent history of a project even though the real history recorded in the
         upstream is much larger. A shallow repository
-        is created by giving the <tt>--depth</tt> option to <a href="git-clone.html">git-clone(1)</a>, and
+        is created by giving the <code>--depth</code> option to <a href="git-clone.html">git-clone(1)</a>, and
         its history can be later deepened with <a href="git-fetch.html">git-fetch(1)</a>.
 </p>
 </dd>
@@ -1371,7 +1519,7 @@ should not be combined with other pathspec.</p></div>
 </dt>
 <dd>
 <p>
-        Symbolic reference: instead of containing the <a href="#def_SHA1">SHA1</a>
+        Symbolic reference: instead of containing the <a href="#def_SHA1">SHA-1</a>
         id itself, it is of the format <em>ref: refs/some/thing</em> and when
         referenced, it recursively dereferences to this reference.
         <em><a href="#def_HEAD">HEAD</a></em> is a prime example of a symref. Symbolic
@@ -1384,13 +1532,13 @@ should not be combined with other pathspec.</p></div>
 </dt>
 <dd>
 <p>
-        A <a href="#def_ref">ref</a> under <tt>refs/tags/</tt> namespace that points to an
+        A <a href="#def_ref">ref</a> under <code>refs/tags/</code> namespace that points to an
         object of an arbitrary type (typically a tag points to either a
         <a href="#def_tag_object">tag</a> or a <a href="#def_commit_object">commit object</a>).
         In contrast to a <a href="#def_head">head</a>, a tag is not updated by
-        the <tt>commit</tt> command. A git tag has nothing to do with a Lisp
+        the <code>commit</code> command. A Git tag has nothing to do with a Lisp
         tag (which would be called an <a href="#def_object_type">object type</a>
-        in git&#8217;s context). A tag is most typically used to mark a particular
+        in Git&#8217;s context). A tag is most typically used to mark a particular
         point in the commit ancestry <a href="#def_chain">chain</a>.
 </p>
 </dd>
@@ -1410,7 +1558,7 @@ should not be combined with other pathspec.</p></div>
 </dt>
 <dd>
 <p>
-        A regular git <a href="#def_branch">branch</a> that is used by a developer to
+        A regular Git <a href="#def_branch">branch</a> that is used by a developer to
         identify a conceptual line of development. Since branches are very easy
         and inexpensive, it is often desirable to have several small branches
         that each contain very well defined concepts or small incremental yet
@@ -1485,23 +1633,28 @@ should not be combined with other pathspec.</p></div>
 </dd>
 </dl></div>
 </div>
+</div>
+<div class="sect1">
 <h2 id="_see_also">SEE ALSO</h2>
 <div class="sectionbody">
 <div class="paragraph"><p><a href="gittutorial.html">gittutorial(7)</a>,
 <a href="gittutorial-2.html">gittutorial-2(7)</a>,
 <a href="gitcvs-migration.html">gitcvs-migration(7)</a>,
-<a href="everyday.html">Everyday git</a>,
+<a href="everyday.html">Everyday Git</a>,
 <a href="user-manual.html">The Git User&#8217;s Manual</a></p></div>
 </div>
+</div>
+<div class="sect1">
 <h2 id="_git">GIT</h2>
 <div class="sectionbody">
 <div class="paragraph"><p>Part of the <a href="git.html">git(1)</a> suite.</p></div>
 </div>
 </div>
+</div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-11-15 13:45:02 PDT
+Last updated 2013-02-05 21:07:26 PST
 </div>
 </div>
 </body>

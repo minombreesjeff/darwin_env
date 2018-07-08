@@ -29,7 +29,16 @@ use Git::SVN::Prompt;
 use Git::SVN::Log;
 use Git::SVN::Migration;
 
-use Git::SVN::Utils qw(fatal can_compress);
+use Git::SVN::Utils qw(
+	fatal
+	can_compress
+	canonicalize_path
+	canonicalize_url
+	join_paths
+	add_path_to_url
+	join_paths
+);
+
 use Git qw(
 	git_cmd_try
 	command
@@ -52,8 +61,6 @@ my $cmd_dir_prefix = eval {
 	command_oneline([qw/rev-parse --show-prefix/], STDERR => 0)
 } || '';
 
-my $git_dir_user_set = 1 if defined $ENV{GIT_DIR};
-$ENV{GIT_DIR} ||= '.git';
 $Git::SVN::Ra::_log_window_size = 100;
 
 if (! exists $ENV{SVN_SSH} && exists $ENV{GIT_SSH}) {
@@ -105,7 +112,8 @@ my ($_stdin, $_help, $_edit,
 	$_message, $_file, $_branch_dest,
 	$_template, $_shared,
 	$_version, $_fetch_all, $_no_rebase, $_fetch_parent,
-	$_merge, $_strategy, $_preserve_merges, $_dry_run, $_local,
+	$_before, $_after,
+	$_merge, $_strategy, $_preserve_merges, $_dry_run, $_parents, $_local,
 	$_prefix, $_no_checkout, $_url, $_verbose,
 	$_commit_url, $_tag, $_merge_info, $_interactive);
 
@@ -118,6 +126,7 @@ my %remote_opts = ( 'username=s' => \$Git::SVN::Prompt::_username,
                     'config-dir=s' => \$Git::SVN::Ra::config_dir,
                     'no-auth-cache' => \$Git::SVN::Prompt::_no_auth_cache,
                     'ignore-paths=s' => \$Git::SVN::Fetcher::_ignore_regex,
+                    'include-paths=s' => \$Git::SVN::Fetcher::_include_regex,
                     'ignore-refs=s' => \$Git::SVN::Ra::_ignore_refs_regex );
 my %fc_opts = ( 'follow-parent|follow!' => \$Git::SVN::_follow_parent,
 		'authors-file|A=s' => \$_authors,
@@ -134,6 +143,7 @@ my %fc_opts = ( 'follow-parent|follow!' => \$Git::SVN::_follow_parent,
 		'use-log-author' => \$Git::SVN::_use_log_author,
 		'add-author-from' => \$Git::SVN::_add_author_from,
 		'localtime' => \$Git::SVN::_localtime,
+		'skip-merge-info' => \$Git::SVN::_skip_merge_info,
 		%remote_opts );
 
 my ($_trunk, @_tags, @_branches, $_stdlayout);
@@ -194,6 +204,7 @@ my %cmd = (
 	            { 'message|m=s' => \$_message,
 	              'destination|d=s' => \$_branch_dest,
 	              'dry-run|n' => \$_dry_run,
+	              'parents' => \$_parents,
 	              'tag|t' => \$_tag,
 	              'username=s' => \$Git::SVN::Prompt::_username,
 	              'commit-url=s' => \$_commit_url } ],
@@ -202,6 +213,7 @@ my %cmd = (
 	         { 'message|m=s' => \$_message,
 	           'destination|d=s' => \$_branch_dest,
 	           'dry-run|n' => \$_dry_run,
+	           'parents' => \$_parents,
 	           'username=s' => \$Git::SVN::Prompt::_username,
 	           'commit-url=s' => \$_commit_url } ],
 	'set-tree' => [ \&cmd_set_tree,
@@ -249,7 +261,8 @@ my %cmd = (
 			} ],
 	'find-rev' => [ \&cmd_find_rev,
 	                "Translate between SVN revision numbers and tree-ish",
-			{} ],
+			{ 'before' => \$_before,
+			  'after' => \$_after } ],
 	'rebase' => [ \&cmd_rebase, "Fetch and rebase your working directory",
 			{ 'merge|m|M' => \$_merge,
 			  'verbose|v' => \$_verbose,
@@ -316,27 +329,20 @@ for (my $i = 0; $i < @ARGV; $i++) {
 };
 
 # make sure we're always running at the top-level working directory
-unless ($cmd && $cmd =~ /(?:clone|init|multi-init)$/) {
-	unless (-d $ENV{GIT_DIR}) {
-		if ($git_dir_user_set) {
-			die "GIT_DIR=$ENV{GIT_DIR} explicitly set, ",
-			    "but it is not a directory\n";
-		}
-		my $git_dir = delete $ENV{GIT_DIR};
-		my $cdup = undef;
-		git_cmd_try {
-			$cdup = command_oneline(qw/rev-parse --show-cdup/);
-			$git_dir = '.' unless ($cdup);
-			chomp $cdup if ($cdup);
-			$cdup = "." unless ($cdup && length $cdup);
-		} "Already at toplevel, but $git_dir not found\n";
-		chdir $cdup or die "Unable to chdir up to '$cdup'\n";
-		unless (-d $git_dir) {
-			die "$git_dir still not found after going to ",
-			    "'$cdup'\n";
-		}
-		$ENV{GIT_DIR} = $git_dir;
-	}
+if ($cmd && $cmd =~ /(?:clone|init|multi-init)$/) {
+	$ENV{GIT_DIR} ||= ".git";
+} else {
+	my ($git_dir, $cdup);
+	git_cmd_try {
+		$git_dir = command_oneline([qw/rev-parse --git-dir/]);
+	} "Unable to find .git directory\n";
+	git_cmd_try {
+		$cdup = command_oneline(qw/rev-parse --show-cdup/);
+		chomp $cdup if ($cdup);
+		$cdup = "." unless ($cdup && length $cdup);
+	} "Already at toplevel, but $git_dir not found\n";
+	$ENV{GIT_DIR} = $git_dir;
+	chdir $cdup or die "Unable to chdir up to '$cdup'\n";
 	$_repository = Git->repository(Repository => $ENV{GIT_DIR});
 }
 
@@ -380,7 +386,7 @@ sub usage {
 	my $fd = $exit ? \*STDERR : \*STDOUT;
 	print $fd <<"";
 git-svn - bidirectional operations between a single Subversion tree and git
-Usage: git svn <command> [options] [arguments]\n
+usage: git svn <command> [options] [arguments]\n
 
 	print $fd "Available commands:\n" unless $cmd;
 
@@ -468,6 +474,9 @@ sub do_git_init_db {
 	my $ignore_paths_regex = \$Git::SVN::Fetcher::_ignore_regex;
 	command_noisy('config', "$pfx.ignore-paths", $$ignore_paths_regex)
 		if defined $$ignore_paths_regex;
+	my $include_paths_regex = \$Git::SVN::Fetcher::_include_regex;
+	command_noisy('config', "$pfx.include-paths", $$include_paths_regex)
+		if defined $$include_paths_regex;
 	my $ignore_refs_regex = \$Git::SVN::Ra::_ignore_refs_regex;
 	command_noisy('config', "$pfx.ignore-refs", $$ignore_refs_regex)
 		if defined $$ignore_refs_regex;
@@ -532,7 +541,7 @@ sub cmd_fetch {
 	}
 	my ($remote) = @_;
 	if (@_ > 1) {
-		die "Usage: $0 fetch [--all] [--parent] [svn-remote]\n";
+		die "usage: $0 fetch [--all] [--parent] [svn-remote]\n";
 	}
 	$Git::SVN::no_reuse_existing = undef;
 	if ($_fetch_parent) {
@@ -667,11 +676,13 @@ sub merge_revs_into_hash {
 }
 
 sub merge_merge_info {
-	my ($mergeinfo_one, $mergeinfo_two) = @_;
+	my ($mergeinfo_one, $mergeinfo_two, $ignore_branch) = @_;
 	my %result_hash = ();
 
 	merge_revs_into_hash(\%result_hash, $mergeinfo_one);
 	merge_revs_into_hash(\%result_hash, $mergeinfo_two);
+
+	delete $result_hash{$ignore_branch} if $ignore_branch;
 
 	my $result = '';
 	# Sort below is for consistency's sake
@@ -693,6 +704,7 @@ sub populate_merge_info {
 		my $all_parents_ok = 1;
 		my $aggregate_mergeinfo = '';
 		my $rooturl = $gs->repos_root;
+		my ($target_branch) = $gs->full_pushurl =~ /^\Q$rooturl\E(.*)/;
 
 		if (defined($rewritten_parent)) {
 			# Replace first parent with newly-rewritten version
@@ -724,7 +736,8 @@ sub populate_merge_info {
 			# Merge previous mergeinfo values
 			$aggregate_mergeinfo =
 				merge_merge_info($aggregate_mergeinfo,
-								 $par_mergeinfo, 0);
+								$par_mergeinfo,
+								$target_branch);
 
 			next if $parent eq $parents[0]; # Skip first parent
 			# Add new changes being placed in tree by merge
@@ -767,7 +780,8 @@ sub populate_merge_info {
 			my $newmergeinfo = "$branchpath:" . join(',', @revsin);
 			$aggregate_mergeinfo =
 				merge_merge_info($aggregate_mergeinfo,
-								 $newmergeinfo, 1);
+								$newmergeinfo,
+								$target_branch);
 		}
 		if ($all_parents_ok and $aggregate_mergeinfo) {
 			return $aggregate_mergeinfo;
@@ -1161,11 +1175,26 @@ sub cmd_branch {
 		$ctx->ls($dst, 'HEAD', 0);
 	} and die "branch ${branch_name} already exists\n";
 
+	if ($_parents) {
+		mk_parent_dirs($ctx, $dst);
+	}
+
 	print "Copying ${src} at r${rev} to ${dst}...\n";
 	$ctx->copy($src, $rev, $dst)
 		unless $_dry_run;
 
 	$gs->fetch_all;
+}
+
+sub mk_parent_dirs {
+	my ($ctx, $parent) = @_;
+	$parent =~ s{/[^/]*$}{};
+
+	if (!eval{$ctx->ls($parent, 'HEAD', 0)}) {
+		mk_parent_dirs($ctx, $parent);
+		print "Creating parent folder ${parent} ...\n";
+		$ctx->mkdir($parent) unless $_dry_run;
+	}
 }
 
 sub cmd_find_rev {
@@ -1182,7 +1211,13 @@ sub cmd_find_rev {
 			    "$head history\n";
 		}
 		my $desired_revision = substr($revision_or_hash, 1);
-		$result = $gs->rev_map_get($desired_revision, $uuid);
+		if ($_before) {
+			$result = $gs->find_rev_before($desired_revision, 1);
+		} elsif ($_after) {
+			$result = $gs->find_rev_after($desired_revision, 1);
+		} else {
+			$result = $gs->rev_map_get($desired_revision, $uuid);
+		}
 	} else {
 		my (undef, $rev, undef) = cmt_metadata($revision_or_hash);
 		$result = $rev;
@@ -1212,7 +1247,7 @@ sub cmd_rebase {
 		return;
 	}
 	if (command(qw/diff-index HEAD --/)) {
-		print STDERR "Cannot rebase with uncommited changes:\n";
+		print STDERR "Cannot rebase with uncommitted changes:\n";
 		command_noisy('status');
 		exit 1;
 	}
@@ -1231,7 +1266,7 @@ sub cmd_show_ignore {
 	my ($url, $rev, $uuid, $gs) = working_head_info('HEAD');
 	$gs ||= Git::SVN->new;
 	my $r = (defined $_revision ? $_revision : $gs->ra->get_latest_revnum);
-	$gs->prop_walk($gs->{path}, $r, sub {
+	$gs->prop_walk($gs->path, $r, sub {
 		my ($gs, $path, $props) = @_;
 		print STDOUT "\n# $path\n";
 		my $s = $props->{'svn:ignore'} or return;
@@ -1247,7 +1282,7 @@ sub cmd_show_externals {
 	my ($url, $rev, $uuid, $gs) = working_head_info('HEAD');
 	$gs ||= Git::SVN->new;
 	my $r = (defined $_revision ? $_revision : $gs->ra->get_latest_revnum);
-	$gs->prop_walk($gs->{path}, $r, sub {
+	$gs->prop_walk($gs->path, $r, sub {
 		my ($gs, $path, $props) = @_;
 		print STDOUT "\n# $path\n";
 		my $s = $props->{'svn:externals'} or return;
@@ -1262,7 +1297,7 @@ sub cmd_create_ignore {
 	my ($url, $rev, $uuid, $gs) = working_head_info('HEAD');
 	$gs ||= Git::SVN->new;
 	my $r = (defined $_revision ? $_revision : $gs->ra->get_latest_revnum);
-	$gs->prop_walk($gs->{path}, $r, sub {
+	$gs->prop_walk($gs->path, $r, sub {
 		my ($gs, $path, $props) = @_;
 		# $path is of the form /path/to/dir/
 		$path = '.' . $path;
@@ -1292,31 +1327,6 @@ sub cmd_mkdirs {
 	$gs->mkemptydirs($_revision);
 }
 
-sub canonicalize_path {
-	my ($path) = @_;
-	my $dot_slash_added = 0;
-	if (substr($path, 0, 1) ne "/") {
-		$path = "./" . $path;
-		$dot_slash_added = 1;
-	}
-	# File::Spec->canonpath doesn't collapse x/../y into y (for a
-	# good reason), so let's do this manually.
-	$path =~ s#/+#/#g;
-	$path =~ s#/\.(?:/|$)#/#g;
-	$path =~ s#/[^/]+/\.\.##g;
-	$path =~ s#/$##g;
-	$path =~ s#^\./## if $dot_slash_added;
-	$path =~ s#^/##;
-	$path =~ s#^\.$##;
-	return $path;
-}
-
-sub canonicalize_url {
-	my ($url) = @_;
-	$url =~ s#^([^:]+://[^/]*/)(.*)$#$1 . canonicalize_path($2)#e;
-	return $url;
-}
-
 # get_svnprops(PATH)
 # ------------------
 # Helper for cmd_propget and cmd_proplist below.
@@ -1330,7 +1340,7 @@ sub get_svnprops {
 	$path = $cmd_dir_prefix . $path;
 	fatal("No such file or directory: $path") unless -e $path;
 	my $is_dir = -d $path ? 1 : 0;
-	$path = $gs->{path} . '/' . $path;
+	$path = join_paths($gs->path, $path);
 
 	# canonicalize the path (otherwise libsvn will abort or fail to
 	# find the file)
@@ -1421,7 +1431,7 @@ sub cmd_multi_fetch {
 # this command is special because it requires no metadata
 sub cmd_commit_diff {
 	my ($ta, $tb, $url) = @_;
-	my $usage = "Usage: $0 commit-diff -r<revision> ".
+	my $usage = "usage: $0 commit-diff -r<revision> ".
 	            "<tree-ish> <tree-ish> [<URL>]";
 	fatal($usage) if (!defined $ta || !defined $tb);
 	my $svn_path = '';
@@ -1431,8 +1441,8 @@ sub cmd_commit_diff {
 			fatal("Needed URL or usable git-svn --id in ",
 			      "the command-line\n", $usage);
 		}
-		$url = $gs->{url};
-		$svn_path = $gs->{path};
+		$url = $gs->url;
+		$svn_path = $gs->path;
 	}
 	unless (defined $_revision) {
 		fatal("-r|--revision is a required argument\n", $usage);
@@ -1466,24 +1476,6 @@ sub cmd_commit_diff {
 	}
 }
 
-sub escape_uri_only {
-	my ($uri) = @_;
-	my @tmp;
-	foreach (split m{/}, $uri) {
-		s/([^~\w.%+-]|%(?![a-fA-F0-9]{2}))/sprintf("%%%02X",ord($1))/eg;
-		push @tmp, $_;
-	}
-	join('/', @tmp);
-}
-
-sub escape_url {
-	my ($url) = @_;
-	if ($url =~ m#^([^:]+)://([^/]*)(.*)$#) {
-		my ($scheme, $domain, $uri) = ($1, $2, escape_uri_only($3));
-		$url = "$scheme://$domain$uri";
-	}
-	$url;
-}
 
 sub cmd_info {
 	my $path = canonicalize_path(defined($_[0]) ? $_[0] : ".");
@@ -1508,21 +1500,21 @@ sub cmd_info {
 	# canonicalize_path() will return "" to make libsvn 1.5.x happy,
 	$path = "." if $path eq "";
 
-	my $full_url = $url . ($fullpath eq "" ? "" : "/$fullpath");
+	my $full_url = canonicalize_url( add_path_to_url( $url, $fullpath ) );
 
 	if ($_url) {
-		print escape_url($full_url), "\n";
+		print "$full_url\n";
 		return;
 	}
 
 	my $result = "Path: $path\n";
 	$result .= "Name: " . basename($path) . "\n" if $file_type ne "dir";
-	$result .= "URL: " . escape_url($full_url) . "\n";
+	$result .= "URL: $full_url\n";
 
 	eval {
 		my $repos_root = $gs->repos_root;
 		Git::SVN::remove_username($repos_root);
-		$result .= "Repository Root: " . escape_url($repos_root) . "\n";
+		$result .= "Repository Root: " . canonicalize_url($repos_root) . "\n";
 	};
 	if ($@) {
 		$result .= "Repository Root: (offline)\n";
@@ -1669,7 +1661,9 @@ sub post_fetch_checkout {
 
 sub complete_svn_url {
 	my ($url, $path) = @_;
-	$path =~ s#/+$##;
+	$path = canonicalize_path($path);
+
+	# If the path is not a URL...
 	if ($path !~ m#^[a-z\+]+://#) {
 		if (!defined $url || $url !~ m#^[a-z\+]+://#) {
 			fatal("E: '$path' is not a complete URL ",
@@ -1686,7 +1680,7 @@ sub complete_url_ls_init {
 		print STDERR "W: $switch not specified\n";
 		return;
 	}
-	$repo_path =~ s#/+$##;
+	$repo_path = canonicalize_path($repo_path);
 	if ($repo_path =~ m#^[a-z\+]+://#) {
 		$ra = Git::SVN::Ra->new($repo_path);
 		$repo_path = '';
@@ -1697,18 +1691,18 @@ sub complete_url_ls_init {
 			      "and a separate URL is not specified");
 		}
 	}
-	my $url = $ra->{url};
+	my $url = $ra->url;
 	my $gs = Git::SVN->init($url, undef, undef, undef, 1);
 	my $k = "svn-remote.$gs->{repo_id}.url";
 	my $orig_url = eval { command_oneline(qw/config --get/, $k) };
-	if ($orig_url && ($orig_url ne $gs->{url})) {
+	if ($orig_url && ($orig_url ne $gs->url)) {
 		die "$k already set: $orig_url\n",
-		    "wanted to set to: $gs->{url}\n";
+		    "wanted to set to: $gs->url\n";
 	}
-	command_oneline('config', $k, $gs->{url}) unless $orig_url;
-	my $remote_path = "$gs->{path}/$repo_path";
+	command_oneline('config', $k, $gs->url) unless $orig_url;
+
+	my $remote_path = join_paths( $gs->path, $repo_path );
 	$remote_path =~ s{%([0-9A-F]{2})}{chr hex($1)}ieg;
-	$remote_path =~ s#/+#/#g;
 	$remote_path =~ s#^/##g;
 	$remote_path .= "/*" if $remote_path !~ /\*/;
 	my ($n) = ($switch =~ /^--(\w+)/);
@@ -1724,6 +1718,36 @@ sub complete_url_ls_init {
 
 sub verify_ref {
 	my ($ref) = @_;
+
+	if ($ref =~ /^(.*)\^0$/) {
+		my $baseref = $1;
+		my $p = "$ENV{GIT_DIR}/$baseref";
+		$p = "$ENV{GIT_DIR}/refs/remotes/$baseref" unless -e $p;
+		$p = "$ENV{GIT_DIR}/refs/$baseref" unless -e $p;
+		$p = "$ENV{GIT_DIR}/refs/heads/$baseref" unless -e $p;
+
+		my $resolved = undef;
+		if (-e $p) {
+			open FH, $p;
+			$resolved = <FH>;
+			chomp $resolved;
+			close FH;
+		} elsif (-e "$ENV{GIT_DIR}/packed-refs") {
+			open FH, "$ENV{GIT_DIR}/packed-refs";
+			while (<FH>) {
+				if ($_ =~ /^([0-9a-fA-F]+) ((refs\/)?(remotes\/|heads\/|\/)?$baseref)$/) {
+					$resolved = $1;
+					last;
+				}
+			}
+		}
+
+		if (defined($resolved)) {
+			return verify_ref("$1^0") if $resolved =~ /^ref: (.*)$/;
+			return $resolved
+		}
+	}
+
 	eval { command_oneline([ 'rev-parse', '--verify', $ref ],
 	                       { STDERR => 0 }); };
 }

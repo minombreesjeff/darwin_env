@@ -38,6 +38,25 @@ not_present() {
     fi
 }
 
+check_status_options() {
+    (cd "$1" &&
+    GIT_CONFIG="$git_config" cvs -Q status "$2" > "${WORKDIR}/status.out" 2>&1
+    )
+    if [ x"$?" != x"0" ] ; then
+	echo "Error from cvs status: $1 $2" >> "${WORKDIR}/marked.log"
+	return 1;
+    fi
+    got="$(sed -n -e 's/^[ 	]*Sticky Options:[ 	]*//p' "${WORKDIR}/status.out")"
+    expect="$3"
+    if [ x"$expect" = x"" ] ; then
+	expect="(none)"
+    fi
+    test x"$got" = x"$expect"
+    stat=$?
+    echo "cvs status: $1 $2 $stat '$3' '$got'" >> "${WORKDIR}/marked.log"
+    return $stat
+}
+
 cvs >/dev/null 2>&1
 if test $? -ne 1
 then
@@ -65,6 +84,7 @@ export CVSROOT CVS_SERVER
 
 rm -rf "$CVSWORK" "$SERVERDIR"
 test_expect_success 'setup' '
+    git config push.default matching &&
     echo "Simple text file" >textfile.c &&
     echo "File with embedded NUL: Q <- there" | q_to_nul > binfile.bin &&
     mkdir subdir &&
@@ -231,6 +251,22 @@ test_expect_success 'cvs co another copy (guess)' '
     marked_as cvswork2/subdir unspecified.other "" &&
     marked_as cvswork2/subdir newfile.bin "" &&
     marked_as cvswork2/subdir newfile.c ""
+'
+
+test_expect_success 'cvs status - sticky options' '
+    check_status_options cvswork2 textfile.c "" &&
+    check_status_options cvswork2 binfile.bin -kb &&
+    check_status_options cvswork2 .gitattributes "" &&
+    check_status_options cvswork2 mixedUp.c -kb &&
+    check_status_options cvswork2 multiline.c -kb &&
+    check_status_options cvswork2 multilineTxt.c "" &&
+    check_status_options cvswork2/subdir withCr.bin -kb &&
+    check_status_options cvswork2 subdir/withCr.bin -kb &&
+    check_status_options cvswork2/subdir file.h "" &&
+    check_status_options cvswork2 subdir/file.h "" &&
+    check_status_options cvswork2/subdir unspecified.other "" &&
+    check_status_options cvswork2/subdir newfile.bin "" &&
+    check_status_options cvswork2/subdir newfile.c ""
 '
 
 test_expect_success 'add text (guess)' '

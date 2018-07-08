@@ -2,12 +2,12 @@
 .\"     Title: git-log
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 08/19/2012
+.\"      Date: 05/24/2013
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.12
+.\"    Source: Git 1.8.3
 .\"  Language: English
 .\"
-.TH "GIT\-LOG" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
+.TH "GIT\-LOG" "1" "05/24/2013" "Git 1\&.8\&.3" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -32,7 +32,7 @@ git-log \- Show commit logs
 .SH "SYNOPSIS"
 .sp
 .nf
-\fIgit log\fR [<options>] [<since>\&.\&.<until>] [[\-\-] <path>\&...]
+\fIgit log\fR [<options>] [<revision range>] [[\-\-] <path>\&...]
 .fi
 .sp
 .SH "DESCRIPTION"
@@ -41,18 +41,6 @@ Shows the commit logs\&.
 .sp
 The command takes options applicable to the \fIgit rev\-list\fR command to control what is shown and how, and options applicable to the \fIgit diff\-*\fR commands to control how the changes each commit introduces are shown\&.
 .SH "OPTIONS"
-.PP
-\-<n>
-.RS 4
-Limits the number of commits to show\&. Note that this is a commit limiting option, see below\&.
-.RE
-.PP
-<since>\&.\&.<until>
-.RS 4
-Show only commits between the named two commits\&. When either <since> or <until> is omitted, it defaults to
-HEAD, i\&.e\&. the tip of the current branch\&. For a more complete list of ways to spell <since> and <until>, see
-\fBgitrevisions\fR(7)\&.
-.RE
 .PP
 \-\-follow
 .RS 4
@@ -79,6 +67,12 @@ is specified, the full ref name (including prefix) will be printed\&. The defaul
 Print out the ref name given on the command line by which each commit was reached\&.
 .RE
 .PP
+\-\-use\-mailmap
+.RS 4
+Use mailmap file to map author and committer names and email to canonical real names and email addresses\&. See
+\fBgit-shortlog\fR(1)\&.
+.RE
+.PP
 \-\-full\-diff
 .RS 4
 Without this flag, "git log \-p <path>\&..." shows commits that touch the specified paths, and diffs about the same specified paths\&. With this, the full diff is shown for commits that touch the specified paths; this means that "<path>\&..." limits only commits, and doesn\(cqt limit diff for those commits\&.
@@ -88,20 +82,36 @@ Note that this affects all diff\-based output types, e\&.g\&. those produced by 
 .PP
 \-\-log\-size
 .RS 4
-Before the log message print out its size in bytes\&. Intended mainly for porcelain tools consumption\&. If git is unable to produce a valid value size is set to zero\&. Note that only message is considered, if also a diff is shown its size is not included\&.
+Before the log message print out its size in bytes\&. Intended mainly for porcelain tools consumption\&. If Git is unable to produce a valid value size is set to zero\&. Note that only message is considered, if also a diff is shown its size is not included\&.
+.RE
+.PP
+<revision range>
+.RS 4
+Show only commits in the specified revision range\&. When no <revision range> is specified, it defaults to
+HEAD
+(i\&.e\&. the whole history leading to the current commit)\&.
+origin\&.\&.HEAD
+specifies all the commits reachable from the current commit (i\&.e\&.
+HEAD), but not from
+origin\&. For a complete list of ways to spell <revision range>, see the "Specifying Ranges" section of
+\fBgitrevisions\fR(7)\&.
 .RE
 .PP
 [\-\-] <path>\&...
 .RS 4
 Show only commits that are enough to explain how the files that match the specified paths came to be\&. See "History Simplification" below for details and other simplification modes\&.
 .sp
-To prevent confusion with options and branch names, paths may need to be prefixed with "\-\- " to separate them from options or refnames\&.
+Paths may need to be prefixed with "\-\- " to separate them from options or the revision range, when confusion arises\&.
 .RE
 .SS "Commit Limiting"
 .sp
-Besides specifying a range of commits that should be listed using the special notations explained in the description, additional commit limiting may be applied\&. Note that they are applied before commit ordering and formatting options, such as \fI\-\-reverse\fR\&.
+Besides specifying a range of commits that should be listed using the special notations explained in the description, additional commit limiting may be applied\&.
+.sp
+Using more options generally further limits the output (e\&.g\&. \-\-since=<date1> limits to commits newer than <date1>, and using it with \-\-grep=<pattern> further limits to commits whose log message has a line that matches <pattern>), unless otherwise noted\&.
+.sp
+Note that these are applied before commit ordering and formatting options, such as \-\-reverse\&.
 .PP
-\-n \fInumber\fR, \-\-max\-count=<number>
+\-<number>, \-n <number>, \-\-max\-count=<number>
 .RS 4
 Limit the number of commits to output\&.
 .RE
@@ -125,22 +135,43 @@ Show commits older than a specific date\&.
 .PP
 \-\-author=<pattern>, \-\-committer=<pattern>
 .RS 4
-Limit the commits output to ones with author/committer header lines that match the specified pattern (regular expression)\&.
+Limit the commits output to ones with author/committer header lines that match the specified pattern (regular expression)\&. With more than one
+\-\-author=<pattern>, commits whose author matches any of the given patterns are chosen (similarly for multiple
+\-\-committer=<pattern>)\&.
+.RE
+.PP
+\-\-grep\-reflog=<pattern>
+.RS 4
+Limit the commits output to ones with reflog entries that match the specified pattern (regular expression)\&. With more than one
+\-\-grep\-reflog, commits whose reflog message matches any of the given patterns are chosen\&. It is an error to use this option unless
+\-\-walk\-reflogs
+is in use\&.
 .RE
 .PP
 \-\-grep=<pattern>
 .RS 4
-Limit the commits output to ones with log message that matches the specified pattern (regular expression)\&.
+Limit the commits output to ones with log message that matches the specified pattern (regular expression)\&. With more than one
+\-\-grep=<pattern>, commits whose message matches any of the given patterns are chosen (but see
+\-\-all\-match)\&.
+.sp
+When
+\-\-show\-notes
+is in effect, the message from the notes as if it is part of the log message\&.
 .RE
 .PP
 \-\-all\-match
 .RS 4
-Limit the commits output to ones that match all given \-\-grep, \-\-author and \-\-committer instead of ones that match at least one\&.
+Limit the commits output to ones that match all given \-\-grep, instead of ones that match at least one\&.
 .RE
 .PP
 \-i, \-\-regexp\-ignore\-case
 .RS 4
 Match the regexp limiting patterns without regard to letters case\&.
+.RE
+.PP
+\-\-basic\-regexp
+.RS 4
+Consider the limiting patterns to be basic regular expressions; this is the default\&.
 .RE
 .PP
 \-E, \-\-extended\-regexp
@@ -151,6 +182,11 @@ Consider the limiting patterns to be extended regular expressions instead of the
 \-F, \-\-fixed\-strings
 .RS 4
 Consider the limiting patterns to be fixed strings (don\(cqt interpret pattern as a regular expression)\&.
+.RE
+.PP
+\-\-perl\-regexp
+.RS 4
+Consider the limiting patterns to be Perl\-compatible regexp\&. Requires libpcre to be compiled in\&.
 .RE
 .PP
 \-\-remove\-empty
@@ -878,16 +914,37 @@ The \fI\-\-simplify\-by\-decoration\fR option allows you to view only the big pi
 .sp
 By default, the commits are shown in reverse chronological order\&.
 .PP
-\-\-topo\-order
-.RS 4
-This option makes them appear in topological order (i\&.e\&. descendant commits are shown before their parents)\&.
-.RE
-.PP
 \-\-date\-order
 .RS 4
-This option is similar to
-\fI\-\-topo\-order\fR
-in the sense that no parent comes before all of its children, but otherwise things are still ordered in the commit timestamp order\&.
+Show no parents before all of its children are shown, but otherwise show commits in the commit timestamp order\&.
+.RE
+.PP
+\-\-topo\-order
+.RS 4
+Show no parents before all of its children are shown, and avoid showing commits on multiple lines of history intermixed\&.
+.sp
+For example, in a commit history like this:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+    \-\-\-1\-\-\-\-2\-\-\-\-4\-\-\-\-7
+        \e              \e
+         3\-\-\-\-5\-\-\-\-6\-\-\-\-8\-\-\-
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+where the numbers denote the order of commit timestamps,
+git rev\-list
+and friends with
+\-\-date\-order
+show the commits in the timestamp order: 8 7 6 5 4 3 2 1\&.
+.sp
+With
+\-\-topo\-order, they would show 8 6 5 3 7 4 2 1 (or 8 7 4 2 6 5 3 1); some older commits are shown before newer ones in order to avoid showing the commits from two parallel development track mixed together\&.
 .RE
 .PP
 \-\-reverse
@@ -897,7 +954,7 @@ Output the commits in reverse order\&. Cannot be combined with
 .RE
 .SS "Object Traversal"
 .sp
-These options are mostly targeted for packing of git repositories\&.
+These options are mostly targeted for packing of Git repositories\&.
 .PP
 \-\-objects
 .RS 4
@@ -922,9 +979,9 @@ Only useful with
 \fI\-\-objects\fR; print the object IDs that are not in packs\&.
 .RE
 .PP
-\-\-no\-walk
+\-\-no\-walk[=(sorted|unsorted)]
 .RS 4
-Only show the given revs, but do not traverse their ancestors\&. This has no effect if a range is specified\&.
+Only show the given commits, but do not traverse their ancestors\&. This has no effect if a range is specified\&. If the argument "unsorted" is given, the commits are show in the order they were given on the command line\&. Otherwise (if "sorted" or no argument was given), the commits are show in reverse chronological order by commit time\&.
 .RE
 .PP
 \-\-do\-walk
@@ -1023,6 +1080,13 @@ option, by resetting the list of notes refs from which notes are shown\&. Option
 These options are deprecated\&. Use the above \-\-notes/\-\-no\-notes options instead\&.
 .RE
 .PP
+\-\-show\-signature
+.RS 4
+Check the validity of a signed commit object by passing the signature to
+gpg \-\-verify
+and show the output\&.
+.RE
+.PP
 \-\-relative\-date
 .RS 4
 Synonym for
@@ -1055,7 +1119,7 @@ YYYY\-MM\-DD
 format\&.
 .sp
 \-\-date=raw
-shows the date in the internal raw git format
+shows the date in the internal raw Git format
 %s %z
 format\&.
 .sp
@@ -1422,7 +1486,7 @@ Subject: [PATCH] <title line>
 .sp
 The
 \fIraw\fR
-format shows the entire commit exactly as stored in the commit object\&. Notably, the SHA1s are displayed in full, regardless of whether \-\-abbrev or \-\-no\-abbrev are used, and
+format shows the entire commit exactly as stored in the commit object\&. Notably, the SHA\-1s are displayed in full, regardless of whether \-\-abbrev or \-\-no\-abbrev are used, and
 \fIparents\fR
 information show the true parent commits, without taking grafts nor history simplification into account\&.
 .RE
@@ -1856,6 +1920,54 @@ or
 .IP \(bu 2.3
 .\}
 
+\fI%GG\fR: raw verification message from GPG for a signed commit
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+\fI%G?\fR: show "G" for a Good signature, "B" for a Bad signature, "U" for a good, untrusted signature and "N" for no signature
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+\fI%GS\fR: show the name of the signer for a signed commit
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+\fI%GK\fR: show the key used to sign a signed commit
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
 \fI%gD\fR: reflog selector, e\&.g\&.,
 refs/stash@{1}
 .RE
@@ -1996,7 +2108,17 @@ or
 .IP \(bu 2.3
 .\}
 
-\fI%C(\&...)\fR: color specification, as described in color\&.branch\&.* config option
+\fI%C(\&...)\fR: color specification, as described in color\&.branch\&.* config option; adding
+auto,
+at the beginning will emit color only when colors are enabled for log output (by
+color\&.diff,
+color\&.ui, or
+\-\-color, and respecting the
+auto
+settings of the former if we are going to a terminal)\&.
+auto
+alone (i\&.e\&.
+%C(auto)) will turn on auto coloring on the next placeholders until the color is switched again\&.
 .RE
 .sp
 .RS 4
@@ -2059,6 +2181,78 @@ or
 
 \fI%w([<w>[,<i1>[,<i2>]]])\fR: switch line wrapping, like the \-w option of
 \fBgit-shortlog\fR(1)\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+\fI%<(<N>[,trunc|ltrunc|mtrunc])\fR: make the next placeholder take at least N columns, padding spaces on the right if necessary\&. Optionally truncate at the beginning (ltrunc), the middle (mtrunc) or the end (trunc) if the output is longer than N columns\&. Note that truncating only works correctly with N >= 2\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+\fI%<|(<N>)\fR: make the next placeholder take at least until Nth columns, padding spaces on the right if necessary
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+\fI%>(<N>)\fR,
+\fI%>|(<N>)\fR: similar to
+\fI%<(<N>)\fR,
+\fI%<|(<N>)\fR
+respectively, but padding spaces on the left
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+\fI%>>(<N>)\fR,
+\fI%>>|(<N>)\fR: similar to
+\fI%>(<N>)\fR,
+\fI%>|(<N>)\fR
+respectively, except that if the next placeholder takes more spaces than given and there are spaces on its left, use those spaces
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+
+\fI%><(<N>)\fR,
+\fI%><|(<N>)\fR: similar to
+\fI% <(<N>)\fR,
+\fI%<|(<N>)\fR
+respectively, but padding both sides (i\&.e\&. the text is centered)
 .RE
 .RE
 .if n \{\
@@ -2173,6 +2367,35 @@ Generate a diff using the "patience diff" algorithm\&.
 \-\-histogram
 .RS 4
 Generate a diff using the "histogram diff" algorithm\&.
+.RE
+.PP
+\-\-diff\-algorithm={patience|minimal|histogram|myers}
+.RS 4
+Choose a diff algorithm\&. The variants are as follows:
+.PP
+default, myers
+.RS 4
+The basic greedy diff algorithm\&. Currently, this is the default\&.
+.RE
+.PP
+minimal
+.RS 4
+Spend extra time to make sure the smallest possible diff is produced\&.
+.RE
+.PP
+patience
+.RS 4
+Use "patience diff" algorithm when generating patches\&.
+.RE
+.PP
+histogram
+.RS 4
+This algorithm extends the patience algorithm to "support low\-occurrence common elements"\&.
+.RE
+.sp
+For instance, if you configured diff\&.algorithm variable to a non\-default value and want to use the default one, then you have to use
+\-\-diff\-algorithm=default
+option\&.
 .RE
 .PP
 \-\-stat[=<width>[,<name\-width>[,<count>]]]
@@ -2320,18 +2543,23 @@ does\&. Omitting the
 option or specifying
 \-\-submodule=short, uses the
 \fIshort\fR
-format\&. This format just shows the names of the commits at the beginning and end of the range\&.
+format\&. This format just shows the names of the commits at the beginning and end of the range\&. Can be tweaked via the
+diff\&.submodule
+configuration variable\&.
 .RE
 .PP
 \-\-color[=<when>]
 .RS 4
-Show colored diff\&. The value must be
-always
-(the default for
-<when>),
+Show colored diff\&.
+\-\-color
+(i\&.e\&. without
+\fI=<when>\fR) is the same as
+\-\-color=always\&.
+\fI<when>\fR
+can be one of
+always,
 never, or
-auto\&. The default value is
-never\&.
+auto\&.
 .RE
 .PP
 \-\-no\-color
@@ -2441,7 +2669,7 @@ It affects the way a change that amounts to a total rewrite of a file not as a s
 m
 controls this aspect of the \-B option (defaults to 60%)\&.
 \-B/70%
-specifies that less than 30% of the original should remain in the result for git to consider it a total rewrite (i\&.e\&. otherwise the resulting patch will be a series of deletion and insertion mixed together with context lines)\&.
+specifies that less than 30% of the original should remain in the result for Git to consider it a total rewrite (i\&.e\&. otherwise the resulting patch will be a series of deletion and insertion mixed together with context lines)\&.
 .sp
 When used with \-M, a totally\-rewritten file is also considered as the source of a rename (usually \-M only considers a file that disappeared as the source of a rename), and the number
 n
@@ -2457,7 +2685,16 @@ If generating diffs, detect and report renames for each commit\&. For following 
 n
 is specified, it is a threshold on the similarity index (i\&.e\&. amount of addition/deletions compared to the file\(cqs size)\&. For example,
 \-M90%
-means git should consider a delete/add pair to be a rename if more than 90% of the file hasn\(cqt changed\&.
+means Git should consider a delete/add pair to be a rename if more than 90% of the file hasn\(cqt changed\&. Without a
+%
+sign, the number is to be read as a fraction, with a decimal point before it\&. I\&.e\&.,
+\-M5
+becomes 0\&.5, and is thus the same as
+\-M50%\&. Similarly,
+\-M05
+is the same as
+\-M5%\&. To limit detection to exact renames, use
+\-M100%\&.
 .RE
 .PP
 \-C[<n>], \-\-find\-copies[=<n>]
@@ -2986,9 +3223,14 @@ git log \-p \-m \-\-first\-parent
 .RS 4
 Shows the history including change diffs, but only from the "main branch" perspective, skipping commits that come from merged branches, and showing full diffs of changes introduced by the merges\&. This makes sense only when following a strict policy of merging all topic branches when staying on a single integration branch\&.
 .RE
+.PP
+git log \-3
+.RS 4
+Limits the number of commits to show to 3\&.
+.RE
 .SH "DISCUSSION"
 .sp
-At the core level, git is character encoding agnostic\&.
+At the core level, Git is character encoding agnostic\&.
 .sp
 .RS 4
 .ie n \{\
@@ -2998,7 +3240,7 @@ At the core level, git is character encoding agnostic\&.
 .sp -1
 .IP \(bu 2.3
 .\}
-The pathnames recorded in the index and in the tree objects are treated as uninterpreted sequences of non\-NUL bytes\&. What readdir(2) returns are what are recorded and compared with the data git keeps track of, which in turn are expected to be what lstat(2) and creat(2) accepts\&. There is no such thing as pathname encoding translation\&.
+The pathnames recorded in the index and in the tree objects are treated as uninterpreted sequences of non\-NUL bytes\&. What readdir(2) returns are what are recorded and compared with the data Git keeps track of, which in turn are expected to be what lstat(2) and creat(2) accepts\&. There is no such thing as pathname encoding translation\&.
 .RE
 .sp
 .RS 4
@@ -3023,7 +3265,7 @@ The contents of the blob objects are uninterpreted sequences of bytes\&. There i
 The commit log messages are uninterpreted sequences of non\-NUL bytes\&.
 .RE
 .sp
-Although we encourage that the commit log messages are encoded in UTF\-8, both the core and git Porcelain are designed not to force UTF\-8 on projects\&. If all participants of a particular project find it more convenient to use legacy encodings, git does not forbid it\&. However, there are a few things to keep in mind\&.
+Although we encourage that the commit log messages are encoded in UTF\-8, both the core and Git Porcelain are designed not to force UTF\-8 on projects\&. If all participants of a particular project find it more convenient to use legacy encodings, Git does not forbid it\&. However, there are a few things to keep in mind\&.
 .sp
 .RS 4
 .ie n \{\
@@ -3133,7 +3375,7 @@ output would be shown without a diff attached\&. The default is
 true\&.
 .RE
 .PP
-mailmap\&.file
+mailmap\&.*
 .RS 4
 See
 \fBgit-shortlog\fR(1)\&.
