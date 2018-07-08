@@ -12,18 +12,6 @@
 			buildConfigurationList = 30FE97020829B43100BB83AB /* Build configuration list for PBXAggregateTarget "All" */;
 			buildPhases = (
 			);
-			buildSettings = {
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = All;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
 			dependencies = (
 				0C08A467FF66C08911CA29CE /* PBXTargetDependency */,
 				0396D5E7FFF9375411CE206D /* PBXTargetDependency */,
@@ -65,7 +53,6 @@
 		031452A0FF9E235311CE206C /* DVFamily.h in Headers */ = {isa = PBXBuildFile; fileRef = 02B83D78FF9D34B211CE206C /* DVFamily.h */; };
 		038A4B82FFF9353B11CE206D /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 038A4B80FFF9353B11CE206D /* IOKit.framework */; };
 		04B6B6E5FF76D54211CA29CE /* IsochronousDataHandler.i in Headers */ = {isa = PBXBuildFile; fileRef = 04B6B6E4FF76D54211CA29CE /* IsochronousDataHandler.i */; };
-		0647D2F3007A840411CE206D /* Localized.r in Rez */ = {isa = PBXBuildFile; fileRef = 0647D2F0007A83D311CE206D /* Localized.r */; };
 		088997A6FF7AC00D11CA29CE /* readtest.c in Sources */ = {isa = PBXBuildFile; fileRef = 088997A4FF7AC00911CA29CE /* readtest.c */; settings = {ATTRIBUTES = (); }; };
 		089C1680FE841241C02AAC07 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 089C167DFE841241C02AAC07 /* InfoPlist.strings */; };
 		08EA7FFCFE8413EDC02AAC07 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 08EA7FFBFE8413EDC02AAC07 /* Carbon.framework */; };
@@ -74,6 +61,7 @@
 		0AF09528FF7AC40511CA29CE /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 02C3D64FFF65A66F11CA29CE /* CoreServices.framework */; };
 		0C08A46CFF67027911CA29CE /* IsochronousDataHandler.h in Headers */ = {isa = PBXBuildFile; fileRef = 0C08A46BFF67027911CA29CE /* IsochronousDataHandler.h */; };
 		13FACEA6FF6716B911CA29CE /* DVFamily.c in Sources */ = {isa = PBXBuildFile; fileRef = 13FACEA4FF67164A11CA29CE /* DVFamily.c */; settings = {ATTRIBUTES = (); }; };
+		302B751D0B5EE93100C0EED0 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 302B751B0B5EE93100C0EED0 /* Localizable.strings */; };
 		8C1B7588023044F504CE206E /* DVLib.c in Sources */ = {isa = PBXBuildFile; fileRef = 8CDC69E301F4EFF304CE206E /* DVLib.c */; };
 		8C31838A015FDAE804CE206D /* IsochronousDataHandler.h in Headers */ = {isa = PBXBuildFile; fileRef = 0C08A46BFF67027911CA29CE /* IsochronousDataHandler.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		8C31838B015FDAE804CE206D /* DeviceControl.h in Headers */ = {isa = PBXBuildFile; fileRef = 02C3D649FF65A4E811CA29CE /* DeviceControl.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -97,41 +85,9 @@
 		8CE0142C023ED7D904CE206E /* DeviceControlPriv.i.c in Sources */ = {isa = PBXBuildFile; fileRef = 02C3D631FF6599F211CA29CE /* DeviceControlPriv.i.c */; };
 		8CFF00AE0282097104CE237C /* CFTest.c in Sources */ = {isa = PBXBuildFile; fileRef = 8CFF00AD0282097104CE237C /* CFTest.c */; };
 		8CFF00B002820B1304CE237C /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C51CC6F00BDE16404CE206D /* CoreFoundation.framework */; };
+		A1C4DB1109D2259C000BCF43 /* DVComponentGlue.h in Headers */ = {isa = PBXBuildFile; fileRef = A1C4DB0E09D2257E000BCF43 /* DVComponentGlue.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		F5FA1990034A455301CD2849 /* writetest.c in Sources */ = {isa = PBXBuildFile; fileRef = 014F01B2FF9D052F11CE206C /* writetest.c */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXBuildStyle section */
-		014F01A8FF9D02F711CE206C /* Development */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				BUILD_STYLE = Development;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_ENABLE_FIX_AND_CONTINUE = YES;
-				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				OPTIMIZATION_CFLAGS = "-O0";
-				ZERO_LINK = YES;
-			};
-			name = Development;
-		};
-		014F01A9FF9D02F711CE206C /* Deployment */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				BUILD_STYLE = Deployment;
-				GCC_ENABLE_FIX_AND_CONTINUE = NO;
-				ZERO_LINK = NO;
-			};
-			name = Deployment;
-		};
-		4D537F0E039BF1D900CE20D6 /* FireLog */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				BUILD_STYLE = FireLog;
-				OPTIMIZATION_CFLAGS = "-O0";
-			};
-			name = FireLog;
-		};
-/* End PBXBuildStyle section */
 
 /* Begin PBXBundleTarget section */
 		089C1673FE841209C02AAC07 /* IOFWDVComponents */ = {
@@ -144,20 +100,6 @@
 				089C1677FE841209C02AAC07 /* Frameworks */,
 				089C1679FE841209C02AAC07 /* Rez */,
 			);
-			buildSettings = {
-				INSTALL_PATH = /System/Library/Components;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "-i /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/CarbonCore.framework/Versions/A/Headers";
-				PRODUCT_NAME = IOFWDVComponents;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-				WRAPPER_EXTENSION = component;
-			};
 			dependencies = (
 			);
 			name = IOFWDVComponents;
@@ -165,7 +107,7 @@
 			productName = IOFWDVComponents;
 			productReference = 01526B84FFC4A6DF11CE206C /* IOFWDVComponents.component */;
 			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 <plist version=\"1.0\">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -183,11 +125,11 @@
 	<key>CFBundlePackageType</key>
 	<string>thng</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.9.0</string>
+	<string>1.9.5</string>
 	<key>CFBundleSignature</key>
 	<string>appl</string>
 	<key>CFBundleVersion</key>
-	<string>1.9.0</string>
+	<string>1.9.5</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 </dict>
@@ -205,20 +147,6 @@
 				13FACEA1FF67159C11CA29CE /* Frameworks */,
 				13FACEA2FF67159C11CA29CE /* Rez */,
 			);
-			buildSettings = {
-				INSTALL_PATH = /System/Library/Extensions;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "-bundle";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = DVFamily;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-				WRAPPER_EXTENSION = bundle;
-			};
 			dependencies = (
 			);
 			name = DVFamily;
@@ -226,7 +154,7 @@
 			productName = DVFamily;
 			productReference = 01526B85FFC4A6DF11CE206C /* DVFamily.bundle */;
 			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 <plist version=\"1.0\">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -234,7 +162,7 @@
 	<key>CFBundleExecutable</key>
 	<string>DVFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IOFWDVComponents version 1.9.0, Copyright 2005 Apple Computer, Inc.</string>
+	<string>IOFWDVComponents version 1.9.5, Copyright 2007 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -246,11 +174,11 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.9.0</string>
+	<string>1.9.5</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.9.0</string>
+	<string>1.9.5</string>
 </dict>
 </plist>
 ";
@@ -321,7 +249,6 @@
 		038A4B80FFF9353B11CE206D /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = /System/Library/Frameworks/IOKit.framework; sourceTree = "<absolute>"; };
 		04B6B6E4FF76D54211CA29CE /* IsochronousDataHandler.i */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.interfacer; path = IsochronousDataHandler.i; sourceTree = "<group>"; };
 		04D734D2FFF9388111CE206D /* DVComponentGlue.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DVComponentGlue.framework; path = /System/Library/Frameworks/DVComponentGlue.framework; sourceTree = "<absolute>"; };
-		0647D2F1007A83D311CE206D /* English */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.rez; name = English; path = English.lproj/Localized.r; sourceTree = "<group>"; };
 		0647D2F4007A85AF11CE206D /* IOFWDVComponents.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IOFWDVComponents.h; sourceTree = "<group>"; };
 		0889979DFF7ABFC811CA29CE /* readtest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = readtest; sourceTree = BUILT_PRODUCTS_DIR; };
 		088997A4FF7AC00911CA29CE /* readtest.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = readtest.c; path = tests/readtest.c; sourceTree = "<group>"; };
@@ -329,6 +256,7 @@
 		08EA7FFBFE8413EDC02AAC07 /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Carbon.framework; path = /System/Library/Frameworks/Carbon.framework; sourceTree = "<absolute>"; };
 		0C08A46BFF67027911CA29CE /* IsochronousDataHandler.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = IsochronousDataHandler.h; sourceTree = "<group>"; };
 		13FACEA4FF67164A11CA29CE /* DVFamily.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = DVFamily.c; sourceTree = "<group>"; };
+		302B751C0B5EE93100C0EED0 /* English */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text.plist.strings; name = English; path = English.lproj/Localizable.strings; sourceTree = "<group>"; };
 		8C51CC6F00BDE16404CE206D /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = /System/Library/Frameworks/CoreFoundation.framework; sourceTree = "<absolute>"; };
 		8CA281E300E2BF7B04CE206D /* devicetest.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = devicetest.c; path = tests/devicetest.c; sourceTree = "<group>"; };
 		8CA281E400E2BF7B04CE206D /* devicetest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = devicetest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -337,6 +265,7 @@
 		8CDC69E501F4F0F904CE206E /* DVLib.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DVLib.h; sourceTree = "<group>"; };
 		8CFF00A70282093404CE237C /* CFTest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = CFTest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CFF00AD0282097104CE237C /* CFTest.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = CFTest.c; path = /Network/Servers/abel/homes/sauron/wgulland/Snippets/CFTest.c; sourceTree = "<absolute>"; };
+		A1C4DB0E09D2257E000BCF43 /* DVComponentGlue.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DVComponentGlue.h; sourceTree = "<group>"; };
 		F51B1CA3034B53C401CD2849 /* DVVers.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DVVers.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -351,28 +280,6 @@
 				01CE0ABBFFF92E6711CE206D /* Frameworks */,
 				01CE0ABCFFF92E6711CE206D /* Rez */,
 			);
-			buildSettings = {
-				CFM_BRIDGE = YES;
-				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 1;
-				EXPORTED_SYMBOLS_FILE = DVComponentGlue.exp;
-				FRAMEWORK_VERSION = A;
-				GENERATE_EXPORT_SETS_AND_GLUE = YES;
-				INSTALL_PATH = /System/Library/Frameworks;
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_LIBTOOL_FLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRINCIPAL_CLASS = "";
-				PRODUCT_NAME = DVComponentGlue;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-				WRAPPER_EXTENSION = framework;
-			};
 			dependencies = (
 			);
 			name = DVComponentGlue;
@@ -380,7 +287,7 @@
 			productName = DVComponentGlue;
 			productReference = 01CE0AB6FFF92E6711CE206D /* DVComponentGlue.framework */;
 			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 <plist version=\"1.0\">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -388,7 +295,7 @@
 	<key>CFBundleExecutable</key>
 	<string>DVComponentGlue</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IOFWDVComponents version 1.9.0, Copyright 2005 Apple Computer, Inc.</string>
+	<string>IOFWDVComponents version 1.9.5, Copyright 2007 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -400,11 +307,11 @@
 	<key>CFBundlePackageType</key>
 	<string>FMWK</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.9.0</string>
+	<string>1.9.5</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.9.0</string>
+	<string>1.9.5</string>
 	<key>CarbonLazyValues</key>
 	<dict>
 		<key>CodeFragmentManager</key>
@@ -555,9 +462,9 @@
 		089C167CFE841241C02AAC07 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				302B751B0B5EE93100C0EED0 /* Localizable.strings */,
 				089C167DFE841241C02AAC07 /* InfoPlist.strings */,
 				02C3D64DFF65A62711CA29CE /* IOFWDVComponents.r */,
-				0647D2F0007A83D311CE206D /* Localized.r */,
 			);
 			name = Resources;
 			sourceTree = "<group>";
@@ -572,6 +479,7 @@
 				02C3D649FF65A4E811CA29CE /* DeviceControl.h */,
 				02C3D632FF6599F211CA29CE /* IsochronousDataHandler.i.c */,
 				0C08A46BFF67027911CA29CE /* IsochronousDataHandler.h */,
+				A1C4DB0E09D2257E000BCF43 /* DVComponentGlue.h */,
 				04B6B6E4FF76D54211CA29CE /* IsochronousDataHandler.i */,
 				01151960FF76ADBC11CA29CE /* DeviceControl.i */,
 				01FFD70AFFF9745011CE206D /* DVComponentGlue.exp */,
@@ -644,6 +552,7 @@
 				01CED3840003BB8C11CE206E /* DVComponentGlue.i in Headers */,
 				8C31838A015FDAE804CE206D /* IsochronousDataHandler.h in Headers */,
 				8C31838B015FDAE804CE206D /* DeviceControl.h in Headers */,
+				A1C4DB1109D2259C000BCF43 /* DVComponentGlue.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -705,16 +614,12 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 30FE97250829B43100BB83AB /* Build configuration list for PBXProject "IOFWDVComponents" */;
-			buildSettings = {
-			};
-			buildStyles = (
-				014F01A8FF9D02F711CE206C /* Development */,
-				014F01A9FF9D02F711CE206C /* Deployment */,
-				4D537F0E039BF1D900CE20D6 /* FireLog */,
-			);
+			compatibilityVersion = "Xcode 2.4";
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* IOFWDVComponents */;
 			projectDirPath = "";
+			projectRoot = "";
+			shouldCheckCompatibility = 1;
 			targets = (
 				0C08A465FF66C08911CA29CE /* All */,
 				089C1673FE841209C02AAC07 /* IOFWDVComponents */,
@@ -743,6 +648,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				089C1680FE841241C02AAC07 /* InfoPlist.strings in Resources */,
+				302B751D0B5EE93100C0EED0 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -796,7 +702,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				02C3D64EFF65A62711CA29CE /* IOFWDVComponents.r in Rez */,
-				0647D2F3007A840411CE206D /* Localized.r in Rez */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -935,19 +840,6 @@
 				00F0818DFFB3905911CE206C /* Frameworks */,
 				00F0818FFFB3905911CE206C /* Rez */,
 			);
-			buildSettings = {
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = AVCTest;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
 			dependencies = (
 			);
 			name = AVCTest;
@@ -964,25 +856,6 @@
 				014F01AFFF9D04C111CE206C /* Frameworks */,
 				014F01B0FF9D04C111CE206C /* Rez */,
 			);
-			buildSettings = {
-				HEADER_SEARCH_PATHS = (
-					/System/Library/Frameworks/QuickTime.framework/headers,
-					/System/Library/Frameworks/CarbonCore.framework/headers,
-					/System/Library/Frameworks/Carbon.framework/Headers,
-					/System/Library/Frameworks/HIToolbox.framework/Headers,
-				);
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = writetest;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
 			dependencies = (
 			);
 			name = writetest;
@@ -999,19 +872,6 @@
 				01D74280FF9D28DA11CE206C /* Frameworks */,
 				01D74281FF9D28DA11CE206C /* Rez */,
 			);
-			buildSettings = {
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = DVTest;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
 			dependencies = (
 			);
 			name = DVTest;
@@ -1028,25 +888,6 @@
 				088997A1FF7ABFC811CA29CE /* Frameworks */,
 				088997A2FF7ABFC811CA29CE /* Rez */,
 			);
-			buildSettings = {
-				HEADER_SEARCH_PATHS = (
-					/System/Library/Frameworks/Carbon.framework/Headers,
-					/System/Library/Frameworks/QuickTime.framework/headers,
-					/System/Library/Frameworks/CarbonCore.framework/headers,
-					/System/Library/Frameworks/HIToolbox.framework/Headers,
-				);
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = readtest;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
 			dependencies = (
 			);
 			name = readtest;
@@ -1062,19 +903,6 @@
 				8CA281E900E2BF7B04CE206D /* Frameworks */,
 				8CA281EA00E2BF7B04CE206D /* Rez */,
 			);
-			buildSettings = {
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = devicetest;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
 			dependencies = (
 			);
 			name = devicetest;
@@ -1091,19 +919,6 @@
 				8CFF00AB0282093404CE237C /* Frameworks */,
 				8CFF00AC0282093404CE237C /* Rez */,
 			);
-			buildSettings = {
-				OTHER_CFLAGS = "";
-				OTHER_LDFLAGS = "";
-				OTHER_REZFLAGS = "";
-				PRODUCT_NAME = CFTest;
-				REZ_EXECUTABLE = YES;
-				SECTORDER_FLAGS = "";
-				WARNING_CFLAGS = (
-					"-Wmost",
-					"-Wno-four-char-constants",
-					"-Wno-unknown-pragmas",
-				);
-			};
 			dependencies = (
 			);
 			name = CFTest;
@@ -1114,20 +929,20 @@
 /* End PBXToolTarget section */
 
 /* Begin PBXVariantGroup section */
-		0647D2F0007A83D311CE206D /* Localized.r */ = {
-			isa = PBXVariantGroup;
-			children = (
-				0647D2F1007A83D311CE206D /* English */,
-			);
-			name = Localized.r;
-			sourceTree = "<group>";
-		};
 		089C167DFE841241C02AAC07 /* InfoPlist.strings */ = {
 			isa = PBXVariantGroup;
 			children = (
 				089C167EFE841241C02AAC07 /* English */,
 			);
 			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		302B751B0B5EE93100C0EED0 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				302B751C0B5EE93100C0EED0 /* English */,
+			);
+			name = Localizable.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
