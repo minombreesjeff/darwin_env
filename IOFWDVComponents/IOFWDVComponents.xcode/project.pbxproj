@@ -3,12 +3,14 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 38;
+	objectVersion = 39;
 	objects = {
 		00F08188FFB3905911CE206C = {
-			isa = PBXExecutableFileReference;
+			explicitFileType = "compiled.mach-o.executable";
+			isa = PBXFileReference;
 			path = AVCTest;
 			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 		00F08189FFB3905911CE206C = {
 			buildPhases = (
@@ -80,9 +82,11 @@
 		00F08191FFB390AA11CE206C = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			name = AVCTest.c;
 			path = tests/AVCTest.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		00F08192FFB390AA11CE206C = {
 			fileRef = 00F08191FFB390AA11CE206C;
@@ -105,8 +109,10 @@
 		01151960FF76ADBC11CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.interfacer;
 			path = DeviceControl.i;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		01151961FF76ADBC11CA29CE = {
 			fileRef = 01151960FF76ADBC11CA29CE;
@@ -117,26 +123,31 @@
 			};
 		};
 		014F01A8FF9D02F711CE206C = {
-			buildRules = (
-			);
 			buildSettings = {
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_FIX_AND_CONTINUE = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
 				OPTIMIZATION_CFLAGS = "-O0";
+				ZERO_LINK = YES;
 			};
 			isa = PBXBuildStyle;
 			name = Development;
 		};
 		014F01A9FF9D02F711CE206C = {
-			buildRules = (
-			);
 			buildSettings = {
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				ZERO_LINK = NO;
 			};
 			isa = PBXBuildStyle;
 			name = Deployment;
 		};
 		014F01ABFF9D04C111CE206C = {
-			isa = PBXExecutableFileReference;
+			explicitFileType = "compiled.mach-o.executable";
+			isa = PBXFileReference;
 			path = writetest;
 			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 		014F01ACFF9D04C111CE206C = {
 			buildPhases = (
@@ -202,9 +213,11 @@
 		014F01B2FF9D052F11CE206C = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			name = writetest.c;
 			path = tests/writetest.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		014F01B4FF9D052F11CE206C = {
 			fileRef = 02C3D632FF6599F211CA29CE;
@@ -265,19 +278,25 @@
 			};
 		};
 		01526B84FFC4A6DF11CE206C = {
-			isa = PBXBundleReference;
+			explicitFileType = wrapper.cfbundle;
+			isa = PBXFileReference;
 			path = IOFWDVComponents.component;
 			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 		01526B85FFC4A6DF11CE206C = {
-			isa = PBXBundleReference;
+			explicitFileType = wrapper.cfbundle;
+			isa = PBXFileReference;
 			path = DVFamily.bundle;
 			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 		01CE0AB6FFF92E6711CE206D = {
-			isa = PBXFrameworkReference;
+			explicitFileType = wrapper.framework;
+			isa = PBXFileReference;
 			path = DVComponentGlue.framework;
 			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 		01CE0AB7FFF92E6711CE206D = {
 			buildPhases = (
@@ -319,9 +338,9 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string></string>
+	<string>DVComponentGlue</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IOFWDVComponents version 1.6.3, Copyright 2005 Apple Computer, Inc.</string>
+	<string>IOFWDVComponents version 1.7.5, Copyright 2005 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -333,11 +352,11 @@
 	<key>CFBundlePackageType</key>
 	<string>FMWK</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.6.3</string>
+	<string>1.7.5</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.6.3</string>
+	<string>1.7.5</string>
 	<key>CarbonLazyValues</key>
 	<dict>
 		<key>CodeFragmentManager</key>
@@ -403,8 +422,10 @@
 		01CED3830003BB8C11CE206E = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.interfacer;
 			path = DVComponentGlue.i;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		01CED3840003BB8C11CE206E = {
 			fileRef = 01CED3830003BB8C11CE206E;
@@ -415,9 +436,11 @@
 			};
 		};
 		01D7427BFF9D28DA11CE206C = {
-			isa = PBXExecutableFileReference;
+			explicitFileType = "compiled.mach-o.executable";
+			isa = PBXFileReference;
 			path = DVTest;
 			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 		01D7427CFF9D28DA11CE206C = {
 			buildPhases = (
@@ -477,9 +500,11 @@
 		01D74283FF9D297311CE206C = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			name = DVTest.c;
 			path = tests/DVTest.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		01D74284FF9D297311CE206C = {
 			fileRef = 01D74283FF9D297311CE206C;
@@ -514,8 +539,10 @@
 		01FFD70AFFF9745011CE206D = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.exports;
 			path = DVComponentGlue.exp;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 //010
 //011
@@ -530,8 +557,10 @@
 		02B83D78FF9D34B211CE206C = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
 			path = DVFamily.h;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		02B83D79FF9D34B211CE206C = {
 			fileRef = 02B83D78FF9D34B211CE206C;
@@ -544,26 +573,34 @@
 		02C3D62FFF65998A11CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			path = DeviceControl.i.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		02C3D631FF6599F211CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			path = DeviceControlPriv.i.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		02C3D632FF6599F211CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			path = IsochronousDataHandler.i.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		02C3D63AFF659AA611CA29CE = {
-			isa = PBXFrameworkReference;
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
 			name = Foundation.framework;
 			path = /System/Library/Frameworks/Foundation.framework;
 			refType = 0;
+			sourceTree = "<absolute>";
 		};
 		02C3D63BFF659AA611CA29CE = {
 			fileRef = 02C3D63AFF659AA611CA29CE;
@@ -572,10 +609,12 @@
 			};
 		};
 		02C3D63CFF659AF211CA29CE = {
-			isa = PBXFrameworkReference;
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
 			name = QuickTime.framework;
 			path = /System/Library/Frameworks/QuickTime.framework;
 			refType = 0;
+			sourceTree = "<absolute>";
 		};
 		02C3D63DFF659AF211CA29CE = {
 			fileRef = 02C3D63CFF659AF211CA29CE;
@@ -586,8 +625,10 @@
 		02C3D642FF65A2AF11CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			path = DVControlComponent.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		02C3D644FF65A2AF11CA29CE = {
 			fileRef = 02C3D631FF6599F211CA29CE;
@@ -608,8 +649,10 @@
 		02C3D647FF65A4C711CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
 			path = DeviceControlPriv.h;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		02C3D648FF65A4C711CA29CE = {
 			fileRef = 02C3D647FF65A4C711CA29CE;
@@ -620,8 +663,10 @@
 		02C3D649FF65A4E811CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
 			path = DeviceControl.h;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		02C3D64AFF65A4E811CA29CE = {
 			fileRef = 02C3D649FF65A4E811CA29CE;
@@ -632,8 +677,10 @@
 		02C3D64DFF65A62711CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.rez;
 			path = IOFWDVComponents.r;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		02C3D64EFF65A62711CA29CE = {
 			fileRef = 02C3D64DFF65A62711CA29CE;
@@ -642,10 +689,12 @@
 			};
 		};
 		02C3D64FFF65A66F11CA29CE = {
-			isa = PBXFrameworkReference;
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
 			name = CoreServices.framework;
 			path = /System/Library/Frameworks/CoreServices.framework;
 			refType = 0;
+			sourceTree = "<absolute>";
 		};
 		02C3D650FF65A66F11CA29CE = {
 			fileRef = 02C3D64FFF65A66F11CA29CE;
@@ -670,10 +719,12 @@
 			};
 		};
 		038A4B80FFF9353B11CE206D = {
-			isa = PBXFrameworkReference;
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
 			name = IOKit.framework;
 			path = /System/Library/Frameworks/IOKit.framework;
 			refType = 0;
+			sourceTree = "<absolute>";
 		};
 		038A4B82FFF9353B11CE206D = {
 			fileRef = 038A4B80FFF9353B11CE206D;
@@ -684,6 +735,7 @@
 		0396D5E7FFF9375411CE206D = {
 			isa = PBXTargetDependency;
 			target = 01CE0AB7FFF92E6711CE206D;
+			targetProxy = A1F91C1907A94D6A000A2E35;
 		};
 //030
 //031
@@ -698,8 +750,10 @@
 		04B6B6E4FF76D54211CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.interfacer;
 			path = IsochronousDataHandler.i;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		04B6B6E5FF76D54211CA29CE = {
 			fileRef = 04B6B6E4FF76D54211CA29CE;
@@ -708,10 +762,12 @@
 			};
 		};
 		04D734D2FFF9388111CE206D = {
-			isa = PBXFrameworkReference;
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
 			name = DVComponentGlue.framework;
 			path = /System/Library/Frameworks/DVComponentGlue.framework;
 			refType = 0;
+			sourceTree = "<absolute>";
 		};
 //040
 //041
@@ -731,13 +787,16 @@
 			name = Localized.r;
 			path = "";
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		0647D2F1007A83D311CE206D = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.rez;
 			name = English;
 			path = English.lproj/Localized.r;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		0647D2F3007A840411CE206D = {
 			fileRef = 0647D2F0007A83D311CE206D;
@@ -748,8 +807,10 @@
 		0647D2F4007A85AF11CE206D = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
 			path = IOFWDVComponents.h;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 //060
 //061
@@ -773,11 +834,14 @@
 			isa = PBXGroup;
 			name = tests;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		0889979DFF7ABFC811CA29CE = {
-			isa = PBXExecutableFileReference;
+			explicitFileType = "compiled.mach-o.executable";
+			isa = PBXFileReference;
 			path = readtest;
 			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 		0889979EFF7ABFC811CA29CE = {
 			buildPhases = (
@@ -841,9 +905,11 @@
 		088997A4FF7AC00911CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			name = readtest.c;
 			path = tests/readtest.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		088997A6FF7AC00D11CA29CE = {
 			fileRef = 088997A4FF7AC00911CA29CE;
@@ -854,6 +920,8 @@
 			};
 		};
 		089C1669FE841209C02AAC07 = {
+			buildSettings = {
+			};
 			buildStyles = (
 				014F01A8FF9D02F711CE206C,
 				014F01A9FF9D02F711CE206C,
@@ -890,6 +958,7 @@
 			isa = PBXGroup;
 			name = IOFWDVComponents;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		089C1671FE841209C02AAC07 = {
 			children = (
@@ -903,6 +972,7 @@
 			isa = PBXGroup;
 			name = "External Frameworks and Libraries";
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		089C1673FE841209C02AAC07 = {
 			buildPhases = (
@@ -948,11 +1018,11 @@
 	<key>CFBundlePackageType</key>
 	<string>thng</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.6.3</string>
+	<string>1.7.5</string>
 	<key>CFBundleSignature</key>
 	<string>appl</string>
 	<key>CFBundleVersion</key>
-	<string>1.6.3</string>
+	<string>1.7.5</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 </dict>
@@ -1021,6 +1091,7 @@
 			isa = PBXGroup;
 			name = Resources;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		089C167DFE841241C02AAC07 = {
 			children = (
@@ -1029,13 +1100,16 @@
 			isa = PBXVariantGroup;
 			name = InfoPlist.strings;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		089C167EFE841241C02AAC07 = {
 			fileEncoding = 10;
 			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
 			name = English;
 			path = English.lproj/InfoPlist.strings;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		089C1680FE841241C02AAC07 = {
 			fileRef = 089C167DFE841241C02AAC07;
@@ -1044,10 +1118,12 @@
 			};
 		};
 		08EA7FFBFE8413EDC02AAC07 = {
-			isa = PBXFrameworkReference;
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
 			name = Carbon.framework;
 			path = /System/Library/Frameworks/Carbon.framework;
 			refType = 0;
+			sourceTree = "<absolute>";
 		};
 		08EA7FFCFE8413EDC02AAC07 = {
 			fileRef = 08EA7FFBFE8413EDC02AAC07;
@@ -1074,6 +1150,7 @@
 			isa = PBXGroup;
 			name = Source;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 //080
 //081
@@ -1136,12 +1213,15 @@
 		0C08A467FF66C08911CA29CE = {
 			isa = PBXTargetDependency;
 			target = 089C1673FE841209C02AAC07;
+			targetProxy = A1F91C1A07A94D6A000A2E35;
 		};
 		0C08A46BFF67027911CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
 			path = IsochronousDataHandler.h;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		0C08A46CFF67027911CA29CE = {
 			fileRef = 0C08A46BFF67027911CA29CE;
@@ -1162,6 +1242,7 @@
 		13FACE9CFF67159C11CA29CE = {
 			isa = PBXTargetDependency;
 			target = 13FACE9DFF67159C11CA29CE;
+			targetProxy = A1F91C1B07A94D6A000A2E35;
 		};
 		13FACE9DFF67159C11CA29CE = {
 			buildPhases = (
@@ -1198,7 +1279,7 @@
 	<key>CFBundleExecutable</key>
 	<string>DVFamily</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IOFWDVComponents version 1.6.3, Copyright 2005 Apple Computer, Inc.</string>
+	<string>IOFWDVComponents version 1.7.5, Copyright 2005 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -1210,11 +1291,11 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.6.3</string>
+	<string>1.7.5</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.6.3</string>
+	<string>1.7.5</string>
 </dict>
 </plist>
 ";
@@ -1272,12 +1353,15 @@
 			isa = PBXGroup;
 			name = DVFamily;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		13FACEA4FF67164A11CA29CE = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			path = DVFamily.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		13FACEA6FF6716B911CA29CE = {
 			fileRef = 13FACEA4FF67164A11CA29CE;
@@ -1312,6 +1396,7 @@
 			isa = PBXGroup;
 			name = Products;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 //190
 //191
@@ -1324,8 +1409,6 @@
 //4D3
 //4D4
 		4D537F0E039BF1D900CE20D6 = {
-			buildRules = (
-			);
 			buildSettings = {
 				OPTIMIZATION_CFLAGS = "-O0";
 			};
@@ -1385,10 +1468,12 @@
 			};
 		};
 		8C51CC6F00BDE16404CE206D = {
-			isa = PBXFrameworkReference;
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.framework;
 			name = CoreFoundation.framework;
 			path = /System/Library/Frameworks/CoreFoundation.framework;
 			refType = 0;
+			sourceTree = "<absolute>";
 		};
 		8C51CC7000BDE16404CE206D = {
 			fileRef = 8C51CC6F00BDE16404CE206D;
@@ -1405,14 +1490,18 @@
 		8CA281E300E2BF7B04CE206D = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			name = devicetest.c;
 			path = tests/devicetest.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		8CA281E400E2BF7B04CE206D = {
-			isa = PBXExecutableFileReference;
+			explicitFileType = "compiled.mach-o.executable";
+			isa = PBXFileReference;
 			path = devicetest;
 			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 		8CA281E500E2BF7B04CE206D = {
 			buildPhases = (
@@ -1497,8 +1586,10 @@
 		8CD463AA010E321C04CE206D = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			path = DVIsochComponent.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		8CD463AB010E321C04CE206D = {
 			fileRef = 8CD463AA010E321C04CE206D;
@@ -1516,12 +1607,15 @@
 			name = Common;
 			path = "";
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		8CDC69E301F4EFF304CE206E = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			path = DVLib.c;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		8CDC69E401F4EFF304CE206E = {
 			fileRef = 8CDC69E301F4EFF304CE206E;
@@ -1532,8 +1626,10 @@
 		8CDC69E501F4F0F904CE206E = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
 			path = DVLib.h;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		8CDC69E601F4F0F904CE206E = {
 			fileRef = 8CDC69E501F4F0F904CE206E;
@@ -1578,9 +1674,11 @@
 			};
 		};
 		8CFF00A70282093404CE237C = {
-			isa = PBXExecutableFileReference;
+			explicitFileType = "compiled.mach-o.executable";
+			isa = PBXFileReference;
 			path = CFTest;
 			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
 		};
 		8CFF00A80282093404CE237C = {
 			buildPhases = (
@@ -1639,9 +1737,11 @@
 		8CFF00AD0282097104CE237C = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
 			name = CFTest.c;
 			path = /Network/Servers/abel/homes/sauron/wgulland/Snippets/CFTest.c;
 			refType = 0;
+			sourceTree = "<absolute>";
 		};
 		8CFF00AE0282097104CE237C = {
 			fileRef = 8CFF00AD0282097104CE237C;
@@ -1660,6 +1760,37 @@
 //8C2
 //8C3
 //8C4
+//A10
+//A11
+//A12
+//A13
+//A14
+		A1F91C1907A94D6A000A2E35 = {
+			containerPortal = 089C1669FE841209C02AAC07;
+			isa = PBXContainerItemProxy;
+			proxyType = 1;
+			remoteGlobalIDString = 01CE0AB7FFF92E6711CE206D;
+			remoteInfo = DVComponentGlue;
+		};
+		A1F91C1A07A94D6A000A2E35 = {
+			containerPortal = 089C1669FE841209C02AAC07;
+			isa = PBXContainerItemProxy;
+			proxyType = 1;
+			remoteGlobalIDString = 089C1673FE841209C02AAC07;
+			remoteInfo = IOFWDVComponents;
+		};
+		A1F91C1B07A94D6A000A2E35 = {
+			containerPortal = 089C1669FE841209C02AAC07;
+			isa = PBXContainerItemProxy;
+			proxyType = 1;
+			remoteGlobalIDString = 13FACE9DFF67159C11CA29CE;
+			remoteInfo = DVFamily;
+		};
+//A10
+//A11
+//A12
+//A13
+//A14
 //F50
 //F51
 //F52
@@ -1668,8 +1799,10 @@
 		F51B1CA3034B53C401CD2849 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
 			path = DVVers.h;
 			refType = 4;
+			sourceTree = "<group>";
 		};
 		F5FA1990034A455301CD2849 = {
 			fileRef = 014F01B2FF9D052F11CE206C;
