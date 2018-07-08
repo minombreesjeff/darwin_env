@@ -334,6 +334,7 @@ test_expect_success 'hierarchical section value' '
 '
 
 cat > expect << EOF
+credential.helper=osxkeychain
 beta.noindent=sillyValue
 nextsection.nonewline=wow2 for me
 123456.a123=987
@@ -345,6 +346,7 @@ test_expect_success 'working --list' '
 	test_cmp expect output
 '
 cat > expect << EOF
+credential.helper=osxkeychain
 EOF
 
 test_expect_success '--list without repo produces empty output' '
@@ -353,6 +355,7 @@ test_expect_success '--list without repo produces empty output' '
 '
 
 cat > expect << EOF
+credential.helper
 beta.noindent
 nextsection.nonewline
 123456.a123
@@ -927,6 +930,7 @@ inued"
 EOF
 
 cat > expect <<\EOF
+credential.helper=osxkeychain
 section.continued=continued
 section.noncont=not continued
 section.quotecont=cont;inued
@@ -947,7 +951,8 @@ cat > .git/config <<\EOF
 EOF
 
 cat > expect <<\EOF
-section.sub=section.val1
+credential.helper
+osxkeychainQsection.sub=section.val1
 foo=barQsection.sub=section.val2
 foo
 barQsection.sub=section.val3
@@ -962,6 +967,16 @@ test_expect_success '--null --list' '
 	test_cmp expect result
 '
 
+cat > expect <<\EOF
+section.sub=section.val1
+foo=barQsection.sub=section.val2
+foo
+barQsection.sub=section.val3
+
+
+Qsection.sub=section.val4
+Qsection.sub=section.val5Q
+EOF
 test_expect_success '--null --get-regexp' '
 	git config --null --get-regexp "val[0-9]" | nul_to_q >result &&
 	echo >>result &&

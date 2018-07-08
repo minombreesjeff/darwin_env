@@ -1527,6 +1527,21 @@ test_expect_success $PREREQ 'cccover adds Cc to all mail' '
 	test_cover_addresses "Cc"
 '
 
+test_expect_success $PREREQ 'escaped quotes in sendemail.aliasfiletype=mutt' '
+	clean_fake_sendmail &&
+	echo "alias sbd \\\"Dot U. Sir\\\" <somebody@example.org>" >.mutt &&
+	git config --replace-all sendemail.aliasesfile "$(pwd)/.mutt" &&
+	git config sendemail.aliasfiletype mutt &&
+	git send-email \
+		--from="Example <nobody@example.com>" \
+		--to=sbd \
+		--smtp-server="$(pwd)/fake.sendmail" \
+		outdir/0001-*.patch \
+		2>errors >out &&
+	grep "^!somebody@example\.org!$" commandline1 &&
+	grep -F "To: \"Dot U. Sir\" <somebody@example.org>" out
+'
+
 test_expect_success $PREREQ 'sendemail.aliasfiletype=mailrc' '
 	clean_fake_sendmail &&
 	echo "alias sbd  somebody@example.org" >.mailrc &&
@@ -1553,6 +1568,88 @@ test_expect_success $PREREQ 'sendemail.aliasfile=~/.mailrc' '
 		outdir/0001-*.patch \
 		2>errors >out &&
 	grep "^!someone@example\.org!$" commandline1
+'
+
+test_dump_aliases () {
+	msg="$1" && shift &&
+	filetype="$1" && shift &&
+	printf '%s\n' "$@" >expect &&
+	cat >.tmp-email-aliases &&
+
+	test_expect_success $PREREQ "$msg" '
+		clean_fake_sendmail && rm -fr outdir &&
+		git config --replace-all sendemail.aliasesfile \
+			"$(pwd)/.tmp-email-aliases" &&
+		git config sendemail.aliasfiletype "$filetype" &&
+		git send-email --dump-aliases 2>errors >actual &&
+		test_cmp expect actual
+	'
+}
+
+test_dump_aliases '--dump-aliases sendmail format' \
+	'sendmail' \
+	'abgroup' \
+	'alice' \
+	'bcgrp' \
+	'bob' \
+	'chloe' <<-\EOF
+	alice: Alice W Land <awol@example.com>
+	bob: Robert Bobbyton <bob@example.com>
+	chloe: chloe@example.com
+	abgroup: alice, bob
+	bcgrp: bob, chloe, Other <o@example.com>
+	EOF
+
+test_dump_aliases '--dump-aliases mutt format' \
+	'mutt' \
+	'alice' \
+	'bob' \
+	'chloe' \
+	'donald' <<-\EOF
+	alias alice Alice W Land <awol@example.com>
+	alias donald Donald C Carlton <donc@example.com>
+	alias bob Robert Bobbyton <bob@example.com>
+	alias chloe chloe@example.com
+	EOF
+
+test_dump_aliases '--dump-aliases mailrc format' \
+	'mailrc' \
+	'alice' \
+	'bob' \
+	'chloe' \
+	'eve' <<-\EOF
+	alias alice   Alice W Land <awol@example.com>
+	alias eve     Eve <eve@example.com>
+	alias bob     Robert Bobbyton <bob@example.com>
+	alias chloe   chloe@example.com
+	EOF
+
+test_dump_aliases '--dump-aliases pine format' \
+	'pine' \
+	'alice' \
+	'bob' \
+	'chloe' \
+	'eve' <<-\EOF
+	alice	Alice W Land	<awol@example.com>
+	eve	Eve	<eve@example.com>
+	bob	Robert	Bobbyton <bob@example.com>
+	chloe		chloe@example.com
+	EOF
+
+test_dump_aliases '--dump-aliases gnus format' \
+	'gnus' \
+	'alice' \
+	'bob' \
+	'chloe' \
+	'eve' <<-\EOF
+	(define-mail-alias "alice" "awol@example.com")
+	(define-mail-alias "eve" "eve@example.com")
+	(define-mail-alias "bob" "bob@example.com")
+	(define-mail-alias "chloe" "chloe@example.com")
+	EOF
+
+test_expect_success '--dump-aliases must be used alone' '
+	test_must_fail git send-email --dump-aliases --to=janice@example.com -1 refs/heads/accounting
 '
 
 test_sendmail_aliases () {

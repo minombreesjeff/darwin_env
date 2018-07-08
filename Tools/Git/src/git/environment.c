@@ -144,11 +144,8 @@ static char *git_path_from_env(const char *envvar, const char *git_dir,
 			       const char *path, int *fromenv)
 {
 	const char *value = getenv(envvar);
-	if (!value) {
-		char *buf = xmalloc(strlen(git_dir) + strlen(path) + 2);
-		sprintf(buf, "%s/%s", git_dir, path);
-		return buf;
-	}
+	if (!value)
+		return xstrfmt("%s/%s", git_dir, path);
 	if (fromenv)
 		*fromenv = 1;
 	return xstrdup(value);
@@ -238,8 +235,6 @@ void set_git_work_tree(const char *new_work_tree)
 	}
 	git_work_tree_initialized = 1;
 	work_tree = xstrdup(real_path(new_work_tree));
-	if (setenv(GIT_WORK_TREE_ENVIRONMENT, work_tree, 1))
-		die("could not set GIT_WORK_TREE to '%s'", work_tree);
 }
 
 const char *get_git_work_tree(void)

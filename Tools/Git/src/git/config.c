@@ -1839,15 +1839,26 @@ contline:
 	return offset;
 }
 
-int git_config_set_in_file(const char *config_filename,
-			const char *key, const char *value)
+int git_config_set_in_file_gently(const char *config_filename,
+				  const char *key, const char *value)
 {
-	return git_config_set_multivar_in_file(config_filename, key, value, NULL, 0);
+	return git_config_set_multivar_in_file_gently(config_filename, key, value, NULL, 0);
 }
 
-int git_config_set(const char *key, const char *value)
+void git_config_set_in_file(const char *config_filename,
+			    const char *key, const char *value)
 {
-	return git_config_set_multivar(key, value, NULL, 0);
+	git_config_set_multivar_in_file(config_filename, key, value, NULL, 0);
+}
+
+int git_config_set_gently(const char *key, const char *value)
+{
+	return git_config_set_multivar_gently(key, value, NULL, 0);
+}
+
+void git_config_set(const char *key, const char *value)
+{
+	git_config_set_multivar(key, value, NULL, 0);
 }
 
 /*
@@ -1892,7 +1903,7 @@ static int git_config_parse_key_1(const char *key, char **store_key, int *basele
 	 * Validate the key and while at it, lower case it for matching.
 	 */
 	if (store_key)
-		*store_key = xmalloc(strlen(key) + 1);
+		*store_key = xmallocz(strlen(key));
 
 	dot = 0;
 	for (i = 0; key[i]; i++) {
@@ -1916,8 +1927,6 @@ static int git_config_parse_key_1(const char *key, char **store_key, int *basele
 		if (store_key)
 			(*store_key)[i] = c;
 	}
-	if (store_key)
-		(*store_key)[i] = 0;
 
 	return 0;
 
@@ -1964,9 +1973,10 @@ int git_config_key_is_valid(const char *key)
  * - the config file is removed and the lock file rename()d to it.
  *
  */
-int git_config_set_multivar_in_file(const char *config_filename,
-				const char *key, const char *value,
-				const char *value_regex, int multi_replace)
+int git_config_set_multivar_in_file_gently(const char *config_filename,
+					   const char *key, const char *value,
+					   const char *value_regex,
+					   int multi_replace)
 {
 	int fd = -1, in_fd = -1;
 	int ret;
@@ -2158,7 +2168,8 @@ int git_config_set_multivar_in_file(const char *config_filename,
 	}
 
 	if (commit_lock_file(lock) < 0) {
-		error("could not commit config file %s", config_filename);
+		error("could not write config file %s: %s", config_filename,
+		      strerror(errno));
 		ret = CONFIG_NO_WRITE;
 		lock = NULL;
 		goto out_free;
@@ -2192,11 +2203,27 @@ write_err_out:
 
 }
 
-int git_config_set_multivar(const char *key, const char *value,
-			const char *value_regex, int multi_replace)
+void git_config_set_multivar_in_file(const char *config_filename,
+				     const char *key, const char *value,
+				     const char *value_regex, int multi_replace)
 {
-	return git_config_set_multivar_in_file(NULL, key, value, value_regex,
-					       multi_replace);
+	if (git_config_set_multivar_in_file_gently(config_filename, key, value,
+						   value_regex, multi_replace) < 0)
+		die(_("Could not set '%s' to '%s'"), key, value);
+}
+
+int git_config_set_multivar_gently(const char *key, const char *value,
+				   const char *value_regex, int multi_replace)
+{
+	return git_config_set_multivar_in_file_gently(NULL, key, value, value_regex,
+						      multi_replace);
+}
+
+void git_config_set_multivar(const char *key, const char *value,
+			     const char *value_regex, int multi_replace)
+{
+	git_config_set_multivar_in_file(NULL, key, value, value_regex,
+					multi_replace);
 }
 
 static int section_name_match (const char *buf, const char *name)
@@ -2344,7 +2371,8 @@ int git_config_rename_section_in_file(const char *config_filename,
 	fclose(config_file);
 unlock_and_out:
 	if (commit_lock_file(lock) < 0)
-		ret = error("could not commit config file %s", config_filename);
+		ret = error("could not write config file %s: %s",
+			    config_filename, strerror(errno));
 out:
 	free(filename_buf);
 	return ret;

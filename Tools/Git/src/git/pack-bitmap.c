@@ -252,16 +252,11 @@ static int load_bitmap_entries_v1(struct bitmap_index *index)
 
 static char *pack_bitmap_filename(struct packed_git *p)
 {
-	char *idx_name;
-	int len;
+	size_t len;
 
-	len = strlen(p->pack_name) - strlen(".pack");
-	idx_name = xmalloc(len + strlen(".bitmap") + 1);
-
-	memcpy(idx_name, p->pack_name, len);
-	memcpy(idx_name + len, ".bitmap", strlen(".bitmap") + 1);
-
-	return idx_name;
+	if (!strip_suffix(p->pack_name, ".pack", &len))
+		die("BUG: pack_name does not end in .pack");
+	return xstrfmt("%.*s.bitmap", (int)len, p->pack_name);
 }
 
 static int open_pack_bitmap_1(struct packed_git *packfile)
@@ -402,7 +397,7 @@ static int ext_index_add_object(struct object *object, const char *name)
 	int hash_ret;
 	int bitmap_pos;
 
-	hash_pos = kh_put_sha1_pos(eindex->positions, object->sha1, &hash_ret);
+	hash_pos = kh_put_sha1_pos(eindex->positions, object->oid.hash, &hash_ret);
 	if (hash_ret > 0) {
 		if (eindex->count >= eindex->alloc) {
 			eindex->alloc = (eindex->alloc + 16) * 3 / 2;
@@ -422,19 +417,15 @@ static int ext_index_add_object(struct object *object, const char *name)
 	return bitmap_pos + bitmap_git.pack->num_objects;
 }
 
-static void show_object(struct object *object, const struct name_path *path,
-			const char *last, void *data)
+static void show_object(struct object *object, const char *name, void *data)
 {
 	struct bitmap *base = data;
 	int bitmap_pos;
 
-	bitmap_pos = bitmap_position(object->sha1);
+	bitmap_pos = bitmap_position(object->oid.hash);
 
-	if (bitmap_pos < 0) {
-		char *name = path_name(path, last);
+	if (bitmap_pos < 0)
 		bitmap_pos = ext_index_add_object(object, name);
-		free(name);
-	}
 
 	bitmap_set(base, bitmap_pos);
 }
@@ -471,11 +462,11 @@ static int should_include(struct commit *commit, void *_data)
 	struct include_data *data = _data;
 	int bitmap_pos;
 
-	bitmap_pos = bitmap_position(commit->object.sha1);
+	bitmap_pos = bitmap_position(commit->object.oid.hash);
 	if (bitmap_pos < 0)
 		bitmap_pos = ext_index_add_object((struct object *)commit, NULL);
 
-	if (!add_to_include_set(data, commit->object.sha1, bitmap_pos)) {
+	if (!add_to_include_set(data, commit->object.oid.hash, bitmap_pos)) {
 		struct commit_list *parent = commit->parents;
 
 		while (parent) {
@@ -511,7 +502,7 @@ static struct bitmap *find_objects(struct rev_info *revs,
 		roots = roots->next;
 
 		if (object->type == OBJ_COMMIT) {
-			khiter_t pos = kh_get_sha1(bitmap_git.bitmaps, object->sha1);
+			khiter_t pos = kh_get_sha1(bitmap_git.bitmaps, object->oid.hash);
 
 			if (pos < kh_end(bitmap_git.bitmaps)) {
 				struct stored_bitmap *st = kh_value(bitmap_git.bitmaps, pos);
@@ -553,7 +544,7 @@ static struct bitmap *find_objects(struct rev_info *revs,
 		int pos;
 
 		roots = roots->next;
-		pos = bitmap_position(object->sha1);
+		pos = bitmap_position(object->oid.hash);
 
 		if (pos < 0 || base == NULL || !bitmap_get(base, pos)) {
 			object->flags &= ~UNINTERESTING;
@@ -598,7 +589,7 @@ static void show_extended_objects(struct bitmap *objects,
 			continue;
 
 		obj = eindex->objects[i];
-		show_reach(obj->sha1, obj->type, 0, eindex->hashes[i], NULL, 0);
+		show_reach(obj->oid.hash, obj->type, 0, eindex->hashes[i], NULL, 0);
 	}
 }
 
@@ -655,7 +646,7 @@ static int in_bitmapped_pack(struct object_list *roots)
 		struct object *object = roots->item;
 		roots = roots->next;
 
-		if (find_pack_entry_one(object->sha1, bitmap_git.pack) > 0)
+		if (find_pack_entry_one(object->oid.hash, bitmap_git.pack) > 0)
 			return 1;
 	}
 
@@ -685,7 +676,7 @@ int prepare_bitmap_walk(struct rev_info *revs)
 		struct object *object = pending_e[i].item;
 
 		if (object->type == OBJ_NONE)
-			parse_object_or_die(object->sha1, NULL);
+			parse_object_or_die(object->oid.hash, NULL);
 
 		while (object->type == OBJ_TAG) {
 			struct tag *tag = (struct tag *) object;
@@ -697,7 +688,7 @@ int prepare_bitmap_walk(struct rev_info *revs)
 
 			if (!tag->tagged)
 				die("bad tag");
-			object = parse_object_or_die(tag->tagged->sha1, NULL);
+			object = parse_object_or_die(tag->tagged->oid.hash, NULL);
 		}
 
 		if (object->flags & UNINTERESTING)
@@ -902,16 +893,15 @@ struct bitmap_test_data {
 	size_t seen;
 };
 
-static void test_show_object(struct object *object,
-			     const struct name_path *path,
-			     const char *last, void *data)
+static void test_show_object(struct object *object, const char *name,
+			     void *data)
 {
 	struct bitmap_test_data *tdata = data;
 	int bitmap_pos;
 
-	bitmap_pos = bitmap_position(object->sha1);
+	bitmap_pos = bitmap_position(object->oid.hash);
 	if (bitmap_pos < 0)
-		die("Object not in bitmap: %s\n", sha1_to_hex(object->sha1));
+		die("Object not in bitmap: %s\n", oid_to_hex(&object->oid));
 
 	bitmap_set(tdata->base, bitmap_pos);
 	display_progress(tdata->prg, ++tdata->seen);
@@ -922,9 +912,9 @@ static void test_show_commit(struct commit *commit, void *data)
 	struct bitmap_test_data *tdata = data;
 	int bitmap_pos;
 
-	bitmap_pos = bitmap_position(commit->object.sha1);
+	bitmap_pos = bitmap_position(commit->object.oid.hash);
 	if (bitmap_pos < 0)
-		die("Object not in bitmap: %s\n", sha1_to_hex(commit->object.sha1));
+		die("Object not in bitmap: %s\n", oid_to_hex(&commit->object.oid));
 
 	bitmap_set(tdata->base, bitmap_pos);
 	display_progress(tdata->prg, ++tdata->seen);
@@ -948,20 +938,20 @@ void test_bitmap_walk(struct rev_info *revs)
 		bitmap_git.version, bitmap_git.entry_count);
 
 	root = revs->pending.objects[0].item;
-	pos = kh_get_sha1(bitmap_git.bitmaps, root->sha1);
+	pos = kh_get_sha1(bitmap_git.bitmaps, root->oid.hash);
 
 	if (pos < kh_end(bitmap_git.bitmaps)) {
 		struct stored_bitmap *st = kh_value(bitmap_git.bitmaps, pos);
 		struct ewah_bitmap *bm = lookup_stored_bitmap(st);
 
 		fprintf(stderr, "Found bitmap for %s. %d bits / %08x checksum\n",
-			sha1_to_hex(root->sha1), (int)bm->bit_size, ewah_checksum(bm));
+			oid_to_hex(&root->oid), (int)bm->bit_size, ewah_checksum(bm));
 
 		result = ewah_to_bitmap(bm);
 	}
 
 	if (result == NULL)
-		die("Commit %s doesn't have an indexed bitmap", sha1_to_hex(root->sha1));
+		die("Commit %s doesn't have an indexed bitmap", oid_to_hex(&root->oid));
 
 	revs->tag_objects = 1;
 	revs->tree_objects = 1;

@@ -2,12 +2,12 @@
 .\"     Title: git-diff-tree
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 09/28/2015
+.\"      Date: 01/04/2016
 .\"    Manual: Git Manual
-.\"    Source: Git 2.6.0
+.\"    Source: Git 2.7.0
 .\"  Language: English
 .\"
-.TH "GIT\-DIFF\-TREE" "1" "09/28/2015" "Git 2\&.6\&.0" "Git Manual"
+.TH "GIT\-DIFF\-TREE" "1" "01/04/2016" "Git 2\&.7\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -335,6 +335,10 @@ unless it was already enabled\&.
 Every non\-overlapping match of the <regex> is considered a word\&. Anything between these matches is considered whitespace and ignored(!) for the purposes of finding differences\&. You may want to append
 |[^[:space:]]
 to your regular expression to make sure that it matches all non\-whitespace characters\&. A match that contains a newline is silently truncated(!) at the newline\&.
+.sp
+For example,
+\-\-word\-diff\-regex=\&.
+will treat each character as a word and, correspondingly, show differences character by character\&.
 .sp
 The regex can also be set via a diff driver or configuration option, see
 \fBgitattributes\fR(1)
@@ -807,9 +811,13 @@ for more details\&.
 .sp
 With an optional
 \fI<ref>\fR
-argument, show this notes ref instead of the default notes ref(s)\&. The ref is taken to be in
+argument, show this notes ref instead of the default notes ref(s)\&. The ref specifies the full refname when it begins with
+refs/notes/; when it begins with
+notes/,
+refs/
+and otherwise
 refs/notes/
-if it is not qualified\&.
+is prefixed to form a full name of the ref\&.
 .sp
 Multiple \-\-notes options can be combined to control which notes are being displayed\&. Examples: "\-\-notes=foo" will show only notes from "refs/notes/foo"; "\-\-notes=foo \-\-notes" will show both notes from "refs/notes/foo" and from the default notes ref(s)\&.
 .RE

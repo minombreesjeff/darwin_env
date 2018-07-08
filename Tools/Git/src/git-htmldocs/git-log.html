@@ -1911,8 +1911,9 @@ people using 80-column terminals.</p></div>
 <em>core.notesRef</em> and <em>notes.displayRef</em> variables (or corresponding
 environment overrides). See <a href="git-config.html">git-config(1)</a> for more details.</p></div>
 <div class="paragraph"><p>With an optional <em>&lt;ref&gt;</em> argument, show this notes ref instead of the
-default notes ref(s). The ref is taken to be in <code>refs/notes/</code> if it
-is not qualified.</p></div>
+default notes ref(s). The ref specifies the full refname when it begins
+with <code>refs/notes/</code>; when it begins with <code>notes/</code>, <code>refs/</code> and otherwise
+<code>refs/notes/</code> is prefixed to form a full name of the ref.</p></div>
 <div class="paragraph"><p>Multiple --notes options can be combined to control which notes are
 being displayed. Examples: "--notes=foo" will show only notes from
 "refs/notes/foo"; "--notes=foo --notes" will show both notes from
@@ -1960,17 +1961,21 @@ being displayed. Examples: "--notes=foo" will show only notes from
 </p>
 </dd>
 <dt class="hdlist1">
---date=(relative|local|default|iso|iso-strict|rfc|short|raw)
+--date=&lt;format&gt;
 </dt>
 <dd>
 <p>
         Only takes effect for dates shown in human-readable format, such
         as when using <code>--pretty</code>. <code>log.date</code> config variable sets a default
-        value for the log command&#8217;s <code>--date</code> option.
+        value for the log command&#8217;s <code>--date</code> option. By default, dates
+        are shown in the original time zone (either committer&#8217;s or
+        author&#8217;s). If <code>-local</code> is appended to the format (e.g.,
+        <code>iso-local</code>), the user&#8217;s local time zone is used instead.
 </p>
 <div class="paragraph"><p><code>--date=relative</code> shows dates relative to the current time,
-e.g. &#8220;2 hours ago&#8221;.</p></div>
-<div class="paragraph"><p><code>--date=local</code> shows timestamps in user&#8217;s local time zone.</p></div>
+e.g. &#8220;2 hours ago&#8221;. The <code>-local</code> option cannot be used with
+<code>--raw</code> or <code>--relative</code>.</p></div>
+<div class="paragraph"><p><code>--date=local</code> is an alias for <code>--date=default-local</code>.</p></div>
 <div class="paragraph"><p><code>--date=iso</code> (or <code>--date=iso8601</code>) shows timestamps in a ISO 8601-like format.
 The differences to the strict ISO 8601 format are:</p></div>
 <div class="ulist"><ul>
@@ -1999,9 +2004,22 @@ format, often found in email messages.</p></div>
 <div class="paragraph"><p><code>--date=format:...</code> feeds the format <code>...</code> to your system <code>strftime</code>.
 Use <code>--date=format:%c</code> to show the date in your system locale&#8217;s
 preferred format.  See the <code>strftime</code> manual for a complete list of
-format placeholders.</p></div>
-<div class="paragraph"><p><code>--date=default</code> shows timestamps in the original time zone
-(either committer&#8217;s or author&#8217;s).</p></div>
+format placeholders. When using <code>-local</code>, the correct syntax is
+<code>--date=format-local:...</code>.</p></div>
+<div class="paragraph"><p><code>--date=default</code> is the default format, and is similar to
+<code>--date=rfc2822</code>, with a few exceptions:</p></div>
+<div class="ulist"><ul>
+<li>
+<p>
+there is no comma after the day-of-week
+</p>
+</li>
+<li>
+<p>
+the time zone is omitted when the local time zone is used
+</p>
+</li>
+</ul></div>
 </dd>
 <dt class="hdlist1">
 --parents
@@ -3092,6 +3110,8 @@ differences.  You may want to append <code>|[^[:space:]]</code> to your regular
 expression to make sure that it matches all non-whitespace characters.
 A match that contains a newline is silently truncated(!) at the
 newline.</p></div>
+<div class="paragraph"><p>For example, <code>--word-diff-regex=.</code> will treat each character as a word
+and, correspondingly, show differences character by character.</p></div>
 <div class="paragraph"><p>The regex can also be set via a diff driver or configuration option, see
 <a href="gitattributes.html">gitattributes(1)</a> or <a href="git-config.html">git-config(1)</a>.  Giving it explicitly
 overrides any diff driver or configuration setting.  Diff drivers
@@ -3992,10 +4012,10 @@ log.follow
 </dt>
 <dd>
 <p>
-        If a single &lt;path&gt; is given to git log, it will act as
-        if the <code>--follow</code> option was also used.  This has the same
-        limitations as <code>--follow</code>, i.e. it cannot be used to follow
-        multiple files and does not work well on non-linear history.
+        If <code>true</code>, <code>git log</code> will act as if the <code>--follow</code> option was used when
+        a single &lt;path&gt; is given.  This has the same limitations as <code>--follow</code>,
+        i.e. it cannot be used to follow multiple files and does not work well
+        on non-linear history.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -4047,7 +4067,7 @@ and overridden by the <code>--notes=&lt;ref&gt;</code> option.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2015-08-03 12:41:59 PDT
+Last updated 2015-10-15 16:07:45 PDT
 </div>
 </div>
 </body>

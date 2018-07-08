@@ -14,6 +14,7 @@
 #include "graph.h"
 #include "userdiff.h"
 #include "line-log.h"
+#include "argv-array.h"
 
 static void range_set_grow(struct range_set *rs, size_t extra)
 {
@@ -502,7 +503,7 @@ static void fill_blob_sha1(struct commit *commit, struct diff_filespec *spec)
 	unsigned mode;
 	unsigned char sha1[20];
 
-	if (get_tree_entry(commit->object.sha1, spec->path,
+	if (get_tree_entry(commit->object.oid.hash, spec->path,
 			   sha1, &mode))
 		die("There is no path %s in the commit", spec->path);
 	fill_filespec(spec, sha1, 1, mode);
@@ -521,7 +522,7 @@ static void fill_line_ends(struct diff_filespec *spec, long *lines,
 	if (diff_populate_filespec(spec, 0))
 		die("Cannot read blob %s", sha1_to_hex(spec->sha1));
 
-	ends = xmalloc(size * sizeof(*ends));
+	ALLOC_ARRAY(ends, size);
 	ends[cur++] = 0;
 	data = spec->data;
 	while (num < spec->size) {
@@ -746,22 +747,17 @@ void line_log_init(struct rev_info *rev, const char *prefix, struct string_list 
 	add_line_range(rev, commit, range);
 
 	if (!rev->diffopt.detect_rename) {
-		int i, count = 0;
-		struct line_log_data *r = range;
+		struct line_log_data *r;
+		struct argv_array array = ARGV_ARRAY_INIT;
 		const char **paths;
-		while (r) {
-			count++;
-			r = r->next;
-		}
-		paths = xmalloc((count+1)*sizeof(char *));
-		r = range;
-		for (i = 0; i < count; i++) {
-			paths[i] = xstrdup(r->path);
-			r = r->next;
-		}
-		paths[count] = NULL;
+
+		for (r = range; r; r = r->next)
+			argv_array_push(&array, r->path);
+		paths = argv_array_detach(&array);
+
 		parse_pathspec(&rev->diffopt.pathspec, 0,
 			       PATHSPEC_PREFER_FULL, "", paths);
+		/* strings are now owned by pathspec */
 		free(paths);
 	}
 }
@@ -824,8 +820,8 @@ static void queue_diffs(struct line_log_data *range,
 	assert(commit);
 
 	DIFF_QUEUE_CLEAR(&diff_queued_diff);
-	diff_tree_sha1(parent ? parent->tree->object.sha1 : NULL,
-			commit->tree->object.sha1, "", opt);
+	diff_tree_sha1(parent ? parent->tree->object.oid.hash : NULL,
+			commit->tree->object.oid.hash, "", opt);
 	if (opt->detect_rename) {
 		filter_diffs_for_paths(range, 1);
 		if (diff_might_be_rename())
@@ -1146,9 +1142,9 @@ static int process_ranges_merge_commit(struct rev_info *rev, struct commit *comm
 	if (nparents > 1 && rev->first_parent_only)
 		nparents = 1;
 
-	diffqueues = xmalloc(nparents * sizeof(*diffqueues));
-	cand = xmalloc(nparents * sizeof(*cand));
-	parents = xmalloc(nparents * sizeof(*parents));
+	ALLOC_ARRAY(diffqueues, nparents);
+	ALLOC_ARRAY(cand, nparents);
+	ALLOC_ARRAY(parents, nparents);
 
 	p = commit->parents;
 	for (i = 0; i < nparents; i++) {

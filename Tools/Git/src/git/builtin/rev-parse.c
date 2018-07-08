@@ -281,11 +281,8 @@ static int try_difference(const char *arg)
 			b = lookup_commit_reference(end);
 			exclude = get_merge_bases(a, b);
 			while (exclude) {
-				struct commit_list *n = exclude->next;
-				show_rev(REVERSED,
-					 exclude->item->object.sha1,NULL);
-				free(exclude);
-				exclude = n;
+				struct commit *commit = pop_commit(&exclude);
+				show_rev(REVERSED, commit->object.oid.hash, NULL);
 			}
 		}
 		*dotdot = '.';
@@ -322,7 +319,7 @@ static int try_parent_shorthands(const char *arg)
 	commit = lookup_commit_reference(sha1);
 	for (parents = commit->parents; parents; parents = parents->next)
 		show_rev(parents_only ? NORMAL : REVERSED,
-				parents->item->object.sha1, arg);
+				parents->item->object.oid.hash, arg);
 
 	*dotdot = '^';
 	return 1;
@@ -766,7 +763,8 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 				continue;
 			}
 			if (!strcmp(arg, "--git-common-dir")) {
-				puts(get_git_common_dir());
+				const char *pfx = prefix ? prefix : "";
+				puts(prefix_filename(pfx, strlen(pfx), get_git_common_dir()));
 				continue;
 			}
 			if (!strcmp(arg, "--resolve-git-dir")) {

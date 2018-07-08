@@ -37,6 +37,13 @@ the default `<refspec>` by consulting `remote.*.push` configuration,
 and if it is not found, honors `push.default` configuration to decide
 what to push (See linkgit:git-config[1] for the meaning of `push.default`).
 
+When neither the command-line nor the configuration specify what to
+push, the default behavior is used, which corresponds to the `simple`
+value for `push.default`: the current branch is pushed to the
+corresponding upstream branch, but as a safety measure, the push is
+aborted if the upstream branch does not have the same name as the
+local one.
+
 
 OPTIONS[[OPTIONS]]
 ------------------
@@ -257,16 +264,20 @@ origin +master` to force a push to the `master` branch). See the
 	is specified. This flag forces progress status even if the
 	standard error stream is not directed to a terminal.
 
---recurse-submodules=check|on-demand::
-	Make sure all submodule commits used by the revisions to be
-	pushed are available on a remote-tracking branch. If 'check' is
-	used Git will verify that all submodule commits that changed in
-	the revisions to be pushed are available on at least one remote
-	of the submodule. If any commits are missing the push will be
-	aborted and exit with non-zero status. If 'on-demand' is used
-	all submodules that changed in the revisions to be pushed will
-	be pushed. If on-demand was not able to push all necessary
-	revisions it will also be aborted and exit with non-zero status.
+--no-recurse-submodules::
+--recurse-submodules=check|on-demand|no::
+	May be used to make sure all submodule commits used by the
+	revisions to be pushed are available on a remote-tracking branch.
+	If 'check' is used Git will verify that all submodule commits that
+	changed in the revisions to be pushed are available on at least one
+	remote of the submodule. If any commits are missing the push will
+	be aborted and exit with non-zero status. If 'on-demand' is used
+	all submodules that changed in the revisions to be pushed will be
+	pushed. If on-demand was not able to push all necessary revisions
+	it will also be aborted and exit with non-zero status. A value of
+	'no' or using '--no-recurse-submodules' can be used to override the
+	push.recurseSubmodules configuration variable when no submodule
+	recursion is required.
 
 --[no-]verify::
 	Toggle the pre-push hook (see linkgit:githooks[5]).  The

@@ -1,6 +1,7 @@
 #include "cache.h"
 #include "exec_cmd.h"
 #include "quote.h"
+#include "argv-array.h"
 #define MAX_ARGS	32
 
 #ifdef RUNTIME_PREFIX
@@ -27,6 +28,25 @@ char *system_path(const char *path)
 		return xstrdup(path);
 
 #ifdef RUNTIME_PREFIX
+#ifdef __APPLE__
+	/* I found out we can get into this state during tests because of our
+	 * system_path() call to find the Xcode-bundled xcconfig because the
+	 * tests (eg: test-scrap-cache-tree) don't call git_extract_argv0_path.
+	 */
+	if (!argv0_path) {
+		char new_argv0[PATH_MAX];
+		uint32_t new_argv0_s = PATH_MAX;
+		if(_NSGetExecutablePath(new_argv0, &new_argv0_s) == 0) {
+			const char *slash = new_argv0 + strlen(new_argv0);
+			while (new_argv0 <= slash && !is_dir_sep(*slash))
+				slash--;
+
+			if (slash >= new_argv0)
+				argv0_path = xstrndup(new_argv0, slash - new_argv0);
+		}
+	}
+#endif
+
 	assert(argv0_path);
 	assert(is_absolute_path(argv0_path));
 
@@ -51,12 +71,10 @@ const char *git_extract_argv0_path(const char *argv0)
 
 	if (!argv0 || !*argv0)
 		return NULL;
-	slash = argv0 + strlen(argv0);
 
-	while (argv0 <= slash && !is_dir_sep(*slash))
-		slash--;
+	slash = find_last_dir_sep(argv0);
 
-	if (slash >= argv0) {
+	if (slash) {
 #ifdef RUNTIME_PREFIX
 		if (!is_dir_sep(*argv0)) {
 			char *path_buf, *s;
@@ -157,32 +175,25 @@ void setup_path(void)
 	strbuf_release(&new_path);
 }
 
-const char **prepare_git_cmd(const char **argv)
+const char **prepare_git_cmd(struct argv_array *out, const char **argv)
 {
-	int argc;
-	const char **nargv;
-
-	for (argc = 0; argv[argc]; argc++)
-		; /* just counting */
-	nargv = xmalloc(sizeof(*nargv) * (argc + 2));
-
-	nargv[0] = "git";
-	for (argc = 0; argv[argc]; argc++)
-		nargv[argc + 1] = argv[argc];
-	nargv[argc + 1] = NULL;
-	return nargv;
+	argv_array_push(out, "git");
+	argv_array_pushv(out, argv);
+	return out->argv;
 }
 
 int execv_git_cmd(const char **argv) {
-	const char **nargv = prepare_git_cmd(argv);
-	trace_argv_printf(nargv, "trace: exec:");
+	struct argv_array nargv = ARGV_ARRAY_INIT;
+
+	prepare_git_cmd(&nargv, argv);
+	trace_argv_printf(nargv.argv, "trace: exec:");
 
 	/* execvp() can only ever return if it fails */
-	sane_execvp("git", (char **)nargv);
+	sane_execvp("git", (char **)nargv.argv);
 
 	trace_printf("trace: exec failed: %s\n", strerror(errno));
 
-	free(nargv);
+	argv_array_clear(&nargv);
 	return -1;
 }
 

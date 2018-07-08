@@ -199,7 +199,7 @@ static int mark_link(struct object *obj, int type, void *data, struct fsck_optio
 		return -1;
 
 	if (type != OBJ_ANY && obj->type != type)
-		die(_("object type mismatch at %s"), sha1_to_hex(obj->sha1));
+		die(_("object type mismatch at %s"), oid_to_hex(&obj->oid));
 
 	obj->flags |= FLAG_LINK;
 	return 0;
@@ -217,13 +217,13 @@ static unsigned check_object(struct object *obj)
 
 	if (!(obj->flags & FLAG_CHECKED)) {
 		unsigned long size;
-		int type = sha1_object_info(obj->sha1, &size);
+		int type = sha1_object_info(obj->oid.hash, &size);
 		if (type <= 0)
 			die(_("did not receive expected object %s"),
-			      sha1_to_hex(obj->sha1));
+			      oid_to_hex(&obj->oid));
 		if (type != obj->type)
 			die(_("object %s: expected type %s, found %s"),
-			    sha1_to_hex(obj->sha1),
+			    oid_to_hex(&obj->oid),
 			    typename(obj->type), typename(type));
 		obj->flags |= FLAG_CHECKED;
 		return 1;
@@ -441,7 +441,7 @@ static void *unpack_entry_data(unsigned long offset, unsigned long size,
 	int hdrlen;
 
 	if (!is_delta_type(type)) {
-		hdrlen = sprintf(hdr, "%s %lu", typename(type), size) + 1;
+		hdrlen = xsnprintf(hdr, sizeof(hdr), "%s %lu", typename(type), size) + 1;
 		git_SHA1_Init(&c);
 		git_SHA1_Update(&c, hdr, hdrlen);
 	} else
@@ -842,7 +842,7 @@ static void sha1_object(const void *data, struct object_entry *obj_entry,
 			    fsck_object(obj, buf, size, &fsck_options))
 				die(_("Error in object"));
 			if (fsck_walk(obj, NULL, &fsck_options))
-				die(_("Not all child objects of %s are reachable"), sha1_to_hex(obj->sha1));
+				die(_("Not all child objects of %s are reachable"), oid_to_hex(&obj->oid));
 
 			if (obj->type == OBJ_TREE) {
 				struct tree *item = (struct tree *) obj;
@@ -1346,7 +1346,7 @@ static void fix_unresolved_deltas(struct sha1file *f)
 	 * before deltas depending on them, a good heuristic is to start
 	 * resolving deltas in the same order as their position in the pack.
 	 */
-	sorted_by_pos = xmalloc(nr_ref_deltas * sizeof(*sorted_by_pos));
+	ALLOC_ARRAY(sorted_by_pos, nr_ref_deltas);
 	for (i = 0; i < nr_ref_deltas; i++)
 		sorted_by_pos[i] = &ref_deltas[i];
 	qsort(sorted_by_pos, nr_ref_deltas, sizeof(*sorted_by_pos), delta_pos_compare);
@@ -1514,6 +1514,7 @@ static void read_v2_anomalous_offsets(struct packed_git *p,
 		if (!(off & 0x80000000))
 			continue;
 		off = off & 0x7fffffff;
+		check_pack_index_ptr(p, &idx2[off * 2]);
 		if (idx2[off * 2])
 			continue;
 		/*
@@ -1744,9 +1745,9 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 
 	curr_pack = open_pack_file(pack_name);
 	parse_pack_header();
-	objects = xcalloc(nr_objects + 1, sizeof(struct object_entry));
+	objects = xcalloc(st_add(nr_objects, 1), sizeof(struct object_entry));
 	if (show_stat)
-		obj_stat = xcalloc(nr_objects + 1, sizeof(struct object_stat));
+		obj_stat = xcalloc(st_add(nr_objects, 1), sizeof(struct object_stat));
 	ofs_deltas = xcalloc(nr_objects, sizeof(struct ofs_delta_entry));
 	parse_pack_objects(pack_sha1);
 	resolve_deltas();
@@ -1759,7 +1760,7 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 	if (show_stat)
 		show_pack_info(stat_only);
 
-	idx_objects = xmalloc((nr_objects) * sizeof(struct pack_idx_entry *));
+	ALLOC_ARRAY(idx_objects, nr_objects);
 	for (i = 0; i < nr_objects; i++)
 		idx_objects[i] = &objects[i].idx;
 	curr_index = write_idx_file(index_name, idx_objects, nr_objects, &opts, pack_sha1);

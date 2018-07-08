@@ -193,7 +193,7 @@ static int compare_commit_dist(const void *a_, const void *b_)
 	b = (struct commit_dist *)b_;
 	if (a->distance != b->distance)
 		return b->distance - a->distance; /* desc sort */
-	return hashcmp(a->commit->object.sha1, b->commit->object.sha1);
+	return oidcmp(&a->commit->object.oid, &b->commit->object.oid);
 }
 
 static struct commit_list *best_bisection_sorted(struct commit_list *list, int nr)
@@ -500,7 +500,7 @@ struct commit_list *filter_skipped(struct commit_list *list,
 		struct commit_list *next = list->next;
 		list->next = NULL;
 		if (0 <= sha1_array_lookup(&skipped_revs,
-					   list->item->object.sha1)) {
+					   list->item->object.oid.hash)) {
 			if (skipped_first && !*skipped_first)
 				*skipped_first = 1;
 			/* Move current to tried list */
@@ -575,7 +575,7 @@ static struct commit_list *skip_away(struct commit_list *list, int count)
 
 	for (i = 0; cur; cur = cur->next, i++) {
 		if (i == index) {
-			if (hashcmp(cur->item->object.sha1, current_bad_oid->hash))
+			if (oidcmp(&cur->item->object.oid, current_bad_oid))
 				return cur;
 			if (previous)
 				return previous;
@@ -708,10 +708,10 @@ static struct commit *get_commit_reference(const unsigned char *sha1)
 
 static struct commit **get_bad_and_good_commits(int *rev_nr)
 {
-	int len = 1 + good_revs.nr;
-	struct commit **rev = xmalloc(len * sizeof(*rev));
+	struct commit **rev;
 	int i, n = 0;
 
+	ALLOC_ARRAY(rev, 1 + good_revs.nr);
 	rev[n++] = get_commit_reference(current_bad_oid->hash);
 	for (i = 0; i < good_revs.nr; i++)
 		rev[n++] = get_commit_reference(good_revs.sha1[i]);
@@ -728,6 +728,11 @@ static void handle_bad_merge_base(void)
 		if (!strcmp(term_bad, "bad") && !strcmp(term_good, "good")) {
 			fprintf(stderr, "The merge base %s is bad.\n"
 				"This means the bug has been fixed "
+				"between %s and [%s].\n",
+				bad_hex, bad_hex, good_hex);
+		} else if (!strcmp(term_bad, "new") && !strcmp(term_good, "old")) {
+			fprintf(stderr, "The merge base %s is new.\n"
+				"The property has changed "
 				"between %s and [%s].\n",
 				bad_hex, bad_hex, good_hex);
 		} else {
@@ -762,11 +767,11 @@ static void handle_skipped_merge_base(const unsigned char *mb)
 }
 
 /*
- * "check_merge_bases" checks that merge bases are not "bad".
+ * "check_merge_bases" checks that merge bases are not "bad" (or "new").
  *
- * - If one is "bad", it means the user assumed something wrong
+ * - If one is "bad" (or "new"), it means the user assumed something wrong
  * and we must exit with a non 0 error code.
- * - If one is "good", that's good, we have nothing to do.
+ * - If one is "good" (or "old"), that's good, we have nothing to do.
  * - If one is "skipped", we can't know but we should warn.
  * - If we don't know, we should check it out and ask the user to test.
  */
@@ -779,7 +784,7 @@ static void check_merge_bases(int no_checkout)
 	result = get_merge_bases_many(rev[0], rev_nr - 1, rev + 1);
 
 	for (; result; result = result->next) {
-		const unsigned char *mb = result->item->object.sha1;
+		const unsigned char *mb = result->item->object.oid.hash;
 		if (!hashcmp(mb, current_bad_oid->hash)) {
 			handle_bad_merge_base();
 		} else if (0 <= sha1_array_lookup(&good_revs, mb)) {
@@ -968,7 +973,7 @@ int bisect_next_all(const char *prefix, int no_checkout)
 		exit(4);
 	}
 
-	bisect_rev = revs.commits->item->object.sha1;
+	bisect_rev = revs.commits->item->object.oid.hash;
 
 	if (!hashcmp(bisect_rev, current_bad_oid->hash)) {
 		exit_if_skipped_commits(tried, current_bad_oid);

@@ -168,11 +168,8 @@ static struct ref *parse_info_refs(struct discovery *heads)
 				    url.buf);
 			data[i] = 0;
 			ref_name = mid + 1;
-			ref = xmalloc(sizeof(struct ref) +
-				      strlen(ref_name) + 1);
-			memset(ref, 0, sizeof(struct ref));
-			strcpy(ref->name, ref_name);
-			get_sha1_hex(start, ref->old_sha1);
+			ref = alloc_ref(ref_name);
+			get_oid_hex(start, &ref->old_oid);
 			if (!refs)
 				refs = ref;
 			if (last_ref)
@@ -351,7 +348,7 @@ static void output_refs(struct ref *refs)
 		if (posn->symref)
 			printf("@%s %s\n", posn->symref, posn->name);
 		else
-			printf("%s %s\n", sha1_to_hex(posn->old_sha1), posn->name);
+			printf("%s %s\n", oid_to_hex(&posn->old_oid), posn->name);
 	}
 	printf("\n");
 	fflush(stdout);
@@ -442,8 +439,20 @@ static int run_slot(struct active_request_slot *slot,
 	err = run_one_slot(slot, results);
 
 	if (err != HTTP_OK && err != HTTP_REAUTH) {
-		error("RPC failed; result=%d, HTTP code = %ld",
-		      results->curl_result, results->http_code);
+		struct strbuf msg = STRBUF_INIT;
+		if (results->http_code && results->http_code != 200)
+			strbuf_addf(&msg, "HTTP %ld", results->http_code);
+		if (results->curl_result != CURLE_OK) {
+			if (msg.len)
+				strbuf_addch(&msg, ' ');
+			strbuf_addf(&msg, "curl %d", results->curl_result);
+			if (curl_errorstr[0]) {
+				strbuf_addch(&msg, ' ');
+				strbuf_addstr(&msg, curl_errorstr);
+			}
+		}
+		error("RPC failed; %s", msg.buf);
+		strbuf_release(&msg);
 	}
 
 	return err;
@@ -699,13 +708,14 @@ static int rpc_service(struct rpc_state *rpc, struct discovery *heads)
 static int fetch_dumb(int nr_heads, struct ref **to_fetch)
 {
 	struct walker *walker;
-	char **targets = xmalloc(nr_heads * sizeof(char*));
+	char **targets;
 	int ret, i;
 
+	ALLOC_ARRAY(targets, nr_heads);
 	if (options.depth)
 		die("dumb http transport does not support --depth");
 	for (i = 0; i < nr_heads; i++)
-		targets[i] = xstrdup(sha1_to_hex(to_fetch[i]->old_sha1));
+		targets[i] = xstrdup(oid_to_hex(&to_fetch[i]->old_oid));
 
 	walker = get_http_walker(url.buf);
 	walker->get_all = 1;
@@ -766,7 +776,7 @@ static int fetch_git(struct discovery *heads,
 		if (!*ref->name)
 			die("cannot fetch by sha1 over smart http");
 		packet_buf_write(&preamble, "%s %s\n",
-				 sha1_to_hex(ref->old_sha1), ref->name);
+				 oid_to_hex(&ref->old_oid), ref->name);
 	}
 	packet_buf_flush(&preamble);
 
@@ -806,19 +816,19 @@ static void parse_fetch(struct strbuf *buf)
 		if (skip_prefix(buf->buf, "fetch ", &p)) {
 			const char *name;
 			struct ref *ref;
-			unsigned char old_sha1[20];
+			struct object_id old_oid;
 
-			if (strlen(p) < 40 || get_sha1_hex(p, old_sha1))
+			if (get_oid_hex(p, &old_oid))
 				die("protocol error: expected sha/ref, got %s'", p);
-			if (p[40] == ' ')
-				name = p + 41;
-			else if (!p[40])
+			if (p[GIT_SHA1_HEXSZ] == ' ')
+				name = p + GIT_SHA1_HEXSZ + 1;
+			else if (!p[GIT_SHA1_HEXSZ])
 				name = "";
 			else
 				die("protocol error: expected sha/ref, got %s'", p);
 
 			ref = alloc_ref(name);
-			hashcpy(ref->old_sha1, old_sha1);
+			oidcpy(&ref->old_oid, &old_oid);
 
 			*list = ref;
 			list = &ref->next;
@@ -848,23 +858,22 @@ static void parse_fetch(struct strbuf *buf)
 
 static int push_dav(int nr_spec, char **specs)
 {
-	const char **argv = xmalloc((10 + nr_spec) * sizeof(char*));
-	int argc = 0, i;
+	struct child_process child = CHILD_PROCESS_INIT;
+	size_t i;
 
-	argv[argc++] = "http-push";
-	argv[argc++] = "--helper-status";
+	child.git_cmd = 1;
+	argv_array_push(&child.args, "http-push");
+	argv_array_push(&child.args, "--helper-status");
 	if (options.dry_run)
-		argv[argc++] = "--dry-run";
+		argv_array_push(&child.args, "--dry-run");
 	if (options.verbosity > 1)
-		argv[argc++] = "--verbose";
-	argv[argc++] = url.buf;
+		argv_array_push(&child.args, "--verbose");
+	argv_array_push(&child.args, url.buf);
 	for (i = 0; i < nr_spec; i++)
-		argv[argc++] = specs[i];
-	argv[argc++] = NULL;
+		argv_array_push(&child.args, specs[i]);
 
-	if (run_command_v_opt(argv, RUN_GIT_CMD))
-		die("git-%s failed", argv[0]);
-	free(argv);
+	if (run_command(&child))
+		die("git-http-push failed");
 	return 0;
 }
 

@@ -246,8 +246,6 @@ free_strings:
 
 static char *normalize_value(const char *key, const char *value)
 {
-	char *normalized;
-
 	if (!value)
 		return NULL;
 
@@ -258,27 +256,21 @@ static char *normalize_value(const char *key, const char *value)
 		 * "~/foobar/" in the config file, and to expand the ~
 		 * when retrieving the value.
 		 */
-		normalized = xstrdup(value);
-	else {
-		normalized = xmalloc(64);
-		if (types == TYPE_INT) {
-			int64_t v = git_config_int64(key, value);
-			sprintf(normalized, "%"PRId64, v);
-		}
-		else if (types == TYPE_BOOL)
-			sprintf(normalized, "%s",
-				git_config_bool(key, value) ? "true" : "false");
-		else if (types == TYPE_BOOL_OR_INT) {
-			int is_bool, v;
-			v = git_config_bool_or_int(key, value, &is_bool);
-			if (!is_bool)
-				sprintf(normalized, "%d", v);
-			else
-				sprintf(normalized, "%s", v ? "true" : "false");
-		}
+		return xstrdup(value);
+	if (types == TYPE_INT)
+		return xstrfmt("%"PRId64, git_config_int64(key, value));
+	if (types == TYPE_BOOL)
+		return xstrdup(git_config_bool(key, value) ?  "true" : "false");
+	if (types == TYPE_BOOL_OR_INT) {
+		int is_bool, v;
+		v = git_config_bool_or_int(key, value, &is_bool);
+		if (!is_bool)
+			return xstrfmt("%d", v);
+		else
+			return xstrdup(v ? "true" : "false");
 	}
 
-	return normalized;
+	die("BUG: cannot normalize type %d", types);
 }
 
 static int get_color_found;
@@ -360,6 +352,9 @@ static int get_colorbool(const char *var, int print)
 
 static void check_write(void)
 {
+	if (!given_config_source.file && !startup_info->have_repository)
+		die("not in a git directory");
+
 	if (given_config_source.use_stdin)
 		die("writing to stdin is not supported");
 
@@ -590,7 +585,7 @@ int cmd_config(int argc, const char **argv, const char *prefix)
 		check_write();
 		check_argc(argc, 2, 2);
 		value = normalize_value(argv[0], argv[1]);
-		ret = git_config_set_in_file(given_config_source.file, argv[0], value);
+		ret = git_config_set_in_file_gently(given_config_source.file, argv[0], value);
 		if (ret == CONFIG_NOTHING_SET)
 			error("cannot overwrite multiple values with a single value\n"
 			"       Use a regexp, --add or --replace-all to change %s.", argv[0]);
@@ -600,23 +595,23 @@ int cmd_config(int argc, const char **argv, const char *prefix)
 		check_write();
 		check_argc(argc, 2, 3);
 		value = normalize_value(argv[0], argv[1]);
-		return git_config_set_multivar_in_file(given_config_source.file,
-						       argv[0], value, argv[2], 0);
+		return git_config_set_multivar_in_file_gently(given_config_source.file,
+							      argv[0], value, argv[2], 0);
 	}
 	else if (actions == ACTION_ADD) {
 		check_write();
 		check_argc(argc, 2, 2);
 		value = normalize_value(argv[0], argv[1]);
-		return git_config_set_multivar_in_file(given_config_source.file,
-						       argv[0], value,
-						       CONFIG_REGEX_NONE, 0);
+		return git_config_set_multivar_in_file_gently(given_config_source.file,
+							      argv[0], value,
+							      CONFIG_REGEX_NONE, 0);
 	}
 	else if (actions == ACTION_REPLACE_ALL) {
 		check_write();
 		check_argc(argc, 2, 3);
 		value = normalize_value(argv[0], argv[1]);
-		return git_config_set_multivar_in_file(given_config_source.file,
-						       argv[0], value, argv[2], 1);
+		return git_config_set_multivar_in_file_gently(given_config_source.file,
+							      argv[0], value, argv[2], 1);
 	}
 	else if (actions == ACTION_GET) {
 		check_argc(argc, 1, 2);
@@ -642,17 +637,17 @@ int cmd_config(int argc, const char **argv, const char *prefix)
 		check_write();
 		check_argc(argc, 1, 2);
 		if (argc == 2)
-			return git_config_set_multivar_in_file(given_config_source.file,
-							       argv[0], NULL, argv[1], 0);
+			return git_config_set_multivar_in_file_gently(given_config_source.file,
+								      argv[0], NULL, argv[1], 0);
 		else
-			return git_config_set_in_file(given_config_source.file,
-						      argv[0], NULL);
+			return git_config_set_in_file_gently(given_config_source.file,
+							     argv[0], NULL);
 	}
 	else if (actions == ACTION_UNSET_ALL) {
 		check_write();
 		check_argc(argc, 1, 2);
-		return git_config_set_multivar_in_file(given_config_source.file,
-						       argv[0], NULL, argv[1], 1);
+		return git_config_set_multivar_in_file_gently(given_config_source.file,
+							      argv[0], NULL, argv[1], 1);
 	}
 	else if (actions == ACTION_RENAME_SECTION) {
 		int ret;

@@ -46,6 +46,7 @@ package main;
 sub usage {
 	print <<EOT;
 git send-email [options] <file | directory | rev-list options >
+git send-email --dump-aliases
 
   Composing:
     --from                  <str>  * Email From:
@@ -100,6 +101,9 @@ git send-email [options] <file | directory | rev-list options >
     --[no-]format-patch            * understand any non optional arguments as
                                      `git format-patch` ones.
     --force                        * Send even if safety checks would prevent it.
+
+  Information:
+    --dump-aliases                 * Dump configured aliases and exit.
 
 EOT
 	exit(1);
@@ -180,6 +184,7 @@ my ($quiet, $dry_run) = (0, 0);
 my $format_patch;
 my $compose_filename;
 my $force = 0;
+my $dump_aliases = 0;
 
 # Handle interactive edition of files.
 my $multiedit;
@@ -239,7 +244,6 @@ my %config_settings = (
     "smtpserveroption" => \@smtp_server_options,
     "smtpuser" => \$smtp_authuser,
     "smtppass" => \$smtp_authpass,
-    "smtpsslcertpath" => \$smtp_ssl_cert_path,
     "smtpdomain" => \$smtp_domain,
     "smtpauth" => \$smtp_auth,
     "to" => \@initial_to,
@@ -259,6 +263,7 @@ my %config_settings = (
 
 my %config_path_settings = (
     "aliasesfile" => \@alias_files,
+    "smtpsslcertpath" => \$smtp_ssl_cert_path,
 );
 
 # Handle Uncouth Termination
@@ -291,6 +296,11 @@ $SIG{INT}  = \&signal_handler;
 
 my $help;
 my $rc = GetOptions("h" => \$help,
+                    "dump-aliases" => \$dump_aliases);
+usage() unless $rc;
+die "--dump-aliases incompatible with other options\n"
+    if !$help and $dump_aliases and @ARGV;
+$rc = GetOptions(
 		    "sender|from=s" => \$sender,
                     "in-reply-to=s" => \$initial_reply_to,
 		    "subject=s" => \$initial_subject,
@@ -514,8 +524,13 @@ my %parse_alias = (
 		if (/^\s*alias\s+(?:-group\s+\S+\s+)*(\S+)\s+(.*)$/) {
 			my ($alias, $addr) = ($1, $2);
 			$addr =~ s/#.*$//; # mutt allows # comments
-			 # commas delimit multiple addresses
-			$aliases{$alias} = [ split_addrs($addr) ];
+			# commas delimit multiple addresses
+			my @addr = split_addrs($addr);
+
+			# quotes may be escaped in the file,
+			# unescape them so we do not double-escape them later.
+			s/\\"/"/g foreach @addr;
+			$aliases{$alias} = \@addr
 		}}},
 	mailrc => sub { my $fh = shift; while (<$fh>) {
 		if (/^alias\s+(\S+)\s+(.*)$/) {
@@ -549,6 +564,11 @@ if (@alias_files and $aliasfiletype and defined $parse_alias{$aliasfiletype}) {
 		$parse_alias{$aliasfiletype}->($fh);
 		close $fh;
 	}
+}
+
+if ($dump_aliases) {
+    print "$_\n" for (sort keys %aliases);
+    exit(0);
 }
 
 # is_format_patch_arg($f) returns 0 if $f names a patch, or 1 if
@@ -1196,8 +1216,7 @@ sub ssl_verify_params {
 		return (SSL_verify_mode => SSL_VERIFY_PEER(),
 			SSL_ca_file => $smtp_ssl_cert_path);
 	} else {
-		print STDERR "Not using SSL_VERIFY_PEER because the CA path does not exist.\n";
-		return (SSL_verify_mode => SSL_VERIFY_NONE());
+		die "CA path \"$smtp_ssl_cert_path\" does not exist";
 	}
 }
 
@@ -1318,6 +1337,13 @@ Message-Id: $message_id
 			require Net::SMTP::SSL;
 			$smtp_domain ||= maildomain();
 			require IO::Socket::SSL;
+
+			# Suppress "variable accessed once" warning.
+			{
+				no warnings 'once';
+				$IO::Socket::SSL::DEBUG = 1;
+			}
+
 			# Net::SMTP::SSL->new() does not forward any SSL options
 			IO::Socket::SSL::set_client_defaults(
 				ssl_verify_params());

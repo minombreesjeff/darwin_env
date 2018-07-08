@@ -394,6 +394,23 @@ int mingw_fflush(FILE *stream)
 	return ret;
 }
 
+#undef write
+ssize_t mingw_write(int fd, const void *buf, size_t len)
+{
+	ssize_t result = write(fd, buf, len);
+
+	if (result < 0 && errno == EINVAL && buf) {
+		/* check if fd is a pipe */
+		HANDLE h = (HANDLE) _get_osfhandle(fd);
+		if (GetFileType(h) == FILE_TYPE_PIPE)
+			errno = EPIPE;
+		else
+			errno = EINVAL;
+	}
+
+	return result;
+}
+
 int mingw_access(const char *filename, int mode)
 {
 	wchar_t wfilename[MAX_PATH];
@@ -752,7 +769,7 @@ static const char *quote_arg(const char *arg)
 		return arg;
 
 	/* insert \ where necessary */
-	d = q = xmalloc(len+n+3);
+	d = q = xmalloc(st_add3(len, n, 3));
 	*d++ = '"';
 	while (*arg) {
 		if (*arg == '"')
@@ -835,7 +852,7 @@ static char **get_path_split(void)
 	if (!n)
 		return NULL;
 
-	path = xmalloc((n+1)*sizeof(char *));
+	ALLOC_ARRAY(path, n + 1);
 	p = envpath;
 	i = 0;
 	do {
@@ -920,7 +937,7 @@ static wchar_t *make_environment_block(char **deltaenv)
 		i++;
 
 	/* copy the environment, leaving space for changes */
-	tmpenv = xmalloc((size + i) * sizeof(char*));
+	ALLOC_ARRAY(tmpenv, size + i);
 	memcpy(tmpenv, environ, size * sizeof(char*));
 
 	/* merge supplied environment changes into the temporary environment */
@@ -1011,7 +1028,7 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 			free(quoted);
 	}
 
-	wargs = xmalloc((2 * args.len + 1) * sizeof(wchar_t));
+	ALLOC_ARRAY(wargs, st_add(st_mult(2, args.len), 1));
 	xutftowcs(wargs, args.buf, 2 * args.len + 1);
 	strbuf_release(&args);
 
@@ -1110,7 +1127,7 @@ static int try_shell_exec(const char *cmd, char *const *argv)
 		int argc = 0;
 		const char **argv2;
 		while (argv[argc]) argc++;
-		argv2 = xmalloc(sizeof(*argv) * (argc+1));
+		ALLOC_ARRAY(argv2, argc + 1);
 		argv2[0] = (char *)cmd;	/* full path to the script file */
 		memcpy(&argv2[1], &argv[1], sizeof(*argv) * argc);
 		pid = mingw_spawnv(prog, argv2, 1);
@@ -1915,28 +1932,31 @@ pid_t waitpid(pid_t pid, int *status, int options)
 	return -1;
 }
 
+int mingw_skip_dos_drive_prefix(char **path)
+{
+	int ret = has_dos_drive_prefix(*path);
+	*path += ret;
+	return ret;
+}
+
 int mingw_offset_1st_component(const char *path)
 {
-	int offset = 0;
-	if (has_dos_drive_prefix(path))
-		offset = 2;
+	char *pos = (char *)path;
 
 	/* unc paths */
-	else if (is_dir_sep(path[0]) && is_dir_sep(path[1])) {
-
+	if (!skip_dos_drive_prefix(&pos) &&
+			is_dir_sep(pos[0]) && is_dir_sep(pos[1])) {
 		/* skip server name */
-		char *pos = strpbrk(path + 2, "\\/");
+		pos = strpbrk(pos + 2, "\\/");
 		if (!pos)
 			return 0; /* Error: malformed unc path */
 
 		do {
 			pos++;
 		} while (*pos && !is_dir_sep(*pos));
-
-		offset = pos - path;
 	}
 
-	return offset + is_dir_sep(path[offset]);
+	return pos + is_dir_sep(*pos) - path;
 }
 
 int xutftowcsn(wchar_t *wcs, const char *utfs, size_t wcslen, int utflen)
@@ -2131,11 +2151,13 @@ void mingw_startup()
 
 int uname(struct utsname *buf)
 {
-	DWORD v = GetVersion();
+	unsigned v = (unsigned)GetVersion();
 	memset(buf, 0, sizeof(*buf));
-	strcpy(buf->sysname, "Windows");
-	sprintf(buf->release, "%u.%u", v & 0xff, (v >> 8) & 0xff);
+	xsnprintf(buf->sysname, sizeof(buf->sysname), "Windows");
+	xsnprintf(buf->release, sizeof(buf->release),
+		 "%u.%u", v & 0xff, (v >> 8) & 0xff);
 	/* assuming NT variants only.. */
-	sprintf(buf->version, "%u", (v >> 16) & 0x7fff);
+	xsnprintf(buf->version, sizeof(buf->version),
+		  "%u", (v >> 16) & 0x7fff);
 	return 0;
 }

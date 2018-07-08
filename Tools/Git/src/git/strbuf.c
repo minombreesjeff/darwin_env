@@ -245,8 +245,8 @@ void strbuf_add_commented_lines(struct strbuf *out, const char *buf, size_t size
 	static char prefix2[2];
 
 	if (prefix1[0] != comment_line_char) {
-		sprintf(prefix1, "%c ", comment_line_char);
-		sprintf(prefix2, "%c", comment_line_char);
+		xsnprintf(prefix1, sizeof(prefix1), "%c ", comment_line_char);
+		xsnprintf(prefix2, sizeof(prefix2), "%c", comment_line_char);
 	}
 	add_lines(out, prefix1, prefix2, buf, size);
 }
@@ -685,7 +685,7 @@ char *xstrdup_tolower(const char *string)
 	size_t len, i;
 
 	len = strlen(string);
-	result = xmalloc(len + 1);
+	result = xmallocz(len);
 	for (i = 0; i < len; i++)
 		result[i] = tolower(string[i]);
 	result[i] = '\0';
@@ -742,6 +742,15 @@ void strbuf_addftime(struct strbuf *sb, const char *fmt, const struct tm *tm)
 		len--; /* drop munged space */
 	}
 	strbuf_setlen(sb, sb->len + len);
+}
+
+void strbuf_add_unique_abbrev(struct strbuf *sb, const unsigned char *sha1,
+			      int abbrev_len)
+{
+	int r;
+	strbuf_grow(sb, GIT_SHA1_HEXSZ + 1);
+	r = find_unique_abbrev_r(sb->buf + sb->len, sha1, abbrev_len);
+	strbuf_setlen(sb, sb->len + r);
 }
 
 /*

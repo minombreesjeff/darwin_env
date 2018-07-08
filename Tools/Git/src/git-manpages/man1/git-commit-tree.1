@@ -2,12 +2,12 @@
 .\"     Title: git-commit-tree
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 09/28/2015
+.\"      Date: 01/04/2016
 .\"    Manual: Git Manual
-.\"    Source: Git 2.6.0
+.\"    Source: Git 2.7.0
 .\"  Language: English
 .\"
-.TH "GIT\-COMMIT\-TREE" "1" "09/28/2015" "Git 2\&.6\&.0" "Git Manual"
+.TH "GIT\-COMMIT\-TREE" "1" "01/04/2016" "Git 2\&.7\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -32,7 +32,7 @@ git-commit-tree \- Create a new commit object
 .SH "SYNOPSIS"
 .sp
 .nf
-\fIgit commit\-tree\fR <tree> [(\-p <parent>)\&...] < changelog
+\fIgit commit\-tree\fR <tree> [(\-p <parent>)\&...]
 \fIgit commit\-tree\fR [(\-p <parent>)\&...] [\-S[<keyid>]] [(\-m <message>)\&...]
                   [(\-F <file>)\&...] <tree>
 .fi
@@ -76,7 +76,9 @@ to read from the standard input\&.
 .PP
 \-S[<keyid>], \-\-gpg\-sign[=<keyid>]
 .RS 4
-GPG\-sign commit\&.
+GPG\-sign commits\&. The
+keyid
+argument is optional and defaults to the committer identity; if specified, it must be stuck to the option without a space\&.
 .RE
 .PP
 \-\-no\-gpg\-sign

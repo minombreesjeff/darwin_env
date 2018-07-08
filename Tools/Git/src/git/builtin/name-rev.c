@@ -55,20 +55,16 @@ copy_data:
 			parents;
 			parents = parents->next, parent_number++) {
 		if (parent_number > 1) {
-			int len = strlen(tip_name);
-			char *new_name = xmalloc(len +
-				1 + decimal_length(generation) +  /* ~<n> */
-				1 + 2 +				  /* ^NN */
-				1);
+			size_t len;
+			char *new_name;
 
-			if (len > 2 && !strcmp(tip_name + len - 2, "^0"))
-				len -= 2;
+			strip_suffix(tip_name, "^0", &len);
 			if (generation > 0)
-				sprintf(new_name, "%.*s~%d^%d", len, tip_name,
-						generation, parent_number);
+				new_name = xstrfmt("%.*s~%d^%d", (int)len, tip_name,
+						   generation, parent_number);
 			else
-				sprintf(new_name, "%.*s^%d", len, tip_name,
-						parent_number);
+				new_name = xstrfmt("%.*s^%d", (int)len, tip_name,
+						   parent_number);
 
 			name_rev(parents->item, new_name, 0,
 				distance + MERGE_TRAVERSAL_WEIGHT, 0);
@@ -166,7 +162,7 @@ static int name_ref(const char *path, const struct object_id *oid, int flags, vo
 		struct tag *t = (struct tag *) o;
 		if (!t->tagged)
 			break; /* broken repository */
-		o = parse_object(t->tagged->sha1);
+		o = parse_object(t->tagged->oid.hash);
 		deref = 1;
 	}
 	if (o && o->type == OBJ_COMMIT) {
@@ -197,7 +193,7 @@ static const char *get_exact_ref_match(const struct object *o)
 		tip_table.sorted = 1;
 	}
 
-	found = sha1_pos(o->sha1, tip_table.table, tip_table.nr,
+	found = sha1_pos(o->oid.hash, tip_table.table, tip_table.nr,
 			 nth_tip_table_ent);
 	if (0 <= found)
 		return tip_table.table[found].refname;
@@ -236,19 +232,19 @@ static void show_name(const struct object *obj,
 		      int always, int allow_undefined, int name_only)
 {
 	const char *name;
-	const unsigned char *sha1 = obj->sha1;
+	const struct object_id *oid = &obj->oid;
 
 	if (!name_only)
-		printf("%s ", caller_name ? caller_name : sha1_to_hex(sha1));
+		printf("%s ", caller_name ? caller_name : oid_to_hex(oid));
 	name = get_rev_name(obj);
 	if (name)
 		printf("%s\n", name);
 	else if (allow_undefined)
 		printf("undefined\n");
 	else if (always)
-		printf("%s\n", find_unique_abbrev(sha1, DEFAULT_ABBREV));
+		printf("%s\n", find_unique_abbrev(oid->hash, DEFAULT_ABBREV));
 	else
-		die("cannot describe '%s'", sha1_to_hex(sha1));
+		die("cannot describe '%s'", oid_to_hex(oid));
 }
 
 static char const * const name_rev_usage[] = {

@@ -93,9 +93,7 @@ static struct git_attr *git_attr_internal(const char *name, int len)
 	if (invalid_attr_name(name, len))
 		return NULL;
 
-	a = xmalloc(sizeof(*a) + len + 1);
-	memcpy(a->name, name, len);
-	a->name[len] = 0;
+	FLEX_ALLOC_MEM(a, name, name, len);
 	a->h = hval;
 	a->next = git_attr_hash[pos];
 	a->attr_nr = attr_nr++;
@@ -485,6 +483,14 @@ static const char *git_etc_gitattributes(void)
 	return system_wide;
 }
 
+static const char *git_xcode_gitattributes(void)
+{
+	static const char *xcode_gitattributes;
+	if (!xcode_gitattributes)
+		xcode_gitattributes = system_path("share/git-core/gitattributes");
+	return xcode_gitattributes;
+}
+
 static int git_attr_system(void)
 {
 	return !git_env_bool("GIT_ATTR_NOSYSTEM", 0);
@@ -505,6 +511,12 @@ static void bootstrap_attr_stack(void)
 	attr_stack = elem;
 
 	if (git_attr_system()) {
+		elem = read_attr_from_file(git_xcode_gitattributes(), 1);
+		if (elem) {
+			elem->origin = NULL;
+			elem->prev = attr_stack;
+			attr_stack = elem;
+		}
 		elem = read_attr_from_file(git_etc_gitattributes(), 1);
 		if (elem) {
 			elem->origin = NULL;
@@ -799,7 +811,7 @@ int git_all_attrs(const char *path, int *num, struct git_attr_check **check)
 			++count;
 	}
 	*num = count;
-	*check = xmalloc(sizeof(**check) * count);
+	ALLOC_ARRAY(*check, count);
 	j = 0;
 	for (i = 0; i < attr_nr; i++) {
 		const char *value = check_all_attr[i].value;

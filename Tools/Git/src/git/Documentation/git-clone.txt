@@ -104,8 +104,13 @@ objects from the source repository into a pack in the cloned repository.
 --dissociate::
 	Borrow the objects from reference repositories specified
 	with the `--reference` options only to reduce network
-	transfer and stop borrowing from them after a clone is made
-	by making necessary local copies of borrowed objects.
+	transfer, and stop borrowing from them after a clone is made
+	by making necessary local copies of borrowed objects.  This
+	option can also be used when cloning locally from a
+	repository that already borrows objects from another
+	repository--the new repository will borrow objects from the
+	same repository, and this option can be used to stop the
+	borrowing.
 
 --quiet::
 -q::
@@ -185,15 +190,14 @@ objects from the source repository into a pack in the cloned repository.
 
 --depth <depth>::
 	Create a 'shallow' clone with a history truncated to the
-	specified number of revisions.
+	specified number of commits. Implies `--single-branch` unless
+	`--no-single-branch` is given to fetch the histories near the
+	tips of all branches.
 
 --[no-]single-branch::
 	Clone only the history leading to the tip of a single branch,
 	either specified by the `--branch` option or the primary
-	branch remote's `HEAD` points at. When creating a shallow
-	clone with the `--depth` option, this is the default, unless
-	`--no-single-branch` is given to fetch the histories near the
-	tips of all branches.
+	branch remote's `HEAD` points at.
 	Further fetches into the resulting repository will only update the
 	remote-tracking branch for the branch this option was used for the
 	initial cloning.  If the HEAD at the remote did not point at any

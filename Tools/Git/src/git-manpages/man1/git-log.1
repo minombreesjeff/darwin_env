@@ -2,12 +2,12 @@
 .\"     Title: git-log
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 09/28/2015
+.\"      Date: 01/04/2016
 .\"    Manual: Git Manual
-.\"    Source: Git 2.6.0
+.\"    Source: Git 2.7.0
 .\"  Language: English
 .\"
-.TH "GIT\-LOG" "1" "09/28/2015" "Git 2\&.6\&.0" "Git Manual"
+.TH "GIT\-LOG" "1" "01/04/2016" "Git 2\&.7\&.0" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -1215,9 +1215,13 @@ for more details\&.
 .sp
 With an optional
 \fI<ref>\fR
-argument, show this notes ref instead of the default notes ref(s)\&. The ref is taken to be in
+argument, show this notes ref instead of the default notes ref(s)\&. The ref specifies the full refname when it begins with
+refs/notes/; when it begins with
+notes/,
+refs/
+and otherwise
 refs/notes/
-if it is not qualified\&.
+is prefixed to form a full name of the ref\&.
 .sp
 Multiple \-\-notes options can be combined to control which notes are being displayed\&. Examples: "\-\-notes=foo" will show only notes from "refs/notes/foo"; "\-\-notes=foo \-\-notes" will show both notes from "refs/notes/foo" and from the default notes ref(s)\&.
 .RE
@@ -1247,20 +1251,29 @@ Synonym for
 \-\-date=relative\&.
 .RE
 .PP
-\-\-date=(relative|local|default|iso|iso\-strict|rfc|short|raw)
+\-\-date=<format>
 .RS 4
 Only takes effect for dates shown in human\-readable format, such as when using
 \-\-pretty\&.
 log\&.date
 config variable sets a default value for the log command\(cqs
 \-\-date
-option\&.
+option\&. By default, dates are shown in the original time zone (either committer\(cqs or author\(cqs)\&. If
+\-local
+is appended to the format (e\&.g\&.,
+iso\-local), the user\(cqs local time zone is used instead\&.
 .sp
 \-\-date=relative
-shows dates relative to the current time, e\&.g\&. \(lq2 hours ago\(rq\&.
+shows dates relative to the current time, e\&.g\&. \(lq2 hours ago\(rq\&. The
+\-local
+option cannot be used with
+\-\-raw
+or
+\-\-relative\&.
 .sp
 \-\-date=local
-shows timestamps in user\(cqs local time zone\&.
+is an alias for
+\-\-date=default\-local\&.
 .sp
 \-\-date=iso
 (or
@@ -1327,10 +1340,35 @@ strftime\&. Use
 \-\-date=format:%c
 to show the date in your system locale\(cqs preferred format\&. See the
 strftime
-manual for a complete list of format placeholders\&.
+manual for a complete list of format placeholders\&. When using
+\-local, the correct syntax is
+\-\-date=format\-local:\&.\&.\&.\&.
 .sp
 \-\-date=default
-shows timestamps in the original time zone (either committer\(cqs or author\(cqs)\&.
+is the default format, and is similar to
+\-\-date=rfc2822, with a few exceptions:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+there is no comma after the day\-of\-week
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
+the time zone is omitted when the local time zone is used
+.RE
 .RE
 .PP
 \-\-parents
@@ -2802,6 +2840,10 @@ Every non\-overlapping match of the <regex> is considered a word\&. Anything bet
 |[^[:space:]]
 to your regular expression to make sure that it matches all non\-whitespace characters\&. A match that contains a newline is silently truncated(!) at the newline\&.
 .sp
+For example,
+\-\-word\-diff\-regex=\&.
+will treat each character as a word and, correspondingly, show differences character by character\&.
+.sp
 The regex can also be set via a diff driver or configuration option, see
 \fBgitattributes\fR(1)
 or
@@ -3636,9 +3678,12 @@ Sat May 8 19:35:34 2010 \-0500\&.
 .PP
 log\&.follow
 .RS 4
-If a single <path> is given to git log, it will act as if the
+If
+true,
+git log
+will act as if the
 \-\-follow
-option was also used\&. This has the same limitations as
+option was used when a single <path> is given\&. This has the same limitations as
 \-\-follow, i\&.e\&. it cannot be used to follow multiple files and does not work well on non\-linear history\&.
 .RE
 .PP

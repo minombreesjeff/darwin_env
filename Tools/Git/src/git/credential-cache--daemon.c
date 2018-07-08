@@ -2,7 +2,6 @@
 #include "tempfile.h"
 #include "credential.h"
 #include "unix-socket.h"
-#include "sigchain.h"
 #include "parse-options.h"
 
 static struct tempfile socket_file;
@@ -245,6 +244,7 @@ static void check_socket_directory(const char *path)
 int main(int argc, const char **argv)
 {
 	const char *socket_path;
+	int ignore_sighup = 0;
 	static const char *usage[] = {
 		"git-credential-cache--daemon [opts] <socket_path>",
 		NULL
@@ -256,6 +256,8 @@ int main(int argc, const char **argv)
 		OPT_END()
 	};
 
+	git_config_get_bool("credentialcache.ignoresighup", &ignore_sighup);
+
 	argc = parse_options(argc, argv, NULL, options, usage, 0);
 	socket_path = argv[0];
 
@@ -264,6 +266,10 @@ int main(int argc, const char **argv)
 
 	check_socket_directory(socket_path);
 	register_tempfile(&socket_file, socket_path);
+
+	if (ignore_sighup)
+		signal(SIGHUP, SIG_IGN);
+
 	serve_cache(socket_path, debug);
 	delete_tempfile(&socket_file);
 

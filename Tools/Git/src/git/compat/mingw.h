@@ -210,6 +210,9 @@ FILE *mingw_freopen (const char *filename, const char *otype, FILE *stream);
 int mingw_fflush(FILE *stream);
 #define fflush mingw_fflush
 
+ssize_t mingw_write(int fd, const void *buf, size_t len);
+#define write mingw_write
+
 int mingw_access(const char *filename, int mode);
 #undef access
 #define access mingw_access
@@ -358,7 +361,10 @@ HANDLE winansi_get_osfhandle(int fd);
  * git specific compatibility
  */
 
-#define has_dos_drive_prefix(path) (isalpha(*(path)) && (path)[1] == ':')
+#define has_dos_drive_prefix(path) \
+	(isalpha(*(path)) && (path)[1] == ':' ? 2 : 0)
+int mingw_skip_dos_drive_prefix(char **path);
+#define skip_dos_drive_prefix mingw_skip_dos_drive_prefix
 #define is_dir_sep(c) ((c) == '/' || (c) == '\\')
 static inline char *mingw_find_last_dir_sep(const char *path)
 {

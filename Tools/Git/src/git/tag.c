@@ -10,7 +10,7 @@ struct object *deref_tag(struct object *o, const char *warn, int warnlen)
 {
 	while (o && o->type == OBJ_TAG)
 		if (((struct tag *)o)->tagged)
-			o = parse_object(((struct tag *)o)->tagged->sha1);
+			o = parse_object(((struct tag *)o)->tagged->oid.hash);
 		else
 			o = NULL;
 	if (!o && warn) {
@@ -24,7 +24,7 @@ struct object *deref_tag(struct object *o, const char *warn, int warnlen)
 struct object *deref_tag_noverify(struct object *o)
 {
 	while (o && o->type == OBJ_TAG) {
-		o = parse_object(o->sha1);
+		o = parse_object(o->oid.hash);
 		if (o && o->type == OBJ_TAG && ((struct tag *)o)->tagged)
 			o = ((struct tag *)o)->tagged;
 		else
@@ -82,7 +82,7 @@ int parse_tag_buffer(struct tag *item, const void *data, unsigned long size)
 	nl = memchr(bufptr, '\n', tail - bufptr);
 	if (!nl || sizeof(type) <= (nl - bufptr))
 		return -1;
-	strncpy(type, bufptr, nl - bufptr);
+	memcpy(type, bufptr, nl - bufptr);
 	type[nl - bufptr] = '\0';
 	bufptr = nl + 1;
 
@@ -127,14 +127,14 @@ int parse_tag(struct tag *item)
 
 	if (item->object.parsed)
 		return 0;
-	data = read_sha1_file(item->object.sha1, &type, &size);
+	data = read_sha1_file(item->object.oid.hash, &type, &size);
 	if (!data)
 		return error("Could not read %s",
-			     sha1_to_hex(item->object.sha1));
+			     oid_to_hex(&item->object.oid));
 	if (type != OBJ_TAG) {
 		free(data);
 		return error("Object %s not a tag",
-			     sha1_to_hex(item->object.sha1));
+			     oid_to_hex(&item->object.oid));
 	}
 	ret = parse_tag_buffer(item, data, size);
 	free(data);

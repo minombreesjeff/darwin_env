@@ -6,7 +6,7 @@
 static void create_directories(const char *path, int path_len,
 			       const struct checkout *state)
 {
-	char *buf = xmalloc(path_len + 1);
+	char *buf = xmallocz(path_len);
 	int len = 0;
 
 	while (len < path_len) {
@@ -96,8 +96,8 @@ static int open_output_fd(char *path, const struct cache_entry *ce, int to_tempf
 {
 	int symlink = (ce->ce_mode & S_IFMT) != S_IFREG;
 	if (to_tempfile) {
-		strcpy(path, symlink
-		       ? ".merge_link_XXXXXX" : ".merge_file_XXXXXX");
+		xsnprintf(path, TEMPORARY_FILENAME_LENGTH, "%s",
+			  symlink ? ".merge_link_XXXXXX" : ".merge_file_XXXXXX");
 		return mkstemp(path);
 	} else {
 		return create_file(path, !symlink ? ce->ce_mode : 0666);
