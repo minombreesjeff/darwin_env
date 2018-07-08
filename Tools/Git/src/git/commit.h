@@ -53,6 +53,8 @@ int find_commit_subject(const char *commit_buffer, const char **subject);
 
 struct commit_list *commit_list_insert(struct commit *item,
 					struct commit_list **list);
+struct commit_list **commit_list_append(struct commit *commit,
+					struct commit_list **next);
 unsigned commit_list_count(const struct commit_list *l);
 struct commit_list *commit_list_insert_by_date(struct commit *item,
 				    struct commit_list **list);
@@ -82,6 +84,7 @@ struct pretty_print_context {
 	const char *after_subject;
 	int preserve_subject;
 	enum date_mode date_mode;
+	unsigned date_mode_explicit:1;
 	int need_8bit_cte;
 	int show_notes;
 	struct reflog_walk_info *reflog_info;

@@ -15,6 +15,38 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see http://www.gnu.org/licenses/ .
 
+# Keep the original TERM for say_color
+ORIGINAL_TERM=$TERM
+
+# Test the binaries we have just built.  The tests are kept in
+# t/ subdirectory and are run in 'trash directory' subdirectory.
+if test -z "$TEST_DIRECTORY"
+then
+	# We allow tests to override this, in case they want to run tests
+	# outside of t/, e.g. for running tests on the test library
+	# itself.
+	TEST_DIRECTORY=$(pwd)
+fi
+if test -z "$TEST_OUTPUT_DIRECTORY"
+then
+	# Similarly, override this to store the test-results subdir
+	# elsewhere
+	TEST_OUTPUT_DIRECTORY=$TEST_DIRECTORY
+fi
+GIT_BUILD_DIR="$TEST_DIRECTORY"/..
+
+################################################################
+# It appears that people try to run tests without building...
+"$GIT_BUILD_DIR/git" >/dev/null
+if test $? != 1
+then
+	echo >&2 'error: you do not seem to have built git yet.'
+	exit 1
+fi
+
+. "$GIT_BUILD_DIR"/GIT-BUILD-OPTIONS
+export PERL_PATH SHELL_PATH
+
 # if --tee was passed, write the output not only to the terminal, but
 # additionally to the file test-results/$BASENAME.out, too.
 case "$GIT_TEST_TEE_STARTED, $* " in
@@ -24,15 +56,12 @@ done,*)
 *' --tee '*|*' --va'*)
 	mkdir -p test-results
 	BASE=test-results/$(basename "$0" .sh)
-	(GIT_TEST_TEE_STARTED=done ${SHELL-sh} "$0" "$@" 2>&1;
+	(GIT_TEST_TEE_STARTED=done ${SHELL_PATH} "$0" "$@" 2>&1;
 	 echo $? > $BASE.exit) | tee $BASE.out
 	test "$(cat $BASE.exit)" = 0
 	exit
 	;;
 esac
-
-# Keep the original TERM for say_color
-ORIGINAL_TERM=$TERM
 
 # For repeatability, reset the environment to known value.
 LANG=C
@@ -46,7 +75,7 @@ EDITOR=:
 # /usr/xpg4/bin/sh and /bin/ksh to bail out.  So keep the unsets
 # deriving from the command substitution clustered with the other
 # ones.
-unset VISUAL EMAIL LANGUAGE COLUMNS $(perl -e '
+unset VISUAL EMAIL LANGUAGE COLUMNS $("$PERL_PATH" -e '
 	my @env = keys %ENV;
 	my $ok = join("|", qw(
 		TRACE
@@ -61,6 +90,7 @@ unset VISUAL EMAIL LANGUAGE COLUMNS $(perl -e '
 	my @vars = grep(/^GIT_/ && !/^GIT_($ok)/o, @env);
 	print join("\n", @vars);
 ')
+unset XDG_CONFIG_HOME
 GIT_AUTHOR_EMAIL=author@example.com
 GIT_AUTHOR_NAME='A U Thor'
 GIT_COMMITTER_EMAIL=committer@example.com
@@ -229,7 +259,7 @@ trap 'die' EXIT
 
 # The user-facing functions are loaded from a separate file so that
 # test_perf subshells can have them too
-. "${TEST_DIRECTORY:-.}"/test-lib-functions.sh
+. "$TEST_DIRECTORY/test-lib-functions.sh"
 
 # You are not expected to call test_ok_ and test_failure_ directly, use
 # the text_expect_* functions instead.
@@ -380,23 +410,6 @@ test_done () {
 	esac
 }
 
-# Test the binaries we have just built.  The tests are kept in
-# t/ subdirectory and are run in 'trash directory' subdirectory.
-if test -z "$TEST_DIRECTORY"
-then
-	# We allow tests to override this, in case they want to run tests
-	# outside of t/, e.g. for running tests on the test library
-	# itself.
-	TEST_DIRECTORY=$(pwd)
-fi
-if test -z "$TEST_OUTPUT_DIRECTORY"
-then
-	# Similarly, override this to store the test-results subdir
-	# elsewhere
-	TEST_OUTPUT_DIRECTORY=$TEST_DIRECTORY
-fi
-GIT_BUILD_DIR="$TEST_DIRECTORY"/..
-
 if test -n "$valgrind"
 then
 	make_symlink () {
@@ -492,8 +505,6 @@ GIT_CONFIG_NOSYSTEM=1
 GIT_ATTR_NOSYSTEM=1
 export PATH GIT_EXEC_PATH GIT_TEMPLATE_DIR GIT_CONFIG_NOSYSTEM GIT_ATTR_NOSYSTEM
 
-. "$GIT_BUILD_DIR"/GIT-BUILD-OPTIONS
-
 if test -z "$GIT_TEST_CMP"
 then
 	if test -n "$GIT_TEST_CMP_USE_COPIED_CONTEXT"
@@ -506,6 +517,7 @@ fi
 
 GITPERLLIB="$GIT_BUILD_DIR"/perl/blib/lib:"$GIT_BUILD_DIR"/perl/blib/arch/auto/Git
 export GITPERLLIB
+export PERL5LIB="$GIT_BUILD_DIR"/perl
 test -d "$GIT_BUILD_DIR"/templates/blt || {
 	error "You haven't built things yet, have you?"
 }
@@ -657,9 +669,29 @@ test_i18ngrep () {
 	fi
 }
 
-# test whether the filesystem supports symbolic links
-ln -s x y 2>/dev/null && test -h y 2>/dev/null && test_set_prereq SYMLINKS
-rm -f y
+test_lazy_prereq SYMLINKS '
+	# test whether the filesystem supports symbolic links
+	ln -s x y && test -h y
+'
+
+test_lazy_prereq CASE_INSENSITIVE_FS '
+	echo good >CamelCase &&
+	echo bad >camelcase &&
+	test "$(cat CamelCase)" != good
+'
+
+test_lazy_prereq UTF8_NFD_TO_NFC '
+	# check whether FS converts nfd unicode to nfc
+	auml=$(printf "\303\244")
+	aumlcdiar=$(printf "\141\314\210")
+	>"$auml" &&
+	case "$(echo *)" in
+	"$aumlcdiar")
+		true ;;
+	*)
+		false ;;
+	esac
+'
 
 # When the tests are run as root, permission tests will report that
 # things are writable when they shouldn't be.

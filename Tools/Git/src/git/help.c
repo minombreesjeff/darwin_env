@@ -4,6 +4,9 @@
 #include "levenshtein.h"
 #include "help.h"
 #include "common-cmds.h"
+#include "string-list.h"
+#include "column.h"
+#include "version.h"
 
 void add_cmdname(struct cmdnames *cmds, const char *name, int len)
 {
@@ -41,9 +44,12 @@ static void uniq(struct cmdnames *cmds)
 	if (!cmds->cnt)
 		return;
 
-	for (i = j = 1; i < cmds->cnt; i++)
-		if (strcmp(cmds->names[i]->name, cmds->names[i-1]->name))
+	for (i = j = 1; i < cmds->cnt; i++) {
+		if (!strcmp(cmds->names[i]->name, cmds->names[j-1]->name))
+			free(cmds->names[i]);
+		else
 			cmds->names[j++] = cmds->names[i];
+	}
 
 	cmds->cnt = j;
 }
@@ -58,9 +64,10 @@ void exclude_cmds(struct cmdnames *cmds, struct cmdnames *excludes)
 		cmp = strcmp(cmds->names[ci]->name, excludes->names[ei]->name);
 		if (cmp < 0)
 			cmds->names[cj++] = cmds->names[ci++];
-		else if (cmp == 0)
-			ci++, ei++;
-		else if (cmp > 0)
+		else if (cmp == 0) {
+			ei++;
+			free(cmds->names[ci++]);
+		} else if (cmp > 0)
 			ei++;
 	}
 
@@ -70,31 +77,25 @@ void exclude_cmds(struct cmdnames *cmds, struct cmdnames *excludes)
 	cmds->cnt = cj;
 }
 
-static void pretty_print_string_list(struct cmdnames *cmds, int longest)
+static void pretty_print_string_list(struct cmdnames *cmds,
+				     unsigned int colopts)
 {
-	int cols = 1, rows;
-	int space = longest + 1; /* min 1 SP between words */
-	int max_cols = term_columns() - 1; /* don't print *on* the edge */
-	int i, j;
+	struct string_list list = STRING_LIST_INIT_NODUP;
+	struct column_options copts;
+	int i;
 
-	if (space < max_cols)
-		cols = max_cols / space;
-	rows = DIV_ROUND_UP(cmds->cnt, cols);
-
-	for (i = 0; i < rows; i++) {
-		printf("  ");
-
-		for (j = 0; j < cols; j++) {
-			int n = j * rows + i;
-			int size = space;
-			if (n >= cmds->cnt)
-				break;
-			if (j == cols-1 || n + rows >= cmds->cnt)
-				size = 1;
-			printf("%-*s", size, cmds->names[n]->name);
-		}
-		putchar('\n');
-	}
+	for (i = 0; i < cmds->cnt; i++)
+		string_list_append(&list, cmds->names[i]->name);
+	/*
+	 * always enable column display, we only consult column.*
+	 * about layout strategy and stuff
+	 */
+	colopts = (colopts & ~COL_ENABLE_MASK) | COL_ENABLED;
+	memset(&copts, 0, sizeof(copts));
+	copts.indent = "  ";
+	copts.padding = 2;
+	print_columns(&list, colopts, &copts);
+	string_list_clear(&list, 0);
 }
 
 static int is_executable(const char *name)
@@ -203,34 +204,21 @@ void load_command_list(const char *prefix,
 	exclude_cmds(other_cmds, main_cmds);
 }
 
-void list_commands(const char *title, struct cmdnames *main_cmds,
-		   struct cmdnames *other_cmds)
+void list_commands(unsigned int colopts,
+		   struct cmdnames *main_cmds, struct cmdnames *other_cmds)
 {
-	int i, longest = 0;
-
-	for (i = 0; i < main_cmds->cnt; i++)
-		if (longest < main_cmds->names[i]->len)
-			longest = main_cmds->names[i]->len;
-	for (i = 0; i < other_cmds->cnt; i++)
-		if (longest < other_cmds->names[i]->len)
-			longest = other_cmds->names[i]->len;
-
 	if (main_cmds->cnt) {
 		const char *exec_path = git_exec_path();
-		printf("available %s in '%s'\n", title, exec_path);
-		printf("----------------");
-		mput_char('-', strlen(title) + strlen(exec_path));
+		printf_ln(_("available git commands in '%s'"), exec_path);
 		putchar('\n');
-		pretty_print_string_list(main_cmds, longest);
+		pretty_print_string_list(main_cmds, colopts);
 		putchar('\n');
 	}
 
 	if (other_cmds->cnt) {
-		printf("%s available from elsewhere on your $PATH\n", title);
-		printf("---------------------------------------");
-		mput_char('-', strlen(title));
+		printf_ln(_("git commands available from elsewhere on your $PATH"));
 		putchar('\n');
-		pretty_print_string_list(other_cmds, longest);
+		pretty_print_string_list(other_cmds, colopts);
 		putchar('\n');
 	}
 }
@@ -334,14 +322,14 @@ const char *help_unknown_cmd(const char *cmd)
 		}
 
 		main_cmds.names[i]->len =
-			levenshtein(cmd, candidate, 0, 2, 1, 4) + 1;
+			levenshtein(cmd, candidate, 0, 2, 1, 3) + 1;
 	}
 
 	qsort(main_cmds.names, main_cmds.cnt,
 	      sizeof(*main_cmds.names), levenshtein_compare);
 
 	if (!main_cmds.cnt)
-		die ("Uh oh. Your system reports no Git commands at all.");
+		die(_("Uh oh. Your system reports no Git commands at all."));
 
 	/* skip and count prefix matches */
 	for (n = 0; n < main_cmds.cnt && !main_cmds.names[n]->len; n++)
@@ -362,23 +350,26 @@ const char *help_unknown_cmd(const char *cmd)
 		const char *assumed = main_cmds.names[0]->name;
 		main_cmds.names[0] = NULL;
 		clean_cmdnames(&main_cmds);
-		fprintf(stderr, "WARNING: You called a Git command named '%s', "
-			"which does not exist.\n"
-			"Continuing under the assumption that you meant '%s'\n",
+		fprintf_ln(stderr,
+			   _("WARNING: You called a Git command named '%s', "
+			     "which does not exist.\n"
+			     "Continuing under the assumption that you meant '%s'"),
 			cmd, assumed);
 		if (autocorrect > 0) {
-			fprintf(stderr, "in %0.1f seconds automatically...\n",
+			fprintf_ln(stderr, _("in %0.1f seconds automatically..."),
 				(float)autocorrect/10.0);
 			poll(NULL, 0, autocorrect * 100);
 		}
 		return assumed;
 	}
 
-	fprintf(stderr, "git: '%s' is not a git command. See 'git --help'.\n", cmd);
+	fprintf_ln(stderr, _("git: '%s' is not a git command. See 'git --help'."), cmd);
 
 	if (SIMILAR_ENOUGH(best_similarity)) {
-		fprintf(stderr, "\nDid you mean %s?\n",
-			n < 2 ? "this": "one of these");
+		fprintf_ln(stderr,
+			   Q_("\nDid you mean this?",
+			      "\nDid you mean one of these?",
+			   n));
 
 		for (i = 0; i < n; i++)
 			fprintf(stderr, "\t%s\n", main_cmds.names[i]->name);

@@ -7,6 +7,7 @@
 #include "dir.h"
 #include "tag.h"
 #include "string-list.h"
+#include "mergesort.h"
 
 enum map_direction { FROM_SRC, FROM_DST };
 
@@ -918,6 +919,27 @@ void free_refs(struct ref *ref)
 	}
 }
 
+int ref_compare_name(const void *va, const void *vb)
+{
+	const struct ref *a = va, *b = vb;
+	return strcmp(a->name, b->name);
+}
+
+static void *ref_list_get_next(const void *a)
+{
+	return ((const struct ref *)a)->next;
+}
+
+static void ref_list_set_next(void *a, void *next)
+{
+	((struct ref *)a)->next = next;
+}
+
+void sort_ref_list(struct ref **l, int (*cmp)(const void *, const void *))
+{
+	*l = llist_mergesort(*l, ref_list_get_next, ref_list_set_next, cmp);
+}
+
 static int count_refspec_match(const char *pattern,
 			       struct ref *refs,
 			       struct ref **matched_ref)
@@ -1078,6 +1100,9 @@ static int match_explicit(struct ref *src, struct ref *dst,
 	case 0:
 		if (!memcmp(dst_value, "refs/", 5))
 			matched_dst = make_linked_ref(dst_value, dst_tail);
+		else if (is_null_sha1(matched_src->new_sha1))
+			error("unable to delete '%s': remote ref does not exist",
+			      dst_value);
 		else if ((dst_guess = guess_ref(dst_value, matched_src)))
 			matched_dst = make_linked_ref(dst_guess, dst_tail);
 		else

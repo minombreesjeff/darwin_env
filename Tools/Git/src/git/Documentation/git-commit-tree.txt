@@ -45,7 +45,7 @@ OPTIONS
 	Each '-p' indicates the id of a parent commit object.
 
 -m <message>::
-	A paragraph in the commig log message. This can be given more than
+	A paragraph in the commit log message. This can be given more than
 	once and each <message> becomes its own paragraph.
 
 -F <file>::
@@ -87,15 +87,6 @@ entry is not provided via "<" redirection, 'git commit-tree' will just wait
 for one to be entered and terminated with ^D.
 
 include::date-formats.txt[]
-
-Diagnostics
------------
-You don't exist. Go away!::
-    The passwd(5) gecos field couldn't be read
-Your parents must have hated you!::
-    The passwd(5) gecos field is longer than a giant static buffer.
-Your sysadmin must hate you!::
-    The passwd(5) name field is longer than a giant static buffer.
 
 Discussion
 ----------

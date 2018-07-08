@@ -126,8 +126,7 @@ static struct notes_merge_pair *diff_tree_remote(struct notes_merge_options *o,
 	diff_setup(&opt);
 	DIFF_OPT_SET(&opt, RECURSIVE);
 	opt.output_format = DIFF_FORMAT_NO_OUTPUT;
-	if (diff_setup_done(&opt) < 0)
-		die("diff_setup_done failed");
+	diff_setup_done(&opt);
 	diff_tree_sha1(base, remote, "", &opt);
 	diffcore_std(&opt);
 
@@ -190,8 +189,7 @@ static void diff_tree_local(struct notes_merge_options *o,
 	diff_setup(&opt);
 	DIFF_OPT_SET(&opt, RECURSIVE);
 	opt.output_format = DIFF_FORMAT_NO_OUTPUT;
-	if (diff_setup_done(&opt) < 0)
-		die("diff_setup_done failed");
+	diff_setup_done(&opt);
 	diff_tree_sha1(base, local, "", &opt);
 	diffcore_std(&opt);
 
@@ -524,8 +522,10 @@ static int merge_from_diffs(struct notes_merge_options *o,
 	free(changes);
 
 	if (o->verbosity >= 4)
-		printf("Merge result: %i unmerged notes and a %s notes tree\n",
-			conflicts, t->dirty ? "dirty" : "clean");
+		printf(t->dirty ?
+		       "Merge result: %i unmerged notes and a dirty notes tree\n" :
+		       "Merge result: %i unmerged notes and a clean notes tree\n",
+		       conflicts);
 
 	return conflicts ? -1 : 1;
 }

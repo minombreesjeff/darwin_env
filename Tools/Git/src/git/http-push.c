@@ -904,7 +904,7 @@ static struct remote_lock *lock_remote(const char *path, long timeout)
 		ep = strchr(ep + 1, '/');
 	}
 
-	escaped = xml_entities(git_default_email);
+	escaped = xml_entities(ident_default_email());
 	strbuf_addf(&out_buffer.buf, LOCK_REQUEST, escaped);
 	free(escaped);
 
@@ -1108,7 +1108,7 @@ static void handle_remote_ls_ctx(struct xml_ctx *ctx, int tag_closed)
 				if (repo->path)
 					url = repo->path;
 				if (strncmp(path, url, repo->path_len))
-					error("Parsed path '%s' does not match url: '%s'\n",
+					error("Parsed path '%s' does not match url: '%s'",
 					      path, url);
 				else {
 					path += repo->path_len;
@@ -1702,7 +1702,7 @@ static int delete_remote_branch(const char *pattern, int force)
 		run_active_slot(slot);
 		free(url);
 		if (results.curl_result != CURLE_OK)
-			return error("DELETE request failed (%d/%ld)\n",
+			return error("DELETE request failed (%d/%ld)",
 				     results.curl_result, results.http_code);
 	} else {
 		free(url);

@@ -32,7 +32,7 @@ test_expect_success 'setup svnrepo' '
 	start_httpd
 	'
 
-test_expect_success 'test clone with funky branch names' '
+test_expect_failure 'test clone with funky branch names' '
 	git svn clone -s "$svnrepo/pr ject" project &&
 	(
 		cd project &&

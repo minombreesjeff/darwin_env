@@ -619,7 +619,7 @@ a log message from the user describing the changes.</p></div>
 </div></div>
 <div class="paragraph"><p>The second syntax (&lt;msg&gt; <tt>HEAD</tt> &lt;commit&gt;&#8230;) is supported for
 historical reasons.  Do not use it from the command line or in
-new scripts.  It is the same as <tt>git merge -m &lt;msg&gt; &lt;commit&gt;&#8230;</tt>.</p></div>
+new scripts.  It is the same as <tt>git merge -m &lt;msg&gt; &lt;commit&gt;...</tt>.</p></div>
 <div class="paragraph"><p>The third syntax ("<tt>git merge --abort</tt>") can only be run after the
 merge has resulted in conflicts. <em>git merge --abort</em> will abort the
 merge process and try to reconstruct the pre-merge state. However,
@@ -971,7 +971,7 @@ other side left that area intact, or vice versa) are incorporated in the
 final result verbatim.  When both sides made changes to the same area,
 however, git cannot randomly pick one side over the other, and asks you to
 resolve it by leaving what both sides did to that area.</p></div>
-<div class="paragraph"><p>By default, git uses the same style as that is used by "merge" program
+<div class="paragraph"><p>By default, git uses the same style as the one used by the "merge" program
 from the RCS suite to present such a conflicted hunk, like this:</p></div>
 <div class="listingblock">
 <div class="content">
@@ -1475,7 +1475,7 @@ branch.&lt;name&gt;.mergeoptions
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2012-02-01 17:36:24 PDT
+Last updated 2012-07-23 21:34:17 PDT
 </div>
 </div>
 </body>

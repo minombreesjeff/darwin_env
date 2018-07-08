@@ -19,6 +19,7 @@
 #include "pack-revindex.h"
 #include "sha1-lookup.h"
 #include "bulk-checkin.h"
+#include "streaming.h"
 
 #ifndef O_NOATIME
 #if defined(__linux__) && (defined(__i386__) || defined(__PPC__))
@@ -228,7 +229,6 @@ char *sha1_pack_index_name(const unsigned char *sha1)
 struct alternate_object_database *alt_odb_list;
 static struct alternate_object_database **alt_odb_tail;
 
-static void read_info_alternates(const char * alternates, int depth);
 static int git_open_noatime(const char *name);
 
 /*
@@ -298,7 +298,7 @@ static int link_alt_odb_entry(const char * entry, int len, const char * relative
 			return -1;
 		}
 	}
-	if (!memcmp(ent->base, objdir, pfxlen)) {
+	if (!strcmp(ent->base, objdir)) {
 		free(ent);
 		return -1;
 	}
@@ -353,7 +353,7 @@ static void link_alt_odb_entries(const char *alt, const char *ep, int sep,
 	}
 }
 
-static void read_info_alternates(const char * relative_base, int depth)
+void read_info_alternates(const char * relative_base, int depth)
 {
 	char *map;
 	size_t mapsz;
@@ -731,6 +731,24 @@ void free_pack_by_name(const char *pack_name)
 	}
 }
 
+static unsigned int get_max_fd_limit(void)
+{
+#ifdef RLIMIT_NOFILE
+	struct rlimit lim;
+
+	if (getrlimit(RLIMIT_NOFILE, &lim))
+		die_errno("cannot get RLIMIT_NOFILE");
+
+	return lim.rlim_cur;
+#elif defined(_SC_OPEN_MAX)
+	return sysconf(_SC_OPEN_MAX);
+#elif defined(OPEN_MAX)
+	return OPEN_MAX;
+#else
+	return 1; /* see the caller ;-) */
+#endif
+}
+
 /*
  * Do not call this directly as this leaks p->pack_fd on error return;
  * call open_packed_git() instead.
@@ -747,13 +765,7 @@ static int open_packed_git_1(struct packed_git *p)
 		return error("packfile %s index unavailable", p->pack_name);
 
 	if (!pack_max_fds) {
-		struct rlimit lim;
-		unsigned int max_fds;
-
-		if (getrlimit(RLIMIT_NOFILE, &lim))
-			die_errno("cannot get RLIMIT_NOFILE");
-
-		max_fds = lim.rlim_cur;
+		unsigned int max_fds = get_max_fd_limit();
 
 		/* Save 3 for stdin/stdout/stderr, 22 for work */
 		if (25 < max_fds)
@@ -1146,10 +1158,47 @@ static const struct packed_git *has_packed_and_bad(const unsigned char *sha1)
 	return NULL;
 }
 
-int check_sha1_signature(const unsigned char *sha1, void *map, unsigned long size, const char *type)
+/*
+ * With an in-core object data in "map", rehash it to make sure the
+ * object name actually matches "sha1" to detect object corruption.
+ * With "map" == NULL, try reading the object named with "sha1" using
+ * the streaming interface and rehash it to do the same.
+ */
+int check_sha1_signature(const unsigned char *sha1, void *map,
+			 unsigned long size, const char *type)
 {
 	unsigned char real_sha1[20];
-	hash_sha1_file(map, size, type, real_sha1);
+	enum object_type obj_type;
+	struct git_istream *st;
+	git_SHA_CTX c;
+	char hdr[32];
+	int hdrlen;
+
+	if (map) {
+		hash_sha1_file(map, size, type, real_sha1);
+		return hashcmp(sha1, real_sha1) ? -1 : 0;
+	}
+
+	st = open_istream(sha1, &obj_type, &size, NULL);
+	if (!st)
+		return -1;
+
+	/* Generate the header */
+	hdrlen = sprintf(hdr, "%s %lu", typename(obj_type), size) + 1;
+
+	/* Sha1.. */
+	git_SHA1_Init(&c);
+	git_SHA1_Update(&c, hdr, hdrlen);
+	for (;;) {
+		char buf[1024 * 16];
+		ssize_t readlen = read_istream(st, buf, sizeof(buf));
+
+		if (!readlen)
+			break;
+		git_SHA1_Update(&c, buf, readlen);
+	}
+	git_SHA1_Final(real_sha1, &c);
+	close_istream(st);
 	return hashcmp(sha1, real_sha1) ? -1 : 0;
 }
 
@@ -2379,7 +2428,7 @@ int move_temp_to_file(const char *tmpfile, const char *filename)
 	unlink_or_warn(tmpfile);
 	if (ret) {
 		if (ret != EEXIST) {
-			return error("unable to write sha1 filename %s: %s\n", filename, strerror(ret));
+			return error("unable to write sha1 filename %s: %s", filename, strerror(ret));
 		}
 		/* FIXME!!! Collision check here ? */
 	}
@@ -2471,9 +2520,9 @@ static int write_loose_object(const unsigned char *sha1, char *hdr, int hdrlen,
 	fd = create_tmpfile(tmp_file, sizeof(tmp_file), filename);
 	if (fd < 0) {
 		if (errno == EACCES)
-			return error("insufficient permission for adding an object to repository database %s\n", get_object_directory());
+			return error("insufficient permission for adding an object to repository database %s", get_object_directory());
 		else
-			return error("unable to create temporary sha1 filename %s: %s\n", tmp_file, strerror(errno));
+			return error("unable to create temporary file: %s", strerror(errno));
 	}
 
 	/* Set it up */

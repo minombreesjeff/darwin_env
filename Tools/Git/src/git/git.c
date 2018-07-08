@@ -13,7 +13,7 @@ const char git_usage_string[] =
 	"           <command> [<args>]";
 
 const char git_more_info_string[] =
-	"See 'git help <command>' for more information on a specific command.";
+	N_("See 'git help <command>' for more information on a specific command.");
 
 static struct startup_info git_startup_info;
 static int use_pager = -1;
@@ -256,8 +256,6 @@ static int handle_alias(int *argcp, const char ***argv)
 	return ret;
 }
 
-const char git_version_string[] = GIT_VERSION;
-
 #define RUN_SETUP		(1<<0)
 #define RUN_SETUP_GENTLY	(1<<1)
 #define USE_PAGER		(1<<2)
@@ -348,10 +346,12 @@ static void handle_internal_command(int argc, const char **argv)
 		{ "cherry-pick", cmd_cherry_pick, RUN_SETUP | NEED_WORK_TREE },
 		{ "clean", cmd_clean, RUN_SETUP | NEED_WORK_TREE },
 		{ "clone", cmd_clone },
+		{ "column", cmd_column, RUN_SETUP_GENTLY },
 		{ "commit", cmd_commit, RUN_SETUP | NEED_WORK_TREE },
 		{ "commit-tree", cmd_commit_tree, RUN_SETUP },
 		{ "config", cmd_config, RUN_SETUP_GENTLY },
 		{ "count-objects", cmd_count_objects, RUN_SETUP },
+		{ "credential", cmd_credential, RUN_SETUP_GENTLY },
 		{ "describe", cmd_describe, RUN_SETUP },
 		{ "diff", cmd_diff },
 		{ "diff-files", cmd_diff_files, RUN_SETUP | NEED_WORK_TREE },

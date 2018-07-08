@@ -177,9 +177,7 @@ test_expect_success 'tag pointing to something else than its type' '
 	test_when_finished "remove_object $tag" &&
 	echo $tag >.git/refs/tags/wrong &&
 	test_when_finished "git update-ref -d refs/tags/wrong" &&
-	test_must_fail git fsck --tags 2>out &&
-	cat out &&
-	grep "error in tag.*broken links" out
+	test_must_fail git fsck --tags
 '
 
 test_expect_success 'cleaned up' '
@@ -211,6 +209,32 @@ test_expect_success 'rev-list --verify-objects with bad sha1' '
 	test_might_fail git rev-list --verify-objects refs/heads/bogus >/dev/null 2>out &&
 	cat out &&
 	grep -q "error: sha1 mismatch 63ffffffffffffffffffffffffffffffffffffff" out
+'
+
+_bz='\0'
+_bz5="$_bz$_bz$_bz$_bz$_bz"
+_bz20="$_bz5$_bz5$_bz5$_bz5"
+
+test_expect_success 'fsck notices blob entry pointing to null sha1' '
+	(git init null-blob &&
+	 cd null-blob &&
+	 sha=$(printf "100644 file$_bz$_bz20" |
+	       git hash-object -w --stdin -t tree) &&
+	  git fsck 2>out &&
+	  cat out &&
+	  grep "warning.*null sha1" out
+	)
+'
+
+test_expect_success 'fsck notices submodule entry pointing to null sha1' '
+	(git init null-commit &&
+	 cd null-commit &&
+	 sha=$(printf "160000 submodule$_bz$_bz20" |
+	       git hash-object -w --stdin -t tree) &&
+	  git fsck 2>out &&
+	  cat out &&
+	  grep "warning.*null sha1" out
+	)
 '
 
 test_done

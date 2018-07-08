@@ -299,19 +299,22 @@ static unsigned int digits_in_number(unsigned int number)
 	return result;
 }
 
-void get_patch_filename(struct commit *commit, int nr, const char *suffix,
-			struct strbuf *buf)
+void get_patch_filename(struct commit *commit, const char *subject, int nr,
+			const char *suffix, struct strbuf *buf)
 {
 	int suffix_len = strlen(suffix) + 1;
 	int start_len = buf->len;
 
-	strbuf_addf(buf, commit ? "%04d-" : "%d", nr);
-	if (commit) {
+	strbuf_addf(buf, commit || subject ? "%04d-" : "%d", nr);
+	if (commit || subject) {
 		int max_len = start_len + FORMAT_PATCH_NAME_MAX - suffix_len;
 		struct pretty_print_context ctx = {0};
-		ctx.date_mode = DATE_NORMAL;
 
-		format_commit_message(commit, "%f", buf, &ctx);
+		if (subject)
+			strbuf_addstr(buf, subject);
+		else if (commit)
+			format_commit_message(commit, "%f", buf, &ctx);
+
 		if (max_len < buf->len)
 			strbuf_setlen(buf, max_len);
 		strbuf_addstr(buf, suffix);
@@ -384,8 +387,8 @@ void log_write_email_headers(struct rev_info *opt, struct commit *commit,
 			 mime_boundary_leader, opt->mime_boundary);
 		extra_headers = subject_buffer;
 
-		get_patch_filename(opt->numbered_files ? NULL : commit, opt->nr,
-				    opt->patch_suffix, &filename);
+		get_patch_filename(opt->numbered_files ? NULL : commit, NULL,
+				   opt->nr, opt->patch_suffix, &filename);
 		snprintf(buffer, sizeof(buffer) - 1,
 			 "\n--%s%s\n"
 			 "Content-Type: text/x-patch;"
@@ -629,10 +632,9 @@ void show_log(struct rev_info *opt)
 			 * graph info here.
 			 */
 			show_reflog_message(opt->reflog_info,
-				    opt->commit_format == CMIT_FMT_ONELINE,
-				    opt->date_mode_explicit ?
-					opt->date_mode :
-					DATE_NORMAL);
+					    opt->commit_format == CMIT_FMT_ONELINE,
+					    opt->date_mode,
+					    opt->date_mode_explicit);
 			if (opt->commit_format == CMIT_FMT_ONELINE)
 				return;
 		}
@@ -652,6 +654,7 @@ void show_log(struct rev_info *opt)
 	if (ctx.need_8bit_cte >= 0)
 		ctx.need_8bit_cte = has_non_ascii(opt->add_signoff);
 	ctx.date_mode = opt->date_mode;
+	ctx.date_mode_explicit = opt->date_mode_explicit;
 	ctx.abbrev = opt->diffopt.abbrev;
 	ctx.after_subject = extra_headers;
 	ctx.preserve_subject = opt->preserve_subject;
@@ -682,7 +685,7 @@ void show_log(struct rev_info *opt)
 	if (opt->use_terminator) {
 		if (!opt->missing_newline)
 			graph_show_padding(opt->graph);
-		putchar('\n');
+		putchar(opt->diffopt.line_termination);
 	}
 
 	strbuf_release(&msgbuf);

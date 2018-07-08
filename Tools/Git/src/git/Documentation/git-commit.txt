@@ -42,7 +42,7 @@ The content to be added can be specified in several ways:
 
 5. by using the --interactive or --patch switches with the 'commit' command
    to decide one by one which files or hunks should be part of the commit,
-   before finalizing the operation. See the ``Interactive Mode`` section of
+   before finalizing the operation. See the ``Interactive Mode'' section of
    linkgit:git-add[1] to learn how to operate these modes.
 
 The `--dry-run` option can be used to obtain a
@@ -101,12 +101,16 @@ OPTIONS
 	When doing a dry-run, give the output in the short-format. See
 	linkgit:git-status[1] for details. Implies `--dry-run`.
 
+--branch::
+	Show the branch and tracking info even in short-format.
+
 --porcelain::
 	When doing a dry-run, give the output in a porcelain-ready
 	format. See linkgit:git-status[1] for details. Implies
 	`--dry-run`.
 
 -z::
+--null::
 	When showing `short` or `porcelain` status output, terminate
 	entries in the status output with NUL, instead of LF. If no
 	format is given, implies the `--porcelain` output format.
@@ -189,6 +193,10 @@ OPTIONS
 	current tip -- if it was a merge, it will have the parents of
 	the current tip as parents -- so the current top commit is
 	discarded.
+
+--no-post-rewrite::
+	Bypass the post-rewrite hook.
+
 +
 --
 It is a rough equivalent for:
@@ -287,7 +295,7 @@ When recording your own work, the contents of modified files in
 your working tree are temporarily stored to a staging area
 called the "index" with 'git add'.  A file can be
 reverted back, only in the index but not in the working tree,
-to that of the last commit with `git reset HEAD \-- <file>`,
+to that of the last commit with `git reset HEAD -- <file>`,
 which effectively reverts 'git add' and prevents the changes to
 this file from participating in the next commit.  After building
 the state to be committed incrementally with these commands,
@@ -381,8 +389,10 @@ DISCUSSION
 Though not required, it's a good idea to begin the commit message
 with a single short (less than 50 character) line summarizing the
 change, followed by a blank line and then a more thorough description.
-Tools that turn commits into email, for example, use the first line
-on the Subject: line and the rest of the commit in the body.
+The text up to the first blank line in a commit message is treated
+as the commit title, and that title is used throughout git.
+For example, linkgit:git-format-patch[1] turns a commit into email, and it uses
+the title on the Subject line and the rest of the commit in the body.
 
 include::i18n.txt[]
 
@@ -399,6 +409,15 @@ This command can run `commit-msg`, `prepare-commit-msg`, `pre-commit`,
 and `post-commit` hooks.  See linkgit:githooks[5] for more
 information.
 
+FILES
+-----
+
+`$GIT_DIR/COMMIT_EDITMSG`::
+	This file contains the commit message of a commit in progress.
+	If `git commit` exits due to an error before creating a commit,
+	any commit message that has been provided by the user (e.g., in
+	an editor session) will be available in this file, but will be
+	overwritten by the next invocation of `git commit`.
 
 SEE ALSO
 --------

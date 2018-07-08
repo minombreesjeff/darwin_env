@@ -48,16 +48,13 @@ int cmd_commit_tree(int argc, const char **argv, const char *prefix)
 	if (argc < 2 || !strcmp(argv[1], "-h"))
 		usage(commit_tree_usage);
 
-	if (get_sha1(argv[1], tree_sha1))
-		die("Not a valid object name %s", argv[1]);
-
 	for (i = 1; i < argc; i++) {
 		const char *arg = argv[i];
 		if (!strcmp(arg, "-p")) {
 			unsigned char sha1[20];
 			if (argc <= ++i)
 				usage(commit_tree_usage);
-			if (get_sha1(argv[i], sha1))
+			if (get_sha1_commit(argv[i], sha1))
 				die("Not a valid object name %s", argv[i]);
 			assert_sha1_type(sha1, OBJ_COMMIT);
 			new_parent(lookup_commit(sha1), &parents);
@@ -104,7 +101,7 @@ int cmd_commit_tree(int argc, const char **argv, const char *prefix)
 			continue;
 		}
 
-		if (get_sha1(arg, tree_sha1))
+		if (get_sha1_tree(arg, tree_sha1))
 			die("Not a valid object name %s", arg);
 		if (got_tree)
 			die("Cannot give more than one trees");

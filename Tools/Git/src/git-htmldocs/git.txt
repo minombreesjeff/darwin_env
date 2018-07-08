@@ -33,7 +33,7 @@ as defined in the configuration file (see linkgit:git-config[1]).
 
 Formatted and hyperlinked version of the latest git
 documentation can be viewed at
-`http://www.kernel.org/pub/software/scm/git/docs/`.
+`http://git-htmldocs.googlecode.com/git/git.html`.
 
 ifdef::stalenotes[]
 [NOTE]
@@ -44,14 +44,35 @@ unreleased) version of git, that is available from 'master'
 branch of the `git.git` repository.
 Documentation for older releases are available here:
 
-* link:v1.7.10/git.html[documentation for release 1.7.10]
+* link:v1.7.12/git.html[documentation for release 1.7.12]
 
 * release notes for
+  link:RelNotes/1.7.12.txt[1.7.12].
+
+* link:v1.7.11.5/git.html[documentation for release 1.7.11.5]
+
+* release notes for
+  link:RelNotes/1.7.11.5.txt[1.7.11.5],
+  link:RelNotes/1.7.11.4.txt[1.7.11.4],
+  link:RelNotes/1.7.11.3.txt[1.7.11.3],
+  link:RelNotes/1.7.11.2.txt[1.7.11.2],
+  link:RelNotes/1.7.11.1.txt[1.7.11.1],
+  link:RelNotes/1.7.11.txt[1.7.11].
+
+* link:v1.7.10.5/git.html[documentation for release 1.7.10.5]
+
+* release notes for
+  link:RelNotes/1.7.10.5.txt[1.7.10.5],
+  link:RelNotes/1.7.10.4.txt[1.7.10.4],
+  link:RelNotes/1.7.10.3.txt[1.7.10.3],
+  link:RelNotes/1.7.10.2.txt[1.7.10.2],
+  link:RelNotes/1.7.10.1.txt[1.7.10.1],
   link:RelNotes/1.7.10.txt[1.7.10].
 
-* link:v1.7.9.6/git.html[documentation for release 1.7.9.6]
+* link:v1.7.9.7/git.html[documentation for release 1.7.9.7]
 
 * release notes for
+  link:RelNotes/1.7.9.7.txt[1.7.9.7],
   link:RelNotes/1.7.9.6.txt[1.7.9.6],
   link:RelNotes/1.7.9.5.txt[1.7.9.5],
   link:RelNotes/1.7.9.4.txt[1.7.9.4],
@@ -60,9 +81,10 @@ Documentation for older releases are available here:
   link:RelNotes/1.7.9.1.txt[1.7.9.1],
   link:RelNotes/1.7.9.txt[1.7.9].
 
-* link:v1.7.8.5/git.html[documentation for release 1.7.8.5]
+* link:v1.7.8.6/git.html[documentation for release 1.7.8.6]
 
 * release notes for
+  link:RelNotes/1.7.8.6.txt[1.7.8.6],
   link:RelNotes/1.7.8.5.txt[1.7.8.5],
   link:RelNotes/1.7.8.4.txt[1.7.8.4],
   link:RelNotes/1.7.8.3.txt[1.7.8.3],
@@ -70,9 +92,10 @@ Documentation for older releases are available here:
   link:RelNotes/1.7.8.1.txt[1.7.8.1],
   link:RelNotes/1.7.8.txt[1.7.8].
 
-* link:v1.7.7.6/git.html[documentation for release 1.7.7.6]
+* link:v1.7.7.7/git.html[documentation for release 1.7.7.7]
 
 * release notes for
+  link:RelNotes/1.7.7.7.txt[1.7.7.7],
   link:RelNotes/1.7.7.6.txt[1.7.7.6],
   link:RelNotes/1.7.7.5.txt[1.7.7.5],
   link:RelNotes/1.7.7.4.txt[1.7.7.4],
@@ -721,7 +744,7 @@ other
 
 'GIT_EDITOR'::
 	This environment variable overrides `$EDITOR` and `$VISUAL`.
-	It is used by several git comands when, on interactive mode,
+	It is used by several git commands when, on interactive mode,
 	an editor is to be launched. See also linkgit:git-var[1]
 	and the `core.editor` option in linkgit:git-config[1].
 

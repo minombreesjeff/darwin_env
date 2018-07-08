@@ -153,6 +153,15 @@
 #endif
 #endif
 
+/* used on Mac OS X */
+#ifdef PRECOMPOSE_UNICODE
+#include "compat/precompose_utf8.h"
+#else
+#define precompose_str(in,i_nfd2nfc)
+#define precompose_argv(c,v)
+#define probe_utf8_pathname_composition(a,b)
+#endif
+
 #ifndef NO_LIBGEN_H
 #include <libgen.h>
 #else
@@ -594,5 +603,14 @@ int rmdir_or_warn(const char *path);
  * the supplied file mode.
  */
 int remove_or_warn(unsigned int mode, const char *path);
+
+/* Call access(2), but warn for any error besides ENOENT. */
+int access_or_warn(const char *path, int mode);
+
+/* Warn on an inaccessible file that ought to be accessible */
+void warn_on_inaccessible(const char *path);
+
+/* Get the passwd entry for the UID of the current process. */
+struct passwd *xgetpwuid_self(void);
 
 #endif

@@ -351,6 +351,11 @@ test_expect_success 'grep -f, multiple patterns' '
 	test_cmp expected actual
 '
 
+test_expect_success 'grep, multiple patterns' '
+	git grep "$(cat patterns)" >actual &&
+	test_cmp expected actual
+'
+
 cat >expected <<EOF
 file:foo mmap bar
 file:foo_mmap bar
@@ -394,17 +399,6 @@ test_expect_success 'grep -q, silently report matches' '
 	test_cmp empty actual
 '
 
-# Create 1024 file names that sort between "y" and "z" to make sure
-# the two files are handled by different calls to an external grep.
-# This depends on MAXARGS in builtin-grep.c being 1024 or less.
-c32="0 1 2 3 4 5 6 7 8 9 a b c d e f g h i j k l m n o p q r s t u v"
-test_expect_success 'grep -C1, hunk mark between files' '
-	for a in $c32; do for b in $c32; do : >y-$a$b; done; done &&
-	git add y-?? &&
-	git grep -C1 "^[yz]" >actual &&
-	test_cmp expected actual
-'
-
 test_expect_success 'grep -C1 hunk mark between files' '
 	git grep -C1 "^[yz]" >actual &&
 	test_cmp expected actual
@@ -430,31 +424,41 @@ test_expect_success 'log grep setup' '
 
 test_expect_success 'log grep (1)' '
 	git log --author=author --pretty=tformat:%s >actual &&
-	( echo third ; echo initial ) >expect &&
+	{
+		echo third && echo initial
+	} >expect &&
 	test_cmp expect actual
 '
 
 test_expect_success 'log grep (2)' '
 	git log --author=" * " -F --pretty=tformat:%s >actual &&
-	( echo second ) >expect &&
+	{
+		echo second
+	} >expect &&
 	test_cmp expect actual
 '
 
 test_expect_success 'log grep (3)' '
 	git log --author="^A U" --pretty=tformat:%s >actual &&
-	( echo third ; echo initial ) >expect &&
+	{
+		echo third && echo initial
+	} >expect &&
 	test_cmp expect actual
 '
 
 test_expect_success 'log grep (4)' '
 	git log --author="frotz\.com>$" --pretty=tformat:%s >actual &&
-	( echo second ) >expect &&
+	{
+		echo second
+	} >expect &&
 	test_cmp expect actual
 '
 
 test_expect_success 'log grep (5)' '
 	git log --author=Thor -F --pretty=tformat:%s >actual &&
-	( echo third ; echo initial ) >expect &&
+	{
+		echo third && echo initial
+	} >expect &&
 	test_cmp expect actual
 '
 
@@ -464,11 +468,19 @@ test_expect_success 'log grep (6)' '
 	test_cmp expect actual
 '
 
-test_expect_success 'log --grep --author implicitly uses all-match' '
-	# grep matches initial and second but not third
-	# author matches only initial and third
-	git log --author="A U Thor" --grep=s --grep=l --format=%s >actual &&
-	echo initial >expect &&
+test_expect_success 'log with multiple --grep uses union' '
+	git log --grep=i --grep=r --format=%s >actual &&
+	{
+		echo fourth && echo third && echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --all-match with multiple --grep uses intersection' '
+	git log --all-match --grep=i --grep=r --format=%s >actual &&
+	{
+		echo third
+	} >expect &&
 	test_cmp expect actual
 '
 
@@ -480,7 +492,47 @@ test_expect_success 'log with multiple --author uses union' '
 	test_cmp expect actual
 '
 
-test_expect_success 'log with --grep and multiple --author uses all-match' '
+test_expect_success 'log --all-match with multiple --author still uses union' '
+	git log --all-match --author="Thor" --author="Aster" --format=%s >actual &&
+	{
+	    echo third && echo second && echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --grep --author uses intersection' '
+	# grep matches only third and fourth
+	# author matches only initial and third
+	git log --author="A U Thor" --grep=r --format=%s >actual &&
+	{
+		echo third
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --grep --grep --author takes union of greps and intersects with author' '
+	# grep matches initial and second but not third
+	# author matches only initial and third
+	git log --author="A U Thor" --grep=s --grep=l --format=%s >actual &&
+	{
+		echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log ---all-match -grep --author --author still takes union of authors and intersects with grep' '
+	# grep matches only initial and third
+	# author matches all but second
+	git log --all-match --author="Thor" --author="Night" --grep=i --format=%s >actual &&
+	{
+	    echo third && echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --grep --author --author takes union of authors and intersects with grep' '
+	# grep matches only initial and third
+	# author matches all but second
 	git log --author="Thor" --author="Night" --grep=i --format=%s >actual &&
 	{
 	    echo third && echo initial
@@ -488,9 +540,13 @@ test_expect_success 'log with --grep and multiple --author uses all-match' '
 	test_cmp expect actual
 '
 
-test_expect_success 'log with --grep and multiple --author uses all-match' '
-	git log --author="Thor" --author="Night" --grep=q --format=%s >actual &&
-	>expect &&
+test_expect_success 'log --all-match --grep --grep --author takes intersection' '
+	# grep matches only third
+	# author matches only initial and third
+	git log --all-match --author="A U Thor" --grep=i --grep=r --format=%s >actual &&
+	{
+		echo third
+	} >expect &&
 	test_cmp expect actual
 '
 

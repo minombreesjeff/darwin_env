@@ -616,9 +616,9 @@ if you choose to go that route.</p></div>
 <div class="paragraph"><p>Submodules are composed from a so-called <tt>gitlink</tt> tree entry
 in the main repository that refers to a particular commit object
 within the inner repository that is completely separate.
-A record in the <tt>.gitmodules</tt> file at the root of the source
-tree assigns a logical name to the submodule and describes
-the default URL the submodule shall be cloned from.
+A record in the <tt>.gitmodules</tt> (see <a href="gitmodules.html">gitmodules(5)</a>) file at the
+root of the source tree assigns a logical name to the submodule and
+describes the default URL the submodule shall be cloned from.
 The logical name can be used for overriding this URL within your
 local repository configuration (see <em>submodule init</em>).</p></div>
 <div class="paragraph"><p>This command will manage the tree entries and contents of the
@@ -725,16 +725,14 @@ update
         checkout the commit specified in the index of the containing repository.
         This will make the submodules HEAD be detached unless <tt>--rebase</tt> or
         <tt>--merge</tt> is specified or the key <tt>submodule.$name.update</tt> is set to
-        <tt>rebase</tt>, <tt>merge</tt> or <tt>none</tt>.
+        <tt>rebase</tt>, <tt>merge</tt> or <tt>none</tt>. <tt>none</tt> can be overridden by specifying
+        <tt>--checkout</tt>.
 </p>
 <div class="paragraph"><p>If the submodule is not yet initialized, and you just want to use the
 setting as stored in .gitmodules, you can automatically initialize the
 submodule with the <tt>--init</tt> option.</p></div>
 <div class="paragraph"><p>If <tt>--recursive</tt> is specified, this command will recurse into the
 registered submodules, and update any nested submodules within.</p></div>
-<div class="paragraph"><p>If the configuration key <tt>submodule.$name.update</tt> is set to <tt>none</tt> the
-submodule with name <tt>$name</tt> will not be updated by default. This can be
-overriden by adding <tt>--checkout</tt> to the command.</p></div>
 </dd>
 <dt class="hdlist1">
 summary
@@ -971,7 +969,7 @@ for details.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2012-03-31 11:18:40 PDT
+Last updated 2012-06-22 15:42:03 PDT
 </div>
 </div>
 </body>

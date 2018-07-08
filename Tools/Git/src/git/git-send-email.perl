@@ -681,6 +681,7 @@ sub ask {
 	my ($prompt, %arg) = @_;
 	my $valid_re = $arg{valid_re};
 	my $default = $arg{default};
+	my $confirm_only = $arg{confirm_only};
 	my $resp;
 	my $i = 0;
 	return defined $default ? $default : undef
@@ -697,6 +698,12 @@ sub ask {
 		}
 		if (!defined $valid_re or $resp =~ /$valid_re/) {
 			return $resp;
+		}
+		if ($confirm_only) {
+			my $yesno = $term->readline("Are you sure you want to use <$resp> [y/N]? ");
+			if (defined $yesno && $yesno =~ /y/i) {
+				return $resp;
+			}
 		}
 	}
 	return undef;
@@ -745,13 +752,16 @@ my $prompting = 0;
 if (!defined $sender) {
 	$sender = $repoauthor || $repocommitter || '';
 	$sender = ask("Who should the emails appear to be from? [$sender] ",
-	              default => $sender);
+	              default => $sender,
+		      valid_re => qr/\@.*\./, confirm_only => 1);
 	print "Emails will be sent from: ", $sender, "\n";
 	$prompting++;
 }
 
 if (!@initial_to && !defined $to_cmd) {
-	my $to = ask("Who should the emails be sent to? ");
+	my $to = ask("Who should the emails be sent to (if any)? ",
+		     default => "",
+		     valid_re => qr/\@.*\./, confirm_only => 1);
 	push @initial_to, parse_address_line($to) if defined $to; # sanitized/validated later
 	$prompting++;
 }
@@ -777,7 +787,9 @@ sub expand_one_alias {
 
 if ($thread && !defined $initial_reply_to && $prompting) {
 	$initial_reply_to = ask(
-		"Message-ID to be used as In-Reply-To for the first email? ");
+		"Message-ID to be used as In-Reply-To for the first email (if any)? ",
+		default => "",
+		valid_re => qr/\@.*\./, confirm_only => 1);
 }
 if (defined $initial_reply_to) {
 	$initial_reply_to =~ s/^\s*<?//;
@@ -862,11 +874,13 @@ $time = time - scalar $#files;
 sub unquote_rfc2047 {
 	local ($_) = @_;
 	my $encoding;
-	if (s/=\?([^?]+)\?q\?(.*)\?=/$2/g) {
+	s{=\?([^?]+)\?q\?(.*?)\?=}{
 		$encoding = $1;
-		s/_/ /g;
-		s/=([0-9A-F]{2})/chr(hex($1))/eg;
-	}
+		my $e = $2;
+		$e =~ s/_/ /g;
+		$e =~ s/=([0-9A-F]{2})/chr(hex($1))/eg;
+		$e;
+	}eg;
 	return wantarray ? ($_, $encoding) : $_;
 }
 

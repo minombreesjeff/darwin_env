@@ -43,6 +43,7 @@ struct diff_filespec {
 	unsigned should_free : 1; /* data should be free()'ed */
 	unsigned should_munmap : 1; /* data should be munmap()'ed */
 	unsigned dirty_submodule : 2;  /* For submodules: its work tree is dirty */
+	unsigned is_stdin : 1;
 #define DIRTY_SUBMODULE_UNTRACKED 1
 #define DIRTY_SUBMODULE_MODIFIED  2
 	unsigned has_more_entries : 1; /* only appear in combined diff */
@@ -54,7 +55,7 @@ struct diff_filespec {
 extern struct diff_filespec *alloc_filespec(const char *);
 extern void free_filespec(struct diff_filespec *);
 extern void fill_filespec(struct diff_filespec *, const unsigned char *,
-			  unsigned short);
+			  int, unsigned short);
 
 extern int diff_populate_filespec(struct diff_filespec *, int);
 extern void diff_free_filespec_data(struct diff_filespec *);

@@ -4,6 +4,10 @@
 #include "sigchain.h"
 #include "argv-array.h"
 
+#ifndef SHELL_PATH
+# define SHELL_PATH "/bin/sh"
+#endif
+
 struct child_to_clean {
 	pid_t pid;
 	struct child_to_clean *next;
@@ -49,13 +53,14 @@ static void mark_child_for_cleanup(pid_t pid)
 
 static void clear_child_for_cleanup(pid_t pid)
 {
-	struct child_to_clean **last, *p;
+	struct child_to_clean **pp;
 
-	last = &children_to_clean;
-	for (p = children_to_clean; p; p = p->next) {
-		if (p->pid == pid) {
-			*last = p->next;
-			free(p);
+	for (pp = &children_to_clean; *pp; pp = &(*pp)->next) {
+		struct child_to_clean *clean_me = *pp;
+
+		if (clean_me->pid == pid) {
+			*pp = clean_me->next;
+			free(clean_me);
 			return;
 		}
 	}
@@ -135,6 +140,8 @@ int sane_execvp(const char *file, char * const argv[])
 	 */
 	if (errno == EACCES && !strchr(file, '/'))
 		errno = exists_in_PATH(file) ? EACCES : ENOENT;
+	else if (errno == ENOTDIR && !strchr(file, '/'))
+		errno = ENOENT;
 	return -1;
 }
 
@@ -152,7 +159,11 @@ static const char **prepare_shell_cmd(const char **argv)
 		die("BUG: shell command is empty");
 
 	if (strcspn(argv[0], "|&;<>()$`\\\"' \t\n*?[#~=%") != strlen(argv[0])) {
+#ifndef WIN32
+		nargv[nargc++] = SHELL_PATH;
+#else
 		nargv[nargc++] = "sh";
+#endif
 		nargv[nargc++] = "-c";
 
 		if (argc < 2)

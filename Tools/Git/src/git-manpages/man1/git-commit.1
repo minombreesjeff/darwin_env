@@ -2,12 +2,12 @@
 .\"     Title: git-commit
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 04/06/2012
+.\"      Date: 08/19/2012
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.10
+.\"    Source: Git 1.7.12
 .\"  Language: English
 .\"
-.TH "GIT\-COMMIT" "1" "04/06/2012" "Git 1\&.7\&.10" "Git Manual"
+.TH "GIT\-COMMIT" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -112,8 +112,7 @@ command to automatically "add" changes from all known files (i\&.e\&. all files 
 .\}
 by using the \-\-interactive or \-\-patch switches with the
 \fIcommit\fR
-command to decide one by one which files or hunks should be part of the commit, before finalizing the operation\&. See the
-`Interactive Mode` section of
+command to decide one by one which files or hunks should be part of the commit, before finalizing the operation\&. See the \(lqInteractive Mode\(rq section of
 \fBgit-add\fR(1)
 to learn how to operate these modes\&.
 .RE
@@ -177,6 +176,11 @@ for details\&. Implies
 \-\-dry\-run\&.
 .RE
 .PP
+\-\-branch
+.RS 4
+Show the branch and tracking info even in short\-format\&.
+.RE
+.PP
 \-\-porcelain
 .RS 4
 When doing a dry\-run, give the output in a porcelain\-ready format\&. See
@@ -185,7 +189,7 @@ for details\&. Implies
 \-\-dry\-run\&.
 .RE
 .PP
-\-z
+\-z, \-\-null
 .RS 4
 When showing
 short
@@ -206,7 +210,7 @@ to read the message from the standard input\&.
 \-\-author=<author>
 .RS 4
 Override the commit author\&. Specify an explicit author using the standard
-A U Thor <\m[blue]\fBauthor@example\&.com\fR\m[]\&\s-2\u[1]\d\s+2>
+A U Thor <author@example\&.com>
 format\&. Otherwise <author> is assumed to be a pattern and is used to search for an existing commit by that author (i\&.e\&. rev\-list \-\-all \-i \-\-author=<author>); the commit author is then copied from the first such commit found\&.
 .RE
 .PP
@@ -222,13 +226,13 @@ Use the given <msg> as the commit message\&.
 .PP
 \-t <file>, \-\-template=<file>
 .RS 4
-Use the contents of the given file as the initial version of the commit message\&. The editor is invoked and you can make subsequent changes\&. If a message is specified using the
+When editing the commit message, start the editor with the contents in the given file\&. The
+commit\&.template
+configuration variable is often used to give this option implicitly to the command\&. This mechanism can be used by projects that want to guide participants with some hints on what to write in the message in what order\&. If the user exits the editor without editing the message, the commit is aborted\&. This has no effect when a message is given by other means, e\&.g\&. with the
 \-m
 or
 \-F
-options, this option has no effect\&. This overrides the
-commit\&.template
-configuration variable\&.
+options\&.
 .RE
 .PP
 \-s, \-\-signoff
@@ -284,6 +288,14 @@ are usually used as the commit log message unmodified\&. This option lets you fu
 \-\-amend
 .RS 4
 Used to amend the tip of the current branch\&. Prepare the tree object you would want to replace the latest commit as usual (this includes the usual \-i/\-o and explicit paths), and the commit log editor is seeded with the commit message from the tip of the current branch\&. The commit you create replaces the current tip \(em if it was a merge, it will have the parents of the current tip as parents \(em so the current top commit is discarded\&.
+.RE
+.PP
+\-\-no\-post\-rewrite
+.RS 4
+Bypass the post\-rewrite hook\&.
+.RE
+.sp
++
 .sp
 It is a rough equivalent for:
 .sp
@@ -299,11 +311,10 @@ It is a rough equivalent for:
 .RE
 .\}
 .sp
+.sp
 but can be used to amend a merge commit\&.
 .sp
-You should understand the implications of rewriting history if you amend a commit that has already been published\&. (See the "RECOVERING FROM UPSTREAM REBASE" section in
-\fBgit-rebase\fR(1)\&.)
-.RE
++ You should understand the implications of rewriting history if you amend a commit that has already been published\&. (See the "RECOVERING FROM UPSTREAM REBASE" section in \fBgit-rebase\fR(1)\&.)
 .PP
 \-i, \-\-include
 .RS 4
@@ -671,15 +682,18 @@ The editor used to edit the commit log message will be chosen from the GIT_EDITO
 .SH "HOOKS"
 .sp
 This command can run commit\-msg, prepare\-commit\-msg, pre\-commit, and post\-commit hooks\&. See \fBgithooks\fR(5) for more information\&.
+.SH "FILES"
+.PP
+$GIT_DIR/COMMIT_EDITMSG
+.RS 4
+This file contains the commit message of a commit in progress\&. If
+git commit
+exits due to an error before creating a commit, any commit message that has been provided by the user (e\&.g\&., in an editor session) will be available in this file, but will be overwritten by the next invocation of
+git commit\&.
+.RE
 .SH "SEE ALSO"
 .sp
 \fBgit-add\fR(1), \fBgit-rm\fR(1), \fBgit-mv\fR(1), \fBgit-merge\fR(1), \fBgit-commit-tree\fR(1)
 .SH "GIT"
 .sp
 Part of the \fBgit\fR(1) suite
-.SH "NOTES"
-.IP " 1." 4
-author@example.com
-.RS 4
-\%mailto:author@example.com
-.RE

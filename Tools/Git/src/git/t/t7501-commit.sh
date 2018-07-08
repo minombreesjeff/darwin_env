@@ -108,6 +108,16 @@ test_expect_success 'amend commit' '
 	EDITOR=./editor git commit --amend
 '
 
+test_expect_success 'amend --only ignores staged contents' '
+	cp file file.expect &&
+	echo changed >file &&
+	git add file &&
+	git commit --no-edit --amend --only &&
+	git cat-file blob HEAD:file >file.actual &&
+	test_cmp file.expect file.actual &&
+	git diff --exit-code
+'
+
 test_expect_success 'set up editor' '
 	cat >editor <<-\EOF &&
 	#!/bin/sh
@@ -135,6 +145,21 @@ test_expect_success '--amend --edit' '
 	git add file &&
 	EDITOR=./editor git commit --edit --amend &&
 	git diff-tree -s --format=%s HEAD >msg &&
+	test_cmp expect msg
+'
+
+test_expect_success '--amend --edit of empty message' '
+	cat >replace <<-\EOF &&
+	#!/bin/sh
+	echo "amended" >"$1"
+	EOF
+	chmod 755 replace &&
+	git commit --allow-empty --allow-empty-message -m "" &&
+	echo more bongo >file &&
+	git add file &&
+	EDITOR=./replace git commit --edit --amend &&
+	git diff-tree -s --format=%s HEAD >msg &&
+	./replace expect &&
 	test_cmp expect msg
 '
 
@@ -485,6 +510,18 @@ test_expect_success 'amend can copy notes' '
 	git commit --amend -m"new foo" &&
 	test "$(git notes show)" = "a note"
 
+'
+
+test_expect_success 'commit a file whose name is a dash' '
+	git reset --hard &&
+	for i in 1 2 3 4 5
+	do
+		echo $i
+	done >./- &&
+	git add ./- &&
+	test_tick &&
+	git commit -m "add dash" >output </dev/null &&
+	test_i18ngrep " changed, 5 insertions" output
 '
 
 test_done

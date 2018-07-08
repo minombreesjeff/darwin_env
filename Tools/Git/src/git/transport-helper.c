@@ -199,7 +199,7 @@ static struct child_process *get_helper(struct transport *transport)
 			data->import_marks = strbuf_detach(&arg, NULL);
 		} else if (mandatory) {
 			die("Unknown mandatory capability %s. This remote "
-			    "helper probably needs newer version of Git.\n",
+			    "helper probably needs newer version of Git.",
 			    capname);
 		}
 	}
@@ -444,6 +444,21 @@ static int fetch_with_import(struct transport *transport,
 	free(fastimport.argv);
 	fastimport.argv = NULL;
 
+	/*
+	 * The fast-import stream of a remote helper that advertises
+	 * the "refspec" capability writes to the refs named after the
+	 * right hand side of the first refspec matching each ref we
+	 * were fetching.
+	 *
+	 * (If no "refspec" capability was specified, for historical
+	 * reasons we default to *:*.)
+	 *
+	 * Store the result in to_fetch[i].old_sha1.  Callers such
+	 * as "git fetch" can use the value to write feedback to the
+	 * terminal, populate FETCH_HEAD, and determine what new value
+	 * should be written to peer_ref if the update is a
+	 * fast-forward or this is a forced update.
+	 */
 	for (i = 0; i < nr_heads; i++) {
 		char *private;
 		posn = to_fetch[i];
@@ -599,7 +614,7 @@ static void push_update_ref_status(struct strbuf *buf,
 		status = REF_STATUS_REMOTE_REJECT;
 		refname = buf->buf + 6;
 	} else
-		die("expected ok/error, helper said '%s'\n", buf->buf);
+		die("expected ok/error, helper said '%s'", buf->buf);
 
 	msg = strchr(refname, ' ');
 	if (msg) {

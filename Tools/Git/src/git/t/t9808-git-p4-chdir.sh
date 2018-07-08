@@ -1,6 +1,6 @@
 #!/bin/sh
 
-test_description='git-p4 relative chdir'
+test_description='git p4 relative chdir'
 
 . ./lib-git-p4.sh
 
@@ -21,24 +21,24 @@ test_expect_success 'init depot' '
 # environment variable is set
 test_expect_success 'P4CONFIG and absolute dir clone' '
 	printf "P4PORT=$P4PORT\nP4CLIENT=$P4CLIENT\n" >p4config &&
-	test_when_finished "rm \"$TRASH_DIRECTORY/p4config\"" &&
+	test_when_finished "rm p4config" &&
 	test_when_finished cleanup_git &&
 	(
 		P4CONFIG=p4config && export P4CONFIG &&
 		sane_unset P4PORT P4CLIENT &&
-		"$GITP4" clone --verbose --dest="$git" //depot
+		git p4 clone --verbose --dest="$git" //depot
 	)
 '
 
 # same thing, but with relative directory name, note missing $ on --dest
 test_expect_success 'P4CONFIG and relative dir clone' '
 	printf "P4PORT=$P4PORT\nP4CLIENT=$P4CLIENT\n" >p4config &&
-	test_when_finished "rm \"$TRASH_DIRECTORY/p4config\"" &&
+	test_when_finished "rm p4config" &&
 	test_when_finished cleanup_git &&
 	(
 		P4CONFIG=p4config && export P4CONFIG &&
 		sane_unset P4PORT P4CLIENT &&
-		"$GITP4" clone --verbose --dest="git" //depot
+		git p4 clone --verbose --dest="git" //depot
 	)
 '
 

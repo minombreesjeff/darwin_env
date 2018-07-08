@@ -585,6 +585,7 @@ git-branch(1) Manual Page
 <div class="verseblock">
 <div class="verseblock-content"><em>git branch</em> [--color[=&lt;when&gt;] | --no-color] [-r | -a]
         [--list] [-v [--abbrev=&lt;length&gt; | --no-abbrev]]
+        [--column[=&lt;options&gt;] | --no-column]
         [(--merged | --no-merged | --contains) [&lt;commit&gt;]] [&lt;pattern&gt;&#8230;]
 <em>git branch</em> [--set-upstream | --track | --no-track] [-l] [-f] &lt;branchname&gt; [&lt;start-point&gt;]
 <em>git branch</em> (-m | -M) [&lt;oldbranch&gt;] &lt;newbranch&gt;
@@ -725,6 +726,20 @@ way to clean up all obsolete remote-tracking branches.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+--column[=&lt;options&gt;]
+</dt>
+<dt class="hdlist1">
+--no-column
+</dt>
+<dd>
+<p>
+        Display branch listing in columns. See configuration variable
+        column.branch for option syntax.<tt>--column</tt> and <tt>--no-column</tt>
+        without options are equivalent to <em>always</em> and <em>never</em> respectively.
+</p>
+<div class="paragraph"><p>This option is only applicable in non-verbose mode.</p></div>
+</dd>
+<dt class="hdlist1">
 -r
 </dt>
 <dt class="hdlist1">
@@ -767,6 +782,18 @@ way to clean up all obsolete remote-tracking branches.</p></div>
         show sha1 and commit subject line for each head, along with
         relationship to upstream branch (if any). If given twice, print
         the name of the upstream branch, as well.
+</p>
+</dd>
+<dt class="hdlist1">
+-q
+</dt>
+<dt class="hdlist1">
+--quiet
+</dt>
+<dd>
+<p>
+        Be more quiet when creating or deleting a branch, suppressing
+        non-error messages.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1001,7 +1028,7 @@ a branch?&#8221;</a> in the Git User&#8217;s Manual.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2012-03-08 16:13:06 PDT
+Last updated 2012-05-03 16:06:58 PDT
 </div>
 </div>
 </body>

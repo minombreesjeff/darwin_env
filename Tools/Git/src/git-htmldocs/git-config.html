@@ -617,11 +617,14 @@ convert the value to the canonical form (simple decimal number for int,
 a "true" or "false" string for bool), or <em>--path</em>, which does some
 path expansion (see <em>--path</em> below).  If no type specifier is passed, no
 checks or transformations are performed on the value.</p></div>
-<div class="paragraph"><p>The file-option can be one of <em>--system</em>, <em>--global</em> or <em>--file</em>
-which specify where the values will be read from or written to.
-The default is to assume the config file of the current repository,
-.git/config unless defined otherwise with GIT_DIR and GIT_CONFIG
-(see <a href="#FILES">[FILES]</a>).</p></div>
+<div class="paragraph"><p>When reading, the values are read from the system, global and
+repository local configuration files by default, and options
+<em>--system</em>, <em>--global</em>, <em>--local</em> and <em>--file &lt;filename&gt;</em> can be
+used to tell the command to read from only that location (see <a href="#FILES">[FILES]</a>).</p></div>
+<div class="paragraph"><p>When writing, the new value is written to the repository local
+configuration file by default, and options <em>--system</em>, <em>--global</em>,
+<em>--file &lt;filename&gt;</em> can be used to tell the command to write to
+that location (you can say <em>--local</em> but that is the default).</p></div>
 <div class="paragraph"><p>This command will fail (with exit code ret) if:</p></div>
 <div class="olist arabic"><ol class="arabic">
 <li>
@@ -725,11 +728,12 @@ you use <em>--global</em> option without $HOME being properly set (ret=128).
 </dt>
 <dd>
 <p>
-        For writing options: write to global ~/.gitconfig file rather than
-        the repository .git/config.
+        For writing options: write to global <sub>/.gitconfig file rather than
+        the repository .git/config, write to $XDG_CONFIG_HOME/git/config file
+        if this file exists and the </sub>/.gitconfig file doesn&#8217;t.
 </p>
-<div class="paragraph"><p>For reading options: read only from global ~/.gitconfig rather than
-from all available files.</p></div>
+<div class="paragraph"><p>For reading options: read only from global ~/.gitconfig and from
+$XDG_CONFIG_HOME/git/config rather than from all available files.</p></div>
 <div class="paragraph"><p>See also <a href="#FILES">[FILES]</a>.</p></div>
 </dd>
 <dt class="hdlist1">
@@ -908,7 +912,7 @@ rather than from all available files.</p></div>
 </div>
 <h2 id="FILES">FILES</h2>
 <div class="sectionbody">
-<div class="paragraph"><p>If not set explicitly with <em>--file</em>, there are three files where
+<div class="paragraph"><p>If not set explicitly with <em>--file</em>, there are four files where
 <em>git config</em> will search for configuration options:</p></div>
 <div class="dlist"><dl>
 <dt class="hdlist1">
@@ -916,9 +920,7 @@ $GIT_DIR/config
 </dt>
 <dd>
 <p>
-        Repository specific configuration file. (The filename is
-        of course relative to the repository root, not the working
-        directory.)
+        Repository specific configuration file.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -928,6 +930,19 @@ $GIT_DIR/config
 <p>
         User-specific configuration file. Also called "global"
         configuration file.
+</p>
+</dd>
+<dt class="hdlist1">
+$XDG_CONFIG_HOME/git/config
+</dt>
+<dd>
+<p>
+        Second user-specific configuration file. If $XDG_CONFIG_HOME is not set
+        or empty, $HOME/.config/git/config will be used. Any single-valued
+        variable set in this file will be overwritten by whatever is in
+        ~/.gitconfig.  It is a good idea not to create this file if
+        you sometimes use older versions of Git, as support for this
+        file was added fairly recently.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1149,7 +1164,9 @@ included file is expanded immediately, as if its contents had been
 found at the location of the include directive. If the value of the
 <tt>include.path</tt> variable is a relative path, the path is considered to be
 relative to the configuration file in which the include directive was
-found. See below for examples.</p></div>
+found. The value of <tt>include.path</tt> is subject to tilde expansion: <tt>~/</tt>
+is expanded to the value of <tt>$HOME</tt>, and <tt>~user/</tt> to the specified
+user&#8217;s home directory. See below for examples.</p></div>
 <h3 id="_example">Example</h3><div style="clear:left"></div>
 <div class="literalblock">
 <div class="content">
@@ -1182,7 +1199,8 @@ found. See below for examples.</p></div>
 <div class="content">
 <pre><tt>[include]
         path = /path/to/foo.inc ; include by absolute path
-        path = foo ; expand "foo" relative to the current file</tt></pre>
+        path = foo ; expand "foo" relative to the current file
+        path = ~/foo ; expand "foo" in your $HOME directory</tt></pre>
 </div></div>
 <h3 id="_variables">Variables</h3><div style="clear:left"></div>
 <div class="paragraph"><p>Note that this list is non-comprehensive and not necessarily complete.
@@ -1205,8 +1223,41 @@ pushNonFastForward
 </dt>
 <dd>
 <p>
-                Advice shown when <a href="git-push.html">git-push(1)</a> refuses
-                non-fast-forward refs.
+                Set this variable to <em>false</em> if you want to disable
+                <em>pushNonFFCurrent</em>, <em>pushNonFFDefault</em>, and
+                <em>pushNonFFMatching</em> simultaneously.
+</p>
+</dd>
+<dt class="hdlist1">
+pushNonFFCurrent
+</dt>
+<dd>
+<p>
+                Advice shown when <a href="git-push.html">git-push(1)</a> fails due to a
+                non-fast-forward update to the current branch.
+</p>
+</dd>
+<dt class="hdlist1">
+pushNonFFDefault
+</dt>
+<dd>
+<p>
+                Advice to set <em>push.default</em> to <em>upstream</em> or <em>current</em>
+                when you ran <a href="git-push.html">git-push(1)</a> and pushed <em>matching
+                refs</em> by default (i.e. you did not provide an explicit
+                refspec, and no <em>push.default</em> configuration was set)
+                and it resulted in a non-fast-forward error.
+</p>
+</dd>
+<dt class="hdlist1">
+pushNonFFMatching
+</dt>
+<dd>
+<p>
+                Advice shown when you ran <a href="git-push.html">git-push(1)</a> and pushed
+                <em>matching refs</em> explicitly (i.e. you used <em>:</em>, or
+                specified a refspec that isn&#8217;t your current branch) and
+                it resulted in a non-fast-forward error.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1214,9 +1265,10 @@ statusHints
 </dt>
 <dd>
 <p>
-                Directions on how to stage/unstage/add shown in the
-                output of <a href="git-status.html">git-status(1)</a> and the template shown
-                when writing commit messages.
+                Show directions on how to proceed from the current
+                state in the output of <a href="git-status.html">git-status(1)</a> and in
+                the template shown when writing commit messages in
+                <a href="git-commit.html">git-commit(1)</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1255,6 +1307,15 @@ detachedHead
                 Advice shown when you used <a href="git-checkout.html">git-checkout(1)</a> to
                 move to the detach HEAD state, to instruct how to create
                 a local branch after the fact.
+</p>
+</dd>
+<dt class="hdlist1">
+amWorkDir
+</dt>
+<dd>
+<p>
+                Advice that shows the location of the patch file when
+                <a href="git-am.html">git-am(1)</a> fails to apply it.
 </p>
 </dd>
 </dl></div>
@@ -1303,6 +1364,20 @@ core.ignorecase
 <div class="paragraph"><p>The default is false, except <a href="git-clone.html">git-clone(1)</a> or <a href="git-init.html">git-init(1)</a>
 will probe and set core.ignorecase true if appropriate when the repository
 is created.</p></div>
+</dd>
+<dt class="hdlist1">
+core.precomposeunicode
+</dt>
+<dd>
+<p>
+        This option is only used by Mac OS implementation of git.
+        When core.precomposeunicode=true, git reverts the unicode decomposition
+        of filenames done by Mac OS. This is useful when sharing a repository
+        between Mac OS and Linux or Windows.
+        (Git for Windows 1.7.10 or higher is needed, or git under cygwin 1.7).
+        When false, file names are handled fully transparent by git,
+        which is backward compatible with older versions of git.
+</p>
 </dd>
 <dt class="hdlist1">
 core.trustctime
@@ -1665,9 +1740,11 @@ core.excludesfile
 <p>
         In addition to <em>.gitignore</em> (per-directory) and
         <em>.git/info/exclude</em>, git looks into this file for patterns
-        of files which are not meant to be tracked.  "&#126;/" is expanded
-        to the value of <tt>$HOME</tt> and "&#126;user/" to the specified user&#8217;s
-        home directory.  See <a href="gitignore.html">gitignore(5)</a>.
+        of files which are not meant to be tracked.  "<tt>~/</tt>" is expanded
+        to the value of <tt>$HOME</tt> and "<tt>~user/</tt>" to the specified user&#8217;s
+        home directory. Its default value is $XDG_CONFIG_HOME/git/ignore.
+        If $XDG_CONFIG_HOME is either not set or empty, $HOME/.config/git/ignore
+        is used instead. See <a href="gitignore.html">gitignore(5)</a>.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -1692,7 +1769,9 @@ core.attributesfile
         In addition to <em>.gitattributes</em> (per-directory) and
         <em>.git/info/attributes</em>, git looks into this file for attributes
         (see <a href="gitattributes.html">gitattributes(5)</a>). Path expansions are made the same
-        way as for <tt>core.excludesfile</tt>.
+        way as for <tt>core.excludesfile</tt>. Its default value is
+        $XDG_CONFIG_HOME/git/attributes. If $XDG_CONFIG_HOME is either not
+        set or empty, $HOME/.config/git/attributes is used instead.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -2308,6 +2387,110 @@ color.ui
 </p>
 </dd>
 <dt class="hdlist1">
+column.ui
+</dt>
+<dd>
+<p>
+        Specify whether supported commands should output in columns.
+        This variable consists of a list of tokens separated by spaces
+        or commas:
+</p>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<tt>always</tt>
+</dt>
+<dd>
+<p>
+        always show in columns
+</p>
+</dd>
+<dt class="hdlist1">
+<tt>never</tt>
+</dt>
+<dd>
+<p>
+        never show in columns
+</p>
+</dd>
+<dt class="hdlist1">
+<tt>auto</tt>
+</dt>
+<dd>
+<p>
+        show in columns if the output is to the terminal
+</p>
+</dd>
+<dt class="hdlist1">
+<tt>column</tt>
+</dt>
+<dd>
+<p>
+        fill columns before rows (default)
+</p>
+</dd>
+<dt class="hdlist1">
+<tt>row</tt>
+</dt>
+<dd>
+<p>
+        fill rows before columns
+</p>
+</dd>
+<dt class="hdlist1">
+<tt>plain</tt>
+</dt>
+<dd>
+<p>
+        show in one column
+</p>
+</dd>
+<dt class="hdlist1">
+<tt>dense</tt>
+</dt>
+<dd>
+<p>
+        make unequal size columns to utilize more space
+</p>
+</dd>
+<dt class="hdlist1">
+<tt>nodense</tt>
+</dt>
+<dd>
+<p>
+        make equal size columns
+</p>
+</dd>
+</dl></div>
+<div class="paragraph"><p>This option defaults to <em>never</em>.</p></div>
+</dd>
+<dt class="hdlist1">
+column.branch
+</dt>
+<dd>
+<p>
+        Specify whether to output branch listing in <tt>git branch</tt> in columns.
+        See <tt>column.ui</tt> for details.
+</p>
+</dd>
+<dt class="hdlist1">
+column.status
+</dt>
+<dd>
+<p>
+        Specify whether to output untracked files in <tt>git status</tt> in columns.
+        See <tt>column.ui</tt> for details.
+</p>
+</dd>
+<dt class="hdlist1">
+column.tag
+</dt>
+<dd>
+<p>
+        Specify whether to output tag listing in <tt>git tag</tt> in columns.
+        See <tt>column.ui</tt> for details.
+</p>
+</dd>
+<dt class="hdlist1">
 commit.status
 </dt>
 <dd>
@@ -2323,7 +2506,7 @@ commit.template
 <dd>
 <p>
         Specify a file to use as the template for new commit messages.
-        "&#126;/" is expanded to the value of <tt>$HOME</tt> and "&#126;user/" to the
+        "<tt>~/</tt>" is expanded to the value of <tt>$HOME</tt> and "<tt>~user/</tt>" to the
         specified user&#8217;s home directory.
 </p>
 </dd>
@@ -2393,7 +2576,7 @@ diff.dirstat
         A comma separated list of <tt>--dirstat</tt> parameters specifying the
         default behavior of the <tt>--dirstat</tt> option to <a href="git-diff.html">git-diff(1)</a>`
         and friends. The defaults can be overridden on the command line
-        (using <tt>--dirstat=&lt;param1,param2,&#8230;&gt;</tt>). The fallback defaults
+        (using <tt>--dirstat=&lt;param1,param2,...&gt;</tt>). The fallback defaults
         (when not changed by <tt>diff.dirstat</tt>) are <tt>changes,noncumulative,3</tt>.
         The following parameters are available:
 </p>
@@ -2468,7 +2651,7 @@ diff.statGraphWidth
 <dd>
 <p>
         Limit the width of the graph part in --stat output. If set, applies
-        to all commands generating --stat outuput except format-patch.
+        to all commands generating --stat output except format-patch.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -4130,13 +4313,13 @@ pack.indexVersion
         and this config option ignored whenever the corresponding pack is
         larger than 2 GB.
 </p>
-<div class="paragraph"><p>If you have an old git that does not understand the version 2 <tt>&#42;.idx</tt> file,
+<div class="paragraph"><p>If you have an old git that does not understand the version 2 <tt>*.idx</tt> file,
 cloning or fetching over a non native protocol (e.g. "http" and "rsync")
-that will copy both <tt>&#42;.pack</tt> file and corresponding <tt>&#42;.idx</tt> file from the
+that will copy both <tt>*.pack</tt> file and corresponding <tt>*.idx</tt> file from the
 other side may give you a repository that cannot be accessed with your
-older version of git. If the <tt>&#42;.pack</tt> file is smaller than 2 GB, however,
+older version of git. If the <tt>*.pack</tt> file is smaller than 2 GB, however,
 you can use <a href="git-index-pack.html">git-index-pack(1)</a> on the *.pack file to regenerate
-the <tt>&#42;.idx</tt> file.</p></div>
+the <tt>*.idx</tt> file.</p></div>
 </dd>
 <dt class="hdlist1">
 pack.packSizeLimit
@@ -4174,9 +4357,9 @@ pretty.&lt;name&gt;
         Alias for a --pretty= format string, as specified in
         <a href="git-log.html">git-log(1)</a>. Any aliases defined here can be used just
         as the built-in pretty formats could. For example,
-        running <tt>git config pretty.changelog "format:&#42; %H %s"</tt>
+        running <tt>git config pretty.changelog "format:* %H %s"</tt>
         would cause the invocation <tt>git log --pretty=changelog</tt>
-        to be equivalent to running <tt>git log "--pretty=format:&#42; %H %s"</tt>.
+        to be equivalent to running <tt>git log "--pretty=format:* %H %s"</tt>.
         Note that an alias with the same name as a built-in format
         will be silently ignored.
 </p>
@@ -4230,19 +4413,31 @@ push.default
 </li>
 <li>
 <p>
-<tt>matching</tt> - push all matching branches.
-  All branches having the same name in both ends are considered to be
-  matching. This is the default.
+<tt>matching</tt> - push all branches having the same name in both ends.
+  This is for those who prepare all the branches into a publishable
+  shape and then push them out with a single command.  It is not
+  appropriate for pushing into a repository shared by multiple users,
+  since locally stalled branches will attempt a non-fast forward push
+  if other users updated the branch.
+ <br />
+  This is currently the default, but Git 2.0 will change the default
+  to <tt>simple</tt>.
 </p>
 </li>
 <li>
 <p>
 <tt>upstream</tt> - push the current branch to its upstream branch.
+  With this, <tt>git push</tt> will update the same remote ref as the one which
+  is merged by <tt>git pull</tt>, making <tt>push</tt> and <tt>pull</tt> symmetrical.
+  See "branch.&lt;name&gt;.merge" for how to configure the upstream branch.
 </p>
 </li>
 <li>
 <p>
-<tt>tracking</tt> - deprecated synonym for <tt>upstream</tt>.
+<tt>simple</tt> - like <tt>upstream</tt>, but refuses to push if the upstream
+  branch&#8217;s name is different from the local one. This is the safest
+  option and is well-suited for beginners. It will become the default
+  in Git 2.0.
 </p>
 </li>
 <li>
@@ -4251,6 +4446,11 @@ push.default
 </p>
 </li>
 </ul></div>
+<div class="paragraph"><p>The <tt>simple</tt>, <tt>current</tt> and <tt>upstream</tt> modes are for those who want to
+push out a single branch after finishing work, even when the other
+branches are not yet ready to be pushed out. If you are working with
+other people to push into the same shared repository, you would want
+to use one of these.</p></div>
 </dd>
 <dt class="hdlist1">
 rebase.stat
@@ -4867,7 +5067,7 @@ web.browser
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2012-03-02 11:52:01 PDT
+Last updated 2012-07-09 13:33:29 PDT
 </div>
 </div>
 </body>

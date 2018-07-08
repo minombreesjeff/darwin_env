@@ -8,9 +8,9 @@ git-rebase - Forward-port local commits to the updated upstream head
 SYNOPSIS
 --------
 [verse]
-'git rebase' [-i | --interactive] [options] [--onto <newbase>]
+'git rebase' [-i | --interactive] [options] [--exec <cmd>] [--onto <newbase>]
 	[<upstream>] [<branch>]
-'git rebase' [-i | --interactive] [options] --onto <newbase>
+'git rebase' [-i | --interactive] [options] [--exec <cmd>] [--onto <newbase>]
 	--root [<branch>]
 'git rebase' --continue | --skip | --abort
 
@@ -210,7 +210,7 @@ rebase.autosquash::
 
 OPTIONS
 -------
-<newbase>::
+--onto <newbase>::
 	Starting point at which to create the new commits. If the
 	--onto option is not specified, the starting point is
 	<upstream>.  May be any valid commit, and not just an
@@ -237,6 +237,10 @@ leave out at most one of A and B, in which case it defaults to HEAD.
 	started, then HEAD will be reset to <branch>. Otherwise HEAD
 	will be reset to where it was when the rebase operation was
 	started.
+
+--keep-empty::
+	Keep the commits that do not change anything from its
+	parents in the result.
 
 --skip::
 	Restart the rebasing process by skipping the current patch.
@@ -267,9 +271,9 @@ which makes little sense.
 -X <strategy-option>::
 --strategy-option=<strategy-option>::
 	Pass the <strategy-option> through to the merge strategy.
-	This implies `\--merge` and, if no strategy has been
+	This implies `--merge` and, if no strategy has been
 	specified, `-s recursive`.  Note the reversal of 'ours' and
-	'theirs' as noted in above for the `-m` option.
+	'theirs' as noted above for the `-m` option.
 
 -q::
 --quiet::
@@ -340,14 +344,36 @@ This uses the `--interactive` machinery internally, but combining it
 with the `--interactive` option explicitly is generally not a good
 idea unless you know what you are doing (see BUGS below).
 
+-x <cmd>::
+--exec <cmd>::
+	Append "exec <cmd>" after each line creating a commit in the
+	final history. <cmd> will be interpreted as one or more shell
+	commands.
++
+This option can only be used with the `--interactive` option
+(see INTERACTIVE MODE below).
++
+You may execute several commands by either using one instance of `--exec`
+with several commands:
++
+	git rebase -i --exec "cmd1 && cmd2 && ..."
++
+or by giving more than one `--exec`:
++
+	git rebase -i --exec "cmd1" --exec "cmd2" --exec ...
++
+If `--autosquash` is used, "exec" lines will not be appended for
+the intermediate commits, and will only appear at the end of each
+squash/fixup series.
 
 --root::
 	Rebase all commits reachable from <branch>, instead of
 	limiting them with an <upstream>.  This allows you to rebase
-	the root commit(s) on a branch.  Must be used with --onto, and
+	the root commit(s) on a branch.  When used with --onto, it
 	will skip changes already contained in <newbase> (instead of
-	<upstream>).  When used together with --preserve-merges, 'all'
-	root commits will be rewritten to have <newbase> as parent
+	<upstream>) whereas without --onto it will operate on every change.
+	When used together with both --onto and --preserve-merges,
+	'all' root commits will be rewritten to have <newbase> as parent
 	instead.
 
 --autosquash::
@@ -517,6 +543,24 @@ in `$SHELL`, or the default shell if `$SHELL` is not set), so you can
 use shell features (like "cd", ">", ";" ...). The command is run from
 the root of the working tree.
 
+----------------------------------
+$ git rebase -i --exec "make test"
+----------------------------------
+
+This command lets you check that intermediate commits are compilable.
+The todo list becomes like that:
+
+--------------------
+pick 5928aea one
+exec make test
+pick 04d0fda two
+exec make test
+pick ba46169 three
+exec make test
+pick f4593f9 four
+exec make test
+--------------------
+
 SPLITTING COMMITS
 -----------------
 
@@ -611,8 +655,8 @@ Easy case: The changes are literally the same.::
 Hard case: The changes are not the same.::
 
 	This happens if the 'subsystem' rebase had conflicts, or used
-	`\--interactive` to omit, edit, squash, or fixup commits; or
-	if the upstream used one of `commit \--amend`, `reset`, or
+	`--interactive` to omit, edit, squash, or fixup commits; or
+	if the upstream used one of `commit --amend`, `reset`, or
 	`filter-branch`.
 
 
@@ -648,7 +692,7 @@ correspond to the ones before the rebase.
 NOTE: While an "easy case recovery" sometimes appears to be successful
       even in the hard case, it may have unintended consequences.  For
       example, a commit that was removed via `git rebase
-      \--interactive` will be **resurrected**!
+      --interactive` will be **resurrected**!
 
 The idea is to manually tell 'git rebase' "where the old 'subsystem'
 ended and your 'topic' began", that is, what the old merge-base
@@ -656,7 +700,7 @@ between them was.  You will have to find a way to name the last commit
 of the old 'subsystem', for example:
 
 * With the 'subsystem' reflog: after 'git fetch', the old tip of
-  'subsystem' is at `subsystem@\{1}`.  Subsequent fetches will
+  'subsystem' is at `subsystem@{1}`.  Subsequent fetches will
   increase the number.  (See linkgit:git-reflog[1].)
 
 * Relative to the tip of 'topic': knowing that your 'topic' has three

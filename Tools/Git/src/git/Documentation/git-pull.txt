@@ -101,6 +101,7 @@ include::merge-options.txt[]
 
 :git-pull: 1
 
+-r::
 --rebase::
 	Rebase the current branch on top of the upstream branch after
 	fetching.  If there is a remote-tracking branch corresponding to
@@ -110,7 +111,7 @@ include::merge-options.txt[]
 +
 See `pull.rebase`, `branch.<name>.rebase` and `branch.autosetuprebase` in
 linkgit:git-config[1] if you want to make `git pull` always use
-`{litdd}rebase` instead of merging.
+`--rebase` instead of merging.
 +
 [NOTE]
 This is a potentially _dangerous_ mode of operation.

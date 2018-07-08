@@ -14,12 +14,12 @@ test_expect_success setup '
 	echo a >a &&
 	echo b >b &&
 	cat >expect <<-\EOF
-	 a |    1 +
-	 b |    1 +
+	 a | 1 +
+	 b | 1 +
 	 2 files changed, 2 insertions(+)
 	EOF
 	git diff --stat --stat-count=2 >actual &&
-	test_cmp expect actual
+	test_i18ncmp expect actual
 '
 
 test_done

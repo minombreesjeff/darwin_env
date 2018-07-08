@@ -9,6 +9,9 @@ void credential_init(struct credential *c)
 {
 	memset(c, 0, sizeof(*c));
 	c->helpers.strdup_strings = 1;
+
+	/* <rdar://problem/12266645> */
+	string_list_append(&c->helpers, "osxkeychain");
 }
 
 void credential_clear(struct credential *c)
@@ -172,6 +175,8 @@ int credential_read(struct credential *c, FILE *fp)
 		} else if (!strcmp(key, "path")) {
 			free(c->path);
 			c->path = xstrdup(value);
+		} else if (!strcmp(key, "url")) {
+			credential_from_url(c, value);
 		}
 		/*
 		 * Ignore other lines; we don't know what they mean, but
@@ -191,7 +196,7 @@ static void credential_write_item(FILE *fp, const char *key, const char *value)
 	fprintf(fp, "%s=%s\n", key, value);
 }
 
-static void credential_write(const struct credential *c, FILE *fp)
+void credential_write(const struct credential *c, FILE *fp)
 {
 	credential_write_item(fp, "protocol", c->protocol);
 	credential_write_item(fp, "host", c->host);

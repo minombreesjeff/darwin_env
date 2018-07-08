@@ -160,8 +160,8 @@ static int show_config(const char *key_, const char *value_, void *cb)
 
 static int get_value(const char *key_, const char *regex_)
 {
-	int ret = -1;
-	char *global = NULL, *repo_config = NULL;
+	int ret = CONFIG_GENERIC_ERROR;
+	char *global = NULL, *xdg = NULL, *repo_config = NULL;
 	const char *system_wide = NULL, *local;
 	struct config_include_data inc = CONFIG_INCLUDE_INIT;
 	config_fn_t fn;
@@ -169,12 +169,10 @@ static int get_value(const char *key_, const char *regex_)
 
 	local = given_config_file;
 	if (!local) {
-		const char *home = getenv("HOME");
 		local = repo_config = git_pathdup("config");
-		if (home)
-			global = xstrdup(mkpath("%s/.gitconfig", home));
 		if (git_config_system())
 			system_wide = git_etc_gitconfig();
+		home_config_paths(&global, &xdg, "config");
 	}
 
 	if (use_key_regexp) {
@@ -198,11 +196,14 @@ static int get_value(const char *key_, const char *regex_)
 		if (regcomp(key_regexp, key, REG_EXTENDED)) {
 			fprintf(stderr, "Invalid key pattern: %s\n", key_);
 			free(key);
+			ret = CONFIG_INVALID_PATTERN;
 			goto free_strings;
 		}
 	} else {
-		if (git_config_parse_key(key_, &key, NULL))
+		if (git_config_parse_key(key_, &key, NULL)) {
+			ret = CONFIG_INVALID_KEY;
 			goto free_strings;
+		}
 	}
 
 	if (regex_) {
@@ -214,6 +215,7 @@ static int get_value(const char *key_, const char *regex_)
 		regexp = (regex_t*)xmalloc(sizeof(regex_t));
 		if (regcomp(regexp, regex_, REG_EXTENDED)) {
 			fprintf(stderr, "Invalid pattern: %s\n", regex_);
+			ret = CONFIG_INVALID_PATTERN;
 			goto free_strings;
 		}
 	}
@@ -229,6 +231,8 @@ static int get_value(const char *key_, const char *regex_)
 
 	if (do_all && system_wide)
 		git_config_from_file(fn, system_wide, data);
+	if (do_all && xdg)
+		git_config_from_file(fn, xdg, data);
 	if (do_all && global)
 		git_config_from_file(fn, global, data);
 	if (do_all)
@@ -238,6 +242,8 @@ static int get_value(const char *key_, const char *regex_)
 		git_config_from_file(fn, local, data);
 	if (!do_all && !seen && global)
 		git_config_from_file(fn, global, data);
+	if (!do_all && !seen && xdg)
+		git_config_from_file(fn, xdg, data);
 	if (!do_all && !seen && system_wide)
 		git_config_from_file(fn, system_wide, data);
 
@@ -255,6 +261,7 @@ static int get_value(const char *key_, const char *regex_)
 free_strings:
 	free(repo_config);
 	free(global);
+	free(xdg);
 	return ret;
 }
 
@@ -379,13 +386,25 @@ int cmd_config(int argc, const char **argv, const char *prefix)
 	}
 
 	if (use_global_config) {
-		char *home = getenv("HOME");
-		if (home) {
-			char *user_config = xstrdup(mkpath("%s/.gitconfig", home));
-			given_config_file = user_config;
-		} else {
+		char *user_config = NULL;
+		char *xdg_config = NULL;
+
+		home_config_paths(&user_config, &xdg_config, "config");
+
+		if (!user_config)
+			/*
+			 * It is unknown if HOME/.gitconfig exists, so
+			 * we do not know if we should write to XDG
+			 * location; error out even if XDG_CONFIG_HOME
+			 * is set and points at a sane location.
+			 */
 			die("$HOME not set");
-		}
+
+		if (access_or_warn(user_config, R_OK) &&
+		    xdg_config && !access_or_warn(xdg_config, R_OK))
+			given_config_file = xdg_config;
+		else
+			given_config_file = user_config;
 	}
 	else if (use_system_config)
 		given_config_file = git_etc_gitconfig();

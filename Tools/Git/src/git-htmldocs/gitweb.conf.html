@@ -843,7 +843,7 @@ $highlight_bin
         By default set to <em>highlight</em>; set it to full path to highlight
         executable if it is not installed on your web server&#8217;s PATH.
         Note that <em>highlight</em> feature must be set for gitweb to actually
-        use syntax hightlighting.
+        use syntax highlighting.
 </p>
 <div class="paragraph"><p><strong>NOTE</strong>: if you want to add support for new file type (supported by
 "highlight" but not used by gitweb), you need to modify <tt>%highlight_ext</tt>
@@ -1201,6 +1201,23 @@ $maxload
 The default value is 300.</p></div>
 </dd>
 <dt class="hdlist1">
+$omit_age_column
+</dt>
+<dd>
+<p>
+        If true, omit the column with date of the most current commit on the
+        projects list page. It can save a bit of I/O and a fork per repository.
+</p>
+</dd>
+<dt class="hdlist1">
+$omit_owner
+</dt>
+<dd>
+<p>
+        If true prevents displaying information about repository owner.
+</p>
+</dd>
+<dt class="hdlist1">
 $per_request_config
 </dt>
 <dd>
@@ -1516,9 +1533,9 @@ forks
 <p>
         If this feature is enabled, gitweb considers projects in
         subdirectories of project root (basename) to be forks of existing
-        projects.  For each project &#8216;$projname.git`, projects in the
+        projects.  For each project <tt>$projname.git</tt>, projects in the
         <tt>$projname/</tt> directory and its subdirectories will not be
-        shown in the main projects list.  Instead, a '+&#8217; mark is shown
+        shown in the main projects list.  Instead, a '+' mark is shown
         next to <tt>$projname</tt>, which links to a "forks" view that lists all
         the forks (all projects in <tt>$projname/</tt> subdirectory).  Additionally
         a "forks" view for a project is linked from project summary page.
@@ -1706,7 +1723,7 @@ gitweb_config.perl
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-11-15 13:45:02 PDT
+Last updated 2012-06-19 16:36:49 PDT
 </div>
 </div>
 </body>

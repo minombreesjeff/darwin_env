@@ -2,12 +2,12 @@
 .\"     Title: git-status
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 04/06/2012
+.\"      Date: 08/19/2012
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.10
+.\"    Source: Git 1.7.12
 .\"  Language: English
 .\"
-.TH "GIT\-STATUS" "1" "04/06/2012" "Git 1\&.7\&.10" "Git Manual"
+.TH "GIT\-STATUS" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -131,6 +131,18 @@ Terminate entries with NUL, instead of LF\&. This implies the
 \-\-porcelain
 output format if no other format is given\&.
 .RE
+.PP
+\-\-column[=<options>], \-\-no\-column
+.RS 4
+Display untracked files in columns\&. See configuration variable column\&.status for option syntax\&.\-\-column
+and
+\-\-no\-column
+without options are equivalent to
+\fIalways\fR
+and
+\fInever\fR
+respectively\&.
+.RE
 .SH "OUTPUT"
 .sp
 The output from this command is designed to be used as a commit template comment, and all the output lines are prefixed with \fI#\fR\&. The default, long format, is designed to be human readable, verbose and descriptive\&. Its contents and format are subject to change at any time\&.
@@ -150,7 +162,7 @@ XY PATH1 \-> PATH2
 .RE
 .\}
 .sp
-where PATH1 is the path in the HEAD, and the ` \-> PATH2` part is shown only when PATH1 corresponds to a different path in the index/worktree (i\&.e\&. the file is renamed)\&. The \fIXY\fR is a two\-letter status code\&.
+where PATH1 is the path in the HEAD, and the " \-> PATH2" part is shown only when PATH1 corresponds to a different path in the index/worktree (i\&.e\&. the file is renamed)\&. The \fIXY\fR is a two\-letter status code\&.
 .sp
 The fields (including the \->) are separated from each other by a single space\&. If a filename contains whitespace or other nonprintable characters, that field will be quoted in the manner of a C string literal: surrounded by ASCII double quote (34) characters, and with interior special characters backslash\-escaped\&.
 .sp
@@ -308,7 +320,7 @@ The user\(cqs color\&.status configuration is not respected; color will always b
 The user\(cqs status\&.relativePaths configuration is not respected; paths shown will always be relative to the repository root\&.
 .RE
 .sp
-There is also an alternate \-z format recommended for machine parsing\&. In that format, the status field is the same, but some other things change\&. First, the \fI\->\fR is omitted from rename entries and the field order is reversed (e\&.g \fIfrom \-> to\fR becomes \fIto from\fR)\&. Second, a NUL (ASCII 0) follows each filename, replacing space as a field separator and the terminating newline (but a space still separates the status field from the first filename)\&. Third, filenames containing special characters are not specially formatted; no quoting or backslash\-escaping is performed\&. Fourth, there is no branch line\&.
+There is also an alternate \-z format recommended for machine parsing\&. In that format, the status field is the same, but some other things change\&. First, the \fI\->\fR is omitted from rename entries and the field order is reversed (e\&.g \fIfrom \-> to\fR becomes \fIto from\fR)\&. Second, a NUL (ASCII 0) follows each filename, replacing space as a field separator and the terminating newline (but a space still separates the status field from the first filename)\&. Third, filenames containing special characters are not specially formatted; no quoting or backslash\-escaping is performed\&.
 .SH "CONFIGURATION"
 .sp
 The command honors color\&.status (or status\&.color \(em they mean the same thing and the latter is kept for backward compatibility) and color\&.status\&.<slot> configuration variables to colorize its output\&.

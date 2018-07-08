@@ -95,7 +95,8 @@ static int add_one_path(struct cache_entry *old, const char *path, int len, stru
 	size = cache_entry_size(len);
 	ce = xcalloc(1, size);
 	memcpy(ce->name, path, len);
-	ce->ce_flags = len;
+	ce->ce_flags = create_ce_flags(0);
+	ce->ce_namelen = len;
 	fill_stat_cache_info(ce, st);
 	ce->ce_mode = ce_mode_from_stat(old, st->st_mode);
 
@@ -211,12 +212,6 @@ static int process_path(const char *path)
 	if (S_ISDIR(st.st_mode))
 		return process_directory(path, len, &st);
 
-	/*
-	 * Process a regular file
-	 */
-	if (ce && S_ISGITLINK(ce->ce_mode))
-		return error("%s is already a gitlink, not replacing", path);
-
 	return add_one_path(ce, path, len, &st);
 }
 
@@ -235,7 +230,8 @@ static int add_cacheinfo(unsigned int mode, const unsigned char *sha1,
 
 	hashcpy(ce->sha1, sha1);
 	memcpy(ce->name, path, len);
-	ce->ce_flags = create_ce_flags(len, stage);
+	ce->ce_flags = create_ce_flags(stage);
+	ce->ce_namelen = len;
 	ce->ce_mode = create_ce_mode(mode);
 	if (assume_unchanged)
 		ce->ce_flags |= CE_VALID;
@@ -433,7 +429,8 @@ static struct cache_entry *read_one_ent(const char *which,
 
 	hashcpy(ce->sha1, sha1);
 	memcpy(ce->name, path, namelen);
-	ce->ce_flags = create_ce_flags(namelen, stage);
+	ce->ce_flags = create_ce_flags(stage);
+	ce->ce_namelen = namelen;
 	ce->ce_mode = create_ce_mode(mode);
 	return ce;
 }
@@ -708,6 +705,7 @@ int cmd_update_index(int argc, const char **argv, const char *prefix)
 	int newfd, entries, has_errors = 0, line_termination = '\n';
 	int read_from_stdin = 0;
 	int prefix_length = prefix ? strlen(prefix) : 0;
+	int preferred_index_format = 0;
 	char set_executable_bit = 0;
 	struct refresh_params refresh_args = {0, &has_errors};
 	int lock_error = 0;
@@ -791,6 +789,8 @@ int cmd_update_index(int argc, const char **argv, const char *prefix)
 			"(for porcelains) forget saved unresolved conflicts",
 			PARSE_OPT_NOARG | PARSE_OPT_NONEG,
 			resolve_undo_clear_callback},
+		OPT_INTEGER(0, "index-version", &preferred_index_format,
+			    "write index in this format"),
 		OPT_END()
 	};
 
@@ -851,6 +851,17 @@ int cmd_update_index(int argc, const char **argv, const char *prefix)
 		}
 	}
 	argc = parse_options_end(&ctx);
+	if (preferred_index_format) {
+		if (preferred_index_format < INDEX_FORMAT_LB ||
+		    INDEX_FORMAT_UB < preferred_index_format)
+			die("index-version %d not in range: %d..%d",
+			    preferred_index_format,
+			    INDEX_FORMAT_LB, INDEX_FORMAT_UB);
+
+		if (the_index.version != preferred_index_format)
+			active_cache_changed = 1;
+		the_index.version = preferred_index_format;
+	}
 
 	if (read_from_stdin) {
 		struct strbuf buf = STRBUF_INIT, nbuf = STRBUF_INIT;

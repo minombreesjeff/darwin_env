@@ -3,18 +3,68 @@
 #include "userdiff.h"
 #include "xdiff-interface.h"
 
-void append_header_grep_pattern(struct grep_opt *opt, enum grep_header_field field, const char *pat)
+static int grep_source_load(struct grep_source *gs);
+static int grep_source_is_binary(struct grep_source *gs);
+
+
+static struct grep_pat *create_grep_pat(const char *pat, size_t patlen,
+					const char *origin, int no,
+					enum grep_pat_token t,
+					enum grep_header_field field)
 {
 	struct grep_pat *p = xcalloc(1, sizeof(*p));
-	p->pattern = pat;
-	p->patternlen = strlen(pat);
-	p->origin = "header";
-	p->no = 0;
-	p->token = GREP_PATTERN_HEAD;
+	p->pattern = xmemdupz(pat, patlen);
+	p->patternlen = patlen;
+	p->origin = origin;
+	p->no = no;
+	p->token = t;
 	p->field = field;
-	*opt->header_tail = p;
-	opt->header_tail = &p->next;
+	return p;
+}
+
+static void do_append_grep_pat(struct grep_pat ***tail, struct grep_pat *p)
+{
+	**tail = p;
+	*tail = &p->next;
 	p->next = NULL;
+
+	switch (p->token) {
+	case GREP_PATTERN: /* atom */
+	case GREP_PATTERN_HEAD:
+	case GREP_PATTERN_BODY:
+		for (;;) {
+			struct grep_pat *new_pat;
+			size_t len = 0;
+			char *cp = p->pattern + p->patternlen, *nl = NULL;
+			while (++len <= p->patternlen) {
+				if (*(--cp) == '\n') {
+					nl = cp;
+					break;
+				}
+			}
+			if (!nl)
+				break;
+			new_pat = create_grep_pat(nl + 1, len - 1, p->origin,
+						  p->no, p->token, p->field);
+			new_pat->next = p->next;
+			if (!p->next)
+				*tail = &new_pat->next;
+			p->next = new_pat;
+			*nl = '\0';
+			p->patternlen -= len;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+void append_header_grep_pattern(struct grep_opt *opt,
+				enum grep_header_field field, const char *pat)
+{
+	struct grep_pat *p = create_grep_pat(pat, strlen(pat), "header", 0,
+					     GREP_PATTERN_HEAD, field);
+	do_append_grep_pat(&opt->header_tail, p);
 }
 
 void append_grep_pattern(struct grep_opt *opt, const char *pat,
@@ -26,15 +76,8 @@ void append_grep_pattern(struct grep_opt *opt, const char *pat,
 void append_grep_pat(struct grep_opt *opt, const char *pat, size_t patlen,
 		     const char *origin, int no, enum grep_pat_token t)
 {
-	struct grep_pat *p = xcalloc(1, sizeof(*p));
-	p->pattern = pat;
-	p->patternlen = patlen;
-	p->origin = origin;
-	p->no = no;
-	p->token = t;
-	*opt->pattern_tail = p;
-	opt->pattern_tail = &p->next;
-	p->next = NULL;
+	struct grep_pat *p = create_grep_pat(pat, patlen, origin, no, t, 0);
+	do_append_grep_pat(&opt->pattern_tail, p);
 }
 
 struct grep_opt *grep_opt_dup(const struct grep_opt *opt)
@@ -293,6 +336,87 @@ static struct grep_expr *compile_pattern_expr(struct grep_pat **list)
 	return compile_pattern_or(list);
 }
 
+static void indent(int in)
+{
+	while (in-- > 0)
+		fputc(' ', stderr);
+}
+
+static void dump_grep_pat(struct grep_pat *p)
+{
+	switch (p->token) {
+	case GREP_AND: fprintf(stderr, "*and*"); break;
+	case GREP_OPEN_PAREN: fprintf(stderr, "*(*"); break;
+	case GREP_CLOSE_PAREN: fprintf(stderr, "*)*"); break;
+	case GREP_NOT: fprintf(stderr, "*not*"); break;
+	case GREP_OR: fprintf(stderr, "*or*"); break;
+
+	case GREP_PATTERN: fprintf(stderr, "pattern"); break;
+	case GREP_PATTERN_HEAD: fprintf(stderr, "pattern_head"); break;
+	case GREP_PATTERN_BODY: fprintf(stderr, "pattern_body"); break;
+	}
+
+	switch (p->token) {
+	default: break;
+	case GREP_PATTERN_HEAD:
+		fprintf(stderr, "<head %d>", p->field); break;
+	case GREP_PATTERN_BODY:
+		fprintf(stderr, "<body>"); break;
+	}
+	switch (p->token) {
+	default: break;
+	case GREP_PATTERN_HEAD:
+	case GREP_PATTERN_BODY:
+	case GREP_PATTERN:
+		fprintf(stderr, "%.*s", (int)p->patternlen, p->pattern);
+		break;
+	}
+	fputc('\n', stderr);
+}
+
+static void dump_grep_expression_1(struct grep_expr *x, int in)
+{
+	indent(in);
+	switch (x->node) {
+	case GREP_NODE_TRUE:
+		fprintf(stderr, "true\n");
+		break;
+	case GREP_NODE_ATOM:
+		dump_grep_pat(x->u.atom);
+		break;
+	case GREP_NODE_NOT:
+		fprintf(stderr, "(not\n");
+		dump_grep_expression_1(x->u.unary, in+1);
+		indent(in);
+		fprintf(stderr, ")\n");
+		break;
+	case GREP_NODE_AND:
+		fprintf(stderr, "(and\n");
+		dump_grep_expression_1(x->u.binary.left, in+1);
+		dump_grep_expression_1(x->u.binary.right, in+1);
+		indent(in);
+		fprintf(stderr, ")\n");
+		break;
+	case GREP_NODE_OR:
+		fprintf(stderr, "(or\n");
+		dump_grep_expression_1(x->u.binary.left, in+1);
+		dump_grep_expression_1(x->u.binary.right, in+1);
+		indent(in);
+		fprintf(stderr, ")\n");
+		break;
+	}
+}
+
+static void dump_grep_expression(struct grep_opt *opt)
+{
+	struct grep_expr *x = opt->pattern_expression;
+
+	if (opt->all_match)
+		fprintf(stderr, "[all-match]\n");
+	dump_grep_expression_1(x, 0);
+	fflush(NULL);
+}
+
 static struct grep_expr *grep_true_expr(void)
 {
 	struct grep_expr *z = xcalloc(1, sizeof(*z));
@@ -356,7 +480,23 @@ static struct grep_expr *prep_header_patterns(struct grep_opt *opt)
 	return header_expr;
 }
 
-void compile_grep_patterns(struct grep_opt *opt)
+static struct grep_expr *grep_splice_or(struct grep_expr *x, struct grep_expr *y)
+{
+	struct grep_expr *z = x;
+
+	while (x) {
+		assert(x->node == GREP_NODE_OR);
+		if (x->u.binary.right &&
+		    x->u.binary.right->node == GREP_NODE_TRUE) {
+			x->u.binary.right = y;
+			break;
+		}
+		x = x->u.binary.right;
+	}
+	return z;
+}
+
+static void compile_grep_patterns_real(struct grep_opt *opt)
 {
 	struct grep_pat *p;
 	struct grep_expr *header_expr = prep_header_patterns(opt);
@@ -376,7 +516,7 @@ void compile_grep_patterns(struct grep_opt *opt)
 
 	if (opt->all_match || header_expr)
 		opt->extended = 1;
-	else if (!opt->extended)
+	else if (!opt->extended && !opt->debug)
 		return;
 
 	p = opt->pattern_list;
@@ -390,10 +530,20 @@ void compile_grep_patterns(struct grep_opt *opt)
 
 	if (!opt->pattern_expression)
 		opt->pattern_expression = header_expr;
+	else if (opt->all_match)
+		opt->pattern_expression = grep_splice_or(header_expr,
+							 opt->pattern_expression);
 	else
 		opt->pattern_expression = grep_or_expr(opt->pattern_expression,
 						       header_expr);
 	opt->all_match = 1;
+}
+
+void compile_grep_patterns(struct grep_opt *opt)
+{
+	compile_grep_patterns_real(opt);
+	if (opt->debug)
+		dump_grep_expression(opt);
 }
 
 static void free_pattern_expr(struct grep_expr *x)
@@ -430,6 +580,7 @@ void free_grep_patterns(struct grep_opt *opt)
 				free_pcre_regexp(p);
 			else
 				regfree(&p->regexp);
+			free(p->pattern);
 			break;
 		default:
 			break;
@@ -1318,7 +1469,7 @@ static int grep_source_load_file(struct grep_source *gs)
 	return 0;
 }
 
-int grep_source_load(struct grep_source *gs)
+static int grep_source_load(struct grep_source *gs)
 {
 	if (gs->buf)
 		return 0;
@@ -1346,7 +1497,7 @@ void grep_source_load_driver(struct grep_source *gs)
 	grep_attr_unlock();
 }
 
-int grep_source_is_binary(struct grep_source *gs)
+static int grep_source_is_binary(struct grep_source *gs)
 {
 	grep_source_load_driver(gs);
 	if (gs->driver->binary != -1)

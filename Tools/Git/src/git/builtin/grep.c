@@ -209,6 +209,7 @@ static void start_threads(struct grep_opt *opt)
 		int err;
 		struct grep_opt *o = grep_opt_dup(opt);
 		o->output = strbuf_out;
+		o->debug = 0;
 		compile_grep_patterns(o);
 		err = pthread_create(&threads[i], NULL, run, o);
 
@@ -600,15 +601,12 @@ static int file_callback(const struct option *opt, const char *arg, int unset)
 	if (!patterns)
 		die_errno(_("cannot open '%s'"), arg);
 	while (strbuf_getline(&sb, patterns, '\n') == 0) {
-		char *s;
-		size_t len;
-
 		/* ignore empty line like grep does */
 		if (sb.len == 0)
 			continue;
 
-		s = strbuf_detach(&sb, &len);
-		append_grep_pat(grep_opt, s, len, arg, ++lno, GREP_PATTERN);
+		append_grep_pat(grep_opt, sb.buf, sb.len, arg, ++lno,
+				GREP_PATTERN);
 	}
 	if (!from_stdin)
 		fclose(patterns);
@@ -775,6 +773,9 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 			   "indicate hit with exit status without output"),
 		OPT_BOOLEAN(0, "all-match", &opt.all_match,
 			"show only matches from files that match all patterns"),
+		{ OPTION_SET_INT, 0, "debug", &opt.debug, NULL,
+		  "show parse tree for grep expression",
+		  PARSE_OPT_NOARG | PARSE_OPT_HIDDEN, NULL, 1 },
 		OPT_GROUP(""),
 		{ OPTION_STRING, 'O', "open-files-in-pager", &show_in_pager,
 			"pager", "show matching files in the pager",
@@ -931,7 +932,7 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 	if (!seen_dashdash) {
 		int j;
 		for (j = i; j < argc; j++)
-			verify_filename(prefix, argv[j]);
+			verify_filename(prefix, argv[j], j == i);
 	}
 
 	paths = get_pathspec(prefix, argv + i);

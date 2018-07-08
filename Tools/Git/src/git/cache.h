@@ -112,6 +112,9 @@ struct cache_header {
 	unsigned int hdr_entries;
 };
 
+#define INDEX_FORMAT_LB 2
+#define INDEX_FORMAT_UB 4
+
 /*
  * The "cache_time" is just the low 32 bits of the
  * time. It doesn't matter if it overflows - we only
@@ -120,48 +123,6 @@ struct cache_header {
 struct cache_time {
 	unsigned int sec;
 	unsigned int nsec;
-};
-
-/*
- * dev/ino/uid/gid/size are also just tracked to the low 32 bits
- * Again - this is just a (very strong in practice) heuristic that
- * the inode hasn't changed.
- *
- * We save the fields in big-endian order to allow using the
- * index file over NFS transparently.
- */
-struct ondisk_cache_entry {
-	struct cache_time ctime;
-	struct cache_time mtime;
-	unsigned int dev;
-	unsigned int ino;
-	unsigned int mode;
-	unsigned int uid;
-	unsigned int gid;
-	unsigned int size;
-	unsigned char sha1[20];
-	unsigned short flags;
-	char name[FLEX_ARRAY]; /* more */
-};
-
-/*
- * This struct is used when CE_EXTENDED bit is 1
- * The struct must match ondisk_cache_entry exactly from
- * ctime till flags
- */
-struct ondisk_cache_entry_extended {
-	struct cache_time ctime;
-	struct cache_time mtime;
-	unsigned int dev;
-	unsigned int ino;
-	unsigned int mode;
-	unsigned int uid;
-	unsigned int gid;
-	unsigned int size;
-	unsigned char sha1[20];
-	unsigned short flags;
-	unsigned short flags2;
-	char name[FLEX_ARRAY]; /* more */
 };
 
 struct cache_entry {
@@ -174,13 +135,13 @@ struct cache_entry {
 	unsigned int ce_gid;
 	unsigned int ce_size;
 	unsigned int ce_flags;
+	unsigned int ce_namelen;
 	unsigned char sha1[20];
 	struct cache_entry *next;
 	struct cache_entry *dir_next;
 	char name[FLEX_ARRAY]; /* more */
 };
 
-#define CE_NAMEMASK  (0x0fff)
 #define CE_STAGEMASK (0x3000)
 #define CE_EXTENDED  (0x4000)
 #define CE_VALID     (0x8000)
@@ -244,25 +205,13 @@ static inline void copy_cache_entry(struct cache_entry *dst, struct cache_entry 
 	dst->ce_flags = (dst->ce_flags & ~CE_STATE_MASK) | state;
 }
 
-static inline unsigned create_ce_flags(size_t len, unsigned stage)
+static inline unsigned create_ce_flags(unsigned stage)
 {
-	if (len >= CE_NAMEMASK)
-		len = CE_NAMEMASK;
-	return (len | (stage << CE_STAGESHIFT));
+	return (stage << CE_STAGESHIFT);
 }
 
-static inline size_t ce_namelen(const struct cache_entry *ce)
-{
-	size_t len = ce->ce_flags & CE_NAMEMASK;
-	if (len < CE_NAMEMASK)
-		return len;
-	return strlen(ce->name + CE_NAMEMASK) + CE_NAMEMASK;
-}
-
+#define ce_namelen(ce) ((ce)->ce_namelen)
 #define ce_size(ce) cache_entry_size(ce_namelen(ce))
-#define ondisk_ce_size(ce) (((ce)->ce_flags & CE_EXTENDED) ? \
-			    ondisk_cache_entry_extended_size(ce_namelen(ce)) : \
-			    ondisk_cache_entry_size(ce_namelen(ce)))
 #define ce_stage(ce) ((CE_STAGEMASK & (ce)->ce_flags) >> CE_STAGESHIFT)
 #define ce_uptodate(ce) ((ce)->ce_flags & CE_UPTODATE)
 #define ce_skip_worktree(ce) ((ce)->ce_flags & CE_SKIP_WORKTREE)
@@ -313,13 +262,11 @@ static inline unsigned int canon_mode(unsigned int mode)
 	return S_IFGITLINK;
 }
 
-#define flexible_size(STRUCT,len) ((offsetof(struct STRUCT,name) + (len) + 8) & ~7)
 #define cache_entry_size(len) (offsetof(struct cache_entry,name) + (len) + 1)
-#define ondisk_cache_entry_size(len) flexible_size(ondisk_cache_entry,len)
-#define ondisk_cache_entry_extended_size(len) flexible_size(ondisk_cache_entry_extended,len)
 
 struct index_state {
 	struct cache_entry **cache;
+	unsigned int version;
 	unsigned int cache_nr, cache_alloc, cache_changed;
 	struct string_list *resolve_undo;
 	struct cache_tree *cache_tree;
@@ -460,8 +407,11 @@ extern const char *setup_git_directory(void);
 extern char *prefix_path(const char *prefix, int len, const char *path);
 extern const char *prefix_filename(const char *prefix, int len, const char *path);
 extern int check_filename(const char *prefix, const char *name);
-extern void verify_filename(const char *prefix, const char *name);
+extern void verify_filename(const char *prefix,
+			    const char *name,
+			    int diagnose_misspelt_rev);
 extern void verify_non_filename(const char *prefix, const char *name);
+extern int path_inside_repo(const char *prefix, const char *path);
 
 #define INIT_DB_QUIET 0x0001
 
@@ -499,6 +449,7 @@ extern int discard_index(struct index_state *);
 extern int unmerged_index(const struct index_state *);
 extern int verify_path(const char *path);
 extern struct cache_entry *index_name_exists(struct index_state *istate, const char *name, int namelen, int igncase);
+extern int index_name_stage_pos(const struct index_state *, const char *name, int namelen, int stage);
 extern int index_name_pos(const struct index_state *, const char *name, int namelen);
 #define ADD_CACHE_OK_TO_ADD 1		/* Ok to add */
 #define ADD_CACHE_OK_TO_REPLACE 2	/* Ok to replace file/directory */
@@ -611,6 +562,7 @@ extern int read_replace_refs;
 extern int fsync_object_files;
 extern int core_preload_index;
 extern int core_apply_sparse_checkout;
+extern int precomposed_unicode;
 
 enum branch_track {
 	BRANCH_TRACK_UNSPECIFIED = -1,
@@ -631,6 +583,7 @@ enum rebase_setup_type {
 enum push_default_type {
 	PUSH_DEFAULT_NOTHING = 0,
 	PUSH_DEFAULT_MATCHING,
+	PUSH_DEFAULT_SIMPLE,
 	PUSH_DEFAULT_UPSTREAM,
 	PUSH_DEFAULT_CURRENT,
 	PUSH_DEFAULT_UNSPECIFIED
@@ -668,6 +621,8 @@ extern char *mksnpath(char *buf, size_t n, const char *fmt, ...)
 extern char *git_snpath(char *buf, size_t n, const char *fmt, ...)
 	__attribute__((format (printf, 3, 4)));
 extern char *git_pathdup(const char *fmt, ...)
+	__attribute__((format (printf, 1, 2)));
+extern char *mkpathdup(const char *fmt, ...)
 	__attribute__((format (printf, 1, 2)));
 
 /* Return a statically allocated filename matching the sha1 signature */
@@ -758,6 +713,7 @@ int set_shared_perm(const char *path, int mode);
 int safe_create_leading_directories(char *path);
 int safe_create_leading_directories_const(const char *path);
 int mkdir_in_gitdir(const char *path);
+extern void home_config_paths(char **global, char **xdg, char *file);
 extern char *expand_user_path(const char *path);
 const char *enter_repo(const char *path, int strict);
 static inline int is_absolute_path(const char *path)
@@ -833,17 +789,25 @@ struct object_context {
 	unsigned mode;
 };
 
+#define GET_SHA1_QUIETLY        01
+#define GET_SHA1_COMMIT         02
+#define GET_SHA1_COMMITTISH     04
+#define GET_SHA1_TREE          010
+#define GET_SHA1_TREEISH       020
+#define GET_SHA1_BLOB	       040
+#define GET_SHA1_ONLY_TO_DIE 04000
+
 extern int get_sha1(const char *str, unsigned char *sha1);
-extern int get_sha1_with_mode_1(const char *str, unsigned char *sha1, unsigned *mode, int only_to_die, const char *prefix);
-static inline int get_sha1_with_mode(const char *str, unsigned char *sha1, unsigned *mode)
-{
-	return get_sha1_with_mode_1(str, sha1, mode, 0, NULL);
-}
-extern int get_sha1_with_context_1(const char *name, unsigned char *sha1, struct object_context *orc, int only_to_die, const char *prefix);
-static inline int get_sha1_with_context(const char *str, unsigned char *sha1, struct object_context *orc)
-{
-	return get_sha1_with_context_1(str, sha1, orc, 0, NULL);
-}
+extern int get_sha1_commit(const char *str, unsigned char *sha1);
+extern int get_sha1_committish(const char *str, unsigned char *sha1);
+extern int get_sha1_tree(const char *str, unsigned char *sha1);
+extern int get_sha1_treeish(const char *str, unsigned char *sha1);
+extern int get_sha1_blob(const char *str, unsigned char *sha1);
+extern void maybe_die_on_misspelt_object_name(const char *name, const char *prefix);
+extern int get_sha1_with_context(const char *str, unsigned flags, unsigned char *sha1, struct object_context *orc);
+
+typedef int each_abbrev_fn(const unsigned char *sha1, void *);
+extern int for_each_abbrev(const char *prefix, each_abbrev_fn, void *);
 
 /*
  * Try to read a SHA1 in hexadecimal format from the 40 characters
@@ -907,6 +871,7 @@ extern int validate_headref(const char *ref);
 extern int base_name_compare(const char *name1, int len1, int mode1, const char *name2, int len2, int mode2);
 extern int df_name_compare(const char *name1, int len1, int mode1, const char *name2, int len2, int mode2);
 extern int cache_name_compare(const char *name1, int len1, const char *name2, int len2);
+extern int cache_name_stage_compare(const char *name1, int len1, int stage1, const char *name2, int len2, int stage2);
 
 extern void *read_object_with_reference(const unsigned char *sha1,
 					const char *required_type,
@@ -927,10 +892,8 @@ enum date_mode {
 };
 
 const char *show_date(unsigned long time, int timezone, enum date_mode mode);
-const char *show_date_relative(unsigned long time, int tz,
-			       const struct timeval *now,
-			       char *timebuf,
-			       size_t timebuf_size);
+void show_date_relative(unsigned long time, int tz, const struct timeval *now,
+			struct strbuf *timebuf);
 int parse_date(const char *date, char *buf, int bufsize);
 int parse_date_basic(const char *date, unsigned long *timestamp, int *offset);
 void datestamp(char *buf, int bufsize);
@@ -939,15 +902,19 @@ unsigned long approxidate_careful(const char *, int *);
 unsigned long approxidate_relative(const char *date, const struct timeval *now);
 enum date_mode parse_date_format(const char *format);
 
-#define IDENT_WARN_ON_NO_NAME  1
-#define IDENT_ERROR_ON_NO_NAME 2
-#define IDENT_NO_DATE	       4
+#define IDENT_STRICT	       1
+#define IDENT_NO_DATE	       2
+#define IDENT_NO_NAME	       4
 extern const char *git_author_info(int);
 extern const char *git_committer_info(int);
 extern const char *fmt_ident(const char *name, const char *email, const char *date_str, int);
 extern const char *fmt_name(const char *name, const char *email);
+extern const char *ident_default_name(void);
+extern const char *ident_default_email(void);
+extern const char *ident_default_date(void);
 extern const char *git_editor(void);
 extern const char *git_pager(int stdout_is_tty);
+extern int git_ident_config(const char *, const char *, void *);
 
 struct ident_split {
 	const char *name_begin;
@@ -999,6 +966,7 @@ extern struct alternate_object_database {
 	char base[FLEX_ARRAY]; /* more */
 } *alt_odb_list;
 extern void prepare_alt_odb(void);
+extern void read_info_alternates(const char * relative_base, int depth);
 extern void add_to_alternates_file(const char *reference);
 typedef int alt_odb_fn(struct alternate_object_database *, void *);
 extern void foreach_alt_odb(alt_odb_fn, void*);
@@ -1077,7 +1045,9 @@ struct extra_have_objects {
 };
 extern struct ref **get_remote_heads(int in, struct ref **list, unsigned int flags, struct extra_have_objects *);
 extern int server_supports(const char *feature);
-extern const char *parse_feature_request(const char *features, const char *feature);
+extern int parse_feature_request(const char *features, const char *feature);
+extern const char *server_feature_value(const char *feature, int *len_ret);
+extern const char *parse_feature_value(const char *feature_list, const char *feature, int *len_ret);
 
 extern struct packed_git *parse_pack_index(unsigned char *sha1, const char *idx_path);
 
@@ -1147,6 +1117,7 @@ extern int update_server_info(int);
 #define CONFIG_NO_WRITE 4
 #define CONFIG_NOTHING_SET 5
 #define CONFIG_INVALID_PATTERN 6
+#define CONFIG_GENERIC_ERROR 7
 
 typedef int (*config_fn_t)(const char *, const char *, void *);
 extern int git_default_config(const char *, const char *, void *);
@@ -1190,9 +1161,6 @@ struct config_include_data {
 #define CONFIG_INCLUDE_INIT { 0 }
 extern int git_config_include(const char *name, const char *value, void *data);
 
-#define MAX_GITNAME (1000)
-extern char git_default_email[MAX_GITNAME];
-extern char git_default_name[MAX_GITNAME];
 #define IDENT_NAME_GIVEN 01
 #define IDENT_MAIL_GIVEN 02
 #define IDENT_ALL_GIVEN (IDENT_NAME_GIVEN|IDENT_MAIL_GIVEN)

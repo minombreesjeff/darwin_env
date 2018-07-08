@@ -42,7 +42,7 @@ The content to be added can be specified in several ways:
 
 5. by using the --interactive or --patch switches with the 'commit' command
    to decide one by one which files or hunks should be part of the commit,
-   before finalizing the operation. See the ``Interactive Mode`` section of
+   before finalizing the operation. See the ``Interactive Mode'' section of
    linkgit:git-add[1] to learn how to operate these modes.
 
 The `--dry-run` option can be used to obtain a
@@ -101,12 +101,16 @@ OPTIONS
 	When doing a dry-run, give the output in the short-format. See
 	linkgit:git-status[1] for details. Implies `--dry-run`.
 
+--branch::
+	Show the branch and tracking info even in short-format.
+
 --porcelain::
 	When doing a dry-run, give the output in a porcelain-ready
 	format. See linkgit:git-status[1] for details. Implies
 	`--dry-run`.
 
 -z::
+--null::
 	When showing `short` or `porcelain` status output, terminate
 	entries in the status output with NUL, instead of LF. If no
 	format is given, implies the `--porcelain` output format.
@@ -132,11 +136,14 @@ OPTIONS
 
 -t <file>::
 --template=<file>::
-	Use the contents of the given file as the initial version
-	of the commit message. The editor is invoked and you can
-	make subsequent changes. If a message is specified using
-	the `-m` or `-F` options, this option has no effect. This
-	overrides the `commit.template` configuration variable.
+	When editing the commit message, start the editor with the
+	contents in the given file.  The `commit.template` configuration
+	variable is often used to give this option implicitly to the
+	command.  This mechanism can be used by projects that want to
+	guide participants with some hints on what to write in the message
+	in what order.  If the user exits the editor without editing the
+	message, the commit is aborted.  This has no effect when a message
+	is given by other means, e.g. with the `-m` or `-F` options.
 
 -s::
 --signoff::
@@ -186,6 +193,10 @@ OPTIONS
 	current tip -- if it was a merge, it will have the parents of
 	the current tip as parents -- so the current top commit is
 	discarded.
+
+--no-post-rewrite::
+	Bypass the post-rewrite hook.
+
 +
 --
 It is a rough equivalent for:
@@ -284,7 +295,7 @@ When recording your own work, the contents of modified files in
 your working tree are temporarily stored to a staging area
 called the "index" with 'git add'.  A file can be
 reverted back, only in the index but not in the working tree,
-to that of the last commit with `git reset HEAD \-- <file>`,
+to that of the last commit with `git reset HEAD -- <file>`,
 which effectively reverts 'git add' and prevents the changes to
 this file from participating in the next commit.  After building
 the state to be committed incrementally with these commands,
@@ -396,6 +407,15 @@ This command can run `commit-msg`, `prepare-commit-msg`, `pre-commit`,
 and `post-commit` hooks.  See linkgit:githooks[5] for more
 information.
 
+FILES
+-----
+
+`$GIT_DIR/COMMIT_EDITMSG`::
+	This file contains the commit message of a commit in progress.
+	If `git commit` exits due to an error before creating a commit,
+	any commit message that has been provided by the user (e.g., in
+	an editor session) will be available in this file, but will be
+	overwritten by the next invocation of `git commit`.
 
 SEE ALSO
 --------

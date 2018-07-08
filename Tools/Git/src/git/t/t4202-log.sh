@@ -178,11 +178,21 @@ test_expect_success 'git log --no-walk <commits> sorts by commit time' '
 	test_cmp expect actual
 '
 
+test_expect_success 'git log --no-walk=sorted <commits> sorts by commit time' '
+	git log --no-walk=sorted --oneline 5d31159 804a787 394ef78 > actual &&
+	test_cmp expect actual
+'
+
 cat > expect << EOF
 5d31159 fourth
 804a787 sixth
 394ef78 fifth
 EOF
+test_expect_success 'git log --no-walk=unsorted <commits> leaves list of commits as given' '
+	git log --no-walk=unsorted --oneline 5d31159 804a787 394ef78 > actual &&
+	test_cmp expect actual
+'
+
 test_expect_success 'git show <commits> leaves list of commits as given' '
 	git show --oneline -s 5d31159 804a787 394ef78 > actual &&
 	test_cmp expect actual
@@ -528,7 +538,7 @@ cat >expect <<\EOF
 | |
 | |     reach
 | | ---
-| |  reach.t |    1 +
+| |  reach.t | 1 +
 | |  1 file changed, 1 insertion(+)
 | |
 | | diff --git a/reach.t b/reach.t
@@ -551,7 +561,7 @@ cat >expect <<\EOF
 | | |
 | | |       octopus-b
 | | |   ---
-| | |    octopus-b.t |    1 +
+| | |    octopus-b.t | 1 +
 | | |    1 file changed, 1 insertion(+)
 | | |
 | | |   diff --git a/octopus-b.t b/octopus-b.t
@@ -567,7 +577,7 @@ cat >expect <<\EOF
 | |
 | |       octopus-a
 | |   ---
-| |    octopus-a.t |    1 +
+| |    octopus-a.t | 1 +
 | |    1 file changed, 1 insertion(+)
 | |
 | |   diff --git a/octopus-a.t b/octopus-a.t
@@ -583,7 +593,7 @@ cat >expect <<\EOF
 |
 |       seventh
 |   ---
-|    seventh.t |    1 +
+|    seventh.t | 1 +
 |    1 file changed, 1 insertion(+)
 |
 |   diff --git a/seventh.t b/seventh.t
@@ -617,7 +627,7 @@ cat >expect <<\EOF
 | | | |
 | | | |     tangle-a
 | | | | ---
-| | | |  tangle-a |    1 +
+| | | |  tangle-a | 1 +
 | | | |  1 file changed, 1 insertion(+)
 | | | |
 | | | | diff --git a/tangle-a b/tangle-a
@@ -639,7 +649,7 @@ cat >expect <<\EOF
 | |/| |
 | | | |       side-2
 | | | |   ---
-| | | |    2 |    1 +
+| | | |    2 | 1 +
 | | | |    1 file changed, 1 insertion(+)
 | | | |
 | | | |   diff --git a/2 b/2
@@ -655,7 +665,7 @@ cat >expect <<\EOF
 | | | |
 | | | |     side-1
 | | | | ---
-| | | |  1 |    1 +
+| | | |  1 | 1 +
 | | | |  1 file changed, 1 insertion(+)
 | | | |
 | | | | diff --git a/1 b/1
@@ -671,7 +681,7 @@ cat >expect <<\EOF
 | | | |
 | | | |     Second
 | | | | ---
-| | | |  one |    1 +
+| | | |  one | 1 +
 | | | |  1 file changed, 1 insertion(+)
 | | | |
 | | | | diff --git a/one b/one
@@ -687,7 +697,7 @@ cat >expect <<\EOF
 |/| |
 | | |       sixth
 | | |   ---
-| | |    a/two |    1 -
+| | |    a/two | 1 -
 | | |    1 file changed, 1 deletion(-)
 | | |
 | | |   diff --git a/a/two b/a/two
@@ -703,7 +713,7 @@ cat >expect <<\EOF
 | | |
 | | |     fifth
 | | | ---
-| | |  a/two |    1 +
+| | |  a/two | 1 +
 | | |  1 file changed, 1 insertion(+)
 | | |
 | | | diff --git a/a/two b/a/two
@@ -719,7 +729,7 @@ cat >expect <<\EOF
 | |
 | |       fourth
 | |   ---
-| |    ein |    1 +
+| |    ein | 1 +
 | |    1 file changed, 1 insertion(+)
 | |
 | |   diff --git a/ein b/ein
@@ -735,8 +745,8 @@ cat >expect <<\EOF
 |
 |       third
 |   ---
-|    ichi |    1 +
-|    one  |    1 -
+|    ichi | 1 +
+|    one  | 1 -
 |    2 files changed, 1 insertion(+), 1 deletion(-)
 |
 |   diff --git a/ichi b/ichi
@@ -759,7 +769,7 @@ cat >expect <<\EOF
 |
 |     second
 | ---
-|  one |    2 +-
+|  one | 2 +-
 |  1 file changed, 1 insertion(+), 1 deletion(-)
 |
 | diff --git a/one b/one
@@ -775,7 +785,7 @@ cat >expect <<\EOF
 
       initial
   ---
-   one |    1 +
+   one | 1 +
    1 file changed, 1 insertion(+)
 
   diff --git a/one b/one
@@ -804,6 +814,13 @@ test_expect_success 'log --graph with diff and stats' '
 	git log --graph --pretty=short --stat -p >actual &&
 	sanitize_output >actual.sanitized <actual &&
 	test_cmp expect actual.sanitized
+'
+
+test_expect_success 'dotdot is a parent directory' '
+	mkdir -p a/b &&
+	( echo sixth && echo fifth ) >expect &&
+	( cd a/b && git log --format=%s .. ) >actual &&
+	test_cmp expect actual
 '
 
 test_done

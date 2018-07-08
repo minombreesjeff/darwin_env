@@ -59,6 +59,30 @@ test_expect_success 'status (1)' '
 	test_i18ngrep "use \"git rm --cached <file>\.\.\.\" to unstage" output
 '
 
+test_expect_success 'status --column' '
+	COLUMNS=50 git status --column="column dense" >output &&
+	cat >expect <<\EOF &&
+# On branch master
+# Changes to be committed:
+#   (use "git reset HEAD <file>..." to unstage)
+#
+#	new file:   dir2/added
+#
+# Changes not staged for commit:
+#   (use "git add <file>..." to update what will be committed)
+#   (use "git checkout -- <file>..." to discard changes in working directory)
+#
+#	modified:   dir1/modified
+#
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#	dir1/untracked dir2/untracked untracked
+#	dir2/modified  output
+EOF
+	test_cmp expect output
+'
+
 cat >expect <<\EOF
 # On branch master
 # Changes to be committed:
@@ -269,6 +293,15 @@ test_expect_success 'status -s -b' '
 	git status -s -b >output &&
 	test_cmp expect output
 
+'
+
+test_expect_success 'status -s -z -b' '
+	tr "\\n" Q <expect >expect.q &&
+	mv expect.q expect &&
+	git status -s -z -b >output &&
+	nul_to_q <output >output.q &&
+	mv output.q output &&
+	test_cmp expect output
 '
 
 test_expect_success 'setup dir3' '
@@ -647,9 +680,14 @@ test_expect_success 'status --porcelain ignores color.status' '
 git config --unset color.status
 git config --unset color.ui
 
-test_expect_success 'status --porcelain ignores -b' '
+test_expect_success 'status --porcelain respects -b' '
 
 	git status --porcelain -b >output &&
+	{
+		echo "## master" &&
+		cat expect
+	} >tmp &&
+	mv tmp expect &&
 	test_cmp expect output
 
 '
@@ -903,7 +941,7 @@ test_expect_success 'status -s submodule summary (clean submodule)' '
 
 test_expect_success 'status -z implies porcelain' '
 	git status --porcelain |
-	perl -pe "s/\012/\000/g" >expect &&
+	"$PERL_PATH" -pe "s/\012/\000/g" >expect &&
 	git status -z >output &&
 	test_cmp expect output
 '

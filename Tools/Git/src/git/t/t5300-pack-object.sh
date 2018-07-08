@@ -13,9 +13,9 @@ TRASH=`pwd`
 test_expect_success \
     'setup' \
     'rm -f .git/index* &&
-     perl -e "print \"a\" x 4096;" > a &&
-     perl -e "print \"b\" x 4096;" > b &&
-     perl -e "print \"c\" x 4096;" > c &&
+     "$PERL_PATH" -e "print \"a\" x 4096;" > a &&
+     "$PERL_PATH" -e "print \"b\" x 4096;" > b &&
+     "$PERL_PATH" -e "print \"c\" x 4096;" > c &&
      test-genrandom "seed a" 2097152 > a_big &&
      test-genrandom "seed b" 2097152 > b_big &&
      git update-index --add a a_big b b_big c &&
@@ -129,7 +129,7 @@ test_expect_success \
 cd "$TRASH"
 
 test_expect_success 'compare delta flavors' '
-	perl -e '\''
+	"$PERL_PATH" -e '\''
 		defined($_ = -s $_) or die for @ARGV;
 		exit 1 if $ARGV[0] <= $ARGV[1];
 	'\'' test-2-$packname_2.pack test-3-$packname_3.pack
@@ -416,6 +416,11 @@ test_expect_success \
 test_expect_success \
     'make sure index-pack detects the SHA1 collision' \
     'test_must_fail git index-pack -o bad.idx test-3.pack 2>msg &&
+     grep "SHA1 COLLISION FOUND" msg'
+
+test_expect_success \
+    'make sure index-pack detects the SHA1 collision (large blobs)' \
+    'test_must_fail git -c core.bigfilethreshold=1 index-pack -o bad.idx test-3.pack 2>msg &&
      grep "SHA1 COLLISION FOUND" msg'
 
 test_done

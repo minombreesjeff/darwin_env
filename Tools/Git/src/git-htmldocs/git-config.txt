@@ -44,11 +44,15 @@ a "true" or "false" string for bool), or '--path', which does some
 path expansion (see '--path' below).  If no type specifier is passed, no
 checks or transformations are performed on the value.
 
-The file-option can be one of '--system', '--global' or '--file'
-which specify where the values will be read from or written to.
-The default is to assume the config file of the current repository,
-.git/config unless defined otherwise with GIT_DIR and GIT_CONFIG
-(see <<FILES>>).
+When reading, the values are read from the system, global and
+repository local configuration files by default, and options
+'--system', '--global', '--local' and '--file <filename>' can be
+used to tell the command to read from only that location (see <<FILES>>).
+
+When writing, the new value is written to the repository local
+configuration file by default, and options '--system', '--global',
+'--file <filename>' can be used to tell the command to write to
+that location (you can say '--local' but that is the default).
 
 This command will fail (with exit code ret) if:
 
@@ -93,10 +97,11 @@ OPTIONS
 
 --global::
 	For writing options: write to global ~/.gitconfig file rather than
-	the repository .git/config.
+	the repository .git/config, write to $XDG_CONFIG_HOME/git/config file
+	if this file exists and the ~/.gitconfig file doesn't.
 +
-For reading options: read only from global ~/.gitconfig rather than
-from all available files.
+For reading options: read only from global ~/.gitconfig and from
+$XDG_CONFIG_HOME/git/config rather than from all available files.
 +
 See also <<FILES>>.
 
@@ -190,17 +195,23 @@ See also <<FILES>>.
 FILES
 -----
 
-If not set explicitly with '--file', there are three files where
+If not set explicitly with '--file', there are four files where
 'git config' will search for configuration options:
 
 $GIT_DIR/config::
-	Repository specific configuration file. (The filename is
-	of course relative to the repository root, not the working
-	directory.)
+	Repository specific configuration file.
 
 ~/.gitconfig::
 	User-specific configuration file. Also called "global"
 	configuration file.
+
+$XDG_CONFIG_HOME/git/config::
+	Second user-specific configuration file. If $XDG_CONFIG_HOME is not set
+	or empty, $HOME/.config/git/config will be used. Any single-valued
+	variable set in this file will be overwritten by whatever is in
+	~/.gitconfig.  It is a good idea not to create this file if
+	you sometimes use older versions of Git, as support for this
+	file was added fairly recently.
 
 $(prefix)/etc/gitconfig::
 	System-wide configuration file.

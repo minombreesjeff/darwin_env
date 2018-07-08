@@ -56,6 +56,9 @@ struct wt_status {
 	enum untracked_status_type show_untracked_files;
 	const char *ignore_submodule_arg;
 	char color_palette[WT_STATUS_MAXSLOT][COLOR_MAXLEN];
+	unsigned colopts;
+	int null_termination;
+	int show_branch;
 
 	/* These are computed during processing of the individual sections */
 	int commitable;
@@ -68,12 +71,22 @@ struct wt_status {
 	struct string_list ignored;
 };
 
+struct wt_status_state {
+	int merge_in_progress;
+	int am_in_progress;
+	int am_empty_patch;
+	int rebase_in_progress;
+	int rebase_interactive_in_progress;
+	int cherry_pick_in_progress;
+	int bisect_in_progress;
+};
+
 void wt_status_prepare(struct wt_status *s);
 void wt_status_print(struct wt_status *s);
 void wt_status_collect(struct wt_status *s);
 
-void wt_shortstatus_print(struct wt_status *s, int null_termination, int show_branch);
-void wt_porcelain_print(struct wt_status *s, int null_termination);
+void wt_shortstatus_print(struct wt_status *s);
+void wt_porcelain_print(struct wt_status *s);
 
 void status_printf_ln(struct wt_status *s, const char *color, const char *fmt, ...)
 	;

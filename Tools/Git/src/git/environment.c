@@ -11,9 +11,6 @@
 #include "refs.h"
 #include "fmt-merge-msg.h"
 
-char git_default_email[MAX_GITNAME];
-char git_default_name[MAX_GITNAME];
-int user_ident_explicitly_given;
 int trust_executable_bit = 1;
 int trust_ctime = 0;
 int has_symlinks = 1;
@@ -61,6 +58,7 @@ char *notes_ref_name;
 int grafts_replace_parents = 1;
 int core_apply_sparse_checkout;
 int merge_log_config = -1;
+int precomposed_unicode = -1; /* see probe_utf8_pathname_composition() */
 struct startup_info *startup_info;
 unsigned long pack_size_limit_cfg;
 

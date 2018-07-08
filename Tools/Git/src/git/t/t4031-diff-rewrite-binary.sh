@@ -44,17 +44,23 @@ test_expect_success 'rewrite diff can show binary patch' '
 	grep "GIT binary patch" diff
 '
 
-test_expect_success 'rewrite diff --stat shows binary changes' '
+test_expect_success 'rewrite diff --numstat shows binary changes' '
+	git diff -B --numstat --summary >diff &&
+	grep -e "-	-	" diff &&
+	grep " rewrite file" diff
+'
+
+test_expect_success 'diff --stat counts binary rewrite as 0 lines' '
 	git diff -B --stat --summary >diff &&
 	grep "Bin" diff &&
-	grep "0 insertions.*0 deletions" diff &&
+	test_i18ngrep "0 insertions.*0 deletions" diff &&
 	grep " rewrite file" diff
 '
 
 {
 	echo "#!$SHELL_PATH"
 	cat <<'EOF'
-perl -e '$/ = undef; $_ = <>; s/./ord($&)/ge; print $_' < "$1"
+"$PERL_PATH" -e '$/ = undef; $_ = <>; s/./ord($&)/ge; print $_' < "$1"
 EOF
 } >dump
 chmod +x dump

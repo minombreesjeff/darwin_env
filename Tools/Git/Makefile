@@ -48,14 +48,17 @@ cflags := $(strip $(RC_CFLAGS))
 $(foreach arch,$(RC_ARCHS),$(eval cflags := $(subst $(cflags),-arch $(arch) ,)))
 export RC_CFLAGS := $(cflags)
 
+CFLAGS = -g3 -gdwarf-2 -Os -pipe -Wall -Wformat-security -D_FORTIFY_SOURCE=2
+
 STRIP := strip -S
 submakevars := -j`sysctl -n hw.activecpu` prefix=$(PREFIX) \
   PYTHON_PATH='MACOSX_DEPLOYMENT_TARGET="" /usr/bin/python' \
-  NO_GETTEXT=YesPlease \
+  NO_GETTEXT=YesPlease NO_INSTALL_HARDLINKS=YesPlease \
   NO_FINK=YesPlease NO_DARWIN_PORTS=YesPlease \
-  RUNTIME_PREFIX=YesPlease \
+  RUNTIME_PREFIX=YesPlease USE_LIBPCRE=YesPlease \
+  XDL_FAST_HASH=YesPlease \
   GITGUI_VERSION=0.12.2 V=1 \
-  CFLAGS='-g3 -gdwarf-2 -Os -pipe -Wall -Wformat-security -D_FORTIFY_SOURCE=2'
+  CFLAGS='$(CFLAGS)'
 
 objarch   := $(foreach arch,$(RC_ARCHS),$(OBJROOT)/$(arch))
 firstarch := $(firstword $(objarch))
@@ -80,12 +83,17 @@ install: install-bin install-man install-contrib
 	rm -rf "$(DSTROOT)$(PREFIX)/share/git-gui"
 	rm -f "$(DSTROOT)$(PREFIX)/libexec/git-core/git-gui"
 	rm -f "$(DSTROOT)$(PREFIX)/share/man/man1/git-gui.1"
+	rm -f "$(DSTROOT)$(PREFIX)/bin/gitk"
+	rm -f "$(DSTROOT)$(PREFIX)/share/man/man1/gitk.1"
 	install -d -o root -g wheel -m 0755 $(DSTROOT)$(PREFIX)/local/OpenSourceVersions
 	install -o root -g wheel -m 0644 $(SRCROOT)/Git.plist $(DSTROOT)$(PREFIX)/local/OpenSourceVersions
 
 install-contrib:
 	install -d -o root -g wheel -m 0755 $(DSTROOT)$(PREFIX)/share/git-core
 	install -o root -g wheel -m 0755 $(SRCROOT)/src/git/contrib/completion/git-completion.bash $(DSTROOT)$(PREFIX)/share/git-core
+	install -o root -g wheel -m 0755 $(SRCROOT)/src/git/contrib/completion/git-prompt.sh $(DSTROOT)$(PREFIX)/share/git-core
+	$(CC) -c $(CFLAGS) $(RC_CFLAGS) $(SRCROOT)/src/git/contrib/credential/osxkeychain/git-credential-osxkeychain.c -o $(OBJROOT)/git-credential-osxkeychain.o
+	$(CC) -o $(DSTROOT)$(PREFIX)/libexec/git-core/git-credential-osxkeychain $(OBJROOT)/git-credential-osxkeychain.o -framework Security
 
 install-bin: $(OBJROOT)/dsyms.timestamp
 	$(MAKE) -C $(firstarch) $(submakevars) \

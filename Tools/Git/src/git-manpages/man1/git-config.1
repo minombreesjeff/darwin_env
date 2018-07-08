@@ -2,12 +2,12 @@
 .\"     Title: git-config
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
 .\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
-.\"      Date: 04/06/2012
+.\"      Date: 08/19/2012
 .\"    Manual: Git Manual
-.\"    Source: Git 1.7.10
+.\"    Source: Git 1.7.12
 .\"  Language: English
 .\"
-.TH "GIT\-CONFIG" "1" "04/06/2012" "Git 1\&.7\&.10" "Git Manual"
+.TH "GIT\-CONFIG" "1" "08/19/2012" "Git 1\&.7\&.12" "Git Manual"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -56,7 +56,9 @@ Multiple lines can be added to an option by using the \fI\-\-add\fR option\&. If
 .sp
 The type specifier can be either \fI\-\-int\fR or \fI\-\-bool\fR, to make \fIgit config\fR ensure that the variable(s) are of the given type and convert the value to the canonical form (simple decimal number for int, a "true" or "false" string for bool), or \fI\-\-path\fR, which does some path expansion (see \fI\-\-path\fR below)\&. If no type specifier is passed, no checks or transformations are performed on the value\&.
 .sp
-The file\-option can be one of \fI\-\-system\fR, \fI\-\-global\fR or \fI\-\-file\fR which specify where the values will be read from or written to\&. The default is to assume the config file of the current repository, \&.git/config unless defined otherwise with GIT_DIR and GIT_CONFIG (see the section called \(lqFILES\(rq)\&.
+When reading, the values are read from the system, global and repository local configuration files by default, and options \fI\-\-system\fR, \fI\-\-global\fR, \fI\-\-local\fR and \fI\-\-file <filename>\fR can be used to tell the command to read from only that location (see the section called \(lqFILES\(rq)\&.
+.sp
+When writing, the new value is written to the repository local configuration file by default, and options \fI\-\-system\fR, \fI\-\-global\fR, \fI\-\-file <filename>\fR can be used to tell the command to write to that location (you can say \fI\-\-local\fR but that is the default)\&.
 .sp
 This command will fail (with exit code ret) if:
 .sp
@@ -183,9 +185,10 @@ Like \-\-get\-all, but interprets the name as a regular expression and writes ou
 .PP
 \-\-global
 .RS 4
-For writing options: write to global ~/\&.gitconfig file rather than the repository \&.git/config\&.
+For writing options: write to global
+/\&.gitconfig file rather than the repository \&.git/config, write to $XDG_CONFIG_HOME/git/config file if this file exists and the/\&.gitconfig file doesn\(cqt\&.
 .sp
-For reading options: read only from global ~/\&.gitconfig rather than from all available files\&.
+For reading options: read only from global ~/\&.gitconfig and from $XDG_CONFIG_HOME/git/config rather than from all available files\&.
 .sp
 See also
 the section called \(lqFILES\(rq\&.
@@ -317,16 +320,21 @@ directives in config files when looking up values\&. Defaults to on\&.
 .RE
 .SH "FILES"
 .sp
-If not set explicitly with \fI\-\-file\fR, there are three files where \fIgit config\fR will search for configuration options:
+If not set explicitly with \fI\-\-file\fR, there are four files where \fIgit config\fR will search for configuration options:
 .PP
 $GIT_DIR/config
 .RS 4
-Repository specific configuration file\&. (The filename is of course relative to the repository root, not the working directory\&.)
+Repository specific configuration file\&.
 .RE
 .PP
 ~/\&.gitconfig
 .RS 4
 User\-specific configuration file\&. Also called "global" configuration file\&.
+.RE
+.PP
+$XDG_CONFIG_HOME/git/config
+.RS 4
+Second user\-specific configuration file\&. If $XDG_CONFIG_HOME is not set or empty, $HOME/\&.config/git/config will be used\&. Any single\-valued variable set in this file will be overwritten by whatever is in ~/\&.gitconfig\&. It is a good idea not to create this file if you sometimes use older versions of Git, as support for this file was added fairly recently\&.
 .RE
 .PP
 $(prefix)/etc/gitconfig
@@ -609,7 +617,7 @@ Variable values ending in a \e are continued on the next line in the customary U
 Some variables may require a special value format\&.
 .SS "Includes"
 .sp
-You can include one config file from another by setting the special include\&.path variable to the name of the file to be included\&. The included file is expanded immediately, as if its contents had been found at the location of the include directive\&. If the value of the include\&.path variable is a relative path, the path is considered to be relative to the configuration file in which the include directive was found\&. See below for examples\&.
+You can include one config file from another by setting the special include\&.path variable to the name of the file to be included\&. The included file is expanded immediately, as if its contents had been found at the location of the include directive\&. If the value of the include\&.path variable is a relative path, the path is considered to be relative to the configuration file in which the include directive was found\&. The value of include\&.path is subject to tilde expansion: ~/ is expanded to the value of $HOME, and ~user/ to the specified user\(cqs home directory\&. See below for examples\&.
 .SS "Example"
 .sp
 .if n \{\
@@ -670,6 +678,7 @@ You can include one config file from another by setting the special include\&.pa
 [include]
         path = /path/to/foo\&.inc ; include by absolute path
         path = foo ; expand "foo" relative to the current file
+        path = ~/foo ; expand "foo" in your $HOME directory
 .fi
 .if n \{\
 .RE
@@ -688,16 +697,55 @@ variables default to
 .PP
 pushNonFastForward
 .RS 4
+Set this variable to
+\fIfalse\fR
+if you want to disable
+\fIpushNonFFCurrent\fR,
+\fIpushNonFFDefault\fR, and
+\fIpushNonFFMatching\fR
+simultaneously\&.
+.RE
+.PP
+pushNonFFCurrent
+.RS 4
 Advice shown when
 \fBgit-push\fR(1)
-refuses non\-fast\-forward refs\&.
+fails due to a non\-fast\-forward update to the current branch\&.
+.RE
+.PP
+pushNonFFDefault
+.RS 4
+Advice to set
+\fIpush\&.default\fR
+to
+\fIupstream\fR
+or
+\fIcurrent\fR
+when you ran
+\fBgit-push\fR(1)
+and pushed
+\fImatching refs\fR
+by default (i\&.e\&. you did not provide an explicit refspec, and no
+\fIpush\&.default\fR
+configuration was set) and it resulted in a non\-fast\-forward error\&.
+.RE
+.PP
+pushNonFFMatching
+.RS 4
+Advice shown when you ran
+\fBgit-push\fR(1)
+and pushed
+\fImatching refs\fR
+explicitly (i\&.e\&. you used
+\fI:\fR, or specified a refspec that isn\(cqt your current branch) and it resulted in a non\-fast\-forward error\&.
 .RE
 .PP
 statusHints
 .RS 4
-Directions on how to stage/unstage/add shown in the output of
+Show directions on how to proceed from the current state in the output of
 \fBgit-status\fR(1)
-and the template shown when writing commit messages\&.
+and in the template shown when writing commit messages in
+\fBgit-commit\fR(1)\&.
 .RE
 .PP
 commitBeforeMerge
@@ -722,6 +770,13 @@ detachedHead
 Advice shown when you used
 \fBgit-checkout\fR(1)
 to move to the detach HEAD state, to instruct how to create a local branch after the fact\&.
+.RE
+.PP
+amWorkDir
+.RS 4
+Advice that shows the location of the patch file when
+\fBgit-am\fR(1)
+fails to apply it\&.
 .RE
 .RE
 .PP
@@ -751,6 +806,11 @@ The default is false, except
 or
 \fBgit-init\fR(1)
 will probe and set core\&.ignorecase true if appropriate when the repository is created\&.
+.RE
+.PP
+core\&.precomposeunicode
+.RS 4
+This option is only used by Mac OS implementation of git\&. When core\&.precomposeunicode=true, git reverts the unicode decomposition of filenames done by Mac OS\&. This is useful when sharing a repository between Mac OS and Linux or Windows\&. (Git for Windows 1\&.7\&.10 or higher is needed, or git under cygwin 1\&.7)\&. When false, file names are handled fully transparent by git, which is backward compatible with older versions of git\&.
 .RE
 .PP
 core\&.trustctime
@@ -1012,7 +1072,7 @@ In addition to
 (per\-directory) and
 \fI\&.git/info/exclude\fR, git looks into this file for patterns of files which are not meant to be tracked\&. "~/" is expanded to the value of
 $HOME
-and "~user/" to the specified user\(cqs home directory\&. See
+and "~user/" to the specified user\(cqs home directory\&. Its default value is $XDG_CONFIG_HOME/git/ignore\&. If $XDG_CONFIG_HOME is either not set or empty, $HOME/\&.config/git/ignore is used instead\&. See
 \fBgitignore\fR(5)\&.
 .RE
 .PP
@@ -1032,7 +1092,7 @@ In addition to
 (per\-directory) and
 \fI\&.git/info/attributes\fR, git looks into this file for attributes (see
 \fBgitattributes\fR(5))\&. Path expansions are made the same way as for
-core\&.excludesfile\&.
+core\&.excludesfile\&. Its default value is $XDG_CONFIG_HOME/git/attributes\&. If $XDG_CONFIG_HOME is either not set or empty, $HOME/\&.config/git/attributes is used instead\&.
 .RE
 .PP
 core\&.editor
@@ -1696,6 +1756,81 @@ if you prefer git commands not to use color unless enabled explicitly with some 
 option\&.
 .RE
 .PP
+column\&.ui
+.RS 4
+Specify whether supported commands should output in columns\&. This variable consists of a list of tokens separated by spaces or commas:
+.PP
+always
+.RS 4
+always show in columns
+.RE
+.PP
+never
+.RS 4
+never show in columns
+.RE
+.PP
+auto
+.RS 4
+show in columns if the output is to the terminal
+.RE
+.PP
+column
+.RS 4
+fill columns before rows (default)
+.RE
+.PP
+row
+.RS 4
+fill rows before columns
+.RE
+.PP
+plain
+.RS 4
+show in one column
+.RE
+.PP
+dense
+.RS 4
+make unequal size columns to utilize more space
+.RE
+.PP
+nodense
+.RS 4
+make equal size columns
+.RE
+.sp
+This option defaults to
+\fInever\fR\&.
+.RE
+.PP
+column\&.branch
+.RS 4
+Specify whether to output branch listing in
+git branch
+in columns\&. See
+column\&.ui
+for details\&.
+.RE
+.PP
+column\&.status
+.RS 4
+Specify whether to output untracked files in
+git status
+in columns\&. See
+column\&.ui
+for details\&.
+.RE
+.PP
+column\&.tag
+.RS 4
+Specify whether to output tag listing in
+git tag
+in columns\&. See
+column\&.ui
+for details\&.
+.RE
+.PP
 commit\&.status
 .RS 4
 A boolean to enable/disable inclusion of status information in the commit message template when using an editor to prepare the commit message\&. Defaults to true\&.
@@ -1757,7 +1892,7 @@ parameters specifying the default behavior of the
 \-\-dirstat
 option to
 \fBgit-diff\fR(1)` and friends\&. The defaults can be overridden on the command line (using
-\-\-dirstat=<param1,param2,\&...>)\&. The fallback defaults (when not changed by
+\-\-dirstat=<param1,param2,\&.\&.\&.>)\&. The fallback defaults (when not changed by
 diff\&.dirstat) are
 changes,noncumulative,3\&. The following parameters are available:
 .PP
@@ -1803,7 +1938,7 @@ files,10,cumulative\&.
 .PP
 diff\&.statGraphWidth
 .RS 4
-Limit the width of the graph part in \-\-stat output\&. If set, applies to all commands generating \-\-stat outuput except format\-patch\&.
+Limit the width of the graph part in \-\-stat output\&. If set, applies to all commands generating \-\-stat output except format\-patch\&.
 .RE
 .PP
 diff\&.external
@@ -3051,7 +3186,10 @@ nothing
 .\}
 
 matching
-\- push all matching branches\&. All branches having the same name in both ends are considered to be matching\&. This is the default\&.
+\- push all branches having the same name in both ends\&. This is for those who prepare all the branches into a publishable shape and then push them out with a single command\&. It is not appropriate for pushing into a repository shared by multiple users, since locally stalled branches will attempt a non\-fast forward push if other users updated the branch\&.
+
+This is currently the default, but Git 2\&.0 will change the default to
+simple\&.
 .RE
 .sp
 .RS 4
@@ -3064,7 +3202,14 @@ matching
 .\}
 
 upstream
-\- push the current branch to its upstream branch\&.
+\- push the current branch to its upstream branch\&. With this,
+git push
+will update the same remote ref as the one which is merged by
+git pull, making
+push
+and
+pull
+symmetrical\&. See "branch\&.<name>\&.merge" for how to configure the upstream branch\&.
 .RE
 .sp
 .RS 4
@@ -3076,9 +3221,9 @@ upstream
 .IP \(bu 2.3
 .\}
 
-tracking
-\- deprecated synonym for
-upstream\&.
+simple
+\- like
+upstream, but refuses to push if the upstream branch\(cqs name is different from the local one\&. This is the safest option and is well\-suited for beginners\&. It will become the default in Git 2\&.0\&.
 .RE
 .sp
 .RS 4
@@ -3093,6 +3238,13 @@ upstream\&.
 current
 \- push the current branch to a branch of the same name\&.
 .RE
+.sp
+The
+simple,
+current
+and
+upstream
+modes are for those who want to push out a single branch after finishing work, even when the other branches are not yet ready to be pushed out\&. If you are working with other people to push into the same shared repository, you would want to use one of these\&.
 .RE
 .PP
 rebase\&.stat

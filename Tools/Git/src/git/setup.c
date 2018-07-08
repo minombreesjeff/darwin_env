@@ -4,7 +4,7 @@
 static int inside_git_dir = -1;
 static int inside_work_tree = -1;
 
-char *prefix_path(const char *prefix, int len, const char *path)
+static char *prefix_path_gently(const char *prefix, int len, const char *path)
 {
 	const char *orig = path;
 	char *sanitized;
@@ -39,13 +39,33 @@ char *prefix_path(const char *prefix, int len, const char *path)
 		if (strncmp(sanitized, work_tree, len) ||
 		    (len > root_len && sanitized[len] != '\0' && sanitized[len] != '/')) {
 		error_out:
-			die("'%s' is outside repository", orig);
+			free(sanitized);
+			return NULL;
 		}
 		if (sanitized[len] == '/')
 			len++;
 		memmove(sanitized, sanitized + len, total - len);
 	}
 	return sanitized;
+}
+
+char *prefix_path(const char *prefix, int len, const char *path)
+{
+	char *r = prefix_path_gently(prefix, len, path);
+	if (!r)
+		die("'%s' is outside repository", path);
+	return r;
+}
+
+int path_inside_repo(const char *prefix, const char *path)
+{
+	int len = prefix ? strlen(prefix) : 0;
+	char *r = prefix_path_gently(prefix, len, path);
+	if (r) {
+		free(r);
+		return 1;
+	}
+	return 0;
 }
 
 int check_filename(const char *prefix, const char *arg)
@@ -61,24 +81,27 @@ int check_filename(const char *prefix, const char *arg)
 	die_errno("failed to stat '%s'", arg);
 }
 
-static void NORETURN die_verify_filename(const char *prefix, const char *arg)
+static void NORETURN die_verify_filename(const char *prefix,
+					 const char *arg,
+					 int diagnose_misspelt_rev)
 {
-	unsigned char sha1[20];
-	unsigned mode;
-
+	if (!diagnose_misspelt_rev)
+		die("%s: no such path in the working tree.\n"
+		    "Use 'git <command> -- <path>...' to specify paths that do not exist locally.",
+		    arg);
 	/*
 	 * Saying "'(icase)foo' does not exist in the index" when the
 	 * user gave us ":(icase)foo" is just stupid.  A magic pathspec
 	 * begins with a colon and is followed by a non-alnum; do not
-	 * let get_sha1_with_mode_1(only_to_die=1) to even trigger.
+	 * let maybe_die_on_misspelt_object_name() even trigger.
 	 */
 	if (!(arg[0] == ':' && !isalnum(arg[1])))
-		/* try a detailed diagnostic ... */
-		get_sha1_with_mode_1(arg, sha1, &mode, 1, prefix);
+		maybe_die_on_misspelt_object_name(arg, prefix);
 
 	/* ... or fall back the most general message. */
 	die("ambiguous argument '%s': unknown revision or path not in the working tree.\n"
-	    "Use '--' to separate paths from revisions", arg);
+	    "Use '--' to separate paths from revisions, like this:\n"
+	    "'git <command> [<revision>...] -- [<file>...]'", arg);
 
 }
 
@@ -88,14 +111,29 @@ static void NORETURN die_verify_filename(const char *prefix, const char *arg)
  * as true, because even if such a filename were to exist, we want
  * it to be preceded by the "--" marker (or we want the user to
  * use a format like "./-filename")
+ *
+ * The "diagnose_misspelt_rev" is used to provide a user-friendly
+ * diagnosis when dying upon finding that "name" is not a pathname.
+ * If set to 1, the diagnosis will try to diagnose "name" as an
+ * invalid object name (e.g. HEAD:foo). If set to 0, the diagnosis
+ * will only complain about an inexisting file.
+ *
+ * This function is typically called to check that a "file or rev"
+ * argument is unambiguous. In this case, the caller will want
+ * diagnose_misspelt_rev == 1 when verifying the first non-rev
+ * argument (which could have been a revision), and
+ * diagnose_misspelt_rev == 0 for the next ones (because we already
+ * saw a filename, there's not ambiguity anymore).
  */
-void verify_filename(const char *prefix, const char *arg)
+void verify_filename(const char *prefix,
+		     const char *arg,
+		     int diagnose_misspelt_rev)
 {
 	if (*arg == '-')
 		die("bad flag '%s' used after filename", arg);
 	if (check_filename(prefix, arg))
 		return;
-	die_verify_filename(prefix, arg);
+	die_verify_filename(prefix, arg, diagnose_misspelt_rev);
 }
 
 /*
@@ -112,7 +150,8 @@ void verify_non_filename(const char *prefix, const char *arg)
 	if (!check_filename(prefix, arg))
 		return;
 	die("ambiguous argument '%s': both revision and filename\n"
-	    "Use '--' to separate filenames from revisions", arg);
+	    "Use '--' to separate paths from revisions, like this:\n"
+	    "'git <command> [<revision>...] -- [<file>...]'", arg);
 }
 
 /*

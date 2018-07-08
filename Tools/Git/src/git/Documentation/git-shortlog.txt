@@ -14,8 +14,7 @@ git log --pretty=short | 'git shortlog' [-h] [-n] [-s] [-e] [-w]
 DESCRIPTION
 -----------
 Summarizes 'git log' output in a format suitable for inclusion
-in release announcements. Each commit will be grouped by author and
-the first line of the commit message will be shown.
+in release announcements. Each commit will be grouped by author and title.
 
 Additionally, "[PATCH]" will be stripped from the commit description.
 
@@ -47,7 +46,7 @@ OPTIONS
 --format[=<format>]::
 	Instead of the commit subject, use some other information to
 	describe each commit.  '<format>' can be any string accepted
-	by the `--format` option of 'git log', such as '{asterisk} [%h] %s'.
+	by the `--format` option of 'git log', such as '* [%h] %s'.
 	(See the "PRETTY FORMATS" section of linkgit:git-log[1].)
 
 	Each pretty-printed commit will be rewrapped before it is shown.

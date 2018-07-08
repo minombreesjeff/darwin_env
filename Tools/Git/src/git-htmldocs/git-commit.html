@@ -632,7 +632,7 @@ by using the -a switch with the <em>commit</em> command to automatically
 <p>
 by using the --interactive or --patch switches with the <em>commit</em> command
    to decide one by one which files or hunks should be part of the commit,
-   before finalizing the operation. See the <tt>`Interactive Mode</tt>` section of
+   before finalizing the operation. See the &#8220;Interactive Mode&#8221; section of
    <a href="git-add.html">git-add(1)</a> to learn how to operate these modes.
 </p>
 </li>
@@ -741,6 +741,14 @@ that, you can recover from it with <em>git reset</em>.</p></div>
 </p>
 </dd>
 <dt class="hdlist1">
+--branch
+</dt>
+<dd>
+<p>
+        Show the branch and tracking info even in short-format.
+</p>
+</dd>
+<dt class="hdlist1">
 --porcelain
 </dt>
 <dd>
@@ -752,6 +760,9 @@ that, you can recover from it with <em>git reset</em>.</p></div>
 </dd>
 <dt class="hdlist1">
 -z
+</dt>
+<dt class="hdlist1">
+--null
 </dt>
 <dd>
 <p>
@@ -778,7 +789,7 @@ that, you can recover from it with <em>git reset</em>.</p></div>
 <dd>
 <p>
         Override the commit author. Specify an explicit author using the
-        standard <tt>A U Thor &lt;<a href="mailto:author@example.com">author@example.com</a>&gt;</tt> format. Otherwise &lt;author&gt;
+        standard <tt>A U Thor &lt;author@example.com&gt;</tt> format. Otherwise &lt;author&gt;
         is assumed to be a pattern and is used to search for an existing
         commit by that author (i.e. rev-list --all -i --author=&lt;author&gt;);
         the commit author is then copied from the first such commit found.
@@ -811,11 +822,14 @@ that, you can recover from it with <em>git reset</em>.</p></div>
 </dt>
 <dd>
 <p>
-        Use the contents of the given file as the initial version
-        of the commit message. The editor is invoked and you can
-        make subsequent changes. If a message is specified using
-        the <tt>-m</tt> or <tt>-F</tt> options, this option has no effect. This
-        overrides the <tt>commit.template</tt> configuration variable.
+        When editing the commit message, start the editor with the
+        contents in the given file.  The <tt>commit.template</tt> configuration
+        variable is often used to give this option implicitly to the
+        command.  This mechanism can be used by projects that want to
+        guide participants with some hints on what to write in the message
+        in what order.  If the user exits the editor without editing the
+        message, the commit is aborted.  This has no effect when a message
+        is given by other means, e.g. with the <tt>-m</tt> or <tt>-F</tt> options.
 </p>
 </dd>
 <dt class="hdlist1">
@@ -907,6 +921,17 @@ that, you can recover from it with <em>git reset</em>.</p></div>
         the current tip as parents&#8201;&#8212;&#8201;so the current top commit is
         discarded.
 </p>
+</dd>
+<dt class="hdlist1">
+--no-post-rewrite
+</dt>
+<dd>
+<p>
+        Bypass the post-rewrite hook.
+</p>
+</dd>
+</dl></div>
+<div class="paragraph"><p>+</p></div>
 <div class="paragraph"><p>It is a rough equivalent for:</p></div>
 <div class="listingblock">
 <div class="content">
@@ -915,10 +940,11 @@ that, you can recover from it with <em>git reset</em>.</p></div>
         $ git commit -c ORIG_HEAD</tt></pre>
 </div></div>
 <div class="paragraph"><p>but can be used to amend a merge commit.</p></div>
-<div class="paragraph"><p>You should understand the implications of rewriting history if you
+<div class="paragraph"><p>+
+You should understand the implications of rewriting history if you
 amend a commit that has already been published.  (See the "RECOVERING
 FROM UPSTREAM REBASE" section in <a href="git-rebase.html">git-rebase(1)</a>.)</p></div>
-</dd>
+<div class="dlist"><dl>
 <dt class="hdlist1">
 -i
 </dt>
@@ -1288,6 +1314,23 @@ order).  See <a href="git-var.html">git-var(1)</a> for details.</p></div>
 and <tt>post-commit</tt> hooks.  See <a href="githooks.html">githooks(5)</a> for more
 information.</p></div>
 </div>
+<h2 id="_files">FILES</h2>
+<div class="sectionbody">
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<tt>$GIT_DIR/COMMIT_EDITMSG</tt>
+</dt>
+<dd>
+<p>
+        This file contains the commit message of a commit in progress.
+        If <tt>git commit</tt> exits due to an error before creating a commit,
+        any commit message that has been provided by the user (e.g., in
+        an editor session) will be available in this file, but will be
+        overwritten by the next invocation of <tt>git commit</tt>.
+</p>
+</dd>
+</dl></div>
+</div>
 <h2 id="_see_also">SEE ALSO</h2>
 <div class="sectionbody">
 <div class="paragraph"><p><a href="git-add.html">git-add(1)</a>,
@@ -1304,7 +1347,7 @@ information.</p></div>
 <div id="footnotes"><hr /></div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2011-11-15 13:45:02 PDT
+Last updated 2012-07-24 15:05:00 PDT
 </div>
 </div>
 </body>

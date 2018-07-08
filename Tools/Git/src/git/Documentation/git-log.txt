@@ -24,10 +24,6 @@ each commit introduces are shown.
 OPTIONS
 -------
 
--<n>::
-	Limits the number of commits to show.
-	Note that this is a commit limiting option, see below.
-
 <since>..<until>::
 	Show only commits between the named two commits.  When
 	either <since> or <until> is omitted, it defaults to
@@ -100,7 +96,7 @@ Examples
 	Show all commits since version 'v2.6.12' that changed any file
 	in the include/scsi or drivers/scsi subdirectories
 
-`git log --since="2 weeks ago" \-- gitk`::
+`git log --since="2 weeks ago" -- gitk`::
 
 	Show the changes during the last two weeks to the file 'gitk'.
 	The "--" is necessary to avoid confusion with the *branch* named
@@ -137,6 +133,8 @@ Examples
 	This makes sense only when following a strict policy of merging all
 	topic branches when staying on a single integration branch.
 
+`git log -3`::
+	Limits the number of commits to show to 3.
 
 Discussion
 ----------

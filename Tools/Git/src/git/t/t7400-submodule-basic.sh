@@ -258,6 +258,27 @@ test_expect_success 'init should register submodule url in .git/config' '
 	test_cmp expect url
 '
 
+test_failure_with_unknown_submodule () {
+	test_must_fail git submodule $1 no-such-submodule 2>output.err &&
+	grep "^error: .*no-such-submodule" output.err
+}
+
+test_expect_success 'init should fail with unknown submodule' '
+	test_failure_with_unknown_submodule init
+'
+
+test_expect_success 'update should fail with unknown submodule' '
+	test_failure_with_unknown_submodule update
+'
+
+test_expect_success 'status should fail with unknown submodule' '
+	test_failure_with_unknown_submodule status
+'
+
+test_expect_success 'sync should fail with unknown submodule' '
+	test_failure_with_unknown_submodule sync
+'
+
 test_expect_success 'update should fail when path is used by a file' '
 	echo hello >expect &&
 
@@ -417,11 +438,8 @@ test_expect_success 'moving to a commit without submodule does not leave empty d
 	git checkout second
 '
 
-test_expect_success 'submodule <invalid-path> warns' '
-
-	git submodule no-such-submodule 2> output.err &&
-	grep "^error: .*no-such-submodule" output.err
-
+test_expect_success 'submodule <invalid-subcommand> fails' '
+	test_must_fail git submodule no-such-subcommand
 '
 
 test_expect_success 'add submodules without specifying an explicit path' '
@@ -483,27 +501,170 @@ test_expect_success 'set up for relative path tests' '
 		git add sub &&
 		git config -f .gitmodules submodule.sub.path sub &&
 		git config -f .gitmodules submodule.sub.url ../subrepo &&
-		cp .git/config pristine-.git-config
+		cp .git/config pristine-.git-config &&
+		cp .gitmodules pristine-.gitmodules
 	)
 '
 
-test_expect_success 'relative path works with URL' '
+test_expect_success '../subrepo works with URL - ssh://hostname/repo' '
 	(
 		cd reltest &&
 		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
 		git config remote.origin.url ssh://hostname/repo &&
 		git submodule init &&
 		test "$(git config submodule.sub.url)" = ssh://hostname/subrepo
 	)
 '
 
-test_expect_success 'relative path works with user@host:path' '
+test_expect_success '../subrepo works with port-qualified URL - ssh://hostname:22/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ssh://hostname:22/repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = ssh://hostname:22/subrepo
+	)
+'
+
+# About the choice of the path in the next test:
+# - double-slash side-steps path mangling issues on Windows
+# - it is still an absolute local path
+# - there cannot be a server with a blank in its name just in case the
+#   path is used erroneously to access a //server/share style path
+test_expect_success '../subrepo path works with local path - //somewhere else/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url "//somewhere else/repo" &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = "//somewhere else/subrepo"
+	)
+'
+
+test_expect_success '../subrepo works with file URL - file:///tmp/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url file:///tmp/repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = file:///tmp/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with helper URL- helper:://hostname/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url helper:://hostname/repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = helper:://hostname/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with scp-style URL - user@host:repo' '
 	(
 		cd reltest &&
 		cp pristine-.git-config .git/config &&
 		git config remote.origin.url user@host:repo &&
 		git submodule init &&
 		test "$(git config submodule.sub.url)" = user@host:subrepo
+	)
+'
+
+test_expect_success '../subrepo works with scp-style URL - user@host:path/to/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url user@host:path/to/repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = user@host:path/to/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - foo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url foo &&
+		# actual: fails with an error
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - foo/bar' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url foo/bar &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = foo/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - ./foo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ./foo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - ./foo/bar' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ./foo/bar &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = foo/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - ../foo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ../foo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = ../subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - ../foo/bar' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ../foo/bar &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = ../foo/subrepo
+	)
+'
+
+test_expect_success '../bar/a/b/c works with relative local path - ../foo/bar.git' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		mkdir -p a/b/c &&
+		(cd a/b/c; git init) &&
+		git config remote.origin.url ../foo/bar.git &&
+		git submodule add ../bar/a/b/c ./a/b/c &&
+		git submodule init &&
+		test "$(git config submodule.a/b/c.url)" = ../foo/bar/a/b/c
 	)
 '
 

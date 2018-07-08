@@ -21,7 +21,7 @@ EOF
 
 cat >hexdump <<'EOF'
 #!/bin/sh
-perl -e '$/ = undef; $_ = <>; s/./ord($&)/ge; print $_' < "$1"
+"$PERL_PATH" -e '$/ = undef; $_ = <>; s/./ord($&)/ge; print $_' < "$1"
 EOF
 chmod +x hexdump
 
@@ -85,13 +85,17 @@ test_expect_success 'status -v produces text' '
 '
 
 cat >expect.stat <<'EOF'
- file |  Bin 2 -> 4 bytes
+ file | Bin 2 -> 4 bytes
  1 file changed, 0 insertions(+), 0 deletions(-)
 EOF
 test_expect_success 'diffstat does not run textconv' '
 	echo file diff=fail >.gitattributes &&
 	git diff --stat HEAD^ HEAD >actual &&
-	test_cmp expect.stat actual
+	test_i18ncmp expect.stat actual &&
+
+	head -n1 <expect.stat >expect.line1 &&
+	head -n1 <actual >actual.line1 &&
+	test_cmp expect.line1 actual.line1
 '
 # restore working setup
 echo file diff=foo >.gitattributes

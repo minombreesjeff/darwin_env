@@ -88,6 +88,20 @@ struct origin {
 	char path[FLEX_ARRAY];
 };
 
+static int diff_hunks(mmfile_t *file_a, mmfile_t *file_b, long ctxlen,
+		      xdl_emit_hunk_consume_func_t hunk_func, void *cb_data)
+{
+	xpparam_t xpp = {0};
+	xdemitconf_t xecfg = {0};
+	xdemitcb_t ecb = {NULL};
+
+	xpp.flags = xdl_opts;
+	xecfg.ctxlen = ctxlen;
+	xecfg.hunk_func = hunk_func;
+	ecb.priv = cb_data;
+	return xdi_diff(file_a, file_b, &xpp, &xecfg, &ecb);
+}
+
 /*
  * Prepare diff_filespec and convert it using diff textconv API
  * if the textconv driver exists.
@@ -96,6 +110,7 @@ struct origin {
 int textconv_object(const char *path,
 		    unsigned mode,
 		    const unsigned char *sha1,
+		    int sha1_valid,
 		    char **buf,
 		    unsigned long *buf_size)
 {
@@ -103,7 +118,7 @@ int textconv_object(const char *path,
 	struct userdiff_driver *textconv;
 
 	df = alloc_filespec(path);
-	fill_filespec(df, sha1, mode);
+	fill_filespec(df, sha1, sha1_valid, mode);
 	textconv = get_textconv(df);
 	if (!textconv) {
 		free_filespec(df);
@@ -128,7 +143,7 @@ static void fill_origin_blob(struct diff_options *opt,
 
 		num_read_blob++;
 		if (DIFF_OPT_TST(opt, ALLOW_TEXTCONV) &&
-		    textconv_object(o->path, o->mode, o->blob_sha1, &file->ptr, &file_size))
+		    textconv_object(o->path, o->mode, o->blob_sha1, 1, &file->ptr, &file_size))
 			;
 		else
 			file->ptr = read_sha1_file(o->blob_sha1, &type, &file_size);
@@ -392,8 +407,7 @@ static struct origin *find_origin(struct scoreboard *sb,
 	paths[1] = NULL;
 
 	diff_tree_setup_paths(paths, &diff_opts);
-	if (diff_setup_done(&diff_opts) < 0)
-		die("diff-setup");
+	diff_setup_done(&diff_opts);
 
 	if (is_null_sha1(origin->commit->object.sha1))
 		do_diff_cache(parent->tree->object.sha1, &diff_opts);
@@ -479,8 +493,7 @@ static struct origin *find_rename(struct scoreboard *sb,
 	diff_opts.single_follow = origin->path;
 	paths[0] = NULL;
 	diff_tree_setup_paths(paths, &diff_opts);
-	if (diff_setup_done(&diff_opts) < 0)
-		die("diff-setup");
+	diff_setup_done(&diff_opts);
 
 	if (is_null_sha1(origin->commit->object.sha1))
 		do_diff_cache(parent->tree->object.sha1, &diff_opts);
@@ -759,12 +772,14 @@ struct blame_chunk_cb_data {
 	long tlno;
 };
 
-static void blame_chunk_cb(void *data, long same, long p_next, long t_next)
+static int blame_chunk_cb(long start_a, long count_a,
+			  long start_b, long count_b, void *data)
 {
 	struct blame_chunk_cb_data *d = data;
-	blame_chunk(d->sb, d->tlno, d->plno, same, d->target, d->parent);
-	d->plno = p_next;
-	d->tlno = t_next;
+	blame_chunk(d->sb, d->tlno, d->plno, start_b, d->target, d->parent);
+	d->plno = start_a + count_a;
+	d->tlno = start_b + count_b;
+	return 0;
 }
 
 /*
@@ -779,8 +794,7 @@ static int pass_blame_to_parent(struct scoreboard *sb,
 	int last_in_target;
 	mmfile_t file_p, file_o;
 	struct blame_chunk_cb_data d;
-	xpparam_t xpp;
-	xdemitconf_t xecfg;
+
 	memset(&d, 0, sizeof(d));
 	d.sb = sb; d.target = target; d.parent = parent;
 	last_in_target = find_last_in_target(sb, target);
@@ -791,11 +805,7 @@ static int pass_blame_to_parent(struct scoreboard *sb,
 	fill_origin_blob(&sb->revs->diffopt, target, &file_o);
 	num_get_patch++;
 
-	memset(&xpp, 0, sizeof(xpp));
-	xpp.flags = xdl_opts;
-	memset(&xecfg, 0, sizeof(xecfg));
-	xecfg.ctxlen = 0;
-	xdi_diff_hunks(&file_p, &file_o, blame_chunk_cb, &d, &xpp, &xecfg);
+	diff_hunks(&file_p, &file_o, 0, blame_chunk_cb, &d);
 	/* The rest (i.e. anything after tlno) are the same as the parent */
 	blame_chunk(sb, d.tlno, d.plno, last_in_target, target, parent);
 
@@ -899,12 +909,15 @@ struct handle_split_cb_data {
 	long tlno;
 };
 
-static void handle_split_cb(void *data, long same, long p_next, long t_next)
+static int handle_split_cb(long start_a, long count_a,
+			   long start_b, long count_b, void *data)
 {
 	struct handle_split_cb_data *d = data;
-	handle_split(d->sb, d->ent, d->tlno, d->plno, same, d->parent, d->split);
-	d->plno = p_next;
-	d->tlno = t_next;
+	handle_split(d->sb, d->ent, d->tlno, d->plno, start_b, d->parent,
+		     d->split);
+	d->plno = start_a + count_a;
+	d->tlno = start_b + count_b;
+	return 0;
 }
 
 /*
@@ -922,8 +935,7 @@ static void find_copy_in_blob(struct scoreboard *sb,
 	int cnt;
 	mmfile_t file_o;
 	struct handle_split_cb_data d;
-	xpparam_t xpp;
-	xdemitconf_t xecfg;
+
 	memset(&d, 0, sizeof(d));
 	d.sb = sb; d.ent = ent; d.parent = parent; d.split = split;
 	/*
@@ -943,12 +955,8 @@ static void find_copy_in_blob(struct scoreboard *sb,
 	 * file_o is a part of final image we are annotating.
 	 * file_p partially may match that image.
 	 */
-	memset(&xpp, 0, sizeof(xpp));
-	xpp.flags = xdl_opts;
-	memset(&xecfg, 0, sizeof(xecfg));
-	xecfg.ctxlen = 1;
 	memset(split, 0, sizeof(struct blame_entry [3]));
-	xdi_diff_hunks(file_p, &file_o, handle_split_cb, &d, &xpp, &xecfg);
+	diff_hunks(file_p, &file_o, 1, handle_split_cb, &d);
 	/* remainder, if any, all match the preimage */
 	handle_split(sb, ent, d.tlno, d.plno, ent->num_lines, parent, split);
 }
@@ -1065,8 +1073,7 @@ static int find_copy_in_parent(struct scoreboard *sb,
 
 	paths[0] = NULL;
 	diff_tree_setup_paths(paths, &diff_opts);
-	if (diff_setup_done(&diff_opts) < 0)
-		die("diff-setup");
+	diff_setup_done(&diff_opts);
 
 	/* Try "find copies harder" on new path if requested;
 	 * we do not want to use diffcore_rename() actually to
@@ -1828,6 +1835,16 @@ static int read_ancestry(const char *graft_file)
 	return 0;
 }
 
+static int update_auto_abbrev(int auto_abbrev, struct origin *suspect)
+{
+	const char *uniq = find_unique_abbrev(suspect->commit->object.sha1,
+					      auto_abbrev);
+	int len = strlen(uniq);
+	if (auto_abbrev < len)
+		return len;
+	return auto_abbrev;
+}
+
 /*
  * How many columns do we need to show line numbers, authors,
  * and filenames?
@@ -1838,12 +1855,16 @@ static void find_alignment(struct scoreboard *sb, int *option)
 	int longest_dst_lines = 0;
 	unsigned largest_score = 0;
 	struct blame_entry *e;
+	int compute_auto_abbrev = (abbrev < 0);
+	int auto_abbrev = default_abbrev;
 
 	for (e = sb->ent; e; e = e->next) {
 		struct origin *suspect = e->suspect;
 		struct commit_info ci;
 		int num;
 
+		if (compute_auto_abbrev)
+			auto_abbrev = update_auto_abbrev(auto_abbrev, suspect);
 		if (strcmp(suspect->path, sb->path))
 			*option |= OUTPUT_SHOW_NAME;
 		num = strlen(suspect->path);
@@ -1871,6 +1892,10 @@ static void find_alignment(struct scoreboard *sb, int *option)
 	max_orig_digits = decimal_width(longest_src_lines);
 	max_digits = decimal_width(longest_dst_lines);
 	max_score_digits = decimal_width(largest_score);
+
+	if (compute_auto_abbrev)
+		/* one more abbrev length is needed for the boundary commit */
+		abbrev = auto_abbrev + 1;
 }
 
 /*
@@ -2044,6 +2069,55 @@ static int git_blame_config(const char *var, const char *value, void *cb)
 	return git_default_config(var, value, cb);
 }
 
+static void verify_working_tree_path(struct commit *work_tree, const char *path)
+{
+	struct commit_list *parents;
+
+	for (parents = work_tree->parents; parents; parents = parents->next) {
+		const unsigned char *commit_sha1 = parents->item->object.sha1;
+		unsigned char blob_sha1[20];
+		unsigned mode;
+
+		if (!get_tree_entry(commit_sha1, path, blob_sha1, &mode) &&
+		    sha1_object_info(blob_sha1, NULL) == OBJ_BLOB)
+			return;
+	}
+	die("no such path '%s' in HEAD", path);
+}
+
+static struct commit_list **append_parent(struct commit_list **tail, const unsigned char *sha1)
+{
+	struct commit *parent;
+
+	parent = lookup_commit_reference(sha1);
+	if (!parent)
+		die("no such commit %s", sha1_to_hex(sha1));
+	return &commit_list_insert(parent, tail)->next;
+}
+
+static void append_merge_parents(struct commit_list **tail)
+{
+	int merge_head;
+	const char *merge_head_file = git_path("MERGE_HEAD");
+	struct strbuf line = STRBUF_INIT;
+
+	merge_head = open(merge_head_file, O_RDONLY);
+	if (merge_head < 0) {
+		if (errno == ENOENT)
+			return;
+		die("cannot open '%s' for reading", merge_head_file);
+	}
+
+	while (!strbuf_getwholeline_fd(&line, merge_head, '\n')) {
+		unsigned char sha1[20];
+		if (line.len < 40 || get_sha1_hex(line.buf, sha1))
+			die("unknown line in '%s': %s", merge_head_file, line.buf);
+		tail = append_parent(tail, sha1);
+	}
+	close(merge_head);
+	strbuf_release(&line);
+}
+
 /*
  * Prepare a dummy commit that represents the work tree (or staged) item.
  * Note that annotating work tree item never works in the reverse.
@@ -2054,6 +2128,7 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 {
 	struct commit *commit;
 	struct origin *origin;
+	struct commit_list **parent_tail, *parent;
 	unsigned char head_sha1[20];
 	struct strbuf buf = STRBUF_INIT;
 	const char *ident;
@@ -2061,19 +2136,37 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	int size, len;
 	struct cache_entry *ce;
 	unsigned mode;
-
-	if (get_sha1("HEAD", head_sha1))
-		die("No such ref: HEAD");
+	struct strbuf msg = STRBUF_INIT;
 
 	time(&now);
 	commit = xcalloc(1, sizeof(*commit));
-	commit->parents = xcalloc(1, sizeof(*commit->parents));
-	commit->parents->item = lookup_commit_reference(head_sha1);
 	commit->object.parsed = 1;
 	commit->date = now;
 	commit->object.type = OBJ_COMMIT;
+	parent_tail = &commit->parents;
+
+	if (!resolve_ref_unsafe("HEAD", head_sha1, 1, NULL))
+		die("no such ref: HEAD");
+
+	parent_tail = append_parent(parent_tail, head_sha1);
+	append_merge_parents(parent_tail);
+	verify_working_tree_path(commit, path);
 
 	origin = make_origin(commit, path);
+
+	ident = fmt_ident("Not Committed Yet", "not.committed.yet", NULL, 0);
+	strbuf_addstr(&msg, "tree 0000000000000000000000000000000000000000\n");
+	for (parent = commit->parents; parent; parent = parent->next)
+		strbuf_addf(&msg, "parent %s\n",
+			    sha1_to_hex(parent->item->object.sha1));
+	strbuf_addf(&msg,
+		    "author %s\n"
+		    "committer %s\n\n"
+		    "Version of %s from %s\n",
+		    ident, ident, path,
+		    (!contents_from ? path :
+		     (!strcmp(contents_from, "-") ? "standard input" : contents_from)));
+	commit->buffer = strbuf_detach(&msg, NULL);
 
 	if (!contents_from || strcmp("-", contents_from)) {
 		struct stat st;
@@ -2096,7 +2189,7 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 		switch (st.st_mode & S_IFMT) {
 		case S_IFREG:
 			if (DIFF_OPT_TST(opt, ALLOW_TEXTCONV) &&
-			    textconv_object(read_from, mode, null_sha1, &buf_ptr, &buf_len))
+			    textconv_object(read_from, mode, null_sha1, 0, &buf_ptr, &buf_len))
 				strbuf_attach(&buf, buf_ptr, buf_len, buf_len + 1);
 			else if (strbuf_read_file(&buf, read_from, st.st_size) != st.st_size)
 				die_errno("cannot open or read '%s'", read_from);
@@ -2111,7 +2204,6 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	}
 	else {
 		/* Reading from stdin */
-		contents_from = "standard input";
 		mode = 0;
 		if (strbuf_read(&buf, 0, 0) < 0)
 			die_errno("failed to read from stdin");
@@ -2144,7 +2236,8 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	ce = xcalloc(1, size);
 	hashcpy(ce->sha1, origin->blob_sha1);
 	memcpy(ce->name, path, len);
-	ce->ce_flags = create_ce_flags(len, 0);
+	ce->ce_flags = create_ce_flags(0);
+	ce->ce_namelen = len;
 	ce->ce_mode = create_ce_mode(mode);
 	add_cache_entry(ce, ADD_CACHE_OK_TO_ADD|ADD_CACHE_OK_TO_REPLACE);
 
@@ -2155,16 +2248,6 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	 */
 	cache_tree_invalidate_path(active_cache_tree, path);
 
-	commit->buffer = xmalloc(400);
-	ident = fmt_ident("Not Committed Yet", "not.committed.yet", NULL, 0);
-	snprintf(commit->buffer, 400,
-		"tree 0000000000000000000000000000000000000000\n"
-		"parent %s\n"
-		"author %s\n"
-		"committer %s\n\n"
-		"Version of %s from %s\n",
-		sha1_to_hex(head_sha1),
-		ident, ident, path, contents_from ? contents_from : path);
 	return commit;
 }
 
@@ -2344,10 +2427,9 @@ int cmd_blame(int argc, const char **argv, const char *prefix)
 parse_done:
 	argc = parse_options_end(&ctx);
 
-	if (abbrev == -1)
-		abbrev = default_abbrev;
-	/* one more abbrev length is needed for the boundary commit */
-	abbrev++;
+	if (0 < abbrev)
+		/* one more abbrev length is needed for the boundary commit */
+		abbrev++;
 
 	if (revs_file && read_ancestry(revs_file))
 		die_errno("reading graft file '%s' failed", revs_file);
@@ -2489,7 +2571,7 @@ parse_done:
 			die("no such path %s in %s", path, final_commit_name);
 
 		if (DIFF_OPT_TST(&sb.revs->diffopt, ALLOW_TEXTCONV) &&
-		    textconv_object(path, o->mode, o->blob_sha1, (char **) &sb.final_buf,
+		    textconv_object(path, o->mode, o->blob_sha1, 1, (char **) &sb.final_buf,
 				    &sb.final_buf_size))
 			;
 		else

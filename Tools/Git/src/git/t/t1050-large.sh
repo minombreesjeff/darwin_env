@@ -6,11 +6,15 @@ test_description='adding and checking out large blobs'
 . ./test-lib.sh
 
 test_expect_success setup '
-	git config core.bigfilethreshold 200k &&
+	# clone does not allow us to pass core.bigfilethreshold to
+	# new repos, so set core.bigfilethreshold globally
+	git config --global core.bigfilethreshold 200k &&
 	echo X | dd of=large1 bs=1k seek=2000 &&
 	echo X | dd of=large2 bs=1k seek=2000 &&
 	echo X | dd of=large3 bs=1k seek=2000 &&
-	echo Y | dd of=huge bs=1k seek=2500
+	echo Y | dd of=huge bs=1k seek=2500 &&
+	GIT_ALLOC_LIMIT=1500 &&
+	export GIT_ALLOC_LIMIT
 '
 
 test_expect_success 'add a large file or two' '
@@ -98,6 +102,65 @@ test_expect_success 'packsize limit' '
 
 		test_cmp expect actual
 	)
+'
+
+test_expect_success 'diff --raw' '
+	git commit -q -m initial &&
+	echo modified >>large1 &&
+	git add large1 &&
+	git commit -q -m modified &&
+	git diff --raw HEAD^
+'
+
+test_expect_success 'hash-object' '
+	git hash-object large1
+'
+
+test_expect_success 'cat-file a large file' '
+	git cat-file blob :large1 >/dev/null
+'
+
+test_expect_success 'cat-file a large file from a tag' '
+	git tag -m largefile largefiletag :large1 &&
+	git cat-file blob largefiletag >/dev/null
+'
+
+test_expect_success 'git-show a large file' '
+	git show :large1 >/dev/null
+
+'
+
+test_expect_success 'index-pack' '
+	git clone file://"`pwd`"/.git foo &&
+	GIT_DIR=non-existent git index-pack --strict --verify foo/.git/objects/pack/*.pack
+'
+
+test_expect_success 'repack' '
+	git repack -ad
+'
+
+test_expect_success 'pack-objects with large loose object' '
+	SHA1=`git hash-object huge` &&
+	test_create_repo loose &&
+	echo $SHA1 | git pack-objects --stdout |
+		GIT_ALLOC_LIMIT=0 GIT_DIR=loose/.git git unpack-objects &&
+	echo $SHA1 | GIT_DIR=loose/.git git pack-objects pack &&
+	test_create_repo packed &&
+	mv pack-* packed/.git/objects/pack &&
+	GIT_DIR=packed/.git git cat-file blob $SHA1 >actual &&
+	cmp huge actual
+'
+
+test_expect_success 'tar achiving' '
+	git archive --format=tar HEAD >/dev/null
+'
+
+test_expect_success 'zip achiving, store only' '
+	git archive --format=zip -0 HEAD >/dev/null
+'
+
+test_expect_success 'zip achiving, deflate' '
+	git archive --format=zip HEAD >/dev/null
 '
 
 test_done

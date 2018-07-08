@@ -19,12 +19,14 @@ typedef void (*change_fn_t)(struct diff_options *options,
 		 unsigned old_mode, unsigned new_mode,
 		 const unsigned char *old_sha1,
 		 const unsigned char *new_sha1,
+		 int old_sha1_valid, int new_sha1_valid,
 		 const char *fullpath,
 		 unsigned old_dirty_submodule, unsigned new_dirty_submodule);
 
 typedef void (*add_remove_fn_t)(struct diff_options *options,
 		    int addremove, unsigned mode,
 		    const unsigned char *sha1,
+		    int sha1_valid,
 		    const char *fullpath, unsigned dirty_submodule);
 
 typedef void (*diff_format_fn_t)(struct diff_queue_struct *q,
@@ -214,12 +216,15 @@ extern void diff_addremove(struct diff_options *,
 			   int addremove,
 			   unsigned mode,
 			   const unsigned char *sha1,
+			   int sha1_valid,
 			   const char *fullpath, unsigned dirty_submodule);
 
 extern void diff_change(struct diff_options *,
 			unsigned mode1, unsigned mode2,
 			const unsigned char *sha1,
 			const unsigned char *sha2,
+			int sha1_valid,
+			int sha2_valid,
 			const char *fullpath,
 			unsigned dirty_submodule1, unsigned dirty_submodule2);
 
@@ -241,7 +246,7 @@ extern int git_diff_ui_config(const char *var, const char *value, void *cb);
 extern int diff_use_color_default;
 extern void diff_setup(struct diff_options *);
 extern int diff_opt_parse(struct diff_options *, const char **, int);
-extern int diff_setup_done(struct diff_options *);
+extern void diff_setup_done(struct diff_options *);
 
 #define DIFF_DETECT_RENAME	1
 #define DIFF_DETECT_COPY	2

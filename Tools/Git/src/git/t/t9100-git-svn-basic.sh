@@ -141,7 +141,7 @@ test_expect_success "$name" '
 
 
 name='executable file becomes a symlink to file'
-test_expect_success "$name" '
+test_expect_failure "$name" '
 	rm exec.sh &&
 	ln -s file exec.sh &&
 	git update-index exec.sh &&
@@ -153,7 +153,7 @@ test_expect_success "$name" '
 
 name='new symlink is added to a file that was also just made executable'
 
-test_expect_success "$name" '
+test_expect_failure "$name" '
 	chmod +x file &&
 	ln -s file exec-2.sh &&
 	git update-index --add file exec-2.sh &&
@@ -165,7 +165,7 @@ test_expect_success "$name" '
 	test -h "$SVN_TREE"/exec-2.sh'
 
 name='modify a symlink to become a file'
-test_expect_success "$name" '
+test_expect_failure "$name" '
 	echo git help >help &&
 	rm exec-2.sh &&
 	cp help exec-2.sh &&

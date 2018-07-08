@@ -101,6 +101,12 @@ OPTIONS
 	The option core.warnAmbiguousRefs is used to select the strict
 	abbreviation mode.
 
+--disambiguate=<prefix>::
+	Show every object whose name begins with the given prefix.
+	The <prefix> must be at least 4 hexadecimal digits long to
+	avoid listing each and every object in the repository by
+	mistake.
+
 --all::
 	Show all refs found in `refs/`.
 
@@ -113,15 +119,14 @@ OPTIONS
 +
 If a `pattern` is given, only refs matching the given shell glob are
 shown.  If the pattern does not contain a globbing character (`?`,
-`{asterisk}`, or `[`), it is turned into a prefix match by
-appending `/{asterisk}`.
+`*`, or `[`), it is turned into a prefix match by appending `/*`.
 
 --glob=pattern::
 	Show all refs matching the shell glob pattern `pattern`. If
 	the pattern does not start with `refs/`, this is automatically
 	prepended.  If the pattern does not contain a globbing
-	character (`?`, `{asterisk}`, or `[`), it is turned into a prefix
-	match by appending `/{asterisk}`.
+	character (`?`, `*`, or `[`), it is turned into a prefix
+	match by appending `/*`.
 
 --show-toplevel::
 	Show the absolute path of the top-level directory.
@@ -138,7 +143,8 @@ appending `/{asterisk}`.
 
 --git-dir::
 	Show `$GIT_DIR` if defined. Otherwise show the path to
-	the .git directory, relative to the current directory.
+	the .git directory. The path shown, when relative, is
+	relative to the current working directory.
 +
 If `$GIT_DIR` is not defined and the current directory
 is not detected to lie in a git repository or work tree

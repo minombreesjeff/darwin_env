@@ -171,4 +171,29 @@ test_expect_success 'relative path when startup_info is NULL' '
 	grep "BUG: startup_info struct is not initialized." error
 '
 
+test_expect_success '<commit>:file correctly diagnosed after a pathname' '
+	test_must_fail git rev-parse file.txt HEAD:file.txt 1>actual 2>error &&
+	test_i18ngrep ! "exists on disk" error &&
+	test_i18ngrep "no such path in the working tree" error &&
+	cat >expect <<-\EOF &&
+	file.txt
+	HEAD:file.txt
+	EOF
+	test_cmp expect actual
+'
+
+test_expect_success 'dotdot is not an empty set' '
+	( H=$(git rev-parse HEAD) && echo $H && echo ^$H ) >expect &&
+
+	git rev-parse HEAD.. >actual &&
+	test_cmp expect actual &&
+
+	git rev-parse ..HEAD >actual &&
+	test_cmp expect actual &&
+
+	echo .. >expect &&
+	git rev-parse .. >actual &&
+	test_cmp expect actual
+'
+
 test_done

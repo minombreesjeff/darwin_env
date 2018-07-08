@@ -2,6 +2,7 @@
 #define SUBMODULE_H
 
 struct diff_options;
+struct argv_array;
 
 enum {
 	RECURSE_SUBMODULES_ON_DEMAND = -1,
@@ -23,12 +24,14 @@ void show_submodule_summary(FILE *f, const char *path,
 		const char *del, const char *add, const char *reset);
 void set_config_fetch_recurse_submodules(int value);
 void check_for_new_submodule_commits(unsigned char new_sha1[20]);
-int fetch_populated_submodules(int num_options, const char **options,
+int fetch_populated_submodules(const struct argv_array *options,
 			       const char *prefix, int command_line_option,
 			       int quiet);
 unsigned is_submodule_modified(const char *path, int ignore_untracked);
 int merge_submodule(unsigned char result[20], const char *path, const unsigned char base[20],
 		    const unsigned char a[20], const unsigned char b[20], int search);
-int check_submodule_needs_pushing(unsigned char new_sha1[20], const char *remotes_name);
+int find_unpushed_submodules(unsigned char new_sha1[20], const char *remotes_name,
+		struct string_list *needs_pushing);
+int push_unpushed_submodules(unsigned char new_sha1[20], const char *remotes_name);
 
 #endif

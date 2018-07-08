@@ -45,7 +45,7 @@ There are two ways to specify which commits to operate on.
 The first rule takes precedence in the case of a single <commit>.  To
 apply the second rule, i.e., format everything since the beginning of
 history up until <commit>, use the '\--root' option: `git format-patch
-\--root <commit>`.  If you want to format only <commit> itself, you
+--root <commit>`.  If you want to format only <commit> itself, you
 can do this with `git format-patch -1 <commit>`.
 
 By default, each output file is numbered sequentially from 1, and uses the
@@ -58,10 +58,13 @@ output, unless the `--stdout` option is specified.
 If `-o` is specified, output files are created in <dir>.  Otherwise
 they are created in the current working directory.
 
-By default, the subject of a single patch is "[PATCH] First Line" and
-the subject when multiple patches are output is "[PATCH n/m] First
-Line". To force 1/1 to be added for a single patch, use `-n`.  To omit
-patch numbers from the subject, use `-N`.
+By default, the subject of a single patch is "[PATCH] " followed by
+the concatenation of lines from the commit message up to the first blank
+line (see the DISCUSSION section of linkgit:git-commit[1]).
+
+When multiple patches are output, the subject prefix will instead be
+"[PATCH n/m] ".  To force 1/1 to be added for a single patch, use `-n`.
+To omit patch numbers from the subject, use `-N`.
 
 If given `--thread`, `git-format-patch` will generate `In-Reply-To` and
 `References` headers to make the second and subsequent patch mails appear
@@ -134,7 +137,7 @@ include::diff-options.txt[]
 The optional <style> argument can be either `shallow` or `deep`.
 'shallow' threading makes every mail a reply to the head of the
 series, where the head is chosen from the cover letter, the
-`\--in-reply-to`, and the first patch mail, in this order.  'deep'
+`--in-reply-to`, and the first patch mail, in this order.  'deep'
 threading makes every mail a reply to the previous one.
 +
 The default is `--no-thread`, unless the 'format.thread' configuration

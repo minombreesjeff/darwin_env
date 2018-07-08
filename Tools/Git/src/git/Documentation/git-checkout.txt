@@ -84,11 +84,11 @@ entries; instead, unmerged entries are ignored.
 	When checking out paths from the index, check out stage #2
 	('ours') or #3 ('theirs') for unmerged paths.
 
--b::
+-b <new_branch>::
 	Create a new branch named <new_branch> and start it at
 	<start_point>; see linkgit:git-branch[1] for details.
 
--B::
+-B <new_branch>::
 	Creates the branch <new_branch> and start it at <start_point>;
 	if it already exists, then reset it to <start_point>. This is
 	equivalent to running "git branch" with "-f"; see
@@ -124,7 +124,7 @@ explicitly give a name with '-b' in such a case.
 	<commit> is not a branch name.  See the "DETACHED HEAD" section
 	below for details.
 
---orphan::
+--orphan <new_branch>::
 	Create a new 'orphan' branch, named <new_branch>, started from
 	<start_point> and switch to it.  The first commit made on this
 	new branch will have no parents and it will be the root of a new
@@ -184,7 +184,7 @@ the conflicted merge in the specified paths.
 +
 This means that you can use `git checkout -p` to selectively discard
 edits from your current working tree. See the ``Interactive Mode''
-section of linkgit:git-add[1] to learn how to operate the `\--patch` mode.
+section of linkgit:git-add[1] to learn how to operate the `--patch` mode.
 
 <branch>::
 	Branch to checkout; if it refers to a branch (i.e., a name that,
@@ -193,11 +193,11 @@ section of linkgit:git-add[1] to learn how to operate the `\--patch` mode.
 	commit, your HEAD becomes "detached" and you are no longer on
 	any branch (see below for details).
 +
-As a special case, the `"@\{-N\}"` syntax for the N-th last branch
+As a special case, the `"@{-N}"` syntax for the N-th last branch
 checks out the branch (instead of detaching).  You may also specify
-`-` which is synonymous with `"@\{-1\}"`.
+`-` which is synonymous with `"@{-1}"`.
 +
-As a further special case, you may use `"A\...B"` as a shortcut for the
+As a further special case, you may use `"A...B"` as a shortcut for the
 merge base of `A` and `B` if there is exactly one merge base. You can
 leave out at most one of `A` and `B`, in which case it defaults to `HEAD`.
 
@@ -366,6 +366,18 @@ $ git checkout hello.c            <3>
 <1> switch branch
 <2> take a file out of another commit
 <3> restore hello.c from the index
++
+If you want to check out _all_ C source files out of the index,
+you can say
++
+------------
+$ git checkout -- '*.c'
+------------
++
+Note the quotes around `*.c`.  The file `hello.c` will also be
+checked out, even though it is no longer in the working tree,
+because the file globbing is used to match entries in the index
+(not in the working tree by the shell).
 +
 If you have an unfortunate branch that is named `hello.c`, this
 step would be confused as an instruction to switch to that branch.

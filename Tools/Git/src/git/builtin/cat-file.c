@@ -11,6 +11,7 @@
 #include "parse-options.h"
 #include "diff.h"
 #include "userdiff.h"
+#include "streaming.h"
 
 #define BATCH 1
 #define BATCH_CHECK 2
@@ -90,7 +91,7 @@ static int cat_one_file(int opt, const char *exp_type, const char *obj_name)
 	unsigned long size;
 	struct object_context obj_context;
 
-	if (get_sha1_with_context(obj_name, sha1, &obj_context))
+	if (get_sha1_with_context(obj_name, 0, sha1, &obj_context))
 		die("Not a valid object name %s", obj_name);
 
 	buf = NULL;
@@ -127,6 +128,8 @@ static int cat_one_file(int opt, const char *exp_type, const char *obj_name)
 			return cmd_ls_tree(2, ls_args, NULL);
 		}
 
+		if (type == OBJ_BLOB)
+			return stream_blob_to_fd(1, sha1, NULL, 0);
 		buf = read_sha1_file(sha1, &type, &size);
 		if (!buf)
 			die("Cannot read object %s", obj_name);
@@ -143,12 +146,34 @@ static int cat_one_file(int opt, const char *exp_type, const char *obj_name)
 			die("git cat-file --textconv %s: <object> must be <sha1:path>",
 			    obj_name);
 
-		if (!textconv_object(obj_context.path, obj_context.mode, sha1, &buf, &size))
+		if (!textconv_object(obj_context.path, obj_context.mode, sha1, 1, &buf, &size))
 			die("git cat-file --textconv: unable to run textconv on %s",
 			    obj_name);
 		break;
 
 	case 0:
+		if (type_from_string(exp_type) == OBJ_BLOB) {
+			unsigned char blob_sha1[20];
+			if (sha1_object_info(sha1, NULL) == OBJ_TAG) {
+				enum object_type type;
+				unsigned long size;
+				char *buffer = read_sha1_file(sha1, &type, &size);
+				if (memcmp(buffer, "object ", 7) ||
+				    get_sha1_hex(buffer + 7, blob_sha1))
+					die("%s not a valid tag", sha1_to_hex(sha1));
+				free(buffer);
+			} else
+				hashcpy(blob_sha1, sha1);
+
+			if (sha1_object_info(blob_sha1, NULL) == OBJ_BLOB)
+				return stream_blob_to_fd(1, blob_sha1, NULL, 0);
+			/*
+			 * we attempted to dereference a tag to a blob
+			 * and failed; there may be new dereference
+			 * mechanisms this code is not aware of.
+			 * fall-back to the usual case.
+			 */
+		}
 		buf = read_object_with_reference(sha1, exp_type, &size, NULL);
 		break;
 

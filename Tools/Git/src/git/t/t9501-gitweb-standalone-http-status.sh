@@ -12,6 +12,13 @@ code and message.'
 
 . ./gitweb-lib.sh
 
+#
+# Gitweb only provides the functionality tested by the 'modification times'
+# tests if it can access a date parser from one of these modules:
+#
+perl -MHTTP::Date -e 0 >/dev/null 2>&1 && test_set_prereq DATE_PARSER
+perl -MTime::ParseDate -e 0 >/dev/null 2>&1 && test_set_prereq DATE_PARSER
+
 # ----------------------------------------------------------------------
 # snapshot settings
 
@@ -92,7 +99,7 @@ test_debug 'cat gitweb.output'
 test_expect_success 'snapshots: bad tree-ish id (tagged object)' '
 	echo object > tag-object &&
 	git add tag-object &&
-	git commit -m "Object to be tagged" &&
+	test_tick && git commit -m "Object to be tagged" &&
 	git tag tagged-object `git hash-object tag-object` &&
 	gitweb_run "p=.git;a=snapshot;h=tagged-object;sf=tgz" &&
 	grep "400 - Object is not a tree-ish" gitweb.output
@@ -112,6 +119,64 @@ test_expect_success 'snapshots: bad object id' '
 '
 test_debug 'cat gitweb.output'
 
+# ----------------------------------------------------------------------
+# modification times (Last-Modified and If-Modified-Since)
+
+test_expect_success DATE_PARSER 'modification: feed last-modified' '
+	gitweb_run "p=.git;a=atom;h=master" &&
+	grep "Status: 200 OK" gitweb.headers &&
+	grep "Last-modified: Thu, 7 Apr 2005 22:14:13 +0000" gitweb.headers
+'
+test_debug 'cat gitweb.headers'
+
+test_expect_success DATE_PARSER 'modification: feed if-modified-since (modified)' '
+	export HTTP_IF_MODIFIED_SINCE="Wed, 6 Apr 2005 22:14:13 +0000" &&
+	test_when_finished "unset HTTP_IF_MODIFIED_SINCE" &&
+	gitweb_run "p=.git;a=atom;h=master" &&
+	grep "Status: 200 OK" gitweb.headers
+'
+test_debug 'cat gitweb.headers'
+
+test_expect_success DATE_PARSER 'modification: feed if-modified-since (unmodified)' '
+	export HTTP_IF_MODIFIED_SINCE="Thu, 7 Apr 2005 22:14:13 +0000" &&
+	test_when_finished "unset HTTP_IF_MODIFIED_SINCE" &&
+	gitweb_run "p=.git;a=atom;h=master" &&
+	grep "Status: 304 Not Modified" gitweb.headers
+'
+test_debug 'cat gitweb.headers'
+
+test_expect_success DATE_PARSER 'modification: snapshot last-modified' '
+	gitweb_run "p=.git;a=snapshot;h=master;sf=tgz" &&
+	grep "Status: 200 OK" gitweb.headers &&
+	grep "Last-modified: Thu, 7 Apr 2005 22:14:13 +0000" gitweb.headers
+'
+test_debug 'cat gitweb.headers'
+
+test_expect_success DATE_PARSER 'modification: snapshot if-modified-since (modified)' '
+	export HTTP_IF_MODIFIED_SINCE="Wed, 6 Apr 2005 22:14:13 +0000" &&
+	test_when_finished "unset HTTP_IF_MODIFIED_SINCE" &&
+	gitweb_run "p=.git;a=snapshot;h=master;sf=tgz" &&
+	grep "Status: 200 OK" gitweb.headers
+'
+test_debug 'cat gitweb.headers'
+
+test_expect_success DATE_PARSER 'modification: snapshot if-modified-since (unmodified)' '
+	export HTTP_IF_MODIFIED_SINCE="Thu, 7 Apr 2005 22:14:13 +0000" &&
+	test_when_finished "unset HTTP_IF_MODIFIED_SINCE" &&
+	gitweb_run "p=.git;a=snapshot;h=master;sf=tgz" &&
+	grep "Status: 304 Not Modified" gitweb.headers
+'
+test_debug 'cat gitweb.headers'
+
+test_expect_success DATE_PARSER 'modification: tree snapshot' '
+	ID=`git rev-parse --verify HEAD^{tree}` &&
+	export HTTP_IF_MODIFIED_SINCE="Wed, 6 Apr 2005 22:14:13 +0000" &&
+	test_when_finished "unset HTTP_IF_MODIFIED_SINCE" &&
+	gitweb_run "p=.git;a=snapshot;h=$ID;sf=tgz" &&
+	grep "Status: 200 OK" gitweb.headers &&
+	! grep -i "last-modified" gitweb.headers
+'
+test_debug 'cat gitweb.headers'
 
 # ----------------------------------------------------------------------
 # load checking

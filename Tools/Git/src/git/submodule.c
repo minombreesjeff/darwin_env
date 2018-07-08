@@ -63,6 +63,9 @@ static int add_submodule_odb(const char *path)
 	alt_odb->name[40] = '\0';
 	alt_odb->name[41] = '\0';
 	alt_odb_list = alt_odb;
+
+	/* add possible alternates from the submodule */
+	read_info_alternates(objects_directory.buf, 0);
 	prepare_alt_odb();
 done:
 	strbuf_release(&objects_directory);
@@ -357,21 +360,19 @@ static void collect_submodules_from_diff(struct diff_queue_struct *q,
 					 void *data)
 {
 	int i;
-	int *needs_pushing = data;
+	struct string_list *needs_pushing = data;
 
 	for (i = 0; i < q->nr; i++) {
 		struct diff_filepair *p = q->queue[i];
 		if (!S_ISGITLINK(p->two->mode))
 			continue;
-		if (submodule_needs_pushing(p->two->path, p->two->sha1)) {
-			*needs_pushing = 1;
-			break;
-		}
+		if (submodule_needs_pushing(p->two->path, p->two->sha1))
+			string_list_insert(needs_pushing, p->two->path);
 	}
 }
 
-
-static void commit_need_pushing(struct commit *commit, int *needs_pushing)
+static void find_unpushed_submodule_commits(struct commit *commit,
+		struct string_list *needs_pushing)
 {
 	struct rev_info rev;
 
@@ -382,14 +383,15 @@ static void commit_need_pushing(struct commit *commit, int *needs_pushing)
 	diff_tree_combined_merge(commit, 1, &rev);
 }
 
-int check_submodule_needs_pushing(unsigned char new_sha1[20], const char *remotes_name)
+int find_unpushed_submodules(unsigned char new_sha1[20],
+		const char *remotes_name, struct string_list *needs_pushing)
 {
 	struct rev_info rev;
 	struct commit *commit;
 	const char *argv[] = {NULL, NULL, "--not", "NULL", NULL};
 	int argc = ARRAY_SIZE(argv) - 1;
 	char *sha1_copy;
-	int needs_pushing = 0;
+
 	struct strbuf remotes_arg = STRBUF_INIT;
 
 	strbuf_addf(&remotes_arg, "--remotes=%s", remotes_name);
@@ -401,13 +403,62 @@ int check_submodule_needs_pushing(unsigned char new_sha1[20], const char *remote
 	if (prepare_revision_walk(&rev))
 		die("revision walk setup failed");
 
-	while ((commit = get_revision(&rev)) && !needs_pushing)
-		commit_need_pushing(commit, &needs_pushing);
+	while ((commit = get_revision(&rev)) != NULL)
+		find_unpushed_submodule_commits(commit, needs_pushing);
 
+	reset_revision_walk();
 	free(sha1_copy);
 	strbuf_release(&remotes_arg);
 
-	return needs_pushing;
+	return needs_pushing->nr;
+}
+
+static int push_submodule(const char *path)
+{
+	if (add_submodule_odb(path))
+		return 1;
+
+	if (for_each_remote_ref_submodule(path, has_remote, NULL) > 0) {
+		struct child_process cp;
+		const char *argv[] = {"push", NULL};
+
+		memset(&cp, 0, sizeof(cp));
+		cp.argv = argv;
+		cp.env = local_repo_env;
+		cp.git_cmd = 1;
+		cp.no_stdin = 1;
+		cp.dir = path;
+		if (run_command(&cp))
+			return 0;
+		close(cp.out);
+	}
+
+	return 1;
+}
+
+int push_unpushed_submodules(unsigned char new_sha1[20], const char *remotes_name)
+{
+	int i, ret = 1;
+	struct string_list needs_pushing;
+
+	memset(&needs_pushing, 0, sizeof(struct string_list));
+	needs_pushing.strdup_strings = 1;
+
+	if (!find_unpushed_submodules(new_sha1, remotes_name, &needs_pushing))
+		return 1;
+
+	for (i = 0; i < needs_pushing.nr; i++) {
+		const char *path = needs_pushing.items[i].string;
+		fprintf(stderr, "Pushing submodule '%s'\n", path);
+		if (!push_submodule(path)) {
+			fprintf(stderr, "Unable to push submodule '%s'\n", path);
+			ret = 0;
+		}
+	}
+
+	string_list_clear(&needs_pushing, 0);
+
+	return ret;
 }
 
 static int is_submodule_commit_present(const char *path, unsigned char sha1[20])
@@ -523,8 +574,7 @@ static void calculate_changed_submodule_paths(void)
 			DIFF_OPT_SET(&diff_opts, RECURSIVE);
 			diff_opts.output_format |= DIFF_FORMAT_CALLBACK;
 			diff_opts.format_callback = submodule_collect_changed_cb;
-			if (diff_setup_done(&diff_opts) < 0)
-				die("diff_setup_done failed");
+			diff_setup_done(&diff_opts);
 			diff_tree_sha1(parent->item->object.sha1, commit->object.sha1, "", &diff_opts);
 			diffcore_std(&diff_opts);
 			diff_flush(&diff_opts);
@@ -538,13 +588,13 @@ static void calculate_changed_submodule_paths(void)
 	initialized_fetch_ref_tips = 0;
 }
 
-int fetch_populated_submodules(int num_options, const char **options,
+int fetch_populated_submodules(const struct argv_array *options,
 			       const char *prefix, int command_line_option,
 			       int quiet)
 {
-	int i, result = 0, argc = 0, default_argc;
+	int i, result = 0;
 	struct child_process cp;
-	const char **argv;
+	struct argv_array argv = ARGV_ARRAY_INIT;
 	struct string_list_item *name_for_path;
 	const char *work_tree = get_git_work_tree();
 	if (!work_tree)
@@ -554,17 +604,13 @@ int fetch_populated_submodules(int num_options, const char **options,
 		if (read_cache() < 0)
 			die("index file corrupt");
 
-	/* 6: "fetch" (options) --recurse-submodules-default default "--submodule-prefix" prefix NULL */
-	argv = xcalloc(num_options + 6, sizeof(const char *));
-	argv[argc++] = "fetch";
-	for (i = 0; i < num_options; i++)
-		argv[argc++] = options[i];
-	argv[argc++] = "--recurse-submodules-default";
-	default_argc = argc++;
-	argv[argc++] = "--submodule-prefix";
+	argv_array_push(&argv, "fetch");
+	for (i = 0; i < options->argc; i++)
+		argv_array_push(&argv, options->argv[i]);
+	argv_array_push(&argv, "--recurse-submodules-default");
+	/* default value, "--submodule-prefix" and its value are added later */
 
 	memset(&cp, 0, sizeof(cp));
-	cp.argv = argv;
 	cp.env = local_repo_env;
 	cp.git_cmd = 1;
 	cp.no_stdin = 1;
@@ -624,16 +670,21 @@ int fetch_populated_submodules(int num_options, const char **options,
 			if (!quiet)
 				printf("Fetching submodule %s%s\n", prefix, ce->name);
 			cp.dir = submodule_path.buf;
-			argv[default_argc] = default_argv;
-			argv[argc] = submodule_prefix.buf;
+			argv_array_push(&argv, default_argv);
+			argv_array_push(&argv, "--submodule-prefix");
+			argv_array_push(&argv, submodule_prefix.buf);
+			cp.argv = argv.argv;
 			if (run_command(&cp))
 				result = 1;
+			argv_array_pop(&argv);
+			argv_array_pop(&argv);
+			argv_array_pop(&argv);
 		}
 		strbuf_release(&submodule_path);
 		strbuf_release(&submodule_git_dir);
 		strbuf_release(&submodule_prefix);
 	}
-	free(argv);
+	argv_array_clear(&argv);
 out:
 	string_list_clear(&changed_submodule_paths, 1);
 	return result;
@@ -741,6 +792,7 @@ static int find_first_merges(struct object_array *result, const char *path,
 		if (in_merge_bases(b, &commit, 1))
 			add_object_array(o, NULL, &merges);
 	}
+	reset_revision_walk();
 
 	/* Now we've got all merges that contain a and b. Prune all
 	 * merges that contain another found merge and save them in

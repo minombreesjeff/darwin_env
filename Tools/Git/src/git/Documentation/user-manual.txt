@@ -1136,9 +1136,12 @@ Creating good commit messages
 Though not required, it's a good idea to begin the commit message
 with a single short (less than 50 character) line summarizing the
 change, followed by a blank line and then a more thorough
-description.  Tools that turn commits into email, for example, use
-the first line on the Subject line and the rest of the commit in the
-body.
+description.  The text up to the first blank line in a commit
+message is treated as the commit title, and that title is used
+throughout git.  For example, linkgit:git-format-patch[1] turns a
+commit into email, and it uses the title on the Subject line and the
+rest of the commit in the body.
+
 
 [[ignoring-files]]
 Ignoring files
@@ -1600,7 +1603,7 @@ dangling tree b24c2473f1fd3d91352a624795be026d64c8841f
 You will see informational messages on dangling objects. They are objects
 that still exist in the repository but are no longer referenced by any of
 your branches, and can (and will) be removed after a while with "gc".
-You can run `git fsck --no-dangling` to supress these messages, and still
+You can run `git fsck --no-dangling` to suppress these messages, and still
 view real errors.
 
 [[recovering-lost-changes]]
@@ -1611,7 +1614,7 @@ Recovering lost changes
 Reflogs
 ^^^^^^^
 
-Say you modify a branch with `linkgit:git-reset[1] --hard`, and then
+Say you modify a branch with +linkgit:git-reset[1] \--hard+, and then
 realize that the branch was the only reference you had to that point in
 history.
 
@@ -2870,7 +2873,7 @@ $ git fetch example
 You can also add a "+" to force the update each time:
 
 -------------------------------------------------
-$ git config remote.example.fetch +master:ref/remotes/example/master
+$ git config remote.example.fetch +master:refs/remotes/example/master
 -------------------------------------------------
 
 Don't do this unless you're sure you won't mind "git fetch" possibly
@@ -2966,7 +2969,7 @@ As you can see, a commit is defined by:
 
 - a tree: The SHA-1 name of a tree object (as defined below), representing
   the contents of a directory at a certain point in time.
-- parent(s): The SHA-1 name of some number of commits which represent the
+- parent(s): The SHA-1 name(s) of some number of commits which represent the
   immediately previous step(s) in the history of the project.  The
   example above has one parent; merge commits may have more than
   one.  A commit with no parents is called a "root" commit, and
@@ -3363,8 +3366,8 @@ Date:
 :100644 100644 oldsha... 4b9458b... M somedirectory/myfile
 ------------------------------------------------
 
-This tells you that the immediately preceding version of the file was
-"newsha", and that the immediately following version was "oldsha".
+This tells you that the immediately following version of the file was
+"newsha", and that the immediately preceding version was "oldsha".
 You also know the commit messages that went with the change from oldsha
 to 4b9458b and with the change from 4b9458b to newsha.
 
@@ -4035,8 +4038,8 @@ $ git ls-files --unmerged
 Each line of the `git ls-files --unmerged` output begins with
 the blob mode bits, blob SHA-1, 'stage number', and the
 filename.  The 'stage number' is git's way to say which tree it
-came from: stage 1 corresponds to `$orig` tree, stage 2 `HEAD`
-tree, and stage3 `$target` tree.
+came from: stage 1 corresponds to the `$orig` tree, stage 2 to
+the `HEAD` tree, and stage 3 to the `$target` tree.
 
 Earlier we said that trivial merges are done inside
 `git read-tree -m`.  For example, if the file did not change
@@ -4207,7 +4210,7 @@ commits one by one with the function `get_revision()`.
 
 If you are interested in more details of the revision walking process,
 just have a look at the first implementation of `cmd_log()`; call
-`git show v1.3.0{tilde}155^2{tilde}4` and scroll down to that function (note that you
+`git show v1.3.0~155^2~4` and scroll down to that function (note that you
 no longer need to call `setup_pager()` directly).
 
 Nowadays, `git log` is a builtin, which means that it is _contained_ in the
@@ -4270,9 +4273,9 @@ Two things are interesting here:
   negative numbers in case of different errors--and 0 on success.
 
 - the variable `sha1` in the function signature of `get_sha1()` is `unsigned
-  char {asterisk}`, but is actually expected to be a pointer to `unsigned
+  char *`, but is actually expected to be a pointer to `unsigned
   char[20]`.  This variable will contain the 160-bit SHA-1 of the given
-  commit.  Note that whenever a SHA-1 is passed as `unsigned char {asterisk}`, it
+  commit.  Note that whenever a SHA-1 is passed as `unsigned char *`, it
   is the binary representation, as opposed to the ASCII representation in
   hex characters, which is passed as `char *`.
 

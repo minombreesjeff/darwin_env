@@ -439,12 +439,14 @@ static char *get_header(const struct commit *commit, const char *key)
 	int key_len = strlen(key);
 	const char *line = commit->buffer;
 
-	for (;;) {
+	while (line) {
 		const char *eol = strchr(line, '\n'), *next;
 
 		if (line == eol)
 			return NULL;
 		if (!eol) {
+			warning("malformed commit (header is missing newline): %s",
+				sha1_to_hex(commit->object.sha1));
 			eol = line + strlen(line);
 			next = NULL;
 		} else
@@ -456,6 +458,7 @@ static char *get_header(const struct commit *commit, const char *key)
 		}
 		line = next;
 	}
+	return NULL;
 }
 
 static char *replace_encoding_header(char *buf, const char *encoding)
@@ -547,8 +550,10 @@ static size_t format_person_part(struct strbuf *sb, char part,
 	mail_end = s.mail_end;
 
 	if (part == 'N' || part == 'E') { /* mailmap lookup */
-		strlcpy(person_name, name_start, name_end - name_start + 1);
-		strlcpy(person_mail, mail_start, mail_end - mail_start + 1);
+		snprintf(person_name, sizeof(person_name), "%.*s",
+			 (int)(name_end - name_start), name_start);
+		snprintf(person_mail, sizeof(person_mail), "%.*s",
+			 (int)(mail_end - mail_start), mail_start);
 		mailmap_name(person_mail, sizeof(person_mail), person_name, sizeof(person_name));
 		name_start = person_name;
 		name_end = name_start + strlen(person_name);
@@ -1010,6 +1015,7 @@ static size_t format_commit_one(struct strbuf *sb, const char *placeholder,
 				get_reflog_selector(sb,
 						    c->pretty_ctx->reflog_info,
 						    c->pretty_ctx->date_mode,
+						    c->pretty_ctx->date_mode_explicit,
 						    (placeholder[1] == 'd'));
 			return 2;
 		case 's':	/* reflog message */

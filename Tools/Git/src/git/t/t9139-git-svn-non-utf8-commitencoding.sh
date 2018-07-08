@@ -19,7 +19,7 @@ done
 
 for H in ISO8859-1 eucJP
 do
-	test_expect_success "$H commit on git side" '
+	test_expect_failure "$H commit on git side" '
 	(
 		cd $H &&
 		git config i18n.commitencoding $H &&

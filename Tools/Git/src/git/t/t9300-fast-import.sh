@@ -12,7 +12,7 @@ test_description='test git fast-import utility'
 # This could be written as "head -c $1", but IRIX "head" does not
 # support the -c option.
 head_c () {
-	perl -e '
+	"$PERL_PATH" -e '
 		my $len = $ARGV[1];
 		while ($len > 0) {
 			my $s;
@@ -1657,7 +1657,7 @@ M 160000 :6 sub
 INPUT_END
 
 test_expect_success \
-	'P: supermodule & submodule mix' \
+	'P: superproject & submodule mix' \
 	'git fast-import <input &&
 	 git checkout subuse1 &&
 	 rm -rf sub && mkdir sub && (cd sub &&
@@ -2117,7 +2117,7 @@ test_expect_success \
     grep :1 git.marks'
 
 test_expect_success \
-    'R: export-marks options can be overriden by commandline options' \
+    'R: export-marks options can be overridden by commandline options' \
     'cat input | git fast-import --export-marks=other.marks &&
     grep :1 other.marks'
 
