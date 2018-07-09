@@ -124,10 +124,6 @@ enum CudaTransactionFlag
 typedef enum CudaTransactionFlag CudaTransactionFlag;
 
 //typedef void (* ADB_input_func)(IOService * obj_id, UInt8 * buffer, UInt32 length, UInt8 command);
-
-// we are called back with this 
-typedef IOReturn (*IOPMSettingControllerCallback)(IOPMSystemSettingType arg_type,
-													int arg_val, void *info);
 													
 													
 class IOCudaADBController;
@@ -212,7 +208,7 @@ public:
                                             void *param1, void *param2,
                                             void *param3, void *param4);
 
-	void handleSettingCallback(IOPMSystemSettingType arg_type, int arg_val);
+	void handleSettingCallback(const OSSymbol *arg_type, OSObject *arg_val, uintptr_t refcon);
 };
 
 #endif /* APPLECUDA_H */

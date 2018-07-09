@@ -173,7 +173,7 @@ bool CudahasRoot( OSObject * us, void *, IOService * yourDevice );
 static IOReturn AppleCudaReadIIC( UInt8 address, UInt8 * buffer, IOByteCount * count );
 static IOReturn AppleCudaWriteIIC( UInt8 address, const UInt8 * buffer, IOByteCount * count );
 
-IOReturn settingControllerCallback(IOPMSystemSettingType arg_type, int arg_val, void *info);
+IOReturn settingControllerCallback(const OSSymbol *arg_type, OSObject *arg_val, OSObject *info);
 
 //
 // inline functions
@@ -234,12 +234,22 @@ static __inline__ void cuda_unlock( AppleCuda * self )
 
 static AppleCuda * gCuda;
 
+// The PM settings we're interested in
+static const OSSymbol * gPMAutoWakeSymbol 
+                = OSSymbol::withCString(kIOPMSettingAutoWakeSecondsKey);
+
+static const OSSymbol * gPMAutoPowerSymbol
+                = OSSymbol::withCString(kIOPMSettingAutoPowerSecondsKey);
+
+static const OSSymbol * gPMRestartPowerLossSymbol
+                = OSSymbol::withCString(kIOPMSettingRestartOnPowerLossKey);
+
 
 // **********************************************************************************
 // init
 //
 // **********************************************************************************
-bool AppleCuda::init ( OSDictionary * properties = 0 )
+bool AppleCuda::init ( OSDictionary * properties )
 {
     return super::init(properties);
 }
@@ -266,6 +276,7 @@ unsigned char	* cuda_base;
     cuda_check_any_interrupt = OSSymbol::withCString("cuda_check_any_interrupt");
 	cuda_read_i2c            = OSSymbol::withCString( "read_iic" );
 	cuda_write_i2c           = OSSymbol::withCString( "write_iic" );
+
     
     workLoop				 = NULL;
     eventSrc				 = NULL;
@@ -451,8 +462,28 @@ unsigned char	* cuda_base;
                  (IOServiceNotificationHandler)CudahasRoot, this, 0 );
 
 	//Register for PM callbacks of old userClient functions
-	if (kIOReturnSuccess != getPMRootDomain()->registerPMSettingController(settingControllerCallback, this))
-			IOLog("ApplePMU_registerPMSettingController with pmRootDomain - failed\n");
+    OSObject *handle = NULL;
+
+    const OSSymbol *arr[] = {
+        gPMAutoWakeSymbol,
+        gPMAutoPowerSymbol,
+        gPMRestartPowerLossSymbol,
+        (const OSSymbol *)NULL
+    };
+
+	if (kIOReturnSuccess != getPMRootDomain()->registerPMSettingController(
+                                   arr, 
+                                   OSMemberFunctionCast(
+                                       IOPMSettingControllerCallback, 
+                                       (OSObject *)this,
+                                       &AppleCuda::handleSettingCallback), 
+                                   (OSObject *)this,
+                                   (uintptr_t)NULL,
+                                   (OSObject **)&handle))
+	{
+		kprintf("AppleCuda_registerPMSettingController with pmRootDomain - failed\n");
+	}
+	
 			
     ourADBinterface->start( this );
 
@@ -791,7 +822,7 @@ IOReturn ioReturn = kIOReturnBadArgument;
 	{
         // make sure address argument is not bigger than UInt8
         if ( ( ((UInt32) param1) & ~0xFF ) == 0 )
-            ioReturn = AppleCudaReadIIC( /* address */ (UInt8)			param1,
+            ioReturn = AppleCudaReadIIC( /* address */ (UInt8)(UInt32)	param1,
                                         /* buffer  */  (UInt8 *)		param2,
                                         /* count   */  (IOByteCount *)	param3 );
 	}
@@ -799,7 +830,7 @@ IOReturn ioReturn = kIOReturnBadArgument;
 	{
         // make sure address argument is not bigger than UInt8
         if ( ( ((UInt32) param1) & ~0xFF ) == 0 )
-            ioReturn = AppleCudaWriteIIC(/* address */ (UInt8)			param1,
+            ioReturn = AppleCudaWriteIIC(/* address */ (UInt8)(UInt32)	param1,
                                         /* buffer  */  (UInt8 *)		param2,
                                         /* count   */  (IOByteCount *)	param3 );
         // else - return what is in ioReturn by default (error)
@@ -1019,54 +1050,37 @@ AppleCudaUserClient * client = NULL;
 }
 
 
-// --------------------------------------------------------------------------
-// Method: settingControllerCallback
-//
-// Purpose:  Allows rootDomain one entry point for setting various kIOPM settings
-//
-IOReturn settingControllerCallback(IOPMSystemSettingType arg_type, int arg_val, void *arg)
-{
-	AppleCuda * me = (AppleCuda *) arg;
-
-    if (me == NULL)
-		{
-		IOLog ("AppleCuda::settingControllerCallback NULL \n");
-        return kIOReturnError;
-		}
-		
-    me->handleSettingCallback (arg_type, arg_val);
-	
-	return kIOReturnSuccess;
-}
 
 // --------------------------------------------------------------------------
 // Method: handleSettingCallback
 //
 // Purpose:  Dispatcher for setting various kIOPM settings
 //
-void AppleCuda::handleSettingCallback(IOPMSystemSettingType arg_type, int arg_val)
+void AppleCuda::handleSettingCallback(const OSSymbol *arg_type, OSObject *arg_val, uintptr_t refcon)
 {	
-	switch( arg_type ) 
-		{
-	    case kIOPMAutoWakeSetting:
-			IOLog("AppleCuda_AutoWakeSetting - entered\n");
-            setWakeTime(arg_val);  			
-        break;
+    OSNumber        *argument = OSDynamicCast(OSNumber, arg_val);
+    int             int_val;
+    
+    if(!argument) return;
 
-    	case kIOPMAutoPowerOnSetting:
-			IOLog("AppleCuda_AutoPowerOnSetting - entered\n");
-			setPowerOnTime(arg_val);			
-        break;
+    int_val = argument->unsigned32BitValue();
 
-    	case kIOPMAutoRestartOnPowerLossSetting:
-			IOLog("AppleCuda_AutoRestartOnPowerLossSetting - entered\n");
-            setFileServerMode(arg_val);		  		
-        break;
+    if(arg_type == gPMAutoWakeSymbol) {
 
-    	default:
-        break;
-		}
+        kprintf("AppleCuda_AutoWakeSetting - entered\n");
+        setWakeTime(int_val);  			
 
+    } else if(arg_type == gPMAutoPowerSymbol) {
+
+        kprintf("AppleCuda_AutoPowerOnSetting - entered\n");
+        setPowerOnTime(int_val);			
+
+    } else if(arg_type == gPMRestartPowerLossSymbol) {
+
+        kprintf("AppleCuda_AutoRestartOnPowerLossSetting - entered\n");
+        setFileServerMode(int_val);		  		
+    }
+    
 }
 
 
