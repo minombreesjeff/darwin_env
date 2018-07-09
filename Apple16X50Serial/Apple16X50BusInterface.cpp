@@ -53,10 +53,6 @@ bool Apple16X50BusInterface::start(IOService *provider)
     if (!WorkLoop) {
         WorkLoop = IOWorkLoop::workLoop();
         if (!WorkLoop) return false;
-        if (!(WorkLoop->init())) {
-            RELEASE(WorkLoop);
-            return false;
-        }
         InterruptSource = IOInterruptEventSource::interruptEventSource(
             this, (IOInterruptEventAction)&handleInterruptAction, getProvider()
         );
@@ -180,7 +176,6 @@ void Apple16X50BusInterface::handleInterrupt(IOInterruptEventSource *source, int
     for (i=0; i<UARTInstance; i++)
         if (UART[i]) UART[i]->interrupt();
     DEBUG_IOLog("-I\n");
-    InterruptSource->enable();
 }
 
 #ifdef REFBUG

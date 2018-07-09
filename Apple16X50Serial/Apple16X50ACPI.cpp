@@ -154,3 +154,8 @@ setReg(UInt32 reg, UInt8 val, void *refCon)
 {
     Provider->ioWrite8(RegBase + reg, val, 0);
 }
+
+
+#pragma mark -- Power Management
+
+
