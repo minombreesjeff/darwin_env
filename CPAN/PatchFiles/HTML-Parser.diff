@@ -1,0 +1,13 @@
+
+--- HTML-Parser/Makefile.PL	2005-01-13 16:08:14.000000000 -0800
++++ /tmp/HTML-Parser/Makefile.PL	2005-01-13 16:25:02.000000000 -0800
+@@ -19,7 +19,7 @@
+ in the Latin-1 range is decoded.
+ 
+ EOT
+-    my $ans = prompt("Do you want decoding on unicode entities?", "no");
++    my $ans = prompt("Do you want decoding on unicode entities?", "yes");
+     if ($ans =~ /^y(es)?$/i) {
+ 	push(@define, "-DUNICODE_ENTITIES");
+     }
+

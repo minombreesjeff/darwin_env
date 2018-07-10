@@ -1,0 +1,25 @@
+#!/usr/bin/perl
+
+# These are the patches to apply.
+# Paths in patch files are relative to the root of the CPAN project
+my (@patchesToApply) = (
+    # Enable Unicode entity decoding in HTML::Parser
+    './PatchFiles/HTML-Parser.diff'
+);
+
+foreach my $patchFile (@patchesToApply) {
+    &applyPatch($patchFile);
+}
+exit(0);
+
+# Subroutine that applies the patches
+sub applyPatch
+{
+    my ($patchFile) = @_;
+    
+    my ($status) = system("/usr/bin/patch -p0 < \"$patchFile\"");
+    if ($status != 0) {
+        print "Unable to apply $patchFile\n";
+        exit($status >> 8);
+    }
+}

@@ -1,0 +1,17 @@
+# http://module-build.sourceforge.net/META-spec.html
+#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
+name:         MIME-tools
+version:      5.416
+version_from: lib/MIME/Tools.pm
+installdirs:  site
+requires:
+    File::Path:                    1
+    File::Spec:                    0.6
+    IO::Stringy:                   1.211
+    Mail::Field:                   1.05
+    Mail::Header:                  1.01
+    Mail::Internet:                1.0203
+    MIME::Base64:                  2.2
+
+distribution_type: module
+generated_by: ExtUtils::MakeMaker version 6.17

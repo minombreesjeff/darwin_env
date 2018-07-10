@@ -1,0 +1,90 @@
+2005-01-03  David F. Skoll  <dfs@roaringpenguin.com>
+
+	* VERSION 5.416 RELEASED
+
+	* Allow MIME::Tools to work with MIME::QuotedPrint 2.20 again.
+	The Makefile.PL will warn about potential problems, but will allow you
+	to proceed.
+
+	* Field/ParamVal.pm: Strip trailing whitespace when extracting
+	parameters.  Apparently, not doing so can cause Perl to core dump
+	on certain badly-formed messages.
+
+2004-10-27  David F. Skoll  <dfs@roaringpenguin.com>
+
+	* VERSION 5.415 RELEASED
+
+	* Fixed parsing of paramater="" in headers, and fixed case where
+	multipart boundary is ""
+
+2004-10-06  David F. Skoll  <dfs@roaringpenguin.com>
+
+	* VERSION 5.414 RELEASED
+
+	* Remove MIME::QuotedPrint 3.03 as a dependency and add
+	MIME::Base64 3.03 instead.
+
+	* Check return values of I/O operations like open(), close(), etc.
+	and die if they fail.  Problem reported by Mark Martinec.
+
+2004-09-15  David F. Skoll  <dfs@roaringpenguin.com>
+
+	* VERSION 5.413 RELEASED
+
+	* Fix some $VERSION = xxx assignments that were broken; make sure
+	VERSION shows up as 5.413 everywhere.  Sorry about that!
+
+2004-09-09  David F. Skoll  <dfs@roaringpenguin.com>
+
+	* VERSION 5.412 RELEASED
+
+	* Recognize "binhex40", "mac-binhex" and "mac-binhex40"
+	Content-Transfer-Encodings.
+
+	* Filer.pm: Be much more strict in evil_filename, allowing only
+	a set of known good characters.
+
+2004-09-08  David F. Skoll  <dfs@roaringpenguin.com>
+
+	* Skip BinHex decoding if prerequisite modules not installed.
+
+	* Fix BinHex decoder so it encodes correctly; regression test for
+	BinHex encoding now passes.
+
+	* Require MIME::QuotedPrint 3.03 or newer.
+
+	* Rename variable "$jkfis" to "$how_encoded"
+
+	* Correct attribution of changes in changelog.
+
+	* Correct bad regexp test for "bad PDF" files.
+
+2004-09-07  David F. Skoll  <dfs@roaringpenguin.com>
+
+	* lib/MIME/Parser/Filer.pm (evil_filename): Make evil_filename
+	more paranoid (Julian Field and Martin Blapp)
+
+	* lib/MIME/Parser/Filer.pm (exorcise_filename): Delete leading and
+	trailing whitespace (Julian Field)
+
+	* Remove all the Benchmark code (Martin Blapp)
+
+	* lib/MIME/Decoder.pm: Add support for BinHex encoded attachments
+	(Julian Field)
+
+	* lib/MIME/Decoder.pm: Require MIME::QuotedPrint 3.03 or newer
+	for correct decoding of binary attachments. (Alexey Kravchuk)
+
+	* lib/MIME/Decoder/QuotedPrint.pm: Attempt to deal sanely with
+	PDF files encoded using quoted-printable encoding by Outlook,
+	which does not follow the RFC guidelines.  (Martin Blapp)
+
+	* lib/MIME/Field/ParamVal.pm: Deal with RFC2231-encoded parameters.
+
+	* lib/MIME/Head.pm: Correct "7-bit", "7 bit" and "7_bit" to 7bit;
+	likewise for 8bit lookalikes.  (Martin Blapp)
+
+	* lib/MIME/Parser.pm: Add max_parts method to limit maximum number
+	of MIME parts we are willing to parse.
+
+	* DSKOLL took over maintainership of MIME::tools at version 5.411a.
