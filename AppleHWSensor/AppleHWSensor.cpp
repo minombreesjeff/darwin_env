@@ -24,6 +24,9 @@
  *
  */
 //		$Log: AppleHWSensor.cpp,v $
+//		Revision 1.23  2005/11/11 21:13:11  ialigaen
+//		Fixed endian problems w/ HWSensor when reading properties for the IOHWSensor class.
+//		
 //		Revision 1.22  2005/04/27 17:43:27  mpontil
 //		When failing to read a sensor value (and so failing to start) print the
 //		error code too.
@@ -216,11 +219,11 @@ bool IOHWSensor::start(IOService *provider)
 		data = OSDynamicCast(OSData, provider->getProperty(sSensorID));
 		if (!data)
 		{
-			IOLog("IOHWSensor - no Sensor ID !!\n");
+			DLOG("IOHWSensor - no Sensor ID !!\n");
 			break;
 		}
-
-        fID = *(UInt32 *)data->getBytesNoCopy();
+		// Changed this to OSReadBigInt32 from *(UInt32 *) to take care of endian problems
+        fID = OSReadBigInt32(data->getBytesNoCopy(),0);
         num = OSNumber::withNumber(fID, 32);
 		if (!num)
 		{
@@ -243,8 +246,8 @@ bool IOHWSensor::start(IOService *provider)
 		{
 			data = OSDynamicCast(OSData, provider->getProperty("reg"));
 			if (!data) break;
-
-			fChannel = *(UInt32 *)data->getBytesNoCopy();
+			// Changed this to OSReadBigInt32 from *(UInt32 *) to take care of endian problems
+			fChannel = OSReadBigInt32(data->getBytesNoCopy(),0);
 		}
 		else
 		{
@@ -270,7 +273,8 @@ bool IOHWSensor::start(IOService *provider)
 	
 			if (length == 2)
 			{
-				fPollingPeriodNS = *(((UInt32 *)data->getBytesNoCopy()) + 1);	// get the second UInt32
+				// Changed this to OSReadBigInt32 from *(UInt32 *) to take care of endian problems
+				fPollingPeriodNS = OSReadBigInt32(data->getBytesNoCopy(),4);	// get the second UInt32
 				num = OSNumber::withNumber(fPollingPeriodNS, 32);
 				if(num)
 				{
@@ -279,7 +283,8 @@ bool IOHWSensor::start(IOService *provider)
 				}
 			}
 
-			fPollingPeriod = *(UInt32 *)data->getBytesNoCopy();
+			// Changed this to OSReadBigInt32 from *(UInt32 *) to take care of endian problems
+			fPollingPeriod = OSReadBigInt32(data->getBytesNoCopy(),0);	// get the first UInt32
 			num = OSNumber::withNumber(fPollingPeriod, 32);
 
 			if(num)
