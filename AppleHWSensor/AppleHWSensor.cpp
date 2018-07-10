@@ -24,6 +24,9 @@
  *
  */
 //		$Log: AppleHWSensor.cpp,v $
+//		Revision 1.24  2007/03/16 21:40:09  raddog
+//		[5056773]IOHWMonitor::updateValue() may call callPlatformFunction with NULL key
+//		
 //		Revision 1.23  2005/11/11 21:13:11  ialigaen
 //		Fixed endian problems w/ HWSensor when reading properties for the IOHWSensor class.
 //		
@@ -107,6 +110,7 @@ static const OSSymbol *sForceUpdate;
 
 OSDefineMetaClassAndStructors(IOHWSensor,IOHWMonitor)
 
+#ifdef ENABLENOTIFY
 static IORegistryEntry *objFromHandle(UInt32 search)
 {
     const OSSymbol *handleSym = NULL;
@@ -143,6 +147,7 @@ static IORegistryEntry *objFromHandle(UInt32 search)
         
     return found;
 }
+#endif
 
 void IOHWSensor::timerCallback(void *self)
 {
@@ -159,23 +164,9 @@ void IOHWSensor::timerCallback(void *self)
 bool IOHWSensor::start(IOService *provider)
 {
 	OSDictionary *dict;
+	bool doPolling;
 	IOReturn ret;
 	SInt32 val, retryCount;
-
-    if ( !(IOHWMonitor::start(provider)) )
-        return false;
-
-	DLOG("IOHWSensor::start(%s) - entered\n", fDebugID);
-
-    // allocate the thread callout
-    fCalloutEntry = thread_call_allocate((thread_call_func_t) IOHWSensor::timerCallback,
-                                                 (thread_call_param_t) this);
-
-	if (fCalloutEntry == NULL)
-	{
-		IOLog("IOHWSensor::start failed to allocate thread callout\n");
-		return(false);
-	}
 
 	// initialize symbols
     if(!sSensorID)
@@ -201,6 +192,21 @@ bool IOHWSensor::start(IOService *provider)
 	if(!sForceUpdate)
 		sForceUpdate = OSSymbol::withCString("force-update");
 
+    if ( !(IOHWMonitor::start(provider)) )
+        return false;
+
+	DLOG("IOHWSensor::start(%s) - entered\n", fDebugID);
+
+    // allocate the thread callout
+    fCalloutEntry = thread_call_allocate((thread_call_func_t) IOHWSensor::timerCallback,
+                                                 (thread_call_param_t) this);
+
+	if (fCalloutEntry == NULL)
+	{
+		IOLog("IOHWSensor::start failed to allocate thread callout\n");
+		return(false);
+	}
+
     fLowThreshold = kNoThreshold;
     fHighThreshold = kNoThreshold;
 
@@ -213,6 +219,8 @@ bool IOHWSensor::start(IOService *provider)
 	OSNumber *num;
 	OSData *data;
 
+	doPolling = false;
+	
 	do {
 
 		// sensor id - required
@@ -293,7 +301,7 @@ bool IOHWSensor::start(IOService *provider)
 				num->release();
 			}
 
-			setTimeout();
+			doPolling = ((fPollingPeriod != kNoPolling) || (fPollingPeriodNS != kNoPolling));
 		}
 	} while (0);
 
@@ -309,6 +317,7 @@ bool IOHWSensor::start(IOService *provider)
 		return(false);
 	}
 
+#ifdef ENABLENOTIFY
 /*
  * Look for a node that wants to be notified of the sensor value.
  * This is specified in OpenFirmware by a property whose name starts with notify-,
@@ -375,6 +384,7 @@ bool IOHWSensor::start(IOService *provider)
         dict->release();
     }
     while (false);
+ #endif
         
 	DLOG("IOHWSensor::start(%s) - polling initial sensor value\n", fDebugID);
 
@@ -397,7 +407,7 @@ bool IOHWSensor::start(IOService *provider)
 	//IOLog("read sensor %d, ret %x value is %d\n", fID, ret, val);
     if(ret != kIOReturnSuccess)
 	{
-		IOLog("AppleHWSensor::start failed to read initial sensor value! Got error %08lx\n", ret);
+		IOLog("AppleHWSensor::start failed to read initial sensor value! Got error %08lx\n", (UInt32)ret);
 
 		if (fCalloutEntry)
 		{
@@ -435,6 +445,11 @@ bool IOHWSensor::start(IOService *provider)
     
     // make us findable by applications
     registerService();
+	
+	fInited = true;		// Good to go
+
+	// Fire off timer at very end when everything is ready
+	if (doPolling) setTimeout();
 
 	DLOG("IOHWSensor::start(%s) - done\n", fDebugID);
     return true;
@@ -502,8 +517,11 @@ SInt32 IOHWSensor::updateCurrentValue()
 		IOSleep (250);	// Sleep and try again
 	} while (1);
     
+#ifdef ENABLENOTIFY
     if(fNotifyObj && fNotifySym)
         fNotifyObj->setProperty(fNotifySym, num);
+#endif
+
     val = num->unsigned32BitValue();
     if(fLowThreshold != kNoThreshold && val <= fLowThreshold)
         sendMessage(kLowThresholdHit, val, fLowThreshold);
@@ -598,7 +616,16 @@ void IOHWSensor::setTimeout()
 
 IOReturn IOHWSensor::setPowerState(unsigned long whatState, IOService *policyMaker)
 {
-	IOReturn status = IOHWMonitor::setPowerState( whatState, policyMaker );
+	IOReturn status;
+	
+	/* 
+	 * Don't care about setPowerState calls during boot.  This protects us from calls
+	 * that come in during start (as soon as joinPMTree is called)
+	 */
+	if (!fInited)
+		return IOPMAckImplied;
+	
+	status = IOHWMonitor::setPowerState( whatState, policyMaker );
 
 	if ( fCalloutEntry )
 	{

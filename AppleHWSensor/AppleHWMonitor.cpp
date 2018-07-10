@@ -24,6 +24,9 @@
  *
  */
 //		$Log: AppleHWMonitor.cpp,v $
+//		Revision 1.8  2007/05/07 18:29:38  pmr
+//		change acknowledgePowerChange to acknowledgeSetPowerState
+//		
 //		Revision 1.7  2006/09/15 22:37:33  raddog
 //		[4703348] Fix buffer overrun problem when parsing sensor type
 //		
@@ -325,7 +328,7 @@ IOReturn IOHWMonitor::updateValue(const OSSymbol *func, const OSSymbol *key)
 	 * in which case we have to ack the PM so it knows we can sleep.
 	 */
 	if (sleeping && powerPolicyMaker)
-		powerPolicyMaker->acknowledgePowerChange (this);
+		powerPolicyMaker->acknowledgeSetPowerState ();
 		
     if(ret != kIOReturnSuccess)
         return ret;
