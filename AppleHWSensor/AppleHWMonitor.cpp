@@ -24,6 +24,9 @@
  *
  */
 //		$Log: AppleHWMonitor.cpp,v $
+//		Revision 1.7  2006/09/15 22:37:33  raddog
+//		[4703348] Fix buffer overrun problem when parsing sensor type
+//		
 //		Revision 1.6  2005/11/11 21:13:11  ialigaen
 //		Fixed endian problems w/ HWSensor when reading properties for the IOHWSensor class.
 //		
@@ -185,6 +188,8 @@ bool IOHWMonitor::start(IOService *provider)
     obj = provider->getProperty("type");
     if (!obj)
     {
+		UInt32 len;
+		
 		obj = provider->getProperty("device_type"); // if no type, parse device_type
 		data = OSDynamicCast(OSData, obj);
 		if (!data)
@@ -194,9 +199,17 @@ bool IOHWMonitor::start(IOService *provider)
 		}
 		
 		ptr = (char *)data->getBytesNoCopy();
-		strcpy(type, ptr);
+		len = data->getLength();
+		
+		if (len >= 31)		// Don't overflow the buffer
+			len = 31;
+			
+		strncpy(type, ptr, len);
+		type[len] = '\0';	// Make sure it's null terminated
+		
 		DLOG("IOHWMonitor::start(%s) - found device_type '%s'\n", fDebugID, type);
 
+		// Lop off "-sensor"
 		for(unsigned int i = strlen(type); i >= 0; i--)
 		{
 			if (type[i] == '-')
