@@ -1,42 +1,38 @@
 /*
- * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1998-2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#include <sys/systm.h>  // snprintf
-
+#include <sys/systm.h>    // snprintf
 #include <IOKit/assert.h>
 #include <IOKit/IOMessage.h>
-#include <IOKit/ata/IOATATypes.h>
-#include <IOKit/ata/IOATAController.h>
-#include <IOKit/ata/ATADeviceNub.h>
-#include "AppleIntelPIIXATAController.h"
-#include "AppleIntelPIIXATADriver.h"
-#include "AppleIntelPIIXATAHW.h"
-#include "AppleIntelPIIXATAKeys.h"
+#include "AppleIntelPIIXPATA.h"
 
 #define super IOPCIATA
-OSDefineMetaClassAndStructors( AppleIntelPIIXATADriver, IOPCIATA )
+OSDefineMetaClassAndStructors( AppleIntelPIIXPATA, IOPCIATA )
 
 #ifdef  PIIX_DEBUG
-#define DLOG(fmt, args...)  IOLog(fmt, ## args)
+#define DLOG(fmt, args...)  kprintf(fmt, ## args)
 #else
 #define DLOG(fmt, args...)
 #endif
@@ -44,28 +40,27 @@ OSDefineMetaClassAndStructors( AppleIntelPIIXATADriver, IOPCIATA )
 // Controller supported modes.
 //
 #define PIOModes   \
-    (_provider->getPIOModes() & ((1 << piixPIOTimingCount) - 1))
+    (_provider->getPIOModeMask() & ((1 << piixPIOTimingCount) - 1))
 
 #define DMAModes   \
-    (_provider->getDMAModes() & ((1 << piixDMATimingCount) - 1))
+    (_provider->getDMAModeMask() & ((1 << piixDMATimingCount) - 1))
 
 #define UDMAModes  \
-    (_provider->getUltraDMAModes() & ((1 << piixUDMATimingCount) - 1))
+    (_provider->getUltraDMAModeMask() & ((1 << piixUDMATimingCount) - 1))
 
 //---------------------------------------------------------------------------
 //
 // Start the single-channel PIIX ATA controller driver.
 //
 
-bool 
-AppleIntelPIIXATADriver::start( IOService * provider )
+bool AppleIntelPIIXPATA::start( IOService * provider )
 {
     DLOG("%s::%s( %p )\n", getName(), __FUNCTION__, provider);
 
     // Our provider is a 'nub' that represents a single channel
     // PIIX ATA controller. Note that it is not an IOPCIDevice.
 
-	_provider = OSDynamicCast( AppleIntelPIIXATAController, provider );
+    _provider = OSDynamicCast( AppleIntelPIIXATAChannel, provider );
     if ( _provider == 0 )
         goto fail;
 
@@ -83,17 +78,13 @@ AppleIntelPIIXATADriver::start( IOService * provider )
 
     // Cache controller properties, and validate them.
 
-    _ioPorts = _provider->getIOBaseAddress();
-    _channel = _provider->getChannelNumber();
+    _cmdBlock = _provider->getCommandBlockAddress();
+    _ctrBlock = _provider->getControlBlockAddress();
+    _channel  = _provider->getChannelNumber();
 
-    if ( ( _ioPorts != kPIIX_P_CMD_ADDR ) && ( _ioPorts != kPIIX_S_CMD_ADDR ) )
-    {
-        IOLog("%s: invalid ATA port address 0x%x\n", getName(), _ioPorts);
-        goto fail;
-    }
     if ( _channel > kPIIX_CHANNEL_SECONDARY )
     {
-        IOLog("%s: invalid ATA channel number %d\n", getName(), _channel);
+        IOLog("%s: invalid ATA channel number %ld\n", getName(), _channel);
         goto fail;
     }
 
@@ -125,28 +116,38 @@ AppleIntelPIIXATADriver::start( IOService * provider )
     resetTimingsForDevice( kATADevice0DeviceID );
     resetTimingsForDevice( kATADevice1DeviceID );
 
-    // Call super after setting _ioPorts. This is because our
+    // Call super after resolving _cmdBlock and _ctrBlock. This is because our
     // configureTFPointers() function will be called by super.
 
     if ( super::start(_provider) == false )
     {
-        IOLog("%s: super start failed\n", getName());
         goto fail;
     }
 
     // This driver will handle interrupts using a work loop.
     // Create interrupt event source that will signal the
     // work loop (thread) when a device interrupt occurs.
-    
-    _intSrc = IOInterruptEventSource::interruptEventSource(
-              (OSObject *)             this,
-	          (IOInterruptEventAction) &interruptOccurred,
-                                       _provider, 0 );
+
+    if ( _provider->getInterruptVector() == 14 ||
+         _provider->getInterruptVector() == 15 )
+    {
+        // Legacy IRQ are never shared, no need for an interrupt filter.
+
+        _intSrc = IOInterruptEventSource::interruptEventSource(
+                      this, &interruptOccurred,
+                      _provider, 0 );
+    }
+    else
+    {
+        _intSrc = IOFilterInterruptEventSource::filterInterruptEventSource(
+                      this, &interruptOccurred, &interruptFilter,
+                      _provider, 0 );
+    }
 
     if ( !_intSrc || !_workLoop ||
          (_workLoop->addEventSource(_intSrc) != kIOReturnSuccess) )
     {
-        IOLog("%s: interrupt event source error\n", getName());
+        IOLog("%s: interrupt registration error\n", getName());
         goto fail;
     }
     _intSrc->enable();
@@ -161,7 +162,7 @@ AppleIntelPIIXATADriver::start( IOService * provider )
         {
             ATADeviceNub * nub;
 
-			nub = ATADeviceNub::ataDeviceNub( (IOATAController*) this,
+            nub = ATADeviceNub::ataDeviceNub( (IOATAController*) this,
                                               (ataUnitID) i,
                                               _devInfo[i].type );
 
@@ -175,14 +176,14 @@ AppleIntelPIIXATADriver::start( IOService * provider )
                 }
                 nub->release();
             }
-		}
-	}
+        }
+    }
 
     // Successful start, announce our vital properties.
 
-    IOLog("%s: %s (Port 0x%x, IRQ %d, BM 0x%x)\n", getName(),
-          _provider->getDeviceName(),
-          _ioPorts, _provider->getInterruptLine(), _ioBMOffset);
+    IOLog("%s: %s (CMD 0x%x, CTR 0x%x, IRQ %d, BM 0x%x)\n", getName(),
+          _provider->getControllerName(), _cmdBlock, _ctrBlock,
+          _provider->getInterruptVector(), _ioBMOffset);
 
     return true;
 
@@ -202,8 +203,7 @@ fail:
  *
  ---------------------------------------------------------------------------*/
 
-void
-AppleIntelPIIXATADriver::free()
+void AppleIntelPIIXPATA::free( void )
 {
 #define RELEASE(x) do { if(x) { (x)->release(); (x) = 0; } } while(0)
 
@@ -233,14 +233,14 @@ AppleIntelPIIXATADriver::free()
 
     // IOATAController should release this.
 
-	if ( _doubleBuffer.logicalBuffer )
-	{
-		IOFree( (void *) _doubleBuffer.logicalBuffer,
+    if ( _doubleBuffer.logicalBuffer )
+    {
+        IOFree( (void *) _doubleBuffer.logicalBuffer,
                          _doubleBuffer.bufferSize );
-		_doubleBuffer.bufferSize     = 0;
-		_doubleBuffer.logicalBuffer  = 0;
-		_doubleBuffer.physicalBuffer = 0;
-	}
+        _doubleBuffer.bufferSize     = 0;
+        _doubleBuffer.logicalBuffer  = 0;
+        _doubleBuffer.physicalBuffer = 0;
+    }
 
     // What about _workloop, _cmdGate, and _timer in the superclass?
 
@@ -253,8 +253,7 @@ AppleIntelPIIXATADriver::free()
  *
  ---------------------------------------------------------------------------*/
 
-IOWorkLoop *
-AppleIntelPIIXATADriver::getWorkLoop() const
+IOWorkLoop * AppleIntelPIIXPATA::getWorkLoop( void ) const
 {
     DLOG("%s::%s()\n", getName(), __FUNCTION__);
 
@@ -264,39 +263,71 @@ AppleIntelPIIXATADriver::getWorkLoop() const
 
 /*---------------------------------------------------------------------------
  *
+ * Override IOATAController::synchronousIO()
+ *
+ ---------------------------------------------------------------------------*/
+
+IOReturn AppleIntelPIIXPATA::synchronousIO( void )
+{
+    IOReturn ret;
+    
+    // IOATAController::synchronousIO() asserts nIEN bit in order to disable
+    // drive interrupts during polled mode command execution. The problem is
+    // that this will float the INTRQ line and put it in high impedance state,
+    // which on certain systems has the undesirable effect of latching a false
+    // interrupt on the interrupt controller. Perhaps those systems lack a
+    // strong pull down resistor on the INTRQ line. Experiment shows that the
+    // interrupt event source is signalled, and its producerCount incremented
+    // after every synchronousIO() call. This false interrupt can become
+    // catastrophic after reverting to async operations since software can
+    // issue a command, handle the false interrupt, and issue another command
+    // to the drive before the actual completion of the first command, leading
+    // to a irrecoverable bus hang. This function is called after an ATA bus
+    // reset. Waking from system sleep will exercise this path.
+    // The workaround is to mask the interrupt line while the INTRQ line is
+    // floating (or bouncing).
+
+    if (_intSrc) _intSrc->disable();
+    ret = super::synchronousIO();
+    if (_intSrc) _intSrc->enable();
+
+    return ret;
+}
+
+/*---------------------------------------------------------------------------
+ *
  * Configure the PIIX PCI device.
  *
  ---------------------------------------------------------------------------*/
 
-bool
-AppleIntelPIIXATADriver::configurePCIDevice( IOPCIDevice * device,
-                                             UInt16        channel )
+bool AppleIntelPIIXPATA::configurePCIDevice( IOPCIDevice * device,
+                                             UInt32        channel )
 {
     UInt32 reg;
 
-    DLOG("%s::%s( %p, %d )\n", getName(), __FUNCTION__,
+    DLOG("%s::%s( %p, %ld )\n", getName(), __FUNCTION__,
          device, channel);
 
-	// Fetch the corresponding primary/secondary IDETIM register and
-	// check the individual channel enable bit. We assume that the
+    // Fetch the corresponding primary/secondary IDETIM register and
+    // check the individual channel enable bit. We assume that the
     // master IOSE bit was already checked by our provider.
 
-	reg = device->configRead32( kPIIX_PCI_IDETIM );
+    reg = device->configRead32( kPIIX_PCI_IDETIM );
 
-	if ( channel == kPIIX_CHANNEL_SECONDARY )
-		reg >>= 16;		// kPIIX_PCI_IDETIM + 2 for secondary channel
+    if ( channel == kPIIX_CHANNEL_SECONDARY )
+        reg >>= 16;  // kPIIX_PCI_IDETIM + 2 for secondary channel
 
-	if ( (reg & kPIIX_PCI_IDETIM_IDE) == 0 )
+    if ( (reg & kPIIX_PCI_IDETIM_IDE) == 0 )
     {
-		IOLog("%s: %s PCI IDE channel is disabled\n", getName(),
-			  (channel == kPIIX_CHANNEL_PRIMARY) ? "Primary" : "Secondary");
-		return false;
-	}
+        IOLog("%s: %s PCI IDE channel is disabled\n", getName(),
+              (channel == kPIIX_CHANNEL_PRIMARY) ? "Primary" : "Secondary");
+        return false;
+    }
 
-	// Enable bus-master. The previous state of the bit is returned
+    // Enable bus-master. The previous state of the bit is returned
     // but ignored.
 
-	device->setBusMasterEnable( true );
+    device->setBusMasterEnable( true );
 
     // Read the IDE config register containing the Ultra DMA clock control,
     // and 80-conductor cable reporting bits.
@@ -314,40 +345,40 @@ AppleIntelPIIXATADriver::configurePCIDevice( IOPCIDevice * device,
  *
  ---------------------------------------------------------------------------*/
 
-bool AppleIntelPIIXATADriver::getBMBaseAddress( IOPCIDevice * provider,
-                                                UInt16        channel,
-                                                UInt16 *      addrOut )
+bool AppleIntelPIIXPATA::getBMBaseAddress( IOPCIDevice * provider,
+                                           UInt32        channel,
+                                           UInt16 *      addrOut )
 {
-	UInt32 bmiba;
+    UInt32 bmiba;
 
-    DLOG("%s::%s( %p, %d, %p )\n", getName(), __FUNCTION__,
+    DLOG("%s::%s( %p, %ld, %p )\n", getName(), __FUNCTION__,
          provider, channel, addrOut);
 
-	bmiba = provider->configRead32( kPIIX_PCI_BMIBA );
+    bmiba = provider->configRead32( kPIIX_PCI_BMIBA );
 
-	if ( (bmiba & kPIIX_PCI_BMIBA_RTE) == 0 )
+    if ( (bmiba & kPIIX_PCI_BMIBA_RTE) == 0 )
     {
         IOLog("%s: PCI memory range 0x%02x (0x%08lx) is not an I/O range\n",
               getName(), kPIIX_PCI_BMIBA, bmiba);
-		return false;
-	}
+        return false;
+    }
 
-	bmiba &= kPIIX_PCI_BMIBA_MASK;	// get the address portion
+    bmiba &= kPIIX_PCI_BMIBA_MASK;  // get the address portion
 
-	// If bmiba is zero, it is likely that the user has elected to
-	// turn off PCI IDE support in the BIOS.
+    // If bmiba is zero, it is likely that the user has elected to
+    // turn off PCI IDE support in the BIOS.
 
-	if ( bmiba == 0 )
-		return false;
+    if ( bmiba == 0 )
+        return false;
 
-	if ( channel == kPIIX_CHANNEL_SECONDARY )
-		bmiba += kPIIX_IO_BM_OFFSET;
+    if ( channel == kPIIX_CHANNEL_SECONDARY )
+        bmiba += kPIIX_IO_BM_OFFSET;
 
-	*addrOut = (UInt16) bmiba;
+    *addrOut = (UInt16) bmiba;
 
     DLOG("%s::%s ioBMOffset = %04x\n", getName(), __FUNCTION__, *addrOut);
 
-	return true;
+    return true;
 }
 
 /*---------------------------------------------------------------------------
@@ -357,8 +388,7 @@ bool AppleIntelPIIXATADriver::getBMBaseAddress( IOPCIDevice * provider,
  *
  ---------------------------------------------------------------------------*/
 
-void
-AppleIntelPIIXATADriver::resetTimingsForDevice( ataUnitID unit )
+void AppleIntelPIIXPATA::resetTimingsForDevice( ataUnitID unit )
 {
     _pioTiming[unit]  = &piixPIOTiming[ 0 ];  // PIO Mode 0
     _dmaTiming[unit]  = 0;
@@ -380,20 +410,19 @@ AppleIntelPIIXATADriver::resetTimingsForDevice( ataUnitID unit )
  *
  ---------------------------------------------------------------------------*/
 
-bool 
-AppleIntelPIIXATADriver::configureTFPointers()
+bool AppleIntelPIIXPATA::configureTFPointers( void )
 {
     DLOG("%s::%s()\n", getName(), __FUNCTION__);
 
-	_tfDataReg      = IOATAIOReg16::withAddress( _ioPorts + 0 );
-	_tfFeatureReg   = IOATAIOReg8::withAddress(  _ioPorts + 1 );
-	_tfSCountReg    = IOATAIOReg8::withAddress(  _ioPorts + 2 );
-	_tfSectorNReg   = IOATAIOReg8::withAddress(  _ioPorts + 3 );
-	_tfCylLoReg     = IOATAIOReg8::withAddress(  _ioPorts + 4 );
-	_tfCylHiReg     = IOATAIOReg8::withAddress(  _ioPorts + 5 );
-	_tfSDHReg       = IOATAIOReg8::withAddress(  _ioPorts + 6 );
-	_tfStatusCmdReg = IOATAIOReg8::withAddress(  _ioPorts + 7 );
-	_tfAltSDevCReg  = IOATAIOReg8::withAddress(  _ioPorts + 0x206 );
+    _tfDataReg      = IOATAIOReg16::withAddress( _cmdBlock + 0 );
+    _tfFeatureReg   = IOATAIOReg8::withAddress(  _cmdBlock + 1 );
+    _tfSCountReg    = IOATAIOReg8::withAddress(  _cmdBlock + 2 );
+    _tfSectorNReg   = IOATAIOReg8::withAddress(  _cmdBlock + 3 );
+    _tfCylLoReg     = IOATAIOReg8::withAddress(  _cmdBlock + 4 );
+    _tfCylHiReg     = IOATAIOReg8::withAddress(  _cmdBlock + 5 );
+    _tfSDHReg       = IOATAIOReg8::withAddress(  _cmdBlock + 6 );
+    _tfStatusCmdReg = IOATAIOReg8::withAddress(  _cmdBlock + 7 );
+    _tfAltSDevCReg  = IOATAIOReg8::withAddress(  _ctrBlock + 2 );
 
     if ( !_tfDataReg || !_tfFeatureReg || !_tfSCountReg ||
          !_tfSectorNReg || !_tfCylLoReg || !_tfCylHiReg ||
@@ -402,7 +431,26 @@ AppleIntelPIIXATADriver::configureTFPointers()
         return false;
     }
 
-	return true;
+    return true;
+}
+
+/*---------------------------------------------------------------------------
+ *
+ * Filter interrupts that are not originated by our hardware. This will help
+ * to prevent waking up our work loop thread when a shared interrupt line is
+ * asserted by another device.
+ *
+ ---------------------------------------------------------------------------*/
+
+bool AppleIntelPIIXPATA::interruptFilter( OSObject * owner,
+                                          IOFilterInterruptEventSource * src )
+{
+    AppleIntelPIIXPATA * self = (AppleIntelPIIXPATA *) owner;
+
+    if ( *(self->_bmStatusReg) & kPIIX_IO_BMISX_IDEINTS )
+        return true;   // wakeup the work loop
+    else
+        return false;  // ignore this interrupt
 }
 
 /*---------------------------------------------------------------------------
@@ -412,17 +460,20 @@ AppleIntelPIIXATADriver::configureTFPointers()
  *
  ---------------------------------------------------------------------------*/
 
-void
-AppleIntelPIIXATADriver::interruptOccurred( OSObject *               owner,
+void AppleIntelPIIXPATA::interruptOccurred( OSObject *               owner,
                                             IOInterruptEventSource * src,
                                             int                      count )
 {
-	AppleIntelPIIXATADriver * self = (AppleIntelPIIXATADriver *) owner;
+    AppleIntelPIIXPATA * self = (AppleIntelPIIXPATA *) owner;
+
+    // Clear interrupt latch
+
+    *(self->_bmStatusReg) = kPIIX_IO_BMISX_IDEINTS;
 
     // Let our superclass handle the interrupt to advance to the next state
     // in its internal state machine.
     
-	self->handleDeviceInterrupt();
+    self->handleDeviceInterrupt();
 }
 
 /*---------------------------------------------------------------------------
@@ -432,8 +483,7 @@ AppleIntelPIIXATADriver::interruptOccurred( OSObject *               owner,
  *
  ---------------------------------------------------------------------------*/
 
-UInt32 
-AppleIntelPIIXATADriver::scanForDrives()
+UInt32 AppleIntelPIIXPATA::scanForDrives( void )
 {
     UInt32 unitsFound;
 
@@ -448,7 +498,8 @@ AppleIntelPIIXATADriver::scanForDrives()
     IOSleep( 10 );
 
     unitsFound = super::scanForDrives();
-    
+
+#if ENABLE_VPC4_DRIVESCAN_WORKAROUND
     // FIXME: Hack for Darwin/x86 on VPC compatibility.
     // VPC 4.0 will set the error bit (bit 0) in the status register
     // following an assertion of SRST. The scanForDrives() code in
@@ -466,7 +517,7 @@ AppleIntelPIIXATADriver::scanForDrives()
 
             for ( milsSpent = 0; milsSpent < 10000; )
             {
-                *_tfSDHReg	= ( unit << 4 );
+                *_tfSDHReg = ( unit << 4 );
                 IODelay( 10 );
 
                 if ( (*_tfStatusCmdReg & mATABusy) == 0x00 ) break;
@@ -479,7 +530,7 @@ AppleIntelPIIXATADriver::scanForDrives()
             // Ignore the error bit in the status register, and check
             // for a ATA device signature.
 
-			if ( (*_tfCylLoReg == 0x00) && (*_tfCylHiReg == 0x00) &&
+            if ( (*_tfCylLoReg == 0x00) && (*_tfCylHiReg == 0x00) &&
                  (*_tfSCountReg == 0x01) && (*_tfSectorNReg == 0x01) &&
                  ( (*_tfAltSDevCReg & 0x50) == 0x50) )
             {
@@ -489,8 +540,9 @@ AppleIntelPIIXATADriver::scanForDrives()
             }
         }
     }
+#endif
 
-	*_tfSDHReg = 0x00; 	// Initialize device selection to device 0.
+    *_tfSDHReg = 0x00;  // Initialize device selection to device 0.
 
     return unitsFound;
 }
@@ -501,31 +553,31 @@ AppleIntelPIIXATADriver::scanForDrives()
  *
  ---------------------------------------------------------------------------*/
 
-IOReturn
-AppleIntelPIIXATADriver::provideBusInfo( IOATABusInfo * infoOut )
+IOReturn AppleIntelPIIXPATA::provideBusInfo( IOATABusInfo * infoOut )
 {
     DLOG("%s::%s( %p )\n", getName(), __FUNCTION__, infoOut);
 
-	if ( infoOut == 0 )
-	{
-		IOLog("%s::%s bad argument\n", getName(), __FUNCTION__);
-		return -1;
-	}
+    if ( infoOut == 0 )
+    {
+        IOLog("%s::%s bad argument\n", getName(), __FUNCTION__);
+        return -1;
+    }
 
     infoOut->zeroData();
     infoOut->setSocketType( kInternalATASocket );
 
-	infoOut->setPIOModes( PIOModes );
-	infoOut->setDMAModes( DMAModes );
-	infoOut->setUltraModes( UDMAModes );
+    infoOut->setPIOModes( PIOModes );
+    infoOut->setDMAModes( DMAModes );
+    infoOut->setUltraModes( UDMAModes );
+    infoOut->setExtendedLBA( true );
 
-	UInt8 units = 0;
-	if ( _devInfo[0].type != kUnknownATADeviceType ) units++;
-	if ( _devInfo[1].type != kUnknownATADeviceType ) units++;
+    UInt8 units = 0;
+    if ( _devInfo[0].type != kUnknownATADeviceType ) units++;
+    if ( _devInfo[1].type != kUnknownATADeviceType ) units++;
 
-	infoOut->setUnits( units );
+    infoOut->setUnits( units );
 
-	return kATANoErr;
+    return kATANoErr;
 }
 
 /*---------------------------------------------------------------------------
@@ -534,18 +586,17 @@ AppleIntelPIIXATADriver::provideBusInfo( IOATABusInfo * infoOut )
  *
  ---------------------------------------------------------------------------*/
 
-IOReturn 
-AppleIntelPIIXATADriver::getConfig( IOATADevConfig * configOut,
-                                    UInt32           unit )
+IOReturn AppleIntelPIIXPATA::getConfig( IOATADevConfig * configOut,
+                                        UInt32           unit )
 {
     DLOG("%s::%s( %p, %ld )\n", getName(), __FUNCTION__,
          configOut, unit);
 
-	if ( (configOut == 0) || (unit > kATADevice1DeviceID) )
-	{
-		IOLog("%s::%s bad argument\n", getName(), __FUNCTION__);
-		return -1;	
-	}
+    if ( (configOut == 0) || (unit > kATADevice1DeviceID) )
+    {
+        IOLog("%s::%s bad argument\n", getName(), __FUNCTION__);
+        return -1;
+    }
 
     configOut->setPIOMode( 0 );
     configOut->setDMAMode( 0 );
@@ -568,7 +619,7 @@ AppleIntelPIIXATADriver::getConfig( IOATADevConfig * configOut,
         configOut->setUltraMode( 1 << _udmaTiming[unit]->mode );
     }
 
-	configOut->setPacketConfig( _devInfo[unit].packetSend );
+    configOut->setPacketConfig( _devInfo[unit].packetSend );
 
     return kATANoErr;
 }
@@ -579,9 +630,8 @@ AppleIntelPIIXATADriver::getConfig( IOATADevConfig * configOut,
  *
  ---------------------------------------------------------------------------*/
 
-IOReturn 
-AppleIntelPIIXATADriver::selectConfig( IOATADevConfig * config,
-                                       UInt32           unit )
+IOReturn AppleIntelPIIXPATA::selectConfig( IOATADevConfig * config,
+                                           UInt32           unit )
 {
     const PIIXTiming *     pioTiming  = 0;
     const PIIXTiming *     dmaTiming  = 0;
@@ -590,11 +640,11 @@ AppleIntelPIIXATADriver::selectConfig( IOATADevConfig * config,
     DLOG("%s::%s( %p, %ld )\n", getName(), __FUNCTION__,
          config, unit);
 
-	if ( (config == 0) || (unit > kATADevice1DeviceID) )
-	{
-		IOLog("%s::%s bad argument\n", getName(), __FUNCTION__);
-		return -1;
-	}
+    if ( (config == 0) || (unit > kATADevice1DeviceID) )
+    {
+        IOLog("%s::%s bad argument\n", getName(), __FUNCTION__);
+        return -1;
+    }
 
     removeProperty( kSelectedPIOModeKey );
     removeProperty( kSelectedDMAModeKey );
@@ -644,7 +694,7 @@ AppleIntelPIIXATADriver::selectConfig( IOATADevConfig * config,
     // Look at the selected Multi-Word DMA mode.
 
     if ( config->getDMAMode() )
-	{
+    {
         UInt8  dmaModeNumber;
 
         // Is the selected DMA mode supported?
@@ -750,9 +800,9 @@ AppleIntelPIIXATADriver::selectConfig( IOATADevConfig * config,
 
     writeTimingRegisters();
 
-	_devInfo[unit].packetSend = config->getPacketConfig();
+    _devInfo[unit].packetSend = config->getPacketConfig();
 
-	return getConfig( config, unit );
+    return getConfig( config, unit );
 }
 
 /*---------------------------------------------------------------------------
@@ -761,10 +811,9 @@ AppleIntelPIIXATADriver::selectConfig( IOATADevConfig * config,
  *
  ---------------------------------------------------------------------------*/
 
-void
-AppleIntelPIIXATADriver::writeTimingRegisters( ataUnitID unit )
+void AppleIntelPIIXPATA::writeTimingRegisters( ataUnitID unit )
 {
-    UInt8 idetimOffset;
+    UInt8  idetimOffset;
     UInt8  sidetimMask;
     UInt8  udmactlMask;
     UInt16 udmatimMask;
@@ -815,7 +864,7 @@ AppleIntelPIIXATADriver::writeTimingRegisters( ataUnitID unit )
     // channels. Call the PCI config space write functions in our
     // provider to serialize changes in those timing registers.
 
-    if ( _provider->hasPerChannelTimingSupport() == false )
+    if ( _provider->hasSharedDriveTimings() == true )
     {
         _provider->pciConfigWrite16( idetimOffset, _idetim[unit] );
         
@@ -838,15 +887,6 @@ AppleIntelPIIXATADriver::writeTimingRegisters( ataUnitID unit )
              getName(),
              _idetim[0] | _idetim[1], _sidetim, _udmactl, _udmatim);
     }
-
-#if 0
-    IOLog("%s: CH %d PCI 0x40: %08lx\n", getName(),
-          _channel, _pciDevice->configRead32( 0x40 ));
-    IOLog("%s: CH %d PCI 0x44: %08lx\n", getName(),
-          _channel, _pciDevice->configRead32( 0x44 ));
-    IOLog("%s: CH %d PCI 0x48: %08lx\n", getName(),
-          _channel, _pciDevice->configRead32( 0x48 ));
-#endif
 }
 
 /*---------------------------------------------------------------------------
@@ -855,8 +895,7 @@ AppleIntelPIIXATADriver::writeTimingRegisters( ataUnitID unit )
  *
  ---------------------------------------------------------------------------*/
 
-void
-AppleIntelPIIXATADriver::computeUDMATimingRegisters( ataUnitID unit )
+void AppleIntelPIIXPATA::computeUDMATimingRegisters( ataUnitID unit )
 {
     UInt8  udmaEnableBit   = kPIIX_PCI_UDMACTL_PSDE0;
     UInt8  udmatimShifts   = kPIIX_PCI_UDMATIM_PCT0_SHIFT;
@@ -904,8 +943,7 @@ AppleIntelPIIXATADriver::computeUDMATimingRegisters( ataUnitID unit )
  *
  ---------------------------------------------------------------------------*/
 
-void
-AppleIntelPIIXATADriver::computeTimingRegisters( ataUnitID unit )
+void AppleIntelPIIXPATA::computeTimingRegisters( ataUnitID unit )
 {
     const PIIXTiming * timing;
     UInt8              index;
@@ -913,11 +951,11 @@ AppleIntelPIIXATADriver::computeTimingRegisters( ataUnitID unit )
 
     DLOG("%s::%s( %d )\n", getName(), __FUNCTION__, unit);
 
-	assert( _pioTiming[unit] != 0 );
+    assert( _pioTiming[unit] != 0 );
 
     timing = _dmaTiming[unit] ? _dmaTiming[unit] : _pioTiming[unit];
 
-	if ( timing->cycleTime != _pioTiming[unit]->cycleTime )
+    if ( timing->cycleTime != _pioTiming[unit]->cycleTime )
     {
         DLOG("%s: using PIO compatible timing\n", getName());
         slowPIO = true;
@@ -927,7 +965,7 @@ AppleIntelPIIXATADriver::computeTimingRegisters( ataUnitID unit )
 
     index = timing->registerIndex;
 
-    if ( _provider->hasPerChannelTimingSupport() == false )
+    if ( _provider->hasSharedDriveTimings() == true )
     {
         _idetim[unit] = piixIDETIM[index][unit];
     }
@@ -964,10 +1002,9 @@ AppleIntelPIIXATADriver::computeTimingRegisters( ataUnitID unit )
  *
  ---------------------------------------------------------------------------*/
 
-void 
-AppleIntelPIIXATADriver::selectIOTiming( ataUnitID unit )
+void AppleIntelPIIXPATA::selectIOTiming( ataUnitID unit )
 {
-    if ( _provider->hasPerChannelTimingSupport() == false )
+    if ( _provider->hasSharedDriveTimings() == true )
     {
         DLOG("%s::%s( %d )\n", getName(), __FUNCTION__, unit);
         writeTimingRegisters( unit );
@@ -981,26 +1018,25 @@ AppleIntelPIIXATADriver::selectIOTiming( ataUnitID unit )
  *
  ---------------------------------------------------------------------------*/
 
-IOReturn
-AppleIntelPIIXATADriver::handleQueueFlush()
+IOReturn AppleIntelPIIXPATA::handleQueueFlush( void )
 {
-	UInt32 savedQstate = _queueState;
+    UInt32 savedQstate = _queueState;
 
     DLOG("%s::%s()\n", getName(), __FUNCTION__);
 
-	_queueState = IOATAController::kQueueLocked;
+    _queueState = IOATAController::kQueueLocked;
 
-	IOATABusCommand * cmdPtr = 0;
+    IOATABusCommand * cmdPtr = 0;
 
-	while ( cmdPtr = dequeueFirstCommand() )
-	{
-		cmdPtr->setResult( kIOReturnError );
-		cmdPtr->executeCallback();
-	}
+    while ( cmdPtr = dequeueFirstCommand() )
+    {
+        cmdPtr->setResult( kIOReturnError );
+        cmdPtr->executeCallback();
+    }
 
-	_queueState = savedQstate;
+    _queueState = savedQstate;
 
-	return kATANoErr;
+    return kATANoErr;
 }
 
 /*---------------------------------------------------------------------------
@@ -1009,10 +1045,9 @@ AppleIntelPIIXATADriver::handleQueueFlush()
  *
  ---------------------------------------------------------------------------*/
 
-IOReturn
-AppleIntelPIIXATADriver::message( UInt32      type,
-                                  IOService * provider,
-                                  void *      argument )
+IOReturn AppleIntelPIIXPATA::message( UInt32      type,
+                                      IOService * provider,
+                                      void *      argument )
 {
     if ( ( provider == _provider ) &&
          ( type == kIOMessageServiceIsTerminated ) )
@@ -1030,15 +1065,14 @@ AppleIntelPIIXATADriver::message( UInt32      type,
  *
  ---------------------------------------------------------------------------*/
 
-bool
-AppleIntelPIIXATADriver::setDriveProperty( UInt8        driveUnit,
+bool AppleIntelPIIXPATA::setDriveProperty( UInt32       driveUnit,
                                            const char * key,
-                                           UInt64       value,
-                                           UInt         numberOfBits)
+                                           UInt32       value,
+                                           UInt32       numberOfBits)
 {
     char keyString[40];
     
-    snprintf(keyString, 40, "Drive %d %s", driveUnit, key);
+    snprintf(keyString, 40, "Drive %ld %s", driveUnit, key);
     
     return super::setProperty( keyString, value, numberOfBits );
 }

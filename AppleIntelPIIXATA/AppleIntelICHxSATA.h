@@ -23,22 +23,24 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef _APPLEINTELPIIXATAKEYS_H
-#define _APPLEINTELPIIXATAKEYS_H
+#ifndef _APPLEINTELICHXSATA_H
+#define _APPLEINTELICHXSATA_H
 
-#define kChannelNumberKey         "Channel Number"
-#define kChannelModeKey           "Channel Mode"
-#define kCommandBlockAddressKey   "Command Block Address"
-#define kControlBlockAddressKey   "Control Block Address"
-#define kInterruptVectorKey       "Interrupt Vector"
+#include "AppleIntelPIIXPATA.h"
 
-#define kPortMappingKey           "Port Mapping"
-#define kTransferModesKey         "Supported Transfer Modes"
-#define kSerialATAKey             "Serial ATA"
-#define kControllerNameKey        "Controller Name"
-#define kSharedDriveTimingsKey    "Shared Drive Timings"
-#define kSelectedPIOModeKey       "PIO Mode"
-#define kSelectedDMAModeKey       "DMA Mode"
-#define kSelectedUltraDMAModeKey  "Ultra DMA Mode"
+class AppleIntelICHxSATA : public AppleIntelPIIXPATA
+{
+    OSDeclareDefaultStructors( AppleIntelICHxSATA )
 
-#endif /* !_APPLEINTELPIIXATAKEYS_H */
+protected:
+    virtual void     setSATAPortEnable( UInt32 driveUnit, bool enable );
+    
+    virtual bool     getSATAPortPresentStatus( UInt32 driveUnit );
+
+public:
+    virtual IOReturn provideBusInfo( IOATABusInfo * infoOut );
+    
+    virtual UInt32   scanForDrives( void );
+};
+
+#endif /* !_APPLEINTELICHXSATA_H */
