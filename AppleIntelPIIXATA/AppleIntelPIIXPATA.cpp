@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2003 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1998-2006 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -68,6 +68,8 @@ OSDefineMetaClassAndStructors( AppleIntelPIIXPATA, IOPCIATA )
 bool AppleIntelPIIXPATA::start( IOService * provider )
 {
     bool superStarted = false;
+	IOACPIPlatformDevice* myACPINode;
+	_drivePowerOn =  true;
 
     DLOG("%s::%s( %p )\n", getName(), __FUNCTION__, provider);
 
@@ -171,6 +173,32 @@ bool AppleIntelPIIXPATA::start( IOService * provider )
 
     initForPM( provider );
 
+	
+	myACPINode = getACPIParent();
+	if( myACPINode )
+	{
+	
+		if( hasMediaNotify( myACPINode ) )
+		{
+			_pciACPIDevice = myACPINode;
+			
+			
+			
+			_interestNotifier = myACPINode->registerInterest(  gIOGeneralInterest ,
+								(IOServiceInterestHandler) AppleIntelPIIXPATA::mediaInterestHandler,
+								this);
+								
+			if( _interestNotifier )
+				DLOG ("AppleIntellPIIX registered Interest.\n");
+		
+		} else {
+		
+			_pciACPIDevice = NULL;
+		
+		}
+	
+	}
+
     // For each device discovered on the ATA bus (by super),
     // create a nub for that device and call registerService() to
     // trigger matching against that device.
@@ -195,11 +223,19 @@ bool AppleIntelPIIXPATA::start( IOService * provider )
                     nub->setProperty( kIOMaximumSegmentCountWriteKey,
                                       kATAMaxDMADesc / 2, 64 );
 
-                    nub->setProperty( kIOMaximumSegmentByteCountReadKey,
-                                      0x10000, 64 );
+                    nub->setProperty( kIOMaximumByteCountReadKey,
+                                      512*256, 64 );
 
-                    nub->setProperty( kIOMaximumSegmentByteCountWriteKey,
-                                      0x10000, 64 );
+                    nub->setProperty( kIOMaximumByteCountWriteKey,
+                                      512*256, 64 );
+									  
+					// set the media notify property if available
+					if( _pciACPIDevice )
+					{
+						nub->setProperty( kATANotifyOnChangeKey, 1, 32);
+					
+					}
+									  				  
                 }
 
                 if ( nub->attach( this ) )
@@ -215,7 +251,7 @@ bool AppleIntelPIIXPATA::start( IOService * provider )
 
     // Successful start, announce our vital properties.
 
-    IOLog("%s: %s (CMD 0x%x, CTR 0x%x, IRQ %d, BM 0x%x)\n", getName(),
+    DLOG("%s: %s (CMD 0x%x, CTR 0x%x, IRQ %d, BM 0x%x)\n", getName(),
           _provider->getControllerName(), _cmdBlock, _ctrBlock,
           _provider->getInterruptVector(), _ioBMOffset);
 
@@ -595,6 +631,28 @@ UInt32 AppleIntelPIIXPATA::scanForDrives( void )
 
     return unitsFound;
 }
+
+
+/*---------------------------------------------------------------------------
+ *
+ * Determine the ATAPI device's state.
+ *
+ ---------------------------------------------------------------------------*/
+
+IOATAController::transState	
+AppleIntelPIIXPATA::determineATAPIState(void)
+{
+	IOATAController::transState			drivePhase = super::determineATAPIState();
+	if(  _currentCommand->state > drivePhase
+		|| _currentCommand->state == kATAStarted )
+	{
+		return (IOATAController::transState) _currentCommand->state;
+	}
+
+	return drivePhase;
+}
+
+
 
 /*---------------------------------------------------------------------------
  *
@@ -1134,15 +1192,22 @@ bool AppleIntelPIIXPATA::setDriveProperty( UInt32       driveUnit,
 
 IOReturn AppleIntelPIIXPATA::createChannelCommands( void )
 {
-    IOMemoryDescriptor* descriptor = _currentCommand->getBuffer();
-    IOMemoryCursor::PhysicalSegment physSegment;
+	IOATABusCommand64* currentCommand64 = OSDynamicCast( IOATABusCommand64, _currentCommand );
+
+    IODMACommand* currentDMACmd = currentCommand64->GetDMACommand();
+    IODMACommand::Segment32 physSegment32;
     UInt32 index = 0;
     UInt8  *xferDataPtr, *ptr2EndData, *next64KBlock, *starting64KBlock;
     UInt32 xferCount, count2Next64KBlock;
+	IOReturn DMAStatus = 0;
+	UInt32 numSegments = 1;
 
-    if ( !descriptor )
+    if ( NULL == currentDMACmd
+		|| currentDMACmd->getMemoryDescriptor() == NULL)
     {
-        return -1;
+        
+		IOLog("%s: DMA buffer not set on command\n", getName());
+		return -1;
     }
 
     // This form of DMA engine can only do 1 pass.
@@ -1150,23 +1215,38 @@ IOReturn AppleIntelPIIXPATA::createChannelCommands( void )
 
     IOByteCount bytesRemaining = _currentCommand->getByteCount() ;
     IOByteCount xfrPosition    = _currentCommand->getPosition() ;
-    IOByteCount  transferSize  = 0; 
+    UInt64  transferSize  = 0; 
 
     // There's a unique problem with pci-style controllers, in that each
     // dma transaction is not allowed to cross a 64K boundary. This leaves
     // us with the yucky task of picking apart any descriptor segments that
     // cross such a boundary ourselves.  
 
-    while ( _DMACursor->getPhysicalSegments(
-                           /* descriptor */ descriptor,
-                           /* position   */ xfrPosition,
-                           /* segments   */ &physSegment,
-                           /* max segs   */ 1,
-                           /* max xfer   */ bytesRemaining,
-                           /* xfer size  */ &transferSize) )
-    {
-        xferDataPtr = (UInt8 *) physSegment.location;
-        xferCount   = physSegment.length;
+//    while ( _DMACursor->getPhysicalSegments(
+//                           /* descriptor */ descriptor,
+//                           /* position   */ xfrPosition,
+//                           /* segments   */ &physSegment,
+//                           /* max segs   */ 1,
+//                           /* max xfer   */ bytesRemaining,
+//                           /* xfer size  */ &transferSize) )
+  
+	
+	  
+	while ( bytesRemaining )
+	{
+		
+		DMAStatus = currentDMACmd->gen32IOVMSegments( &transferSize, &physSegment32, &numSegments);
+		if ( ( DMAStatus != kIOReturnSuccess ) || ( numSegments != 1 ) || ( physSegment32.fLength == 0 ) )
+		{
+			
+			panic ( "AppleIntelPIIXPATA::createChannelCommands [%d] status %lx segs %d phys %qx:%qx \n", __LINE__, DMAStatus, numSegments, physSegment32.fIOVMAddr, physSegment32.fLength );
+		    break;
+		    
+		}
+		
+		
+		xferDataPtr = (UInt8 *) physSegment32.fIOVMAddr;
+        xferCount   = physSegment32.fLength;
 
         if ( (UInt32) xferDataPtr & 0x01 )
         {
@@ -1351,3 +1431,243 @@ IOReturn AppleIntelPIIXPATA::setPowerState( unsigned long stateIndex,
 
     return IOPMAckImplied;
 }
+
+#pragma mark -
+#pragma mark acpi code
+IOACPIPlatformDevice*
+AppleIntelPIIXPATA::getACPIParent( void )
+{
+
+	// get the ACPI path
+	OSObject* acpi_path_object = NULL;
+	OSString* acpi_path = NULL;
+	IORegistryEntry* acpi_device_entry = NULL;
+	IOACPIPlatformDevice* acpi_device = NULL;
+	
+	acpi_path_object = _provider->getProvider()->getProvider()->getProperty("acpi-path");
+	if( acpi_path_object != NULL )
+	{
+		acpi_path = OSDynamicCast( OSString, acpi_path_object);
+		if( acpi_path )
+		{
+		
+			// get the acpi nub
+			acpi_device_entry = IORegistryEntry::fromPath( acpi_path->getCStringNoCopy() );
+			if( acpi_device_entry )
+			{
+			
+				if( acpi_device_entry->metaCast( "IOACPIPlatformDevice") )
+				{
+					DLOG( "++++++--->>> PIIX got the ACPI device\n");
+					acpi_device = ( IOACPIPlatformDevice*) acpi_device_entry;
+					
+				}
+			
+			} else {
+			
+				DLOG("****------> PIIXATA could not get registry acpi_path entry \n");
+			
+			}
+		
+		
+		} else {
+		
+			DLOG("****------> PIIXATA could not cast acpi_path\n");
+		}
+		
+	
+	
+	
+	} else {
+	
+		DLOG("------> ** PIIX ATA no acpi-path\n");
+	
+	}
+	return acpi_device;
+}
+
+bool
+AppleIntelPIIXPATA::hasMediaNotify(IOACPIPlatformDevice* acpi_device)
+{
+	OSData *compatibleEntry;
+	bool result = false;
+	
+	compatibleEntry = OSDynamicCast( OSData, acpi_device->getProperty( "compatible") );
+	if( compatibleEntry )
+	{
+		
+		if( compatibleEntry->isEqualTo( "media-notify" , 12 ) )
+		{
+				result = true;
+				DLOG( "PIIXATA has mediaNotify\n");
+		}
+		
+
+	}
+	
+	return result;
+}
+
+void
+AppleIntelPIIXPATA::turnOffDrive( void )
+{
+
+
+
+	// drive-low the ATA interface
+	UInt32 maskBits = 0x3 << 16;
+	UInt32 disableBits = 0x02 << 16;
+	UInt32 ideConfigBits = _pciDevice->configRead32( kPIIX_PCI_IDECONFIG );
+	
+	ideConfigBits &= ~maskBits;
+	
+	_pciDevice->configWrite32( kPIIX_PCI_IDECONFIG , ( disableBits | ideConfigBits));
+	
+	// turn off the power
+	_pciACPIDevice->evaluateObject( "_PS3" );
+	
+	_drivePowerOn = false;
+}
+
+void
+AppleIntelPIIXPATA::turnOnDrive( void )
+{
+	_drivePowerOn = true;
+	
+	// turn on the power
+	_pciACPIDevice->evaluateObject( "_PS0" );
+
+	// enable the interface
+	UInt32 disableBits = 0x3 << 16;
+	UInt32 ideConfigBits =  _pciDevice->configRead32( kPIIX_PCI_IDECONFIG ); 
+	
+	_pciDevice->configWrite32( kPIIX_PCI_IDECONFIG , (~disableBits) &  ideConfigBits);
+	
+	IOSleep( 500 );
+	
+	// wait for the drive to go not Busy for up to 31 seconds
+	bool resetFailed = true;
+	for( int i = 0; i < 3100; i++)
+	{
+	
+		UInt8 status = *_tfStatusCmdReg;
+		if( (status & 0x80) == 0x00 )
+		{	
+			resetFailed = false;
+			DLOG(" AppleIntelPIIX cleared busy in %d seconds\n", i);
+			break;
+		
+		}
+		IOSleep( 10 );
+	}
+	
+	if( resetFailed )
+	{
+	
+		DLOG("AppleIntelPIIX failed to clear busy on power control\n");
+	
+	}
+
+	executeEventCallouts( kATAResetEvent, kATAInvalidDeviceID);
+
+}
+
+IOReturn
+AppleIntelPIIXPATA::mediaInterestHandler( void* target, 
+										void* refCon,
+										UInt32 messageType, 
+										IOService* provider,
+										void* messageArgument,
+										vm_size_t argSize)
+{
+	bool result = kIOReturnSuccess;
+	
+	
+	// target is this pointer
+	AppleIntelPIIXPATA* self = (AppleIntelPIIXPATA*) target;
+	// refCon is whatever I set
+	//DLOG( "PIIXPata got messageType = %x\n", messageType);
+	
+	if( messageType == kIOACPIMessageDeviceNotification )
+	{
+	
+		UInt32 messageVal = * ((UInt32*)messageArgument);
+		
+		switch( messageVal )
+		{
+			case 0x81:
+				DLOG( "PIIXPata got insert message\n");
+				self->_cmdGate->runAction(
+					OSMemberFunctionCast( IOCommandGate::Action, self, &AppleIntelPIIXPATA::handleInsert) );
+			break;
+			
+			case 0x82:
+				DLOG( "PIIXPata got remove message \n");
+				
+			break;
+			
+			default:
+				DLOG("PIIXPata got unknown ACPI message value\n");
+				
+		}
+	
+	}
+	
+	
+	return result;
+
+
+}
+
+
+void 
+AppleIntelPIIXPATA::completeIO( IOReturn commandResult)
+{
+
+	bool quiescePower = false;
+	
+	if (_currentCommand->getFlags() & mATAFlagQuiesce)
+	{
+		quiescePower = true;
+	
+	}
+
+	super::completeIO( commandResult );
+	
+	if( quiescePower )
+	{
+		turnOffDrive();
+	}
+
+
+}
+
+IOReturn 
+AppleIntelPIIXPATA::dispatchNext( void )
+{
+	if( ! _drivePowerOn ) 
+	{
+		turnOnDrive();
+	}
+
+	
+
+	return super::dispatchNext();
+
+}
+
+IOReturn
+AppleIntelPIIXPATA::handleInsert( void )
+{
+	DLOG("AppleIntelPIIXPATA handling Insertion\n");
+
+	if( ! _drivePowerOn )
+	{
+	
+		turnOnDrive();
+	
+	}
+
+	return kIOReturnSuccess;
+}
+
