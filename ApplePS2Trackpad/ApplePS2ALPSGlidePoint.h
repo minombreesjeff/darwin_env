@@ -27,12 +27,12 @@
 #include <IOKit/hidsystem/IOHIPointing.h>
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// ApplePS2SynapticsTouchPad Class Declaration
+// ApplePS2ALPSGlidePoint Class Declaration
 //
 
-class ApplePS2SynapticsTouchPad : public IOHIPointing 
+class ApplePS2ALPSGlidePoint : public IOHIPointing 
 {
-	OSDeclareDefaultStructors( ApplePS2SynapticsTouchPad );
+	OSDeclareDefaultStructors( ApplePS2ALPSGlidePoint );
 
 private:
     ApplePS2MouseDevice * _device;
@@ -48,12 +48,15 @@ private:
                                                            UInt32  packetSize );
 
     virtual void   setCommandByte( UInt8 setBits, UInt8 clearBits );
+	virtual void   setSampleRateAndResolution( void );
 
+	virtual void   setTapEnable( bool enable );
     virtual void   setTouchPadEnable( bool enable );
+#if _NO_TOUCHPAD_ENABLE_
     virtual UInt32 getTouchPadData( UInt8 dataSelector );
     virtual bool   setTouchPadModeByte( UInt8 modeByteValue,
                                         bool  enableStreamMode = false );
-
+#endif
 	virtual void   free();
 	virtual void   interruptOccurred( UInt8 data );
     virtual void   setDevicePowerState(UInt32 whatToDo);
@@ -64,7 +67,7 @@ protected:
 
 public:
     virtual bool init( OSDictionary * properties );
-    virtual ApplePS2SynapticsTouchPad * probe( IOService * provider,
+    virtual ApplePS2ALPSGlidePoint * probe( IOService * provider,
                                                SInt32 *    score );
     
     virtual bool start( IOService * provider );

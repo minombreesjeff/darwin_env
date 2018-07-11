@@ -23,35 +23,34 @@
 #include <IOKit/assert.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/hidsystem/IOHIDParameter.h>
-#include "ApplePS2SynapticsTouchPad.h"
+#include "ApplePS2ALPSGlidePoint.h"
 
 enum {
     //
-    // Relative mode, 40 packets/s, sleep mode disabled
     //
-    kModeByteValueGesturesEnabled  = 0x00,
-    kModeByteValueGesturesDisabled = 0x04
+    kTapEnabled  = 0x01
 };
 
 // =============================================================================
-// ApplePS2SynapticsTouchPad Class Implementation
+// ApplePS2ALPSGlidePoint Class Implementation
 //
 
 #define super IOHIPointing
-OSDefineMetaClassAndStructors(ApplePS2SynapticsTouchPad, IOHIPointing);
+OSDefineMetaClassAndStructors(ApplePS2ALPSGlidePoint, IOHIPointing);
 
-UInt32 ApplePS2SynapticsTouchPad::deviceType()
+UInt32 ApplePS2ALPSGlidePoint::deviceType()
 { return NX_EVS_DEVICE_TYPE_MOUSE; };
 
-UInt32 ApplePS2SynapticsTouchPad::interfaceID()
+UInt32 ApplePS2ALPSGlidePoint::interfaceID()
 { return NX_EVS_DEVICE_INTERFACE_BUS_ACE; };
 
-IOItemCount ApplePS2SynapticsTouchPad::buttonCount() { return 2; };
-IOFixed     ApplePS2SynapticsTouchPad::resolution()  { return _resolution; };
+IOItemCount ApplePS2ALPSGlidePoint::buttonCount() { return 2; };
+IOFixed     ApplePS2ALPSGlidePoint::resolution()  { return _resolution; };
+bool IsItALPS(UInt8 byte0, UInt8 byte1, UInt8 byte2);
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-bool ApplePS2SynapticsTouchPad::init( OSDictionary * properties )
+bool ApplePS2ALPSGlidePoint::init( OSDictionary * properties )
 {
     //
     // Initialize this object's minimal state. This is invoked right after this
@@ -64,16 +63,17 @@ bool ApplePS2SynapticsTouchPad::init( OSDictionary * properties )
     _interruptHandlerInstalled = false;
     _packetByteCount           = 0;
     _resolution                = (100) << 16; // (100 dpi, 4 counts/mm)
-    _touchPadModeByte          = kModeByteValueGesturesDisabled;
+    _touchPadModeByte          = kTapEnabled;
 
     return true;
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-ApplePS2SynapticsTouchPad *
-ApplePS2SynapticsTouchPad::probe( IOService * provider, SInt32 * score )
+ApplePS2ALPSGlidePoint *
+ApplePS2ALPSGlidePoint::probe( IOService * provider, SInt32 * score )
 {
+	UInt8   byte0, byte1, byte2;
     //
     // The driver has been instructed to verify the presence of the actual
     // hardware we represent. We are guaranteed by the controller that the
@@ -90,62 +90,111 @@ ApplePS2SynapticsTouchPad::probe( IOService * provider, SInt32 * score )
 
     //
     // Send an "Identify TouchPad" command and see if the device is
-    // a Synaptics TouchPad based on its response.  End the command
+    // a ALPS GlidePoint based on its response.  End the command
     // chain with a "Set Defaults" command to clear all state.
     //
 
+    // ALPS GlidePoint detection
     request->commands[0].command  = kPS2C_SendMouseCommandAndCompareAck;
     request->commands[0].inOrOut  = kDP_SetDefaultsAndDisable;
+
+    // set mouse sample rate 100
     request->commands[1].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[1].inOrOut  = kDP_SetMouseResolution;
+    request->commands[1].inOrOut  = kDP_SetMouseSampleRate;
     request->commands[2].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[2].inOrOut  = 0;
+    request->commands[2].inOrOut  = 100;
+
+    // Set mouse resolution 0
     request->commands[3].command  = kPS2C_SendMouseCommandAndCompareAck;
     request->commands[3].inOrOut  = kDP_SetMouseResolution;
     request->commands[4].command  = kPS2C_SendMouseCommandAndCompareAck;
     request->commands[4].inOrOut  = 0;
+
+    // 3X set mouse scaling 2 to 1
     request->commands[5].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[5].inOrOut  = kDP_SetMouseResolution;
+    request->commands[5].inOrOut  = kDP_SetMouseScaling2To1;
     request->commands[6].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[6].inOrOut  = 0;
+    request->commands[6].inOrOut  = kDP_SetMouseScaling2To1;
     request->commands[7].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[7].inOrOut  = kDP_SetMouseResolution;
+    request->commands[7].inOrOut  = kDP_SetMouseScaling2To1;
+
+    // get mouse info
     request->commands[8].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[8].inOrOut  = 0;
-    request->commands[9].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[9].inOrOut  = kDP_GetMouseInformation;
+    request->commands[8].inOrOut  = kDP_GetMouseInformation;
+    request->commands[9].command  = kPS2C_ReadDataPort;
+    request->commands[9].inOrOut  = 0;
     request->commands[10].command = kPS2C_ReadDataPort;
     request->commands[10].inOrOut = 0;
     request->commands[11].command = kPS2C_ReadDataPort;
     request->commands[11].inOrOut = 0;
-    request->commands[12].command = kPS2C_ReadDataPort;
-    request->commands[12].inOrOut = 0;
-    request->commands[13].command = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[13].inOrOut = kDP_SetDefaultsAndDisable;
-    request->commandsCount = 14;
+    request->commands[12].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[12].inOrOut  = kDP_SetDefaultsAndDisable;
+    request->commandsCount = 13;
+
     device->submitRequestAndBlock(request);
 
-    if ( request->commandsCount == 14 &&
-         request->commands[11].inOrOut == 0x47 )
-    {
-        _touchPadVersion = (request->commands[12].inOrOut & 0x0f) << 8
-                         |  request->commands[10].inOrOut;
-
-        //
-        // Only support 4.x or later touchpads.
-        //
-
-        if ( _touchPadVersion >= 0x400 ) success = true;
-    }
-
+    success = true;
+	byte0 = request->commands[9].inOrOut;
+	byte1 = request->commands[10].inOrOut;
+	byte2 = request->commands[11].inOrOut;
+	// IOLog("%s:%s three bytes returned are: [%02x %02x %02x]\n", getName(), __FUNCTION__, byte0, byte1, byte2);
+	
+    success = IsItALPS(byte0, byte1, byte2);
+	_touchPadVersion = (byte2 & 0x0f) << 8 | byte0;
+	
     device->freeRequest(request);
 
     return (success) ? this : 0;
+
+}
+
+bool IsItALPS(UInt8 byte0, UInt8 byte1, UInt8 byte2)
+{
+	bool	success = false;
+	short   i;
+	
+	#define NUM_SINGLES 9
+	static int singles[NUM_SINGLES * 3] ={
+		0x33,0x2,0xa,
+		0x53,0x2,0x0a,
+		0x53,0x2,0x14,
+		0x63,0x2,0xa,
+		0x63,0x2,0x14,
+//		0x73,0x2,0xa,	// 3622947
+		0x63,0x2,0x28,
+		0x63,0x2,0x3c,
+		0x63,0x2,0x50,
+		0x63,0x2,0x64};
+	#define NUM_DUALS 3
+	static int duals[NUM_DUALS * 3]={
+		0x20,0x2,0xe,
+		0x22,0x2,0xa,
+		0x22,0x2,0x14};
+
+	for(i = 0;i < NUM_SINGLES;i++) {
+		if((byte0 == singles[i * 3] && (byte1 == singles[i * 3 + 1]) && byte2 == singles[i * 3 + 2]))
+		{
+			success = true;
+			break;
+		}
+	}
+	if(success == false)
+	{
+		for(i = 0;i < NUM_DUALS;i++)
+		{
+			if((byte0 == duals[i * 3]) && (byte1 == duals[i * 3 + 1]) && (byte2 == duals[i * 3 + 2]))
+			{
+				success = true;
+				break;
+			}
+		}
+	}
+	return success;
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-bool ApplePS2SynapticsTouchPad::start( IOService * provider )
+bool ApplePS2ALPSGlidePoint::start( IOService * provider )
 { 
     UInt64 gesturesEnabled;
 
@@ -167,20 +216,20 @@ bool ApplePS2SynapticsTouchPad::start( IOService * provider )
     // Announce hardware properties.
     //
 
-    IOLog("ApplePS2Trackpad: Synaptics TouchPad v%d.%d\n",
+    IOLog("ApplePS2Trackpad: ALPS GlidePoint v%d.%d\n",
           (UInt8)(_touchPadVersion >> 8), (UInt8)(_touchPadVersion));
 
     //
     // Write the TouchPad mode byte value.
     //
 
-    setTouchPadModeByte(_touchPadModeByte);
+    setTapEnable(_touchPadModeByte);
 
     //
     // Advertise the current state of the tapping feature.
     //
 
-    gesturesEnabled = (_touchPadModeByte == kModeByteValueGesturesEnabled)
+    gesturesEnabled = (_touchPadModeByte == kTapEnabled)
                     ? 1 : 0;
     setProperty("Clicking", gesturesEnabled, sizeof(gesturesEnabled)*8);
 
@@ -197,7 +246,7 @@ bool ApplePS2SynapticsTouchPad::start( IOService * provider )
     //
 
     _device->installInterruptAction(this,
-        (PS2InterruptAction)&ApplePS2SynapticsTouchPad::interruptOccurred);
+        (PS2InterruptAction)&ApplePS2ALPSGlidePoint::interruptOccurred);
     _interruptHandlerInstalled = true;
 
     //
@@ -218,7 +267,7 @@ bool ApplePS2SynapticsTouchPad::start( IOService * provider )
 	//
 
 	_device->installPowerControlAction( this, (PS2PowerControlAction) 
-             &ApplePS2SynapticsTouchPad::setDevicePowerState );
+             &ApplePS2ALPSGlidePoint::setDevicePowerState );
 	_powerControlHandlerInstalled = true;
 
     return true;
@@ -226,7 +275,7 @@ bool ApplePS2SynapticsTouchPad::start( IOService * provider )
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void ApplePS2SynapticsTouchPad::stop( IOService * provider )
+void ApplePS2ALPSGlidePoint::stop( IOService * provider )
 {
     //
     // The driver has been instructed to stop.  Note that we must break all
@@ -267,7 +316,7 @@ void ApplePS2SynapticsTouchPad::stop( IOService * provider )
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void ApplePS2SynapticsTouchPad::free()
+void ApplePS2ALPSGlidePoint::free()
 {
     //
     // Release the pointer to the provider object.
@@ -284,7 +333,7 @@ void ApplePS2SynapticsTouchPad::free()
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void ApplePS2SynapticsTouchPad::interruptOccurred( UInt8 data )
+void ApplePS2ALPSGlidePoint::interruptOccurred( UInt8 data )
 {
     //
     // This will be invoked automatically from our device when asynchronous
@@ -315,7 +364,7 @@ void ApplePS2SynapticsTouchPad::interruptOccurred( UInt8 data )
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void ApplePS2SynapticsTouchPad::
+void ApplePS2ALPSGlidePoint::
      dispatchRelativePointerEventWithPacket( UInt8 * packet,
                                              UInt32  packetSize )
 {
@@ -346,9 +395,75 @@ void ApplePS2SynapticsTouchPad::
     dispatchRelativePointerEvent(dx, dy, buttons, now);
 }
 
+
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void ApplePS2SynapticsTouchPad::setTouchPadEnable( bool enable )
+void ApplePS2ALPSGlidePoint::setTapEnable( bool enable )
+{
+    //
+    // Instructs the trackpad to honor or ignore tapping
+    //
+	bool success;
+    PS2Request * request = _device->allocateRequest();
+    if ( !request ) return;
+
+    request->commands[0].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[0].inOrOut  = kDP_SetMouseScaling2To1;
+    request->commands[1].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[1].inOrOut  = kDP_SetMouseScaling2To1;
+    request->commands[2].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[2].inOrOut  = kDP_SetMouseScaling2To1;
+    request->commands[3].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[3].inOrOut  = kDP_SetDefaultsAndDisable;
+    request->commands[4].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[4].inOrOut  = kDP_GetMouseInformation;
+    request->commands[5].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[5].inOrOut  = kDP_SetDefaultsAndDisable;
+    request->commands[6].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[6].inOrOut  = kDP_SetDefaultsAndDisable;
+
+    if (enable)
+	{
+		request->commands[7].command  = kPS2C_SendMouseCommandAndCompareAck;
+    	request->commands[7].inOrOut  = kDP_SetMouseSampleRate;
+		request->commands[8].command  = kPS2C_SendMouseCommandAndCompareAck;
+    	request->commands[8].inOrOut  = 0x0A;	// 1010 somehow enables tapping
+	}
+	else
+	{
+		request->commands[7].command  = kPS2C_SendMouseCommandAndCompareAck;
+    	request->commands[7].inOrOut  = kDP_SetMouseResolution;
+		request->commands[8].command  = kPS2C_SendMouseCommandAndCompareAck;
+    	request->commands[8].inOrOut  = 0x00;
+	}
+
+    request->commands[9].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[9].inOrOut  = kDP_SetMouseScaling1To1;
+    request->commands[10].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[10].inOrOut  = kDP_SetMouseScaling1To1;
+    request->commands[11].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[11].inOrOut  = kDP_SetMouseScaling1To1;
+    request->commands[12].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[12].inOrOut  = kDP_SetDefaultsAndDisable;
+    request->commands[13].command  = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[13].inOrOut  = kDP_Enable;
+
+    request->commandsCount = 14;
+    // _device->submitRequest(request); // asynchronous, auto-free'd
+	_device->submitRequestAndBlock(request);
+
+    success = (request->commandsCount == 14);
+	if (success)
+	{
+		setSampleRateAndResolution();
+	}
+
+    _device->freeRequest(request);
+
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+void ApplePS2ALPSGlidePoint::setTouchPadEnable( bool enable )
 {
     //
     // Instructs the trackpad to start or stop the reporting of data packets.
@@ -360,131 +475,54 @@ void ApplePS2SynapticsTouchPad::setTouchPadEnable( bool enable )
 
     // (mouse enable/disable command)
     request->commands[0].command = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[0].inOrOut = (enable)?kDP_Enable:kDP_SetDefaultsAndDisable;
-    request->commandsCount = 1;
-    _device->submitRequestAndBlock(request);
-    _device->freeRequest(request);
+    request->commands[0].inOrOut = kDP_SetDefaultsAndDisable;
+    request->commands[1].command = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[1].inOrOut = kDP_SetDefaultsAndDisable;
+    request->commands[2].command = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[2].inOrOut = kDP_SetDefaultsAndDisable;
+    request->commands[3].command = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[3].inOrOut = kDP_SetDefaultsAndDisable;
+
+	// (mouse or pad enable/disable command)
+    request->commands[4].command = kPS2C_SendMouseCommandAndCompareAck;
+    request->commands[4].inOrOut = (enable)?kDP_Enable:kDP_SetDefaultsAndDisable;
+    request->commandsCount = 5;
+    _device->submitRequest(request); // asynchronous, auto-free'd
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-UInt32 ApplePS2SynapticsTouchPad::getTouchPadData( UInt8 dataSelector )
+void ApplePS2ALPSGlidePoint::setSampleRateAndResolution( void )
 {
-    PS2Request * request     = _device->allocateRequest();
-    UInt32       returnValue = (UInt32)(-1);
-
-    if ( !request ) return returnValue;
-
-    // Disable stream mode before the command sequence.
-    request->commands[0].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[0].inOrOut  = kDP_SetDefaultsAndDisable;
-
-    // 4 set resolution commands, each encode 2 data bits.
-    request->commands[1].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[1].inOrOut  = kDP_SetMouseResolution;
-    request->commands[2].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[2].inOrOut  = (dataSelector >> 6) & 0x3;
-
-    request->commands[3].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[3].inOrOut  = kDP_SetMouseResolution;
-    request->commands[4].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[4].inOrOut  = (dataSelector >> 4) & 0x3;
-
-    request->commands[5].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[5].inOrOut  = kDP_SetMouseResolution;
-    request->commands[6].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[6].inOrOut  = (dataSelector >> 2) & 0x3;
-
-    request->commands[7].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[7].inOrOut  = kDP_SetMouseResolution;
-    request->commands[8].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[8].inOrOut  = (dataSelector >> 0) & 0x3;
-
-    // Read response bytes.
-    request->commands[9].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[9].inOrOut  = kDP_GetMouseInformation;
-    request->commands[10].command = kPS2C_ReadDataPort;
-    request->commands[10].inOrOut = 0;
-    request->commands[11].command = kPS2C_ReadDataPort;
-    request->commands[11].inOrOut = 0;
-    request->commands[12].command = kPS2C_ReadDataPort;
-    request->commands[12].inOrOut = 0;
-
-    request->commandsCount = 13;
-    _device->submitRequestAndBlock(request);
-
-    if (request->commandsCount == 13) // success?
-    {
-        returnValue = ((UInt32)request->commands[10].inOrOut << 16) |
-                      ((UInt32)request->commands[11].inOrOut <<  8) |
-                      ((UInt32)request->commands[12].inOrOut);
-    }
-
-    _device->freeRequest(request);
-
-    return returnValue;
-}
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-bool ApplePS2SynapticsTouchPad::setTouchPadModeByte( UInt8 modeByteValue,
-                                                     bool  enableStreamMode )
-{
+	// Following the Synaptics specification, but assuming everywhere it
+	// says "Syanptics doesn't do this" implies "ALPS should do this"
+	// We set the sample rate to 100, and resolution to 4 counts per mm
+	// This should match the Synaptics behavior
     PS2Request * request = _device->allocateRequest();
-    bool         success;
+    if ( !request ) return;
 
-    if ( !request ) return false;
-
-    // Disable stream mode before the command sequence.
+	// From 3.4 of the Synaptics TouchPad Interfacing Guide
     request->commands[0].command  = kPS2C_SendMouseCommandAndCompareAck;
     request->commands[0].inOrOut  = kDP_SetDefaultsAndDisable;
-
-    // 4 set resolution commands, each encode 2 data bits.
-    request->commands[1].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[1].inOrOut  = kDP_SetMouseResolution;
-    request->commands[2].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[2].inOrOut  = (modeByteValue >> 6) & 0x3;
-
-    request->commands[3].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[3].inOrOut  = kDP_SetMouseResolution;
-    request->commands[4].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[4].inOrOut  = (modeByteValue >> 4) & 0x3;
-
-    request->commands[5].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[5].inOrOut  = kDP_SetMouseResolution;
-    request->commands[6].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[6].inOrOut  = (modeByteValue >> 2) & 0x3;
-
-    request->commands[7].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[7].inOrOut  = kDP_SetMouseResolution;
-    request->commands[8].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[8].inOrOut  = (modeByteValue >> 0) & 0x3;
-
-    // Set sample rate 20 to set mode byte 2. Older pads have 4 mode
-    // bytes (0,1,2,3), but only mode byte 2 remain in modern pads.
-    request->commands[9].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[9].inOrOut  = kDP_SetMouseSampleRate;
-    request->commands[10].command = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[10].inOrOut = 20;
-
-    request->commands[11].command  = kPS2C_SendMouseCommandAndCompareAck;
-    request->commands[11].inOrOut  = enableStreamMode ?
-                                     kDP_Enable :
-                                     kDP_SetMouseScaling1To1; /* Nop */
-
-    request->commandsCount = 12;
-    _device->submitRequestAndBlock(request);
-
-    success = (request->commandsCount == 12);
+	request->commands[1].command = kPS2C_SendMouseCommandAndCompareAck;
+	request->commands[1].inOrOut = kDP_SetMouseSampleRate;
+	request->commands[2].command = kPS2C_SendMouseCommandAndCompareAck;
+	request->commands[2].inOrOut = 100;
+	request->commands[3].command = kPS2C_SendMouseCommandAndCompareAck;
+	request->commands[3].inOrOut = kDP_SetMouseResolution;
+	request->commands[4].command = kPS2C_SendMouseCommandAndCompareAck;
+	request->commands[4].inOrOut = 2;   // 0x02 = 4 counts per mm
+	request->commands[5].command = kPS2C_SendMouseCommandAndCompareAck;
+	request->commands[5].inOrOut = kDP_Enable;
+	request->commandsCount = 6;
+	_device->submitRequestAndBlock(request);
 
     _device->freeRequest(request);
-    
-    return success;
 }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void ApplePS2SynapticsTouchPad::setCommandByte( UInt8 setBits, UInt8 clearBits )
+void ApplePS2ALPSGlidePoint::setCommandByte( UInt8 setBits, UInt8 clearBits )
 {
     //
     // Sets the bits setBits and clears the bits clearBits "atomically" in the
@@ -541,15 +579,15 @@ void ApplePS2SynapticsTouchPad::setCommandByte( UInt8 setBits, UInt8 clearBits )
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-IOReturn ApplePS2SynapticsTouchPad::setParamProperties( OSDictionary * dict )
+IOReturn ApplePS2ALPSGlidePoint::setParamProperties( OSDictionary * dict )
 {
     OSNumber * clicking = OSDynamicCast( OSNumber, dict->getObject("Clicking") );
 
     if ( clicking )
     {    
         UInt8  newModeByteValue = clicking->unsigned32BitValue() & 0x1 ?
-                                  kModeByteValueGesturesEnabled :
-                                  kModeByteValueGesturesDisabled;
+                                  kTapEnabled :
+                                  0;
 
         if (_touchPadModeByte != newModeByteValue)
         {
@@ -559,7 +597,7 @@ IOReturn ApplePS2SynapticsTouchPad::setParamProperties( OSDictionary * dict )
             // Write the TouchPad mode byte value.
             //
 
-            setTouchPadModeByte(_touchPadModeByte, true);
+            setTapEnable(_touchPadModeByte);
 
             //
             // Advertise the current state of the tapping feature.
@@ -574,14 +612,14 @@ IOReturn ApplePS2SynapticsTouchPad::setParamProperties( OSDictionary * dict )
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void ApplePS2SynapticsTouchPad::setDevicePowerState( UInt32 whatToDo )
+void ApplePS2ALPSGlidePoint::setDevicePowerState( UInt32 whatToDo )
 {
     switch ( whatToDo )
     {
         case kPS2C_DisableDevice:
             
             //
-            // Disable touchpad (synchronous).
+            // Disable touchpad.
             //
 
             setTouchPadEnable( false );
@@ -589,14 +627,8 @@ void ApplePS2SynapticsTouchPad::setDevicePowerState( UInt32 whatToDo )
 
         case kPS2C_EnableDevice:
 
-            //
-            // Must not issue any commands before the device has
-            // completed its power-on self-test and calibration.
-            //
+            setTapEnable( _touchPadModeByte );
 
-            IOSleep(1000);
-
-            setTouchPadModeByte( _touchPadModeByte );
 
             //
             // Enable the mouse clock (should already be so) and the
@@ -606,18 +638,11 @@ void ApplePS2SynapticsTouchPad::setDevicePowerState( UInt32 whatToDo )
             setCommandByte( kCB_EnableMouseIRQ, kCB_DisableMouseClock );
 
             //
-            // Clear packet buffer pointer to avoid issues caused by
-            // stale packet fragments.
-            //
-
-            _packetByteCount = 0;
-
-            //
             // Finally, we enable the trackpad itself, so that it may
             // start reporting asynchronous events.
             //
 
             setTouchPadEnable( true );
             break;
-    }
+	}
 }
