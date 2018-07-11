@@ -1,5 +1,6 @@
 /*
  *  AOAHALPlugin.h
+ *  AppleOnboardAudio
  *
  *  Created by cerveau on Mon May 28 2001.
  *  Copyright (c) 2001 __CompanyName__. All rights reserved.
@@ -40,16 +41,13 @@ properties : we will define the following enhancement
 #ifndef __AOAHALPLUGIN__
 #define __AOAHALPLUGIN__
 
-#include <CoreAudio/CoreAudio.h>
+#include <CoreAudio/AudioDriverPlugIn.h>
 
 //#include <CoreAudio/AudioDriverPlugin.h>
-enum
-{
-    kAOAPropertyUsageMode = 'Ausg',
-    kAOAPropertyBootBeep = 'Abbp',
-    kAOAPropertySubControl = 'Asub',
-    kAOAPropertyPhysicalOutputs = 'Aout',
-    kAOAPropertyPhysicalInputs = 'Ains',
+enum {
+	kAOAPropertyHeadphoneExclusive				= 'hpex',
+	kAOAPropertySelectionsReference				= 'selr',
+	kAOAPropertyPowerState						= 'powr'
 };
 
 #endif

@@ -1,6 +1,6 @@
 /*
  *  AudioHardwareMux.cpp
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by cerveau on Sat Feb 03 2001.
  *  Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
@@ -68,7 +68,7 @@ void AudioHardwareMux::free(){
     super::free();
 }
 
-void AudioHardwareMux::attachAudioPluginRef(AppleLegacyAudio *theAudioPlugin){
+void AudioHardwareMux::attachAudioPluginRef(Apple02Audio *theAudioPlugin){
     pluginRef = theAudioPlugin;
     // pluginRef->retain();
 }

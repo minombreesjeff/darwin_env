@@ -1,6 +1,6 @@
 /*
  *	AppleTemplateAudio.h
- *	AppleLegacyAudio
+ *	Apple02Audio
  *
  *	Created by nthompso on Thu Jul 05 2001.
  *	Copyright (c) 2001 Apple. All rights reserved.
@@ -19,9 +19,9 @@
 #include <IOKit/i2c/PPCI2CInterface.h>
 
 #include "AppleDallasDriver.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 #include "texas_hw.h"
-#include "AppleLegacyDBDMAAudioDMAEngine.h"
+#include "Apple02DBDMAAudioDMAEngine.h"
 #include "AudioI2SControl.h"
 
 class IOInterruptEventSource;
@@ -89,8 +89,8 @@ typedef enum SoundFormat {
 } SoundFormat;
 #endif
 
-// declare a class for our driver.	This is based from AppleLegacyAudio
-class AppleTexasAudio : public AppleLegacyAudio
+// declare a class for our driver.	This is based from Apple02Audio
+class AppleTexasAudio : public Apple02Audio
 {
 	OSDeclareDefaultStructors(AppleTexasAudio);
 
@@ -155,6 +155,7 @@ protected:
 	UInt32					lastLeftVol;
 	UInt32					lastRightVol;
 	Boolean					dallasSpeakersProbed;						// So we only probe the speakers once when they are plugged in
+	Boolean					mPollingMode;
 
 	// information specific to the chip
 	Boolean					gModemSoundActive;
@@ -278,6 +279,9 @@ protected:
 	UInt32			GetDeviceID (void);
 	Boolean			HasInput (void);
 
+#if DEBUGLOG
+	void LogStuff ();
+#endif
 
 	// This provides access to the Texas registers:
 	PPCI2CInterface *interface;

@@ -8,6 +8,7 @@
  */
 #include "PlatformInterface.h"
 #include "AudioHardwareCommon.h"
+#include "AppleOnboardAudioUserClient.h"
 #include <IOKit/i2c/PPCI2CInterface.h>
 #include <IOKit/IOInterruptEventSource.h>
 #include <IOKit/IOFilterInterruptEventSource.h>
@@ -21,12 +22,12 @@
 
 #include <IOKit/IOService.h>
 
-#define	kBUILD_FOR_DIRECT_FCR_HW_ACCESS
-#define	kBUILD_FOR_DIRECT_I2SCellEnable_HW_ACCESS
-#define	kBUILD_FOR_DIRECT_I2SEnable_HW_ACCESS
-#define	kBUILD_FOR_DIRECT_I2SClockEnable_HW_ACCESS
-#define	kBUILD_FOR_DIRECT_GPIO_HW_ACCESS
-#define	kBUILD_FOR_DIRECT_I2S_HW_ACCESS
+//#define	kBUILD_FOR_DIRECT_I2SCellEnable_HW_ACCESS		/*	WORKS	*/
+//#define	kBUILD_FOR_DIRECT_I2SEnable_HW_ACCESS			/*	WORKS	*/
+//#define	kBUILD_FOR_DIRECT_I2SClockEnable_HW_ACCESS			/*	TESTING - NOT WORKING	*/
+//#define	kBUILD_FOR_DIRECT_I2SswReset_HW_ACCESS			/*	WORKS	*/
+//#define	kBUILD_FOR_DIRECT_GPIO_HW_ACCESS				/*	WORKS	*/
+//#define	kBUILD_FOR_DIRECT_I2S_HW_ACCESS					/*	WORKS	*/
 
 #ifdef DLOG
 #undef DLOG
@@ -169,35 +170,11 @@ class AppleI2S : public IOService
 #define	kAUDIO_GPIO_LINE_OUT_MUTE			0x00000075
 #define	kAUDIO_GPIO_CLOCK_MUX_SELECT		0x00000076
 
-typedef enum GPIOSelector {
-	kGPIO_Selector_AnalogCodecReset	= 0,
-	kGPIO_Selector_ClockMux,
-	kGPIO_Selector_CodecInterrupt,
-	kGPIO_Selector_CodecErrorInterrupt,
-	kGPIO_Selector_DigitalCodecReset,
-	kGPIO_Selector_DigitalInDetect,
-	kGPIO_Selector_DigitalInType,
-	kGPIO_Selector_DigitalOutDetect,
-	kGPIO_Selector_DigitalOutType,
-	kGPIO_Selector_HeadphoneDetect,
-	kGPIO_Selector_HeadphoneMute,
-	kGPIO_Selector_InputDataMux,
-	kGPIO_Selector_LineInDetect,
-	kGPIO_Selector_LineOutDetect,
-	kGPIO_Selector_LineOutMute,
-	kGPIO_Selector_SpeakerDetect,
-	kGPIO_Selector_SpeakerMute
-};
-
-typedef enum GPIOType {
-	kGPIO_Type_ConnectorType = 0,
-	kGPIO_Type_Detect,
-	kGPIO_Type_Irq,
-	kGPIO_Type_MuteL,
-	kGPIO_Type_MuteH,
-	kGPIO_Type_Mux,
-	kGPIO_Type_Reset,
-};
+typedef enum {
+	kK2I2SClockSource_45MHz					= 0,			//	compatible with K2 driver
+	kK2I2SClockSource_49MHz					= 1,			//	compatible with K2 driver
+	kK2I2SClockSource_18MHz 				= 2			//	compatible with K2 driver
+} K2I2SClockSource;
 
 class K2Platform : public PlatformInterface {
 
@@ -218,8 +195,8 @@ public:
 	//
 	// I2S Methods: FCR3
 	//
-//	virtual IOReturn		requestI2SClockSource(I2SClockFrequency inFrequency);
-//	virtual IOReturn		releaseI2SClockSource(I2SClockFrequency inFrequency);
+	virtual IOReturn		requestI2SClockSource(I2SClockFrequency inFrequency);
+	virtual IOReturn		releaseI2SClockSource(I2SClockFrequency inFrequency);
 	//
 	// I2S Methods: FCR1
 	//
@@ -232,8 +209,8 @@ public:
 	virtual IOReturn		setI2SCellEnable(bool enable);
 	virtual bool			getI2SCellEnable();
 	
-//	virtual IOReturn		setI2SSWReset(bool enable);
-//	virtual bool			getI2SSWReset();
+	virtual IOReturn		setI2SSWReset(bool enable);
+	virtual bool			getI2SSWReset();
 	//
 	// I2S Methods: IOM Control
 	//
@@ -252,31 +229,26 @@ public:
 	// GPIO Methods
 	//
 
+	virtual	GpioAttributes	getComboInJackTypeConnected();
+	virtual	GpioAttributes	getComboOutJackTypeConnected();
 	virtual	GpioAttributes	getDigitalInConnected();
-	virtual	GpioAttributes	getDigitalInTypeConnected();		//	for combo digital/analog connector
 	virtual	GpioAttributes	getDigitalOutConnected();
-	virtual	GpioAttributes	getDigitalOutTypeConnected();		//	for combo digital/analog connector
 	virtual GpioAttributes	getLineInConnected();
 	virtual GpioAttributes	getLineOutConnected();
 	virtual GpioAttributes 	getHeadphoneConnected();
 	virtual GpioAttributes	getSpeakerConnected();
 	virtual GpioAttributes	getCodecInterrupt();
 	virtual GpioAttributes	getCodecErrorInterrupt();
-
 	virtual IOReturn 		setHeadphoneMuteState(GpioAttributes muteState);
 	virtual GpioAttributes 	getHeadphoneMuteState();
-	
-	virtual IOReturn 		setLineOutMuteState(GpioAttributes muteState);
-	virtual GpioAttributes 	getLineOutMuteState();
-	
-	virtual IOReturn 		setSpeakerMuteState(GpioAttributes muteState);
-	virtual GpioAttributes 	getSpeakerMuteState();
-	
-	virtual IOReturn		setClockMux(GpioAttributes muxState);
-	virtual GpioAttributes	getClockMux();
-
 	virtual IOReturn		setInputDataMux(GpioAttributes muxState);
 	virtual GpioAttributes	getInputDataMux();
+	virtual IOReturn 		setLineOutMuteState(GpioAttributes muteState);
+	virtual GpioAttributes 	getLineOutMuteState();
+	virtual IOReturn 		setSpeakerMuteState(GpioAttributes muteState);
+	virtual GpioAttributes 	getSpeakerMuteState();
+	virtual IOReturn		setClockMux(GpioAttributes muxState);
+	virtual GpioAttributes	getClockMux();
 
 //	virtual bool	 		getInternalSpeakerID();
 
@@ -284,6 +256,8 @@ public:
 	// Set Interrupt Handler Methods
 	//
 	
+	virtual IOReturn		disableInterrupt ( PlatformInterruptSource source );
+	virtual IOReturn		enableInterrupt ( PlatformInterruptSource source );
 	virtual IOReturn		registerInterruptHandler (IOService * theDevice, void * interruptHandler, PlatformInterruptSource source );
 	virtual IOReturn		unregisterInterruptHandler (IOService * theDevice, void * interruptHandler, PlatformInterruptSource source );
 
@@ -296,6 +270,12 @@ public:
 	virtual	IODBDMAChannelRegisters *	GetOutputChannelRegistersVirtualAddress ( IOService * dbdmaProvider );
 	virtual void						LogDBDMAChannelRegisters ( void );
 
+	//	
+	//	User Client Support
+	//
+	virtual IOReturn			getPlatformState ( PlatformStateStructPtr outState );
+	virtual IOReturn			setPlatformState ( PlatformStateStructPtr inState );
+	
 private:
 
     IOService *					mK2Service;
@@ -358,15 +338,14 @@ private:
 	static const char * 	kAppleGPIO_RegisterDigitalInDetect;
 	static const char * 	kAppleGPIO_UnregisterDigitalInDetect;
 
-	static const char * 	kAppleGPIO_GetDigitalInType;	
+	static const char * 	kAppleGPIO_GetComboInJackType;	
+	static const char * 	kAppleGPIO_GetComboOutJackType;	
 
 	static const char * 	kAppleGPIO_DisableDigitalOutDetect;
 	static const char * 	kAppleGPIO_EnableDigitalOutDetect;
 	static const char * 	kAppleGPIO_GetDigitalOutDetect;
 	static const char * 	kAppleGPIO_RegisterDigitalOutDetect;
 	static const char * 	kAppleGPIO_UnregisterDigitalOutDetect;
-
-	static const char * 	kAppleGPIO_GetDigitalOutType;	
 
 	static const char * 	kAppleGPIO_DisableLineInDetect;			
 	static const char * 	kAppleGPIO_EnableLineInDetect;			
@@ -387,14 +366,19 @@ private:
 	static const char * 	kAppleGPIO_UnregisterHeadphoneDetect;	
 
 	static const char * 	kAppleGPIO_SetHeadphoneMute;				
+	static const char * 	kAppleGPIO_GetHeadphoneMute;				
 
 	static const char * 	kAppleGPIO_SetAmpMute;					
+	static const char * 	kAppleGPIO_GetAmpMute;					
 
-	static const char * 	kAppleGPIO_SetAudioHwReset;				
+	static const char * 	kAppleGPIO_SetAudioHwReset;
+	static const char *		kAppleGPIO_GetAudioHwReset;				
 
 	static const char * 	kAppleGPIO_SetAudioDigHwReset;			
+	static const char * 	kAppleGPIO_GetAudioDigHwReset;			
 
 	static const char * 	kAppleGPIO_SetLineOutMute;				
+	static const char * 	kAppleGPIO_GetLineOutMute;				
 
 	static const char * 	kAppleGPIO_DisableCodecIRQ;				
 	static const char * 	kAppleGPIO_EnableCodecIRQ;				
@@ -409,20 +393,26 @@ private:
 	static const char * 	kAppleGPIO_UnregisterCodecErrorIRQ;			
 
 	static const char * 	kAppleGPIO_SetCodecClockMux;				
+	static const char * 	kAppleGPIO_GetCodecClockMux;				
 
-	static const char * 	kAppleGPIO_SetCodecInputDataMux;			
+	static const char * 	kAppleGPIO_SetCodecInputDataMux;
+	static const char * 	kAppleGPIO_GetCodecInputDataMux;
+	
+	static const char *		kAppleGPIO_GetInternalSpeakerID;
 	
 	bool					mAppleI2S_Enable;
 	bool					mAppleI2S_ClockEnable;
 	bool					mAppleI2S_Reset;
 	bool					mAppleI2S_CellEnable;
-	GpioAttributes			mAppleGPIO_AnalogCodecReset;
-	GpioAttributes			mAppleGPIO_DigitalCodecReset;
-	GpioAttributes			mAppleGPIO_HeadphoneMute;
+
 	GpioAttributes			mAppleGPIO_AmpMute;
-	GpioAttributes			mAppleGPIO_LineOutMute;
+	GpioAttributes			mAppleGPIO_AnalogCodecReset;
 	GpioAttributes			mAppleGPIO_CodecClockMux;
 	GpioAttributes			mAppleGPIO_CodecInputDataMux;
+	GpioAttributes			mAppleGPIO_DigitalCodecReset;
+	GpioAttributes			mAppleGPIO_HeadphoneMute;
+	GpioAttributes			mAppleGPIO_LineOutMute;
+	GpioAttributes			mAppleGPIO_InternalSpeakerID;
 	GpioAttributes			mAppleGPIO_SpeakerID;
 
 	//
@@ -435,6 +425,7 @@ private:
 	
 	UInt32					mI2CPort;
 	PPCI2CInterface*		mI2CInterface;
+	bool					mI2C_lastTransactionResult;
 
 	//
 	// I2S
@@ -468,34 +459,66 @@ private:
 	
 	AppleI2S *				mI2SInterface;
 #endif	
+
+	GpioAttributes			GetCachedAttribute ( GPIOSelector selector, GpioAttributes defaultResult );
+	static void				gpioTimerCallback ( OSObject *target, IOAudioDevice *device );
+	bool					interruptUsesTimerPolling( PlatformInterruptSource source );
+	void					poll ( void );
+	void					pollGpioInterrupts ( void );
 	GpioAttributes			readGpioState ( GPIOSelector selector );
 	IOReturn				writeGpioState ( GPIOSelector selector, GpioAttributes gpioState );
 	IOReturn				translateGpioAttributeToGpioState ( GPIOType gpioType, GpioAttributes gpioAttribute, UInt32 * valuePtr );
-	
 	volatile UInt8 *		mHwPtr;
 	volatile UInt8 *		mHwI2SPtr;
+	IOReturn				setupI2SClockSource( UInt32 cell, bool requestClock, UInt32 clockSource );
+public:
 	void					LogFCR ( void );
 	void					LogI2S ( void );
 	void					LogGPIO ( void );
-
+	void					LogInterruptGPIO ( void );
+private:
 	volatile UInt32 *				mFcr1;
+	
 	volatile UInt32 *				mFcr3;
+	
 	volatile UInt32 *				mSerialFormat;
 	volatile UInt32 *				mI2SIntCtrl;
 	volatile UInt32 *				mDataWordSize;
 	volatile UInt32 *				mFrameCounter;
-	volatile UInt8 *				mGPIO_inputDataMuxSelect;
-	volatile UInt8 *				mGPIO_lineInSense;
+	
+	IOTimerEventSource *			mGpioPollTimer;
+
+	volatile UInt8 *				mGPIO_analogCodecReset;
+	volatile UInt8 *				mGPIO_mclkMuxSelect;
 	volatile UInt8 *				mGPIO_digitalCodecErrorIrq;
 	volatile UInt8 *				mGPIO_digitalCodecReset;
-	volatile UInt8 *				mGPIO_lineOutSense;
-	volatile UInt8 *				mGPIO_headphoneSense;
 	volatile UInt8 *				mGPIO_digitalCodecIrq;
+	volatile UInt8 *				mGPIO_headphoneSense;
 	volatile UInt8 *				mGPIO_headphoneMute;
-	volatile UInt8 *				mGPIO_analogCodecReset;
+	volatile UInt8 *				mGPIO_inputDataMuxSelect;
+	volatile UInt8 *				mGPIO_internalSpeakerID;
+	volatile UInt8 *				mGPIO_lineInSense;
+	volatile UInt8 *				mGPIO_lineOutSense;
 	volatile UInt8 *				mGPIO_lineOutMute;
-	volatile UInt8 *				mGPIO_mclkMuxSelect;
 	volatile UInt8 *				mGPIO_speakerMute;
+	
+	void *							mCodecInterruptHandler;
+	void *							mCodecErrorInterruptHandler;
+	void *							mDigitalInDetectInterruptHandler;
+	void *							mDigitalOutDetectInterruptHandler;
+	void *							mHeadphoneDetectInterruptHandler;
+	void *							mLineInputDetectInterruptHandler;
+	void *							mLineOutputDetectInterruptHandler;
+	void *							mSpeakerDetectInterruptHandler;
+
+	bool							mCodecInterruptEnable;
+	bool							mCodecErrorInterruptEnable;
+	bool							mDigitalInDetectInterruptEnable;
+	bool							mDigitalOutDetectInterruptEnable;
+	bool							mHeadphoneDetectInterruptEnable;
+	bool							mLineInputDetectInterruptEnable;
+	bool							mLineOutputDetectInterruptEnable;
+	bool							mSpeakerDetectInterruptEnable;
 };
 
 #endif

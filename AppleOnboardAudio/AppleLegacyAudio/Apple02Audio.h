@@ -1,6 +1,6 @@
 /*
- *  AppleLegacyAudio.h
- *  AppleLegacyAudio
+ *  Apple02Audio.h
+ *  Apple02Audio
  *
  *  Created by cerveau on Mon Jun 04 2001.
  *  Copyright (c) 2001 Apple Computer Inc. All rights reserved.
@@ -19,7 +19,7 @@
 #include "AudioHardwareOutput.h"
 #include "AudioHardwareInput.h"
 #include "AudioHardwarePower.h"
-#include "AppleLegacyDBDMAAudioDMAEngine.h"
+#include "Apple02DBDMAAudioDMAEngine.h"
 
 enum {
     kOutMute			= 0,
@@ -59,7 +59,7 @@ typedef SpeakerIDStruct * SpeakerIDStructPtr;
 
 class IOAudioControl;
 
-class AppleLegacyAudio : public IOAudioDevice
+class Apple02Audio : public IOAudioDevice
 {
     friend class AudioHardwareOutput;
     friend class AudioHardwareInput;
@@ -68,7 +68,7 @@ class AppleLegacyAudio : public IOAudioDevice
     friend class AudioPowerObject;
 	friend class AOAUserClient;
     
-    OSDeclareDefaultStructors(AppleLegacyAudio);
+    OSDeclareDefaultStructors(Apple02Audio);
 
 protected:
 	// general controls : these are the default controls attached to a DMA audio engine
@@ -84,7 +84,9 @@ protected:
     IOAudioLevelControl *		inGainRight;
     IOAudioSelectorControl *	inputSelector;
 	IOAudioSelectorControl *	outputSelector;			// This is a read only selector
-        
+	thread_call_t				mPowerThread;
+	thread_call_t				mInitHardwareThread;
+
 	// globals for the driver
 	unsigned long long			idleSleepDelayTime;
 	IOTimerEventSource *		idleTimer;
@@ -104,7 +106,7 @@ protected:
 	Boolean						shuttingDown;
 
 	// we keep the engines around to have a cleaner initHardware
-    AppleLegacyDBDMAAudioDMAEngine *	driverDMAEngine;
+    Apple02DBDMAAudioDMAEngine *	driverDMAEngine;
 
 	// Port Handler like info
     OSArray	*					AudioDetects;
@@ -124,6 +126,7 @@ protected:
 	IOFixed 					mDefaultInMaxDB;
 	bool 						mRangeInChanged;	
 	
+	bool						mTerminating;
 	DualMonoModeType			mInternalMicDualMonoMode;	// aml 6.17.02
 	
 	UInt32						mProcessingParams[kMaxProcessingParamSize/sizeof(UInt32)];
@@ -134,6 +137,7 @@ public:
     virtual bool init(OSDictionary *properties);
     virtual void free();
     virtual IOService* probe(IOService *provider, SInt32*);
+	virtual void stop (IOService *provider);
 
     bool     getMuteState();
     void     setMuteState(bool newMuteState);
@@ -141,6 +145,10 @@ public:
     virtual OSArray *getDetectArray();
 	// IOAudioDevice subclass
     virtual bool initHardware(IOService *provider);
+	static void				initHardwareThread (Apple02Audio * aoa, void * provider);
+	static IOReturn			initHardwareThreadAction (OSObject * owner, void * provider, void * arg2, void * arg3, void * arg4);
+	virtual IOReturn		protectedInitHardware (IOService * provider);
+
     virtual IOReturn createDefaultsPorts();
     
     virtual IORegistryEntry * FindEntryByNameAndProperty (const IORegistryEntry * start, const char * name, const char * key, UInt32 value);
@@ -161,7 +169,9 @@ public:
 
     virtual IOReturn inputSelectorChanged(SInt32 newValue);
 
-    virtual IOReturn performPowerStateChange(IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState,
+	static void performPowerStateChangeThread (Apple02Audio * aoa, void * newPowerState);
+	static IOReturn performPowerStateChangeThreadAction (OSObject * owner, void * arg1, void * arg2, void * arg3, void * arg4);
+	virtual IOReturn performPowerStateChange (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState,
                                                                                             UInt32 *microsecondsUntilComplete);
 	virtual void setTimerForSleep ();
 	static void sleepHandlerTimer (OSObject *owner, IOTimerEventSource *sender);
@@ -211,6 +221,8 @@ protected:
     virtual UInt32 		sndHWGetInSenseBits(void) = 0;
     virtual UInt32 		sndHWGetRegister(UInt32 regNum) = 0;
     virtual IOReturn   	sndHWSetRegister(UInt32 regNum, UInt32 value) = 0;
+
+	virtual void		sndHWPostThreadedInit (IOService *provider) { return; } // [3284411]
 
 public:
     virtual  IOReturn   sndHWSetPowerState(IOAudioDevicePowerState theState) = 0;
@@ -280,7 +292,7 @@ class	AppleLegacyOnboardAudioUserClient : public IOUserClient
 	
 	protected:
 		
-		AppleLegacyAudio *					mDriver;
+		Apple02Audio *					mDriver;
 		task_t								mClientTask;
 		
 	public:
@@ -320,11 +332,11 @@ class	AppleLegacyOnboardAudioUserClient : public IOUserClient
 		
 		// Static member functions
 		
-		static AppleLegacyOnboardAudioUserClient * Create( AppleLegacyAudio *inDriver, task_t task );
+		static AppleLegacyOnboardAudioUserClient * Create( Apple02Audio *inDriver, task_t task );
 		
 		// Creation/Deletion
 		
-		virtual bool		initWithDriver( AppleLegacyAudio *inDriver, task_t task );
+		virtual bool		initWithDriver( Apple02Audio *inDriver, task_t task );
 		virtual void		free();
 		
 		// Public API's

@@ -1,6 +1,6 @@
 /*
  *  AudioHardwareUtilities.h
- *  Project : AppleLegacyAudio
+ *  Project : Apple02Audio
  *
  *  Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
@@ -25,7 +25,7 @@
  *  
  *  @APPLE_LICENSE_HEADER_END@
  * 
- * A series of macros used in the AppleLegacyAudio code in order to simplify
+ * A series of macros used in the Apple02Audio code in order to simplify
  * reading.
  *
  */
@@ -68,6 +68,37 @@
 #define debug7IOLog( message, arg2, arg3, arg4, arg5, arg6, arg7 ) ;
 #define debug8IOLog( message, arg2, arg3, arg4, arg5, arg6, arg7, arg8 ) ;
 #define debug9IOLog( message, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9 ) ;
+#endif
+
+#ifdef DEBUGLOG
+#define debugIrqIOLog( message ) \
+	{IOLog( message );}
+#define debug2IrqIOLog( message, arg2 ) \
+	{IOLog( message, arg2 );}
+#define debug3IrqIOLog( message, arg2, arg3 ) \
+	{IOLog( message, arg2, arg3 );}
+#define debug4IrqIOLog( message, arg2, arg3, arg4 ) \
+	{IOLog( message, arg2, arg3, arg4 );}
+#define debug5IrqIOLog( message, arg2, arg3, arg4, arg5 ) \
+	{IOLog( message, arg2, arg3, arg4, arg5 );}
+#define debug6IrqIOLog( message, arg2, arg3, arg4, arg5, arg6 ) \
+	{IOLog( message, arg2, arg3, arg4, arg5, arg6 );}
+#define debug7IrqIOLog( message, arg2, arg3, arg4, arg5, arg6, arg7 ) \
+	{IOLog( message, arg2, arg3, arg4, arg5, arg6, arg7 );}
+#define debug8IrqIOLog( message, arg2, arg3, arg4, arg5, arg6, arg7, arg8 ) \
+	{IOLog( message, arg2, arg3, arg4, arg5, arg6, arg7, arg8 );}
+#define debug9IrqIOLog( message, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9 ) \
+    {IOLog( message, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9 );}
+#else
+#define debugIrqIOLog( message ) ;
+#define debug2IrqIOLog( message, arg2 ) ;
+#define debug3IrqIOLog( message, arg2, arg3 ) ;
+#define debug4IrqIOLog( message, arg2, arg3, arg4 ) ;
+#define debug5IrqIOLog( message, arg2, arg3, arg4, arg5 ) ;
+#define debug6IrqIOLog( message, arg2, arg3, arg4, arg5, arg6 ) ;
+#define debug7IrqIOLog( message, arg2, arg3, arg4, arg5, arg6, arg7 ) ;
+#define debug8IrqIOLog( message, arg2, arg3, arg4, arg5, arg6, arg7, arg8 ) ;
+#define debug9IrqIOLog( message, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9 ) ;
 #endif
 
 

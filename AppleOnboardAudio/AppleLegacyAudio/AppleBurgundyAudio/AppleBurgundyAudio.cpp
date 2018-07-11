@@ -44,7 +44,7 @@
 #include "AppleBurgundyAudio.h"
 #include "burgundy_hw.h"
 
-#include "AppleLegacyDBDMAAudioDMAEngine.h"
+#include "Apple02DBDMAAudioDMAEngine.h"
 
 /*
  * Prototyes for the "very private methods" at the end of this
@@ -200,9 +200,9 @@ static void Burgundy_writeSoundControlReg( volatile UInt8 *ioBaseBurgundy, int v
 
 
 
-#define super AppleLegacyAudio
+#define super Apple02Audio
 
-OSDefineMetaClassAndStructors( AppleBurgundyAudio, AppleLegacyAudio )
+OSDefineMetaClassAndStructors( AppleBurgundyAudio, Apple02Audio )
 
 
 /* ==============
@@ -286,14 +286,14 @@ BAIL:
 
 bool AppleBurgundyAudio::initHardware(IOService* provider)
 {
-    // Gets the base for the burgundy registers:
-    AbsoluteTime		timerInterval;
     bool myreturn = true;
 
     DEBUG_IOLOG("+ AppleBurgundyAudio::initHardware\n");
     
     super::initHardware(provider);
 
+// this code moved to sndHWPostThreadedInit () for [3284411]
+/*
     gCanPollSatus = true;
     checkStatus(true);    
 //    flushAudioControls();
@@ -305,6 +305,7 @@ bool AppleBurgundyAudio::initHardware(IOService* provider)
 	mInternalMicDualMonoMode = e_Mode_CopyRightToLeft;		
     
     duringInitialization = false;
+ */
     
     DEBUG_IOLOG("- AppleBurgundyAudio::initHardware\n");
     return myreturn;
@@ -371,7 +372,7 @@ void AppleBurgundyAudio::sndHWInitialize(IOService *provider){
     UInt32 idx, tmpReg;
         
     DEBUG_IOLOG("+ AppleBurgundyAudio::sndHWInitialize\n");
-    map = provider->mapDeviceMemoryWithIndex(AppleLegacyDBDMAAudioDMAEngine::kDBDMADeviceIndex);
+    map = provider->mapDeviceMemoryWithIndex(Apple02DBDMAAudioDMAEngine::kDBDMADeviceIndex);
     ioBaseBurgundy = (UInt8 *)map->getVirtualAddress();
     
     if(!ioBaseBurgundy) debugIOLog("We have no mermory map !!!\n");
@@ -508,6 +509,23 @@ void AppleBurgundyAudio::sndHWInitialize(IOService *provider){
 void AppleBurgundyAudio::sndHWPostDMAEngineInit (IOService *provider) {
 	if (NULL != driverDMAEngine)
 		driverDMAEngine->setSampleLatencies (kBurgundySampleLatency, kBurgundySampleLatency);
+}
+
+// This method handles everything after the initHW thread is done, keeping the 
+// same sequence of code as before the thread was introduced. [3284411]
+void AppleBurgundyAudio::sndHWPostThreadedInit (IOService *provider) 
+{
+    AbsoluteTime		timerInterval;
+	
+	gCanPollSatus = true;
+    checkStatus(true);    
+        
+    nanoseconds_to_absolutetime(NSEC_PER_SEC, &timerInterval);
+    addTimerEvent(this, &AppleBurgundyAudio::timerCallback, timerInterval);
+
+	mInternalMicDualMonoMode = e_Mode_CopyRightToLeft;		
+    
+    duringInitialization = false;
 }
 
 UInt32 AppleBurgundyAudio::sndHWGetCurrentSampleFrame (void) {

@@ -1,6 +1,6 @@
 /*
  *  AppleDACAAudio.h
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by nthompso on Thu Jul 05 2001.
  *  Copyright (c) 2001 Apple. All rights reserved.
@@ -19,13 +19,13 @@
 #include <IOKit/audio/IOAudioDevice.h>
 #include <IOKit/i2c/PPCI2CInterface.h>
 
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 #include "AudioHardwareDetect.h"
 #include "AudioI2SControl.h"
 
-// declare a class for our driver.  This is based from AppleLegacyAudio
+// declare a class for our driver.  This is based from Apple02Audio
 
-class AppleDACAAudio : public AppleLegacyAudio
+class AppleDACAAudio : public Apple02Audio
 {
     OSDeclareDefaultStructors(AppleDACAAudio);
 
@@ -197,7 +197,7 @@ private:
     // bits 5:0, and mask against 0x3F00 (this is a mask with 0011111100000000).  This will correctly 
     // set the left channel volume without inadvertenly setting other values in this register.
     //
-    // The AppleLegacyAudio class supports a set register method, these macros allow us to specify
+    // The Apple02Audio class supports a set register method, these macros allow us to specify
     // the value param, whilst still allowing us to mask correctly and compatibly.
 
 

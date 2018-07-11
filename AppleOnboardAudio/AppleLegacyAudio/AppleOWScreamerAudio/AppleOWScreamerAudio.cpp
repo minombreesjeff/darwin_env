@@ -36,7 +36,7 @@
 #include "AudioHardwareUtilities.h"
 #include "AppleOWScreamerAudio.h"
 #include "awacs_OWhw.h"
-#include "AppleLegacyDBDMAAudioDMAEngine.h"
+#include "Apple02DBDMAAudioDMAEngine.h"
 #include "AudioHardwareConstants.h"
 
 /*
@@ -156,7 +156,7 @@ void AppleOWScreamerAudio::release() const
 bool AppleOWScreamerAudio::start(IOService *provider)
 {
     IOMemoryMap *		map;
-    AppleLegacyDBDMAAudioDMAEngine 	*driverDMAEngine;
+    Apple02DBDMAAudioDMAEngine 	*driverDMAEngine;
     IORegistryEntry *		perch = 0;
     IORegistryEntry *		sound = 0;
     AbsoluteTime		timerInterval;
@@ -165,13 +165,13 @@ bool AppleOWScreamerAudio::start(IOService *provider)
     setManufacturerName("Apple");
     setDeviceName("Built-in audio controller");
     
-    map = provider->mapDeviceMemoryWithIndex(AppleLegacyDBDMAAudioDMAEngine::kDBDMADeviceIndex);
+    map = provider->mapDeviceMemoryWithIndex(Apple02DBDMAAudioDMAEngine::kDBDMADeviceIndex);
     if (!map) {
         return false;
     }
     ioBase = (awacsOW_regmap_t *)map->getVirtualAddress();
 
-    driverDMAEngine = new AppleLegacyDBDMAAudioDMAEngine;
+    driverDMAEngine = new Apple02DBDMAAudioDMAEngine;
     if (!driverDMAEngine->init(NULL, provider, true)) {
         driverDMAEngine->release();
         return false;

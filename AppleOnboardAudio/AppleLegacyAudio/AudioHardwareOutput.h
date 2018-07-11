@@ -1,6 +1,6 @@
 /*
  *  AudioHardwareOutput.h
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Copyright (c) 2000 Apple Computer Inc. All rights reserved.
  *
@@ -58,7 +58,7 @@
 // is extracted by parsing the Open Firmware "sound-objects" properties
 // of the "sound" node
 
-class AppleLegacyAudio;
+class Apple02Audio;
 
 typedef struct _s_AudioHardwareOutputInfo {
     UInt32 deviceMask;
@@ -92,7 +92,7 @@ class AudioHardwareOutput : public IOAudioPort {
 public:
         
     static AudioHardwareOutput *create(AudioHardwareOutputInfo theOutputInfo); 
-    void attachAudioPluginRef(AppleLegacyAudio *theAudioPlugin);
+    void attachAudioPluginRef(Apple02Audio *theAudioPlugin);
             
 	// receive a new set of devices
     void deviceIntService( UInt32 currentDevices );
@@ -130,11 +130,11 @@ protected:
     
 	// plugin to which it refers. As this example was brought up on the Screamer chip
 	// the object is of type AppleScreamerAudio. THIS IS NOT HERE TO STAY!!!
-	// We should assign a AppleHarwareAudio (or AppleLegacyAudio object).
+	// We should assign a AppleHarwareAudio (or Apple02Audio object).
 	// This reference is passed at creation. However, it would be (in my opinion)
 	// better to create by finding the right class in the IOKit object.
      
-    AppleLegacyAudio *pluginRef;
+    Apple02Audio *pluginRef;
 
 };
 

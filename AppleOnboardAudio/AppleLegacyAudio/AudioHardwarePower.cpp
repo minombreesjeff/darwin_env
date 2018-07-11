@@ -1,6 +1,6 @@
 /*
  *  AudioHardwarePower.cpp
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by cerveau on Sun Jun 03 2001.
  *  Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
@@ -8,12 +8,12 @@
  */
 
 #include "AudioHardwarePower.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 
 #pragma mark -Generic Power Object
 OSDefineMetaClassAndStructors(AudioPowerObject, OSObject)
    
-AudioPowerObject* AudioPowerObject::createAudioPowerObject(AppleLegacyAudio *pluginRef){
+AudioPowerObject* AudioPowerObject::createAudioPowerObject(Apple02Audio *pluginRef){
     AudioPowerObject *myAudioPowerObject = 0;
     
     myAudioPowerObject = new AudioPowerObject;
@@ -26,9 +26,12 @@ AudioPowerObject* AudioPowerObject::createAudioPowerObject(AppleLegacyAudio *plu
     return myAudioPowerObject;
 }
     
-bool AudioPowerObject::init(AppleLegacyAudio *pluginRef){
+bool AudioPowerObject::init(Apple02Audio *pluginRef){
     DEBUG_IOLOG("+ AudioPowerObject::init\n");
-    if (!(OSObject::init())) 
+ 	
+	mMicroSecondsRequired = 50000;
+    
+	if (!(OSObject::init())) 
         return false;
     
     if(pluginRef) {
@@ -57,12 +60,20 @@ IOReturn AudioPowerObject::setHardwarePowerOff(){
     return result;
 }
 
+UInt32 AudioPowerObject::GetTimeToChangePowerState (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState) {
+	if (kIOAudioDeviceActive == newPowerState && kIOAudioDeviceSleep == oldPowerState) {
+		return mMicroSecondsRequired;
+	} else {
+		return 1;
+	}
+}
+
 // For FW PB and PowerBook G4
 #pragma mark -FW PowerBook and PowerBook G4
 
 OSDefineMetaClassAndStructors(AudioProj10PowerObject, AudioPowerObject)
 
-AudioProj10PowerObject* AudioProj10PowerObject::createAudioProj10PowerObject(AppleLegacyAudio *pluginRef){
+AudioProj10PowerObject* AudioProj10PowerObject::createAudioProj10PowerObject(Apple02Audio *pluginRef){
     AudioProj10PowerObject *myAudioproj10PowerObject = 0;
     DEBUG_IOLOG("+ AudioProj10PowerObject::createAudioProj10PowerObject\n");
     myAudioproj10PowerObject = new AudioProj10PowerObject;
@@ -77,8 +88,9 @@ AudioProj10PowerObject* AudioProj10PowerObject::createAudioProj10PowerObject(App
     return myAudioproj10PowerObject;
 }
 
-bool AudioProj10PowerObject::init(AppleLegacyAudio *pluginRef){
+bool AudioProj10PowerObject::init(Apple02Audio *pluginRef){
     DEBUG_IOLOG("+ AudioProj10PowerObject::init\n");
+ 	mMicroSecondsRequired = 750000;
     return (AudioPowerObject::init(pluginRef));
     DEBUG_IOLOG("- AudioProj10PowerObject::init\n");
 }
@@ -168,7 +180,7 @@ IOReturn AudioProj10PowerObject::setHardwarePowerOff(){
 
 OSDefineMetaClassAndStructors(AudioProj6PowerObject, AudioPowerObject)
 
-AudioProj6PowerObject* AudioProj6PowerObject::createAudioProj6PowerObject(AppleLegacyAudio *pluginRef){
+AudioProj6PowerObject* AudioProj6PowerObject::createAudioProj6PowerObject(Apple02Audio *pluginRef){
     AudioProj6PowerObject *myAudioProj6PowerObject =0;
     
     DEBUG_IOLOG("+ AudioProj6PowerObject::createAudioProj6PowerObject\n");
@@ -185,8 +197,9 @@ AudioProj6PowerObject* AudioProj6PowerObject::createAudioProj6PowerObject(AppleL
     return myAudioProj6PowerObject;
 }
 
-bool AudioProj6PowerObject::init(AppleLegacyAudio *pluginRef){
+bool AudioProj6PowerObject::init(Apple02Audio *pluginRef){
     DEBUG_IOLOG("+ AudioProj6PowerObject::init\n");
+ 	mMicroSecondsRequired = 750000;
     return (AudioPowerObject::init(pluginRef));
     DEBUG_IOLOG("- AudioProj6PowerObject::init\n");
 }
@@ -273,7 +286,7 @@ IOReturn AudioProj6PowerObject::setHardwarePowerOn(){
 
 OSDefineMetaClassAndStructors(AudioProj4PowerObject, AudioPowerObject)
 
-AudioProj4PowerObject* AudioProj4PowerObject::createAudioProj4PowerObject(AppleLegacyAudio *pluginRef){
+AudioProj4PowerObject* AudioProj4PowerObject::createAudioProj4PowerObject(Apple02Audio *pluginRef){
     AudioProj4PowerObject* myAudioProj4PowerObject=0;
     
     return(myAudioProj4PowerObject);
@@ -296,7 +309,7 @@ IOReturn AudioProj4PowerObject::setHardwarePowerOn(){
 
 OSDefineMetaClassAndStructors(AudioProj8PowerObject, AudioPowerObject)
 
-AudioProj8PowerObject* AudioProj8PowerObject::createAudioProj8PowerObject(AppleLegacyAudio *pluginRef)
+AudioProj8PowerObject* AudioProj8PowerObject::createAudioProj8PowerObject(Apple02Audio *pluginRef)
 {
     DEBUG_IOLOG("+ myAudioProj8PowerObject::createAudioProj10PowerObject\n");
     AudioProj8PowerObject* myAudioProj8PowerObject=0;
@@ -313,9 +326,10 @@ AudioProj8PowerObject* AudioProj8PowerObject::createAudioProj8PowerObject(AppleL
     return(myAudioProj8PowerObject);
 }
 								
-bool AudioProj8PowerObject::init(AppleLegacyAudio *pluginRef)
+bool AudioProj8PowerObject::init(Apple02Audio *pluginRef)
 {
     DEBUG_IOLOG("+ AudioProj8PowerObject::init\n");
+ 	mMicroSecondsRequired = 1000000;
     return (AudioPowerObject::init(pluginRef));
     DEBUG_IOLOG("- AudioProj8PowerObject::init\n");
 }
@@ -388,7 +402,7 @@ IOReturn AudioProj8PowerObject::setHardwarePowerOn()
 
 OSDefineMetaClassAndStructors(AudioProj7PowerObject, AudioPowerObject)
 
-AudioProj7PowerObject* AudioProj7PowerObject::createAudioProj7PowerObject(AppleLegacyAudio *pluginRef){
+AudioProj7PowerObject* AudioProj7PowerObject::createAudioProj7PowerObject(Apple02Audio *pluginRef){
     AudioProj7PowerObject *myAudioProj7PowerObject = 0;
     DEBUG_IOLOG("+ AudioProj7PowerObject::createAudioProj10PowerObject\n");
     myAudioProj7PowerObject = new AudioProj7PowerObject;
@@ -403,9 +417,10 @@ AudioProj7PowerObject* AudioProj7PowerObject::createAudioProj7PowerObject(AppleL
     return myAudioProj7PowerObject;
 }
 
-bool AudioProj7PowerObject::init(AppleLegacyAudio *pluginRef){
+bool AudioProj7PowerObject::init(Apple02Audio *pluginRef){
     DEBUG_IOLOG("+ AudioProj10PowerObject::init\n");
-    return (AudioPowerObject::init(pluginRef));
+ 	mMicroSecondsRequired = 750000;
+   return (AudioPowerObject::init(pluginRef));
     DEBUG_IOLOG("- AudioProj10PowerObject::init\n");
 }
 
@@ -438,6 +453,18 @@ IOReturn AudioProj7PowerObject::setHardwarePowerOff(){
     
     DEBUG_IOLOG("- AudioProj7PowerObject::setHardwarePowerOff\n");
     return result;
+}
+
+void AudioProj7PowerObject::setIdlePowerState (void) {
+    if(audioPluginRef) {
+	    audioPluginRef->sndHWSetPowerState(kIOAudioDeviceIdle);
+	}
+}
+
+void AudioProj7PowerObject::setFullPowerState (void) {
+    if(audioPluginRef) {
+	    audioPluginRef->sndHWSetPowerState(kIOAudioDeviceActive);
+	}
 }
 
 void AudioProj7PowerObject::setHardwarePowerIdleOn ( void ) {
@@ -481,7 +508,7 @@ IOReturn AudioProj7PowerObject::setHardwarePowerOn(){
 
 OSDefineMetaClassAndStructors(AudioProj14PowerObject, AudioPowerObject)
 
-AudioProj14PowerObject* AudioProj14PowerObject::createAudioProj14PowerObject(AppleLegacyAudio *pluginRef){
+AudioProj14PowerObject* AudioProj14PowerObject::createAudioProj14PowerObject(Apple02Audio *pluginRef){
     AudioProj14PowerObject* myAudioProj14PowerObject = NULL;
 
     DEBUG_IOLOG("+ AudioProj14PowerObject::createAudioProj14PowerObject\n");
@@ -498,8 +525,9 @@ AudioProj14PowerObject* AudioProj14PowerObject::createAudioProj14PowerObject(App
     return (myAudioProj14PowerObject);
 }
 
-bool AudioProj14PowerObject::init(AppleLegacyAudio *pluginRef){
+bool AudioProj14PowerObject::init(Apple02Audio *pluginRef){
     DEBUG_IOLOG("+ AudioProj14PowerObject::init\n");
+	mMicroSecondsRequired = 2000000;
     return (AudioPowerObject::init(pluginRef));
     DEBUG_IOLOG("- AudioProj14PowerObject::init\n");
 }
@@ -540,24 +568,12 @@ IOReturn AudioProj14PowerObject::setHardwarePowerOn(){
     return result;
 }
 
-UInt32 AudioProj14PowerObject::GetTimeToChangePowerState (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState) {
-	UInt32						microSecondsRequired;
-
-	if (kIOAudioDeviceActive == newPowerState && kIOAudioDeviceSleep == oldPowerState) {
-		microSecondsRequired = 2000000;
-	} else {
-		microSecondsRequired = 0;
-	}
-
-	return microSecondsRequired;
-}
-
 // for iBook dual USB
 #pragma mark -iBook dual USB
 
 OSDefineMetaClassAndStructors(AudioProj16PowerObject, AudioPowerObject)
 
-AudioProj16PowerObject* AudioProj16PowerObject::createAudioProj16PowerObject(AppleLegacyAudio *pluginRef){
+AudioProj16PowerObject* AudioProj16PowerObject::createAudioProj16PowerObject(Apple02Audio *pluginRef){
     AudioProj16PowerObject* myAudioProj16PowerObject = NULL;
 
     DEBUG_IOLOG("+ AudioProj16PowerObject::createAudioProj16PowerObject\n");
@@ -574,8 +590,9 @@ AudioProj16PowerObject* AudioProj16PowerObject::createAudioProj16PowerObject(App
     return (myAudioProj16PowerObject);
 }
 
-bool AudioProj16PowerObject::init(AppleLegacyAudio *pluginRef){
+bool AudioProj16PowerObject::init(Apple02Audio *pluginRef){
     DEBUG_IOLOG("+ AudioProj16PowerObject::init\n");
+	mMicroSecondsRequired = 2000000;
     return (AudioPowerObject::init(pluginRef));
     DEBUG_IOLOG("- AudioProj16PowerObject::init\n");
 }
@@ -618,16 +635,4 @@ IOReturn AudioProj16PowerObject::setHardwarePowerOn(){
 	}
 
     return result;
-}
-
-UInt32 AudioProj16PowerObject::GetTimeToChangePowerState (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState) {
-	UInt32						microSecondsRequired;
-
-	if (kIOAudioDeviceActive == newPowerState && newPowerState != oldPowerState) {
-		microSecondsRequired = 2000000;
-	} else {
-		microSecondsRequired = 0;
-	}
-
-	return microSecondsRequired;
 }

@@ -5,6 +5,7 @@
 
 #include "AppleDBDMAAudio.h"
 #include "PlatformInterface.h"
+#include "AppleOnboardAudioUserClient.h"
 
 typedef enum {
 	kControlBusFatalErrorRecovery	= 0,
@@ -49,6 +50,9 @@ public:
 	virtual bool			getMute () {return false;}
 	virtual IOReturn		setMute (bool muteState) {return 0;}
 
+	virtual bool			getInputMute () {return false;}
+	virtual IOReturn		setInputMute (bool muteState) {return 0;}
+
 	virtual	UInt32			getMaximumdBVolume (void) {return 0;}
 	virtual	UInt32			getMinimumdBVolume (void) {return 0;}
 	virtual	UInt32			getMaximumVolume (void) {return 0;}
@@ -63,13 +67,16 @@ public:
 	virtual IOReturn		setInputGain (UInt32 leftGain, UInt32 rightGain) {return kIOReturnError;}
 	
 	virtual	void			setEQ (UInt32 inEQIndex) {return;}
+	virtual	void			setEQ (void * inEQStructure, Boolean inRealtime) {return;}
 	virtual	void			disableEQ (void) {return;}
+	virtual	void			enableEQ (void) {return;}
 	
 	virtual IOReturn		performDeviceSleep () {return kIOReturnError;}
 	virtual IOReturn		performDeviceWake () {return kIOReturnError;}
 
 	virtual IOReturn		setSampleRate ( UInt32 sampleRate ) { return kIOReturnError; }
 	virtual IOReturn		setSampleDepth ( UInt32 sampleDepth ) { return kIOReturnError; }
+	virtual IOReturn		setSampleType ( UInt32 sampleType ) { return kIOReturnSuccess; }
 	
 	virtual UInt32			getClockLock ( void ) { return 0; }
 	virtual IOReturn		breakClockSelect ( UInt32 clockSource ) { return kIOReturnError; }
@@ -77,10 +84,19 @@ public:
 	
 	virtual	void			notifyHardwareEvent ( UInt32 statusSelector, UInt32 newValue ) { return; } 
 
-	virtual void			recoverFromFatalError ( FatalRecoverySelector selector ) {return;}
+	virtual IOReturn		recoverFromFatalError ( FatalRecoverySelector selector ) {return kIOReturnError;}
 
 	virtual	UInt32			getCurrentSampleFrame (void) {return 0;}
 	virtual void			setCurrentSampleFrame (UInt32 value) {return;}
+	
+	virtual void			poll ( void ) { return; }
+
+	//	
+	//	User Client Support
+	//
+	virtual IOReturn			getPluginState ( HardwarePluginDescriptorPtr outState ) = 0;
+	virtual IOReturn			setPluginState ( HardwarePluginDescriptorPtr inState ) = 0;
+	virtual	HardwarePluginType	getPluginType ( void ) = 0;
 };
 
 #if 0
@@ -99,7 +115,7 @@ class	AudioHardwareObjectUserClient : public IOUserClient
 	
 	protected:
 		
-		AppleLegacyAudio *					mDriver;
+		Apple02Audio *					mDriver;
 		task_t								mClientTask;
 		
 	public:
@@ -139,11 +155,11 @@ class	AudioHardwareObjectUserClient : public IOUserClient
 		
 		// Static member functions
 		
-		static AppleLegacyOnboardAudioUserClient * Create( AppleLegacyAudio *inDriver, task_t task );
+		static AppleLegacyOnboardAudioUserClient * Create( Apple02Audio *inDriver, task_t task );
 		
 		// Creation/Deletion
 		
-		virtual bool		initWithDriver( AppleLegacyAudio *inDriver, task_t task );
+		virtual bool		initWithDriver( Apple02Audio *inDriver, task_t task );
 		virtual void		free();
 		
 		// Public API's

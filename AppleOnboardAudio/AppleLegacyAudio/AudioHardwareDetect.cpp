@@ -1,6 +1,6 @@
 /*
  *  AudioHardwareDetect.cpp (implementation)
- *  Project : AppleLegacyAudio
+ *  Project : Apple02Audio
  *
  *  Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
@@ -38,7 +38,7 @@
  *     -  An interrupt is detected, and depending on its value triggers or not
  *        the detect
  *
- *  As of this version of the AppleLegacyAudio project (01/2001), and for the Screamer
+ *  As of this version of the Apple02Audio project (01/2001), and for the Screamer
  *  chip, the test for detect activation is made by creating a timer in the Codec driver
  *  and polling regularly. However we should change this method
  *    + make it work on the IOWorkloop of the driver

@@ -1,6 +1,6 @@
  /*
  *  AudioHardwareConstants.h
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  @APPLE_LICENSE_HEADER_START@
  *  
@@ -23,7 +23,7 @@
  *  
  *  @APPLE_LICENSE_HEADER_END@
  *
- *  Contains a lot of constants used across the AppleLegacyAudio project.
+ *  Contains a lot of constants used across the Apple02Audio project.
  *  There are three kind of constants : 
  *      - the string equivalent used mainly to parse the Open Firmware 
  *        device tree. Eventually they will move to the header file
@@ -127,6 +127,7 @@ typedef enum {
 	kExternalMicInStatus,
 	kDigitalInStatus,
 	kRequestCodecRecoveryStatus,
+	kClockInterruptedRecovery,
 	kClockLockStatus,
 	kAES3StreamErrorStatus,
 	kComboIsAnalogStatus,
@@ -136,7 +137,13 @@ typedef enum {
 	kBreakClockSelect,
 	kMakeClockSelect,
 	kSetSampleRate,
-	kSetSampleBitDepth
+	kSetSampleBitDepth,
+	kPowerStateChange,
+	kPreDMAEngineInit,
+	kPostDMAEngineInit,
+	kRestartTransport,
+	kRunPollTask,
+	kSetSampleType
 } ActionSelector;
 
 // Machine layout constants. All NewWorld machines have a device-id property
@@ -177,7 +184,14 @@ enum {
 	layoutQ26					=	33,
 	layoutP86					=	34,
 	layoutQ16					=	35,
-	layoutQ37					=	36
+	layoutQ37					=	36,
+	layoutQ27					=	37,
+	layoutP72D					=	38,
+	layoutQ41					=	39,
+	layoutQ54					=	40,
+	layoutQ59					=	41,
+	layoutNeoBorg_Analog		=	42,
+	layoutNeoBorg_Digital		=	43
 };
 
 // Hardware type 
@@ -281,14 +295,18 @@ enum GpioAddressSelector {
 	kHeadphoneMuteSel			=	'hmut',
 	kHeadphoneDetecteSel		=	'hcon',
 	kAmplifierMuteSel			=	'amut',
-	kSpeakerDetectSel			=	'dlas',
+	kSpeakerIDSel				=	'dlas',
 	kCodecResetSel				=	'rset',
 	kLineInDetectSel			=	'ldet',
 	kLineOutMuteSel				=	'lmut',
 	kLineOutDetectSel			=	'lcon',
 	kDigitalOutDetectSel		=	'digO',
+	kComboOutJackTypeSel		=	'dgOT',
 	kDigitalInDetectSel			=	'digI',
-	kMasterMuteSel				=	'mstr'
+	kComboInJackTypeSel			=	'dgIT',
+	kMasterMuteSel				=	'mstr',
+	kInternalSpeakerIDSel		=	'ispi',
+	kSpeakerDetectSel			=	'sdet'
 };
 //	END WARNING:
 
@@ -329,7 +347,7 @@ enum speakerIDBitAddresses {
 enum{
     kMaximumPRAMVolume 	= 7,
     kMinimumPRAMVolume	= 0,
-    KNumPramVolumeSteps	= (kMaximumPRAMVolume- kMinimumPRAMVolume+1),
+    KNumPramVolumeSteps	= (kMaximumPRAMVolume - kMinimumPRAMVolume + 1),
     kPRamVolumeAddr		= 8,
     
     kDefaultVolume		= 0x006E006E,

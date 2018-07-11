@@ -1,11 +1,11 @@
 /*
- *  AppleLegacyDBDMAAudioClip.h
- *  AppleLegacyAudio
+ *  Apple02DBDMAAudioClip.h
+ *  Apple02Audio
  *
  * 	Private header for for floating point library
  *
  *  Created by Aram Lindahl on Thu Nov 14 2002.
- *  Copyright (c) 2002 __MyCompanyName__. All rights reserved.
+ *  Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  */
 

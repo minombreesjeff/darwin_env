@@ -39,7 +39,7 @@ double   copysign ( double arg2, double arg1 );
 double	 fabs ( double x );
 double   nan   ( const char *string );
 
-#include "ppc_intrinsics.h"
+#include <ppc_intrinsics.h>
 
 #define __FMADD __fmadd
 #define __FMADDS __fmadds

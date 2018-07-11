@@ -8,7 +8,7 @@
 
 #include "AudioHardwareCommon.h"
 
-#include "AppleLegacyDBDMAAudioFloatLib.h"
+#include "Apple02DBDMAAudioFloatLib.h"
 
 //#define _TIME_CLIP_ROUTINE
 
@@ -38,9 +38,9 @@ typedef enum {
 
 class AppleiSubEngine;
 
-class AppleLegacyDBDMAAudioDMAEngine : public IOAudioEngine
+class Apple02DBDMAAudioDMAEngine : public IOAudioEngine
 {
-    OSDeclareDefaultStructors(AppleLegacyDBDMAAudioDMAEngine)
+    OSDeclareDefaultStructors(Apple02DBDMAAudioDMAEngine)
 
 public:
 
@@ -58,7 +58,7 @@ public:
     virtual bool 		initHardware(IOService *provider);
     virtual IOReturn	performAudioEngineStart();
     virtual IOReturn 	performAudioEngineStop();
-    IOReturn     		restartOutputIfFailure();
+    IOReturn     		restartDMA();
 	virtual void 		setSampleLatencies (UInt32 outputLatency, UInt32 inputLatency); 
 	virtual void 		stop(IOService *provider);
 	virtual bool		willTerminate (IOService * provider, IOOptionBits options);
@@ -114,8 +114,7 @@ protected:
     UInt32							numBlocks;
     UInt32							blockSize;
 	
-    UInt32							fBadCmd;
-    UInt32							fBadResult;
+	Boolean							mNeedToRestartDMA;
 
     // Next lines for iSub
 	iSubProcessingParams_t			miSubProcessingParams;
@@ -168,13 +167,13 @@ protected:
 	static bool 					interruptFilter(OSObject *owner, IOFilterInterruptEventSource *source);
     static void 					interruptHandler(OSObject *owner, IOInterruptEventSource *source, int count);
 	static IOReturn 				iSubAttachChangeHandler (IOService *target, IOAudioControl *attachControl, SInt32 oldValue, SInt32 newValue);
-    static bool						iSubEnginePublished (AppleLegacyDBDMAAudioDMAEngine * dbdmaEngineObject, void * refCon, IOService * newService);
+    static bool						iSubEnginePublished (Apple02DBDMAAudioDMAEngine * dbdmaEngineObject, void * refCon, IOService * newService);
 	static IOReturn 				iSubCloseAction (OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4);
 	static IOReturn 				iSubOpenAction (OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4);
 
 	// [3094574] aml, added member function pointers
-	IOReturn 						(AppleLegacyDBDMAAudioDMAEngine::*mClipAppleLegacyDBDMAToOutputStreamRoutine)(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
-	IOReturn 						(AppleLegacyDBDMAAudioDMAEngine::*mConvertInputStreamToAppleLegacyDBDMARoutine)(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn 						(Apple02DBDMAAudioDMAEngine::*mClipAppleLegacyDBDMAToOutputStreamRoutine)(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn 						(Apple02DBDMAAudioDMAEngine::*mConvertInputStreamToAppleLegacyDBDMARoutine)(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 
 	inline	void					startTiming();
 	inline 	void					endTiming();

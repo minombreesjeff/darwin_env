@@ -35,7 +35,7 @@
 #define _APPLEBURGUNDYAUDIO_H
 
 #include "AudioHardwareCommon.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 #include "AudioHardwareConstants.h"
 #include "AudioDeviceTreeParser.h"
 #include "AudioHardwarePower.h"
@@ -48,7 +48,7 @@ struct IODBDMADescriptor;
 class IOAudioLevelControl;
 class AudioDeviceTreeParser;
 
-class AppleBurgundyAudio : public AppleLegacyAudio
+class AppleBurgundyAudio : public Apple02Audio
 {	
     friend class AudioHardwareOutput;
     friend class AudioHardwareInput;
@@ -101,6 +101,7 @@ protected:
 
     void 			sndHWInitialize(IOService *provider);
 	virtual void	sndHWPostDMAEngineInit (IOService *provider);
+	virtual void	sndHWPostThreadedInit (IOService *provider); // [3284411]
 
     UInt32 			sndHWGetInSenseBits(void);
     UInt32 			sndHWGetRegister(UInt32 regNum);

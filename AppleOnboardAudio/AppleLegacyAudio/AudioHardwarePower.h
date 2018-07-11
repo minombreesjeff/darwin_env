@@ -1,6 +1,6 @@
 /*
  *  AudioHardwarePower.h
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by lcerveau on Tue Feb 20 2001.
  *  Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
@@ -11,9 +11,9 @@
 #define _AUDIOHARDWAREPOWER_H_
 
 #include "AudioHardwareCommon.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 
-enum{
+enum {
     kBasePowerObject,     			// basic mute 
     kProj6PowerObject = 6,			// for PowerBook G3
     kProj7PowerObject,	  			// for Screamer based G4 tower and iMac DVs
@@ -28,7 +28,7 @@ class AudioPowerObject : public OSObject {
     OSDeclareDefaultStructors(AudioPowerObject);
 
 public:
-    static  AudioPowerObject* createAudioPowerObject(AppleLegacyAudio *pluginRef);
+    static  AudioPowerObject* createAudioPowerObject(Apple02Audio *pluginRef);
 
     virtual IOReturn setHardwarePowerOn();
     virtual IOReturn setHardwarePowerOff();
@@ -36,19 +36,18 @@ public:
 	virtual void setIdlePowerState (void) {return;}
 	virtual void setFullPowerState (void) {return;}
 	virtual void setHardwarePowerIdleOn ( void ) { setHardwarePowerOn (); }
-	virtual UInt32 GetTimeToChangePowerState (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState) {return 0;}
+	virtual UInt32 GetTimeToChangePowerState (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState);
 
 protected:    
-    virtual bool init(AppleLegacyAudio  *pluginRef);
+    virtual bool init(Apple02Audio  *pluginRef);
     virtual void free();
     
     IODeviceMemory *powerReg;
-    AppleLegacyAudio *audioPluginRef;
+    Apple02Audio *audioPluginRef;
     short 	hardwareType;
     OSArray *OutputPortMuteStates;
-//    bool     singleMuteState;
-}; 
-
+	UInt32	mMicroSecondsRequired;
+};
 
 // For FW PB and PowerBook G4
 #pragma mark -
@@ -56,7 +55,7 @@ class AudioProj10PowerObject : public AudioPowerObject {
      OSDeclareDefaultStructors(AudioProj10PowerObject);
 
 public:
-     static AudioProj10PowerObject* createAudioProj10PowerObject(AppleLegacyAudio *pluginRef);
+     static AudioProj10PowerObject* createAudioProj10PowerObject(Apple02Audio *pluginRef);
 
     virtual IOReturn setHardwarePowerOn();
     virtual IOReturn setHardwarePowerOff();
@@ -65,7 +64,7 @@ public:
 	virtual void setHardwarePowerIdleOn ( void );
 
 private:
-    bool init(AppleLegacyAudio *pluginRef);
+    bool init(Apple02Audio *pluginRef);
     enum {
         durationMillisecond = 1,
         kTime10ms = durationMillisecond * 10,	// a delay of 10 ms is required after 
@@ -84,14 +83,14 @@ class AudioProj6PowerObject : public AudioPowerObject {
     OSDeclareDefaultStructors(AudioProj6PowerObject);
 
 public:
-    static AudioProj6PowerObject* createAudioProj6PowerObject(AppleLegacyAudio *pluginRef);                                                            
+    static AudioProj6PowerObject* createAudioProj6PowerObject(Apple02Audio *pluginRef);                                                            
     virtual IOReturn setHardwarePowerOff();	
     virtual IOReturn setHardwarePowerOn();
 	virtual void setIdlePowerState (void);
 	virtual void setFullPowerState (void);
 	virtual void setHardwarePowerIdleOn ( void );
 
-    bool init(AppleLegacyAudio *pluginRef);
+    bool init(Apple02Audio *pluginRef);
 
 private:
     UInt32	*powerObjectReg;	// register Objectling power
@@ -123,7 +122,7 @@ class AudioProj4PowerObject : public AudioPowerObject {
     OSDeclareDefaultStructors(AudioProj4PowerObject);
 
 public:
-    static AudioProj4PowerObject* createAudioProj4PowerObject(AppleLegacyAudio *pluginRef);
+    static AudioProj4PowerObject* createAudioProj4PowerObject(Apple02Audio *pluginRef);
 								
     virtual IOReturn setHardwarePowerOff();	
     virtual IOReturn setHardwarePowerOn();
@@ -150,7 +149,7 @@ class AudioProj8PowerObject : public AudioPowerObject {
     OSDeclareDefaultStructors(AudioProj8PowerObject);
     
 public:
-    static AudioProj8PowerObject* createAudioProj8PowerObject(AppleLegacyAudio *pluginRef);
+    static AudioProj8PowerObject* createAudioProj8PowerObject(Apple02Audio *pluginRef);
 								
     virtual IOReturn setHardwarePowerOff();	
     virtual IOReturn setHardwarePowerOn();
@@ -159,7 +158,7 @@ public:
 	virtual void setHardwarePowerIdleOn ( void );
 
 private:
-    bool init(AppleLegacyAudio *pluginRef);
+    bool init(Apple02Audio *pluginRef);
 
 };
 
@@ -169,14 +168,16 @@ class AudioProj7PowerObject : public AudioPowerObject {
     OSDeclareDefaultStructors(AudioProj7PowerObject);
     
 public:
-    static AudioProj7PowerObject* createAudioProj7PowerObject(AppleLegacyAudio *pluginRef);
+    static AudioProj7PowerObject* createAudioProj7PowerObject(Apple02Audio *pluginRef);
 								
     virtual IOReturn setHardwarePowerOff();	
     virtual IOReturn setHardwarePowerOn();
+	virtual void setIdlePowerState (void);
+	virtual void setFullPowerState (void);
 	virtual void setHardwarePowerIdleOn ( void );
 
 private:
-    bool init(AppleLegacyAudio *pluginRef);
+    bool init(Apple02Audio *pluginRef);
     UInt8	*powerObjectReg; 	// register Objectling power
     UInt32	layoutID;	 	// layout id of built in hardware.
     Boolean	restoreProgOut;		// remember and restore ProgOut
@@ -204,17 +205,16 @@ class AudioProj14PowerObject : public AudioPowerObject {
     OSDeclareDefaultStructors(AudioProj14PowerObject);
     
 public:
-    static AudioProj14PowerObject* createAudioProj14PowerObject(AppleLegacyAudio *pluginRef);
+    static AudioProj14PowerObject* createAudioProj14PowerObject(Apple02Audio *pluginRef);
 
     virtual IOReturn setHardwarePowerOff();	
     virtual IOReturn setHardwarePowerOn();
 	virtual void setIdlePowerState (void);
 	virtual void setFullPowerState (void);
 	virtual void setHardwarePowerIdleOn ( void );
-	virtual UInt32 GetTimeToChangePowerState (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState);
 
 private:
-	bool init(AppleLegacyAudio *pluginRef);
+	bool init(Apple02Audio *pluginRef);
 };
     
 // for iBook dual USB
@@ -223,7 +223,7 @@ class AudioProj16PowerObject : public AudioPowerObject {
     OSDeclareDefaultStructors(AudioProj16PowerObject);
     
 public:
-    static AudioProj16PowerObject* createAudioProj16PowerObject(AppleLegacyAudio *pluginRef);
+    static AudioProj16PowerObject* createAudioProj16PowerObject(Apple02Audio *pluginRef);
 								
     virtual IOReturn setHardwarePowerOff();	
     virtual IOReturn setHardwarePowerOn();
@@ -231,10 +231,9 @@ public:
 	virtual void setIdlePowerState (void);
 	virtual void setFullPowerState (void);
 	virtual void setHardwarePowerIdleOn ( void );
-	virtual UInt32 GetTimeToChangePowerState (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState);
 
 private:
-	bool init(AppleLegacyAudio *pluginRef);
+	bool init(Apple02Audio *pluginRef);
 };
     
 #endif

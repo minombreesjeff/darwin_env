@@ -64,7 +64,7 @@ typedef long                            fexcept_t;
 
 /*    Definitions of floating-point exception macros                          */
 enum {
-  FE_INEXACT                    = 0x02000000,s
+  FE_INEXACT                    = 0x02000000,
   FE_DIVBYZERO                  = 0x04000000,
   FE_UNDERFLOW                  = 0x08000000,
   FE_OVERFLOW                   = 0x10000000,

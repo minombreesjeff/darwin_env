@@ -34,7 +34,7 @@
 #define _APPLESCREAMERAUDIO_H
 
 #include "AudioHardwareCommon.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 #include "AudioHardwareConstants.h"
 #include "AudioDeviceTreeParser.h"
 #include "AudioHardwarePower.h"
@@ -70,7 +70,7 @@ typedef struct NoisyStateRec NoisyStateRec;
 class IOAudioLevelControl;
 class AudioDeviceTreeParser;
 
-class AppleScreamerAudio : public AppleLegacyAudio
+class AppleScreamerAudio : public Apple02Audio
 {
     friend class AudioHardwareOutput;
     friend class AudioHardwareInput;
@@ -132,8 +132,9 @@ protected:
 	// could be common.
 		
 	// hardware registers manipulationf
-    void 		sndHWInitialize(IOService *provider);
+    void 			sndHWInitialize(IOService *provider);
 	virtual void	sndHWPostDMAEngineInit (IOService *provider);
+	virtual void	sndHWPostThreadedInit (IOService *provider); // [3284411]
 
     UInt32 		sndHWGetInSenseBits(void);
     UInt32 		sndHWGetRegister(UInt32 regNum);

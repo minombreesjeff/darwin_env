@@ -129,8 +129,10 @@ const unsigned short SqrtTable[256] =
       26732, 26732, 26987, 27242 };
 
 //    There are flag and rounding errors being generated in this file
-#ifndef notdef
-double __sqrt ( double x )
+#if 1 
+//#ifndef notdef
+double sqrt ( double x )
+//double __sqrt ( double x )
       {
       register int index;
       hexdouble xInHex, yInHex, gInHex;

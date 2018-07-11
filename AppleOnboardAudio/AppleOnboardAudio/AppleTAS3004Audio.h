@@ -38,6 +38,7 @@
 #include "AppleDBDMAAudio.h"
 #include "AppleOnboardAudio.h"
 #include "AudioHardwareObjectInterface.h"
+#include "AppleOnboardAudioUserClient.h"
 
 class IORegistryEntry;
 
@@ -46,8 +47,6 @@ class AppleTAS3004Audio : public AudioHardwareObjectInterface
     OSDeclareDefaultStructors(AppleTAS3004Audio);
 
 private:
-	Boolean					mDisableLoadingEQFromFile;
-
 	SInt32					minVolume;
 	SInt32					maxVolume;
 	Boolean					gVolMuteActive;
@@ -62,9 +61,12 @@ private:
 	UInt32					speakerID;									// The ID of the speakers that are plugged in
 	UInt32					detectCollection;
 	TAS3004_ShadowReg		shadowTAS3004Regs;							// write through shadow registers for TAS3004
-	Boolean					semaphores;
+	TAS3004_ShadowReg		standbyTAS3004Regs;							// [3280002] used for filter coefficient management
+	Boolean					mSemaphores;
 	UInt32					deviceID;
 	AppleOnboardAudio *		mAudioDeviceProvider;
+	Boolean					mTAS_WasDead;
+	Boolean					mEQDisabled;
 
 	static const UInt8		kDEQAddress;								// Address for i2c TAS3004
 
@@ -104,11 +106,12 @@ public:
 
     virtual IOReturn	setPlayThrough (bool playthroughstate);
 
-	virtual	void		setEQ ( UInt32 inEQIndex );
+	virtual	void		setEQ ( void * inEQStructure, Boolean inRealtime );
 	virtual	void		disableEQ (void);
+	virtual	void		enableEQ (void);
 
 	virtual	void		notifyHardwareEvent ( UInt32 statusSelector, UInt32 newValue ) { return; }
-	virtual	void		recoverFromFatalError ( FatalRecoverySelector selector );
+	virtual	IOReturn	recoverFromFatalError ( FatalRecoverySelector selector );
 
 	virtual	UInt32		getCurrentSampleFrame (void);
 	virtual void		setCurrentSampleFrame (UInt32 value);
@@ -123,26 +126,37 @@ public:
 	virtual IOReturn	breakClockSelect ( UInt32 clockSource );
 	virtual IOReturn	makeClockSelect ( UInt32 clockSource );
 
+	virtual void			poll ( void ) { return; }
+
+	//	
+	//	User Client Support
+	//
+	virtual IOReturn	getPluginState ( HardwarePluginDescriptorPtr outState );
+	virtual IOReturn	setPluginState ( HardwarePluginDescriptorPtr inState );
+	virtual	HardwarePluginType	getPluginType ( void );
+	
 private:
 	// activation functions
 	IOReturn			SetVolumeCoefficients (UInt32 left, UInt32 right);
 	IOReturn			SetAmplifierMuteState (UInt32 ampID, Boolean muteState);
     IOReturn			SetMixerState ( UInt32 mixerState );								
 	IOReturn			InitEQSerialMode (UInt32 mode, Boolean restoreOnNormal);
-	IOReturn 			GetShadowRegisterInfo( UInt8 regAddr, UInt8 ** shadowPtr, UInt8* registerSize );
+	IOReturn 			GetShadowRegisterInfo( TAS3004_ShadowReg * shadowRegsPtr, UInt8 regAddr, UInt8 ** shadowPtr, UInt8* registerSize );
+
 	IOReturn			CODEC_Initialize ();
-	void				CODEC_LogRegisters ();
     void				CODEC_Reset ( void );
 	IOReturn			CODEC_ReadRegister (UInt8 regAddr, UInt8* registerData);
 	IOReturn			CODEC_WriteRegister (UInt8 regAddr, UInt8* registerData, UInt8 mode);
+
 	void				SetBiquadInfoToUnityAllPass (void);
 	void				SetUnityGainAllPass (void);
 	IOReturn			SndHWSetDRC( DRCInfoPtr theDRCSettings );
-	IOReturn			GetCustomEQCoefficients ( UInt32 inEQIndex, EQPrefsElementPtr * eqPrefs );
+	IOReturn			BuildCustomEQCoefficients ( void * eqPrefs );
 	IOReturn			SndHWSetOutputBiquad( UInt32 streamID, UInt32 biquadRefNum, FourDotTwenty *biquadCoefficients );
 	IOReturn			SndHWSetOutputBiquadGroup( UInt32 biquadFilterCount, FourDotTwenty *biquadCoefficients );
 	IOReturn			SetOutputBiquadCoefficients (UInt32 streamID, UInt32 biquadRefNum, UInt8 *biquadCoefficients);
-	void				SelectOutputAndLoadEQ ( void );
+	IOReturn			setBiquadCoefficients ( void * biquadCoefficients );
+
 	IOReturn			SetAnalogPowerDownMode( UInt8 mode );
 	IOReturn			ToggleAnalogPowerDownWake( void );
 	IORegistryEntry *	FindEntryByProperty (const IORegistryEntry * start, const char * key, const char * value);
@@ -165,7 +179,10 @@ private:
 		kExternalSpeakersActive	= 4
 	};
 
-	static const EQPrefsPtr 	kEQPrefsPtr;
+	EQPrefsElement		mEQPref;
+
+	void				copyFilter (EQStructPtr source, EQStructPtr dest, UInt32 sourceIndex, UInt32 destIndex);
+	void				GenerateOptimalFilterOrder (EQStructPtr ioEQ);
 
 #if 0
 			// User Client calls

@@ -1,6 +1,6 @@
 /*
  *  AudioHardwareCommon.h
- *  Project : AppleLegacyAudio
+ *  Project : Apple02Audio
  *
  *  @APPLE_LICENSE_HEADER_START@
  *  

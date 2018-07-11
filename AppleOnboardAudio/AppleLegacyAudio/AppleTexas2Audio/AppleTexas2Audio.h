@@ -37,7 +37,7 @@
 #include <IOKit/i2c/PPCI2CInterface.h>
 
 #include "AppleDallasDriver.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 #include "Texas2_hw.h"
 #include "AudioI2SControl.h"
 
@@ -82,8 +82,8 @@ enum {
 	kExternalSpeakersActive	= 4
 };
 
-// declare a class for our driver.  This is based from AppleLegacyAudio
-class AppleTexas2Audio : public AppleLegacyAudio
+// declare a class for our driver.  This is based from Apple02Audio
+class AppleTexas2Audio : public Apple02Audio
 {
     OSDeclareDefaultStructors(AppleTexas2Audio);
 
@@ -167,6 +167,7 @@ protected:
 	Boolean					dallasSpeakersProbed;						// So we only probe the speakers once when they are plugged in
 	Boolean					hasANDedReset;								//	[2855519]
 	UInt32					gPowerState;
+	Boolean					powerStateChangeInProcess;
 
 	// information specific to the chip
 	Boolean					gModemSoundActive;

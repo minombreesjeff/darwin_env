@@ -4,7 +4,7 @@
 #include <IOKit/audio/IOAudioTypes.h>
 #include <IOKit/audio/IOAudioDebug.h>
 
-#include "AppleLegacyDBDMAAudioClip.h"	
+#include "Apple02DBDMAAudioClip.h"	
 
 #pragma mark ------------------------ 
 #pragma mark еее Processing Routines

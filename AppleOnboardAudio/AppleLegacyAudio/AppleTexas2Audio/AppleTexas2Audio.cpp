@@ -1,6 +1,6 @@
 /*
  *  AppleTexas2Audio.cpp (definition)
- *  Project : AppleLegacyAudio
+ *  Project : Apple02Audio
  *
  *  Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
@@ -50,9 +50,9 @@
 	#define kInterruptSettleTime		10000000ULL
 #endif
 
-#define super AppleLegacyAudio
+#define super Apple02Audio
 
-OSDefineMetaClassAndStructors(AppleTexas2Audio, AppleLegacyAudio)
+OSDefineMetaClassAndStructors(AppleTexas2Audio, Apple02Audio)
 
 EQPrefsPtr		gEQPrefs = &theEQPrefs;
 extern uid_t	console_user;
@@ -81,6 +81,7 @@ bool AppleTexas2Audio::init(OSDictionary *properties)
 	gVolMuteActive = false;
 	gModemSoundActive = false;
 	gInputNoneAlias = kSndHWInputNone;	//	default assumption is that no unused input is available to alias kSndHWInputNone
+	powerStateChangeInProcess = false;	//	[3234624]
 
 	debugIOLog("- AppleTexas2Audio::init\n");
 	return true;
@@ -252,7 +253,7 @@ void AppleTexas2Audio::checkStatus(bool force)
 // hardware specific initialization needs to be in here, together with the code
 // required to start audio on the device.
 //
-//	There are three sections of memory mapped I/O that are directly accessed by the AppleLegacyAudio.  These
+//	There are three sections of memory mapped I/O that are directly accessed by the Apple02Audio.  These
 //	include the GPIOs, I2S DMA Channel Registers and I2S control registers.  They fall within the memory map 
 //	as follows:
 //	~                              ~
@@ -278,9 +279,9 @@ void AppleTexas2Audio::checkStatus(bool force)
 //	|                              |
 //	~                              ~
 //
-//	The I2S DMA Channel is mapped in by the AppleLegacyDBDMAAudioDMAEngine.  Only the I2S control registers are 
+//	The I2S DMA Channel is mapped in by the Apple02DBDMAAudioDMAEngine.  Only the I2S control registers are 
 //	mapped in by the AudioI2SControl.  The Apple I/O Configuration Space (i.e. FCRs, GPIOs and ExtIntGPIOs)
-//	are mapped in by the subclass of AppleLegacyAudio.  The FCRs must also be mapped in by the AudioI2SControl
+//	are mapped in by the subclass of Apple02Audio.  The FCRs must also be mapped in by the AudioI2SControl
 //	object as the init method must enable the I2S I/O Module for which the AudioI2SControl object is
 //	being instantiated for.
 //
@@ -311,7 +312,7 @@ void	AppleTexas2Audio::sndHWInitialize(IOService *provider)
 	UInt32					*masterMuteGpioAddr;						//	[2933090]
 	UInt32					*hwResetGpioAddr;							//	[2855519]
 	UInt32					loopCnt;
-    UInt32					myFrameRate;
+//	UInt32					myFrameRate;
 	UInt8					data[kTexas2BIQwidth];						// space for biggest register size
 	UInt8					curValue;
 
@@ -322,9 +323,10 @@ void	AppleTexas2Audio::sndHWInitialize(IOService *provider)
 	gpio	= NULL;		//	detects & mutes
 	i2c		= NULL;		//	audio control transport layer
 	savedNanos = 0;
-
+#if 0
     // Sets the frame rate:
 	myFrameRate = frameRate(0);				//	get the fixed point sample rate from the register but expressed as an int
+#endif
 	FailIf (!provider, Exit);
 	ourProvider = provider;
     FailIf (!findAndAttachI2C (provider), Exit);
@@ -721,7 +723,7 @@ void	AppleTexas2Audio::sndHWInitialize(IOService *provider)
 	Texas2_WriteRegister( kTexas2MainCtrl2Reg, data, kUPDATE_SHADOW );
 
 	// All this config should go in a single method: 
-	map = provider->mapDeviceMemoryWithIndex (AppleLegacyDBDMAAudioDMAEngine::kDBDMADeviceIndex);
+	map = provider->mapDeviceMemoryWithIndex (Apple02DBDMAAudioDMAEngine::kDBDMADeviceIndex);
 	FailIf (!map, Exit);
     // the i2s stuff is in a separate class.  make an instance of the class and store
     AudioI2SInfo tempInfo;
@@ -732,7 +734,7 @@ void	AppleTexas2Audio::sndHWInitialize(IOService *provider)
     audioI2SControl = AudioI2SControl::create(&tempInfo) ;
     FailIf (NULL == audioI2SControl, Exit);
     audioI2SControl->retain();
-
+#if 0
 	// This call will set the next of the frame parameters
 	// (clockSource, mclkDivisor,  sclkDivisor)
 	ClockSource				clockSource;
@@ -749,7 +751,7 @@ void	AppleTexas2Audio::sndHWInitialize(IOService *provider)
 	//				to the serial format register.  That method now also sets the data word format register while
 	//				the clocks are stopped.		rbm	2 Oct 2002
 	audioI2SControl->setSerialFormatRegister (clockSource, mclkDivisor, sclkDivisor, kSndIOFormatI2S64x, dataFormat);
-
+#endif
 	err = Texas2_Initialize();			//	flush the shadow contents to the HW
 	IOSleep (1);
 	ToggleAnalogPowerDownWake();
@@ -802,7 +804,7 @@ void AppleTexas2Audio::sndHWPostDMAEngineInit (IOService *provider) {
 		workLoop->addEventSource (lineOutIntEventSource);
 
 		if (NULL != outputSelector) {
-			outputSelector->addAvailableSelection(kIOAudioOutputPortSubTypeLine, "Line Out");
+			outputSelector->addAvailableSelection(kIOAudioOutputPortSubTypeLine, "LineOut");
 		}
 	}
 	//	[2878119]	} end
@@ -829,7 +831,7 @@ void AppleTexas2Audio::sndHWPostDMAEngineInit (IOService *provider) {
 		workLoop->addEventSource (dallasIntEventSource);
 
 		if (NULL != outputSelector) {
-			outputSelector->addAvailableSelection(kIOAudioOutputPortSubTypeExternalSpeaker, "External speakers");
+			outputSelector->addAvailableSelection(kIOAudioOutputPortSubTypeExternalSpeaker, "ExtSpeakers");
 		}
 	}
 
@@ -1427,7 +1429,6 @@ IOReturn AppleTexas2Audio::sndHWSetPowerState(IOAudioDevicePowerState theState)
 	switch (theState) {
 		case kIOAudioDeviceActive:
 			result = performDeviceWake ();
-			completePowerStateChange ();
 			break;
 		case kIOAudioDeviceIdle:
 			result = performDeviceIdleSleep ();
@@ -1503,8 +1504,9 @@ IOReturn AppleTexas2Audio::performDeviceIdleSleep () {
 //	Codec RESET by ANDing the headphone and speaker amplifier mute active states.
 //	This must be done AFTER waking the I2S clocks!
 IOReturn AppleTexas2Audio::performDeviceWake () {
-    IOService *							keyLargo;
-	IOReturn							err;
+    IOService *				keyLargo;
+	IOReturn				err;
+	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	debugIOLog ("+ AppleTexas2Audio::performDeviceWake\n");
 
@@ -1514,11 +1516,14 @@ IOReturn AppleTexas2Audio::performDeviceWake () {
     keyLargo = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
     
     if (NULL != keyLargo) {
+		funcSymbolName = OSSymbol::withCString ( "keyLargo_powerI2S" );						//	[3323977]
+		FailIf ( NULL == funcSymbolName, Exit );											//	[3323977]
 		// Turn on the i2s clocks...
 		switch ( i2SInterfaceNumber ) {
-			case kUseI2SCell0:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)true, (void *)0, 0, 0);	break;
-			case kUseI2SCell1:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)true, (void *)1, 0, 0);	break;
+			case kUseI2SCell0:	keyLargo->callPlatformFunction (funcSymbolName, false, (void *)true, (void *)0, 0, 0);	break;
+			case kUseI2SCell1:	keyLargo->callPlatformFunction (funcSymbolName, false, (void *)true, (void *)1, 0, 0);	break;
 		}
+		funcSymbolName->release ();															//	[3323977]
 	}
 	// *** END NOTE
 
@@ -1595,6 +1600,7 @@ IOReturn AppleTexas2Audio::performDeviceWake () {
 	}
 
 	gPowerState = kIOAudioDeviceActive;
+Exit:
 	debugIOLog ("- AppleTexas2Audio::performDeviceWake\n");
 	return err;
 }
@@ -1832,7 +1838,7 @@ void AppleTexas2Audio::DisplaySpeakersNotFullyConnected (OSObject *owner, IOTime
 						0,		// Flags (for later usage)
 						"",		// iconPath (not supported yet)
 						"",		// soundPath (not supported yet)
-						"/System/Library/Extensions/AppleLegacyAudio.kext",		// localizationPath
+						"/System/Library/Extensions/Apple02Audio.kext",		// localizationPath
 						"HeaderOfDallasPartialInsert",		// the header
 						"StringOfDallasPartialInsert",
 						"ButtonOfDallasPartialInsert"); 
@@ -1923,6 +1929,19 @@ void AppleTexas2Audio::RealHeadphoneInterruptHandler (IOInterruptEventSource *so
 	}
 
 	headphonesConnected = IsHeadphoneConnected ();
+
+	//	[3234624]	begin {
+	if ( ( kIOAudioDeviceIdle == gPowerState ) && hasANDedReset && !powerStateChangeInProcess ) {
+		//	Go back to active on jack state changes if on a system with ANDed RESET.
+		//	Note that invoking setHardwarePowerOn will cause a nested execution of
+		//	this (i.e. 'RealHeadphoneInterruptHandler') routine so a semaphore is
+		//	used to block redundant calls to setHardwarePowerOn so that the nested
+		//	calls do not go more than two layers.
+		powerStateChangeInProcess = true;
+		theAudioPowerObject->setHardwarePowerOn ();
+		powerStateChangeInProcess = false;
+	}
+	//	[3234624]	} end
 
 	SetOutputSelectorCurrentSelection ();
 
@@ -2052,7 +2071,7 @@ UInt8 *	AppleTexas2Audio::getGPIOAddress (UInt32 gpioSelector) {
 		case kHeadphoneMuteSel:			gpioAddress = hdpnMuteGpio;						break;
 		case kHeadphoneDetecteSel:		gpioAddress = headphoneExtIntGpio;				break;
 		case kAmplifierMuteSel:			gpioAddress = ampMuteGpio;						break;
-		case kSpeakerDetectSel:			gpioAddress = dallasExtIntGpio;					break;
+		case kSpeakerIDSel:				gpioAddress = dallasExtIntGpio;					break;
 		case kCodecResetSel:			gpioAddress = hwResetGpio;						break;
 		case kLineInDetectSel:			gpioAddress = lineInExtIntGpio;					break;
 		case kLineOutDetectSel:			gpioAddress = lineOutExtIntGpio;				break;
@@ -2075,7 +2094,7 @@ Boolean	AppleTexas2Audio::getGPIOActiveState (UInt32 gpioSelector) {
 		case kHeadphoneMuteSel:			activeState = hdpnActiveState;					break;
 		case kHeadphoneDetecteSel:		activeState = headphoneInsertedActiveState;		break;
 		case kAmplifierMuteSel:			activeState = ampActiveState;					break;
-		case kSpeakerDetectSel:			activeState = dallasInsertedActiveState;		break;
+		case kSpeakerIDSel:				activeState = dallasInsertedActiveState;		break;
 		case kCodecResetSel:			activeState = hwResetActiveState;				break;
 		case kLineInDetectSel:			activeState = lineInExtIntActiveState;			break;
 		case kLineOutDetectSel:			activeState = lineOutExtIntActiveState;			break;
@@ -2098,7 +2117,7 @@ void	AppleTexas2Audio::setGPIOActiveState ( UInt32 selector, UInt8 gpioActiveSta
 		case kHeadphoneMuteSel:			hdpnActiveState = gpioActiveState;					break;
 		case kHeadphoneDetecteSel:		headphoneInsertedActiveState = gpioActiveState;		break;
 		case kAmplifierMuteSel:			ampActiveState = gpioActiveState;					break;
-		case kSpeakerDetectSel:			dallasInsertedActiveState = gpioActiveState;		break;
+		case kSpeakerIDSel:				dallasInsertedActiveState = gpioActiveState;		break;
 		case kCodecResetSel:			hwResetActiveState = gpioActiveState;				break;
 		case kLineInDetectSel:			lineInExtIntActiveState = gpioActiveState;			break;
 		case kLineOutDetectSel:			lineOutExtIntActiveState = gpioActiveState;			break;
@@ -2119,7 +2138,7 @@ Boolean	AppleTexas2Audio::checkGpioAvailable ( UInt32 selector ) {
 		case kHeadphoneMuteSel:			if ( NULL != hdpnMuteGpio ) { result = TRUE; }				break;
 		case kHeadphoneDetecteSel:		if ( NULL != headphoneExtIntGpio ) { result = TRUE; }		break;
 		case kAmplifierMuteSel:			if ( NULL != ampMuteGpio ) { result = TRUE; }				break;
-		case kSpeakerDetectSel:			if ( NULL != dallasExtIntGpio ) { result = TRUE; }			break;
+		case kSpeakerIDSel:				if ( NULL != dallasExtIntGpio ) { result = TRUE; }			break;
 		case kCodecResetSel:			if ( NULL != hwResetGpio ) { result = TRUE; }				break;
 		case kLineInDetectSel:			if ( NULL != lineInExtIntGpio ) { result = TRUE; }			break;
 		case kLineOutDetectSel:			if ( NULL != lineOutExtIntGpio ) { result = TRUE; }			break;
@@ -2772,7 +2791,8 @@ Boolean AppleTexas2Audio::IsCodecRESET( Boolean logMessage ) {
 //	set the amplifiers and TAS3004 to a sleep state.  Idle leaves the
 //	TAS3004 RESET negated while Sleep leaves the TAS3004 RESET asserted.
 void	AppleTexas2Audio::Texas2_Quiesce ( UInt32 mode ) {
-    IOService *							keyLargo;
+    IOService *				keyLargo;
+	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	debugIOLog ("+ AppleTexas2Audio::Texas2_Quiesce\n");
 
@@ -2781,11 +2801,39 @@ void	AppleTexas2Audio::Texas2_Quiesce ( UInt32 mode ) {
 	//	Mute all of the amplifiers
 		
 	//	[2855519]	begin {
-	SetAnalogPowerDownMode (kPowerDownAnalog);
-	SetAmplifierMuteState( kHEADPHONE_AMP, 1 == hdpnActiveState ? 1 : 0 );
-	SetAmplifierMuteState( kSPEAKER_AMP, 1 == ampActiveState ? 1 : 0 );
+	
+	//	[3234624]	begin {
+	//	Only set analog power down mode if running with the headphone jack
+	//	inserted when on a system that has the ANDed reset or always for 
+	//	systems having a dedicated GPIO reset.
+	if ( hasANDedReset ) {
+		if ( kIOAudioDeviceSleep == mode ) {
+			SetAmplifierMuteState ( kHEADPHONE_AMP, ASSERT_GPIO ( hdpnActiveState ) );		//	mute
+			SetAmplifierMuteState ( kSPEAKER_AMP, ASSERT_GPIO ( ampActiveState ) );			//	mute
+			IOSleep (kAmpRecoveryMuteDuration);
+			SetAnalogPowerDownMode (kPowerDownAnalog);
+		} else if ( kIOAudioDeviceIdle == mode ) {
+			if ( !IsHeadphoneConnected() ) {
+				//	Headphones aren't connected so go to lowest power configuration
+				//	by switching to the headphone amplifier (driving no transducer)
+				//	and turn off the analog power section of the TAS3004.
+				SetAmplifierMuteState ( kHEADPHONE_AMP, NEGATE_GPIO ( hdpnActiveState  ) );	//	unmute
+				IOSleep (kAmpRecoveryMuteDuration);
+				SetAmplifierMuteState ( kSPEAKER_AMP, ASSERT_GPIO ( ampActiveState ) );		//	mute
+				SetAnalogPowerDownMode (kPowerDownAnalog);
+			}
+		}
+	} else {
+		SetAmplifierMuteState ( kHEADPHONE_AMP, ASSERT_GPIO ( hdpnActiveState ) );			//	mute
+		SetAmplifierMuteState ( kSPEAKER_AMP, ASSERT_GPIO ( ampActiveState ) );				//	mute
+		IOSleep (kAmpRecoveryMuteDuration);
+		SetAnalogPowerDownMode (kPowerDownAnalog);
+	}
+	//	[3234624]	} end
+	
 	SetAmplifierMuteState( kLINEOUT_AMP, 1 == lineOutMuteActiveState ? 1 : 0 );
 	IOSleep (kAmpRecoveryMuteDuration);
+	
 	if ( kIOAudioDeviceSleep == mode ) {
 		debug2IOLog ( "Texas2_Quiesce ( %d ) asserting RESET\n", (unsigned int)mode );
 		Texas2_Reset_ASSERT();
@@ -2814,13 +2862,16 @@ void	AppleTexas2Audio::Texas2_Quiesce ( UInt32 mode ) {
 	keyLargo = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
 	
 	if (NULL != keyLargo) {
+		funcSymbolName = OSSymbol::withCString ( "keyLargo_powerI2S" );						//	[3323977]
+		FailIf ( NULL == funcSymbolName, Exit );											//	[3323977]
 		// ...and turn off the i2s clocks...
 		switch ( i2SInterfaceNumber ) {
-			case kUseI2SCell0:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)false, (void *)0, 0, 0);	break;
-			case kUseI2SCell1:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)false, (void *)1, 0, 0);	break;
+			case kUseI2SCell0:	keyLargo->callPlatformFunction (funcSymbolName, false, (void *)false, (void *)0, 0, 0);	break;
+			case kUseI2SCell1:	keyLargo->callPlatformFunction (funcSymbolName, false, (void *)false, (void *)1, 0, 0);	break;
 		}
+		funcSymbolName->release ();															//	[3323977]
 	}
-
+Exit:
 	debugIOLog ("- AppleTexas2Audio::Texas2_Quiesce\n");
 	return;
 }
@@ -2829,6 +2880,23 @@ void	AppleTexas2Audio::Texas2_Quiesce ( UInt32 mode ) {
 //	[2855519]	Call down to lower level functions to implement the Codec
 //	RESET assertion and negation where hardware dependencies exist...
 void	AppleTexas2Audio::Texas2_Reset ( void ) {
+	ClockSource				clockSource;
+	UInt32					sclkDivisor;
+	UInt32					mclkDivisor;
+	UInt32					dataFormat;	//	[3060321]	rbm	2 Oct 2002
+	UInt32					myFrameRate;
+	dataFormat = ( ( 2 << kNumChannelsInShift ) | kDataIn16 | ( 2 << kNumChannelsOutShift ) | kDataOut16 );	//	[3060321]	rbm	2 Oct 2002
+
+	myFrameRate = frameRate (0);
+
+	FailIf (FALSE == audioI2SControl->setSampleParameters (myFrameRate, 256, &clockSource, &mclkDivisor, &sclkDivisor, kSndIOFormatI2S64x), Exit);
+	//	[3060321]	The data word format register and serial format register require that the I2S clocks be stopped and
+	//				restarted before the register value is applied to operation of the I2S IOM.  We now pass the data
+	//				word format to setSerialFormatRegister as that method stops the clocks when applying the value
+	//				to the serial format register.  That method now also sets the data word format register while
+	//				the clocks are stopped.		rbm	2 Oct 2002
+	audioI2SControl->setSerialFormatRegister (clockSource, mclkDivisor, sclkDivisor, kSndIOFormatI2S64x, dataFormat);
+
     if ( hwResetGpio || hasANDedReset ) {
 		IOSleep ( kCodec_RESET_SETUP_TIME );	//	I2S clocks must be running prerequisite to RESET
         Texas2_Reset_ASSERT();
@@ -2836,6 +2904,9 @@ void	AppleTexas2Audio::Texas2_Reset ( void ) {
         Texas2_Reset_NEGATE();
         IOSleep ( kCodec_RESET_RELEASE_TIME );	//	No I2C transactions for 
     }
+
+Exit:
+	return;
 }
 
 
@@ -3123,7 +3194,7 @@ IOReturn 	AppleTexas2Audio::Texas2_WriteRegister(UInt8 regAddr, UInt8* registerD
 					closeI2C();
 					//	[3166905]	begin {
 					if ( !success ) {
-						debug6IOLog ( "%d = interface->writeI2CBus ( %X, %X, %X, %X ) FAILED ><><>< RESETTING & FLUSHING CACHE\n", 
+						IOLog ( "%d = interface->writeI2CBus ( %X, %X, %X, %X ) FAILED ><><>< RESETTING & FLUSHING CACHE\n", 
 							(unsigned int)success, (unsigned int)DEQAddress, (unsigned int)regAddr, (unsigned int)registerData, (unsigned int)registerSize );
 						success = Texas2_Initialize();
 					}
@@ -4060,8 +4131,7 @@ bool AppleTexas2Audio::openI2C()
 	FailIf (!interface->openI2CBus (getI2CPort()), Exit);
 	interface->setStandardSubMode ();
 
-	// have to turn on polling or it doesn't work...need to figure out why, but not today.
-	interface->setPollingMode (true);
+	interface->setPollingMode (false);
 
 	return true;
 

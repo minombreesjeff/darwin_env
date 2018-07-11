@@ -90,7 +90,7 @@ extern "C" {
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  cos(double_t x);
+ double_t  cos(double_t x);
 
 
 /*
@@ -101,7 +101,7 @@ extern double_t  cos(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  sin(double_t x);
+double_t  sin(double_t x);
 
 
 /*
@@ -112,7 +112,7 @@ extern double_t  sin(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  tan(double_t x);
+double_t  tan(double_t x);
 
 
 /*
@@ -123,7 +123,7 @@ extern double_t  tan(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  acos(double_t x);
+double_t  acos(double_t x);
 
 
 /*
@@ -134,7 +134,7 @@ extern double_t  acos(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  asin(double_t x);
+double_t  asin(double_t x);
 
 
 /*
@@ -145,7 +145,7 @@ extern double_t  asin(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  atan(double_t x);
+double_t  atan(double_t x);
 
 
 /*
@@ -156,7 +156,7 @@ extern double_t  atan(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  atan2(double_t y, double_t x);
+double_t  atan2(double_t y, double_t x);
 
 
 
@@ -174,7 +174,7 @@ extern double_t  atan2(double_t y, double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  cosh(double_t x);
+double_t  cosh(double_t x);
 
 
 /*
@@ -185,7 +185,7 @@ extern double_t  cosh(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  sinh(double_t x);
+double_t  sinh(double_t x);
 
 
 /*
@@ -196,7 +196,7 @@ extern double_t  sinh(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  tanh(double_t x);
+double_t  tanh(double_t x);
 
 
 /*
@@ -207,7 +207,7 @@ extern double_t  tanh(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  acosh(double_t x);
+double_t  acosh(double_t x);
 
 
 /*
@@ -218,7 +218,7 @@ extern double_t  acosh(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  asinh(double_t x);
+double_t  asinh(double_t x);
 
 
 /*
@@ -229,7 +229,7 @@ extern double_t  asinh(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  atanh(double_t x);
+double_t  atanh(double_t x);
 
 
 
@@ -264,7 +264,7 @@ extern double_t  atanh(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  exp(double_t x);
+double_t  exp(double_t x);
 
 
 /*
@@ -275,7 +275,7 @@ extern double_t  exp(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  expm1(double_t x);
+double_t  expm1(double_t x);
 
 
 /*
@@ -286,7 +286,7 @@ extern double_t  expm1(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  exp2(double_t x);
+double_t  exp2(double_t x);
 
 
 /*
@@ -297,7 +297,7 @@ extern double_t  exp2(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  frexp(double_t x, int *exponent);
+double_t  frexp(double_t x, int *exponent);
 
 
 /*
@@ -308,7 +308,7 @@ extern double_t  frexp(double_t x, int *exponent);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  ldexp(double_t x, int n);
+double_t  ldexp(double_t x, int n);
 
 
 /*
@@ -319,7 +319,7 @@ extern double_t  ldexp(double_t x, int n);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  log(double_t x);
+double_t  log(double_t x);
 
 
 /*
@@ -330,7 +330,7 @@ extern double_t  log(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  log2(double_t x);
+double_t  log2(double_t x);
 
 
 /*
@@ -341,7 +341,7 @@ extern double_t  log2(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  log1p(double_t x);
+double_t  log1p(double_t x);
 
 
 /*
@@ -352,7 +352,7 @@ extern double_t  log1p(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  log10(double_t x);
+double_t  log10(double_t x);
 
 
 /*
@@ -363,7 +363,7 @@ extern double_t  log10(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  logb(double_t x);
+double_t  logb(double_t x);
 
 
 #if !TYPE_LONGDOUBLE_IS_DOUBLE
@@ -375,7 +375,7 @@ extern double_t  logb(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern long double  modfl(long double x, long double *iptrl);
+long double  modfl(long double x, long double *iptrl);
 
 
 #endif  /* !TYPE_LONGDOUBLE_IS_DOUBLE */
@@ -388,7 +388,7 @@ extern long double  modfl(long double x, long double *iptrl);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  modf(double_t x, double_t *iptr);
+double_t  modf(double_t x, double_t *iptr);
 
 
 /*
@@ -399,7 +399,7 @@ extern double_t  modf(double_t x, double_t *iptr);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern float  modff(float x, float *iptrf);
+float  modff(float x, float *iptrf);
 
 
 
@@ -417,7 +417,7 @@ typedef int                             _scalb_n_type;
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  scalb(double_t x, _scalb_n_type n);
+double_t  scalb(double_t x, _scalb_n_type n);
 
 
 
@@ -440,7 +440,7 @@ extern double_t  scalb(double_t x, _scalb_n_type n);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  fabs(double_t x);
+double_t  fabs(double_t x);
 
 
 /*
@@ -451,7 +451,7 @@ extern double_t  fabs(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  hypot(double_t x, double_t y);
+double_t  hypot(double_t x, double_t y);
 
 
 /*
@@ -462,7 +462,7 @@ extern double_t  hypot(double_t x, double_t y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 2.0 and later
  */
-extern double_t  pow(double_t x, double_t y);
+double_t  pow(double_t x, double_t y);
 
 
 /*
@@ -473,7 +473,7 @@ extern double_t  pow(double_t x, double_t y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  sqrt(double_t x);
+double_t  sqrt(double_t x);
 
 
 
@@ -497,7 +497,7 @@ extern double_t  sqrt(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  erf(double_t x);
+double_t  erf(double_t x);
 
 
 /*
@@ -508,7 +508,7 @@ extern double_t  erf(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  erfc(double_t x);
+double_t  erfc(double_t x);
 
 
 /*
@@ -519,7 +519,7 @@ extern double_t  erfc(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  gamma(double_t x);
+double_t  gamma(double_t x);
 
 
 /*
@@ -530,7 +530,7 @@ extern double_t  gamma(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  lgamma(double_t x);
+double_t  lgamma(double_t x);
 
 
 
@@ -571,7 +571,7 @@ extern double_t  lgamma(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  ceil(double_t x);
+double_t  ceil(double_t x);
 
 
 /*
@@ -582,7 +582,7 @@ extern double_t  ceil(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  floor(double_t x);
+double_t  floor(double_t x);
 
 
 /*
@@ -593,7 +593,7 @@ extern double_t  floor(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  rint(double_t x);
+double_t  rint(double_t x);
 
 
 /*
@@ -604,7 +604,7 @@ extern double_t  rint(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  nearbyint(double_t x);
+double_t  nearbyint(double_t x);
 
 
 /*
@@ -615,7 +615,7 @@ extern double_t  nearbyint(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern long  rinttol(double_t x);
+long  rinttol(double_t x);
 
 
 /*
@@ -626,7 +626,7 @@ extern long  rinttol(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  round(double_t x);
+double_t  round(double_t x);
 
 
 /*
@@ -637,7 +637,7 @@ extern double_t  round(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern long  roundtol(double_t round);
+long  roundtol(double_t round);
 
 
 /*
@@ -659,7 +659,7 @@ typedef double_t                        _trunc_return_type;
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern _trunc_return_type  trunc(double_t x);
+_trunc_return_type  trunc(double_t x);
 
 
 
@@ -683,7 +683,7 @@ extern _trunc_return_type  trunc(double_t x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  fmod(double_t x, double_t y);
+double_t  fmod(double_t x, double_t y);
 
 
 /*
@@ -694,7 +694,7 @@ extern double_t  fmod(double_t x, double_t y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  remainder(double_t x, double_t y);
+double_t  remainder(double_t x, double_t y);
 
 
 /*
@@ -705,7 +705,7 @@ extern double_t  remainder(double_t x, double_t y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  remquo(double_t x, double_t y, int *quo);
+double_t  remquo(double_t x, double_t y, int *quo);
 
 
 
@@ -736,7 +736,7 @@ extern double_t  remquo(double_t x, double_t y, int *quo);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  copysign(double_t x, double_t y);
+double_t  copysign(double_t x, double_t y);
 
 
 /*
@@ -747,7 +747,7 @@ extern double_t  copysign(double_t x, double_t y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double  nan(const char * tagp);
+double  nan(const char * tagp);
 
 
 /*
@@ -758,7 +758,7 @@ extern double  nan(const char * tagp);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern float  nanf(const char * tagp);
+float  nanf(const char * tagp);
 
 
 
@@ -770,7 +770,7 @@ extern float  nanf(const char * tagp);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  nanl(const char * tagp);
+long double  nanl(const char * tagp);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double nanl(const char *tagp) { return (long double) nan(tagp); }
@@ -788,7 +788,7 @@ extern long double  nanl(const char * tagp);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double  nextafterd(double x, double y);
+double  nextafterd(double x, double y);
 
 
 /*
@@ -799,7 +799,7 @@ extern double  nextafterd(double x, double y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern float  nextafterf(float x, float y);
+float  nextafterf(float x, float y);
 
 
 
@@ -811,7 +811,7 @@ extern float  nextafterf(float x, float y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  nextafterl(long double x, long double y);
+long double  nextafterl(long double x, long double y);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double nextafterl(long double x, long double y) { return (long double) nextafterd((double)(x),(double)(y)); }
@@ -891,7 +891,7 @@ extern long double  nextafterl(long double x, long double y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  fdim(double_t x, double_t y);
+double_t  fdim(double_t x, double_t y);
 
 
 /*
@@ -902,7 +902,7 @@ extern double_t  fdim(double_t x, double_t y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  fmax(double_t x, double_t y);
+double_t  fmax(double_t x, double_t y);
 
 
 /*
@@ -913,7 +913,7 @@ extern double_t  fmax(double_t x, double_t y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later
  */
-extern double_t  fmin(double_t x, double_t y);
+double_t  fmin(double_t x, double_t y);
 
 
 #endif /* (defined(__MWERKS__) && defined(__cmath__)) || (TARGET_RT_MAC_MACHO && defined(__MATH__)) */
@@ -948,7 +948,7 @@ extern const double_t pi;
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  cosl(long double x);
+long double  cosl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double cosl(long double x) { return (long double) cos((double)(x)); }
@@ -967,7 +967,7 @@ extern long double  cosl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  sinl(long double x);
+long double  sinl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double sinl(long double x) { return (long double) sin((double)(x)); }
@@ -986,7 +986,7 @@ extern long double  sinl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  tanl(long double x);
+long double  tanl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double tanl(long double x) { return (long double) tan((double)(x)); }
@@ -1005,7 +1005,7 @@ extern long double  tanl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  acosl(long double x);
+long double  acosl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double acosl(long double x) { return (long double) acos((double)(x)); }
@@ -1024,7 +1024,7 @@ extern long double  acosl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  asinl(long double x);
+long double  asinl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double asinl(long double x) { return (long double) asin((double)(x)); }
@@ -1043,7 +1043,7 @@ extern long double  asinl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  atanl(long double x);
+long double  atanl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double atanl(long double x) { return (long double) atan((double)(x)); }
@@ -1062,7 +1062,7 @@ extern long double  atanl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  atan2l(long double y, long double x);
+long double  atan2l(long double y, long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double atan2l(long double y, long double x) { return (long double) atan2((double)(y), (double)(x)); }
@@ -1081,7 +1081,7 @@ extern long double  atan2l(long double y, long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  coshl(long double x);
+long double  coshl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double coshl(long double x) { return (long double) cosh((double)(x)); }
@@ -1100,7 +1100,7 @@ extern long double  coshl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  sinhl(long double x);
+long double  sinhl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double sinhl(long double x) { return (long double) sinh((double)(x)); }
@@ -1119,7 +1119,7 @@ extern long double  sinhl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  tanhl(long double x);
+long double  tanhl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double tanhl(long double x) { return (long double) tanh((double)(x)); }
@@ -1138,7 +1138,7 @@ extern long double  tanhl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  acoshl(long double x);
+long double  acoshl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double acoshl(long double x) { return (long double) acosh((double)(x)); }
@@ -1157,7 +1157,7 @@ extern long double  acoshl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  asinhl(long double x);
+long double  asinhl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double asinhl(long double x) { return (long double) asinh((double)(x)); }
@@ -1176,7 +1176,7 @@ extern long double  asinhl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  atanhl(long double x);
+long double  atanhl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double atanhl(long double x) { return (long double) atanh((double)(x)); }
@@ -1195,7 +1195,7 @@ extern long double  atanhl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  expl(long double x);
+long double  expl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double expl(long double x) { return (long double) exp((double)(x)); }
@@ -1214,7 +1214,7 @@ extern long double  expl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  expm1l(long double x);
+long double  expm1l(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double expm1l(long double x) { return (long double) expm1((double)(x)); }
@@ -1233,7 +1233,7 @@ extern long double  expm1l(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  exp2l(long double x);
+long double  exp2l(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double exp2l(long double x) { return (long double) exp2((double)(x)); }
@@ -1252,7 +1252,7 @@ extern long double  exp2l(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  frexpl(long double x, int *exponent);
+long double  frexpl(long double x, int *exponent);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double frexpl(long double x, int *exponent) { return (long double) frexp((double)(x), (exponent)); }
@@ -1271,7 +1271,7 @@ extern long double  frexpl(long double x, int *exponent);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  ldexpl(long double x, int n);
+long double  ldexpl(long double x, int n);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double ldexpl(long double x, int n) { return (long double) ldexp((double)(x), (n)); }
@@ -1290,7 +1290,7 @@ extern long double  ldexpl(long double x, int n);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  logl(long double x);
+long double  logl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double logl(long double x) { return (long double) log((double)(x)); }
@@ -1309,7 +1309,7 @@ extern long double  logl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  log1pl(long double x);
+long double  log1pl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double log1pl(long double x) { return (long double) log1p((double)(x)); }
@@ -1328,7 +1328,7 @@ extern long double  log1pl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  log10l(long double x);
+long double  log10l(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double log10l(long double x) { return (long double) log10((double)(x)); }
@@ -1347,7 +1347,7 @@ extern long double  log10l(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  log2l(long double x);
+long double  log2l(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double log2l(long double x) { return (long double) log2((double)(x)); }
@@ -1366,7 +1366,7 @@ extern long double  log2l(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  logbl(long double x);
+long double  logbl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double logbl(long double x) { return (long double) logb((double)(x)); }
@@ -1385,7 +1385,7 @@ extern long double  logbl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  scalbl(long double x, long n);
+long double  scalbl(long double x, long n);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double scalbl(long double x, long n) { return (long double) scalb((double)(x), (n)); }
@@ -1404,7 +1404,7 @@ extern long double  scalbl(long double x, long n);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  fabsl(long double x);
+long double  fabsl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double fabsl(long double x) { return (long double) fabs((double)(x)); }
@@ -1423,7 +1423,7 @@ extern long double  fabsl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  hypotl(long double x, long double y);
+long double  hypotl(long double x, long double y);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double hypotl(long double x, long double y) { return (long double) hypot((double)(x), (double)(y)); }
@@ -1442,7 +1442,7 @@ extern long double  hypotl(long double x, long double y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  powl(long double x, long double y);
+long double  powl(long double x, long double y);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double powl(long double x, long double y) { return (long double) pow((double)(x), (double)(y)); }
@@ -1461,7 +1461,7 @@ extern long double  powl(long double x, long double y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  sqrtl(long double x);
+long double  sqrtl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double sqrtl(long double x) { return (long double) sqrt((double)(x)); }
@@ -1480,7 +1480,7 @@ extern long double  sqrtl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  erfl(long double x);
+long double  erfl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double erfl(long double x) { return (long double) erf((double)(x)); }
@@ -1499,7 +1499,7 @@ extern long double  erfl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  erfcl(long double x);
+long double  erfcl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double erfcl(long double x) { return (long double) erfc((double)(x)); }
@@ -1518,7 +1518,7 @@ extern long double  erfcl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  gammal(long double x);
+long double  gammal(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double gammal(long double x) { return (long double) gamma((double)(x)); }
@@ -1537,7 +1537,7 @@ extern long double  gammal(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  lgammal(long double x);
+long double  lgammal(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double lgammal(long double x) { return (long double) lgamma((double)(x)); }
@@ -1556,7 +1556,7 @@ extern long double  lgammal(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 2.0 and later or as macro/inline
  */
-extern long double  ceill(long double x);
+long double  ceill(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double ceill(long double x) { return (long double) ceil((double)(x)); }
@@ -1575,7 +1575,7 @@ extern long double  ceill(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  floorl(long double x);
+long double  floorl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double floorl(long double x) { return (long double) floor((double)(x)); }
@@ -1594,7 +1594,7 @@ extern long double  floorl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  rintl(long double x);
+long double  rintl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double rintl(long double x) { return (long double) rint((double)(x)); }
@@ -1613,7 +1613,7 @@ extern long double  rintl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  nearbyintl(long double x);
+long double  nearbyintl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double nearbyintl(long double x) { return (long double) nearbyint((double)(x)); }
@@ -1632,7 +1632,7 @@ extern long double  nearbyintl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long  rinttoll(long double x);
+long  rinttoll(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long rinttoll(long double x) { return rinttol((double)(x)); }
@@ -1651,7 +1651,7 @@ extern long  rinttoll(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  roundl(long double x);
+long double  roundl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double roundl(long double x) { return (long double) round((double)(x)); }
@@ -1670,7 +1670,7 @@ extern long double  roundl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long  roundtoll(long double x);
+long  roundtoll(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long roundtoll(long double x) { return roundtol((double)(x)); }
@@ -1689,7 +1689,7 @@ extern long  roundtoll(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  truncl(long double x);
+long double  truncl(long double x);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double truncl(long double x) { return (long double) trunc((double)(x)); }
@@ -1708,7 +1708,7 @@ extern long double  truncl(long double x);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  remainderl(long double x, long double y);
+long double  remainderl(long double x, long double y);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double remainderl(long double x, long double y) { return (long double) remainder((double)(x), (double)(y)); }
@@ -1727,7 +1727,7 @@ extern long double  remainderl(long double x, long double y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  remquol(long double x, long double y, int *quo);
+long double  remquol(long double x, long double y, int *quo);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double remquol(long double x, long double y, int *quo) { return (long double) remquo((double)(x), (double)(y), (quo)); }
@@ -1746,7 +1746,7 @@ extern long double  remquol(long double x, long double y, int *quo);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  copysignl(long double x, long double y);
+long double  copysignl(long double x, long double y);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double copysignl(long double x, long double y) { return (long double) copysign((double)(x), (double)(y)); }
@@ -1765,7 +1765,7 @@ extern long double  copysignl(long double x, long double y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  fdiml(long double x, long double y);
+long double  fdiml(long double x, long double y);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double fdiml(long double x, long double y) { return (long double) fdim((double)(x), (double)(y)); }
@@ -1784,7 +1784,7 @@ extern long double  fdiml(long double x, long double y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  fmaxl(long double x, long double y);
+long double  fmaxl(long double x, long double y);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double fmaxl(long double x, long double y) { return (long double) fmax((double)(x), (double)(y)); }
@@ -1803,7 +1803,7 @@ extern long double  fmaxl(long double x, long double y);
  *    CarbonLib:        in CarbonLib 1.0 and later
  *    Non-Carbon CFM:   in MathLib 1.0 and later or as macro/inline
  */
-extern long double  fminl(long double x, long double y);
+long double  fminl(long double x, long double y);
 #if TYPE_LONGDOUBLE_IS_DOUBLE
   #ifdef __cplusplus
     inline long double fminl(long double x, long double y) { return (long double) fmin((double)(x), (double)(y)); }

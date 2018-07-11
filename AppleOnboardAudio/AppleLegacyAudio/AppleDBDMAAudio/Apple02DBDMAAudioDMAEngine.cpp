@@ -1,7 +1,7 @@
 #define DEBUGTIMESTAMPS		FALSE
 
-#include "AppleLegacyDBDMAAudioDMAEngine.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02DBDMAAudioDMAEngine.h"
+#include "Apple02Audio.h"
 
 #include <IOKit/IOMemoryDescriptor.h>
 #include <IOKit/audio/IOAudioDebug.h>
@@ -26,37 +26,37 @@ extern vm_offset_t phystokv(vm_offset_t pa);
 
 #define super IOAudioEngine
 
-OSDefineMetaClassAndStructors(AppleLegacyDBDMAAudioDMAEngine, super)
+OSDefineMetaClassAndStructors(Apple02DBDMAAudioDMAEngine, super)
 
-const int AppleLegacyDBDMAAudioDMAEngine::kDBDMADeviceIndex	= 0;
-const int AppleLegacyDBDMAAudioDMAEngine::kDBDMAOutputIndex	= 1;
-const int AppleLegacyDBDMAAudioDMAEngine::kDBDMAInputIndex	= 2;
+const int Apple02DBDMAAudioDMAEngine::kDBDMADeviceIndex	= 0;
+const int Apple02DBDMAAudioDMAEngine::kDBDMAOutputIndex	= 1;
+const int Apple02DBDMAAudioDMAEngine::kDBDMAInputIndex	= 2;
 
 #pragma mark ------------------------ 
 #pragma mark еее IOAudioEngine Methods
 #pragma mark ------------------------ 
 
-bool AppleLegacyDBDMAAudioDMAEngine::filterInterrupt(int index)
+bool Apple02DBDMAAudioDMAEngine::filterInterrupt(int index)
 {
 	// check to see if this interupt is because the DMA went bad
-    UInt32 result = IOGetDBDMAChannelStatus(ioBaseDMAOutput);
-    UInt32 cmd = IOGetDBDMACommandPtr(ioBaseDMAOutput);
+    UInt32 resultOut = IOGetDBDMAChannelStatus (ioBaseDMAOutput);
+    UInt32 resultIn = 1;
 
-    if (!(result & kdbdmaActive)) {
-        fBadResult = result;
-        fBadCmd = cmd;
-    }		
+	if (ioBaseDMAInput) {
+		resultIn = IOGetDBDMAChannelStatus (ioBaseDMAInput) & kdbdmaActive;
+	}
 
-    if (status) 
-    {
-        // test the takeTimeStamp :it will increment the fCurrentLoopCount and time stamp it with the time now
-        takeTimeStamp();
-    }
+    if (!(resultOut & kdbdmaActive) || !resultIn) {
+		mNeedToRestartDMA = TRUE;
+	}
+
+	// test the takeTimeStamp :it will increment the fCurrentLoopCount and time stamp it with the time now
+	takeTimeStamp ();
 
     return false;
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::free()
+void Apple02DBDMAAudioDMAEngine::free()
 {
     if (interruptEventSource) {
         interruptEventSource->release();
@@ -115,26 +115,16 @@ void AppleLegacyDBDMAAudioDMAEngine::free()
     super::free();
 }
 
-UInt32 AppleLegacyDBDMAAudioDMAEngine::getCurrentSampleFrame()
+UInt32 Apple02DBDMAAudioDMAEngine::getCurrentSampleFrame()
 {
-  
-    UInt32 currentBlock = 0;
+	SInt32		curFrame;
 
-    if (ioBaseDMAOutput) {
-        vm_offset_t currentDMACommandPhys, currentDMACommand;
+	curFrame = ((Apple02Audio *)audioDevice)->sndHWGetCurrentSampleFrame () % 16384;
 
-        currentDMACommandPhys = (vm_offset_t)IOGetDBDMAChannelRegister(ioBaseDMAOutput, commandPtrLo);
-        currentDMACommand = phystokv(currentDMACommandPhys);
-
-        if ((UInt32)currentDMACommand > (UInt32)dmaCommandBufferOut) {
-            currentBlock = ((UInt32)currentDMACommand - (UInt32)dmaCommandBufferOut) / sizeof(IODBDMADescriptor);
-        }
-    }
-
-    return currentBlock * blockSize / 4;	// 4 bytes per frame - 2 per sample * 2 channels - BIG HACK
+	return curFrame;
 }
 
-bool AppleLegacyDBDMAAudioDMAEngine::init(OSDictionary	*properties,
+bool Apple02DBDMAAudioDMAEngine::init(OSDictionary	*properties,
                                  IOService 			*theDeviceProvider,
                                  bool				hasInput,
                                  UInt32				nBlocks,
@@ -147,7 +137,7 @@ bool AppleLegacyDBDMAAudioDMAEngine::init(OSDictionary	*properties,
 	IOMemoryMap *map;
 	Boolean					result;
 
-	CLOG("+ AppleLegacyDBDMAAudioDMAEngine::init\n");
+	CLOG("+ Apple02DBDMAAudioDMAEngine::init\n");
 	result = FALSE;
 
 	// Ususal check
@@ -155,12 +145,12 @@ bool AppleLegacyDBDMAAudioDMAEngine::init(OSDictionary	*properties,
 	FailIf (NULL == theDeviceProvider, Exit);
 
 	// create the memory places for DMA
-	map = theDeviceProvider->mapDeviceMemoryWithIndex(AppleLegacyDBDMAAudioDMAEngine::kDBDMAOutputIndex);
+	map = theDeviceProvider->mapDeviceMemoryWithIndex(Apple02DBDMAAudioDMAEngine::kDBDMAOutputIndex);
 	FailIf (NULL == map, Exit);
 	ioBaseDMAOutput = (IODBDMAChannelRegisters *) map->getVirtualAddress();
 
 	if(hasInput) {
-		map = theDeviceProvider->mapDeviceMemoryWithIndex(AppleLegacyDBDMAAudioDMAEngine::kDBDMAInputIndex);
+		map = theDeviceProvider->mapDeviceMemoryWithIndex(Apple02DBDMAAudioDMAEngine::kDBDMAInputIndex);
 		FailIf (NULL == map, Exit);
 		ioBaseDMAInput = (IODBDMAChannelRegisters *) map->getVirtualAddress();
 	} else {
@@ -199,11 +189,11 @@ bool AppleLegacyDBDMAAudioDMAEngine::init(OSDictionary	*properties,
 	result = TRUE;
 
 Exit:
-	CLOG("- AppleLegacyDBDMAAudioDMAEngine::init\n");    
+	CLOG("- Apple02DBDMAAudioDMAEngine::init\n");    
 	return result;
 }
 
-bool AppleLegacyDBDMAAudioDMAEngine::initHardware(IOService *provider)
+bool Apple02DBDMAAudioDMAEngine::initHardware(IOService *provider)
 {
 	vm_offset_t					offset;
 	vm_offset_t					sampleBufOut;
@@ -229,8 +219,9 @@ bool AppleLegacyDBDMAAudioDMAEngine::initHardware(IOService *provider)
             16,
             kIOAudioStreamAlignmentHighByte,
             kIOAudioStreamByteOrderBigEndian,
-            true
-    };
+            true,
+			0
+		};
 	
 	//	rbm 7.15.2002 keep a copy for user client
 	dbdmaFormat.fNumChannels = format.fNumChannels;
@@ -239,14 +230,14 @@ bool AppleLegacyDBDMAAudioDMAEngine::initHardware(IOService *provider)
 	dbdmaFormat.fBitDepth = format.fBitDepth;
 	dbdmaFormat.fBitWidth = format.fBitWidth;
 	dbdmaFormat.fAlignment = format.fAlignment;
+	dbdmaFormat.fByteOrder = format.fByteOrder;
 	dbdmaFormat.fIsMixable = format.fIsMixable;
 	dbdmaFormat.fDriverTag = format.fDriverTag;
-        
-    DEBUG_IOLOG("+ AppleLegacyDBDMAAudioDMAEngine::initHardware()\n");
+
+    DEBUG_IOLOG("+ Apple02DBDMAAudioDMAEngine::initHardware()\n");
     
     ourProvider = provider;
-    fBadCmd = 0;
-    fBadResult = 0;
+	mNeedToRestartDMA = FALSE;
 
     FailIf (!super::initHardware(provider), Exit);
         
@@ -319,8 +310,8 @@ bool AppleLegacyDBDMAAudioDMAEngine::initHardware(IOService *provider)
     FailIf (!workLoop, Exit);
     
     interruptEventSource = IOFilterInterruptEventSource::filterInterruptEventSource(this,
-                                                                               AppleLegacyDBDMAAudioDMAEngine::interruptHandler,
-                                                                               AppleLegacyDBDMAAudioDMAEngine::interruptFilter,
+                                                                               Apple02DBDMAAudioDMAEngine::interruptHandler,
+                                                                               Apple02DBDMAAudioDMAEngine::interruptFilter,
                                                                                audioDevice->getProvider(),
                                                                                interruptIndex);
     FailIf (!interruptEventSource, Exit);
@@ -489,14 +480,14 @@ bool AppleLegacyDBDMAAudioDMAEngine::initHardware(IOService *provider)
 	result = TRUE;
 
 Exit:
-    DEBUG_IOLOG("- AppleLegacyDBDMAAudioDMAEngine::initHardware()\n");
+    DEBUG_IOLOG("- Apple02DBDMAAudioDMAEngine::initHardware()\n");
     return result;
 }
 
 
-bool AppleLegacyDBDMAAudioDMAEngine::interruptFilter(OSObject *owner, IOFilterInterruptEventSource *source)
+bool Apple02DBDMAAudioDMAEngine::interruptFilter(OSObject *owner, IOFilterInterruptEventSource *source)
 {
-    register AppleLegacyDBDMAAudioDMAEngine *dmaEngine = (AppleLegacyDBDMAAudioDMAEngine *)owner;
+    register Apple02DBDMAAudioDMAEngine *dmaEngine = (Apple02DBDMAAudioDMAEngine *)owner;
     bool result = true;
 
     if (dmaEngine) {
@@ -506,17 +497,17 @@ bool AppleLegacyDBDMAAudioDMAEngine::interruptFilter(OSObject *owner, IOFilterIn
     return result;
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::interruptHandler(OSObject *owner, IOInterruptEventSource *source, int count)
+void Apple02DBDMAAudioDMAEngine::interruptHandler(OSObject *owner, IOInterruptEventSource *source, int count)
 {
     return;
 }
 
-IOReturn AppleLegacyDBDMAAudioDMAEngine::performAudioEngineStart()
+IOReturn Apple02DBDMAAudioDMAEngine::performAudioEngineStart()
 {
 	IOPhysicalAddress			commandBufferPhys;
 	IOReturn					result;
 
-    debugIOLog(" + AppleLegacyDBDMAAudioDMAEngine::performAudioEngineStart()\n");
+    debugIOLog(" + Apple02DBDMAAudioDMAEngine::performAudioEngineStart()\n");
 
 	result = kIOReturnError;
     FailIf (!ioBaseDMAOutput || !dmaCommandBufferOut || !status || !interruptEventSource, Exit);
@@ -550,23 +541,23 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::performAudioEngineStart()
     IOSetDBDMABranchSelect(ioBaseDMAOutput, IOSetDBDMAChannelControlBits(kdbdmaS0));
 	commandBufferPhys = dmaCommandBufferOutMemDescriptor->getPhysicalAddress ();
 	FailIf (NULL == commandBufferPhys, Exit);
-	((AppleLegacyAudio *)audioDevice)->sndHWSetCurrentSampleFrame (0);
+	((Apple02Audio *)audioDevice)->sndHWSetCurrentSampleFrame (0);
 	IODBDMAStart(ioBaseDMAOutput, (IODBDMADescriptor *)commandBufferPhys);
 
 	dmaRunState = TRUE;				//	rbm 7.12.02	added for user client support
 	result = kIOReturnSuccess;
 
-    debugIOLog(" - AppleLegacyDBDMAAudioDMAEngine::performAudioEngineStart()\n");
+    debugIOLog(" - Apple02DBDMAAudioDMAEngine::performAudioEngineStart()\n");
 
 Exit:
     return result;
 }
 
-IOReturn AppleLegacyDBDMAAudioDMAEngine::performAudioEngineStop()
+IOReturn Apple02DBDMAAudioDMAEngine::performAudioEngineStop()
 {
     UInt16 attemptsToStop = 1000;
 
-    debugIOLog("+ AppleLegacyDBDMAAudioDMAEngine::performAudioEngineStop()\n");
+    debugIOLog("+ Apple02DBDMAAudioDMAEngine::performAudioEngineStop()\n");
 
     if (NULL != iSubEngine) {
         iSubEngine->StopiSub ();
@@ -604,12 +595,12 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::performAudioEngineStop()
 	dmaRunState = FALSE;				//	rbm 7.12.02	added for user client support
     interruptEventSource->enable();
 
-    DEBUG_IOLOG("- AppleLegacyDBDMAAudioDMAEngine::performAudioEngineStop()\n");
+    DEBUG_IOLOG("- Apple02DBDMAAudioDMAEngine::performAudioEngineStop()\n");
     return kIOReturnSuccess;
 }
 
 // This gets called when a new audio stream needs to be mixed into an already playing audio stream
-void AppleLegacyDBDMAAudioDMAEngine::resetClipPosition (IOAudioStream *audioStream, UInt32 clipSampleFrame) {
+void Apple02DBDMAAudioDMAEngine::resetClipPosition (IOAudioStream *audioStream, UInt32 clipSampleFrame) {
   if ((NULL != iSubBufferMemory) && (NULL != iSubEngine)) {
 				
 		resetiSubProcessingState();
@@ -651,51 +642,30 @@ void AppleLegacyDBDMAAudioDMAEngine::resetClipPosition (IOAudioStream *audioStre
     }
 }
 
-IOReturn AppleLegacyDBDMAAudioDMAEngine::restartOutputIfFailure(){
-	IOPhysicalAddress			commandBufferPhys;
+IOReturn Apple02DBDMAAudioDMAEngine::restartDMA () {
 	IOReturn					result;
 
 	result = kIOReturnError;
-    FailIf (!ioBaseDMAOutput || !dmaCommandBufferOut || !status || !interruptEventSource, Exit);
+    FailIf (!ioBaseDMAOutput || !dmaCommandBufferOut || !interruptEventSource, Exit);
 
-#if DEBUGLOG
-	IOLog ("Restarting DMA\n");
-#endif
-    flush_dcache((vm_offset_t)dmaCommandBufferOut, commandBufferSize, false);
-
-	if (NULL != iSubEngine) {
-		needToSync = TRUE;
-		startiSub = TRUE;
-		restartedDMA = TRUE;
-	}
-
-    interruptEventSource->enable();
-
-	// add the time stamp take to test
-    takeTimeStamp(false);
-    
-    IOSetDBDMAChannelControl(ioBaseDMAOutput, IOClearDBDMAChannelControlBits(kdbdmaS0));
-    IOSetDBDMABranchSelect(ioBaseDMAOutput, IOSetDBDMAChannelControlBits(kdbdmaS0));
-	commandBufferPhys = dmaCommandBufferOutMemDescriptor->getPhysicalAddress ();
-	FailIf (NULL == commandBufferPhys, Exit);
-	IODBDMAStart(ioBaseDMAOutput, (IODBDMADescriptor *)commandBufferPhys);
-
+	performAudioEngineStop ();
+	performAudioEngineStart ();
 	result = kIOReturnSuccess;
 
 Exit:
     return result;
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::setSampleLatencies (UInt32 outputLatency, UInt32 inputLatency) {
+void Apple02DBDMAAudioDMAEngine::setSampleLatencies (UInt32 outputLatency, UInt32 inputLatency) {
 	setOutputSampleLatency (outputLatency);
 	setInputSampleLatency (inputLatency);
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::stop(IOService *provider)
+void Apple02DBDMAAudioDMAEngine::stop(IOService *provider)
 {
     IOWorkLoop *workLoop;
     
-    DEBUG3_IOLOG(" + AppleLegacyDBDMAAudioDMAEngine[%p]::stop(%p)\n", this, provider);
+    DEBUG3_IOLOG(" + Apple02DBDMAAudioDMAEngine[%p]::stop(%p)\n", this, provider);
     
     if (interruptEventSource) {
         workLoop = getWorkLoop();
@@ -706,7 +676,7 @@ void AppleLegacyDBDMAAudioDMAEngine::stop(IOService *provider)
     
     super::stop(provider);
     stopAudioEngine();
-    DEBUG3_IOLOG(" - AppleLegacyDBDMAAudioDMAEngine[%p]::stop(%p)\n", this, provider);
+    DEBUG3_IOLOG(" - Apple02DBDMAAudioDMAEngine[%p]::stop(%p)\n", this, provider);
 }
 
 #pragma mark ------------------------ 
@@ -714,89 +684,87 @@ void AppleLegacyDBDMAAudioDMAEngine::stop(IOService *provider)
 #pragma mark ------------------------ 
 
 // [3094574] aml, pick the correct output conversion routine based on our current state
-void AppleLegacyDBDMAAudioDMAEngine::chooseOutputClippingRoutinePtr()
+void Apple02DBDMAAudioDMAEngine::chooseOutputClippingRoutinePtr()
 {
 	if ((NULL != iSubBufferMemory) && (NULL != iSubEngine)) {
 		if (32 == dbdmaFormat.fBitWidth) {
 			if (TRUE == fNeedsRightChanMixed) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSubMixRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSubMixRightChannel;
 			} else if (TRUE == fNeedsRightChanDelay) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSubDelayRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSubDelayRightChannel;
 			} else {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSub;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSub;
 			}
 		} else if (16 == dbdmaFormat.fBitWidth) {
 			if (TRUE == fNeedsPhaseInversion) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubInvertRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubInvertRightChannel;
 			} else if (TRUE == fNeedsRightChanMixed) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubMixRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubMixRightChannel;
 			} else if (TRUE == fNeedsRightChanDelay) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubDelayRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubDelayRightChannel;
 			} else {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSub;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSub;
 			}
 		} else {
-			IOLog("AppleLegacyDBDMAAudioDMAEngine::chooseOutputClippingRoutinePtr - iSub attached, non-supported output bit depth!\n");
+			IOLog("Apple02DBDMAAudioDMAEngine::chooseOutputClippingRoutinePtr - iSub attached, non-supported output bit depth!\n");
 		}
 	} else {
 		if (32 == dbdmaFormat.fBitWidth) {
 			if (TRUE == fNeedsRightChanMixed) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32MixRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32MixRightChannel;
 			} else if (TRUE == fNeedsRightChanDelay) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32DelayRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32DelayRightChannel;
 			} else {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32;
 			}
 		} else if (16 == dbdmaFormat.fBitWidth) {
 			if (TRUE == fNeedsPhaseInversion) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16InvertRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16InvertRightChannel;
 			} else if (TRUE == fNeedsRightChanMixed) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16MixRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16MixRightChannel;
 			} else if (TRUE == fNeedsRightChanDelay) {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16DelayRightChannel;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16DelayRightChannel;
 			} else {
-				mClipAppleLegacyDBDMAToOutputStreamRoutine = &AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16;
+				mClipAppleLegacyDBDMAToOutputStreamRoutine = &Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16;
 			}
 		} else {
-			IOLog("AppleLegacyDBDMAAudioDMAEngine::chooseOutputClippingRoutinePtr - Non-supported output bit depth!\n");
+			IOLog("Apple02DBDMAAudioDMAEngine::chooseOutputClippingRoutinePtr - Non-supported output bit depth!\n");
 		}
 	}
 }
 
 // [3094574] aml, pick the correct input conversion routine based on our current state
-void AppleLegacyDBDMAAudioDMAEngine::chooseInputConversionRoutinePtr() 
+void Apple02DBDMAAudioDMAEngine::chooseInputConversionRoutinePtr() 
 {
 	if (32 == dbdmaFormat.fBitWidth) {
 		if (mUseSoftwareInputGain) {
-			mConvertInputStreamToAppleLegacyDBDMARoutine = &AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream32WithGain;
+			mConvertInputStreamToAppleLegacyDBDMARoutine = &Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream32WithGain;
 		} else {
-			mConvertInputStreamToAppleLegacyDBDMARoutine = &AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream32;
+			mConvertInputStreamToAppleLegacyDBDMARoutine = &Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream32;
 		}
 	} else if (16 == dbdmaFormat.fBitWidth) {
 		if (mUseSoftwareInputGain) {
-			mConvertInputStreamToAppleLegacyDBDMARoutine = &AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16WithGain;
+			mConvertInputStreamToAppleLegacyDBDMARoutine = &Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16WithGain;
 		} else {
 			if (e_Mode_CopyRightToLeft == mInputDualMonoMode) {
-				mConvertInputStreamToAppleLegacyDBDMARoutine = &AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16CopyR2L;
+				mConvertInputStreamToAppleLegacyDBDMARoutine = &Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16CopyR2L;
 			} else {
-				mConvertInputStreamToAppleLegacyDBDMARoutine = &AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16;
+				mConvertInputStreamToAppleLegacyDBDMARoutine = &Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16;
 			}
 		}
 	} else {
-		IOLog("AppleLegacyDBDMAAudioDMAEngine::chooseInputConversionRoutinePtr - Non-supported input bit depth!\n");
+		IOLog("Apple02DBDMAAudioDMAEngine::chooseInputConversionRoutinePtr - Non-supported input bit depth!\n");
 	}
 }
 
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipOutputSamples(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream)
+IOReturn Apple02DBDMAAudioDMAEngine::clipOutputSamples(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream)
 {
 	IOReturn result;
  
  	// if the DMA went bad restart it
-	if (fBadCmd && fBadResult)
-	{
-		fBadCmd = 0;
-		fBadResult = 0;
-		restartOutputIfFailure();
+	if (mNeedToRestartDMA) {
+		mNeedToRestartDMA = FALSE;
+		restartDMA ();
 	}
 
 	startTiming();
@@ -810,9 +778,15 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipOutputSamples(const void *mixBuf, v
 }
 
 // [3094574] aml, use function pointer instead of if/else block
-IOReturn AppleLegacyDBDMAAudioDMAEngine::convertInputSamples(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream)
+IOReturn Apple02DBDMAAudioDMAEngine::convertInputSamples(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream)
 {
 	IOReturn result;
+
+ 	// if the DMA went bad restart it
+	if (mNeedToRestartDMA) {
+		mNeedToRestartDMA = FALSE;
+		restartDMA ();
+	}
 
 	result = (*this.*mConvertInputStreamToAppleLegacyDBDMARoutine)(sampleBuf, destBuf, firstSampleFrame, numSampleFrames, streamFormat);
 
@@ -826,7 +800,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::convertInputSamples(const void *sampleB
 // ------------------------------------------------------------------------
 // Float32 to Native SInt16
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     float	*inFloatBufferPtr;
     SInt16	*outSInt16BufferPtr;
@@ -845,7 +819,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16(co
 // Float32 to Native SInt16, delay right channel to correct for TAS 3004
 // I2S clocking issue which puts left and right samples out of phase.
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16DelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16DelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
 
     float	*inFloatBufferPtr;
@@ -868,7 +842,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16Del
 // assumes 2 channels.  Note that there is no 32 bit version of this 
 // conversion routine, since the older hardware does not support it.
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16InvertRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16InvertRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     float	*inFloatBufferPtr;
     SInt16	*outSInt16BufferPtr;
@@ -889,7 +863,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16Inv
 // Float32 to Native SInt16, mix right and left channels and mute right
 // assumes 2 channels
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16MixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16MixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     float	*inFloatBufferPtr;
     SInt16	*outSInt16BufferPtr;
@@ -909,7 +883,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16Mix
 // ------------------------------------------------------------------------
 // Float32 to Native SInt32
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     float	*inFloatBufferPtr;
 	SInt32	*outSInt32BufferPtr;
@@ -928,7 +902,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32(co
 // Float32 to Native SInt32, delay right channel to correct for TAS 3004
 // I2S clocking issue which puts left and right samples out of phase.
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32DelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32DelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
 
     float	*inFloatBufferPtr;
@@ -950,7 +924,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32Del
 // Float32 to Native SInt32, mix right and left channels and mute right
 // assumes 2 channels
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32MixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32MixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     float	*inFloatBufferPtr;
 	SInt32	*outSInt32BufferPtr;
@@ -974,7 +948,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32Mix
 // ------------------------------------------------------------------------
 // Float32 to Native SInt16 with iSub, assumes 2 channel data
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSub(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSub(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 		maxSampleIndex, numSamples;
     float*		floatMixBuf;
@@ -1022,7 +996,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSu
 // ------------------------------------------------------------------------
 // Float32 to Native SInt16 with iSub, mix and mute right channel
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubDelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubDelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 		sampleIndex, maxSampleIndex, numSamples;
     float *		floatMixBuf;
@@ -1070,7 +1044,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSu
 // ------------------------------------------------------------------------
 // Float32 to Native SInt16 with iSub, invert right channel - assumes 2 channels 
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubInvertRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubInvertRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 		sampleIndex, maxSampleIndex, numSamples;
     float *		floatMixBuf;
@@ -1118,7 +1092,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSu
 // ------------------------------------------------------------------------
 // Float32 to Native SInt16 with iSub, mix and mute right channel
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubMixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSubMixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
 
     UInt32 		sampleIndex, maxSampleIndex, numSamples;
@@ -1167,7 +1141,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream16iSu
 // ------------------------------------------------------------------------
 // Float32 to Native SInt32 with iSub, assumes 2 channel data
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSub(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSub(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 		sampleIndex, maxSampleIndex, numSamples;
     float *		floatMixBuf;
@@ -1214,7 +1188,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSu
 // ------------------------------------------------------------------------
 // Float32 to Native SInt32 with iSub, delay right channel one sample
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSubDelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSubDelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 		sampleIndex, maxSampleIndex, numSamples;
     float *		floatMixBuf;
@@ -1262,7 +1236,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSu
 // ------------------------------------------------------------------------
 // Float32 to Native SInt32 with iSub, mix and mute right channel
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSubMixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSubMixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 		sampleIndex, maxSampleIndex, numSamples;
     float *		floatMixBuf;
@@ -1314,7 +1288,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::clipAppleLegacyDBDMAToOutputStream32iSu
 // ------------------------------------------------------------------------
 // Native SInt16 to Float32
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 numSamplesLeft;
     float *floatDestBuf;
@@ -1334,7 +1308,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream1
 // older machines only.  Note that there is no 32 bit version of this  
 // function because older hardware does not support it.
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16CopyR2L(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16CopyR2L(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 numSamplesLeft;
     float *floatDestBuf;
@@ -1353,7 +1327,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream1
 // ------------------------------------------------------------------------
 // Native SInt16 to Float32, with software input gain
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16WithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream16WithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 numSamplesLeft;
     float *floatDestBuf;
@@ -1371,7 +1345,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream1
 // ------------------------------------------------------------------------
 // Native SInt32 to Float32
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream32(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream32(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 numSamplesLeft;
     float *floatDestBuf;
@@ -1389,7 +1363,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream3
 // ------------------------------------------------------------------------
 // Native SInt32 to Float32, with software input gain
 // ------------------------------------------------------------------------
-IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream32WithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+IOReturn Apple02DBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream32WithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
 {
     UInt32 numSamplesLeft;
     float *floatDestBuf;
@@ -1408,7 +1382,7 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::convertAppleLegacyDBDMAFromInputStream3
 #pragma mark еее State Routines
 #pragma mark ------------------------ 
 
-void AppleLegacyDBDMAAudioDMAEngine::setDualMonoMode(const DualMonoModeType inDualMonoMode) 
+void Apple02DBDMAAudioDMAEngine::setDualMonoMode(const DualMonoModeType inDualMonoMode) 
 { 
 	mInputDualMonoMode = inDualMonoMode; 
 	chooseInputConversionRoutinePtr();
@@ -1416,7 +1390,7 @@ void AppleLegacyDBDMAAudioDMAEngine::setDualMonoMode(const DualMonoModeType inDu
 	return;   	
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::setInputGainL(UInt32 inGainL) 
+void Apple02DBDMAAudioDMAEngine::setInputGainL(UInt32 inGainL) 
 { 
     if (mInputGainLPtr == NULL) {        
         mInputGainLPtr = (float *)IOMalloc(sizeof(float));
@@ -1426,7 +1400,7 @@ void AppleLegacyDBDMAAudioDMAEngine::setInputGainL(UInt32 inGainL)
     return;   
 } 
 
-void AppleLegacyDBDMAAudioDMAEngine::setInputGainR(UInt32 inGainR) 
+void Apple02DBDMAAudioDMAEngine::setInputGainR(UInt32 inGainR) 
 { 
     if (mInputGainRPtr == NULL) {        
         mInputGainRPtr = (float *)IOMalloc(sizeof(float));
@@ -1438,7 +1412,7 @@ void AppleLegacyDBDMAAudioDMAEngine::setInputGainR(UInt32 inGainR)
 
 // [3094574] aml, updated routines below to set the proper clipping routine
 
-void AppleLegacyDBDMAAudioDMAEngine::setPhaseInversion(const bool needsPhaseInversion) 
+void Apple02DBDMAAudioDMAEngine::setPhaseInversion(const bool needsPhaseInversion) 
 {
 	fNeedsPhaseInversion = needsPhaseInversion; 
 	chooseOutputClippingRoutinePtr();
@@ -1446,7 +1420,7 @@ void AppleLegacyDBDMAAudioDMAEngine::setPhaseInversion(const bool needsPhaseInve
 	return;   
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::setRightChanDelay(const bool needsRightChanDelay)  
+void Apple02DBDMAAudioDMAEngine::setRightChanDelay(const bool needsRightChanDelay)  
 {
 	fNeedsRightChanDelay = needsRightChanDelay;  
 	chooseOutputClippingRoutinePtr();
@@ -1454,7 +1428,7 @@ void AppleLegacyDBDMAAudioDMAEngine::setRightChanDelay(const bool needsRightChan
 	return;   
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::setRightChanMixed(const bool needsRightChanMixed)  
+void Apple02DBDMAAudioDMAEngine::setRightChanMixed(const bool needsRightChanMixed)  
 {
 	fNeedsRightChanMixed = needsRightChanMixed;  
 	chooseOutputClippingRoutinePtr();
@@ -1462,7 +1436,7 @@ void AppleLegacyDBDMAAudioDMAEngine::setRightChanMixed(const bool needsRightChan
 	return;   
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::setUseSoftwareInputGain(const bool inUseSoftwareInputGain) 
+void Apple02DBDMAAudioDMAEngine::setUseSoftwareInputGain(const bool inUseSoftwareInputGain) 
 {     
 	mUseSoftwareInputGain = inUseSoftwareInputGain;     	
 	chooseInputConversionRoutinePtr();
@@ -1474,7 +1448,7 @@ void AppleLegacyDBDMAAudioDMAEngine::setUseSoftwareInputGain(const bool inUseSof
 #pragma mark еее Format Routines
 #pragma mark ------------------------ 
 
-IOReturn AppleLegacyDBDMAAudioDMAEngine::getAudioStreamFormat( IOAudioStreamFormat * streamFormatPtr )
+IOReturn Apple02DBDMAAudioDMAEngine::getAudioStreamFormat( IOAudioStreamFormat * streamFormatPtr )
 {
 	if ( NULL != streamFormatPtr ) {
 		streamFormatPtr->fNumChannels = dbdmaFormat.fNumChannels;
@@ -1490,12 +1464,12 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::getAudioStreamFormat( IOAudioStreamForm
 	return kIOReturnSuccess;
 }
 
-bool AppleLegacyDBDMAAudioDMAEngine::getDmaState (void )
+bool Apple02DBDMAAudioDMAEngine::getDmaState (void )
 {
 	return dmaRunState;
 }
 
-IOReturn AppleLegacyDBDMAAudioDMAEngine::performFormatChange(IOAudioStream *audioStream, const IOAudioStreamFormat *newFormat, const IOAudioSampleRate *newSampleRate)
+IOReturn Apple02DBDMAAudioDMAEngine::performFormatChange(IOAudioStream *audioStream, const IOAudioStreamFormat *newFormat, const IOAudioSampleRate *newSampleRate)
 {
 	if ( NULL != newFormat ) {									//	rbm 7.15.2002 keep a copy for user client
 		dbdmaFormat.fNumChannels = newFormat->fNumChannels;
@@ -1507,11 +1481,11 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::performFormatChange(IOAudioStream *audi
 		dbdmaFormat.fByteOrder = newFormat->fByteOrder;
 		dbdmaFormat.fIsMixable = newFormat->fIsMixable;
 		dbdmaFormat.fDriverTag = newFormat->fDriverTag;
-	}
 
-	// [3094574] aml, set the proper clipping routine
-	chooseOutputClippingRoutinePtr();
-	chooseInputConversionRoutinePtr();
+		// [3094574] aml, set the proper clipping routine
+		chooseOutputClippingRoutinePtr();
+		chooseInputConversionRoutinePtr();
+	}
 
     return kIOReturnSuccess;
 }
@@ -1520,16 +1494,16 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::performFormatChange(IOAudioStream *audi
 #pragma mark еее iSub Support
 #pragma mark ------------------------ 
 
-IOReturn AppleLegacyDBDMAAudioDMAEngine::iSubAttachChangeHandler (IOService *target, IOAudioControl *attachControl, SInt32 oldValue, SInt32 newValue) {
+IOReturn Apple02DBDMAAudioDMAEngine::iSubAttachChangeHandler (IOService *target, IOAudioControl *attachControl, SInt32 oldValue, SInt32 newValue) {
     IOReturn						result;
-    AppleLegacyDBDMAAudioDMAEngine *		audioDMAEngine;
+    Apple02DBDMAAudioDMAEngine *		audioDMAEngine;
     IOCommandGate *					cg;
 
-	debug5IOLog ("+ AppleLegacyDBDMAAudioDMAEngine::iSubAttachChangeHandler (%p, %p, 0x%lx, 0x%lx)\n", target, attachControl, oldValue, newValue);
+	debug5IOLog ("+ Apple02DBDMAAudioDMAEngine::iSubAttachChangeHandler (%p, %p, 0x%lx, 0x%lx)\n", target, attachControl, oldValue, newValue);
 
 	result = kIOReturnSuccess;
 	FailIf (oldValue == newValue, Exit);
-    audioDMAEngine = OSDynamicCast (AppleLegacyDBDMAAudioDMAEngine, target);
+    audioDMAEngine = OSDynamicCast (Apple02DBDMAAudioDMAEngine, target);
 	FailIf (NULL == audioDMAEngine, Exit);
 
 	if (newValue) {
@@ -1563,16 +1537,16 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::iSubAttachChangeHandler (IOService *tar
 	}
 
 Exit:
-    debugIOLog ("- AppleLegacyDBDMAAudioDMAEngine::iSubAttachChangeHandler\n");
+    debugIOLog ("- Apple02DBDMAAudioDMAEngine::iSubAttachChangeHandler\n");
     return result;
 }
 
-bool AppleLegacyDBDMAAudioDMAEngine::iSubEnginePublished (AppleLegacyDBDMAAudioDMAEngine * dbdmaEngineObject, void * refCon, IOService * newService) {
+bool Apple02DBDMAAudioDMAEngine::iSubEnginePublished (Apple02DBDMAAudioDMAEngine * dbdmaEngineObject, void * refCon, IOService * newService) {
 	IOReturn						result;
 	bool							resultCode;
     IOCommandGate *					cg;
 
-	debug4IOLog ("+AppleLegacyDBDMAAudioDMAEngine::iSubEnginePublished (%p, %p, %p)\n", dbdmaEngineObject, (UInt32*)refCon, newService);
+	debug4IOLog ("+Apple02DBDMAAudioDMAEngine::iSubEnginePublished (%p, %p, %p)\n", dbdmaEngineObject, (UInt32*)refCon, newService);
 
 	resultCode = false;
 
@@ -1583,9 +1557,9 @@ bool AppleLegacyDBDMAAudioDMAEngine::iSubEnginePublished (AppleLegacyDBDMAAudioD
 	FailIf (NULL == dbdmaEngineObject->iSubEngine, Exit);
 
 	// Create the memory for the high/low samples to go into
-    dbdmaEngineObject->miSubProcessingParams.lowFreqSamples = (float *)IOMallocAligned (round_page((dbdmaEngineObject->numBlocks * dbdmaEngineObject->blockSize) * sizeof (float)), PAGE_SIZE);
+    dbdmaEngineObject->miSubProcessingParams.lowFreqSamples = (float *)IOMallocAligned ((dbdmaEngineObject->numBlocks * dbdmaEngineObject->blockSize) * sizeof (float), PAGE_SIZE);
 	FailIf (NULL == dbdmaEngineObject->miSubProcessingParams.lowFreqSamples, Exit);
-    dbdmaEngineObject->miSubProcessingParams.highFreqSamples = (float *)IOMallocAligned (round_page((dbdmaEngineObject->numBlocks * dbdmaEngineObject->blockSize) * sizeof (float)), PAGE_SIZE);
+    dbdmaEngineObject->miSubProcessingParams.highFreqSamples = (float *)IOMallocAligned ((dbdmaEngineObject->numBlocks * dbdmaEngineObject->blockSize) * sizeof (float), PAGE_SIZE);
 	FailIf (NULL == dbdmaEngineObject->miSubProcessingParams.highFreqSamples, Exit);
 
 	// Open the iSub which will cause it to create mute and volume controls
@@ -1629,17 +1603,17 @@ Exit:
 		dbdmaEngineObject->chooseOutputClippingRoutinePtr();
 	}
 	
-	debug5IOLog ("-AppleLegacyDBDMAAudioDMAEngine::iSubEnginePublished (%p, %p, %p), result = %d\n", dbdmaEngineObject, (UInt32 *)refCon, newService, resultCode);
+	debug5IOLog ("-Apple02DBDMAAudioDMAEngine::iSubEnginePublished (%p, %p, %p), result = %d\n", dbdmaEngineObject, (UInt32 *)refCon, newService, resultCode);
 	return resultCode;
 }
 
-IOReturn AppleLegacyDBDMAAudioDMAEngine::iSubCloseAction (OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4) {
+IOReturn Apple02DBDMAAudioDMAEngine::iSubCloseAction (OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4) {
     if (NULL != owner) {
-        AppleLegacyDBDMAAudioDMAEngine *		audioEngine;
+        Apple02DBDMAAudioDMAEngine *		audioEngine;
 
-		debugIOLog ("+AppleLegacyDBDMAAudioDMAEngine::iSubCloseAction\n");
+		debugIOLog ("+Apple02DBDMAAudioDMAEngine::iSubCloseAction\n");
 
-		audioEngine = OSDynamicCast (AppleLegacyDBDMAAudioDMAEngine, owner);
+		audioEngine = OSDynamicCast (Apple02DBDMAAudioDMAEngine, owner);
 
         if (NULL != audioEngine && NULL != audioEngine->iSubEngine && TRUE == audioEngine->iSubOpen) {
 			AppleiSubEngine *				oldiSubEngine;
@@ -1689,23 +1663,23 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::iSubCloseAction (OSObject *owner, void 
 #endif
     }
 
-	debugIOLog ("-AppleLegacyDBDMAAudioDMAEngine::iSubCloseAction\n");
+	debugIOLog ("-Apple02DBDMAAudioDMAEngine::iSubCloseAction\n");
 	return kIOReturnSuccess;
 }
 
-IOReturn AppleLegacyDBDMAAudioDMAEngine::iSubOpenAction (OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4) {
+IOReturn Apple02DBDMAAudioDMAEngine::iSubOpenAction (OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4) {
 	IOReturn					result;
 	bool						resultBool;
 
-	debugIOLog ("+AppleLegacyDBDMAAudioDMAEngine::iSubOpenAction\n");
+	debugIOLog ("+Apple02DBDMAAudioDMAEngine::iSubOpenAction\n");
 
 	result = kIOReturnError;
 	resultBool = FALSE;
 
     if (NULL != owner) {
-        AppleLegacyDBDMAAudioDMAEngine *		audioEngine;
+        Apple02DBDMAAudioDMAEngine *		audioEngine;
 
-		audioEngine = OSDynamicCast (AppleLegacyDBDMAAudioDMAEngine, owner);
+		audioEngine = OSDynamicCast (Apple02DBDMAAudioDMAEngine, owner);
 		resultBool = audioEngine->iSubEngine->openiSub (audioEngine);
     }
 
@@ -1713,11 +1687,11 @@ IOReturn AppleLegacyDBDMAAudioDMAEngine::iSubOpenAction (OSObject *owner, void *
 		result = kIOReturnSuccess;
 	}
 
-	debugIOLog ("-AppleLegacyDBDMAAudioDMAEngine::iSubOpenAction\n");
+	debugIOLog ("-Apple02DBDMAAudioDMAEngine::iSubOpenAction\n");
 	return result;
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::iSubSynchronize(UInt32 firstSampleFrame, UInt32 numSampleFrames) 
+void Apple02DBDMAAudioDMAEngine::iSubSynchronize(UInt32 firstSampleFrame, UInt32 numSampleFrames) 
 {
 	void *						iSubBuffer = NULL;
 	SInt32						offsetDelta;
@@ -1961,7 +1935,7 @@ void AppleLegacyDBDMAAudioDMAEngine::iSubSynchronize(UInt32 firstSampleFrame, UI
 	return;
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::resetiSubProcessingState() 
+void Apple02DBDMAAudioDMAEngine::resetiSubProcessingState() 
 { 	
 	miSubProcessingParams.srcPhase =  1.0;		
 	miSubProcessingParams.srcState =  0.0;		
@@ -1996,10 +1970,10 @@ void AppleLegacyDBDMAAudioDMAEngine::resetiSubProcessingState()
 	return;   	
 }
 
-bool AppleLegacyDBDMAAudioDMAEngine::willTerminate (IOService * provider, IOOptionBits options) {
+bool Apple02DBDMAAudioDMAEngine::willTerminate (IOService * provider, IOOptionBits options) {
     IOCommandGate *					cg;
 
-	debug3IOLog ("+AppleLegacyDBDMAAudioDMAEngine[%p]::willTerminate (%p)\n", this, provider);
+	debug3IOLog ("+Apple02DBDMAAudioDMAEngine[%p]::willTerminate (%p)\n", this, provider);
 
 	if (iSubEngine == (AppleiSubEngine *)provider) {
 		debugIOLog ("iSub requesting termination\n");
@@ -2015,12 +1989,12 @@ bool AppleLegacyDBDMAAudioDMAEngine::willTerminate (IOService * provider, IOOpti
 		}
 	}
 
-	debug2IOLog ("-AppleLegacyDBDMAAudioDMAEngine[%p]::willTerminate - about to call super::willTerminate ()\n", this);
+	debug2IOLog ("-Apple02DBDMAAudioDMAEngine[%p]::willTerminate - about to call super::willTerminate ()\n", this);
 
 	return super::willTerminate (provider, options);
 }
 
-void AppleLegacyDBDMAAudioDMAEngine::updateiSubPosition(UInt32 firstSampleFrame, UInt32 numSampleFrames)
+void Apple02DBDMAAudioDMAEngine::updateiSubPosition(UInt32 firstSampleFrame, UInt32 numSampleFrames)
 {
 	if (TRUE == startiSub) {
 		iSubEngine->StartiSub ();
@@ -2035,7 +2009,7 @@ void AppleLegacyDBDMAAudioDMAEngine::updateiSubPosition(UInt32 firstSampleFrame,
 #pragma mark еее Utilities
 #pragma mark ------------------------ 
 
-inline void AppleLegacyDBDMAAudioDMAEngine::startTiming() {
+inline void Apple02DBDMAAudioDMAEngine::startTiming() {
 #ifdef _TIME_CLIP_ROUTINE
 	AbsoluteTime				uptime;
 	AbsoluteTime				lastuptime;
@@ -2058,7 +2032,7 @@ inline void AppleLegacyDBDMAAudioDMAEngine::startTiming() {
 #endif
 }
 
-inline void AppleLegacyDBDMAAudioDMAEngine::endTiming() {
+inline void Apple02DBDMAAudioDMAEngine::endTiming() {
 #ifdef _TIME_CLIP_ROUTINE
 	if ((mCallCount % kCallFrequency) == 0) {
 		clock_get_uptime (&uptime);

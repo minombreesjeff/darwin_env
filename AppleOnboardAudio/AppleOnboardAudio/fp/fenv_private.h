@@ -34,7 +34,7 @@
 #define __FENV_PRIVATE__
 
 /*  Pick up the publicly visible enums formerly sited here */
-#include <fenv.h>
+#include "fenv.h"
 
 /*  Macros to get or set environment flags doubleword  */
 #define      FEGETENVD(x)         asm volatile ("mffs %0" : "=f" (x));

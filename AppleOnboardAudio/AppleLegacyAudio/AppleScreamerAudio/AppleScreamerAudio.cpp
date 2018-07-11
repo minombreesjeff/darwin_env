@@ -1,6 +1,6 @@
 /*
  *  AudioScreamerAudio.cpp (definition)
- *  Project : AppleLegacyAudio
+ *  Project : Apple02Audio
  *
  *  Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
@@ -63,7 +63,7 @@
 #include "awacs_hw.h"
 #include "AppleScreamerAudio.h"
 
-#include "AppleLegacyDBDMAAudioDMAEngine.h"
+#include "Apple02DBDMAAudioDMAEngine.h"
 
 static void		ScreamerWaitUntilReady (volatile awacs_regmap_t *ioBaseAwacs);
 static void 	Screamer_writeCodecControlReg( volatile awacs_regmap_t *ioBaseAwacs, int value );
@@ -158,9 +158,9 @@ static UInt32 Screamer_ReadStatusRegisters( volatile awacs_regmap_t *ioBaseAwacs
 	return OSReadLittleInt32( &ioBaseAwacs->CodecStatusRegister, 0 );
 }
 
-#define super AppleLegacyAudio
+#define super Apple02Audio
 
-OSDefineMetaClassAndStructors(AppleScreamerAudio, AppleLegacyAudio)
+OSDefineMetaClassAndStructors(AppleScreamerAudio, Apple02Audio)
 
 // Unix like prototypes
 bool AppleScreamerAudio::init(OSDictionary *properties)
@@ -218,13 +218,14 @@ IOService* AppleScreamerAudio::probe(IOService* provider, SInt32* score)
 
 bool AppleScreamerAudio::initHardware(IOService *provider)
 {
-    AbsoluteTime		timerInterval;
     bool myreturn = true;
 
     DEBUG_IOLOG("+ AppleScreamerAudio::initHardware\n");
 
     super::initHardware(provider);
 
+// this code moved to sndHWPostThreadedInit () for [3284411]
+#if 0
 	// Common information
     codecStatus &= ~kAllSense;
     gCanPollStatus = true;    
@@ -278,7 +279,9 @@ bool AppleScreamerAudio::initHardware(IOService *provider)
     nanoseconds_to_absolutetime(NSEC_PER_SEC, &timerInterval);
     addTimerEvent(this, &AppleScreamerAudio::timerCallback, timerInterval);
     powerState = kIOAudioDeviceActive;
-    DEBUG_IOLOG("- AppleScreamerAudio::initHardware\n");
+ #endif
+ 
+   DEBUG_IOLOG("- AppleScreamerAudio::initHardware\n");
     return myreturn;
 }
 
@@ -305,6 +308,24 @@ void AppleScreamerAudio::setDeviceDetectionInActive(){
     gCanPollStatus = false;
 }
 
+// This method handles everything after the initHW thread is done, keeping the 
+// same sequence of code as before the thread was introduced. [3284411]
+void AppleScreamerAudio::sndHWPostThreadedInit (IOService *provider) 
+{
+    AbsoluteTime		timerInterval;
+
+	// Common information
+    codecStatus &= ~kAllSense;
+    gCanPollStatus = true;    
+    checkStatus(true);
+    
+	// Prepare the timer loop --> should go on the workloop
+    nanoseconds_to_absolutetime(NSEC_PER_SEC, &timerInterval);
+    addTimerEvent(this, &AppleScreamerAudio::timerCallback, timerInterval);
+    powerState = kIOAudioDeviceActive;
+	return;
+}
+
 // IOAudio subclasses
 void AppleScreamerAudio::sndHWInitialize(IOService *provider)
 {
@@ -312,7 +333,7 @@ void AppleScreamerAudio::sndHWInitialize(IOService *provider)
     
     DEBUG_IOLOG("+ AppleScreamerAudio::sndHWInitialize\n");
 	ourProvider = provider;
-    map = provider->mapDeviceMemoryWithIndex(AppleLegacyDBDMAAudioDMAEngine::kDBDMADeviceIndex);
+    map = provider->mapDeviceMemoryWithIndex(Apple02DBDMAAudioDMAEngine::kDBDMADeviceIndex);
     
     ioBase = (awacs_regmap_t *)map->getVirtualAddress();
     

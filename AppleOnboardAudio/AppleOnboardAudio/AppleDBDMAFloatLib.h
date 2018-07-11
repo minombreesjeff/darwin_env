@@ -22,8 +22,20 @@ extern "C" {
 #pragma mark ----------------------------- 
 
 void delayRightChannel(float* inFloatBufferPtr, UInt32 numSamples);
+void balanceAdjust(float* inFloatBufferPtr, UInt32 numSamples, EQStructPtr inEQ);
 void invertRightChannel(float* inFloatBufferPtr, UInt32 numSamples);
 void mixAndMuteRightChannel(float* inFloatBufferPtr, UInt32 numSamples); 
+void limiter(float* inFloatBufferPtr, UInt32 numSamples, LimiterStructPtr ioLimiterState, UInt32 index); 
+void equalizer(float* inFloatBufferPtr, UInt32 numSamples, EQStructPtr inEQ);
+void crossover2way (float* inFloatBufferPtr, UInt32 numSamples, CrossoverStructPtr ioCrossover);
+void multibandLimiter(float *inBuf, UInt32 numSamples, CrossoverStructPtr ioCrossover, LimiterStructPtr ioLimiter);
+
+void setEQCoefficients (EQParamStructPtr inParams, EQStructPtr inEQ, UInt32 index, UInt32 inSampleRate);
+void setLimiterCoefficients (LimiterParamStructPtr inParams, LimiterStructPtr ioLimiter, UInt32 index, UInt32 inSampleRate);
+void setCrossoverCoefficients (CrossoverParamStructPtr inParams, CrossoverStructPtr ioCrossover, UInt32 inSampleRate);
+void resetEQ (EQStructPtr inEQ);
+void resetLimiter (LimiterStructPtr ioLimiter);
+void resetCrossover (CrossoverStructPtr ioCrossover);
 
 #pragma mark ----------------------------- 
 #pragma mark ••• iSub Processing Functions
@@ -31,7 +43,8 @@ void mixAndMuteRightChannel(float* inFloatBufferPtr, UInt32 numSamples);
 
 void iSubDownSampleLinearAndConvert(float* inData, float* srcPhase, float* srcState, UInt32 adaptiveSampleRate, UInt32 outputSampleRate, UInt32 sampleIndex, UInt32 maxSampleIndex, SInt16 *iSubBufferMemory, SInt32 *iSubBufferOffset, UInt32 iSubBufferLen, UInt32 *loopCount);
 Boolean Set4thOrderPhaseCompCoefficients (float *b0, float *b1, float *a1, float *a2, UInt32 samplingRate);
-void StereoFilter4thOrderPhaseComp (float *in, float *low, float *high, UInt32 frames, UInt32 samplingRate, PreviousValues *section1State, PreviousValues *section2State, PreviousValues *phaseCompState);
+void StereoCrossover4thOrderPhaseComp (float *in, float *low, float *high, UInt32 frames, UInt32 samplingRate, PreviousValues *section1State, PreviousValues *section2State, PreviousValues *phaseCompState);
+void StereoLowPass4thOrder (float *in, float *low, UInt32 frames, UInt32 samplingRate, PreviousValues *section1State, PreviousValues *section2State);
 
 #pragma mark ----------------------------- 
 #pragma mark ••• Integer to Float
@@ -81,5 +94,6 @@ void Float32ToSwapInt32( float *src, signed long *dst, unsigned int count );
 UInt32 	CalculateOffset (UInt64 nanoseconds, UInt32 sampleRate);
 void 	dBfixed2float (UInt32 indBfixed, float* ioGainPtr);
 void 	inputGainConverter (UInt32 inGainIndex, float* ioGainPtr);
-
+void 	convertToFourDotTwenty(FourDotTwenty* ioFourDotTwenty, float* inFloatPtr);
+void 	dB2linear (float * inDB, float * outLinear);
 };

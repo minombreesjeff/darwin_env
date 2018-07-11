@@ -1,6 +1,6 @@
 /*
  *  AppleTexas2EQPrefs.cpp
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by mcookson on Mon Jul 16 2001.
  *  Copyright (c) 2001 Apple Computer, Inc. All rights reserved.

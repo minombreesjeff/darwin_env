@@ -1,6 +1,6 @@
 /*
  *  AudioI2SControl.cpp
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by nthompso on Fri Jul 13 2001.
  *  Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
@@ -56,6 +56,8 @@ AudioI2SControl *AudioI2SControl::create(AudioI2SInfo *theInfo)
 // --------------------------------------------------------------------------
 bool AudioI2SControl::init(AudioI2SInfo *theInfo) 
 {    
+	UInt32				tempFcr1;
+	
     debugIOLog("+ AudioI2SControl::init\n");
 	
     if(!super::init())
@@ -108,18 +110,8 @@ bool AudioI2SControl::init(AudioI2SInfo *theInfo)
         DEBUG_IOLOG("AudioI2SControl::init ERROR: unable to setup ioBaseAddress and i2SInterfaceNumber\n");
     }
 
-	//	[3060321]	ioConfigurationBaseAddress is required by this object in order to enable the target
-	//				I2S I/O Module for which this object is to service.  The I2S I/O Module
-	//				enable occurs through the configuration registers which reside in the
-	//				first block of ioBase.		rbm		2 Oct 2002
-	if (NULL != ioBaseAddressMemory) {
-		ioConfigurationBaseAddress = (void *)ioBaseAddressMemory->map()->getVirtualAddress();
-	} else {
-		return false;
-	}
-
 	//
-	//	There are three sections of memory mapped I/O that are directly accessed by the AppleLegacyAudio.  These
+	//	There are three sections of memory mapped I/O that are directly accessed by the Apple02Audio.  These
 	//	include the GPIOs, I2S DMA Channel Registers and I2S control registers.  They fall within the memory map 
 	//	as follows:
 	//	~                              ~
@@ -145,9 +137,9 @@ bool AudioI2SControl::init(AudioI2SInfo *theInfo)
 	//	|                              |
 	//	~                              ~
 	//
-	//	The I2S DMA Channel is mapped in by the AppleLegacyDBDMAAudioDMAEngine.  Only the I2S control registers are 
+	//	The I2S DMA Channel is mapped in by the Apple02DBDMAAudioDMAEngine.  Only the I2S control registers are 
 	//	mapped in by the AudioI2SControl.  The Apple I/O Configuration Space (i.e. FCRs, GPIOs and ExtIntGPIOs)
-	//	are mapped in by the subclass of AppleLegacyAudio.  The FCRs must also be mapped in by the AudioI2SControl
+	//	are mapped in by the subclass of Apple02Audio.  The FCRs must also be mapped in by the AudioI2SControl
 	//	object as the init method must enable the I2S I/O Module for which the AudioI2SControl object is
 	//	being instantiated for.
 	//
@@ -167,16 +159,20 @@ bool AudioI2SControl::init(AudioI2SInfo *theInfo)
 	//	Enable the I2S interface by setting the enable bit in the feature 
 	//	control register.  This one action requires knowledge of the address 
 	//	of I/O configuration address space.		[3060321]	rbm		2 Oct 2002
+	tempFcr1 = KLGetRegister ( kFCR1Offset );
 	if ( kUseI2SCell0 == i2SInterfaceNumber ) {
-		KLSetRegister ( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister ( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) | kI2S0InterfaceEnable );
+		tempFcr1 &= ~( 1 << kI2S0SwReset );
+		KLSetRegister ( kFCR1Offset, tempFcr1 );
+		KLSetRegister ( kFCR1Offset, tempFcr1 | kI2S0InterfaceEnable );
 	} else {
-		KLSetRegister ( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister ( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) | kI2S1InterfaceEnable );
+		tempFcr1 &= ~( 1 << kI2S1SwReset );
+		KLSetRegister ( kFCR1Offset, tempFcr1 );
+		KLSetRegister ( kFCR1Offset, tempFcr1 | kI2S1InterfaceEnable );
 	}
 
     DEBUG_IOLOG("- AudioI2SControl::init\n");
     return(true);
 }
-
 
 // --------------------------------------------------------------------------
 void AudioI2SControl::free()
@@ -248,7 +244,10 @@ bool AudioI2SControl::setSampleParameters(UInt32 sampleRate, UInt32 mclkToFsRati
 // Method: setSerialFormatRegister ::Set global values to the serial format register
 void AudioI2SControl::setSerialFormatRegister(ClockSource clockSource, UInt32 mclkDivisor, UInt32 sclkDivisor, SoundFormat serialFormat, UInt32 newDataFormat)
 {
-    UInt32	regValue = 0;
+    UInt32					regValue = 0;
+    IOService *				keyLargo;
+	IOReturn				err;
+	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
     switch ((int)clockSource) {
         case kClock18MHz:			regValue = kClockSource18MHz;														break;
@@ -282,12 +281,31 @@ void AudioI2SControl::setSerialFormatRegister(ClockSource clockSource, UInt32 mc
 
 	// 1] Stop the clock:
     clockRun(false);
+
+	keyLargo = NULL;
+    keyLargo = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
+    
+    if (NULL != keyLargo) {
+		funcSymbolName = OSSymbol::withCString ( "keyLargo_powerI2S" );						//	[3323977]
+		FailIf ( NULL == funcSymbolName, Exit );											//	[3323977]
+		// ...turn on the i2s clocks...
+		switch ( i2SInterfaceNumber ) {
+			case kUseI2SCell0:	err = keyLargo->callPlatformFunction (funcSymbolName, false, (void *)true, (void *)0, 0, 0);	break;	//	[3323977]
+			case kUseI2SCell1:	err = keyLargo->callPlatformFunction (funcSymbolName, false, (void *)true, (void *)1, 0, 0);	break;	//	[3323977]
+		}
+		funcSymbolName->release ();		//	[3323977]
+		if ( kIOReturnSuccess != err ) {
+			IOLog ( "keyLargo->callPlatformFunction FAIL\n" );
+		}
+	}
 	// 2] Setup the serial format register & data format register
 	SetSerialFormatReg ( regValue );
 	dataFormat = newDataFormat;				//	[3060321]	save this to verify value that was used to init!
 	SetDataWordSizesReg ( dataFormat );		//	[3060321]	rbm	2 Oct 2002	MUST OCCUR WHILE CLOCK IS STOPPED
 	// 3 restarts the clock:
-    clockRun(true);    
+    clockRun(true);
+Exit:
+	return;
 }
 
 
@@ -436,40 +454,54 @@ UInt32 AudioI2SControl::GetCounterReg(void )
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 UInt32 AudioI2SControl::FCR1GetReg( void )
 {
-	return ReadWordLittleEndian ( ioConfigurationBaseAddress, kFCR1Offset );		//	[3060321]	FCR accessor to use ioConfigurationBaseAddress
+	return KLGetRegister(kFCR1Offset);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void AudioI2SControl::Fcr1SetReg(UInt32 value)
 {
-	WriteWordLittleEndian( ioConfigurationBaseAddress, kFCR1Offset, value );		//	[3060321]	FCR accessor to use ioConfigurationBaseAddress
+	KLSetRegister(kFCR1Offset, value);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 UInt32 AudioI2SControl::FCR3GetReg( void )
 {
-	return ReadWordLittleEndian ( ioConfigurationBaseAddress, kFCR3Offset );		//	[3060321]	FCR accessor to use ioConfigurationBaseAddress
+	return KLGetRegister(kFCR3Offset);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void AudioI2SControl::Fcr3SetReg(UInt32 value)
 {
-	WriteWordLittleEndian( ioConfigurationBaseAddress, kFCR3Offset, value );		//	[3060321]	FCR accessor to use ioConfigurationBaseAddress
+	KLSetRegister(kFCR3Offset, value);
 }
 
 // Access to Keylargo registers:
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//	[3110829] register accesses need to translate endian format.
-void AudioI2SControl::KLSetRegister(void *klRegister, UInt32 value)
+void AudioI2SControl::KLSetRegister(UInt32 klRegister, UInt32 value)
 {
-	OSWriteLittleInt32(klRegister, 0, value);
+    IOService *				keyLargoService = NULL;
+	UInt32					mask = kAudioFCR1Mask;
+
+    keyLargoService = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
+
+    if (keyLargoService) {
+        keyLargoService->callPlatformFunction (OSSymbol::withCString ("keyLargo_safeWriteRegUInt32"), false, (void *)klRegister, (void *)mask, (void *) value, 0);
+    } 
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//	[3110829] register accesses need to translate endian format.
-UInt32 AudioI2SControl::KLGetRegister(void *klRegister)
+UInt32 AudioI2SControl::KLGetRegister(UInt32 klRegister)
 {
-    return (OSReadLittleInt32(klRegister, 0));
+	UInt32					value = 0;
+    IOService *				keyLargoService = NULL;
+
+    keyLargoService = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
+
+    if (keyLargoService) {
+        keyLargoService->callPlatformFunction (OSSymbol::withCString ("keyLargo_safeReadRegUInt32"), false, (void *)klRegister, &value, 0, 0);
+    } 
+
+	return value;
 }
 
 // --------------------------------------------------------------------------
@@ -481,21 +513,29 @@ bool AudioI2SControl::clockRun(bool start)
     if (start) {
 		switch ( i2SInterfaceNumber ) {
 			case kUseI2SCell0:
-				KLSetRegister(((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) | kI2S0ClockEnable);
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S0ClockEnable);
 				break;
 			case kUseI2SCell1:
-				KLSetRegister(((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) | kI2S1ClockEnable);
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S1ClockEnable);
 				break;
+			default:
+				IOLog ("\n\n\n!!!!Wrong I2S interface number!!!!\n\n\n");
 		}
     } else {
         UInt16 loop = 50;
 		switch ( i2SInterfaceNumber ) {
 			case kUseI2SCell0:
-				KLSetRegister(((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) & (~kI2S0ClockEnable));
+				KLSetRegister( kFCR1Offset, KLGetRegister(  kFCR1Offset ) | kI2S0InterfaceEnable);
+				KLSetRegister( kFCR1Offset, KLGetRegister(  kFCR1Offset ) | kI2S0CellEnable);
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) & ~kI2S0ClockEnable);
 				break;
 			case kUseI2SCell1:
-				KLSetRegister(((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) & (~kI2S1ClockEnable));
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S1InterfaceEnable);
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S1CellEnable);
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) & ~kI2S1ClockEnable);
 				break;
+			default:
+				IOLog ("\n\n\n!!!!Wrong I2S interface number!!!!\n\n\n");
 		}
         
 		while (((GetIntCtlReg() & kClocksStoppedPending) == 0) && (loop--)) {

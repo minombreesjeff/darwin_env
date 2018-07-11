@@ -26,6 +26,7 @@
 #ifndef __TAS3004_HW__
 #define __TAS3004_HW__
 
+#include "AppleDBDMAAudio.h"
 #include <IOKit/IOTypes.h>
 
 #define		kDontRestoreOnNormal		0
@@ -48,15 +49,7 @@ typedef UInt8	biquadParams[15];
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //  CONSTANTS
 
-static biquadParams	kBiquad0db = {									//	biquad coefficients - unity gain all pass
-			0x10, 0x00, 0x00,  										//	B0(23-16), B0(15-8), B0(7-0)
-			0x00, 0x00, 0x00,  										//	B1(23-16), B0(15-8), B0(7-0)
-			0x00, 0x00, 0x00,  										//	B2(23-16), B0(15-8), B0(7-0)
-			0x00, 0x00, 0x00,  										//	A1(23-16), B0(15-8), B0(7-0)
-			0x00, 0x00, 0x00  										//	A2(23-16), B0(15-8), B0(7-0)
-};
-
-#if 0
+#if 0 // plese don't delete, these may be used in the future
 static UInt8	kTrebleRegValues[] = {
 	0x01,	0x09,	0x10,	0x16,	0x1C,	0x22,					//	+18.0, +17.5, +17.0, +16.5, +16.0, +15.5	[dB]
 	0x28,	0x2D,	0x32,	0x36,	0x3A,	0x3E,					//	+15.0, +14.5, +14.0, +13.5, +13.0, +12.5	[dB]
@@ -614,6 +607,8 @@ typedef struct{
 typedef TAS3004_ShadowReg TAS3004_ShadowReg;
 typedef TAS3004_ShadowReg *TAS3004_ShadowRegPtr;
 
+#define	kTAS3004_NumberOfRegisters			27
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 struct HiLevelFilterCoefficients {
 	float			filterFrequency;
@@ -623,14 +618,6 @@ struct HiLevelFilterCoefficients {
 };
 typedef HiLevelFilterCoefficients * HiLevelFilterCoefficientsPtr;
 
-struct FourDotTwenty
-{
-	unsigned char integerAndFraction1;
-	unsigned char fraction2;
-	unsigned char fraction3;
-};
-typedef struct FourDotTwenty FourDotTwenty, *FourDotTwentyPtr;
-
 union EQFilterCoefficients {
 		FourDotTwenty				coefficient[kNumberOfCoefficientsPerBiquad];	//	Coefficient[] is b0, b1, b2, a1 & a2 
 //		HiLevelFilterCoefficients	hlFilter;
@@ -638,11 +625,11 @@ union EQFilterCoefficients {
 typedef EQFilterCoefficients *EQFilterCoefficientsPtr;
 
 struct EQPrefsElement {
-	/*double*/ UInt32		filterSampleRate;		
-	/*double*/ UInt32		drcCompressionRatioNumerator;
-	/*double*/ UInt32		drcCompressionRatioDenominator;
-	/*double*/ SInt32		drcThreshold;
-	/*double*/ SInt32		drcMaximumVolume;
+	UInt32					filterSampleRate;		
+	UInt32					drcCompressionRatioNumerator;
+	UInt32					drcCompressionRatioDenominator;
+	SInt32					drcThreshold;
+	SInt32					drcMaximumVolume;
 	UInt32					drcEnable;
 	UInt32					layoutID;				//	what cpu we're running on
 	UInt32					deviceID;				//	i.e. internal spkr, external spkr, h.p.
@@ -664,14 +651,14 @@ struct EQPrefs {
 typedef EQPrefs *EQPrefsPtr;
 
 struct DRCInfo {
-	/*double*/ UInt32		compressionRatioNumerator;
-	/*double*/ UInt32		compressionRatioDenominator;
-	/*double*/ SInt32		threshold;
-	/*double*/ SInt32		maximumVolume;
-	/*double*/ UInt32		maximumAvailableVolume;
-	/*double*/ UInt32		minimumAvailableVolume;
-	/*double*/ UInt32		maximumAvailableThreshold;
-	/*double*/ UInt32		minimumAvailableThreshold;
+	UInt32					compressionRatioNumerator;
+	UInt32					compressionRatioDenominator;
+	SInt32					threshold;
+	SInt32					maximumVolume;
+	UInt32					maximumAvailableVolume;
+	UInt32					minimumAvailableVolume;
+	UInt32					maximumAvailableThreshold;
+	UInt32					minimumAvailableThreshold;
 	Boolean					enable;
 };
 typedef DRCInfo *DRCInfoPtr;

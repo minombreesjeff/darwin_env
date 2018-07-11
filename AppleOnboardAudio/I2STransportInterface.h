@@ -24,6 +24,26 @@ typedef enum ClockSource
 	kClock18MHz				= 18432000		 // 18 MHz clock source
 } ClockSource;
 
+//	Number of 18.4320 MHz clock cycles per sample subframe and
+//	are used to determine the externally clocked sample rate by
+//	comparing the least sigificant 12 bits of the serial format
+//	register against the limits described here.
+typedef enum ExternalSampleRate {
+	kSampleRate_32Khz_LowerLimt		=	574,
+	kSampleRate_32Khz_UpperLimt		=	580,
+	kSampleRate_44Khz_LowerLimt		=	415,
+	kSampleRate_44Khz_UpperLimt		=	419,
+	kSampleRate_48Khz_LowerLimt		=	382,
+	kSampleRate_48Khz_UpperLimt		=	386,
+	kSampleRate_88Khz_LowerLimt		=	207,
+	kSampleRate_88Khz_UpperLimt		=	210,
+	kSampleRate_96Khz_LowerLimt		=	190,
+	kSampleRate_96Khz_UpperLimt		=	194,
+	kSampleRate_192Khz_LowerLimt	=	 94,
+	kSampleRate_192Khz_UpperLimt	=	 98
+} ExternalSampleRate;
+
+//	Format encoding within the serial format register.
 typedef enum SoundFormat 
 {
     kSndIOFormatI2SSony,
@@ -114,6 +134,7 @@ class I2STransportInterface : public TransportInterface {
 public:
 
 	virtual bool		init (PlatformInterface * inPlatformInterface);
+	virtual void		free ( void );
 	
 	virtual IOReturn	transportSetSampleRate ( UInt32 sampleRate );
 	virtual IOReturn	transportSetSampleWidth ( UInt32 sampleWidth, UInt32 dmaWidth );
@@ -125,6 +146,14 @@ public:
 	virtual	IOReturn	transportMakeClockSelect ( UInt32 clockSource );
 
 	virtual bool		transportCanClockSelect ( UInt32 clockSource ) {return false;}
+	
+	virtual UInt32		transportGetSampleRate ( void );
+
+	//	------------------------------
+	//	USER CLIENT
+	//	------------------------------
+	virtual	IOReturn		getTransportInterfaceState ( TransportStateStructPtr outState );
+	virtual IOReturn		setTransportInterfaceState ( TransportStateStructPtr inState );
 	
 private:
 	UInt32				mMclkMultiplier;
@@ -139,7 +168,15 @@ private:
 	UInt32				mSerialFormat;				//	value to be written to serial format register
 	UInt32				mDataWordSize;				//	value to be written to data word size register
 	I2SClockFrequency	mClockSelector;
+
+	Boolean				mHave18MHzClock;
+	Boolean				mHave45MHzClock;
+	Boolean				mHave49MHzClock;
+
+	IOReturn 			requestClockSources ();
+	IOReturn 			releaseClockSources ();	
 	
+	IOReturn			calculateSerialFormatRegisterValue ( UInt32 sampleRate );
 	void				waitForClocksStopped ( void );
 };
 

@@ -1,6 +1,6 @@
 /*
  *  AudioI2SControl.h
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by nthompso on Fri Jul 13 2001.
  *  Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
@@ -35,7 +35,7 @@
 
 #include "AudioHardwareCommon.h"
 #include "AudioHardwareUtilities.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 
 // Sound Formats:
 typedef enum SoundFormat 
@@ -68,7 +68,9 @@ typedef struct _s_AudioI2SInfo
 {
     UInt32			i2sSerialFormat;
     IOMemoryMap		*map ;
-} AudioI2SInfo ;
+} AudioI2SInfo;
+
+#define kAudioFCR1Mask 0x001E3C00
 
 // AudioI2SControl is essentially a class for setting the state of the I2S registers
 class AudioI2SControl : public OSObject 
@@ -94,7 +96,6 @@ private:
 	void	*i2sBaseAddress;					//	base address of I2S I/O Module
 //	void	*ioClockBaseAddress;				//	base address for the clock						[3060321]
 //	void	*ioStatusRegister_GPIO12;			//	the register with the input detection			[3060321]
-	void	*ioConfigurationBaseAddress;		//	base address for the configuration registers
 
 	// Recalls which i2s interface we are attached to:
 	UInt8 i2SInterfaceNumber;
@@ -133,8 +134,8 @@ public:
 	void		Fcr3SetReg(UInt32 value);
 
 	// starts and stops the clock count:
-	void   KLSetRegister(void *klRegister, UInt32 value);
-	UInt32   KLGetRegister(void *klRegister);
+	void   KLSetRegister(UInt32 klRegister, UInt32 value);
+	UInt32   KLGetRegister(UInt32 klRegister);
 
 	static AudioI2SControl *create(AudioI2SInfo *theInfo) ;
 //	void *getIOStatusRegister_GPIO12(void) { return (ioStatusRegister_GPIO12); } ;			[3060321]

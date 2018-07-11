@@ -1,6 +1,6 @@
 /*
  *  AppleDACAAudio.c
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by nthompso on Tue Jul 03 2001.
  *
@@ -28,7 +28,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  * This file contains a new version of the Apple DACA audio driver for Mac OS X.
- * The driver is derived from the AppleLegacyAudio class.
+ * The driver is derived from the Apple02Audio class.
  *
  */
  
@@ -40,12 +40,12 @@
 #include "AppleDACAAudio.h"
 #include "daca_hw.h"
 
-#include "AppleLegacyDBDMAAudioDMAEngine.h"
+#include "Apple02DBDMAAudioDMAEngine.h"
 
 #include "AudioI2SControl.h"
 
-#define super AppleLegacyAudio
-OSDefineMetaClassAndStructors(AppleDACAAudio, AppleLegacyAudio)
+#define super Apple02Audio
+OSDefineMetaClassAndStructors(AppleDACAAudio, Apple02Audio)
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
@@ -262,7 +262,7 @@ void AppleDACAAudio::checkStatus(bool force)
 // hardware specific initialization needs to be in here, together with the code
 // required to start audio on the device.
 //
-//	There are three sections of memory mapped I/O that are directly accessed by the AppleLegacyAudio.  These
+//	There are three sections of memory mapped I/O that are directly accessed by the Apple02Audio.  These
 //	include the GPIOs, I2S DMA Channel Registers and I2S control registers.  They fall within the memory map 
 //	as follows:
 //	~                              ~
@@ -288,9 +288,9 @@ void AppleDACAAudio::checkStatus(bool force)
 //	|                              |
 //	~                              ~
 //
-//	The I2S DMA Channel is mapped in by the AppleLegacyDBDMAAudioDMAEngine.  Only the I2S control registers are 
+//	The I2S DMA Channel is mapped in by the Apple02DBDMAAudioDMAEngine.  Only the I2S control registers are 
 //	mapped in by the AudioI2SControl.  The Apple I/O Configuration Space (i.e. FCRs, GPIOs and ExtIntGPIOs)
-//	are mapped in by the subclass of AppleLegacyAudio.  The FCRs must also be mapped in by the AudioI2SControl
+//	are mapped in by the subclass of Apple02Audio.  The FCRs must also be mapped in by the AudioI2SControl
 //	object as the init method must enable the I2S I/O Module for which the AudioI2SControl object is
 //	being instantiated for.
 //
@@ -309,7 +309,7 @@ void 	AppleDACAAudio::sndHWInitialize(IOService *provider)
 	//			necessary to derive the address of the memory mapped I/O register from
 	//			the base address of the GPIO node which has an 'AAPL,address' property.
     // get the video jack information
-	map = provider->mapDeviceMemoryWithIndex ( AppleLegacyDBDMAAudioDMAEngine::kDBDMADeviceIndex );
+	map = provider->mapDeviceMemoryWithIndex ( Apple02DBDMAAudioDMAEngine::kDBDMADeviceIndex );
 	if ( map ) {
 		soundConfigSpace = (UInt8*)map->getPhysicalAddress();
 		if ((((UInt32)soundConfigSpace ^ kI2S0BaseOffset) & 0x0001FFFF) == 0) 
@@ -351,7 +351,7 @@ void 	AppleDACAAudio::sndHWInitialize(IOService *provider)
 			fAppleAudioVideoJackStateKey = 0;
 	}
     
-    map = provider->mapDeviceMemoryWithIndex(AppleLegacyDBDMAAudioDMAEngine::kDBDMADeviceIndex);
+    map = provider->mapDeviceMemoryWithIndex(Apple02DBDMAAudioDMAEngine::kDBDMADeviceIndex);
     if(!map)  
     {
         DEBUG_IOLOG("AppleDACAAudio::sndHWInitialize ERROR: unable to mapDeviceMemoryWithIndex\n");
@@ -1021,9 +1021,10 @@ IOReturn AppleDACAAudio::sndHWSetPowerState(IOAudioDevicePowerState theState)
     
 // --------------------------------------------------------------------------
 IOReturn	AppleDACAAudio::performDeviceWake () {
-    IOReturn		myReturn;
-	IOService		*keyLargo;
-	UInt32			temp;
+    IOReturn				myReturn;
+	IOService				*keyLargo;
+	UInt32					temp;
+	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
     
     DEBUG_IOLOG("+ AppleDACAAudio::performDeviceWake\n");
 
@@ -1036,9 +1037,12 @@ IOReturn	AppleDACAAudio::performDeviceWake () {
 	temp = myAudioI2SControl->GetSerialFormatReg();
 	temp = myAudioI2SControl->GetDataWordSizesReg();
 	if ( NULL != keyLargo ) {
+		funcSymbolName = OSSymbol::withCString ( "keyLargo_powerI2S" );						//	[3323977]
+		FailIf ( NULL == funcSymbolName, Exit );											//	[3323977]
 		//	Turn ON the I2S clocks
-		keyLargo->callPlatformFunction ( OSSymbol::withCString ( "keyLargo_powerI2S" ), false, (void*)true, (void*)0, 0, 0 );
+		keyLargo->callPlatformFunction ( funcSymbolName, false, (void*)true, (void*)0, 0, 0 );
 		IODelay ( 100 );
+		funcSymbolName->release ();															//	[3323977]
 	}
 	//	Restore I2S registers	(rbm 11 Oct 2002)
 	myAudioI2SControl->setSampleParameters(kDACA_FRAME_RATE, 0, &clockSource, &mclkDivisor, &sclkDivisor, kSndIOFormatI2S32x);
@@ -1058,7 +1062,7 @@ IOReturn	AppleDACAAudio::performDeviceWake () {
 	}
 	temp = myAudioI2SControl->GetSerialFormatReg();
 	temp = myAudioI2SControl->GetDataWordSizesReg();
-	
+Exit:
     DEBUG_IOLOG("- AppleDACAAudio::performDeviceWake\n");
     return(myReturn);
 }

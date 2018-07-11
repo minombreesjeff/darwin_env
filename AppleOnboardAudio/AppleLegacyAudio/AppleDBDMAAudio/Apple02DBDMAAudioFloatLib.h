@@ -1,6 +1,6 @@
 /*
- *  AppleLegacyDBDMAAudioFloatLib.h
- *  AppleLegacyAudio
+ *  Apple02DBDMAAudioFloatLib.h
+ *  Apple02Audio
  *
  * 	Public interface for floating point library.
  *  The library includes input and output conversion 
@@ -9,7 +9,7 @@
  *  require floating point.
  *	
  *  Created by Aram Lindahl on Thu Nov 14 2002.
- *  Copyright (c) 2002 Apple Computer. All rights reserved.
+ *  Copyright (c) 2002-2003 Apple Computer, Inc. All rights reserved.
  *
  */
 

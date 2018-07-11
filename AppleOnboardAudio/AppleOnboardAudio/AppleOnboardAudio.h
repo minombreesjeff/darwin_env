@@ -17,6 +17,7 @@
 #include "AudioHardwareConstants.h"
 #include "AppleDBDMAAudio.h"
 #include "AudioHardwareObjectInterface.h"
+#include "AppleOnboardAudioUserClient.h"
 
 #include "PlatformInterface.h"
 #include "TransportInterface.h"
@@ -75,10 +76,47 @@ enum jackStates {
 	kUnknown					= 2
 };
 
+typedef struct AOAStateUserClientStruct {
+	UInt32				ucPramData;
+	UInt32				ucPramVolume;
+	UInt32				ucPowerState;
+	UInt32				ucReserved_3;
+	UInt32				ucReserved_4;
+	UInt32				ucReserved_5;
+	UInt32				ucReserved_6;
+	UInt32				ucReserved_7;
+	UInt32				ucReserved_8;
+	UInt32				ucReserved_9;
+	UInt32				ucReserved_10;
+	UInt32				ucReserved_11;
+	UInt32				ucReserved_12;
+	UInt32				ucReserved_13;
+	UInt32				ucReserved_14;
+	UInt32				ucReserved_15;
+	UInt32				ucReserved_16;
+	UInt32				ucReserved_17;
+	UInt32				ucReserved_18;
+	UInt32				ucReserved_19;
+	UInt32				ucReserved_20;
+	UInt32				ucReserved_21;
+	UInt32				ucReserved_22;
+	UInt32				ucReserved_23;
+	UInt32				ucReserved_24;
+	UInt32				ucReserved_25;
+	UInt32				ucReserved_26;
+	UInt32				ucReserved_27;
+	UInt32				ucReserved_28;
+	UInt32				ucReserved_29;
+	UInt32				ucReserved_30;
+	UInt32				ucReserved_31;
+} AOAStateUserClientStruct, *AOAStateUserClientStructPtr;
+
+
 #define kPluginPListInputLatency		"InputLatency"
 #define kPluginPListOutputLatency		"OutputLatency"
 #define kPluginPListAOAAttributes		"AOAAttributes"
 #define kPluginPListSoftwareInputGain	"SoftwareInputGain"
+#define kPluginPListNumHardwareEQBands	"NumHardwareEQBands"
 
 #define kSoundEntry						"sound"
 #define	kLayoutID						"layout-id"
@@ -98,14 +136,19 @@ enum jackStates {
 #define kEqualization					"Equalization"
 #define kDynamicRange					"DynamicRange"
 #define kSoftwareDSP					"SoftwareDSP"
+#define kMaxVolumeOffset				"maxVolumeOffset"
 #define kSpeakerID						"SpeakerID"
 #define kPluginRecoveryOrder			"RecoveryOrder"
 #define kClipRoutines					"ClipRoutines"
+#define kEncoding						"Encoding"
+#define kIsMixable						"IsMixable"
 
 #define kFilterType						"FilterType"
 #define kFilterFrequency				"Frequency"
 #define kFilterQ						"Q"
 #define kFilterGain						"Gain"
+#define kFilterRunInSoftware			"runInSoftware"
+#define kFilterIndex					"index"
 
 #define kLimiter						"Limiter"
 #define kLimiterType					"LimiterType"
@@ -113,6 +156,7 @@ enum jackStates {
 #define kLimiterAttackTime				"AttackTime"
 #define kLimiterReleaseTime				"ReleaseTime"
 #define kLimiterThreshold				"Threshold"
+#define kLimiterGain					"Gain"
 #define kLimiterRatio					"Ratio"
 #define kLimiterLookahead				"Lookahead"
 
@@ -124,6 +168,7 @@ enum jackStates {
 #define kRightVolControlString			"Right"
 #define kMasterVolControlString			"Master"
 #define kMuteControlString				"Mute"
+#define	kPlaythroughControlString		"Playthrough"
 
 #define kOutputsList					"Outputs"
 #define kHeadphones						"Headphones"
@@ -137,6 +182,7 @@ enum jackStates {
 #define kExternalMic					"ExternalMic"
 #define kLineIn							"LineIn"
 #define kDigitalIn						"DigitalIn"
+#define kInputDataMux					"InputDataMux"
 
 #define kPluginPListMasterVol			"master-vol"
 #define kPluginPListLeftVol				"left-vol"
@@ -144,18 +190,21 @@ enum jackStates {
 #define kPluginPListLeftGain			"left-gain"
 #define kPluginPListRightGain			"right-gain"
 
-#define kInternalClockString			"Internal Clock"
-#define kExternalClockString			"External Clock"
+#define kInternalClockString			"InternalClock"
+#define kExternalClockString			"ExternalClock"
 
-#define kFloatToIntClipString				"FloatToInt"
-#define kIntToFloatClipString				"IntToFloat"
-#define kPhaseInversionClipString			"PhaseInversion"
-#define kStereoToLeftChanClipString			"StereoToLeft"
-#define kStereoToRightChanClipString		"StereoToRight"
-#define kDelayLeftChan1SampleClipString		"DelayLeft"
-#define kDelayRightChan1SampleClipString	"DelayRight"
-#define kCopyLeftToRight					"LeftToRight"
-#define kCopyRightToLeft					"RightToLeft"
+#define kFloatToIntClipString					"FloatToInt"
+#define kIntToFloatClipString					"IntToFloat"
+#define kPhaseInversionClipString				"PhaseInversion"
+#define kStereoToLeftChanClipString				"StereoToLeft"
+#define kStereoToRightChanClipString			"StereoToRight"
+#define kDelayLeftChan1SampleClipString			"DelayLeft"
+#define kDelayRightChan1SampleClipString		"DelayRight"
+#define kBalanceAdjustClipString				"BalanceAdjust"
+#define kCopyLeftToRight						"LeftToRight"
+#define kCopyRightToLeft						"RightToLeft"
+#define kLeftBalanceAdjust						"LeftBalanceAdjust"
+#define kRightBalanceAdjust						"RightBalanceAdjust"
 
 #define kNoEQID							0xFFFFFFFF
 
@@ -175,6 +224,7 @@ protected:
     IOAudioToggleControl *				mPlaythruToggleControl;
 	IOAudioToggleControl *				mHeadphoneConnected;
 	IOAudioToggleControl *				mInputConnectionControl;
+	IOAudioToggleControl *				mOutHeadLineDigExclusiveControl;
 	IOAudioLevelControl *				mPRAMVolumeControl;
 	IOAudioLevelControl *				mOutMasterVolumeControl;
     IOAudioLevelControl *				mOutLeftVolumeControl;
@@ -192,6 +242,12 @@ protected:
 	TransportInterface *				mTransportInterface;
 	AudioHardwareObjectInterface *		mCurrentOutputPlugin;				
 	AudioHardwareObjectInterface *		mCurrentInputPlugin;				
+    thread_call_t						mPowerThread;
+	thread_call_t						mInitHardwareThread;
+	bool								mTerminating;
+	bool								mHeadLineDigExclusive;
+	bool								mClockSelectInProcessSemaphore;
+	bool								mSampleRateSelectInProcessSemaphore;
 	
 	// we keep the engines around to have a cleaner initHardware
     AppleDBDMAAudio *					mDriverDMAEngine;
@@ -203,21 +259,25 @@ protected:
     SInt32								mGainRight;
 	Boolean								mUseMasterVolumeControl;
 	Boolean								mUseInputGainControls;
+	Boolean								mUsePlaythroughControl;			//	[3281535]
 	UInt32								mLayoutID;
 	UInt32								mDetectCollection;
 	UInt32								mSpeakerID;
 	bool								mCurrentPluginHasSoftwareInputGain;
 	UInt32								mAmpRecoveryMuteDuration;
 	
+	UInt32								mOutputLatency;
 	
 	unsigned long long					idleSleepDelayTime;
 	IOTimerEventSource *				idleTimer;
+	IOTimerEventSource *				pollTimer;
     Boolean								mIsMute;
     Boolean								mAutoUpdatePRAM;
 	IOAudioDevicePowerState				ourPowerState;
 	Boolean								shuttingDown;
 
     OSArray	*							AudioSoftDSPFeatures;
+	OSString *							mCurrentProcessingOutputString;
 
 	// Dynamic variable that handle the connected devices
     sndHWDeviceSpec						currentDevices;
@@ -225,11 +285,18 @@ protected:
     bool 								mHasHardwareInputGain;		// aml 5.3.02
 	bool 								mRangeInChanged;	
 	
+	bool								mEncodedOutputFormat;
+	
 	DualMonoModeType					mInternalMicDualMonoMode;	// aml 6.17.02
 	
 	UInt32								mProcessingParams[kMaxProcessingParamSize/sizeof(UInt32)];
 	bool								disableLoadingEQFromFile;
+	SInt32								mCurrentClockSelector;
 
+	IOService *							mProvider;
+	
+	IOAudioSampleRate					mTransportSampleRate;
+	
 public:
 	// Classical Unix funxtions
 	virtual bool			start (IOService * provider);
@@ -243,9 +310,13 @@ public:
 
 	// IOAudioDevice subclass
     virtual bool			initHardware (IOService * provider);
+	static void				initHardwareThread (AppleOnboardAudio * aoa, void * provider);
+	static IOReturn			initHardwareThreadAction (OSObject * owner, void * provider, void * arg2, void * arg3, void * arg4);
+	virtual IOReturn		protectedInitHardware (IOService * provider);
     virtual IOReturn		createDefaultControls ();
 	virtual IOReturn		createInputGainControls (void);
 	virtual IOReturn		createOutputVolumeControls (void);
+	virtual UInt16			getTerminalTypeForCharCode (UInt32 outputSelection);
     virtual UInt32			getCharCodeForString (OSString * inputString);
 	virtual IOReturn		createInputSelectorControl (void);
 	virtual IOReturn 		createOutputSelectorControl (void);
@@ -273,6 +344,9 @@ public:
 	virtual IOReturn		clockSelectorChanged (SInt32 newValue);
 
     virtual IOReturn		performPowerStateChange (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState, UInt32 * microsecondsUntilComplete);
+	static void 			performPowerStateChangeThread (AppleOnboardAudio * aoa, void * newPowerState);
+	static IOReturn			performPowerStateChangeThreadAction (OSObject * owner, void * newPowerState, void * us, void * arg3, void * arg4);
+
 	virtual void			setTimerForSleep ();
 	static void				sleepHandlerTimer (OSObject * owner, IOTimerEventSource * sender);
     
@@ -285,9 +359,9 @@ public:
 	static	IOReturn		registerPluginAction (OSObject * owner, void * arg1, void * arg2, void * arg3, void * arg4);
 	virtual void			unRegisterPlugin (AudioHardwareObjectInterface *inPlugin);
 
-//	virtual void			pluginStatusChangedNotification (AudioHardwareObjectInterface * thePlugin, UInt32 statusSelector, UInt32 newValue);
 	virtual void			interruptEventHandler (UInt32 statusSelector, UInt32 newValue);
-	static	IOReturn		sInterruptEventAction (OSObject * owner, void * arg1, void * arg2, void * arg3, void * arg4);
+	static	IOReturn		interruptEventHandlerAction (OSObject * owner, void * arg1, void * arg2, void * arg3, void * arg4);
+	virtual void			protectedInterruptEventHandler (UInt32 statusSelector, UInt32 newValue);
 
 	virtual PlatformInterface * getPlatformInterfaceObject (void);
 	virtual IOReturn 		AdjustOutputVolumeControls (AudioHardwareObjectInterface * thePluginObject, UInt32 inSelection);
@@ -297,6 +371,29 @@ public:
 	virtual IOReturn		formatChangeRequest (const IOAudioStreamFormat * inFormat, const IOAudioSampleRate * inRate);
 	virtual	UInt32			getCurrentSampleFrame (void);
 	virtual void			setCurrentSampleFrame (UInt32 value);
+			UInt32 			getNumHardwareEQBandsForCurrentOutput ();
+	AudioHardwareObjectInterface * getCurrentOutputPlugin () { return mCurrentOutputPlugin; };
+	//	
+	//	User Client Support
+	//
+	IOReturn				getPlatformState ( UInt32 arg2, void * outState );
+	IOReturn 				getPluginState ( HardwarePluginType arg2, void * outState );
+	IOReturn 				getDMAStateAndFormat ( UInt32 arg2, void * outState );
+	IOReturn 				getSoftwareProcessingState ( UInt32 arg2, void * outState );
+	IOReturn				getAOAState ( UInt32 arg2, void * outState );
+	IOReturn				getTransportInterfaceState ( UInt32 arg2, void * outState );
+
+	IOReturn				setPlatformState ( UInt32 arg2, void * inState );
+	IOReturn 				setPluginState ( HardwarePluginType arg2, void * inState );
+	IOReturn 				setDMAState ( UInt32 arg2, void * inState );
+	IOReturn 				setSoftwareProcessingState ( UInt32 arg2, void * inState );
+	IOReturn				setAOAState ( UInt32 arg2, void * inState );
+	IOReturn				setTransportInterfaceState ( UInt32 arg2, void * inState );
+	
+	//	Functions invoked directly on the platform interface object
+	virtual void			setInputDataMuxForConnection ( char * connectionString );
+
+	AOAStateUserClientStruct	mUCState;
 
 protected:
 	// Do the link to the IOAudioFamily 
@@ -319,13 +416,16 @@ protected:
 	bool				hasRightVolumeControl (const UInt32 inCode);
 
 	void				setUseInputGainControls (const char * outputEntry);
+	void				setUsePlaythroughControl (const char * inputEntry);			//	[3281535]
 
 	OSArray *			getControlsArray (const char * outputEntry);
 	AudioHardwareObjectInterface * getPluginObjectForConnection (const char * entry);
+	GpioAttributes		getInputDataMuxForConnection (const char * entry);
 
-	IOReturn			setHardwareDSP (UInt32 outputEntry);
-	IOReturn			setHardwareDSP (const char * outputEntry);
 	void				setSoftwareOutputDSP (const char * inSelectedOutput);
+
+	UInt32				getMaxVolumeOffsetForOutput (const UInt32 inCode);
+	UInt32				getMaxVolumeOffsetForOutput (const char * inSelectedOutput);
 
 	UInt32				setClipRoutineForOutput (const char * inSelectedOutput);
 	UInt32				setClipRoutineForInput (const char * inSelectedInput);
@@ -354,141 +454,29 @@ protected:
 	void				initializeDetectCollection ( void );
 	UInt32				parseOutputDetectCollection (void);
 	UInt32				parseInputDetectCollection (void);
-	void				selectAmplifier (const UInt32 inSelection);
+	void				selectOutput (const UInt32 inSelection, const bool inUpdateAll = TRUE);
+	void				muteAnalogOuts ();
+	void				setAnalogCodecMute (UInt32 inValue);
 
 	char *				getConnectionKeyFromCharCode (const SInt32 inSelection, const UInt32 inDirection);
 
 	AudioHardwareObjectInterface *	getPluginObjectWithName (OSString * inName);
-	void				callPluginsInOrder (UInt32 inSelector, UInt32 newValue);
+	IOReturn			callPluginsInReverseOrder (UInt32 inSelector, UInt32 newValue);
+	IOReturn			callPluginsInOrder (UInt32 inSelector, UInt32 newValue);
+	AudioHardwareObjectInterface *	findPluginForType ( HardwarePluginType pluginType );
 
+	void				setPollTimer ();
+	static void			pollTimerCallback ( OSObject *owner, IOTimerEventSource *device );
+	void				runPolledTasks ( void );
+	
 protected:
     // The PRAM utility
 	UInt32				PRAMToVolumeValue (void);
     UInt8				VolumeToPRAMValue (UInt32 leftVol, UInt32 rightVol);
     void				WritePRAMVol (UInt32 volLeft, UInt32 volRight);
 	UInt8				ReadPRAMVol (void);
-
-#if 0
-public:
-	// User Client calls residing in AOA derived object (accessed indirectly through public APIs)
-	virtual UInt8		readGPIO (UInt32 selector) = 0;
-	virtual void		writeGPIO (UInt32 selector, UInt8 data) = 0;
-	virtual Boolean		getGPIOActiveState (UInt32 gpioSelector) = 0;
-	virtual void		setGPIOActiveState ( UInt32 selector, UInt8 gpioActiveState ) = 0;
-	virtual Boolean		checkGpioAvailable ( UInt32 selector ) {return 0;}
-	virtual IOReturn	readHWReg32 ( UInt32 selector, UInt32 * registerData ) = 0;
-	virtual IOReturn	writeHWReg32 ( UInt32 selector, UInt32 registerData ) = 0;
-	virtual IOReturn	readCodecReg ( UInt32 selector, void * registerData,  UInt32 * registerDataSize ) = 0;
-	virtual IOReturn	writeCodecReg ( UInt32 selector, void * registerData ) = 0;
-	virtual IOReturn	readSpkrID ( UInt32 selector, UInt32 * speakerIDPtr ) = 0;
-	virtual IOReturn	getCodecRegSize ( UInt32 selector, UInt32 * codecRegSizePtr ) = 0;
-	virtual IOReturn	getVolumePRAM ( UInt32 * pramDataPtr ) = 0;
-	virtual IOReturn	getDmaState ( UInt32 * dmaStatePtr ) = 0;
-	virtual IOReturn	getStreamFormat ( IOAudioStreamFormat * streamFormatPtr ) = 0;
-	virtual IOReturn	readPowerState ( UInt32 selector, IOAudioDevicePowerState * powerState ) = 0;
-	virtual IOReturn	setPowerState ( UInt32 selector, IOAudioDevicePowerState powerState ) = 0;
-	virtual IOReturn	setBiquadCoefficients ( UInt32 selector, void * biquadCoefficients, UInt32 coefficientSize ) = 0;
-	virtual IOReturn	getBiquadInformation ( UInt32 scalarArg1, void * outStructPtr, IOByteCount * outStructSizePtr ) = 0;
-	virtual IOReturn	getProcessingParameters ( UInt32 scalarArg1, void * outStructPtr, IOByteCount * outStructSizePtr ) = 0;
-	virtual IOReturn	setProcessingParameters ( UInt32 scalarArg1, void * inStructPtr, UInt32 inStructSize ) = 0;
-	virtual	IOReturn	invokeInternalFunction ( UInt32 functionSelector, void * inData ) = 0;
-#endif
+	
+	IOTimerEventSource *	theTimerEvent;
 };
 
-#if 0
-//===========================================================================================================================
-//	AppleLegacyOnboardAudioUserClient
-//===========================================================================================================================
-
-class	AppleLegacyOnboardAudioUserClient : public IOUserClient
-{
-    OSDeclareDefaultStructors( AppleLegacyOnboardAudioUserClient )
-	
-	public:
-	
-		static const IOExternalMethod		sMethods[];
-		static const IOItemCount			sMethodCount;
-	
-	protected:
-		
-		AppleOnboardAudio *					mDriver;
-		task_t								mClientTask;
-		
-	public:
-		
-		//	WARNING:	The following enumerations must maintain the current order.  New
-		//				enumerations may be added to the end of the list but must not
-		//				be inserted into the center of the list.  Insertion of enumerations
-		//				in the center of the list will cause the 'Audio Hardware Utility'
-		//				to panic.  
-		enum
-		{
-			kgpioReadIndex	 		=	0,		/*	returns data from gpio																		*/
-			kgpioWriteIndex 		=	1,		/*	writes data to gpio																			*/
-			kgetGpioActiveState		=	2,		/*	returns TRUE if gpio is active high															*/
-			ksetGpioActiveState		=	3,		/*	sets the gpio active state (polarity)														*/
-			kcheckIfGpioExists		=	4,		/*	returns TRUE if gpio exists on host CPU														*/
-			kreadHWRegister32		=	5,		/*	returns data memory mapped I/O by hardware register reference								*/
-			kwriteHWRegister32		=	6,		/*	writed stat to memory mapped I/O by hardware register reference								*/
-			kreadCodecRegister		=	7,		/*	returns data CODEC (i.e. Screamer, DACA, Burgundy, Tumbler, Snapper by register reference	*/
-			kwriteCodecRegister		=	8,		/*	writes data to CODEC (i.e. Screamer, DACA, Burgundy, Tumbler, Snapper by register reference	*/
-			kreadSpeakerID			=	9,		/*	returns data from Dallas ROM																*/
-			kgetCodecRegisterSize	=	10,		/*	return the size of a codec register in expressed in bytes									*/
-			kreadPRAM				=	11,		/*	return PRAM contents																		*/
-			kreadDMAState			=	12,		/*	return DMA state																			*/
-			kreadStreamFormat		=	13,		/*	return IOAudioStreamFormat																	*/
-			kreadPowerState			=	14,
-			ksetPowerState			=	15,
-			ksetBiquadCoefficients	=	16,
-			kgetBiquadInfo			=	17,
-			kgetProcessingParams	=	18,		/*	tbd: (see Aram)	*/
-			ksetProcessingParams	=	19,		/*	tbd: (see Aram)	*/
-			kinvokeInternalFunction	=	20
-		};
-
-		
-		//	END WARNING:
-		
-		// Static member functions
-		
-		static AppleLegacyOnboardAudioUserClient * Create( AppleOnboardAudio *inDriver, task_t task );
-		
-		// Creation/Deletion
-		
-		virtual bool		initWithDriver( AppleOnboardAudio *inDriver, task_t task );
-		virtual void		free();
-		
-		// Public API's
-		
-		virtual IOReturn	gpioRead ( UInt32 selector, UInt8 * gpioState );
-		virtual IOReturn	gpioWrite ( UInt32 selector, UInt8 gpioState );
-		virtual IOReturn	gpioGetActiveState (UInt32 selector, UInt8 * gpioActiveState);
-		virtual IOReturn	gpioSetActiveState ( UInt32 selector, UInt8 gpioActiveState );
-		virtual IOReturn	gpioCheckAvailable ( UInt32 selector, UInt8 * gpioExists );
-		virtual IOReturn	hwRegisterRead32 ( UInt32 selector, UInt32 * registerData );
-		virtual IOReturn	hwRegisterWrite32 ( UInt32 selector, UInt32 registerData );
-		virtual IOReturn	codecReadRegister ( UInt32 scalarArg1, void * outStructPtr, IOByteCount * outStructSizePtr );
-		virtual IOReturn	codecWriteRegister ( UInt32 selector, void * data, UInt32 inStructSize );
-		virtual IOReturn	readSpeakerID ( UInt32 selector, UInt32 * speakerIDPtr );
-		virtual IOReturn	codecRegisterSize ( UInt32 selector, UInt32 * codecRegSizePtr );
-		virtual IOReturn	readPRAMVolume ( UInt32 selector, UInt32 * pramDataPtr );
-		virtual IOReturn	readDMAState ( UInt32 selector, UInt32 * dmaStatePtr );
-		virtual IOReturn	readStreamFormat ( UInt32 selector, IOAudioStreamFormat * outStructPtr, IOByteCount * outStructSizePtr );
-		virtual IOReturn	readPowerState ( UInt32 selector, IOAudioDevicePowerState * powerState );
-		virtual IOReturn	setPowerState ( UInt32 selector, IOAudioDevicePowerState powerState );
-		virtual IOReturn	setBiquadCoefficients ( UInt32 selector, void * biquadCoefficients, UInt32 coefficientSize );
-		virtual IOReturn	getBiquadInfo ( UInt32 scalarArg1, void * outStructPtr, IOByteCount * outStructSizePtr );
-		virtual IOReturn	getProcessingParams ( UInt32 scalarArg1, void * outStructPtr, IOByteCount * outStructSizePtr );
-		virtual IOReturn	setProcessingParams ( UInt32 scalarArg1, void * inStructPtr, UInt32 inStructSize );
-		virtual IOReturn	invokeInternalFunction ( UInt32 functionSelector, void * inData, UInt32 inDataSize );
-
-	protected:
-		
-		// IOUserClient overrides
-		
-		virtual IOReturn			clientClose();
-		virtual IOReturn			clientDied();
-		virtual	IOExternalMethod *	getTargetAndMethodForIndex( IOService **outTarget, UInt32 inIndex );
-};
-#endif
 #endif

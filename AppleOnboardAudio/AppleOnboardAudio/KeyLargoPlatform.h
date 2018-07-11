@@ -15,6 +15,7 @@
 #include <IOKit/IORegistryEntry.h>
 #include <IOKit/IOCommandGate.h>
 #include <IOKit/ppc/IODBDMA.h>
+#include "AppleOnboardAudioUserClient.h"
 
 #define	kKL_AUDIO_MAC_IO_BASE_ADDRESS			0x80000000
 #define	kKL_AUDIO_MAC_IO_SIZE					256
@@ -22,6 +23,9 @@
 class KeyLargoPlatform : public PlatformInterface {
 
     OSDeclareDefaultStructors(KeyLargoPlatform);
+
+	typedef 						bool GpioActiveState;
+	typedef 						UInt8* GpioPtr;
 
 public:
 
@@ -76,26 +80,49 @@ public:
 	//
 	// GPIO Methods
 	//
+
+	virtual void					initAudioGpioPtr ( const IORegistryEntry * start, const char * gpioName, GpioPtr* gpioH, GpioActiveState* gpioActiveStatePtr );
+	virtual IOReturn				getGpioPtrAndActiveState ( GPIOSelector theGpio, GpioPtr * gpioPtrPtr, GpioActiveState * activeStatePtr ) ;
+	virtual GpioAttributes			getGpioAttributes ( GPIOSelector theGpio );
+	virtual IOReturn				setGpioAttributes ( GPIOSelector theGpio, GpioAttributes attributes );
+
+	virtual IOReturn				setClockMux(GpioAttributes muxState);
+	virtual GpioAttributes			getClockMux();
+
+	virtual GpioAttributes			getCodecErrorInterrupt();
+
+	virtual GpioAttributes			getCodecInterrupt();
+
+	virtual	GpioAttributes			getComboInJackTypeConnected();
+
+	virtual	GpioAttributes			getComboOutJackTypeConnected();
+
+	virtual	GpioAttributes			getDigitalInConnected();
+
+	virtual	GpioAttributes			getDigitalOutConnected();
+
 	virtual GpioAttributes		 	getHeadphoneConnected();
-	virtual GpioAttributes			getSpeakerConnected();
-	virtual GpioAttributes			getLineOutConnected();
 
 	virtual IOReturn 				setHeadphoneMuteState(GpioAttributes muteState);
 	virtual GpioAttributes		 	getHeadphoneMuteState();
+
+	virtual IOReturn				setInputDataMux(GpioAttributes muxState) ;
+	virtual GpioAttributes			getInputDataMux();
+
+	virtual GpioAttributes			getInternalSpeakerID();
+
+	virtual GpioAttributes			getLineInConnected();
 	
+	virtual GpioAttributes			getLineOutConnected();
+
 	virtual IOReturn 				setLineOutMuteState(GpioAttributes muteState);
 	virtual GpioAttributes		 	getLineOutMuteState();
-	
+
+	virtual GpioAttributes			getSpeakerConnected();
+
 	virtual IOReturn 				setSpeakerMuteState(GpioAttributes  muteState);
 	virtual GpioAttributes		 	getSpeakerMuteState();
 	
-	virtual IOReturn				setClockMux(GpioAttributes muxState) { return kIOReturnError; }
-	virtual GpioAttributes			getClockMux() { return kGPIO_MuxSelectDefault; }
-
-	virtual IOReturn				setInputDataMux(GpioAttributes muxState) { return kIOReturnError; }
-	virtual GpioAttributes			getInputDataMux() { return kGPIO_MuxSelectDefault; }
-
-//	virtual bool 					getInternalSpeakerID();
 
 	//
 	// Non-inherited public User Client support	
@@ -124,56 +151,63 @@ public:
 	virtual	IODBDMAChannelRegisters *	GetInputChannelRegistersVirtualAddress ( IOService * dbdmaProvider );
 	virtual	IODBDMAChannelRegisters *	GetOutputChannelRegistersVirtualAddress ( IOService * dbdmaProvider );
 
+	virtual void					LogDBDMAChannelRegisters ( void );
+
+	//	
+	//	User Client Support
+	//
+	virtual IOReturn				getPlatformState ( PlatformStateStructPtr outState );
+	virtual IOReturn				setPlatformState ( PlatformStateStructPtr inState );
+	
 private:
 
 	IOWorkLoop*						mWorkLoop;
     IOService*						mKeyLargoService;
+	IODBDMAChannelRegisters *		mIOBaseDMAOutput;
+	const OSSymbol *				mKLI2SPowerSymbolName;	// [3324205]
 	//
 	// GPIO
 	//
-	typedef 						bool GpioActiveState;
-	typedef 						UInt8* GpioPtr;
 
-	UInt8 							gpioReadByte( UInt8* gpioAddress );
-	void 							gpioWriteByte( UInt8* gpioAddress, UInt8 data );
-	
-	bool	 						gpioRead( UInt8* gpioAddress );
 	IOReturn						gpioWrite( UInt8* gpioAddress, UInt8 data );
-	
-	UInt8 							gpioGetDDR( UInt8* gpioAddress );
 
-	GpioPtr							hwAnalogResetGpio;
-	GpioPtr							hwDigitalResetGpio;
-	GpioPtr							hdpnMuteGpio;
-	GpioPtr							ampMuteGpio;
-	GpioPtr							speakerIDGpio;
-	GpioPtr							lineOutMuteGpio;								
-	GpioPtr							masterMuteGpio;									
+	GpioPtr							mAmplifierMuteGpio;
+	GpioPtr							mAnalogResetGpio;
+	GpioPtr							mClockMuxGpio;
+	GpioPtr							mComboInJackTypeGpio;							
+	GpioPtr							mComboOutJackTypeGpio;							
+	GpioPtr							mCodecErrorInterruptGpio;
+	GpioPtr							mCodecInterruptGpio;
+	GpioPtr							mDigitalInDetectGpio;							
+	GpioPtr							mDigitalOutDetectGpio;							
+	GpioPtr							mDigitalResetGpio;
+	GpioPtr							mHeadphoneDetectGpio;
+	GpioPtr							mHeadphoneMuteGpio;
+	GpioPtr							mInputDataMuxGpio;
+	GpioPtr							mInternalSpeakerIDGpio;
+	GpioPtr							mLineInDetectGpio;								
+	GpioPtr							mLineOutDetectGpio;	
+	GpioPtr							mLineOutMuteGpio;								
+	GpioPtr							mSpeakerDetectGpio;
 
-	GpioPtr							lineInExtIntGpio;								
-	GpioPtr							lineOutExtIntGpio;	
-	GpioPtr							digitalOutExtIntGpio;							
-	GpioPtr							digitalInExtIntGpio;							
-	GpioPtr							headphoneExtIntGpio;
-	GpioPtr							speakerExtIntGpio;
-	GpioPtr							codecIntGpio;
-	GpioPtr							codecErrorIntGpio;
-
-	GpioActiveState			hwAnalogResetActiveState;							//	indicates asserted state (i.e. '0' or '1')
-	GpioActiveState			hwDigitalResetActiveState;							//	indicates asserted state (i.e. '0' or '1')
-	GpioActiveState			hdpnActiveState;								
-	GpioActiveState			ampActiveState;									
-	GpioActiveState			speakerIDActiveState;									
-	GpioActiveState			headphoneInsertedActiveState;
-	GpioActiveState			speakerInsertedActiveState;
-	GpioActiveState			lineInExtIntActiveState;						
-	GpioActiveState			lineOutExtIntActiveState;						
-	GpioActiveState			digitalOutExtIntActiveState;					
-	GpioActiveState			digitalInExtIntActiveState;					
-	GpioActiveState			mCodecExtIntActiveState;					
-	GpioActiveState			mCodecErrorExtIntActiveState;					
-	GpioActiveState			lineOutMuteActiveState;							
-	GpioActiveState			masterMuteActiveState;						
+	GpioActiveState					mAmplifierMuteActiveState;									
+	GpioActiveState					mAnalogResetActiveState;
+	GpioActiveState					mClockMuxActiveState;
+	GpioActiveState					mCodecErrorInterruptActiveState;					
+	GpioActiveState					mCodecInterruptActiveState;					
+	GpioActiveState					mDigitalInDetectActiveState;					
+	GpioActiveState					mComboInJackTypeActiveState;					
+	GpioActiveState					mDigitalOutDetectActiveState;					
+	GpioActiveState					mComboOutJackTypeActiveState;					
+	GpioActiveState					mDigitalResetActiveState;
+	GpioActiveState					mHeadphoneDetectActiveState;
+	GpioActiveState					mHeadphoneMuteActiveState;	
+	GpioActiveState					mInputDataMuxActiveState;							
+	GpioActiveState					mInternalSpeakerIDActiveState;					
+	GpioActiveState					mLineInDetectActiveState;						
+	GpioActiveState					mLineOutDetectActiveState;						
+	GpioActiveState					mLineOutMuteActiveState;							
+	GpioActiveState					mSpeakerDetectActiveState;									
 
 	volatile UInt8 *		mHwPtr;								//	remove after burning real rom on real hardware
 
@@ -232,16 +266,17 @@ private:
 		kNoI2SCell				=	0xFFFFFFFF
 	} I2SCell;
 	
-	I2SCell		mI2SInterfaceNumber;
+	I2SCell					mI2SInterfaceNumber;
 	
-	bool		findAndAttachI2C();
-	bool		detachFromI2C();
-	bool		openI2C();
-	void		closeI2C();
+	bool					findAndAttachI2C();
+	bool					detachFromI2C();
+	bool					openI2C();
+	void					closeI2C();
 
-	IOReturn 	initI2S(IOMemoryMap* map);
+	IOReturn 				initI2S(IOMemoryMap* map);
 	
-	UInt32		mI2CPort;
+	UInt32					mI2CPort;
+	bool					mI2C_lastTransactionResult;
 
 	PPCI2CInterface* mI2CInterface;
 
@@ -337,15 +372,20 @@ private:
 		kShutdown_PLL_Total_bitWidth	=	1		//	
 	};
 
-	static const char* 	kHeadphoneAmpEntry;
-	static const char*  kAmpEntry;
-	static const char*  kSpeakerIDEntry;
-	static const char*  kLineOutAmpEntry;
+	static const char*	kAmpMuteEntry;
 	static const char*  kAnalogHWResetEntry;
+	static const char*  kComboInJackTypeEntry;
+	static const char*  kComboOutJackTypeEntry;
 	static const char*  kDigitalHWResetEntry;
+	static const char*  kDigitalInDetectEntry;
+	static const char*  kDigitalOutDetectEntry;
 	static const char*  kHeadphoneDetectInt;
+	static const char* 	kHeadphoneMuteEntry;
+	static const char*	kInternalSpeakerIDEntry;
 	static const char*  kLineInDetectInt;
 	static const char*  kLineOutDetectInt;
+	static const char*  kLineOutMuteEntry;
+	static const char*  kSpeakerDetectEntry;
 
 	static const char*  kNumInputs;
 	static const char*  kDeviceID;

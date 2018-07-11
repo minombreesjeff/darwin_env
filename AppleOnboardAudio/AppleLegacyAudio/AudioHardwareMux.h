@@ -1,6 +1,6 @@
 /*
  *  AudioHardwareMux.h
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by cerveau on Sat Feb 03 2001.
  *  Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
@@ -12,7 +12,7 @@
 
 #include "AudioHardwareCommon.h"
 #include "AudioHardwareUtilities.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 
 
 // Kind of muxes
@@ -88,7 +88,7 @@ class AudioHardwareMux : public OSObject {
 
 public:
     static AudioHardwareMux *create(AudioHardwareMuxInfo theMuxInfo); 
-    void attachAudioPluginRef(AppleLegacyAudio *theAudioPlugin);
+    void attachAudioPluginRef(Apple02Audio *theAudioPlugin);
     
     UInt32   GetMuxSource();
     IOReturn SetMuxSource(UInt32 source );
@@ -114,7 +114,7 @@ protected:
 	// MuxProgOut specific (the Map should be pass to the constructor)
     UInt32		MuxPOnumSources;
     MuxSourceMap	MuxPOsources[2];   //we should make it a pointer but we know there is 2 to take care until now		
-    AppleLegacyAudio *pluginRef;
+    Apple02Audio *pluginRef;
 
 };
 

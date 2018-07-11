@@ -1,6 +1,6 @@
  /*
  *  AudioI2SHardwareConstants.h
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  @APPLE_LICENSE_HEADER_START@
  *  
@@ -23,7 +23,7 @@
  *  
  *  @APPLE_LICENSE_HEADER_END@
  *
- *  Contains a lot of constants used across the AppleLegacyAudio project.
+ *  Contains a lot of constants used across the Apple02Audio project.
  *  There are three kind of constants : 
  *      - the string equivalent used mainly to parse the Open Firmware 
  *        device tree. Eventually they will move to the header file
@@ -128,6 +128,9 @@ enum FCR3_FieldWidth {
 #define		kI2S1ClockEnable 		(UInt32)( 1 << kI2S1ClkEnBit )
 #define		kI2S0InterfaceEnable 	(UInt32)( 1 << kI2S0Enable )
 #define		kI2S1InterfaceEnable 	(UInt32)( 1 << kI2S1Enable )
+#define		kI2S0CellEnable 		(UInt32)( 1 << kI2S0CellEn )
+#define		kI2S1CellEnable 		(UInt32)( 1 << kI2S1CellEn )
+
 
 enum i2sReference {
 	kUseI2SCell0			=	0,

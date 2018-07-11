@@ -1,6 +1,6 @@
 /*
  *  AudioHardwareOutput.cpp
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Copyright (c) 2000 Apple Computer Inc. All rights reserved.
  *
@@ -50,7 +50,7 @@
 #include "AudioHardwareCommon.h"
 #include "AudioHardwareOutput.h"
 #include "AudioHardwareConstants.h"
-#include "AppleLegacyAudio.h"
+#include "Apple02Audio.h"
 
 #define super IOAudioPort
 
@@ -101,7 +101,7 @@ void AudioHardwareOutput::free(){
     super::free();
 }
 
-void AudioHardwareOutput::attachAudioPluginRef(AppleLegacyAudio *theAudioPlugin){
+void AudioHardwareOutput::attachAudioPluginRef(Apple02Audio *theAudioPlugin){
     pluginRef = theAudioPlugin;
     // pluginRef->retain();
 }

@@ -1,6 +1,6 @@
 /*
  *  AudioDeviceTreeParser.cpp
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by lcerveau on Thu May 31 2001.
  *  Copyright (c) 2001 __CompanyName__. All rights reserved.

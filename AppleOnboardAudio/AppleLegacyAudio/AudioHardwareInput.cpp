@@ -1,6 +1,6 @@
 /*
  *  AppleHardwareInput.cpp
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by lcerveau on Wed Jan 03 2001.
  *  Copyright (c) 2000 __CompanyName__. All rights reserved.
@@ -53,7 +53,7 @@ void AudioHardwareInput::free(){
     super::free();
 }
 
-void AudioHardwareInput::attachAudioPluginRef(AppleLegacyAudio *theAudioPlugin){
+void AudioHardwareInput::attachAudioPluginRef(Apple02Audio *theAudioPlugin){
     pluginRef = theAudioPlugin;
     // pluginRef->retain();
 }

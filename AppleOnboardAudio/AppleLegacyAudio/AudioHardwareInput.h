@@ -1,6 +1,6 @@
 /*
  *  AppleHardwareInput.h
- *  AppleLegacyAudio
+ *  Apple02Audio
  *
  *  Created by lcerveau on Wed Jan 03 2001.
  *  Copyright (c) 2000 Apple Computer Inc. All rights reserved.
@@ -13,7 +13,7 @@
 #include "AudioHardwareCommon.h"
 #include "AudioHardwareUtilities.h"
 #include "AudioHardwareMux.h"
-// #include "AppleLegacyAudio.h"  // we should replace with AppleAudioHardware generic class
+// #include "Apple02Audio.h"  // we should replace with AppleAudioHardware generic class
 class AudioHardwareMux;
 
 typedef struct _s_AudioHardwareInputInfo {
@@ -58,7 +58,7 @@ public:
     static AudioHardwareInput *create(AudioHardwareInputInfo theInputInfo);
     bool deviceSetActive( UInt32 currentDevices );
     void forceActivation(UInt32 selector);
-    void attachAudioPluginRef(AppleLegacyAudio *theAudioPlugin);
+    void attachAudioPluginRef(Apple02Audio *theAudioPlugin);
     UInt32 getInputPortType(void);
 	void setInputGain(UInt32 leftGain, UInt32 rightGain);
     
@@ -75,7 +75,7 @@ protected:
     bool	active;					// set if the input is active
     AudioHardwareMux *theMuxRef;  	//the Mux if there isone
 
-    AppleLegacyAudio *pluginRef;
+    Apple02Audio *pluginRef;
     UInt32 	gainLeft;
     UInt32 	gainRight;
 };

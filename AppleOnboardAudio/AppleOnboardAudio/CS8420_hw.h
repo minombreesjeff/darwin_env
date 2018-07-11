@@ -12,19 +12,6 @@
 
 #include <libkern/OSTypes.h>
 
-#define	kSPDIFModelName				"353S0615"
-#define kI2CDTEntry					"i2c"
-#define kHWResetEntry				"audio-hw-reset"
-#define kSPDIFResetEntry			"audio-spdif-reset"
-#define kAudioGPIO					"audio-gpio"
-#define kAudioGPIOActiveState		"audio-gpio-active-state"
-#define	kSpdifErrDetectInt			"spdif-err-detect"
-
-#define kSPDIFOutputSampleLatency	31
-#define kSPDIFInputSampleLatency	32
-
-#define kCommonFrameRate 44100
-
 //	====================================================================================================
 //
 //	Control Port Register Bit Definitions.
@@ -118,9 +105,10 @@ enum CS8420_DATA_FLOW_CTRL {
 		txdSAI			=	1,				//		( txdSAI << baTXD )				¥	Serial Audio Input port
 		txdAES3			=	2,				//		( txdAES3 << baTXD )				AES3 receiver
 	baSPD				=	1,				//	bit addressed field:					Serial Audio Output Port Data Source
-		spdSrcOut		=	0,				//		( spdSrcOut << baSPD )			¥	SRC Output (default) (default)
+		spdSrcOut		=	0,				//		( spdSrcOut << baSPD )			¥	SRC Output (default) (use when cpu is clock master & CS8420 is slave)
 		spdSAI			=	1,				//		( spdSAI << baSPD )					Serial Audio Input port
-		spdAES3			=	2,				//		( spdAES3 << baSPD )				AES3 receiver
+		spdAES3			=	2,				//		( spdAES3 << baSPD )				AES3 receiver (use when CS8420 is clock master and cpu is slave)
+		spdMASK			=	3,				//		( spdMASK << baSPD )
 	baSRCD				=	0,				//	bit addressed field:					Input Data Source for Sample Rate Converter (SRC)
 		srcdSAIP		=	0,				//		( srcdSAIP << baSRCD )			¥	Serial Audio Input Port (default)
 		srcdAES3		=	1				//		( srcdAES3 << baSRCD )				AES3 Receiver
@@ -522,12 +510,52 @@ enum CS8420_ID_VERSION {
 //
 //	====================================================================================================
 
-typedef enum TOPAZ_AccessMode {
-	kTOPAZ_AccessMode_UPDATE_SHADOW					=	0,
-	kTOPAZ_AccessMode_UPDATE_HW						=	1,
-	kTOPAZ_AccessMode_UPDATE_ALL					=	2,
-	kTOPAZ_AccessMode_FORCE_UPDATE_ALL				=	3
+enum PRO_CHANNEL_STATUS_BYTE_0 {
+	baProSampleFrequency			=	6,
+	pSampleFrequency_NotIndicate	=	0,
+	pSampleFrequency_48Khz			=	2,
+	pSampleFrequency_44Khz			=	1,
+	pSampleFrequency_32Khz			=	3
 };
+
+enum CONSUMER_CHANNEL_STATUS_BYTE_3 {
+	baConsumerSampleFrequency		=	0x00,
+	cSampleFrequency_44Khz			=	0x00,
+	cSampleFrequency_48Khz			=	0x40,
+	cSampleFrequency_32Khz			=	0xC0
+};
+
+enum CONSUMER_CHANNEL_STATUS_BYTE_4 {
+	cWordLength_24Max_notIndicated	=	0x01,
+	cWordLength_24Max_24bits		=	0x0B,
+	cWordLength_24Max_23bits		=	0x03,
+	cWordLength_24Max_22bits		=	0x05,
+	cWordLength_24Max_21bits		=	0x07,
+	cWordLength_24Max_20bits		=	0x09,
+	cWordLength_20Max_notIndicated	=	0x00,
+	cWordLength_20Max_20bits		=	0x0A,
+	cWordLength_20Max_19bits		=	0x02,
+	cWordLength_20Max_18bits		=	0x04,
+	cWordLength_20Max_17bits		=	0x06,
+	cWordLength_20Max_16bits		=	0x08
+};
+
+enum PRO_CHANNEL_STATUS_BYTE_2 {
+	baUseOfAuxSampleBits			=	0,
+	baSourceWordLength				=	3
+};
+
+#define	kBANonAudio				1
+#define	kConsumerMode_audio		0
+#define	kConsumerMode_nonAudio	1
+
+#define	kBACopyright			2
+#define	kCopyPermited			1
+
+#define	kConsumer				0
+#define	kProfessional			1
+#define	kBAProConsumer			0
+
 
 enum CS84xx_I2C_ADDRESS {
 	kCS84xx_I2C_BASE_ADDRESS	=	0x20,
@@ -572,16 +600,16 @@ enum gpio{
 		gpioBIT_MASK			=	1		//	value shifted by bit position to be used to determine a GPIO bit state
 };
 
-#define	kMISC_CNTRL_1_INIT_8420				( ( swclkOMCK << baSWCLK ) | ( vbitValid << baVSET ) | ( muteSAO << baMuteSAO ) | ( muteAES3 << baMuteAES ) | ( enableDITH << baDITH ) | ( activeLowINT << baINT ) | ( outputTCBLD << baTCBLD ) )
-#define	kMISC_CNTRL_1_INIT_8406				( ( swclkRMCK << baSWCLK ) | ( vbitValid << baVSET ) | ( muteSAO << baMuteSAO ) | ( muteAES3 << baMuteAES ) | ( enableDITH << baDITH ) | ( activeLowINT << baINT ) | ( outputTCBLD << baTCBLD ) )
+#define	kMISC_CNTRL_1_INIT_8420				( ( swclkOMCK << baSWCLK ) | ( vbitValid << baVSET ) | ( normalSAO << baMuteSAO ) | ( muteAES3 << baMuteAES ) | ( enableDITH << baDITH ) | ( activeLowINT << baINT ) | ( outputTCBLD << baTCBLD ) )
+#define	kMISC_CNTRL_1_INIT_8406				( ( swclkRMCK << baSWCLK ) | ( vbitValid << baVSET ) | ( normalSAO << baMuteSAO ) | ( muteAES3 << baMuteAES ) | ( enableDITH << baDITH ) | ( activeLowINT << baINT ) | ( outputTCBLD << baTCBLD ) )
 #define	kMISC_CNTRL_2_INIT					( ( notTruncated << baTRUNC ) | ( replaceMute << baHOLD ) | ( fsi256 << baRMCKF ) | ( mmrStereo << baMMR ) | ( mmtStereo << baMMT ) | ( discrete << baMMTCS ) | ( useLeft << baMMTLR ) )
-#define	kDATA_FLOW_CTRL_INIT				( ( enAutoMute << baAMLL ) | ( aes3TXNormal << baTXOFF ) | ( normalBP << baAESBP ) | ( txdSAI << baTXD ) | ( spdSAI << baSPD ) | ( srcdSAIP << baSRCD ) )
-#define	kCLOCK_SOURCE_CTRL_INIT_STOP		( ( runSTOP << baRUN ) | ( omck256fso << baCLK ) | ( outcOmckXbaCLK << baOUTC ) | ( incOmckXbaCLK << baINC ) | ( rxd256fsiAES3 << baRXD ) )
+#define	kDATA_FLOW_CTRL_INIT				( ( enAutoMute << baAMLL ) | ( aes3TXNormal << baTXOFF ) | ( normalBP << baAESBP ) | ( txdSAI << baTXD ) | ( spdSrcOut << baSPD ) | ( srcdAES3 << baSRCD ) )
+#define	kCLOCK_SOURCE_CTRL_INIT_STOP		( ( runSTOP << baRUN ) | ( omck256fso << baCLK ) | ( outcOmckXbaCLK << baOUTC ) | ( incRecIC << baINC ) | ( rxd256fsiAES3 << baRXD ) )
 #define	kCLOCK_SOURCE_CTRL_INIT				( ( runNORMAL << baRUN ) | ( omck256fso << baCLK ) | ( outcOmckXbaCLK << baOUTC ) | ( incRecIC << baINC ) | ( rxd256fsiAES3 << baRXD ) )
 #define	kSERIAL_AUDIO_INPUT_FORMAT_INIT		( ( inputSlave << baSIMS ) | ( isclk64fsi << baSISF ) | ( input24bit << baSIRES ) | ( siLeftJust << baSIJUST ) | ( siMsb2ndCk << baSIDEL ) | ( siRising << baSISPOL ) | ( siRightILRCK << baSILRPOL ) )
 #define	kSERIAL_AUDIO_OUTPUT_FORMAT_INIT	( ( somsSlave << baSOMS ) | ( osclk64Fso << baSOSF ) | ( out24bit << baSORES ) | ( soLeftJust << baSOJUST ) | ( soMsb2ndCk << baSODEL ) | ( sdoutFalling << baSOSPOL ) | ( soRightOLRCK << baSOLRPOL ) )
-//#define	kRX_ERROR_MASK1_INIT				( ( maskRxError << baQCRCM ) | ( maskRxError << baCCRCM ) | ( enRxError << baUNLOCKM ) | ( enRxError << baVALIDM ) | ( enRxError << baCONFM ) | ( enRxError << baBIPM ) | ( enRxError << baPARITYM ) )
-#define	kRX_ERROR_MASK1_INIT				0
+#define	kRX_ERROR_MASK_DISABLE_RERR			( ( maskRxError << baQCRCM ) | ( maskRxError << baCCRCM ) | ( maskRxError << baUNLOCKM ) | ( maskRxError << baVALIDM ) | ( enRxError << baCONFM ) | ( enRxError << baBIPM ) | ( maskRxError << baPARITYM ) )
+#define	kRX_ERROR_MASK_ENABLE_RERR			( ( maskRxError << baQCRCM ) | ( maskRxError << baCCRCM ) | ( enRxError << baUNLOCKM ) | ( maskRxError << baVALIDM ) | ( enRxError << baCONFM ) | ( enRxError << baBIPM ) | ( maskRxError << baPARITYM ) )
 
 #define	kMASK_ALL								0x00
 #define	kMASK_NONE								0xFF

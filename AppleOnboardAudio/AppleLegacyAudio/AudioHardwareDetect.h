@@ -1,6 +1,6 @@
 /*
  *  AudioHardwareDetect.h (definition)
- *  Project : AppleLegacyAudio
+ *  Project : Apple02Audio
  *
  *  Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
