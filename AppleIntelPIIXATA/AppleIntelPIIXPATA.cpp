@@ -1512,7 +1512,8 @@ void
 AppleIntelPIIXPATA::turnOffDrive( void )
 {
 
-
+    if (_intSrc) 
+		_intSrc->disable();
 
 	// drive-low the ATA interface
 	UInt32 maskBits = 0x3 << 16;
@@ -1527,11 +1528,19 @@ AppleIntelPIIXPATA::turnOffDrive( void )
 	_pciACPIDevice->evaluateObject( "_PS3" );
 	
 	_drivePowerOn = false;
+	
+	// clean up any interrupt glitches left over from powering down the drive. 
+	*_bmStatusReg = kPIIX_IO_BMISX_IDEINTS;
+    if (_intSrc) 
+		_intSrc->enable();
 }
 
 void
 AppleIntelPIIXPATA::turnOnDrive( void )
 {
+    if (_intSrc) 
+		_intSrc->disable();
+
 	_drivePowerOn = true;
 	
 	// turn on the power
@@ -1567,6 +1576,11 @@ AppleIntelPIIXPATA::turnOnDrive( void )
 		DLOG("AppleIntelPIIX failed to clear busy on power control\n");
 	
 	}
+ 
+	// clean up any interrupt glitches left over from powering up the drive. 
+	*_bmStatusReg = kPIIX_IO_BMISX_IDEINTS;
+    if (_intSrc) 
+		_intSrc->enable();
 
 	executeEventCallouts( kATAResetEvent, kATAInvalidDeviceID);
 

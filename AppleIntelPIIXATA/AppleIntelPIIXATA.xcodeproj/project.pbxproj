@@ -20,23 +20,6 @@
 		B9480862048679CF08D5663B /* AppleIntelICHxSATA.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B9480860048679CF08D5663B /* AppleIntelICHxSATA.cpp */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXBuildStyle section */
-		AC7F34940A880FA100F3BD72 /* Development */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = NO;
-			};
-			name = Development;
-		};
-		AC7F34950A880FA100F3BD72 /* Deployment */ = {
-			isa = PBXBuildStyle;
-			buildSettings = {
-				COPY_PHASE_STRIP = YES;
-			};
-			name = Deployment;
-		};
-/* End PBXBuildStyle section */
-
 /* Begin PBXBundleTarget section */
 		089C1673FE841209C02AAC07 /* AppleIntelPIIXATA */ = {
 			isa = PBXBundleTarget;
@@ -65,7 +48,7 @@
 	<key>CFBundleExecutable</key>
 	<string>AppleIntelPIIXATA</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.14, Copyright Apple Computer, Inc. 2000-2006</string>
+	<string>1.16, Copyright Apple Computer, Inc. 2000-2006</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -77,11 +60,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.14</string>
+	<string>1.16</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.14</string>
+	<string>1.16</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>ESB2 ATA/100</key>
@@ -355,12 +338,6 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			buildConfigurationList = 424EEE1309871760007E6FBC /* Build configuration list for PBXProject "AppleIntelPIIXATA" */;
-			buildSettings = {
-			};
-			buildStyles = (
-				AC7F34940A880FA100F3BD72 /* Development */,
-				AC7F34950A880FA100F3BD72 /* Deployment */,
-			);
 			hasScannedForEncodings = 1;
 			mainGroup = 089C166AFE841209C02AAC07 /* AppleIntelPIIXATA */;
 			projectDirPath = "";
@@ -441,7 +418,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleIntelPIIXATA;
-				MODULE_VERSION = 1.14;
+				MODULE_VERSION = 1.16;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
