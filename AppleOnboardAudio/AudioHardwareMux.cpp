@@ -99,6 +99,9 @@ IOReturn AudioHardwareMux::SetMuxSource(UInt32 source ) {
             }
             break;
         case kAudioHardwareMux101:
+			// [3325960], release OSSymbols
+			const OSSymbol *	theReadSymbol;
+			const OSSymbol *	theWriteSymbol;
             doTimingStuff = false;
             WSMuxchanCSetting = 0;
             UInt8  value;
@@ -108,12 +111,16 @@ IOReturn AudioHardwareMux::SetMuxSource(UInt32 source ) {
             MmuxOffset = k101MuxChanCEnableOffset;           
             heathrow = IOService::waitForService(IOService::serviceMatching("Heathrow"));
 
-            heathrow->callPlatformFunction(OSSymbol::withCString("heathrow_safeReadRegUInt8"), false, 
-                                                                (void *)MmuxOffset, &value, 0, 0);
-            value &= k101MuxClearChanCBitsMask;
+			theWriteSymbol = OSSymbol::withCString("heathrow_writeRegUInt8");
+			FailIf (NULL == theWriteSymbol, EXIT);
+			theReadSymbol = OSSymbol::withCString("heathrow_safeReadRegUInt8");
+			FailIf (NULL == theReadSymbol, EXIT);
 
-            heathrow->callPlatformFunction(OSSymbol::withCString("heathrow_writeRegUInt8"), false, 
-                                                                (void *)&MmuxOffset, (void *)(UInt32)value, 0, 0);
+			heathrow->callPlatformFunction(theReadSymbol, false, (void *)MmuxOffset, &value, 0, 0);
+			value &= k101MuxClearChanCBitsMask;
+			
+			heathrow->callPlatformFunction(theWriteSymbol, false, (void *)&MmuxOffset, (void *)(UInt32)value, 0, 0);
+
             switch(source) {
                 case 'imic':
                     WSMuxchanCSetting |= k101MuxInternalMicInput;
@@ -130,21 +137,22 @@ IOReturn AudioHardwareMux::SetMuxSource(UInt32 source ) {
                 default:
                     break;
             }                        
-            
-            heathrow->callPlatformFunction(OSSymbol::withCString("heathrow_safeReadRegUInt8"), false, 
-                                                                (void *)MmuxOffset, &value, 0, 0); 
+
+            heathrow->callPlatformFunction(theReadSymbol, false, (void *)MmuxOffset, &value, 0, 0); 
             
             value |= WSMuxchanCSetting; 
             
             if(doTimingStuff) {
                 IOSleep(k101MuxMClkDelay);
-                heathrow->callPlatformFunction(OSSymbol::withCString("heathrow_writeRegUInt8"), false, 
-                                                         (void *)&MmuxOffset, (void *)(UInt32)value, 0, 0);
+                heathrow->callPlatformFunction(theWriteSymbol, false, (void *)&MmuxOffset, (void *)(UInt32)value, 0, 0);
                 IOSleep(delayTime);
             } else {
-                heathrow->callPlatformFunction(OSSymbol::withCString("heathrow_writeRegUInt8"), false, 
-                                                         (void *)&MmuxOffset, (void *)(UInt32)value, 0, 0);
+                heathrow->callPlatformFunction(theWriteSymbol, false, (void *)&MmuxOffset, (void *)(UInt32)value, 0, 0);
             }
+
+			theWriteSymbol->release ();
+			theReadSymbol->release ();
+
             break;
         default:
             result = kIOReturnError;

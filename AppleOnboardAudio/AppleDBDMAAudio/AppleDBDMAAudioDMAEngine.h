@@ -95,6 +95,9 @@ protected:
     bool							fNeedsRightChanDelay;   // [3134221] aml
 	bool							fNeedsRightChanMixed;
 
+	bool							fNeedsRightChanDelayInput;
+	bool							fNeedsBalanceAdjust;
+
 	// aml 6.17.02
 	DualMonoModeType				mInputDualMonoMode;
 
@@ -102,6 +105,9 @@ protected:
     bool 							mUseSoftwareInputGain;
     float *							mInputGainLPtr;				
     float *							mInputGainRPtr;				
+
+    UInt32							mLeftSoftVolume;				
+    UInt32							mRightSoftVolume;				
 
 	bool							dmaRunState;			//	rbm 7.12.02 added for user client support
 	IOAudioStreamFormat				dbdmaFormat;			//	rbm 7.15.02 added for user client support
@@ -151,6 +157,11 @@ public:
     inline void  		setRightChanMixed(bool needsRightChanMixed ) { fNeedsRightChanMixed = needsRightChanMixed; }; 
     inline bool  		getRightChanMixed() { return fNeedsRightChanMixed; };
 
+	void  				setRightChanDelayInput(const bool needsRightChanDelay);
+
+			void  		setBalanceAdjust(const bool needsBalanceAdjust);
+    inline	bool  		getBalanceAdjust() { return fNeedsBalanceAdjust; };
+
 	// aml 6.17.02
 	void 				setDualMonoMode(const DualMonoModeType inDualMonoMode) { mInputDualMonoMode = inDualMonoMode; };
 
@@ -158,6 +169,9 @@ public:
     void		 		setUseSoftwareInputGain(bool inUseSoftwareInputGain);
     void	 			setInputGainL(UInt32 inGainL); 
     void		 		setInputGainR(UInt32 inGainR); 
+
+    void	 			setLeftSoftVolume(UInt32 inVolume); 
+    void	 			setRightSoftVolume(UInt32 inVolume); 
 
     virtual UInt32 		getCurrentSampleFrame();
 	virtual void 		resetClipPosition (IOAudioStream *audioStream, UInt32 clipSampleFrame);

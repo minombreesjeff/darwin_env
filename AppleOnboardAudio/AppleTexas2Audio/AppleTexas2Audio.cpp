@@ -5,21 +5,24 @@
  *  Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
  *  @APPLE_LICENSE_HEADER_START@
- * 
- *  The contents of this file constitute Original Code as defined in and
- *  are subject to the Apple Public Source License Version 1.1 (the
- *  "License").  You may not use this file except in compliance with the
- *  License.  Please obtain a copy of the License at
- *  http://www.apple.com/publicsource and read it before using this file.
- * 
- *  This Original Code and all software distributed under the License are
- *  distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *  
+ *  Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ *  
+ *  This file contains Original Code and/or Modifications of Original Code
+ *  as defined in and that are subject to the Apple Public Source License
+ *  Version 2.0 (the 'License'). You may not use this file except in
+ *  compliance with the License. Please obtain a copy of the License at
+ *  http://www.opensource.apple.com/apsl/ and read it before using this
+ *  file.
+ *  
+ *  The Original Code and all software distributed under the License are
+ *  distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  *  EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  *  INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- *  License for the specific language governing rights and limitations
- *  under the License.
- * 
+ *  FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ *  Please see the License for the specific language governing rights and
+ *  limitations under the License.
+ *  
  *  @APPLE_LICENSE_HEADER_END@
  *
  *  Hardware independent (relatively) code for the Texas Insruments Texas2 Codec
@@ -78,8 +81,14 @@ bool AppleTexas2Audio::init(OSDictionary *properties)
 	gVolMuteActive = false;
 	gModemSoundActive = false;
 	gInputNoneAlias = kSndHWInputNone;	//	default assumption is that no unused input is available to alias kSndHWInputNone
+	powerStateChangeInProcess = false;	//	[3234624]
 
+	mKeyLargoPowerI2SSymbol = OSSymbol::withCString ("keyLargo_powerI2S");
+	if (NULL == mKeyLargoPowerI2SSymbol)	
+		return false;
+		
 	debugIOLog("- AppleTexas2Audio::init\n");
+	
 	return true;
 }
 
@@ -127,6 +136,8 @@ void AppleTexas2Audio::free()
 	CLEAN_RELEASE(headphoneIntEventSource);
 	CLEAN_RELEASE(dallasIntEventSource);
 
+	CLEAN_RELEASE(mKeyLargoPowerI2SSymbol);
+	
 	super::free();
 	debugIOLog("- AppleTexas2Audio::free\n");
 }
@@ -663,7 +674,7 @@ void	AppleTexas2Audio::sndHWInitialize(IOService *provider)
 	data[DRC_Integration]		= kDRCIntegrationThreshold;
 	data[DRC_Attack]			= kDRCAttachThreshold;
 	data[DRC_Decay]				= kDRCDecayThreshold;
-	Texas2_WriteRegister( kTexas2DynamicRangeCtrlReg, data, kUPDATE_ALL );
+	Texas2_WriteRegister( kTexas2DynamicRangeCtrlReg, data, kUPDATE_SHADOW );
 
 	for( loopCnt = 0; loopCnt < kTexas2VOLwidth; loopCnt++ )				//	init to volume = muted
 	    data[loopCnt] = 0;
@@ -771,7 +782,32 @@ void AppleTexas2Audio::sndHWPostDMAEngineInit (IOService *provider) {
 		driverDMAEngine->setSampleLatencies (kTexas2OutputSampleLatency, kTexas2InputSampleLatency);
 		driverDMAEngine->setRightChanDelay(TRUE);		// [3134221] aml
 	}
+	
+	if (layoutID == layoutQ16) {
+		OSDictionary *		AOAprop;
+		OSData *			volumeData;
+		UInt32				volume;
 
+		mNeedBalanceAdjust = true;
+
+		if (AOAprop = OSDynamicCast(OSDictionary, getProperty("AOAAttributes") )) {
+			volumeData = (OSDynamicCast(OSData, AOAprop->getObject("leftBalanceAdjust")));			
+			if (NULL != volumeData) {
+				memcpy (&(volume), volumeData->getBytesNoCopy (), 4);
+				driverDMAEngine->setLeftSoftVolume (volume);
+			} else {
+				driverDMAEngine->setLeftSoftVolume (NULL);
+			}
+			volumeData = (OSDynamicCast(OSData, AOAprop->getObject("rightBalanceAdjust")));
+			if (NULL != volumeData) {
+				memcpy (&(volume), volumeData->getBytesNoCopy (), 4);
+				driverDMAEngine->setRightSoftVolume (volume);
+			} else {
+				driverDMAEngine->setRightSoftVolume (NULL);
+			}
+		}
+	}
+		
 	dallasDriver = NULL;
 	dallasDriverNotifier = addNotification (gIOPublishNotification, serviceMatching ("AppleDallasDriver"), (IOServiceNotificationHandler)&DallasDriverPublished, this);
 	if (NULL != dallasDriver)
@@ -1066,11 +1102,20 @@ IOReturn   AppleTexas2Audio::sndHWSetActiveInputExclusive(
 	Texas2_ReadRegister (kTexas2AnalogControlReg, data);
 	data[0] &= ~((1 << kADM) | (1 << kLRB) | (1 << kINP));
     switch (input) {
-        case kSndHWInput1:	data[0] |= ((kADMNormal << kADM) | (kLeftInputForMonaural << kLRB) | (kAnalogInputA << kINP));			break;
-        case kSndHWInput2:	data[0] |= ((kADMNormal << kADM) | (kLeftInputForMonaural << kLRB) | (kAnalogInputB << kINP));			break;
-        case kSndHWInput3:	data[0] |= ((kADMBInputsMonaural << kADM) | (kLeftInputForMonaural << kLRB) | (kAnalogInputB << kINP));	break;
-        case kSndHWInput4:	data[0] |= ((kADMBInputsMonaural << kADM) | (kRightInputForMonaural << kLRB) | (kAnalogInputB << kINP));	break;
-        default:			result = kIOReturnError;																					break;
+        case kSndHWInput1:	data[0] |= ((kADMNormal << kADM) | (kLeftInputForMonaural << kLRB) | (kAnalogInputA << kINP));			
+			driverDMAEngine->setRightChanDelayInput(false);		// [3336743]
+			break;
+        case kSndHWInput2:	data[0] |= ((kADMNormal << kADM) | (kLeftInputForMonaural << kLRB) | (kAnalogInputB << kINP));			
+			driverDMAEngine->setRightChanDelayInput(false);		// [3336743]
+			break;
+        case kSndHWInput3:	data[0] |= ((kADMBInputsMonaural << kADM) | (kLeftInputForMonaural << kLRB) | (kAnalogInputB << kINP));	
+			driverDMAEngine->setRightChanDelayInput(true);		// [3336743]
+			break;
+        case kSndHWInput4:	data[0] |= ((kADMBInputsMonaural << kADM) | (kRightInputForMonaural << kLRB) | (kAnalogInputB << kINP));	
+			driverDMAEngine->setRightChanDelayInput(true);		// [3336743]
+			break;
+        default:			result = kIOReturnError;																					
+			break;
     }
 	//	If the new input selection remains valid then flush the
 	//	selection setting out to the hardware.
@@ -1169,12 +1214,22 @@ IOReturn AppleTexas2Audio::sndHWSetPlayThrough(bool playthroughstate)
 	err = Texas2_ReadRegister ( kTexas2MixerRightGainReg, rightMixerGain );
 	FailIf ( kIOReturnSuccess != err, Exit );
 
-	if ( playthroughstate ) {
-		leftMixerGain[6] = 0x10;
-		rightMixerGain[6] = 0x10;
+	if ( usesDigitalPlaythrough() ) {
+		if ( playthroughstate ) {
+			leftMixerGain[3] = 0x10;
+			rightMixerGain[3] = 0x10;
+		} else {
+			leftMixerGain[3] = 0x00;
+			rightMixerGain[3] = 0x00;
+		}
 	} else {
-		leftMixerGain[6] = 0x00;
-		rightMixerGain[6] = 0x00;
+		if ( playthroughstate ) {
+			leftMixerGain[6] = 0x10;
+			rightMixerGain[6] = 0x10;
+		} else {
+			leftMixerGain[6] = 0x00;
+			rightMixerGain[6] = 0x00;
+		}
 	}
 	err = Texas2_WriteRegister ( kTexas2MixerLeftGainReg, leftMixerGain, kUPDATE_ALL );
 	err = Texas2_WriteRegister ( kTexas2MixerRightGainReg, rightMixerGain, kUPDATE_ALL );
@@ -1415,7 +1470,6 @@ IOReturn AppleTexas2Audio::sndHWSetPowerState(IOAudioDevicePowerState theState)
 	switch (theState) {
 		case kIOAudioDeviceActive:
 			result = performDeviceWake ();
-			completePowerStateChange ();
 			break;
 		case kIOAudioDeviceIdle:
 			result = performDeviceIdleSleep ();
@@ -1503,8 +1557,8 @@ IOReturn AppleTexas2Audio::performDeviceWake () {
     if (NULL != keyLargo) {
 		// Turn on the i2s clocks...
 		switch ( i2SInterfaceNumber ) {
-			case kUseI2SCell0:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)true, (void *)0, 0, 0);	break;
-			case kUseI2SCell1:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)true, (void *)1, 0, 0);	break;
+			case kUseI2SCell0:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)true, (void *)0, 0, 0);	break;
+			case kUseI2SCell1:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)true, (void *)1, 0, 0);	break;
 		}
 	}
 
@@ -1909,6 +1963,19 @@ void AppleTexas2Audio::RealHeadphoneInterruptHandler (IOInterruptEventSource *so
 	}
 
 	headphonesConnected = IsHeadphoneConnected ();
+	
+	//	[3234624]	begin {
+	if ( ( kIOAudioDeviceIdle == gPowerState ) && hasANDedReset && !powerStateChangeInProcess ) {
+		//	Go back to active on jack state changes if on a system with ANDed RESET.
+		//	Note that invoking setHardwarePowerOn will cause a nested execution of
+		//	this (i.e. 'RealHeadphoneInterruptHandler') routine so a semaphore is
+		//	used to block redundant calls to setHardwarePowerOn so that the nested
+		//	calls do not go more than two layers.
+		powerStateChangeInProcess = true;
+		theAudioPowerObject->setHardwarePowerOn ();
+		powerStateChangeInProcess = false;
+	}
+	//	[3234624]	} end
 
 	SetOutputSelectorCurrentSelection ();
 
@@ -2767,19 +2834,51 @@ void	AppleTexas2Audio::Texas2_Quiesce ( UInt32 mode ) {
 	//	Mute all of the amplifiers
 		
 	//	[2855519]	begin {
-	SetAnalogPowerDownMode (kPowerDownAnalog);
-	SetAmplifierMuteState( kHEADPHONE_AMP, 1 == hdpnActiveState ? 1 : 0 );
-	SetAmplifierMuteState( kSPEAKER_AMP, 1 == ampActiveState ? 1 : 0 );
-	SetAmplifierMuteState( kLINEOUT_AMP, 1 == lineOutMuteActiveState ? 1 : 0 );
-	IOSleep (kAmpRecoveryMuteDuration);
-	if ( kIOAudioDeviceSleep == mode ) {
-		debug2IOLog ( "Texas2_Quiesce ( %d ) asserting RESET\n", (unsigned int)mode );
-		Texas2_Reset_ASSERT();
+	
+	//	[3234624]	begin {
+	//	Only set analog power down mode if running with the headphone jack
+	//	inserted when on a system that has the ANDed reset or always for 
+	//	systems having a dedicated GPIO reset.
+	if ( hasANDedReset ) {
+		if ( kIOAudioDeviceSleep == mode ) {
+			SetAmplifierMuteState ( kHEADPHONE_AMP, ASSERT_GPIO ( hdpnActiveState ) );		//	mute
+			SetAmplifierMuteState ( kSPEAKER_AMP, ASSERT_GPIO ( ampActiveState ) );			//	mute
+			IOSleep (kAmpRecoveryMuteDuration);
+			SetAnalogPowerDownMode (kPowerDownAnalog);
+			Texas2_Reset_ASSERT();
+		} else if ( kIOAudioDeviceIdle == mode ) {
+			if ( codecResetFlag ) {
+				Texas2_Reset_NEGATE();
+			}
+			if ( !IsHeadphoneConnected() ) {
+				//	Headphones aren't connected so go to lowest power configuration
+				//	by switching to the headphone amplifier (driving no transducer)
+				//	and turn off the analog power section of the TAS3004.
+				SetAmplifierMuteState ( kHEADPHONE_AMP, NEGATE_GPIO ( hdpnActiveState  ) );	//	unmute
+				IOSleep (kAmpRecoveryMuteDuration);
+				SetAmplifierMuteState ( kSPEAKER_AMP, ASSERT_GPIO ( ampActiveState ) );		//	mute
+				//IOLog ( "CHECK 3\n" );
+			} else {
+				SetAnalogPowerDownMode (kPowerDownAnalog);
+			}
+		}
 	} else {
-		debug2IOLog ( "Texas2_Quiesce ( %d ) negating RESET\n", (unsigned int)mode );
-		Texas2_Reset_NEGATE();
+		SetAmplifierMuteState ( kHEADPHONE_AMP, ASSERT_GPIO ( hdpnActiveState ) );			//	mute
+		SetAmplifierMuteState ( kSPEAKER_AMP, ASSERT_GPIO ( ampActiveState ) );				//	mute
+		IOSleep (kAmpRecoveryMuteDuration);
+		SetAnalogPowerDownMode (kPowerDownAnalog);
+		SetAmplifierMuteState( kLINEOUT_AMP, 1 == lineOutMuteActiveState ? 1 : 0 );
+		IOSleep (kAmpRecoveryMuteDuration);
+		
+		if ( kIOAudioDeviceSleep == mode ) {
+			debug2IOLog ( "Texas2_Quiesce ( %d ) asserting RESET\n", (unsigned int)mode );
+			Texas2_Reset_ASSERT();
+		} else {
+			debug2IOLog ( "Texas2_Quiesce ( %d ) negating RESET\n", (unsigned int)mode );
+			Texas2_Reset_NEGATE();
+		}
 	}
-	//	[2855519]	} end
+	//	[3234624]	} end		[2855519]	} end
 
 	//	Timing for systems with a master mute [see 2949185] is as follows:
 	//					____________________
@@ -2792,7 +2891,7 @@ void	AppleTexas2Audio::Texas2_Quiesce ( UInt32 mode ) {
 	//
 	//					       -->| 500 MS |<--
 	//
-	if ( NULL != masterMuteGpio ) {			//	[2949185] begin {
+	if ( NULL != masterMuteGpio && hasANDedReset ) {			//	[2949185] begin {
 		IOSleep ( 500 );
 		SetAmplifierMuteState (kMASTER_AMP, ASSERT_GPIO (masterMuteActiveState));	//	assert mute
 	}										//	} end [2949185]
@@ -2802,10 +2901,11 @@ void	AppleTexas2Audio::Texas2_Quiesce ( UInt32 mode ) {
 	if (NULL != keyLargo) {
 		// ...and turn off the i2s clocks...
 		switch ( i2SInterfaceNumber ) {
-			case kUseI2SCell0:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)false, (void *)0, 0, 0);	break;
-			case kUseI2SCell1:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)false, (void *)1, 0, 0);	break;
+			case kUseI2SCell0:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)false, (void *)0, 0, 0);	break;
+			case kUseI2SCell1:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)false, (void *)1, 0, 0);	break;
 		}
 	}
+	
 
 	debugIOLog ("- AppleTexas2Audio::Texas2_Quiesce\n");
 	return;
@@ -2836,6 +2936,7 @@ void	AppleTexas2Audio::Texas2_Reset_ASSERT ( void ) {
     } else {
 		debugIOLog( "*** HARDWARE RESET ASSERT METHOD NOT DETERMINED!!!\n" );
 	}
+	codecResetFlag = TRUE;
 }
 
 
@@ -2860,6 +2961,7 @@ void	AppleTexas2Audio::Texas2_Reset_NEGATE ( void ) {
     } else {
 		debugIOLog( "*** HARDWARE RESET NEGATE METHOD NOT DETERMINED!!!\n" );
 	}
+	codecResetFlag = FALSE;
 }
 
 
@@ -3258,6 +3360,19 @@ void AppleTexas2Audio::DeviceInterruptService (void) {
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Boolean AppleTexas2Audio::usesDigitalPlaythrough ( void )
+{
+	Boolean			result;
+	
+	switch ( layoutID ) {
+		case layoutQ54:
+		case layoutQ41:			result = true;		break;
+		default:				result = false;		break;
+	}
+	return result;
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 UInt32 AppleTexas2Audio::GetDeviceMatch (void) {
 	UInt32			theDeviceMatch;
 
@@ -3568,6 +3683,10 @@ IOReturn AppleTexas2Audio::SetActiveOutput (UInt32 output, Boolean touchBiquad) 
 	
 	debug3IOLog ("+ SetActiveOutput (output = %ld, touchBiquad = %d)\n", output, touchBiquad);
 
+	if (mNeedBalanceAdjust) {
+		driverDMAEngine->setBalanceAdjust(FALSE);
+	}
+
 	err = kIOReturnSuccess;
 	//	[2855519] begin {
 		switch (output) {
@@ -3583,6 +3702,9 @@ IOReturn AppleTexas2Audio::SetActiveOutput (UInt32 output, Boolean touchBiquad) 
 			case kSndHWOutput2:																//	fall through to kSndHWOutput3
 			case kSndHWOutput3:
 				err = SelectSpeakerAmplifier();
+				if (mNeedBalanceAdjust) {
+					driverDMAEngine->setBalanceAdjust(FALSE);
+				}
 				break;
 			case kSndHWOutput4:
 				if ( NULL != masterMuteGpio ) {
@@ -3829,12 +3951,21 @@ IOReturn AppleTexas2Audio::SndHWSetDRC( DRCInfoPtr theDRCSettings ) {
 	//	would result in a hardware setting of -89.625 dB as the hardware settings become
 	//	non-linear at the very lowest value.
 	
-	regData[DRC_Threshold]		= (UInt8)(kDRCUnityThreshold + (kDRC_CountsPerStep * (theDRCSettings->threshold / kDRC_ThreholdStepSize)));
-	regData[DRC_AboveThreshold]	= theDRCSettings->enable ? kDRCAboveThreshold3to1 : kDisableDRC ;
-	regData[DRC_BelowThreshold]	= kDRCBelowThreshold1to1;
-	regData[DRC_Integration]	= kDRCIntegrationThreshold;
-	regData[DRC_Attack]			= kDRCAttachThreshold;
-	regData[DRC_Decay]			= kDRCDecayThreshold;
+	if (layoutID == layoutQ16) {
+		regData[DRC_Threshold]		= (UInt8)(kDRCUnityThreshold + (kDRC_CountsPerStep * (theDRCSettings->threshold / kDRC_ThreholdStepSize)));
+		regData[DRC_AboveThreshold]	= theDRCSettings->enable ? 0x30 : kDisableDRC;		// 1.6:1
+		regData[DRC_BelowThreshold]	= 0x32;		// 1.6:1
+		regData[DRC_Integration]	= 0x60;		// 6.7 ms
+		regData[DRC_Attack]			= 0x90;		// 53 ms
+		regData[DRC_Decay]			= 0xB0;		// 212 ms
+	} else {
+		regData[DRC_Threshold]		= (UInt8)(kDRCUnityThreshold + (kDRC_CountsPerStep * (theDRCSettings->threshold / kDRC_ThreholdStepSize)));
+		regData[DRC_AboveThreshold]	= theDRCSettings->enable ? kDRCAboveThreshold3to1 : kDisableDRC ;
+		regData[DRC_BelowThreshold]	= kDRCBelowThreshold1to1;
+		regData[DRC_Integration]	= kDRCIntegrationThreshold;
+		regData[DRC_Attack]			= kDRCAttachThreshold;
+		regData[DRC_Decay]			= kDRCDecayThreshold;
+	}
 	err = Texas2_WriteRegister( kTexas2DynamicRangeCtrlReg, regData, kFORCE_UPDATE_ALL );
 
 	//	The current volume setting needs to be scaled against the new range of volume 

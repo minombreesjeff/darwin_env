@@ -7,19 +7,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
@@ -67,6 +70,8 @@ typedef struct _s_AudioI2SInfo
     IOMemoryMap		*map ;
 } AudioI2SInfo ;
 
+#define kAudioFCR1Mask 0x001E3C00
+
 // AudioI2SControl is essentially a class for setting the state of the I2S registers
 class AudioI2SControl : public OSObject 
 {
@@ -91,7 +96,6 @@ private:
 	void	*i2sBaseAddress;					//	base address of I2S I/O Module
 //	void	*ioClockBaseAddress;				//	base address for the clock						[3060321]
 //	void	*ioStatusRegister_GPIO12;			//	the register with the input detection			[3060321]
-	void	*ioConfigurationBaseAddress;		//	base address for the configuration registers
 
 	// Recalls which i2s interface we are attached to:
 	UInt8 i2SInterfaceNumber;
@@ -130,8 +134,8 @@ public:
 	void		Fcr3SetReg(UInt32 value);
 
 	// starts and stops the clock count:
-	void   KLSetRegister(void *klRegister, UInt32 value);
-	UInt32   KLGetRegister(void *klRegister);
+	void   KLSetRegister(UInt32 klRegister, UInt32 value);
+	UInt32   KLGetRegister(UInt32 klRegister);
 
 	static AudioI2SControl *create(AudioI2SInfo *theInfo) ;
 //	void *getIOStatusRegister_GPIO12(void) { return (ioStatusRegister_GPIO12); } ;			[3060321]

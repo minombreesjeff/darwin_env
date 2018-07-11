@@ -7,19 +7,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
@@ -105,16 +108,6 @@ bool AudioI2SControl::init(AudioI2SInfo *theInfo)
         DEBUG_IOLOG("AudioI2SControl::init ERROR: unable to setup ioBaseAddress and i2SInterfaceNumber\n");
     }
 
-	//	[3060321]	ioConfigurationBaseAddress is required by this object in order to enable the target
-	//				I2S I/O Module for which this object is to service.  The I2S I/O Module
-	//				enable occurs through the configuration registers which reside in the
-	//				first block of ioBase.		rbm		2 Oct 2002
-	if (NULL != ioBaseAddressMemory) {
-		ioConfigurationBaseAddress = (void *)ioBaseAddressMemory->map()->getVirtualAddress();
-	} else {
-		return false;
-	}
-
 	//
 	//	There are three sections of memory mapped I/O that are directly accessed by the AppleOnboardAudio.  These
 	//	include the GPIOs, I2S DMA Channel Registers and I2S control registers.  They fall within the memory map 
@@ -165,15 +158,14 @@ bool AudioI2SControl::init(AudioI2SInfo *theInfo)
 	//	control register.  This one action requires knowledge of the address 
 	//	of I/O configuration address space.		[3060321]	rbm		2 Oct 2002
 	if ( kUseI2SCell0 == i2SInterfaceNumber ) {
-		KLSetRegister ( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister ( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) | kI2S0InterfaceEnable );
+		KLSetRegister ( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S0InterfaceEnable );
 	} else {
-		KLSetRegister ( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister ( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) | kI2S1InterfaceEnable );
+		KLSetRegister ( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S1InterfaceEnable );
 	}
 
     DEBUG_IOLOG("- AudioI2SControl::init\n");
     return(true);
 }
-
 
 // --------------------------------------------------------------------------
 void AudioI2SControl::free()
@@ -284,7 +276,7 @@ void AudioI2SControl::setSerialFormatRegister(ClockSource clockSource, UInt32 mc
 	dataFormat = newDataFormat;				//	[3060321]	save this to verify value that was used to init!
 	SetDataWordSizesReg ( dataFormat );		//	[3060321]	rbm	2 Oct 2002	MUST OCCUR WHILE CLOCK IS STOPPED
 	// 3 restarts the clock:
-    clockRun(true);    
+    clockRun(true);
 }
 
 
@@ -433,40 +425,62 @@ UInt32 AudioI2SControl::GetCounterReg(void )
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 UInt32 AudioI2SControl::FCR1GetReg( void )
 {
-	return ReadWordLittleEndian ( ioConfigurationBaseAddress, kFCR1Offset );		//	[3060321]	FCR accessor to use ioConfigurationBaseAddress
+	return KLGetRegister(kFCR1Offset);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void AudioI2SControl::Fcr1SetReg(UInt32 value)
 {
-	WriteWordLittleEndian( ioConfigurationBaseAddress, kFCR1Offset, value );		//	[3060321]	FCR accessor to use ioConfigurationBaseAddress
+	KLSetRegister(kFCR1Offset, value);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 UInt32 AudioI2SControl::FCR3GetReg( void )
 {
-	return ReadWordLittleEndian ( ioConfigurationBaseAddress, kFCR3Offset );		//	[3060321]	FCR accessor to use ioConfigurationBaseAddress
+	return KLGetRegister(kFCR3Offset);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void AudioI2SControl::Fcr3SetReg(UInt32 value)
 {
-	WriteWordLittleEndian( ioConfigurationBaseAddress, kFCR3Offset, value );		//	[3060321]	FCR accessor to use ioConfigurationBaseAddress
+	KLSetRegister(kFCR3Offset, value);
 }
 
 // Access to Keylargo registers:
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//	[3110829] register accesses need to translate endian format.
-void AudioI2SControl::KLSetRegister(void *klRegister, UInt32 value)
+void AudioI2SControl::KLSetRegister(UInt32 klRegister, UInt32 value)
 {
-	OSWriteLittleInt32(klRegister, 0, value);
+    IOService *				keyLargoService = NULL;
+	UInt32					mask = kAudioFCR1Mask;
+	const OSSymbol *		theSymbol;
+	
+	theSymbol = OSSymbol::withCString("keyLargo_safeWriteRegUInt32");
+
+    keyLargoService = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
+
+    if (keyLargoService && theSymbol) {
+        keyLargoService->callPlatformFunction (theSymbol, false, (void *)klRegister, (void *)mask, (void *) value, 0);
+		theSymbol->release ();
+    } 
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//	[3110829] register accesses need to translate endian format.
-UInt32 AudioI2SControl::KLGetRegister(void *klRegister)
+UInt32 AudioI2SControl::KLGetRegister(UInt32 klRegister)
 {
-    return (OSReadLittleInt32(klRegister, 0));
+	UInt32					value = 0;
+    IOService *				keyLargoService = NULL;
+	const OSSymbol *		theSymbol;
+	
+	theSymbol = OSSymbol::withCString("keyLargo_safeReadRegUInt32");
+
+    keyLargoService = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
+
+    if (keyLargoService && theSymbol) {
+        keyLargoService->callPlatformFunction (theSymbol, false, (void *)klRegister, &value, 0, 0);
+		theSymbol->release ();
+    } 
+
+	return value;
 }
 
 // --------------------------------------------------------------------------
@@ -478,20 +492,20 @@ bool AudioI2SControl::clockRun(bool start)
     if (start) {
 		switch ( i2SInterfaceNumber ) {
 			case kUseI2SCell0:
-				KLSetRegister(((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) | kI2S0ClockEnable);
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S0ClockEnable);
 				break;
 			case kUseI2SCell1:
-				KLSetRegister(((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) | kI2S1ClockEnable);
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S1ClockEnable);
 				break;
 		}
     } else {
         UInt16 loop = 50;
 		switch ( i2SInterfaceNumber ) {
 			case kUseI2SCell0:
-				KLSetRegister(((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) & (~kI2S0ClockEnable));
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) & ~kI2S0ClockEnable);
 				break;
 			case kUseI2SCell1:
-				KLSetRegister(((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset, KLGetRegister( ((UInt8*)ioConfigurationBaseAddress) + kFCR1Offset ) & (~kI2S1ClockEnable));
+				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) & ~kI2S1ClockEnable);
 				break;
 		}
         

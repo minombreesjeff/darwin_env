@@ -84,7 +84,8 @@ protected:
     IOAudioLevelControl *		inGainRight;
     IOAudioSelectorControl *	inputSelector;
 	IOAudioSelectorControl *	outputSelector;			// This is a read only selector
-        
+	thread_call_t				mPowerThread;
+
 	// globals for the driver
 	unsigned long long			idleSleepDelayTime;
 	IOTimerEventSource *		idleTimer;
@@ -124,16 +125,18 @@ protected:
 	IOFixed 					mDefaultInMaxDB;
 	bool 						mRangeInChanged;	
 	
+	bool						mTerminating;
 	DualMonoModeType			mInternalMicDualMonoMode;	// aml 6.17.02
 	
 	UInt32						mProcessingParams[kMaxProcessingParamSize/sizeof(UInt32)];
 	bool						disableLoadingEQFromFile;
-
+	
 public:
 	// Classical Unix funxtions
     virtual bool init(OSDictionary *properties);
     virtual void free();
     virtual IOService* probe(IOService *provider, SInt32*);
+	virtual void stop (IOService *provider);
 
     bool     getMuteState();
     void     setMuteState(bool newMuteState);
@@ -161,7 +164,9 @@ public:
 
     virtual IOReturn inputSelectorChanged(SInt32 newValue);
 
-    virtual IOReturn performPowerStateChange(IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState,
+	static void performPowerStateChangeThread (AppleOnboardAudio * aoa, void * newPowerState);
+	static IOReturn performPowerStateChangeThreadAction (OSObject * owner, void * arg1, void * arg2, void * arg3, void * arg4);
+	virtual IOReturn performPowerStateChange (IOAudioDevicePowerState oldPowerState, IOAudioDevicePowerState newPowerState,
                                                                                             UInt32 *microsecondsUntilComplete);
 	virtual void setTimerForSleep ();
 	static void sleepHandlerTimer (OSObject *owner, IOTimerEventSource *sender);

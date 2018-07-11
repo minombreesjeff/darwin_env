@@ -16,6 +16,9 @@ extern "C" {
 extern vm_offset_t phystokv(vm_offset_t pa);
 };
 
+extern float gOldSample;
+extern float gOldInputSample;
+
 #define super IOAudioEngine
 
 OSDefineMetaClassAndStructors(AppleDBDMAAudioDMAEngine, super)
@@ -472,6 +475,9 @@ IOReturn AppleDBDMAAudioDMAEngine::performAudioEngineStart()
     if(ioBaseDMAInput)
         flush_dcache((vm_offset_t)dmaCommandBufferIn, commandBufferSize, false);
 
+	gOldSample = 0;
+	gOldInputSample = 0;
+
     filterState.xl_1 = 0.0;
     filterState.xr_1 = 0.0;
     filterState.xl_2 = 0.0;
@@ -655,6 +661,10 @@ UInt32 AppleDBDMAAudioDMAEngine::getCurrentSampleFrame()
 
 // This gets called when a new audio stream needs to be mixed into an already playing audio stream
 void AppleDBDMAAudioDMAEngine::resetClipPosition (IOAudioStream *audioStream, UInt32 clipSampleFrame) {
+
+	gOldSample = 0;
+	gOldInputSample = 0;
+
     if ((NULL != iSubBufferMemory) && (NULL != iSubEngine)) {
 				
         srcPhase = 1.0;			// aml 3.5.02
@@ -734,12 +744,14 @@ UInt32 CalculateOffset (UInt64 nanoseconds, UInt32 sampleRate);
 IOReturn clipAppleDBDMAToOutputStream(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 // [3134221] aml
 IOReturn clipAppleDBDMAToOutputStreamDelayRight(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+IOReturn clipAppleDBDMAToOutputStreamDelayRightBalance(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, float* leftVolume, float* rightVolume);
 IOReturn clipAppleDBDMAToOutputStreamInvertRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 IOReturn clipAppleDBDMAToOutputStreamMixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 
 IOReturn clipAppleDBDMAToOutputStreamiSub(const void *mixBuf, void *sampleBuf, PreviousValues *filterState, PreviousValues *filterState2, PreviousValues *phaseCompState, float *low, float *high, UInt32 firstSampleFrame, UInt32 numSampleFrames, UInt32 sampleRate, const IOAudioStreamFormat *streamFormat, SInt16 * iSubBufferMemory, UInt32 *loopCount, SInt32 *iSubBufferOffset, UInt32 iSubBufferLen, iSubAudioFormatType* iSubFormat, float* srcPhase, float* srcState, UInt32 adaptiveSampleRate);
 // [3134221] aml
 IOReturn clipAppleDBDMAToOutputStreamiSubDelayRight(const void *mixBuf, void *sampleBuf, PreviousValues *filterState, PreviousValues *filterState2, PreviousValues *phaseCompState, float *low, float *high, UInt32 firstSampleFrame, UInt32 numSampleFrames, UInt32 sampleRate, const IOAudioStreamFormat *streamFormat, SInt16 * iSubBufferMemory, UInt32 *loopCount, SInt32 *iSubBufferOffset, UInt32 iSubBufferLen, iSubAudioFormatType* iSubFormat, float* srcPhase, float* srcState, UInt32 adaptiveSampleRate);
+IOReturn clipAppleDBDMAToOutputStreamiSubDelayRightBalance(const void *mixBuf, void *sampleBuf, PreviousValues *filterState, PreviousValues *filterState2, PreviousValues *phaseCompState, float *low, float *high, UInt32 firstSampleFrame, UInt32 numSampleFrames, UInt32 sampleRate, const IOAudioStreamFormat *streamFormat, SInt16 * iSubBufferMemory, UInt32 *loopCount, SInt32 *iSubBufferOffset, UInt32 iSubBufferLen, iSubAudioFormatType* iSubFormat, float* srcPhase, float* srcState, UInt32 adaptiveSampleRate, float* leftVolume, float* rightVolume);
 IOReturn clipAppleDBDMAToOutputStreamiSubInvertRightChannel(const void *mixBuf, void *sampleBuf, PreviousValues *filterState, PreviousValues *filterState2, PreviousValues *phaseCompState, float *low, float *high, UInt32 firstSampleFrame, UInt32 numSampleFrames, UInt32 sampleRate, const IOAudioStreamFormat *streamFormat, SInt16 * iSubBufferMemory, UInt32 *loopCount, SInt32 *iSubBufferOffset, UInt32 iSubBufferLen, iSubAudioFormatType* iSubFormat, float* srcPhase, float* srcState, UInt32 adaptiveSampleRate);
 IOReturn clipAppleDBDMAToOutputStreamiSubMixRightChannel(const void *mixBuf, void *sampleBuf, PreviousValues *filterState, PreviousValues *filterState2, PreviousValues *phaseCompState, float *low, float *high, UInt32 firstSampleFrame, UInt32 numSampleFrames, UInt32 sampleRate, const IOAudioStreamFormat *streamFormat, SInt16 * iSubBufferMemory, UInt32 *loopCount, SInt32 *iSubBufferOffset, UInt32 iSubBufferLen, iSubAudioFormatType* iSubFormat, float* srcPhase, float* srcState, UInt32 adaptiveSampleRate);
 
@@ -749,23 +761,24 @@ IOReturn convertAppleDBDMAFromInputStream(const void *sampleBuf, void *destBuf, 
 // aml 5.10.02, adding input clip routine with software gain control
 // aml 6.17.02, added dual mono mode parameter
 IOReturn convertAppleDBDMAFromInputStreamWithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, float* inGainL, float* inGainR, DualMonoModeType inDualMonoMode);
+IOReturn convertAppleDBDMAFromInputStreamDelayRightWithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, float* inGainL, float* inGainR, DualMonoModeType inDualMonoMode);
 
 // aml 5.10.02 added utility functions
 void dBfixed2float(UInt32 indBfixed, float* ioGainPtr);
 void inputGainConverter(UInt32 inGainIndex, float* ioGainPtr);
 };
 
-// aml 5.10.02
-void AppleDBDMAAudioDMAEngine::setUseSoftwareInputGain(bool inUseSoftwareInputGain) { 
-    mUseSoftwareInputGain = inUseSoftwareInputGain; 
+void AppleDBDMAAudioDMAEngine::setRightChanDelayInput(const bool needsRightChanDelay)  // [3336743]
+{
+	fNeedsRightChanDelayInput = needsRightChanDelay;  
+	
+	return;   
+}
 
-#ifdef _AML_LOG_INPUT_GAIN // aml XXX testing
-    if (mUseSoftwareInputGain)
-        IOLog("AppleDBDMAAudioDMAEngine::setUseSoftwareInputGain, use SW input gain = TRUE.\n"); 
-    else
-        IOLog("AppleDBDMAAudioDMAEngine::setUseSoftwareInputGain, use SW input gain = FALSE.\n"); 
-#endif                    
-    
+// aml 5.10.02
+void AppleDBDMAAudioDMAEngine::setUseSoftwareInputGain(bool inUseSoftwareInputGain) 
+{
+    mUseSoftwareInputGain = inUseSoftwareInputGain;     
     return;   
 }
 
@@ -774,9 +787,6 @@ void AppleDBDMAAudioDMAEngine::setInputGainL(UInt32 inGainL) {
 
     if (mInputGainLPtr == NULL) {        
         mInputGainLPtr = (float *)IOMalloc(sizeof(float));
-#ifdef _AML_LOG_INPUT_GAIN // aml XXX testing
-        IOLog("AppleDBDMAAudioDMAEngine::setInputGainL - allocating mInputGainLPtr (0x%x).\n", mInputGainLPtr);   
-#endif                    
     }
     inputGainConverter(inGainL, mInputGainLPtr);
 	
@@ -788,13 +798,38 @@ void AppleDBDMAAudioDMAEngine::setInputGainR(UInt32 inGainR) {
 
     if (mInputGainRPtr == NULL) {        
         mInputGainRPtr = (float *)IOMalloc(sizeof(float));
-#ifdef _AML_LOG_INPUT_GAIN // aml XXX testing
-        IOLog("AppleDBDMAAudioDMAEngine::setInputGainR - allocating mInputGainRPtr (0x%x).\n", mInputGainRPtr);   
-#endif                    
     }
     inputGainConverter(inGainR, mInputGainRPtr);
 
     return;   
+} 
+
+
+void AppleDBDMAAudioDMAEngine::setBalanceAdjust(const bool needsBalanceAdjust)  
+{
+	fNeedsBalanceAdjust = needsBalanceAdjust;  
+	
+	return;   
+}
+
+void AppleDBDMAAudioDMAEngine::setLeftSoftVolume(UInt32 inVolume) 
+{
+	if (NULL != inVolume) {
+		mLeftSoftVolume = inVolume;
+    } else {
+		mLeftSoftVolume = 0x3F800000;
+	}
+	return;   
+} 
+
+void AppleDBDMAAudioDMAEngine::setRightSoftVolume(UInt32 inVolume) 
+{ 
+	if (NULL != inVolume) {
+		mRightSoftVolume = inVolume;
+    } else {
+		mRightSoftVolume = 0x3F800000;
+	}	
+	return;   
 } 
 
 IOReturn AppleDBDMAAudioDMAEngine::clipOutputSamples(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream)
@@ -1062,7 +1097,11 @@ IOReturn AppleDBDMAAudioDMAEngine::clipOutputSamples(const void *mixBuf, void *s
 		} else if (TRUE == fNeedsRightChanMixed) {
             result = clipAppleDBDMAToOutputStreamiSubMixRightChannel (mixBuf, sampleBuf, &filterState, &filterState2, &phaseCompState, lowFreqSamples, highFreqSamples, firstSampleFrame, numSampleFrames, sampleRate, streamFormat, (SInt16*)iSubBuffer, &iSubLoopCount, &iSubBufferOffset, iSubBufferLen, &iSubFormat, &srcPhase, &srcState, adaptiveSampleRate);
 		} else if (TRUE == fNeedsRightChanDelay) {	// [3134221] aml
-            result = clipAppleDBDMAToOutputStreamiSubDelayRight (mixBuf, sampleBuf, &filterState, &filterState2, &phaseCompState, lowFreqSamples, highFreqSamples, firstSampleFrame, numSampleFrames, sampleRate, streamFormat, (SInt16*)iSubBuffer, &iSubLoopCount, &iSubBufferOffset, iSubBufferLen, &iSubFormat, &srcPhase, &srcState, adaptiveSampleRate);
+			if (TRUE == fNeedsBalanceAdjust) {
+				result = clipAppleDBDMAToOutputStreamiSubDelayRightBalance (mixBuf, sampleBuf, &filterState, &filterState2, &phaseCompState, lowFreqSamples, highFreqSamples, firstSampleFrame, numSampleFrames, sampleRate, streamFormat, (SInt16*)iSubBuffer, &iSubLoopCount, &iSubBufferOffset, iSubBufferLen, &iSubFormat, &srcPhase, &srcState, adaptiveSampleRate, (float *)&mLeftSoftVolume, (float *)&mRightSoftVolume);
+			} else {
+				result = clipAppleDBDMAToOutputStreamiSubDelayRight (mixBuf, sampleBuf, &filterState, &filterState2, &phaseCompState, lowFreqSamples, highFreqSamples, firstSampleFrame, numSampleFrames, sampleRate, streamFormat, (SInt16*)iSubBuffer, &iSubLoopCount, &iSubBufferOffset, iSubBufferLen, &iSubFormat, &srcPhase, &srcState, adaptiveSampleRate);
+			}
 		} else {
             result = clipAppleDBDMAToOutputStreamiSub (mixBuf, sampleBuf, &filterState, &filterState2, &phaseCompState, lowFreqSamples, highFreqSamples, firstSampleFrame, numSampleFrames, sampleRate, streamFormat, (SInt16*)iSubBuffer, &iSubLoopCount, &iSubBufferOffset, iSubBufferLen, &iSubFormat, &srcPhase, &srcState, adaptiveSampleRate);
 		}
@@ -1081,7 +1120,11 @@ IOReturn AppleDBDMAAudioDMAEngine::clipOutputSamples(const void *mixBuf, void *s
 		} else if (TRUE == fNeedsRightChanMixed) {
 			result = clipAppleDBDMAToOutputStreamMixRightChannel(mixBuf, sampleBuf, firstSampleFrame, numSampleFrames, streamFormat);
 		} else if (TRUE == fNeedsRightChanDelay) { 	// [3134221] aml
-			result = clipAppleDBDMAToOutputStreamDelayRight(mixBuf, sampleBuf, firstSampleFrame, numSampleFrames, streamFormat);
+			if (TRUE == fNeedsBalanceAdjust) {
+				result = clipAppleDBDMAToOutputStreamDelayRightBalance(mixBuf, sampleBuf, firstSampleFrame, numSampleFrames, streamFormat, (float *)&mLeftSoftVolume, (float *)&mRightSoftVolume);
+			} else {
+				result = clipAppleDBDMAToOutputStreamDelayRight(mixBuf, sampleBuf, firstSampleFrame, numSampleFrames, streamFormat);
+			}
 		} else {
 			result = clipAppleDBDMAToOutputStream(mixBuf, sampleBuf, firstSampleFrame, numSampleFrames, streamFormat);
 		}
@@ -1093,7 +1136,11 @@ IOReturn AppleDBDMAAudioDMAEngine::clipOutputSamples(const void *mixBuf, void *s
 IOReturn AppleDBDMAAudioDMAEngine::convertInputSamples(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream)
 {
 	if (mUseSoftwareInputGain) {
-		return convertAppleDBDMAFromInputStreamWithGain(sampleBuf, destBuf, firstSampleFrame, numSampleFrames, streamFormat, mInputGainLPtr, mInputGainRPtr, mInputDualMonoMode);
+		if (fNeedsRightChanDelayInput) {	// [3336743]
+			return convertAppleDBDMAFromInputStreamDelayRightWithGain(sampleBuf, destBuf, firstSampleFrame, numSampleFrames, streamFormat, mInputGainLPtr, mInputGainRPtr, mInputDualMonoMode);
+		} else {
+			return convertAppleDBDMAFromInputStreamWithGain(sampleBuf, destBuf, firstSampleFrame, numSampleFrames, streamFormat, mInputGainLPtr, mInputGainRPtr, mInputDualMonoMode);
+		}	
 	} else {
 		return convertAppleDBDMAFromInputStream(sampleBuf, destBuf, firstSampleFrame, numSampleFrames, streamFormat, mInputDualMonoMode);
 	}

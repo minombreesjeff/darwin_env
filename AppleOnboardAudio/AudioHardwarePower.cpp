@@ -227,10 +227,16 @@ IOReturn AudioProj6PowerObject::setHardwarePowerOff(){
     
     powerRegAdrr = kPowerObjectOffset;
     if(HeathRow) {
-        mask = kPowerObjectMask;
-        data = kPowerOff;
-        HeathRow->callPlatformFunction(OSSymbol::withCString("heathrow_safeWriteRegUInt32"), false, 
-                                                                (void *)powerRegAdrr, (void *)mask, (void *) data, 0);
+		const OSSymbol *				theSymbol;
+	
+		theSymbol = OSSymbol::withCString("heathrow_safeWriteRegUInt32");
+        
+		if (theSymbol) {
+			mask = kPowerObjectMask;
+			data = kPowerOff;
+			HeathRow->callPlatformFunction(theSymbol, false, (void *)powerRegAdrr, (void *)mask, (void *) data, 0);
+			theSymbol->release ();
+		}
     } 
 
     DEBUG2_IOLOG("- AudioProj6PowerObject::setHardwarePowerOff, %d\n", kIOReturnSuccess == result);
@@ -249,11 +255,17 @@ IOReturn AudioProj6PowerObject::setHardwarePowerOn(){
 
     powerRegAdrr = kPowerObjectOffset;
     if(HeathRow) {
-        mask = kPowerObjectMask;
-        data = kPowerOn;        
-        HeathRow->callPlatformFunction(OSSymbol::withCString("heathrow_safeWriteRegUInt32"), false, 
-                                                                (void *)powerRegAdrr, (void *)mask, (void *) data, 0);
-        IOSleep(10);
+ 		const OSSymbol *				theSymbol;
+	
+		theSymbol = OSSymbol::withCString("heathrow_safeWriteRegUInt32");
+        
+		if (theSymbol) {
+			mask = kPowerObjectMask;
+			data = kPowerOn;        
+			HeathRow->callPlatformFunction(theSymbol, false, (void *)powerRegAdrr, (void *)mask, (void *) data, 0);
+			IOSleep(10);
+			theSymbol->release ();
+		}
     }
     
     if(audioPluginRef) {

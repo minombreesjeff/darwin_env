@@ -8,19 +8,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").	You may not use this file except in compliance with the
- * License.	 Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  *
@@ -75,6 +78,10 @@ bool AppleTexasAudio::init(OSDictionary *properties)
 	gVolMuteActive = false;
 	gModemSoundActive = false;
 
+	mKeyLargoPowerI2SSymbol = OSSymbol::withCString ("keyLargo_powerI2S");
+	if (NULL == mKeyLargoPowerI2SSymbol)	
+		return false;
+
 	debugIOLog("- AppleTexasAudio::init\n");
 	return true;
 }
@@ -118,6 +125,8 @@ void AppleTexasAudio::free()
 	publishResource (gAppleAudioVideoJackStateKey, NULL);
 	CLEAN_RELEASE(headphoneIntEventSource);
 	CLEAN_RELEASE(dallasIntEventSource);
+
+	CLEAN_RELEASE(mKeyLargoPowerI2SSymbol);
 
 	super::free();
 	debugIOLog("- AppleTexasAudio::free\n");
@@ -1081,7 +1090,6 @@ IOReturn AppleTexasAudio::sndHWSetPowerState (IOAudioDevicePowerState theState) 
 			} else {
 				result = performDeviceWake ();
 			}
-			completePowerStateChange ();
 			break;
 		case kIOAudioDeviceIdle:
 			result = performDeviceIdleSleep ();
@@ -1117,8 +1125,8 @@ IOReturn AppleTexasAudio::performDeviceIdleSleep () {
     if (NULL != keyLargo) {
 		// ...and turn off the i2s clocks...
 		switch ( i2SInterfaceNumber ) {
-			case kUseI2SCell0:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)false, (void *)0, 0, 0);	break;
-			case kUseI2SCell1:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)false, (void *)1, 0, 0);	break;
+			case kUseI2SCell0:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)false, (void *)0, 0, 0);	break;
+			case kUseI2SCell1:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)false, (void *)1, 0, 0);	break;
 		}
 	}
 
@@ -1138,8 +1146,8 @@ IOReturn AppleTexasAudio::performDeviceIdleWake () {
     if (NULL != keyLargo) {
 		// Turn on the i2s clocks...
 		switch ( i2SInterfaceNumber ) {
-			case kUseI2SCell0:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)true, (void *)0, 0, 0);	break;
-			case kUseI2SCell1:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)true, (void *)1, 0, 0);	break;
+			case kUseI2SCell0:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)true, (void *)0, 0, 0);	break;
+			case kUseI2SCell1:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)true, (void *)1, 0, 0);	break;
 		}
 	}
 
@@ -1225,8 +1233,8 @@ IOReturn AppleTexasAudio::performDeviceSleep () {
     if (NULL != keyLargo) {
 		// ...and turn off the i2s clocks...
 		switch ( i2SInterfaceNumber ) {
-			case kUseI2SCell0:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)false, (void *)0, 0, 0);	break;
-			case kUseI2SCell1:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)false, (void *)1, 0, 0);	break;
+			case kUseI2SCell0:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)false, (void *)0, 0, 0);	break;
+			case kUseI2SCell1:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)false, (void *)1, 0, 0);	break;
 		}
 	}
 
@@ -1252,8 +1260,8 @@ IOReturn AppleTexasAudio::performDeviceWake () {
     if (NULL != keyLargo) {
 		// ...turn on the i2s clocks...
 		switch ( i2SInterfaceNumber ) {
-			case kUseI2SCell0:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)true, (void *)0, 0, 0);	break;
-			case kUseI2SCell1:	keyLargo->callPlatformFunction (OSSymbol::withCString ("keyLargo_powerI2S"), false, (void *)true, (void *)1, 0, 0);	break;
+			case kUseI2SCell0:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)true, (void *)0, 0, 0);	break;
+			case kUseI2SCell1:	keyLargo->callPlatformFunction (mKeyLargoPowerI2SSymbol, false, (void *)true, (void *)1, 0, 0);	break;
 		}
 	}
 
@@ -1692,6 +1700,7 @@ Exit:
 	return;
 }
 
+#if 0
 //	===========================================================================================
 //	Override the AppleOnboardAudio implementation here as part of [3103075].  This is necessary
 //	because any jack state changes are deferred while the audio system is sleeping.  We need
@@ -1748,6 +1757,7 @@ IOReturn AppleTexasAudio::performPowerStateChange(IOAudioDevicePowerState oldPow
 
 	return result;
 }
+#endif
 
 #pragma mark +DIRECT HARDWARE MANIPULATION
 // --------------------------------------------------------------------------

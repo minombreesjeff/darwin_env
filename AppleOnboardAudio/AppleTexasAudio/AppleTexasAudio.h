@@ -159,6 +159,8 @@ protected:
 	// information specific to the chip
 	Boolean					gModemSoundActive;
 	Boolean					dontReleaseHPMute;
+	
+	const OSSymbol *		mKeyLargoPowerI2SSymbol;
 
 #if 0
 	// holds the current frame rate settings:
