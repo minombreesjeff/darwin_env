@@ -672,7 +672,7 @@ bool AppleIntelPIIXATARoot::serializeProperties( OSSerialize * s ) const
     if ( _provider )
     {
         // Dump the timing registers for debugging.
-        sprintf( timingString, "0x40=%08lx 0x44=%08lx 0x48=%08lx 0x54=%04x",
+        snprintf( timingString, sizeof ( timingString ), "0x40=%08lx 0x44=%08lx 0x48=%08lx 0x54=%04x",
                  _provider->configRead32( 0x40 ),
                  _provider->configRead32( 0x44 ),
                  _provider->configRead32( 0x48 ),

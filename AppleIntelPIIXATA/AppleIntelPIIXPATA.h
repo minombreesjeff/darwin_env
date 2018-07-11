@@ -186,6 +186,11 @@ public:
     virtual IOReturn createChannelCommands( void );
 
     virtual bool freeDMAChannel( void );
+	
+    /* Optional IOPCIATA override to prevent spurius interrupts */
+	
+	virtual IOReturn selectDevice( ataUnitID unit );
+
 };
 
 #endif /* !_APPLEINTELPIIXPATA_H */

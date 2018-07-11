@@ -25,6 +25,7 @@
 #include <IOKit/IOMessage.h>
 #include <IOKit/IOKitKeys.h>
 #include "AppleIntelPIIXPATA.h"
+#include <IOKit/IOLocksPrivate.h>
 
 #define super IOPCIATA
 OSDefineMetaClassAndStructors( AppleIntelPIIXPATA, IOPCIATA )
@@ -58,6 +59,68 @@ OSDefineMetaClassAndStructors( AppleIntelPIIXPATA, IOPCIATA )
 // up to 2048 ATA sectors per transfer
 
 #define kMaxATAXfer      512 * 2048
+
+class AppleIntelPIIXPATAWorkLoop : public IOWorkLoop
+{
+	OSDeclareDefaultStructors ( AppleIntelPIIXPATAWorkLoop );
+	
+public:
+	static AppleIntelPIIXPATAWorkLoop * workLoop ( void );
+	
+protected:
+	
+	bool init ( void );
+	void free ( void );
+	
+	lck_grp_t *		fLockGroup;
+	
+};
+
+OSDefineMetaClassAndStructors ( AppleIntelPIIXPATAWorkLoop, IOWorkLoop );
+
+AppleIntelPIIXPATAWorkLoop * AppleIntelPIIXPATAWorkLoop::workLoop()
+{
+    AppleIntelPIIXPATAWorkLoop *loop;
+    
+    loop = new AppleIntelPIIXPATAWorkLoop;
+    if(!loop)
+        return loop;
+    if(!loop->init()) {
+        loop->release();
+        loop = NULL;
+    }
+    return loop;
+}
+
+bool
+AppleIntelPIIXPATAWorkLoop::init ( void )
+{
+	
+	char	name[64];
+	
+	snprintf ( name, 64, "PATA" );
+	fLockGroup = lck_grp_alloc_init ( name, LCK_GRP_ATTR_NULL );
+	if ( fLockGroup )
+	{
+		gateLock = IORecursiveLockAllocWithLockGroup ( fLockGroup );
+	}
+	
+	return IOWorkLoop::init ( );
+}
+
+void AppleIntelPIIXPATAWorkLoop::free ( void )
+{
+	
+	if ( fLockGroup )
+	{
+		lck_grp_free ( fLockGroup );
+		fLockGroup = NULL;
+	}
+	
+	IOWorkLoop::free ( );
+	
+}
+
 
 /*---------------------------------------------------------------------------
  *
@@ -167,6 +230,11 @@ bool AppleIntelPIIXPATA::start( IOService * provider )
         IOLog("%s: interrupt registration error\n", getName());
         goto fail;
     }
+	
+	// clean up any interrupt glitches left over from powering down the drive. 
+	*_bmStatusReg = kPIIX_IO_BMISX_IDEINTS;
+	
+	// enable interrupts
     _intSrc->enable();
 
     // Attach to power management.
@@ -343,7 +411,7 @@ IOWorkLoop * AppleIntelPIIXPATA::getWorkLoop( void ) const
     DLOG("%s::%s()\n", getName(), __FUNCTION__);
 
     return ( _workLoop ) ? _workLoop :
-                           IOWorkLoop::workLoop();
+                           AppleIntelPIIXPATAWorkLoop::workLoop();
 }
 
 /*---------------------------------------------------------------------------
@@ -374,6 +442,7 @@ IOReturn AppleIntelPIIXPATA::synchronousIO( void )
 
     if (_intSrc) _intSrc->disable();
     ret = super::synchronousIO();
+	*_bmStatusReg = kPIIX_IO_BMISX_IDEINTS;
     if (_intSrc) _intSrc->enable();
 
     return ret;
@@ -643,7 +712,7 @@ IOATAController::transState
 AppleIntelPIIXPATA::determineATAPIState(void)
 {
 	IOATAController::transState			drivePhase = super::determineATAPIState();
-	if(  _currentCommand->state > drivePhase
+	if(  ( IOATAController::transState ) _currentCommand->state > drivePhase
 		|| _currentCommand->state == kATAStarted )
 	{
 		return (IOATAController::transState) _currentCommand->state;
@@ -1239,7 +1308,7 @@ IOReturn AppleIntelPIIXPATA::createChannelCommands( void )
 		if ( ( DMAStatus != kIOReturnSuccess ) || ( numSegments != 1 ) || ( physSegment32.fLength == 0 ) )
 		{
 			
-			panic ( "AppleIntelPIIXPATA::createChannelCommands [%d] status %lx segs %d phys %qx:%qx \n", __LINE__, DMAStatus, numSegments, physSegment32.fIOVMAddr, physSegment32.fLength );
+			panic ( "AppleIntelPIIXPATA::createChannelCommands [%d] status %x segs %d phys %x:%x \n", __LINE__, DMAStatus, ( int ) numSegments, ( int ) physSegment32.fIOVMAddr, ( int ) physSegment32.fLength );
 		    break;
 		    
 		}
@@ -1594,7 +1663,7 @@ AppleIntelPIIXPATA::mediaInterestHandler( void* target,
 										void* messageArgument,
 										vm_size_t argSize)
 {
-	bool result = kIOReturnSuccess;
+	IOReturn result = kIOReturnSuccess;
 	
 	
 	// target is this pointer
@@ -1684,4 +1753,30 @@ AppleIntelPIIXPATA::handleInsert( void )
 
 	return kIOReturnSuccess;
 }
+
+
+IOReturn
+AppleIntelPIIXPATA::selectDevice( ataUnitID unit )
+{
+	
+	DLOG("AppleIntelPIIXPATA selectDevice\n");
+	
+	IOReturn result = kIOReturnSuccess;
+	
+	// temporarily disable interrupts
+    if (_intSrc) _intSrc->disable();
+	
+	// let the superclass switch drives
+	result = super::selectDevice( unit );
+	
+	// clean up any interrupt glitches left over from switching drives.
+	*_bmStatusReg = kPIIX_IO_BMISX_IDEINTS;
+	
+	// re-eanble interrupts
+    if (_intSrc) _intSrc->enable();
+	
+	return result;
+	
+}
+
 
