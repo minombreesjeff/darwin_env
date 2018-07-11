@@ -19,16 +19,9 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-/*
- *   TAS3001C - Texas 
- *
- *   Notes:
- *
- *
- */
 
-#ifndef __TEXAS_HW__
-#define __TEXAS_HW__
+#ifndef __TEXAS2_HW__
+#define __TEXAS2_HW__
 
 #include <libkern/OSTypes.h>
 
@@ -59,10 +52,13 @@
 #define		kDontRestoreOnNormal		0
 #define		kRestoreOnNormal			1
 
-#define		kNumberOfBiquadsPerChannel				6
-#define		kNumberOfCoefficientsPerBiquad			5
-#define		kNumberOfBiquadCoefficientsPerChannel	( kNumberOfBiquadsPerChannel * kNumberOfCoefficientsPerBiquad )
-#define		kNumberOfBiquadCoefficients				( kNumberOfBiquadCoefficientsPerChannel * kTumblerMaxStreamCnt )
+#define		kNumberOfBiquadsPerChannel						6
+#define		kNumberOfTexas2BiquadsPerChannel				7
+#define		kNumberOfCoefficientsPerBiquad					5
+#define		kNumberOfBiquadCoefficientsPerChannel			( kNumberOfBiquadsPerChannel * kNumberOfCoefficientsPerBiquad )
+#define		kNumberOfBiquadCoefficients						( kNumberOfBiquadCoefficientsPerChannel * kTexas2MaxStreamCnt )
+#define		kNumberOfTexas2BiquadCoefficientsPerChannel		( kNumberOfTexas2BiquadsPerChannel * kNumberOfCoefficientsPerBiquad )
+#define		kNumberOfTexas2BiquadCoefficients				( kNumberOfTexas2BiquadCoefficientsPerChannel * kTexas2MaxStreamCnt )
 /*
  * Status register:
  */
@@ -75,42 +71,42 @@ enum {
 	i2cBusSubAddrAVOL		= 0x02,
 	i2cBusSubaddrGCFG		= 0x03,
 
-	kSRC_48SR_REG			= 0x00,		              // 32 - 48 KHz default
-	kSRC_32SR_REG			= 0x01,		     	      // 26 - 32 KHz
-	kSRC_24SR_REG			= 0x02,			      // 20 - 26 KHz
-	kSRC_16SR_REG			= 0x03,			      // 14 - 20 KHz
-	kSRC_12SR_REG			= 0x04,			      // 10 - 14 KHz
-	kSRC_8SR_REG			= 0x05,			      // 8 - 10 KHz
-	kSRC_Auto_REG			= 0x06,			      // autoselect
+	kSRC_48SR_REG			= 0x00,				// 32 - 48 KHz default
+	kSRC_32SR_REG			= 0x01,				// 26 - 32 KHz
+	kSRC_24SR_REG			= 0x02,				// 20 - 26 KHz
+	kSRC_16SR_REG			= 0x03,				// 14 - 20 KHz
+	kSRC_12SR_REG			= 0x04,				// 10 - 14 KHz
+	kSRC_8SR_REG			= 0x05,				// 8 - 10 KHz
+	kSRC_Auto_REG			= 0x06,				// autoselect
 	kSampleRateControlMask  = 0x07
 };
 
 enum {
-	kClockSourceMask		=	(3<<30),	  // mask off clock sources
-	kClockSource18MHz		=	(0<<30),	 // select 18 MHz clock base
-	kClockSource45MHz		=	(1<<30),	 // select 45 MHz clock base
-	kClockSource49MHz		=	(2<<30),	 // select 49 MHz clock base
+	kClockSourceMask		=	(3<<30),		// mask off clock sources
+	kClockSource18MHz		=	(0<<30),		// select 18 MHz clock base
+	kClockSource45MHz		=	(1<<30),		// select 45 MHz clock base
+	kClockSource49MHz		=	(2<<30),		// select 49 MHz clock base
 	kMClkDivisorShift		=	24,			    // shift to position value in MClk divisor field
-	kMClkDivisorMask		=	(0x1F<<24),// mask MClk divisor field
-	kMClkDivisor1			=	(0x14<<24),	 // MClk == clock source
-	kMClkDivisor3			=	(0x13<<24),	 // MClk == clock source/3
-	kMClkDivisor5			=	(0x12<<24),	 // MClk == clock source/5
+	kMClkDivisorMask		=	(0x1F<<24),		// mask MClk divisor field
+	kMClkDivisor1			=	(0x14<<24),	 	// MClk == clock source
+	kMClkDivisor3			=	(0x13<<24),		// MClk == clock source/3
+	kMClkDivisor5			=	(0x12<<24),		// MClk == clock source/5
 	kSClkDivisorShift		=	20,			    // shift to position value in SClk divisor field
-	kSClkDivisorMask		=	(0xF<<20),	// mask SClk divisor field
+	kSClkDivisorMask		=	(0xF<<20),		// mask SClk divisor field
 	kSClkDivisor1			=	(8<<20),	    // SClk == MClk
 	kSClkDivisor3			=	(9<<20),	    // SClk == MClk/3
-	kSClkMaster				=	(1<<19),	     // SClk in master mode
-	kSClkSlave				=	(0<<19),	      // SClk in slave mode
-	kSerialFormatShift		=	16,			   // shift to position value in I2S serial format field
-	kSerialFormatMask		=	(7<<16),	 // mask serial format field
-	kSerialFormatSony		=	(0<<16),	 // Sony mode
-	kSerialFormat64x		=	(1<<16),	  // I2S 64x mode
-	kSerialFormat32x		=	(2<<16),	  // I2S 32x mode
-	kSerialFormatDAV		=	(4<<16),	  // DAV mode
-	kSerialFormatSiliLabs	=	(5<<16),	  // Silicon Labs mode
+	kSClkMaster				=	(1<<19),		// SClk in master mode
+	kSClkSlave				=	(0<<19),		// SClk in slave mode
+	kSerialFormatShift		=	16,				// shift to position value in I2S serial format field
+	kSerialFormatMask		=	(7<<16),		// mask serial format field
+	kSerialFormatSony		=	(0<<16),		// Sony mode
+	kSerialFormat64x		=	(1<<16),		// I2S 64x mode
+	kSerialFormat32x		=	(2<<16),		// I2S 32x mode
+	kSerialFormatDAV		=	(4<<16),		// DAV mode
+	kSerialFormatSiliLabs	=	(5<<16),		// Silicon Labs mode
 	kExtSampleFreqIntShift	=	12,			    // shift to position for external sample frequency interrupt
-	kExtSampleFreqIntMask	=	(0xF<<12),	// mask external sample frequency interrupt field
-	kExtSampleFreqMask		=	0xFFF		      // mask for external sample frequency
+	kExtSampleFreqIntMask	=	(0xF<<12),		// mask external sample frequency interrupt field
+	kExtSampleFreqMask		=	0xFFF			// mask for external sample frequency
 };
 
 /*
@@ -284,73 +280,131 @@ static IOFixed	volumedBTable[] = {
 #pragma mark -
 #pragma mark ¥¥¥¥¥¥¥¥ TAS3001C Registers ¥¥¥¥¥¥¥¥
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-enum TAS3001Registers {					//	Specification downloadable at <http://www.ti.com> or <http://www.ti.com/sc/docs/products/analog/tas3001.html>
-										//	Bytes	Byte Description (bit encoding interleaved with register address where appropriate)
-	kMainCtrlReg			=	0x01,
-	kFL						=	7,		//	N.......	[bit address]	Load Mode:		0 = normal,		1 = Fast Load
-	kSC						=	6,		//	.N......	[bit address]	SCLK frequency:	0 = 32 fs,		1 = 64 fs
-	kE0						=	4,		//	..NN....	[bit address]	Output Serial Mode
-	kF0						=	2,		//	....NN..	[bit address]	Input Serial Mode
-	kW0						=	0,		//	......NN	[bit address]	Serial Port Word Length
+enum Texas2Registers {
+	kTexas2MainCtrl1Reg					=	0x01,	//	 1		C(7-0)
+	kFL									=	7,		//	N.......	[bit address]	Load Mode:		0 = normal,		1 = Fast Load
+	kSC									=	6,		//	.N......	[bit address]	SCLK frequency:	0 = 32 fs,		1 = 64 fs
+	kE0									=	4,		//	..NN....	[bit address]	Output Serial Mode
+	kF0									=	0,		//	....10..	[bit address]	
+	kW0									=	0,		//	......NN	[bit address]	Serial Port Word Length
+
+	kNormalLoad							=	0,		//	use:	( kNormalLoad << kFL )
+	kFastLoad							=	1,		//	use:	( kFastLoad << kFL )
 	
-	kNormalLoad				=	0,		//	use:	( kNormalLoad << kFL )
-	kFastLoad				=	1,		//	use:	( kFastLoad << kFL )
+	kSerialModeLeftJust					=	0,		//	use:	( kSerialModeLeftJust << kEO ) ÉORÉ ( kSerialModeLeftJust << kFO )
+	kSerialModeRightJust				=	1,		//	use:	( kSerialModeRightJust << kEO ) ÉORÉ ( kSerialModeRightJust << kFO )
+	kSerialModeI2S						=	2,		//	use:	( kSerialModeI2S << kEO ) ÉORÉ ( kSerialModeI2S << kFO )
 	
-	kSerialModeLeftJust		=	0,		//	use:	( kSerialModeLeftJust << kEO ) ÉORÉ ( kSerialModeLeftJust << kFO )
-	kSerialModeRightJust	=	1,		//	use:	( kSerialModeRightJust << kEO ) ÉORÉ ( kSerialModeRightJust << kFO )
-	kSerialModeI2S			=	2,		//	use:	( kSerialModeI2S << kEO ) ÉORÉ ( kSerialModeI2S << kFO )
+	kSerialWordLength16					=	0,		//	use:	( kSerialWordLength16 << kWO )
+	kSerialWordLength18					=	1,		//	use:	( kSerialWordLength18 << kWO )
+	kSerialWordLength20					=	2,		//	use:	( kSerialWordLength20 << kWO )
 	
-	kSerialWordLength16		=	0,		//	use:	( kSerialWordLength16 << kWO )
-	kSerialWordLength18		=	1,		//	use:	( kSerialWordLength18 << kWO )
-	kSerialWordLength20		=	2,		//	use:	( kSerialWordLength20 << kWO )
+	k32fs								=	0,		//	use:	( k32fs << kSC )
+	k64fs								=	1,		//	use:	( k64fs << kSC )
 	
-	k32fs					=	0,		//	use:	( k32fs << kSC )
-	k64fs					=	1,		//	use:	( k64fs << kSC )
+	kI2SMode							=	( kSerialModeI2S << kE0 ) | ( 2 << kF0 ),
+	kLeftJustMode						=	( kSerialModeLeftJust << kE0 ) | ( kSerialModeLeftJust << kF0 ),
+	kRightJustMode						=	( kSerialModeRightJust << kE0 ) | ( kSerialModeRightJust << kF0 ),
 	
-	kI2SMode				=	( kSerialModeI2S << kE0 ) | ( kSerialModeI2S << kF0 ),
-	kLeftJustMode			=	( kSerialModeLeftJust << kE0 ) | ( kSerialModeLeftJust << kF0 ),
-	kRightJustMode			=	( kSerialModeRightJust << kE0 ) | ( kSerialModeRightJust << kF0 ),
+	kTexas2DynamicRangeCtrlReg			=	0x02,	//	 5		RATIO(7-0), THRESHOLD(7-0), ENERGY(7-0), ATTACK(7-0), DECAY(7-0)
+	kTexas2VolumeCtrlReg				=	0x04,	//	 6		VL(23-16), VL(15-8), VL(7-0), VR(23-16), VR(15-8), VR(7-0)
+	kTexas2TrebleCtrlReg				=	0x05,	//	 1		T(7-0)
+	kTexas2BassCtrlReg					=	0x06,	//	 1		B(7-0)
+	kTexas2MixerLeftGainReg				=	0x07,	//	 9		S1L(23-16), S1L(15-8), S1L(7-0)
+													//			S2L(23-16), S2L(15-8), S2L(7-0)
+													//			AIL(23-16), AIL(15-8), AIL(7-0)
+	kTexas2MixerRightGainReg			=	0x08,	//	 9		S1R(23-16), S1R(15-8), S1R(7-0)
+													//			S2R(23-16), S2R(15-8), S2R(7-0)
+													//			AIR(23-16), AIR(15-8), AIR(7-0)
+	kTexas2LeftBiquad0CtrlReg			=	0x0A,	//	15		B0(23-16), B0(15-8), B0(7-0), 
+													//			B1(23-16), B1(15-8), B1(7-0), 
+													//			B2(23-16), B2(15-8), B2(7-0), 
+													//			A1(23-16), A1(15-8), A1(7-0), 
+													//			A2(23-16), A2(15-8), A2(7-0)
+	kTexas2LeftBiquad1CtrlReg			=	0x0B,	//	15		(same format as kLeftBiquad0CtrlReg)
+	kTexas2LeftBiquad2CtrlReg			=	0x0C,	//	15		(same format as kLeftBiquad0CtrlReg)
+	kTexas2LeftBiquad3CtrlReg			=	0x0D,	//	15		(same format as kLeftBiquad0CtrlReg)
+	kTexas2LeftBiquad4CtrlReg			=	0x0E,	//	15		(same format as kLeftBiquad0CtrlReg)
+	kTexas2LeftBiquad5CtrlReg			=	0x0F,	//	15		(same format as kLeftBiquad0CtrlReg)
+	kTexas2LeftBiquad6CtrlReg			=	0x10,	//	15		(same format as kLeftBiquad0CtrlReg)
 	
-	kDynamicRangeCtrlReg	=	0x02,	//	2		DRC Byte 1 (7-0), DRC Byte 2 (7-0)
-	kEN						=	0,		//	.......N	[bit address]	Enable:			0 = disable,	1 = enable
-	kCR						=	6,		//	NN......	[bit address]	Compression Ratio
-	kCompression3to1		=	3,		//	only valid compression ration is 3:1
-										//	Byte[1] of dynamic range compressor is nibble map packed array
-	
-	kDrcDisable				=	0,		//	use:	( kDrcDisable << kEN )
-	kDrcEnable				=	1,		//	use:	( kDrcEnable << kEN )
-	kDefaultCompThld		=	0xA0,	//	default compression threshold (Larry Heyl provided this setting)
-	
-	kVolumeCtrlReg			=	0x04,	//	6		VL(23-16), VL(15-8), VL(7-0), VR(23-16), VR(15-8), VR(7-0)
-	
-	kTrebleCtrlReg			=	0x05,	//	1		T(7-0)
-	
-	kBassCtrlReg			=	0x06,	//	1		B(7-0)
-	
-	kMixer1CtrlReg			=	0x07,	//	3		S(23-16), S(15-8), S(7-0)
-	
-	kMixer2CtrlReg			=	0x08,	//	3		S(23-16), S(15-8), S(7-0)
-	
-	kLeftBiquad0CtrlReg		=	0x0A,	//	15		B0(23-16), B0(15-8), B0(7-0), 
-										//			B1(23-16), B1(15-8), B1(7-0), 
-										//			B2(23-16), B2(15-8), B2(7-0), 
-										//			A1(23-16), A1(15-8), A1(7-0), 
-										//			A2(23-16), A2(15-8), A2(7-0)
-										
-	kLeftBiquad1CtrlReg		=	0x0B,	//	15		(same format as kLeftBiquad0CtrlReg)
-	kLeftBiquad2CtrlReg		=	0x0C,	//	15		(same format as kLeftBiquad0CtrlReg)
-	kLeftBiquad3CtrlReg		=	0x0D,	//	15		(same format as kLeftBiquad0CtrlReg)
-	kLeftBiquad4CtrlReg		=	0x0E,	//	15		(same format as kLeftBiquad0CtrlReg)
-	kLeftBiquad5CtrlReg		=	0x0F,	//	15		(same format as kLeftBiquad0CtrlReg)
-	
-	kRightBiquad0CtrlReg	=	0x13,	//	15		(same format as kLeftBiquad0CtrlReg)
-	kRightBiquad1CtrlReg	=	0x14,	//	15		(same format as kRightBiquad0CtrlReg)
-	kRightBiquad2CtrlReg	=	0x15,	//	15		(same format as kRightBiquad0CtrlReg)
-	kRightBiquad3CtrlReg	=	0x16,	//	15		(same format as kRightBiquad0CtrlReg)
-	kRightBiquad4CtrlReg	=	0x17,	//	15		(same format as kRightBiquad0CtrlReg)
-	kRightBiquad5CtrlReg	=	0x18	//	15		(same format as kRightBiquad0CtrlReg)
+	kTexas2RightBiquad0CtrlReg			=	0x13,	//	15		(same format as kLeftBiquad0CtrlReg)
+	kTexas2RightBiquad1CtrlReg			=	0x14,	//	15		(same format as kRightBiquad0CtrlReg)
+	kTexas2RightBiquad2CtrlReg			=	0x15,	//	15		(same format as kRightBiquad0CtrlReg)
+	kTexas2RightBiquad3CtrlReg			=	0x16,	//	15		(same format as kRightBiquad0CtrlReg)
+	kTexas2RightBiquad4CtrlReg			=	0x17,	//	15		(same format as kRightBiquad0CtrlReg)
+	kTexas2RightBiquad5CtrlReg			=	0x18,	//	15		(same format as kRightBiquad0CtrlReg)
+	kTexas2RightBiquad6CtrlReg			=	0x19,	//	15		(same format as kRightBiquad0CtrlReg)
+	kTexas2LeftLoudnessBiquadReg		=	0x21,	//	15		(same format as kRightBiquad0CtrlReg)
+	kTexas2RightLoudnessBiquadReg		=	0x22,	//	15		(same format as kRightBiquad0CtrlReg)
+	kTexas2LeftLoudnessBiquadGainReg	=	0x23,	//	 3		LBG(23-16), LBG(15-8), LBG(7-0)
+	kTexas2RightLoudnessBiquadGainReg	=	0x24,	//	 3		RBG(23-16), RBG(15-8), RBG(7-0)
+	kTexas2TestReg						=	0x29,	//	10		RESERVED
+	kTexas2AnalogControlReg				=	0x40,	//	 1		Anal_ctrl(7-0)
+	kTexas2Test0x41Reg					=	0x41,	//	 1
+	kTexas2Text0x42Reg					=	0x42,	//	 1
+	kTexas2MainCtrl2Reg					=	0x43	//	 1		MCR2(7-0)
 };
 
+enum AnalogControlReg {
+	kADM					=	7,
+	kLRB					=	6,
+	kDM						=	2,
+	kDM0					=	2,
+	kDM1					=	3,
+	kINP					=	1,
+	kAPD					=	0,
+	
+	kADMNormal				=	0,		//	use:	( kADMNormal << kADM )
+	kADMBInputsMonaural		=	1,		//	use:	( kADMBInputsMonaural << kADM )
+	
+	kLeftInputForMonaural	=	0,		//	use:	( kLeftInputForMonaural << kLRB )
+	kRightInputForMonaural	=	1,		//	use:	( kRightInputForMonaural << kLRB )
+	
+	kDeEmphasisOFF			=	0,		//	use:	( kDeEmphasisOFF << kDM )
+	kDeEmphasis48KHz		=	1,		//	use:	( kDeEmphasis48KHz << kDM )
+	kDeEmphasis44KHz		=	2,		//	use:	( kDeEmphasis44KHz << kDM )
+	
+	kAnalogInputA			=	0,		//	use:	( kAnalogInputA << kINP )
+	kAnalogInputB			=	1,		//	use:	( kAnalogInputB << kINP )
+	
+	kPowerNormalAnalog		=	0,		//	use:	( kPowerNormalAnalog << kAPD )
+	kPowerDownAnalog		=	1,		//	use:	( kPowerDownAnalog << kAPD )
+	kAPD_MASK				=	1		//	use:	( kAPD_MASK << kAPD )
+};
+
+enum MainCtrl2Reg {
+	kDL						=	7,		//	use:	( kNormalBassTreble << kDL ) OR ( kLoadBassTreble << kDL )
+	kNormalBassTreble		=	0,
+	kLoadBassTreble			=	1,
+	kAP						=	1,		//	use:	( kNormalFilter << kAP ) OR ( kAllPassFilter << kAP )
+	kNormalFilter			=	0,
+	kAllPassFilter			=	1,
+	kFilter_MASK			=	1
+};
+
+enum DRCRegisterByteIndex {
+		DRC_AboveThreshold,
+		DRC_BelowThreshold,
+		DRC_Threshold,
+		DRC_Integration,
+		DRC_Attack,
+		DRC_Decay
+};
+
+enum Texas2_DRC_Constants {
+		kDisableDRC						=	0x59,	/*	Disable the DRC by setting above threshold to this value	*/
+		kDRCAboveThreshold3to1			=	0x58,	/*	Abstracts Texas2 decay to TAS3001C behavior 3.20 to 1.0	*/
+		kDRCBelowThreshold1to1			=	0x02,	/*	Abstracts Texas2 decay to TAS3001C behavior 3.20 to 1.0	*/
+		kDRCUnityThreshold				=	0xEF,	/*	This value sets 0.0 dB threshold							*/
+		kDRCIntegrationThreshold		=	0xF0,	/*	Abstracts Texas2 decay to TAS3001C behavior of 2400 mS		*/
+		kDRCAttachThreshold				=	0x70,	/*	Abstracts Texas2 decay to TAS3001C behavior of 13 mS		*/
+		kDRCDecayThreshold				=	0xB0,	/*	Abstracts Texas2 decay to TAS3001C behavior of 212 mS		*/
+		kDRC_ThreholdStepSize			=	-750,	/*	Expressed in dB X 1000										*/
+		kDRC_CountsPerStep				=	2		/*	Each 0.750 dB step requires a two count step in hardware	*/
+};
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 enum biquadInformation{
 	kBiquadRefNum_0						=	 0,
 	kBiquadRefNum_1						=	 1,
@@ -358,40 +412,34 @@ enum biquadInformation{
 	kBiquadRefNum_3						=	 3,
 	kBiquadRefNum_4						=	 4,
 	kBiquadRefNum_5						=	 5,
-	kTumblerMaxBiquadRefNum				=	 5,
-	kTumblerNumBiquads					=	 6,
-	kTumblerCoefficientsPerBiquad		=	 5,
-	kTumblerCoefficientBitWidth			=	24,
-	kTumblerCoefficientIntegerBitWidth	=	 4,
-	kTumblerCoefficientFractionBitWidth	=	20
+	kBiquadRefNum_6						=	 6,
+	kTexas2MaxBiquadRefNum				=	 6,
+	kTexas2NumBiquads					=	 6,
+	kTexas2CoefficientsPerBiquad		=	 5,
+	kTexas2CoefficientBitWidth			=	24,
+	kTexas2CoefficientIntegerBitWidth	=	 4,
+	kTexas2CoefficientFractionBitWidth	=	20
 };
 
-#define	kEXPERIMENT			2
-#if kEXPERIMENT == 1
-#define	TAS_I2S_MODE		kLeftJustMode
-#define	TAS_WORD_LENGTH		kSerialWordLength20
-#elif kEXPERIMENT == 2
 #define	TAS_I2S_MODE		kI2SMode
 #define	TAS_WORD_LENGTH		kSerialWordLength20
-#elif kEXPERIMENT == 3
-#define	TAS_I2S_MODE		kLeftJustMode
-#define	TAS_WORD_LENGTH		kSerialWordLength16
-#elif kEXPERIMENT == 4
-#define	TAS_I2S_MODE		kI2SMode
-#define	TAS_WORD_LENGTH		kSerialWordLength16
-#endif
 
 #define	ASSERT_GPIO( x )					( 0 == x ? 0 : 1 )
 #define	NEGATE_GPIO( x )					( 0 == x ? 1 : 0 )
 
-enum TAS3001C_registerWidths{
-	kMCRwidth				=	1,
-	kDRCwidth				=	2,
-	kVOLwidth				=	6,
-	kTREwidth				=	1,
-	kBASwidth				=	1,
-	kMIXwidth				=	3,
-	kBIQwidth				=	( 3 * 5 )
+enum Texas2_registerWidths{
+	kTexas2MC1Rwidth					=	1,
+	kTexas2DRCwidth						=	6,
+	kTexas2VOLwidth						=	6,
+	kTexas2TREwidth						=	1,
+	kTexas2BASwidth						=	1,
+	kTexas2MIXERGAINwidth				=	9,
+	kTexas2BIQwidth						=	( 3 * 5 ),
+	kTexas2LoudnessBIQwidth				=	( 3 * 5 ),
+	kTexas2LOUDNESSBIQUADGAINwidth		=	3,
+	kTexas2ANALOGCTRLREGwidth			=	1,
+	kTexas2MC2Rwidth					=	1,
+	kTexas2MaximumRegisterWidth			=	( 3 * 5 )
 };
 
 enum mixerType{
@@ -409,15 +457,17 @@ enum {
 	kStreamCountStereo			= 2
 };
 
-enum GeneralHardwareAttributeConstants {
+enum GeneralTexas2HardwareAttributeConstants {
 	kSampleRatesCount			=	2,
 	kFrontLeftOFFSET			=	0,
 	kFrontRightOFFSET			=	1,
-	kTumblerMaxStreamCnt		=	kStreamCountStereo,	//	Two streams are kStreamFrontLeft and kStreamFrontRight (see SoundHardwarePriv.h)
-	kTumblerMaxSndSystem		=	2,					//	Tumbler supports kSndHWSystemBuiltIn and kSndHWSystemTelephony
+	kTexas2MaxStreamCnt			=	kStreamCountStereo,	//	Two streams are kStreamFrontLeft and kStreamFrontRight (see SoundHardwarePriv.h)
+	kTexas2MaxSndSystem			=	2,					//	Texas2 supports kSndHWSystemBuiltIn and kSndHWSystemTelephony
 	k16BitsPerChannel			=	16,
-	kTumblerInputChannelDepth	=	kStreamCountMono,
-	kTumblerInputFrameSize		=	16,
+	kTexas2InputChannelDepth	=	kStreamCountMono,
+	kTexas2InputFrameSize		=	16,
+	kTexas2TouchBiquad			=	1,
+	kTexas2BiquadUntouched		=	0,
 	kTouchBiquad				=	1,
 	kBiquadUntouched			=	0
 };
@@ -470,20 +520,20 @@ enum {
 #define kSetTreble				0
 #define kToneGainToRegIndex		0x38E
 
-#define kDrcThresholdMin		-35.9375				/*	minimum DRC threshold dB (i.e. -36.000 dB + 0.375 dB)	*/
-#define	kDrcThresholdMax		  /*0.0*/ 0				/*	maximum DRC threshold dB								*/
+#define kDrcThresholdMin			-35.9375				/*	minimum DRC threshold dB (i.e. -36.000 dB + 0.375 dB)	*/
+#define	kDrcThresholdMax			/*0.0*/ 0				/*	maximum DRC threshold dB								*/
 
 // For Mac OS X we can't use floats, so multiply by 1000 to make a normal interger
-#define	kDrcThresholdStepSize	  /*0.375*/ 375			/*	dB per increment										*/
-#define	kDrcUnityThresholdHW	 (15 << 4 )				/*	hardware value for 0.0 dB DRC threshold					*/
-#define	kDrcRatioNumerator		  /*3.0*/ 3
-#define	kDrcRationDenominator	  /*1.0*/ 1
-#define	kDefaultMaximumVolume	  /*0.0*/ 0
-#define	kTumblerVolumeStepSize	  /*0.5*/ 1
-#define	kTumblerMinVolume		/*-70.0*/ -70
-#define	kTumblerAbsMaxVolume	/*+18.0*/ 18
-/*#define kTumblerVolToVolSteps	  1.82*/
-#define	kTumblerMaxIntVolume	256
+#define	kDrcThresholdStepSize		/*0.375*/	375			/*	dB per increment										*/
+#define	kDrcUnityThresholdHW		(15 << 4 )				/*	hardware value for 0.0 dB DRC threshold					*/
+#define	kDrcRatioNumerator			/*3.0*/		3
+#define	kDrcRationDenominator		/*1.0*/		1
+#define	kDefaultMaximumVolume		/*0.0*/		0
+#define	kTexas2VolumeStepSize		/*0.5*/		1
+#define	kTexas2MinVolume			/*-70.0*/	-70
+#define	kTexas2AbsMaxVolume			/*+18.0*/	18
+/*#define kTexas2VolToVolSteps	  1.82*/
+#define	kTexas2MaxIntVolume			256
 // 225 was picked over 10 because it allows the part to come fully to volume after mute so that we don't loose the start of a sound
 #define	kAmpRecoveryMuteDuration	225					/* expressed in milliseconds	*/
 
@@ -495,7 +545,6 @@ enum {
 #define kDallasDetectInt			"extint-gpio16"
 #define kKWDallasDetectInt			"keywest-gpio16"
 #define kVideoPropertyEntry			"video"
-#define kOneWireBus					"one-wire-bus"
 
 #define kGPIODTEntry				"gpio"
 #define kI2CDTEntry					"i2c"
@@ -505,13 +554,15 @@ enum {
 
 #define kNumInputs					"#-inputs"
 #define kDeviceID					"device-id"
-#define kSpeakerID					"speaker-id"
 #define kCompatible					"compatible"
 #define kAAPLAddress				"AAPL,address"
 #define kI2CAddress					"i2c-address"
 #define kAudioGPIO					"audio-gpio"
 #define kAudioGPIOActiveState		"audio-gpio-active-state"
 #define kIOInterruptControllers		"IOInterruptControllers"
+
+#define	kOneWireBusPropName			"one-wire-bus"
+#define	kSpeakerIDPropValue			"speaker-id"
 
 enum UFixedPointGain{
 	kMinSoftwareGain				=	0x00008000,
@@ -542,7 +593,7 @@ enum writeMode{
 };
 
 enum resetRetryCount{
-	kRESET_MAX_RETRY_COUNT			=	5
+	kTexas2_MAX_RETRY_COUNT		=	5
 };
 
 enum eqPrefsVersion{
@@ -567,31 +618,41 @@ enum muteSelectors{
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // STRUCTURES
 
+#ifndef GpioActiveState
 typedef Boolean	GpioActiveState;
+#endif
 
 typedef struct{
-	UInt8		sMCR[kMCRwidth];
-	UInt8		sDRC[kDRCwidth];
-	UInt8		sVOL[kVOLwidth];
-	UInt8		sTRE[kTREwidth];
-	UInt8		sBAS[kBASwidth];
-	UInt8		sMX1[kMIXwidth];
-	UInt8		sMX2[kMIXwidth];
-	UInt8		sLB0[kBIQwidth];
-	UInt8		sLB1[kBIQwidth];
-	UInt8		sLB2[kBIQwidth];
-	UInt8		sLB3[kBIQwidth];
-	UInt8		sLB4[kBIQwidth];
-	UInt8		sLB5[kBIQwidth];
-	UInt8		sRB0[kBIQwidth];
-	UInt8		sRB1[kBIQwidth];
-	UInt8		sRB2[kBIQwidth];
-	UInt8		sRB3[kBIQwidth];
-	UInt8		sRB4[kBIQwidth];
-	UInt8		sRB5[kBIQwidth];
-}TAS3001C_ShadowReg;
-typedef TAS3001C_ShadowReg TAS3001C_ShadowReg;
-typedef TAS3001C_ShadowReg *TAS3001C_ShadowRegPtr;
+	UInt8		sMC1R[kTexas2MC1Rwidth];					//	main control 1 register
+	UInt8		sDRC[kTexas2DRCwidth];						//	dynamic range compression
+	UInt8		sVOL[kTexas2VOLwidth];						//	volume
+	UInt8		sTRE[kTexas2TREwidth];						//	treble
+	UInt8		sBAS[kTexas2BASwidth];						//	bass
+	UInt8		sMXL[kTexas2MIXERGAINwidth];				//	mixer left
+	UInt8		sMXR[kTexas2MIXERGAINwidth];				//	mixer right
+	UInt8		sLB0[kTexas2BIQwidth];						//	left biquad 0
+	UInt8		sLB1[kTexas2BIQwidth];						//	left biquad 1
+	UInt8		sLB2[kTexas2BIQwidth];						//	left biquad 2
+	UInt8		sLB3[kTexas2BIQwidth];						//	left biquad 3
+	UInt8		sLB4[kTexas2BIQwidth];						//	left biquad 4
+	UInt8		sLB5[kTexas2BIQwidth];						//	left biquad 5
+	UInt8		sLB6[kTexas2BIQwidth];						//	left biquad 6
+	UInt8		sRB0[kTexas2BIQwidth];						//	right biquad 0
+	UInt8		sRB1[kTexas2BIQwidth];						//	right biquad 1
+	UInt8		sRB2[kTexas2BIQwidth];						//	right biquad 2
+	UInt8		sRB3[kTexas2BIQwidth];						//	right biquad 3
+	UInt8		sRB4[kTexas2BIQwidth];						//	right biquad 4
+	UInt8		sRB5[kTexas2BIQwidth];						//	right biquad 5
+	UInt8		sRB6[kTexas2BIQwidth];						//	right biquad 6
+	UInt8		sLLB[kTexas2LoudnessBIQwidth];				//	left loudness biquad
+	UInt8		sRLB[kTexas2LoudnessBIQwidth];				//	right loudness biquad
+	UInt8		sLLBG[kTexas2LOUDNESSBIQUADGAINwidth];		//	left loudness biquad gain
+	UInt8		sRLBG[kTexas2LOUDNESSBIQUADGAINwidth];		//	right loudness biquad gain
+	UInt8		sACR[kTexas2ANALOGCTRLREGwidth];			//	analog control register
+	UInt8		sMC2R[kTexas2MC2Rwidth];					//	main control 2 register
+}Texas2_ShadowReg;
+typedef Texas2_ShadowReg Texas2_ShadowReg;
+typedef Texas2_ShadowReg *Texas2_ShadowRegPtr;
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 struct HiLevelFilterCoefficients {
@@ -638,7 +699,7 @@ struct EQPrefs {
 	UInt32					genreType;				//	'jazz', 'clas', etc...
 	UInt32					eqCount;				//	number of eq[n] array elements
 	UInt32					nameID;					//	resource id of STR identifying the filter genre
-	EQPrefsElement			eq[11];					//	'n' sized based on number of devicID/speakerID/layoutID combinations...
+	EQPrefsElement			eq[8];					//	'n' sized based on number of devicID/speakerID/layoutID combinations...
 };
 typedef EQPrefs *EQPrefsPtr;
 
@@ -681,4 +742,7 @@ enum gpio{
 		gpioDATA				=	0		//	bit address:	the gpio itself
 };
 
-#endif	// __TEXAS_HW__
+
+
+
+#endif	// __TEXAS2_HW__

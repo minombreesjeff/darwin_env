@@ -1,27 +1,41 @@
 /*
- *	AppleTemplateAudio.h
- *	AppleOnboardAudio
+ * Copyright (c) 1998-2001 Apple Computer, Inc. All rights reserved.
  *
- *	Created by nthompso on Thu Jul 05 2001.
- *	Copyright (c) 2001 Apple. All rights reserved.
- *
+ * @APPLE_LICENSE_HEADER_START@
+ * 
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ * 
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * @APPLE_LICENSE_HEADER_END@
  */
 
 /*
- * Contains the interface definition for the DAC 3550A audio Controller
- * This is the audio controller used in the original iBook.
+ *
+ * Interface definition for the Texas2 audio Controller
+ *
+ * HISTORY
+ *
  */
- 
- 
-#ifndef _APPLEDACAAUDIO_H
-#define _APPLEDACAAUDIO_H
+
+#ifndef _APPLETEXAS2AUDIO_H
+#define _APPLETEXAS2AUDIO_H
 
 #include <IOKit/i2c/PPCI2CInterface.h>
 
 #include "AppleDallasDriver.h"
 #include "AppleOnboardAudio.h"
-#include "texas_hw.h"
-#include "AppleDBDMAAudioDMAEngine.h"
+#include "Texas2_hw.h"
 
 class IOInterruptEventSource;
 class IORegistryEntry;
@@ -74,14 +88,14 @@ typedef enum SoundFormat {
 	kSndIOFormatUnknown
 } SoundFormat;
 
-// declare a class for our driver.	This is based from AppleOnboardAudio
-class AppleTexasAudio : public AppleOnboardAudio
+// declare a class for our driver.  This is based from AppleOnboardAudio
+class AppleTexas2Audio : public AppleOnboardAudio
 {
-	OSDeclareDefaultStructors(AppleTexasAudio);
+    OSDeclareDefaultStructors(AppleTexas2Audio);
 
-	friend class AudioHardwareOutput;
-	friend class AudioHardwareInput;
-	friend class AudioHardwareMux;
+    friend class AudioHardwareOutput;
+    friend class AudioHardwareInput;
+    friend class AudioHardwareMux;
 
 protected:
 	UInt32					gVolLeft;
@@ -93,6 +107,7 @@ protected:
 	IOInterruptEventSource *headphoneIntEventSource;
 	IOInterruptEventSource *dallasIntEventSource;
 	Boolean					hasVideo;									// TRUE if this hardware has video out its headphone jack
+	Boolean					headphonesActive;
 	Boolean					headphonesConnected;
 	Boolean					dallasSpeakersConnected;
 	DRCInfo					drc;										// dynamic range compression info
@@ -107,8 +122,8 @@ protected:
 	GpioActiveState			ampActiveState;								//	indicates asserted state (i.e. '0' or '1')
 	GpioActiveState			headphoneInsertedActiveState;
 	GpioActiveState			dallasInsertedActiveState;
-	UInt8					DEQAddress;									// Address for i2c TAS3001
-	TAS3001C_ShadowReg		shadowRegs;									// write through shadow registers for TAS3001C
+	UInt8					DEQAddress;									// Address for i2c Texas2
+	Texas2_ShadowReg		shadowTexas2Regs;							// write through shadow registers for Texas2
 	Boolean					semaphores;
 	UInt32					deviceID;
 	double					biquadGroupInfo[kNumberOfBiquadCoefficients];
@@ -124,7 +139,6 @@ protected:
 	const OSSymbol			*gAppleAudioVideoJackStateKey;
 	AppleDallasDriver *		dallasDriver;
 	IONotifier *			dallasDriverNotifier;
-    IOFilterInterruptEventSource* interruptEventSource;					// interrupt event source
 	IOTimerEventSource *	dallasHandlerTimer;
 	IOTimerEventSource *	notifierHandlerTimer;
 	Boolean					doneWaiting;
@@ -141,71 +155,66 @@ protected:
 	UInt32					sclkDivisor;
 	SoundFormat				serialFormat;
 
-	// Hardware register manipulation
-	virtual void		sndHWInitialize (IOService *provider) ;
+    // Hardware register manipulation
+    virtual void 		sndHWInitialize(IOService *provider) ;
 	virtual void		sndHWPostDMAEngineInit (IOService *provider);
-	virtual UInt32		sndHWGetInSenseBits (void) ;
-	virtual UInt32		sndHWGetRegister (UInt32 regNum) ;
-	virtual IOReturn	sndHWSetRegister (UInt32 regNum, UInt32 value) ;
+    virtual UInt32 		sndHWGetInSenseBits(void) ;
+    virtual UInt32 		sndHWGetRegister(UInt32 regNum) ;
+    virtual IOReturn   	sndHWSetRegister(UInt32 regNum, UInt32 value) ;
 
-	// IO activation functions
-	virtual	 UInt32		sndHWGetActiveOutputExclusive (void);
-	virtual	 IOReturn	sndHWSetActiveOutputExclusive (UInt32 outputPort);
-	virtual	 UInt32		sndHWGetActiveInputExclusive (void);
-	virtual	 IOReturn	sndHWSetActiveInputExclusive (UInt32 input);
+    // IO activation functions
+    virtual  UInt32		sndHWGetActiveOutputExclusive(void);
+    virtual  IOReturn   sndHWSetActiveOutputExclusive(UInt32 outputPort );
+    virtual  UInt32 	sndHWGetActiveInputExclusive(void);
+    virtual  IOReturn   sndHWSetActiveInputExclusive(UInt32 input );
+    
+    // control function
+    virtual  bool   	sndHWGetSystemMute(void);
+    virtual  IOReturn  	sndHWSetSystemMute(bool mutestate);
+    virtual  bool   	sndHWSetSystemVolume(UInt32 leftVolume, UInt32 rightVolume);
+    virtual  IOReturn   sndHWSetSystemVolume(UInt32 value);
+    virtual  IOReturn	sndHWSetPlayThrough(bool playthroughstate);
+    virtual  IOReturn   sndHWSetSystemInputGain(UInt32 leftGain, UInt32 rightGain) ;
+   
 
-	// control function
-	virtual	 bool		sndHWGetSystemMute (void);
-	virtual	 IOReturn	sndHWSetSystemMute (bool mutestate);
-	virtual	 bool		sndHWSetSystemVolume (UInt32 leftVolume, UInt32 rightVolume);
-	virtual	 IOReturn	sndHWSetSystemVolume (UInt32 value);
-	virtual	 IOReturn	sndHWSetPlayThrough (bool playthroughstate);
-	virtual	 IOReturn	sndHWSetSystemInputGain (UInt32 leftGain, UInt32 rightGain) ;
-
-	// Identification
-	virtual UInt32		sndHWGetType (void);
-	virtual UInt32		sndHWGetManufacturer (void);
+    //Identification
+    virtual UInt32 		sndHWGetType( void );
+    virtual UInt32		sndHWGetManufacturer( void );
 
     virtual void setDeviceDetectionActive (void);
     virtual void setDeviceDetectionInActive (void);      
 
 public:
-	// Classical Unix driver functions
-	virtual bool		init (OSDictionary *properties);
-	virtual void		free ();
+    // Classical Unix driver functions
+    virtual bool 		init(OSDictionary *properties);
+    virtual void 		free();
 
-	virtual IOService*	probe (IOService *provider, SInt32*);
+    virtual IOService* probe(IOService *provider, SInt32*);
 
-	// IOAudioDevice subclass
-	virtual bool		initHardware (IOService *provider);
-
-	// Power Management
-	virtual	 IOReturn	sndHWSetPowerState (IOAudioDevicePowerState theState);
-	
-	// 
-	virtual	 UInt32		sndHWGetConnectedDevices (void);
-	virtual	 UInt32		sndHWGetProgOutput ();
-	virtual	 IOReturn	sndHWSetProgOutput (UInt32 outputBits);
+    //IOAudioDevice subclass
+    virtual bool 		initHardware(IOService *provider);
+            
+    //Power Management
+    virtual  IOReturn   sndHWSetPowerState(IOAudioDevicePowerState theState);
+    
+    // 
+    virtual  UInt32		sndHWGetConnectedDevices(void);
+    virtual  UInt32 	sndHWGetProgOutput();
+    virtual  IOReturn   sndHWSetProgOutput(UInt32 outputBits);
 
 private:
-	// These will probably change when we have a general method
-	// to verify the Detects.  Wait til we figure out how to do 
-	// this with interrupts and then make that generic.
-	virtual void		checkStatus (bool force);
-	static void			timerCallback (OSObject *target, IOAudioDevice *device);
+    //These will probably change when we have a general method
+    //to verify the Detects.  Wait til we figure out how to do 
+    // this with interrupts and then make that generic.
+    virtual void 		checkStatus(bool force);
+    static void 		timerCallback(OSObject *target, IOAudioDevice *device);
 
 	Boolean				IsHeadphoneConnected (void);
 	Boolean				IsSpeakerConnected (void);
 
 public:	
-	static void headphoneInterruptHandler(OSObject *owner, IOInterruptEventSource *source, int count);
 	void RealHeadphoneInterruptHandler (IOInterruptEventSource *source, int count);
 	void RealDallasInterruptHandler (IOInterruptEventSource *source, int count);
-    static bool interruptFilter (OSObject *, IOFilterInterruptEventSource *);
-    static void dallasInterruptHandler (OSObject *owner, IOInterruptEventSource *source, int count);
-	static void DallasInterruptHandlerTimer (OSObject *owner, IOTimerEventSource *sender);
-	static bool	DallasDriverPublished (AppleTexasAudio * appleTexasAudio, void * refCon, IOService * newService);
-	static void DisplaySpeakersNotFullyConnected (OSObject *owner, IOTimerEventSource *sender);
 
 	virtual IOReturn performDeviceWake ();
 	virtual IOReturn performDeviceSleep ();
@@ -221,10 +230,10 @@ protected:
 	IOReturn	InitEQSerialMode (UInt32 mode, Boolean restoreOnNormal);
 	Boolean		GpioRead (UInt8* gpioAddress);
 	UInt8		GpioGetDDR (UInt8* gpioAddress);
-	IOReturn	TAS3001C_Initialize (UInt32 resetFlag);
-	IOReturn	TAS3001C_ReadRegister (UInt8 regAddr, UInt8* registerData);
-	IOReturn	TAS3001C_WriteRegister (UInt8 regAddr, UInt8* registerData, UInt8 mode);
-	IOReturn	TAS3001C_Reset (UInt32 resetFlag);
+	IOReturn 	AppleTexas2Audio::GetShadowRegisterInfo( UInt8 regAddr, UInt8 ** shadowPtr, UInt8* registerSize );
+	IOReturn	Texas2_Initialize ();
+	IOReturn	Texas2_ReadRegister (UInt8 regAddr, UInt8* registerData);
+	IOReturn	Texas2_WriteRegister (UInt8 regAddr, UInt8* registerData, UInt8 mode);
 	void		GpioWrite (UInt8* gpioAddress, UInt8 data);
 	void		SetBiquadInfoToUnityAllPass (void);
 	void		SetUnityGainAllPass (void);
@@ -237,13 +246,21 @@ protected:
 	IOReturn	SndHWSetOutputBiquadGroup( UInt32 biquadFilterCount, FourDotTwenty *biquadCoefficients );
 	IOReturn	SetOutputBiquadCoefficients (UInt32 streamID, UInt32 biquadRefNum, UInt8 *biquadCoefficients);
 	IOReturn	SetActiveOutput (UInt32 output, Boolean touchBiquad);
-
+	IOReturn	SetAnalogPowerDownMode( UInt8 mode );
+	IOReturn	ToggleAnalogPowerDownWake( void );
 	IORegistryEntry * FindEntryByProperty (const IORegistryEntry * start, const char * key, const char * value);
 	IORegistryEntry * FindEntryByNameAndProperty (const IORegistryEntry * start, const char * name, const char * key, UInt32 value);
 	UInt32			GetDeviceID (void);
 	Boolean			HasInput (void);
 
-	// This provides access to the Texas registers:
+    static bool interruptFilter (OSObject *, IOFilterInterruptEventSource *);
+    static void dallasInterruptHandler (OSObject *owner, IOInterruptEventSource *source, int count);
+	static bool	DallasDriverPublished (AppleTexas2Audio * appleTexas2Audio, void * refCon, IOService * newService);
+	static void DallasInterruptHandlerTimer (OSObject *owner, IOTimerEventSource *sender);
+	static void DisplaySpeakersNotFullyConnected (OSObject *owner, IOTimerEventSource *sender);
+	static void headphoneInterruptHandler(OSObject *owner, IOInterruptEventSource *source, int count);
+
+	// This provides access to the Texas2 registers:
 	PPCI2CInterface *interface;
 
 	UInt32		getI2CPort ();
@@ -279,6 +296,17 @@ protected:
 	void setSerialFormatRegister(ClockSource clockSource, UInt32 mclkDivisor, UInt32 sclkDivisor, SoundFormat serialFormat);
 	bool setHWSampleRate(UInt rate);
 	UInt32 frameRate(UInt32 index);
-};
 
-#endif
+	//	The following should probably be implemented in the base class
+protected:    
+	UInt32				mActiveOutput;		//	set to kSndHWOutputNone at init
+	UInt32				mActiveInput;		//	set to kSndHWInputNone at init
+	UInt32				gInputNoneAlias;	
+} ;
+
+
+
+
+
+
+#endif /* _APPLETEXAS2AUDIO_H */
