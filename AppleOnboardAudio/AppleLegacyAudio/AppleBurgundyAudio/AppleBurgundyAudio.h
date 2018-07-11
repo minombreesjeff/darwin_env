@@ -84,6 +84,14 @@ protected:
     bool  						duringInitialization;
     bool						gCanPollSatus;
 
+	IOService					*ourProvider;					//	[3042660]	rbm	30 Sept 2002
+	SInt32						minVolume;						//	[3042660]	rbm	30 Sept 2002
+	SInt32						maxVolume;						//	[3042660]	rbm	30 Sept 2002
+	Boolean						useMasterVolumeControl;			//	[3042660]	rbm	30 Sept 2002
+	UInt32						lastLeftVol;					//	[3042660]	rbm	30 Sept 2002
+	UInt32						lastRightVol;					//	[3042660]	rbm	30 Sept 2002
+	UInt32						mLayoutID;						//	[3042660]	rbm	30 Sept 2002
+
 public:
 	// Classical Unix function
     virtual bool init(OSDictionary *properties);
@@ -117,6 +125,7 @@ protected:
     IOReturn   	sndHWSetActiveOutputExclusive(UInt32 outputPort );
     UInt32 		sndHWGetActiveInputExclusive(void);
     IOReturn   	sndHWSetActiveInputExclusive(UInt32 input );
+	IOReturn	AdjustControls (void );
     UInt32 		sndHWGetProgOutput();    
     IOReturn   	sndHWSetProgOutput(UInt32 outputBits);
 	virtual UInt32		sndHWGetCurrentSampleFrame (void);
@@ -139,6 +148,7 @@ protected:
 	// Identification
     UInt32 	sndHWGetType( void );
     UInt32	sndHWGetManufacturer( void );
+	UInt32	GetDeviceID (void);
     
 	// Burgundy soecific routine
     void 	DisconnectMixer(UInt32 mixer );

@@ -189,6 +189,7 @@ bool AppleDBDMAAudio::init (OSDictionary *			properties,
 	mCurrentEQStructPtr = &mEQStructA;
 	mCurrentLimiterStructPtr = &mLimiterStructA;
 	mCurrentCrossoverStructPtr = &mCrossoverStructA;
+	mCurrentInputEQStructPtr = &mInputEQStructA;	// [3306305]
 
 	// init current state
 	initializeSoftwareEQ ();
@@ -202,6 +203,7 @@ bool AppleDBDMAAudio::init (OSDictionary *			properties,
 	memcpy (&mEQStructB, &mEQStructA, sizeof (EQStruct));
 	memcpy (&mLimiterStructB, &mLimiterStructA, sizeof (LimiterStruct));
 	memcpy (&mCrossoverStructB, &mCrossoverStructA, sizeof (CrossoverStruct));
+	memcpy (&mInputEQStructB, &mInputEQStructA, sizeof (EQStruct));	// [3306305]
 
     mOutputSampleBuffer = IOMallocAligned(numBlocks * blockSize, PAGE_SIZE);
 
@@ -287,7 +289,7 @@ Exit:
 UInt32 AppleDBDMAAudio::GetEncodingFormat (OSString * theEncoding) {
 	UInt32						sampleFormat;
 
-	sampleFormat = '????';
+	sampleFormat = 0x3F3F3F3F;			// because '????' is a trigraph....
 	
 	if (NULL != theEncoding) {
 		if (theEncoding->isEqualTo ("PCM")) {
@@ -374,6 +376,13 @@ bool AppleDBDMAAudio::publishStreamFormats (void) {
 				if (mInputStream) mInputStream->setFormat (&dbdmaFormat);
 				setSampleRate (&sampleRate);
 				ourProvider->formatChangeRequest (NULL, &sampleRate);
+			}
+			
+			// [3306295] all mixable formats get duplicated as non-mixable for hog mode
+			if (dbdmaFormat.fIsMixable) {
+				dbdmaFormat.fIsMixable = false;
+				mOutputStream->addAvailableFormat (&dbdmaFormat, &dbdmaFormatExtension, &sampleRate, &sampleRate);
+				dbdmaFormat.fIsMixable = true;
 			}
 		}
 	}
@@ -692,7 +701,11 @@ IOReturn AppleDBDMAAudio::performAudioEngineStart()
 
 	resetiSubProcessingState();
 
+	*((UInt32 *)&mLastOutputSample) = 0;
+	*((UInt32 *)&mLastInputSample) = 0;
+
 	resetEQ (mCurrentEQStructPtr);
+	resetEQ (mCurrentInputEQStructPtr);	// [3306305]
 	resetLimiter (mCurrentLimiterStructPtr);
 	resetCrossover (mCurrentCrossoverStructPtr);
 
@@ -802,8 +815,12 @@ void AppleDBDMAAudio::resetClipPosition (IOAudioStream *audioStream, UInt32 clip
 		resetiSubProcessingState();
 
 		resetEQ (mCurrentEQStructPtr);
+		resetEQ (mCurrentInputEQStructPtr);	// [3306305]
 		resetLimiter (mCurrentLimiterStructPtr);
 		resetCrossover (mCurrentCrossoverStructPtr);
+
+		*((UInt32 *)&mLastOutputSample) = 0;
+		*((UInt32 *)&mLastInputSample) = 0;
 
 		#if DEBUGLOG
         debug4IOLog ("+resetClipPosition: iSubBufferOffset=%ld, previousClippedToFrame=%ld, clipSampleFrame=%ld\n", miSubProcessingParams.iSubBufferOffset, previousClippedToFrame, clipSampleFrame);
@@ -892,6 +909,62 @@ void AppleDBDMAAudio::detach(IOService *provider)
     debug2IOLog("AppleDBDMAAudio::detach(%p)\n", provider);
 }
 
+OSString *AppleDBDMAAudio::getGlobalUniqueID()
+{
+    const char *className = NULL;
+    const char *location = NULL;
+    char *uniqueIDStr;
+    OSString *localID = NULL;
+    OSString *uniqueID = NULL;
+    UInt32 uniqueIDSize;
+    
+	className = "Apple03DBDMAAudio";
+    
+    location = getLocation();
+    
+    localID = getLocalUniqueID();
+    
+    uniqueIDSize = 3;
+    
+    if (className) {
+        uniqueIDSize += strlen(className);
+    }
+    
+    if (location) {
+        uniqueIDSize += strlen(location);
+    }
+    
+    if (localID) {
+        uniqueIDSize += localID->getLength();
+    }
+        
+    uniqueIDStr = (char *)IOMallocAligned(uniqueIDSize, sizeof (char));
+    
+    if (uniqueIDStr) {
+		bzero(uniqueIDStr, uniqueIDSize);
+
+        if (className) {
+            sprintf(uniqueIDStr, "%s:", className);
+        }
+        
+        if (location) {
+            strcat(uniqueIDStr, location);
+            strcat(uniqueIDStr, ":");
+        }
+        
+        if (localID) {
+            strcat(uniqueIDStr, localID->getCStringNoCopy());
+            localID->release();
+        }
+        
+        uniqueID = OSString::withCString(uniqueIDStr);
+        
+        IOFreeAligned(uniqueIDStr, uniqueIDSize);
+    }
+
+    return uniqueID;
+}
+
 #pragma mark ------------------------ 
 #pragma mark еее Conversion Routines
 #pragma mark ------------------------ 
@@ -899,37 +972,37 @@ void AppleDBDMAAudio::detach(IOService *provider)
 // [3094574] aml, pick the correct output conversion routine based on our current state
 void AppleDBDMAAudio::chooseOutputClippingRoutinePtr()
 {
-	if (kIOAudioStreamSampleFormat1937AC3 == mDBDMAOutputFormat.fSampleFormat) { // [3281454], no iSub during encoded playback either
+	if (FALSE == mDBDMAOutputFormat.fIsMixable) { // [3281454], no iSub during encoded playback either
 		mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipMemCopyToOutputStream;
 	} else {
-		if ((NULL != iSubBufferMemory) && (NULL != iSubEngine)) {
-			if (32 == mDBDMAOutputFormat.fBitWidth) {
-				if (TRUE == fNeedsRightChanMixed) {
-					mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubMixRightChannel;
-				} else if (TRUE == fNeedsRightChanDelay) {
-					if (TRUE == fNeedsBalanceAdjust) {
-						mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubDelayRightChannelBalance;
-					} else {
-						mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubDelayRightChannel;
-					}
+	if ((NULL != iSubBufferMemory) && (NULL != iSubEngine)) {
+		if (32 == mDBDMAOutputFormat.fBitWidth) {
+			if (TRUE == fNeedsRightChanMixed) {
+				mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubMixRightChannel;
+			} else if (TRUE == fNeedsRightChanDelay) {
+				if (TRUE == fNeedsBalanceAdjust) {
+					mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubDelayRightChannelBalance;
 				} else {
-					mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSub;
-				}
-			} else if (16 == mDBDMAOutputFormat.fBitWidth) {
-				if (TRUE == fNeedsPhaseInversion) {
-					mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubInvertRightChannel;
-				} else if (TRUE == fNeedsRightChanMixed) {
-					mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubMixRightChannel;
-				} else if (TRUE == fNeedsRightChanDelay) {
-					if (TRUE == fNeedsBalanceAdjust) {
-						mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubDelayRightChannelBalance;
-					} else {
-						mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubDelayRightChannel;
-					}
-				} else {
-					mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSub;
+					mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubDelayRightChannel;
 				}
 			} else {
+				mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSub;
+			}
+		} else if (16 == mDBDMAOutputFormat.fBitWidth) {
+			if (TRUE == fNeedsPhaseInversion) {
+				mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubInvertRightChannel;
+			} else if (TRUE == fNeedsRightChanMixed) {
+				mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubMixRightChannel;
+			} else if (TRUE == fNeedsRightChanDelay) {
+				if (TRUE == fNeedsBalanceAdjust) {
+					mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubDelayRightChannelBalance;
+				} else {
+					mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubDelayRightChannel;
+				}
+			} else {
+				mClipAppleDBDMAToOutputStreamRoutine = &AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSub;
+			}
+		} else {
 				debugIOLog("AppleDBDMAAudio::chooseOutputClippingRoutinePtr - Non-supported output bit depth, iSub attached.\n");
 			}	
 		} else {
@@ -971,13 +1044,21 @@ void AppleDBDMAAudio::chooseInputConversionRoutinePtr()
 {
 	if (32 == mDBDMAInputFormat.fBitWidth) {
 		if (mUseSoftwareInputGain) {
-			mConvertInputStreamToAppleDBDMARoutine = &AppleDBDMAAudio::convertAppleDBDMAFromInputStream32WithGain;
+			if (fNeedsRightChanDelayInput) {// [3173869]
+				mConvertInputStreamToAppleDBDMARoutine = &AppleDBDMAAudio::convertAppleDBDMAFromInputStream32DelayRightWithGain;
+			} else {
+				mConvertInputStreamToAppleDBDMARoutine = &AppleDBDMAAudio::convertAppleDBDMAFromInputStream32WithGain;
+			}
 		} else {
 			mConvertInputStreamToAppleDBDMARoutine = &AppleDBDMAAudio::convertAppleDBDMAFromInputStream32;
 		}
 	} else if (16 == mDBDMAInputFormat.fBitWidth) {
 		if (mUseSoftwareInputGain) {
-			mConvertInputStreamToAppleDBDMARoutine = &AppleDBDMAAudio::convertAppleDBDMAFromInputStream16WithGain;
+			if (fNeedsRightChanDelayInput) {// [3173869]
+				mConvertInputStreamToAppleDBDMARoutine = &AppleDBDMAAudio::convertAppleDBDMAFromInputStream16DelayRightWithGain;
+			} else {
+				mConvertInputStreamToAppleDBDMARoutine = &AppleDBDMAAudio::convertAppleDBDMAFromInputStream16WithGain;
+			}
 		} else {
 			if (e_Mode_CopyRightToLeft == mInputDualMonoMode) {
 				mConvertInputStreamToAppleDBDMARoutine = &AppleDBDMAAudio::convertAppleDBDMAFromInputStream16CopyR2L;
@@ -1030,7 +1111,7 @@ IOReturn AppleDBDMAAudio::convertInputSamples(const void *sampleBuf, void *destB
 #pragma mark еее Output Routines
 #pragma mark ------------------------ 
 
-inline void AppleDBDMAAudio::dspProcessing (float* inFloatBufferPtr, UInt32 inNumSamples) {
+inline void AppleDBDMAAudio::outputProcessing (float* inFloatBufferPtr, UInt32 inNumSamples) {
 #ifdef USE_SOFT_DSP
 	if (mCurrentEQStructPtr->phaseReverse) {
 		invertRightChannel(inFloatBufferPtr, inNumSamples);
@@ -1070,7 +1151,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16(const void *mixBuf, voi
     inFloatBufferPtr = (float *)mixBuf+firstSampleFrame*streamFormat->fNumChannels;
 	outSInt16BufferPtr = (SInt16 *)sampleBuf+firstSampleFrame * streamFormat->fNumChannels;
 
-	dspProcessing(inFloatBufferPtr, numSamples);
+	outputProcessing(inFloatBufferPtr, numSamples);
 	
 	Float32ToNativeInt16( inFloatBufferPtr, outSInt16BufferPtr, numSamples );
 
@@ -1092,9 +1173,9 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16DelayRightChannel(const 
     inFloatBufferPtr = (float *)mixBuf+firstSampleFrame*streamFormat->fNumChannels;
 	outSInt16BufferPtr = (SInt16 *)sampleBuf+firstSampleFrame * streamFormat->fNumChannels;
 	
-	delayRightChannel( inFloatBufferPtr, numSamples );
+	delayRightChannel( inFloatBufferPtr, numSamples , &mLastOutputSample);
 
-	dspProcessing(inFloatBufferPtr, numSamples);
+	outputProcessing(inFloatBufferPtr, numSamples);
 	
 	Float32ToNativeInt16( inFloatBufferPtr, outSInt16BufferPtr, numSamples );
 
@@ -1116,9 +1197,9 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16DelayRightChannelBalance
     inFloatBufferPtr = (float *)mixBuf+firstSampleFrame*streamFormat->fNumChannels;
 	outSInt16BufferPtr = (SInt16 *)sampleBuf+firstSampleFrame * streamFormat->fNumChannels;
 	
-	delayRightChannel (inFloatBufferPtr, numSamples);
+	delayRightChannel( inFloatBufferPtr, numSamples , &mLastOutputSample);
 
-	dspProcessing (inFloatBufferPtr, numSamples);
+	outputProcessing (inFloatBufferPtr, numSamples);
 
 	balanceAdjust (inFloatBufferPtr, numSamples, mCurrentEQStructPtr);
 	
@@ -1144,7 +1225,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16InvertRightChannel(const
 
 	invertRightChannel( inFloatBufferPtr, numSamples );
 
-	dspProcessing(inFloatBufferPtr, numSamples);
+	outputProcessing (inFloatBufferPtr, numSamples);
 
 	Float32ToNativeInt16( inFloatBufferPtr, outSInt16BufferPtr, numSamples );
    
@@ -1165,7 +1246,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16MixRightChannel(const vo
     inFloatBufferPtr = (float *)mixBuf+firstSampleFrame*streamFormat->fNumChannels;
 	outSInt16BufferPtr = (SInt16 *)sampleBuf+firstSampleFrame * streamFormat->fNumChannels;
 
-	dspProcessing(inFloatBufferPtr, numSamples);
+	outputProcessing (inFloatBufferPtr, numSamples);
 	
 	mixAndMuteRightChannel( inFloatBufferPtr, numSamples );
 
@@ -1187,7 +1268,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream32(const void *mixBuf, voi
     inFloatBufferPtr = (float *)mixBuf+firstSampleFrame*streamFormat->fNumChannels;
 	outSInt32BufferPtr = (SInt32 *)sampleBuf + firstSampleFrame * streamFormat->fNumChannels;
 
-	dspProcessing(inFloatBufferPtr, numSamples);
+	outputProcessing (inFloatBufferPtr, numSamples);
 
 	Float32ToNativeInt32( inFloatBufferPtr, outSInt32BufferPtr, numSamples );
 
@@ -1208,9 +1289,9 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream32DelayRightChannel(const 
     inFloatBufferPtr = (float *)mixBuf+firstSampleFrame*streamFormat->fNumChannels;
 	outSInt32BufferPtr = (SInt32 *)sampleBuf + firstSampleFrame * streamFormat->fNumChannels;
 	
-	delayRightChannel( inFloatBufferPtr, numSamples );
+	delayRightChannel( inFloatBufferPtr, numSamples , &mLastOutputSample);
 
-	dspProcessing(inFloatBufferPtr, numSamples);
+	outputProcessing (inFloatBufferPtr, numSamples);
 
 	Float32ToNativeInt32( inFloatBufferPtr, outSInt32BufferPtr, numSamples );
 	
@@ -1231,9 +1312,9 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream32DelayRightChannelBalance
     inFloatBufferPtr = (float *)mixBuf+firstSampleFrame*streamFormat->fNumChannels;
 	outSInt32BufferPtr = (SInt32 *)sampleBuf + firstSampleFrame * streamFormat->fNumChannels;
 	
-	delayRightChannel( inFloatBufferPtr, numSamples );
+	delayRightChannel( inFloatBufferPtr, numSamples , &mLastOutputSample);
 
-	dspProcessing(inFloatBufferPtr, numSamples);
+	outputProcessing (inFloatBufferPtr, numSamples);
 
 	balanceAdjust (inFloatBufferPtr, numSamples, mCurrentEQStructPtr);
 
@@ -1256,7 +1337,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream32MixRightChannel(const vo
     inFloatBufferPtr = (float *)mixBuf+firstSampleFrame*streamFormat->fNumChannels;
 	outSInt32BufferPtr = (SInt32 *)sampleBuf + firstSampleFrame * streamFormat->fNumChannels;
 	
-	dspProcessing(inFloatBufferPtr, numSamples);
+	outputProcessing (inFloatBufferPtr, numSamples);
 
 	mixAndMuteRightChannel( inFloatBufferPtr, numSamples );
 
@@ -1309,7 +1390,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSub(const void *mixBuf,
     // high side 
 	outputBuf16 = (SInt16 *)sampleBuf+firstSampleFrame * streamFormat->fNumChannels;
 
-	dspProcessing(high, numSamples);
+	outputProcessing (high, numSamples);
 
 	Float32ToNativeInt16( high, outputBuf16, numSamples );
 
@@ -1360,9 +1441,9 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubDelayRightChannel(co
 
     // high side 
 	outputBuf16 = (SInt16 *)sampleBuf+firstSampleFrame * streamFormat->fNumChannels;
-	delayRightChannel (high, numSamples);
+	delayRightChannel( high, numSamples , &mLastOutputSample);
 
-	dspProcessing (high, numSamples);
+	outputProcessing (high, numSamples);
 
 	Float32ToNativeInt16 (high, outputBuf16, numSamples);
 
@@ -1413,9 +1494,9 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubDelayRightChannelBal
 
     // high side 
 	outputBuf16 = (SInt16 *)sampleBuf+firstSampleFrame * streamFormat->fNumChannels;
-	delayRightChannel (high, numSamples);
+	delayRightChannel( high, numSamples , &mLastOutputSample);
 
-	dspProcessing (high, numSamples);
+	outputProcessing (high, numSamples);
 
 	balanceAdjust (high, numSamples, mCurrentEQStructPtr);
 
@@ -1470,7 +1551,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubInvertRightChannel(c
 	outputBuf16 = (SInt16 *)sampleBuf+firstSampleFrame * streamFormat->fNumChannels;
 	invertRightChannel( high, numSamples );
 
-	dspProcessing(high, numSamples);
+	outputProcessing (high, numSamples);
 
 	Float32ToNativeInt16( high, outputBuf16, numSamples );
 
@@ -1524,7 +1605,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream16iSubMixRightChannel(cons
 	outputBuf16 = (SInt16 *)sampleBuf+firstSampleFrame * streamFormat->fNumChannels;
 	mixAndMuteRightChannel(  high, numSamples );
 
-	dspProcessing(high, numSamples);
+	outputProcessing (high, numSamples);
 
 	Float32ToNativeInt16( high, outputBuf16, numSamples );
 
@@ -1576,7 +1657,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSub(const void *mixBuf,
     // high side 
 	outputBuf32 = (SInt32 *)sampleBuf + firstSampleFrame * streamFormat->fNumChannels;
 
-	dspProcessing(high, numSamples);
+	outputProcessing (high, numSamples);
 
 	Float32ToNativeInt32( high, outputBuf32, numSamples );
 
@@ -1627,9 +1708,9 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubDelayRightChannel(co
 
     // high side 
 	outputBuf32 = (SInt32 *)sampleBuf + firstSampleFrame * streamFormat->fNumChannels;
-	delayRightChannel( high, numSamples );
+	delayRightChannel( high, numSamples , &mLastOutputSample);
 
-	dspProcessing(high, numSamples);
+	outputProcessing (high, numSamples);
 
 	Float32ToNativeInt32( high, outputBuf32, numSamples );
 
@@ -1681,9 +1762,9 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubDelayRightChannelBal
 
     // high side 
 	outputBuf32 = (SInt32 *)sampleBuf + firstSampleFrame * streamFormat->fNumChannels;
-	delayRightChannel( high, numSamples );
+	delayRightChannel( high, numSamples , &mLastOutputSample);
 
-	dspProcessing(high, numSamples);
+	outputProcessing (high, numSamples);
 
 	balanceAdjust (high, numSamples, mCurrentEQStructPtr);
 
@@ -1738,7 +1819,7 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubMixRightChannel(cons
 	outputBuf32 = (SInt32 *)sampleBuf + firstSampleFrame * streamFormat->fNumChannels;
 	mixAndMuteRightChannel( high, numSamples );
 
-	dspProcessing(high, numSamples);
+	outputProcessing (high, numSamples);
 
 	Float32ToNativeInt32( high, outputBuf32, numSamples );
 
@@ -1755,6 +1836,16 @@ IOReturn AppleDBDMAAudio::clipAppleDBDMAToOutputStream32iSubMixRightChannel(cons
 #pragma mark еее Input Routines
 #pragma mark ------------------------ 
 
+inline void AppleDBDMAAudio::inputProcessing (float* inFloatBufferPtr, UInt32 inNumSamples) {
+#ifdef USE_SOFT_DSP
+
+	if (false == mCurrentInputEQStructPtr->bypassAll) {
+		equalizer (inFloatBufferPtr, inNumSamples, mCurrentInputEQStructPtr);
+	}
+
+#endif
+}
+
 // ------------------------------------------------------------------------
 // Native SInt16 to Float32
 // ------------------------------------------------------------------------
@@ -1769,6 +1860,33 @@ IOReturn AppleDBDMAAudio::convertAppleDBDMAFromInputStream16(const void *sampleB
 	inputBuf16 = &(((SInt16 *)sampleBuf)[firstSampleFrame * streamFormat->fNumChannels]);
 
    	NativeInt16ToFloat32(inputBuf16, floatDestBuf, numSamplesLeft, 16);
+
+	// [3306305]
+	inputProcessing (floatDestBuf, numSamplesLeft); 
+
+    return kIOReturnSuccess;
+}
+
+
+// ------------------------------------------------------------------------
+// Native SInt16 to Float32 with right channel delay and gain for TAS compensation [3173869]
+// ------------------------------------------------------------------------
+IOReturn AppleDBDMAAudio::convertAppleDBDMAFromInputStream16DelayRightWithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+{
+    UInt32 numSamplesLeft;
+    float *floatDestBuf;
+    SInt16 *inputBuf16;
+	
+    floatDestBuf = (float *)destBuf;
+    numSamplesLeft = numSampleFrames * streamFormat->fNumChannels;
+	inputBuf16 = &(((SInt16 *)sampleBuf)[firstSampleFrame * streamFormat->fNumChannels]);
+
+   	NativeInt16ToFloat32(inputBuf16, floatDestBuf, numSamplesLeft, 16);
+
+	delayRightChannel( floatDestBuf, numSamplesLeft , &mLastInputSample);
+
+	// [3306305]
+	inputProcessing (floatDestBuf, numSamplesLeft); 
 
     return kIOReturnSuccess;
 }
@@ -1791,6 +1909,9 @@ IOReturn AppleDBDMAAudio::convertAppleDBDMAFromInputStream16CopyR2L(const void *
    
 	NativeInt16ToFloat32CopyRightToLeft(inputBuf16, floatDestBuf, numSamplesLeft, 16);
 
+	// [3306305]
+	inputProcessing (floatDestBuf, numSamplesLeft); 
+
     return kIOReturnSuccess;
 }
 
@@ -1808,6 +1929,9 @@ IOReturn AppleDBDMAAudio::convertAppleDBDMAFromInputStream16WithGain(const void 
 	inputBuf16 = &(((SInt16 *)sampleBuf)[firstSampleFrame * streamFormat->fNumChannels]);
 
 	NativeInt16ToFloat32Gain(inputBuf16, floatDestBuf, numSamplesLeft, 16, mInputGainLPtr, mInputGainRPtr);
+
+	// [3306305]
+	inputProcessing (floatDestBuf, numSamplesLeft); 
 
     return kIOReturnSuccess;
 }
@@ -1827,6 +1951,9 @@ IOReturn AppleDBDMAAudio::convertAppleDBDMAFromInputStream32(const void *sampleB
    
 	NativeInt32ToFloat32(inputBuf32, floatDestBuf, numSamplesLeft, 32);
 
+	// [3306305]
+	inputProcessing (floatDestBuf, numSamplesLeft); 
+
     return kIOReturnSuccess;
 }
 
@@ -1845,6 +1972,32 @@ IOReturn AppleDBDMAAudio::convertAppleDBDMAFromInputStream32WithGain(const void 
 
 	NativeInt32ToFloat32Gain(inputBuf32, floatDestBuf, numSamplesLeft, 32, mInputGainLPtr, mInputGainRPtr);
 
+	// [3306305]
+	inputProcessing (floatDestBuf, numSamplesLeft); 
+
+    return kIOReturnSuccess;
+}
+
+// ------------------------------------------------------------------------
+// Native SInt32 to Float32 with right channel delay and gain  for TAS compensation [3173869]
+// ------------------------------------------------------------------------
+IOReturn AppleDBDMAAudio::convertAppleDBDMAFromInputStream32DelayRightWithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat)
+{
+    UInt32 numSamplesLeft;
+    float *floatDestBuf;
+    SInt32 *inputBuf32;
+
+    floatDestBuf = (float *)destBuf;
+    numSamplesLeft = numSampleFrames * streamFormat->fNumChannels;
+	inputBuf32 = &(((SInt32 *)sampleBuf)[firstSampleFrame * streamFormat->fNumChannels]);
+   
+	NativeInt32ToFloat32Gain(inputBuf32, floatDestBuf, numSamplesLeft, 32, mInputGainLPtr, mInputGainRPtr);
+
+	delayRightChannel( floatDestBuf, numSamplesLeft , &mLastInputSample);
+
+	// [3306305]
+	inputProcessing (floatDestBuf, numSamplesLeft); 
+
     return kIOReturnSuccess;
 }
 
@@ -1861,6 +2014,7 @@ void AppleDBDMAAudio::resetOutputClipOptions() {
 
 void AppleDBDMAAudio::resetInputClipOptions() {
 	mInputDualMonoMode = e_Mode_Disabled;
+	fNeedsRightChanDelayInput = false;
 }
 
 void AppleDBDMAAudio::setEqualizationFromDictionary (OSDictionary * inDictionary) 
@@ -1973,6 +2127,114 @@ void AppleDBDMAAudio::setEqualizationFromDictionary (OSDictionary * inDictionary
 Exit:
 	return;   	
 }	
+
+void AppleDBDMAAudio::setInputEqualizationFromDictionary (OSDictionary * inDictionary) 
+{ 
+	OSDictionary *					theFilterDict;
+	OSCollectionIterator *			collectionIterator;
+	OSNumber *						typeNumber;
+	OSNumber *						indexNumber;
+	OSSymbol *						theSymbol;
+	OSBoolean *						theBoolean;
+	OSData *						parameterData;
+	EQParamStruct 					eqParams;
+	UInt32							typeCode;
+	UInt32							index;
+	Boolean							runInSoftware;
+	UInt32							filtersInSoftwareCount;
+	
+	debug2IOLog ("AppleDBDMAAudio::setInputEqualizationFromDictionary (%p)\n", inDictionary);
+
+	collectionIterator = OSCollectionIterator::withCollection (inDictionary);
+	FailIf (NULL == collectionIterator, Exit);
+	
+	initializeSoftwareEQ ();
+	
+	eqParams.type = (FilterType)0;
+	eqParams.fc = 0;
+	eqParams.Q = 0;
+	eqParams.gain = 0;
+	
+	index = 0;
+	filtersInSoftwareCount = 0;
+
+	while (theSymbol = OSDynamicCast (OSSymbol, collectionIterator->getNextObject ())) {
+		debug2IOLog ("symbol = %s\n", theSymbol->getCStringNoCopy ());
+		theFilterDict = OSDynamicCast (OSDictionary, inDictionary->getObject (theSymbol));
+		debug2IOLog ("theFilterDict = %p\n", theFilterDict);
+
+		if (NULL != theFilterDict) {
+			typeNumber = OSDynamicCast (OSNumber, theFilterDict->getObject (kFilterType));
+			debug2IOLog ("typeNumber = %p\n", typeNumber);
+			FailIf (NULL == typeNumber, Exit);
+			typeCode = typeNumber->unsigned32BitValue ();
+			debug2IOLog ("filter type = %4s\n", (char *)&typeCode);
+			eqParams.type = (FilterType)typeCode;
+
+			indexNumber = OSDynamicCast (OSNumber, theFilterDict->getObject (kFilterIndex));
+			debug2IOLog ("indexNumber = %p\n", indexNumber);
+			FailIf (NULL == indexNumber, Exit);
+			index = indexNumber->unsigned32BitValue ();
+			debug2IOLog ("filter index = %ld\n", index);
+			if (index >= kMaxNumFilters) {
+				debug2IOLog ("Filter index too high (%ld) for this layout.\n", index);
+				continue;
+			}
+			parameterData = OSDynamicCast (OSData, theFilterDict->getObject (kFilterFrequency));
+			FailIf (NULL == parameterData, Exit);
+			debug2IOLog ("parameterData = %lx\n", *(UInt32 *)(parameterData->getBytesNoCopy ()));
+			memcpy (&(eqParams.fc), parameterData->getBytesNoCopy (), 4);
+
+			parameterData = OSDynamicCast (OSData, theFilterDict->getObject (kFilterQ));
+			FailIf (NULL == parameterData, Exit);
+			debug2IOLog ("parameterData = %lx\n", *(UInt32 *)(parameterData->getBytesNoCopy ()));
+			memcpy (&(eqParams.Q), parameterData->getBytesNoCopy (), 4);
+
+			parameterData = OSDynamicCast (OSData, theFilterDict->getObject (kFilterGain));
+			if (NULL != parameterData) {
+				FailIf (NULL == parameterData, Exit);
+				debug2IOLog ("parameterData = %lx\n", *(UInt32 *)(parameterData->getBytesNoCopy ()));
+				memcpy (&(eqParams.gain), parameterData->getBytesNoCopy (), 4);
+			}
+
+			theBoolean = OSDynamicCast (OSBoolean, theFilterDict->getObject (kFilterRunInSoftware));
+			if (NULL != theBoolean) {
+				runInSoftware = theBoolean->getValue ();
+				debug3IOLog ("runInSoftware[%ld] = %d\n", index, runInSoftware);
+				mCurrentInputEQStructPtr->runInSoftware[index] = runInSoftware;
+				if (runInSoftware) {
+					filtersInSoftwareCount++;
+				}
+			} else {
+				mCurrentInputEQStructPtr->runInSoftware[index] = FALSE;
+			}
+			
+			// FIX: only use member structure, and not this local variable once this works...
+			memcpy (&(mInputEQParams[index]), &eqParams, sizeof(EQParamStruct));
+
+			setEQCoefficients (&eqParams, mCurrentInputEQStructPtr, index, sampleRate.whole);
+			
+			mCurrentInputEQStructPtr->bypassFilter[index] = FALSE;
+
+			debug3IOLog ("mCurrentInputEQStructPtr->b0[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentInputEQStructPtr->b0[index])));
+			debug3IOLog ("mCurrentInputEQStructPtr->b1[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentInputEQStructPtr->b1[index])));
+			debug3IOLog ("mCurrentInputEQStructPtr->b2[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentInputEQStructPtr->b2[index])));
+			debug3IOLog ("mCurrentInputEQStructPtr->a1[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentInputEQStructPtr->a1[index])));
+			debug3IOLog ("mCurrentInputEQStructPtr->a2[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentInputEQStructPtr->a2[index])));
+			
+		}
+	}
+		
+	mCurrentInputEQStructPtr->numSoftwareFilters = filtersInSoftwareCount;
+	debug2IOLog ("mCurrentInputEQStructPtr->numSoftwareFilters = %ld\n", mCurrentInputEQStructPtr->numSoftwareFilters);
+	
+	mCurrentInputEQStructPtr->bypassAll = false;
+	
+	collectionIterator->release ();
+
+Exit:
+	return;   	
+}
 	
 void AppleDBDMAAudio::setLimiterFromDictionary (OSDictionary * inDictionary) 
 { 
@@ -2162,6 +2424,20 @@ void AppleDBDMAAudio::initializeSoftwareEQ (void)
 
 	resetEQ (mCurrentEQStructPtr);
 
+	// [3306305]
+	bzero (mCurrentInputEQStructPtr, sizeof (EQStruct));
+	bzero (&mInputEQParams, sizeof (EQParamStruct));
+	
+	mCurrentInputEQStructPtr->bypassAll = true;
+	for (index = 0; index < kMaxNumFilters; index++) {
+		*(UInt32*)(&mCurrentInputEQStructPtr->b0[index]) = 0x3F800000;
+	}
+
+	*(UInt32*)(&mCurrentInputEQStructPtr->leftSoftVolume) = 0x3F800000;
+	*(UInt32*)(&mCurrentInputEQStructPtr->rightSoftVolume) = 0x3F800000;
+
+	resetEQ (mCurrentInputEQStructPtr);
+
 	return;   	
 }
 
@@ -2211,6 +2487,17 @@ void AppleDBDMAAudio::disableSoftwareEQ (void)
 	return;   	
 }
 
+// [3306305]
+void AppleDBDMAAudio::disableSoftwareInputEQ (void) 
+{ 
+	debugIOLog ("AppleDBDMAAudio::disableSoftwareInputEQ\n");
+
+	mInputEQStructA.bypassAll = true;
+	mInputEQStructB.bypassAll = true;
+	
+	return;   	
+}
+
 void AppleDBDMAAudio::disableSoftwareLimiter() 
 { 
 	debugIOLog ("AppleDBDMAAudio::disableSoftwareLimiter\n");
@@ -2227,6 +2514,17 @@ void AppleDBDMAAudio::enableSoftwareEQ (void)
 //	mCurrentEQStructPtr->bypassAll = false;
 	mEQStructA.bypassAll = false;
 	mEQStructB.bypassAll = false;
+	
+	return;   	
+}
+
+// [3306305]
+void AppleDBDMAAudio::enableSoftwareInputEQ (void) 
+{ 
+	debugIOLog ("AppleDBDMAAudio::enableSoftwareInputEQ\n");
+	
+	mInputEQStructA.bypassAll = false;
+	mInputEQStructB.bypassAll = false;
 	
 	return;   	
 }
@@ -2321,6 +2619,17 @@ void AppleDBDMAAudio::setUseSoftwareInputGain(const bool inUseSoftwareInputGain)
 	mUseSoftwareInputGain = inUseSoftwareInputGain;     	
 	chooseInputConversionRoutinePtr();
 	
+	return;   
+}
+
+void AppleDBDMAAudio::setRightChanDelayInput(const bool needsRightChanDelay)  // [3173869]
+{
+	// Don't call this because it messes up the input stream if two or more applications are recording at once.  [3398910]
+/*
+	debug2IOLog ("setRightChanDelayInput (%s)\n", needsRightChanDelay ? "true" : "false");
+	fNeedsRightChanDelayInput = needsRightChanDelay;
+	chooseInputConversionRoutinePtr();
+*/	
 	return;   
 }
 
@@ -2495,6 +2804,8 @@ IOReturn AppleDBDMAAudio::copySoftwareProcessingState (GetSoftProcUserClientStru
 	}
 	outState->numBands = mCurrentCrossoverStructPtr->numBands;
 
+	// add input EQ here
+
 	return kIOReturnSuccess;
 }
 
@@ -2504,6 +2815,7 @@ IOReturn AppleDBDMAAudio::applySoftwareProcessingState (SetSoftProcUserClientStr
 	LimiterParamStruct 				limiterParams;
 	CrossoverParamStruct			crossoverParams;
 	EQStructPtr 					secondaryEQPtr;
+	EQStructPtr 					secondaryInputEQPtr;
 	LimiterStructPtr				secondaryLimiterPtr;
 	CrossoverStructPtr				secondaryCrossoverPtr;
 	UInt32							index;
@@ -2513,131 +2825,178 @@ IOReturn AppleDBDMAAudio::applySoftwareProcessingState (SetSoftProcUserClientStr
 	IOLog ("AppleDBDMAAudio::applySoftwareProcessingState (0x%p)\n", inState);
 	#endif
 	
-	// Set state on structure currently not in use, then switch when finished
-	if (mCurrentEQStructPtr == &mEQStructA) {
-		secondaryEQPtr = &mEQStructB;
-		memcpy (&mEQStructB, &mEQStructA, sizeof (EQStruct));
-	} else {
-		secondaryEQPtr = &mEQStructA;
-		memcpy (&mEQStructA, &mEQStructB, sizeof (EQStruct));
-	}
-	if (mCurrentLimiterStructPtr == &mLimiterStructA) {
-		secondaryLimiterPtr = &mLimiterStructB;
-		memcpy (&mLimiterStructB, &mLimiterStructA, sizeof (LimiterStruct));
-	} else {
-		secondaryLimiterPtr = &mLimiterStructA;
-		memcpy (&mLimiterStructA, &mLimiterStructB, sizeof (LimiterStruct));
-	}
-	if (mCurrentCrossoverStructPtr == &mCrossoverStructA) {
-		secondaryCrossoverPtr = &mCrossoverStructB;
-		memcpy (&mCrossoverStructB, &mCrossoverStructA, sizeof (CrossoverStruct));
-	} else {
-		secondaryCrossoverPtr = &mCrossoverStructA;
-		memcpy (&mCrossoverStructA, &mCrossoverStructB, sizeof (CrossoverStruct));
-	}
-
-	filtersInSoftwareCount = 0;
-	secondaryEQPtr->bypassAll = inState->bypassAllFilters;
-	#ifdef LOG_SOFT_DSP
-	IOLog ("secondaryEQPtr->bypassAll = %d\n", secondaryEQPtr->bypassAll);
-	#endif
-	for (index = 0; index < kMaxNumFilters; index++) {
-		secondaryEQPtr->bypassFilter[index] = inState->bypassFilter[index];
-		secondaryEQPtr->runInSoftware[index] = inState->runInSoftware[index];
-		if (secondaryEQPtr->runInSoftware[index]) {
-			filtersInSoftwareCount++;
+	if (FALSE == inState->processInput) {
+		// Set state on structure currently not in use, then switch when finished
+		if (mCurrentEQStructPtr == &mEQStructA) {
+			secondaryEQPtr = &mEQStructB;
+			memcpy (&mEQStructB, &mEQStructA, sizeof (EQStruct));
+		} else {
+			secondaryEQPtr = &mEQStructA;
+			memcpy (&mEQStructA, &mEQStructB, sizeof (EQStruct));
 		}
-		eqParams.type = (FilterType)inState->filterType[index];
-		eqParams.fc = inState->fc[index];
-		eqParams.Q = inState->Q[index];
-		eqParams.gain = inState->gain[index];
-		#ifdef LOG_SOFT_DSP
-		IOLog ("secondaryEQPtr->runInSoftware[%ld] = %d\n", index, secondaryEQPtr->runInSoftware[index]);
-		IOLog ("secondaryEQPtr->bypassFilter[%ld] = %d\n", index, secondaryEQPtr->bypassFilter[index]);
-		IOLog ("eqParams.type = %4s\n", (char *)&(eqParams.type));
-		IOLog ("eqParams.fc = 0x%lX\n", *(UInt32 *)&(eqParams.fc));
-		IOLog ("eqParams.Q = 0x%lX\n", *(UInt32 *)&(eqParams.Q));
-		IOLog ("eqParams.gain = 0x%lX\n", *(UInt32 *)&(eqParams.gain));
-		#endif
-		// FIX: only use member structure, and not this local variable once this works...
-		memcpy (&(mEQParams[index]), &eqParams, sizeof(EQParamStruct));
-		setEQCoefficients (&eqParams, secondaryEQPtr, index, sampleRate.whole);
-		#ifdef LOG_SOFT_DSP
-		IOLog ("secondaryEQPtr->b0[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->b0[index])));
-		IOLog ("secondaryEQPtr->b1[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->b1[index])));
-		IOLog ("secondaryEQPtr->b2[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->b2[index])));
-		IOLog ("secondaryEQPtr->a1[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->a1[index])));
-		IOLog ("secondaryEQPtr->a2[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->a2[index])));				
-		#endif
-	}
-	secondaryEQPtr->numSoftwareFilters = filtersInSoftwareCount;
-	secondaryEQPtr->phaseReverse = inState->phaseReverse;
-	secondaryEQPtr->leftSoftVolume = inState->leftSoftVolume;
-	secondaryEQPtr->rightSoftVolume = inState->rightSoftVolume;
+		if (mCurrentLimiterStructPtr == &mLimiterStructA) {
+			secondaryLimiterPtr = &mLimiterStructB;
+			memcpy (&mLimiterStructB, &mLimiterStructA, sizeof (LimiterStruct));
+		} else {
+			secondaryLimiterPtr = &mLimiterStructA;
+			memcpy (&mLimiterStructA, &mLimiterStructB, sizeof (LimiterStruct));
+		}
+		if (mCurrentCrossoverStructPtr == &mCrossoverStructA) {
+			secondaryCrossoverPtr = &mCrossoverStructB;
+			memcpy (&mCrossoverStructB, &mCrossoverStructA, sizeof (CrossoverStruct));
+		} else {
+			secondaryCrossoverPtr = &mCrossoverStructA;
+			memcpy (&mCrossoverStructA, &mCrossoverStructB, sizeof (CrossoverStruct));
+		}
 
-	secondaryLimiterPtr->bypassAll = inState->bypassAllLimiters;
-	#ifdef LOG_SOFT_DSP
-	IOLog ("secondaryLimiterPtr->bypassAll = %d\n", secondaryLimiterPtr->bypassAll);
-	#endif
-	for (index = 0; index < kMaxNumLimiters; index++) {
-		secondaryLimiterPtr->bypass[index] = inState->bypassLimiter[index];
-		limiterParams.type = (LimiterType)inState->limiterType[index];
-		limiterParams.threshold = inState->threshold[index];
-		limiterParams.gain = inState->limitergain[index];
-		limiterParams.ratio = inState->ratio[index];
-		limiterParams.attack = inState->attack[index];
-		limiterParams.release = inState->release[index];
-		limiterParams.lookahead = inState->lookahead[index];
-		#ifdef LOG_SOFT_DSP
-		IOLog ("limiterParams.type = %4s\n", (char *)&(limiterParams.type));
-		IOLog ("limiterParams.threshold = 0x%lX\n", *(UInt32 *)&(limiterParams.threshold));
-		IOLog ("limiterParams.ratio = 0x%lX\n", *(UInt32 *)&(limiterParams.ratio));
-		IOLog ("limiterParams.attack = 0x%lX\n", *(UInt32 *)&(limiterParams.attack));
-		IOLog ("limiterParams.release = 0x%lX\n", *(UInt32 *)&(limiterParams.release));
-		IOLog ("limiterParams.lookahead = 0x%lX\n", *(UInt32 *)&(limiterParams.lookahead));
-		IOLog ("inState->bandIndex[%ld] = 0x%lX\n", index, *(UInt32 *)&(inState->bandIndex[index]));
-		#endif
-		// FIX: only use member structure, and not this local variable once this works...
-		memcpy (&(mLimiterParams[index]), &limiterParams, sizeof(LimiterParamStruct));
-		setLimiterCoefficients (&limiterParams, secondaryLimiterPtr, inState->bandIndex[index], sampleRate.whole);
-		#ifdef LOG_SOFT_DSP
-		IOLog ("secondaryLimiterPtr->threshold[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryLimiterPtr->threshold[index])));
-		IOLog ("secondaryLimiterPtr->oneMinusOneOverRatio[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryLimiterPtr->oneMinusOneOverRatio[index])));
-		IOLog ("secondaryLimiterPtr->attackTc[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryLimiterPtr->attackTc[index])));
-		IOLog ("secondaryLimiterPtr->releaseTc[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryLimiterPtr->releaseTc[index])));
-		#endif
-	}
+		filtersInSoftwareCount = 0;
 
-	crossoverParams.numBands = inState->numBands;
-	crossoverParams.phaseReverseHigh = inState->phaseReverseHigh;
-	#ifdef LOG_SOFT_DSP
-	IOLog ("crossoverParams.numBands = %ld\n", crossoverParams.numBands);	
-	IOLog ("crossoverParams.phaseReverseHigh = %ld\n", crossoverParams.phaseReverseHigh);	
-	#endif
-	for (index = 0; index < crossoverParams.numBands - 1; index++) {
-		crossoverParams.frequency[index] = inState->frequency[index];
-		crossoverParams.delay[index] = inState->delay[index];
+		secondaryEQPtr->bypassAll = inState->bypassAllFilters;
 		#ifdef LOG_SOFT_DSP
-		IOLog ("crossoverParams.frequency[%ld] = %ld\n", index, *((UInt32 *)&(crossoverParams.frequency[index])));	
+		IOLog ("secondaryEQPtr->bypassAll = %d\n", secondaryEQPtr->bypassAll);
 		#endif
-	}
-	// FIX: only use member structure, and not this local variable once this works...
-	memcpy (&mCrossoverParams, &crossoverParams, sizeof(CrossoverParamStruct));
-	setCrossoverCoefficients (&crossoverParams, secondaryCrossoverPtr, sampleRate.whole);
-	#ifdef LOG_SOFT_DSP
-	IOLog ("secondaryCrossoverPtr->c1_1st[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryCrossoverPtr->c1_1st[index])));
-	IOLog ("secondaryCrossoverPtr->c1_2nd[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryCrossoverPtr->c1_2nd[index])));
-	IOLog ("secondaryCrossoverPtr->c2_2nd[[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryCrossoverPtr->c2_2nd[[index])));
-	#endif
+		for (index = 0; index < kMaxNumFilters; index++) {
+			secondaryEQPtr->bypassFilter[index] = inState->bypassFilter[index];
+			secondaryEQPtr->runInSoftware[index] = inState->runInSoftware[index];
+			if (secondaryEQPtr->runInSoftware[index]) {
+				filtersInSoftwareCount++;
+			}
+			eqParams.type = (FilterType)inState->filterType[index];
+			eqParams.fc = inState->fc[index];
+			eqParams.Q = inState->Q[index];
+			eqParams.gain = inState->gain[index];
+			#ifdef LOG_SOFT_DSP
+			IOLog ("secondaryEQPtr->runInSoftware[%ld] = %d\n", index, secondaryEQPtr->runInSoftware[index]);
+			IOLog ("secondaryEQPtr->bypassFilter[%ld] = %d\n", index, secondaryEQPtr->bypassFilter[index]);
+			IOLog ("eqParams.type = %4s\n", (char *)&(eqParams.type));
+			IOLog ("eqParams.fc = 0x%lX\n", *(UInt32 *)&(eqParams.fc));
+			IOLog ("eqParams.Q = 0x%lX\n", *(UInt32 *)&(eqParams.Q));
+			IOLog ("eqParams.gain = 0x%lX\n", *(UInt32 *)&(eqParams.gain));
+			#endif
+			// FIX: only use member structure, and not this local variable once this works...
+			memcpy (&(mEQParams[index]), &eqParams, sizeof(EQParamStruct));
+			setEQCoefficients (&eqParams, secondaryEQPtr, index, sampleRate.whole);
+			#ifdef LOG_SOFT_DSP
+			IOLog ("secondaryEQPtr->b0[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->b0[index])));
+			IOLog ("secondaryEQPtr->b1[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->b1[index])));
+			IOLog ("secondaryEQPtr->b2[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->b2[index])));
+			IOLog ("secondaryEQPtr->a1[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->a1[index])));
+			IOLog ("secondaryEQPtr->a2[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->a2[index])));				
+			#endif
+		}
+		secondaryEQPtr->numSoftwareFilters = filtersInSoftwareCount;
+		secondaryEQPtr->phaseReverse = inState->phaseReverse;
+		secondaryEQPtr->leftSoftVolume = inState->leftSoftVolume;
+		secondaryEQPtr->rightSoftVolume = inState->rightSoftVolume;
 	
-	// Update processing state pointer after all state is updated
-	mCurrentEQStructPtr = secondaryEQPtr;
-	mCurrentLimiterStructPtr = secondaryLimiterPtr;
-	mCurrentCrossoverStructPtr = secondaryCrossoverPtr;
-
-	// Send latest state to current output hardware in realtime mode
-	(ourProvider->getCurrentOutputPlugin ())->setEQ ((void *)secondaryEQPtr, TRUE);
+		secondaryLimiterPtr->bypassAll = inState->bypassAllLimiters;
+		#ifdef LOG_SOFT_DSP
+		IOLog ("secondaryLimiterPtr->bypassAll = %d\n", secondaryLimiterPtr->bypassAll);
+		#endif
+		for (index = 0; index < kMaxNumLimiters; index++) {
+			secondaryLimiterPtr->bypass[index] = inState->bypassLimiter[index];
+			limiterParams.type = (LimiterType)inState->limiterType[index];
+			limiterParams.threshold = inState->threshold[index];
+			limiterParams.gain = inState->limitergain[index];
+			limiterParams.ratio = inState->ratio[index];
+			limiterParams.attack = inState->attack[index];
+			limiterParams.release = inState->release[index];
+			limiterParams.lookahead = inState->lookahead[index];
+			#ifdef LOG_SOFT_DSP
+			IOLog ("limiterParams.type = %4s\n", (char *)&(limiterParams.type));
+			IOLog ("limiterParams.threshold = 0x%lX\n", *(UInt32 *)&(limiterParams.threshold));
+			IOLog ("limiterParams.ratio = 0x%lX\n", *(UInt32 *)&(limiterParams.ratio));
+			IOLog ("limiterParams.attack = 0x%lX\n", *(UInt32 *)&(limiterParams.attack));
+			IOLog ("limiterParams.release = 0x%lX\n", *(UInt32 *)&(limiterParams.release));
+			IOLog ("limiterParams.lookahead = 0x%lX\n", *(UInt32 *)&(limiterParams.lookahead));
+			IOLog ("inState->bandIndex[%ld] = 0x%lX\n", index, *(UInt32 *)&(inState->bandIndex[index]));
+			#endif
+			// FIX: only use member structure, and not this local variable once this works...
+			memcpy (&(mLimiterParams[index]), &limiterParams, sizeof(LimiterParamStruct));
+			setLimiterCoefficients (&limiterParams, secondaryLimiterPtr, inState->bandIndex[index], sampleRate.whole);
+			#ifdef LOG_SOFT_DSP
+			IOLog ("secondaryLimiterPtr->threshold[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryLimiterPtr->threshold[index])));
+			IOLog ("secondaryLimiterPtr->oneMinusOneOverRatio[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryLimiterPtr->oneMinusOneOverRatio[index])));
+			IOLog ("secondaryLimiterPtr->attackTc[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryLimiterPtr->attackTc[index])));
+			IOLog ("secondaryLimiterPtr->releaseTc[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryLimiterPtr->releaseTc[index])));
+			#endif
+		}
 	
+		crossoverParams.numBands = inState->numBands;
+		crossoverParams.phaseReverseHigh = inState->phaseReverseHigh;
+		#ifdef LOG_SOFT_DSP
+		IOLog ("crossoverParams.numBands = %ld\n", crossoverParams.numBands);	
+		IOLog ("crossoverParams.phaseReverseHigh = %ld\n", crossoverParams.phaseReverseHigh);	
+		#endif
+		for (index = 0; index < crossoverParams.numBands - 1; index++) {
+			crossoverParams.frequency[index] = inState->frequency[index];
+			crossoverParams.delay[index] = inState->delay[index];
+			#ifdef LOG_SOFT_DSP
+			IOLog ("crossoverParams.frequency[%ld] = %ld\n", index, *((UInt32 *)&(crossoverParams.frequency[index])));	
+			#endif
+		}
+		// FIX: only use member structure, and not this local variable once this works...
+		memcpy (&mCrossoverParams, &crossoverParams, sizeof(CrossoverParamStruct));
+		setCrossoverCoefficients (&crossoverParams, secondaryCrossoverPtr, sampleRate.whole);
+		#ifdef LOG_SOFT_DSP
+		IOLog ("secondaryCrossoverPtr->c1_1st[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryCrossoverPtr->c1_1st[index])));
+		IOLog ("secondaryCrossoverPtr->c1_2nd[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryCrossoverPtr->c1_2nd[index])));
+		IOLog ("secondaryCrossoverPtr->c2_2nd[[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryCrossoverPtr->c2_2nd[[index])));
+		#endif
+		// Update processing state pointer after all state is updated
+		mCurrentEQStructPtr = secondaryEQPtr;
+		mCurrentLimiterStructPtr = secondaryLimiterPtr;
+		mCurrentCrossoverStructPtr = secondaryCrossoverPtr;
+	
+		// Send latest state to current output hardware in realtime mode
+		(ourProvider->getCurrentOutputPlugin ())->setEQ ((void *)secondaryEQPtr, TRUE);
+		
+	} else {
+		debugIOLog ("inputProcessing enabled.\n");
+		// [3306305]
+		if (mCurrentInputEQStructPtr == &mInputEQStructA) {
+			secondaryInputEQPtr = &mInputEQStructB;
+			memcpy (&mInputEQStructB, &mInputEQStructA, sizeof (EQStruct));
+		} else {
+			secondaryInputEQPtr = &mInputEQStructA;
+			memcpy (&mInputEQStructA, &mInputEQStructB, sizeof (EQStruct));
+		}
+		secondaryInputEQPtr->bypassAll = inState->bypassAllFilters;
+
+		for (index = 0; index < kMaxNumFilters; index++) {
+			secondaryInputEQPtr->bypassFilter[index] = inState->bypassFilter[index];
+			secondaryInputEQPtr->runInSoftware[index] = true;
+	
+			eqParams.type = (FilterType)inState->filterType[index];
+			eqParams.fc = inState->fc[index];
+			eqParams.Q = inState->Q[index];
+			eqParams.gain = inState->gain[index];
+			#ifdef LOG_SOFT_DSP
+			IOLog ("secondaryInputEQPtr->runInSoftware[%ld] = %d\n", index, secondaryEQPtr->runInSoftware[index]);
+			IOLog ("secondaryInputEQPtr->bypassFilter[%ld] = %d\n", index, secondaryEQPtr->bypassFilter[index]);
+			IOLog ("eqParams.type = %4s\n", (char *)&(eqParams.type));
+			IOLog ("eqParams.fc = 0x%lX\n", *(UInt32 *)&(eqParams.fc));
+			IOLog ("eqParams.Q = 0x%lX\n", *(UInt32 *)&(eqParams.Q));
+			IOLog ("eqParams.gain = 0x%lX\n", *(UInt32 *)&(eqParams.gain));
+			#endif
+			// FIX: only use member structure, and not this local variable once this works...
+			memcpy (&(mInputEQParams[index]), &eqParams, sizeof(EQParamStruct));
+			setEQCoefficients (&eqParams, secondaryInputEQPtr, index, sampleRate.whole);
+			#ifdef LOG_SOFT_DSP
+			IOLog ("secondaryInputEQPtr->b0[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->b0[index])));
+			IOLog ("secondaryInputEQPtr->b1[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->b1[index])));
+			IOLog ("secondaryInputEQPtr->b2[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->b2[index])));
+			IOLog ("secondaryInputEQPtr->a1[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->a1[index])));
+			IOLog ("secondaryInputEQPtr->a2[%ld] = 0x%lx\n", index, *((UInt32 *)&(secondaryEQPtr->a2[index])));				
+			#endif
+		}
+		secondaryInputEQPtr->numSoftwareFilters = kMaxNumFilters;
+		secondaryInputEQPtr->phaseReverse = inState->phaseReverse;
+		secondaryInputEQPtr->leftSoftVolume = inState->leftSoftVolume;
+		secondaryInputEQPtr->rightSoftVolume = inState->rightSoftVolume;
+		mCurrentInputEQStructPtr = secondaryInputEQPtr;
+	}
+
 	return kIOReturnSuccess;
 }
 
@@ -2792,6 +3151,27 @@ void AppleDBDMAAudio::updateDSPForSampleRate (UInt32 inSampleRate) {
 		#endif
 	}
 
+	if (!mCurrentInputEQStructPtr->bypassAll) {
+		// Update EQ coefficients
+		debug2IOLog ("updateDSPForSampleRate (%ld), input filters not bypassed.\n", inSampleRate);
+		for (index = 0; index < kMaxNumFilters; index++) {
+			#ifdef LOG_SOFT_DSP
+			IOLog ("mInputEQParams[%ld].type = %4s\n", index, (char *)&(mEQParams[index].type));
+			IOLog ("mInputEQParams[%ld].fc = %ld\n", index, *(UInt32 *)&(mEQParams[index].fc));
+			IOLog ("mInputEQParams[%ld].gain = %ld\n", index, *(UInt32 *)&(mEQParams[index].gain));
+			IOLog ("mInputEQParams[%ld].Q = %ld\n", index, *(UInt32 *)&(mEQParams[index].Q));
+			#endif
+			setEQCoefficients (&mInputEQParams[index], mCurrentInputEQStructPtr, index, inSampleRate);
+			#ifdef LOG_SOFT_DSP
+			IOLog ("mCurrentInputEQStructPtr->b0[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentEQStructPtr->b0[index])));
+			IOLog ("mCurrentInputEQStructPtr->b1[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentEQStructPtr->b1[index])));
+			IOLog ("mCurrentInputEQStructPtr->b2[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentEQStructPtr->b2[index])));
+			IOLog ("mCurrentInputEQStructPtr->a1[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentEQStructPtr->a1[index])));
+			IOLog ("mCurrentInputEQStructPtr->a2[%ld] = 0x%lx\n", index, *((UInt32 *)&(mCurrentEQStructPtr->a2[index])));
+			#endif
+		}
+	}
+
 }
 
 #pragma mark ------------------------ 
@@ -2868,13 +3248,15 @@ bool AppleDBDMAAudio::iSubEnginePublished (AppleDBDMAAudio * dbdmaEngineObject, 
 	FailIf (NULL == dbdmaEngineObject->miSubProcessingParams.highFreqSamples, Exit);
 
 	// Open the iSub which will cause it to create mute and volume controls
-	dbdmaEngineObject->attach (dbdmaEngineObject->iSubEngine);
+//	dbdmaEngineObject->attach (dbdmaEngineObject->iSubEngine);
+	dbdmaEngineObject->iSubEngine->retain ();
 	cg = dbdmaEngineObject->getCommandGate ();
-	FailWithAction (NULL == cg, dbdmaEngineObject->detach (dbdmaEngineObject->iSubEngine), Exit);
+//	FailWithAction (NULL == cg, dbdmaEngineObject->detach (dbdmaEngineObject->iSubEngine), Exit);
+	FailWithAction (NULL == cg, dbdmaEngineObject->iSubEngine->release(), Exit);
 	dbdmaEngineObject->setSampleOffset(kMinimumLatencyiSub);	// HAL should notice this when iSub adds it's controls and sends out update
 	IOSleep (102);
 	result = cg->runAction (iSubOpenAction);
-	FailWithAction (kIOReturnSuccess != result, dbdmaEngineObject->detach (dbdmaEngineObject->iSubEngine), Exit);
+	FailWithAction (kIOReturnSuccess != result, dbdmaEngineObject->iSubEngine->release (), Exit);
 	dbdmaEngineObject->iSubBufferMemory = dbdmaEngineObject->iSubEngine->GetSampleBuffer ();
 	debug2IOLog ("iSubBuffer length = %ld\n", dbdmaEngineObject->iSubBufferMemory->getLength ());
 
@@ -2934,12 +3316,12 @@ IOReturn AppleDBDMAAudio::iSubCloseAction (OSObject *owner, void *arg1, void *ar
 			audioEngine->iSubBufferMemory = NULL;
 
 			// [3094574] aml - iSub is gone, update the clipping routine while the engine is paused
-			audioEngine->chooseOutputClippingRoutinePtr();
+			audioEngine->chooseOutputClippingRoutinePtr ();
 
 			audioEngine->completeConfigurationChange ();
 			audioEngine->resumeAudioEngine ();
 
-			audioEngine->detach (oldiSubEngine); //(audioEngine->iSubEngine);
+			oldiSubEngine->release (); //(audioEngine->iSubEngine);
 
 			//audioEngine->iSubEngine = NULL;
 			//audioEngine->iSubBufferMemory = NULL;
@@ -2985,7 +3367,7 @@ IOReturn AppleDBDMAAudio::iSubOpenAction (OSObject *owner, void *arg1, void *arg
         AppleDBDMAAudio *		audioEngine;
 
 		audioEngine = OSDynamicCast (AppleDBDMAAudio, owner);
-		resultBool = audioEngine->iSubEngine->openiSub (audioEngine);
+		resultBool = audioEngine->iSubEngine->openiSub (audioEngine, &requestiSubClose);
     }
 
 	if (resultBool) {
@@ -3050,6 +3432,8 @@ void AppleDBDMAAudio::iSubSynchronize(UInt32 firstSampleFrame, UInt32 numSampleF
 			distance = miSubProcessingParams.iSubBufferOffset - (iSubEngine->GetCurrentByteCount () / 2);
 		} else if (miSubProcessingParams.iSubLoopCount == (iSubEngine->GetCurrentLoopCount () + 1) && miSubProcessingParams.iSubBufferOffset < (SInt32)(iSubEngine->GetCurrentByteCount () / 2)) {
 			distance = iSubBufferLen - (iSubEngine->GetCurrentByteCount () / 2) + miSubProcessingParams.iSubBufferOffset;
+		} else {
+			distance = initialiSubLead;
 		}
 
 		if (distance < (initialiSubLead / 2)) {			
@@ -3276,11 +3660,12 @@ void AppleDBDMAAudio::resetiSubProcessingState()
 }
 
 bool AppleDBDMAAudio::willTerminate (IOService * provider, IOOptionBits options) {
-    IOCommandGate *					cg;
+//	IOCommandGate *					cg;
 	Boolean 						result;
 	
 	debug3IOLog ("+AppleDBDMAAudio[%p]::willTerminate (%p)\n", this, provider);
 
+/*
 	if (iSubEngine == (AppleiSubEngine *)provider) {
 		debugIOLog ("iSub requesting termination\n");
 
@@ -3290,19 +3675,19 @@ bool AppleDBDMAAudio::willTerminate (IOService * provider, IOOptionBits options)
 		}
 
 		// Set up notifier to run when iSub shows up again
-		FailIf(NULL == iSubAttach, Exit);
-		
-		if (iSubAttach->getIntValue ()) {
-			iSubEngineNotifier = addNotification (gIOPublishNotification, serviceMatching ("AppleiSubEngine"), (IOServiceNotificationHandler)&iSubEnginePublished, this);
+		if (NULL != iSubAttach) {
+			if (iSubAttach->getIntValue ()) {
+				iSubEngineNotifier = addNotification (gIOPublishNotification, serviceMatching ("AppleiSubEngine"), (IOServiceNotificationHandler)&iSubEnginePublished, this);
+			}
 		}
 	}
+*/
 	
 	debug2IOLog ("AppleDBDMAAudio::willTerminate, before audioDevice retain count = %d\n", audioDevice->getRetainCount());
 
 	result = super::willTerminate (provider, options);
 	debug3IOLog ("-AppleDBDMAAudio[%p]::willTerminate, super::willTerminate () returned %d\n", this, result);
 
-Exit:
 	return result;
 }
 
@@ -3314,6 +3699,23 @@ bool AppleDBDMAAudio::requestTerminate (IOService * provider, IOOptionBits optio
 	debug3IOLog ("AppleDBDMAAudio[%p]::requestTerminate, super::requestTerminate () returned %d\n", this, result);
 
 	return result;
+}
+
+void AppleDBDMAAudio::requestiSubClose (IOAudioEngine * audioEngine) {
+	AppleDBDMAAudio *				dbdmaAudioEngine;
+    IOCommandGate *								cg;
+
+	dbdmaAudioEngine = OSDynamicCast (AppleDBDMAAudio, audioEngine);
+
+	cg = dbdmaAudioEngine->getCommandGate ();
+	if (NULL != cg) {
+		cg->runAction (dbdmaAudioEngine->iSubCloseAction);
+	}
+
+	// Set up notifier to run when iSub shows up again
+	if (dbdmaAudioEngine->iSubAttach->getIntValue ()) {
+		dbdmaAudioEngine->iSubEngineNotifier = addNotification (gIOPublishNotification, serviceMatching ("AppleiSubEngine"), (IOServiceNotificationHandler)&dbdmaAudioEngine->iSubEnginePublished, dbdmaAudioEngine);
+	}
 }
 
 void AppleDBDMAAudio::updateiSubPosition(UInt32 firstSampleFrame, UInt32 numSampleFrames)
@@ -3375,7 +3777,8 @@ inline void AppleDBDMAAudio::endTiming() {
 bool AppleDBDMAAudio::engineDied ( void ) {
 	bool			result = FALSE;
 	UInt32			tempInterruptCount;
-	
+
+	tempInterruptCount = 0;
 	if ( dmaRunState ) {
 		tempInterruptCount = mDmaInterruptCount;
 		if ( tempInterruptCount == mLastDmaInterruptCount ) {

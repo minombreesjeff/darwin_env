@@ -50,6 +50,9 @@ const UInt32 KeyLargoPlatform::kI2S1InterfaceEnable 		= ( 1 << kI2S1Enable );
 
 const char*  KeyLargoPlatform::kAmpMuteEntry				= "amp-mute";
 const char*  KeyLargoPlatform::kAnalogHWResetEntry			= "audio-hw-reset";
+
+const char*	 KeyLargoPlatform::kCodecErrorIrqTypeEntry		= "codec-error-irq";
+const char*	 KeyLargoPlatform::kCodecIrqTypeEntry			= "codec-irq";
 const char*	 KeyLargoPlatform::kComboInJackTypeEntry		= "combo-input-type";
 const char*	 KeyLargoPlatform::kComboOutJackTypeEntry		= "combo-output-type";
 const char*  KeyLargoPlatform::kDigitalHWResetEntry			= "audio-dig-hw-reset";
@@ -139,22 +142,22 @@ bool KeyLargoPlatform::init (IOService* device, AppleOnboardAudio* provider, UIn
 	}
 	debug2IOLog ("KeyLargoPlatform - mI2CPort = %ld\n", mI2CPort);
 
-	initAudioGpioPtr ( gpio, kAmpMuteEntry, &mAmplifierMuteGpio, &mAmplifierMuteActiveState );						//	control - no interrupt
-	initAudioGpioPtr ( gpio, kAnalogHWResetEntry, &mAnalogResetGpio, &mAnalogResetActiveState );					//	control - no interrupt
-	initAudioGpioPtr ( gpio, kComboInJackTypeEntry, &mComboInJackTypeGpio, &mComboInJackTypeActiveState );			//	control - no interrupt
-	initAudioGpioPtr ( gpio, kComboOutJackTypeEntry, &mComboOutJackTypeGpio, &mComboOutJackTypeActiveState );		//	control - no interrupt
-	initAudioGpioPtr ( gpio, kDigitalHWResetEntry, &mDigitalResetGpio, &mDigitalResetActiveState );					//	control - no interrupt
-	initAudioGpioPtr ( gpio, kDigitalInDetectEntry, &mDigitalInDetectGpio, &mDigitalInDetectActiveState );			//	detect  - does interrupt	¥
-	initAudioGpioPtr ( gpio, kDigitalInDetectEntry, &mCodecErrorInterruptGpio, &mCodecErrorInterruptActiveState );	//	detect  - does interrupt	¥
-	initAudioGpioPtr ( gpio, kDigitalInDetectEntry, &mCodecInterruptGpio, &mCodecInterruptActiveState );			//	detect  - does interrupt	¥
-	initAudioGpioPtr ( gpio, kDigitalOutDetectEntry, &mDigitalOutDetectGpio, &mDigitalOutDetectActiveState );		//	detect  - does interrupt	¥
-	initAudioGpioPtr ( gpio, kHeadphoneDetectInt, &mHeadphoneDetectGpio, &mHeadphoneDetectActiveState );			//	detect  - does interrupt	¥
-	initAudioGpioPtr ( gpio, kHeadphoneMuteEntry, &mHeadphoneMuteGpio, &mHeadphoneMuteActiveState );				//	control - no interrupt
-	initAudioGpioPtr ( gpio, kInternalSpeakerIDEntry, &mInternalSpeakerIDGpio, &mInternalSpeakerIDActiveState );	//	control - no interrupt
-	initAudioGpioPtr ( gpio, kLineInDetectInt, &mLineInDetectGpio, &mLineInDetectActiveState );						//	detect  - does interrupt	¥
-	initAudioGpioPtr ( gpio, kLineOutDetectInt, &mLineOutDetectGpio, &mLineOutDetectActiveState );					//	detect  - does interrupt	¥
-	initAudioGpioPtr ( gpio, kLineOutMuteEntry, &mLineOutMuteGpio, &mLineOutMuteActiveState );						//	control - no interrupt
-	initAudioGpioPtr ( gpio, kSpeakerDetectEntry, &mSpeakerDetectGpio, &mSpeakerDetectActiveState );				//	detect  - does interrupt	¥
+	initAudioGpioPtr ( gpio, kAmpMuteEntry, &mAmplifierMuteGpio, &mAmplifierMuteActiveState, NULL );											//	control - no interrupt
+	initAudioGpioPtr ( gpio, kAnalogHWResetEntry, &mAnalogResetGpio, &mAnalogResetActiveState, NULL );											//	control - no interrupt
+	initAudioGpioPtr ( gpio, kCodecErrorIrqTypeEntry, &mCodecErrorInterruptGpio, &mCodecErrorInterruptActiveState, &mCodecErrorIntProvider );	//	control - does interrupt
+	initAudioGpioPtr ( gpio, kCodecIrqTypeEntry, &mCodecInterruptGpio, &mCodecInterruptActiveState, &mCodecIntProvider );						//	control - does interrupt
+	initAudioGpioPtr ( gpio, kComboInJackTypeEntry, &mComboInJackTypeGpio, &mComboInJackTypeActiveState, NULL );								//	control - no interrupt
+	initAudioGpioPtr ( gpio, kComboOutJackTypeEntry, &mComboOutJackTypeGpio, &mComboOutJackTypeActiveState, NULL );								//	control - no interrupt
+	initAudioGpioPtr ( gpio, kDigitalHWResetEntry, &mDigitalResetGpio, &mDigitalResetActiveState, NULL );										//	control - no interrupt
+	initAudioGpioPtr ( gpio, kDigitalInDetectEntry, &mDigitalInDetectGpio, &mDigitalInDetectActiveState, &mDigitalInDetectIntProvider );		//	detect  - does interrupt
+	initAudioGpioPtr ( gpio, kDigitalOutDetectEntry, &mDigitalOutDetectGpio, &mDigitalOutDetectActiveState, &mDigitalOutDetectIntProvider );	//	detect  - does interrupt
+	initAudioGpioPtr ( gpio, kHeadphoneDetectInt, &mHeadphoneDetectGpio, &mHeadphoneDetectActiveState, &mHeadphoneDetectIntProvider );			//	detect  - does interrupt
+	initAudioGpioPtr ( gpio, kHeadphoneMuteEntry, &mHeadphoneMuteGpio, &mHeadphoneMuteActiveState, NULL );										//	control - no interrupt
+	initAudioGpioPtr ( gpio, kInternalSpeakerIDEntry, &mInternalSpeakerIDGpio, &mInternalSpeakerIDActiveState, NULL );							//	control - no interrupt
+	initAudioGpioPtr ( gpio, kLineInDetectInt, &mLineInDetectGpio, &mLineInDetectActiveState, &mDigitalInDetectIntProvider );					//	detect  - does interrupt
+	initAudioGpioPtr ( gpio, kLineOutDetectInt, &mLineOutDetectGpio, &mLineOutDetectActiveState, &mLineOutDetectIntProvider );					//	detect  - does interrupt
+	initAudioGpioPtr ( gpio, kLineOutMuteEntry, &mLineOutMuteGpio, &mLineOutMuteActiveState, NULL );											//	control - no interrupt
+	initAudioGpioPtr ( gpio, kSpeakerDetectEntry, &mSpeakerDetectGpio, &mSpeakerDetectActiveState, &mSpeakerDetectIntProvider );				//	detect  - does interrupt
 
 	theService = (OSDynamicCast(IOService, i2s));
 	FailWithAction (!theService, result = false, Exit);
@@ -577,19 +580,14 @@ IOReturn KeyLargoPlatform::requestI2SClockSource(I2SClockFrequency inFrequency)
 }
 
 //	--------------------------------------------------------------------------------
-IOReturn KeyLargoPlatform::setFrameCount (UInt32 value) {
-	OSWriteLittleInt32(mI2SBaseAddress, kI2SFrameCountOffset, value);
-
+IOReturn KeyLargoPlatform::setFrameCount ( UInt32 value ) {
+	OSWriteLittleInt32 ( mI2SBaseAddress, kI2SFrameCountOffset, value );
 	return kIOReturnSuccess;
 }
 
 //	--------------------------------------------------------------------------------
 UInt32 KeyLargoPlatform::getFrameCount () {
-	UInt32 frameCount = 0;
-
 	return OSReadLittleInt32(mI2SBaseAddress, kI2SFrameCountOffset);
-
-	return frameCount;
 }
 
 #pragma mark ---------------------------
@@ -597,7 +595,7 @@ UInt32 KeyLargoPlatform::getFrameCount () {
 #pragma mark ---------------------------
 
 //	--------------------------------------------------------------------------------
-void KeyLargoPlatform::initAudioGpioPtr ( const IORegistryEntry * start, const char * gpioName, GpioPtr* gpioH, GpioActiveState* gpioActiveStatePtr ) {
+void KeyLargoPlatform::initAudioGpioPtr ( const IORegistryEntry * start, const char * gpioName, GpioPtr* gpioH, GpioActiveState* gpioActiveStatePtr, IOService ** intProvider ) {
     IORegistryEntry			*theRegEntry;
 	OSData					*theProperty;
 	IOMemoryMap				*map;
@@ -607,6 +605,9 @@ void KeyLargoPlatform::initAudioGpioPtr ( const IORegistryEntry * start, const c
 	
 	theRegEntry = FindEntryByProperty (start, kAudioGPIO, gpioName);
 	if ( NULL != theRegEntry ) {
+		if ( NULL != intProvider ) {
+			*intProvider = OSDynamicCast ( IOService, theRegEntry );
+		}
 		theProperty = OSDynamicCast ( OSData, theRegEntry->getProperty ( kAAPLAddress ) );
 		if ( NULL != theProperty ) {
 			theGpioAddr = (UInt32*)theProperty->getBytesNoCopy();
@@ -716,6 +717,7 @@ GpioAttributes KeyLargoPlatform::getGpioAttributes ( GPIOSelector theGpio ) {
 			case kGPIO_Selector_LineInDetect:
 			case kGPIO_Selector_LineOutDetect:
 			case kGPIO_Selector_SpeakerDetect:
+				if ( kGPIO_Selector_HeadphoneDetect == theGpio ) { *gpioPtr |= 0x80; }	//	BROWN PATCH - TEMPORARY!!!
 				if ( ( gpioValue & ( gpioBIT_MASK << gpioPIN_RO ) ) == ( activeState << gpioPIN_RO ) ) {
 					result = kGPIO_Connected;
 				} else {
@@ -900,7 +902,7 @@ GpioAttributes	KeyLargoPlatform::getSpeakerConnected() {
 
 //	--------------------------------------------------------------------------------
 GpioAttributes KeyLargoPlatform::getSpeakerMuteState() {
-	return getGpioAttributes ( kGPIO_Selector_SpeakerDetect );
+	return getGpioAttributes ( kGPIO_Selector_SpeakerMute );
 }
 
 //	--------------------------------------------------------------------------------
@@ -967,6 +969,7 @@ IOReturn KeyLargoPlatform::registerInterruptHandler (IOService * theDevice, void
 	return result;
 }
 
+//	--------------------------------------------------------------------------------
 IOReturn KeyLargoPlatform::unregisterInterruptHandler (IOService * theDevice, void * interruptHandler, PlatformInterruptSource source ) {
 	IOReturn				result;
 
@@ -1017,7 +1020,6 @@ Exit:
 	if (NULL != theInterruptEventSource) {
 		theInterruptEventSource->release();
 	}
-	debug2IOLog ( "KeyLargoPlatform::setHeadphoneDetectInterruptHandler() returns %X\n", result );
 	return result;
 }
 
@@ -1344,6 +1346,7 @@ IOReturn KeyLargoPlatform::initI2S(IOMemoryMap* map) {
     {
         DEBUG_IOLOG("AudioI2SControl::init ERROR: unable to setup ioBaseAddress and i2SInterfaceNumber\n");
     }
+	debug4IOLog ( "mIOBaseAddress %p, mIOBaseAddressMemory %p, mI2SInterfaceNumber %d\n", mIOBaseAddress, mIOBaseAddressMemory, mI2SInterfaceNumber );
 	FailIf (NULL == mIOBaseAddressMemory, Exit);
 
 	//	[3060321]	ioConfigurationBaseAddress is required by this object in order to enable the target
@@ -1389,21 +1392,11 @@ IOReturn KeyLargoPlatform::initI2S(IOMemoryMap* map) {
 	//
 	
 	//	Map the I2S configuration registers
-	if (kUseI2SCell0 == mI2SInterfaceNumber) {
-		mIOI2SBaseAddressMemory = IODeviceMemory::withRange ((IOPhysicalAddress)((UInt8 *)mSoundConfigSpace), kI2S_IO_CONFIGURATION_SIZE);
-	} else {
-		mIOI2SBaseAddressMemory = IODeviceMemory::withRange ((IOPhysicalAddress)((UInt8 *)mSoundConfigSpace), kI2S_IO_CONFIGURATION_SIZE);
-	}
-	if (NULL != mIOI2SBaseAddressMemory) {
-		mI2SBaseAddress = (void *)mIOI2SBaseAddressMemory->map()->getVirtualAddress();
-	} else {
-		return kIOReturnError;
-	}
-	FailIf (NULL == mIOI2SBaseAddressMemory, Exit)
-	
+	mIOI2SBaseAddressMemory = IODeviceMemory::withRange ((IOPhysicalAddress)((UInt8 *)mSoundConfigSpace), kI2S_IO_CONFIGURATION_SIZE);
+	FailIf ( NULL == mIOI2SBaseAddressMemory, Exit );
 	mI2SBaseAddress = (void *)mIOI2SBaseAddressMemory->map()->getVirtualAddress();
 	FailIf (NULL == mI2SBaseAddress, Exit);
-
+	
 	debug2IOLog ("KeyLargoPlatform::initI2S - mI2SInterfaceNumber = 0x%X\n", mI2SInterfaceNumber);
 	debug2IOLog ("KeyLargoPlatform::initI2S - mIOI2SBaseAddressMemory = %p\n", mIOI2SBaseAddressMemory);
 	debug2IOLog ("KeyLargoPlatform::initI2S - mI2SBaseAddress = %p\n", mI2SBaseAddress);
@@ -1634,53 +1627,80 @@ IOReturn	KeyLargoPlatform::setPlatformState ( PlatformStateStructPtr inState ) {
 	IOReturn			result = kIOReturnBadArgument;
 	
 	debug2IOLog ( "+ UC KeyLargoPlatform::setPlatformState ( %p )\n", inState );
+	debug2IOLog ( "+ UC KeyLargoPlatform::setPlatformState ( %p )\n", inState );
 	FailIf ( NULL == inState, Exit );
-	result = setI2SIOMIntControl ( inState->i2s.intCtrl );
-	FailIf ( kIOReturnSuccess != result, Exit );
-	result = setSerialFormatRegister ( inState->i2s.serialFmt );
-	FailIf ( kIOReturnSuccess != result, Exit );
-	result = setFrameCount ( inState->i2s.frameCount );
-	FailIf ( kIOReturnSuccess != result, Exit );
-	result = setDataWordSizes ( inState->i2s.dataWordSizes );
-	FailIf ( kIOReturnSuccess != result, Exit );
-	
-	result = setI2SEnable ( inState->fcr.i2sEnable );
-	FailIf ( kIOReturnSuccess != result, Exit );
-	result = setI2SClockEnable ( inState->fcr.i2sClockEnable );
-	FailIf ( kIOReturnSuccess != result, Exit );
-	result = setI2SCellEnable ( inState->fcr.i2sCellEnable );
-	FailIf ( kIOReturnSuccess != result, Exit );
-	
+	if ( inState->i2s.intCtrl != getI2SIOMIntControl () ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setI2SIOMIntControl ( %lX )\n", inState->i2s.intCtrl );
+		result = setI2SIOMIntControl ( inState->i2s.intCtrl );
+		FailIf ( kIOReturnSuccess != result, Exit );
+	}
+	if ( inState->i2s.serialFmt != getSerialFormatRegister () ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setSerialFormatRegister ( %lX )\n", inState->i2s.serialFmt );
+		result = setSerialFormatRegister ( inState->i2s.serialFmt );
+		FailIf ( kIOReturnSuccess != result, Exit );
+	}
+	if ( ( inState->i2s.frameCount != getFrameCount () ) && ( 0 == inState->i2s.frameCount ) ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setFrameCount ( %lX )\n", inState->i2s.frameCount );
+		result = setFrameCount ( inState->i2s.frameCount );
+		FailIf ( kIOReturnSuccess != result, Exit );
+	}
+	if ( inState->i2s.dataWordSizes != getDataWordSizes () ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setDataWordSizes ( %lX )\n", inState->i2s.dataWordSizes );
+		result = setDataWordSizes ( inState->i2s.dataWordSizes );
+		FailIf ( kIOReturnSuccess != result, Exit );
+	}
+	if ( inState->fcr.i2sEnable != getI2SEnable () ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setI2SEnable ( %lX )\n", inState->fcr.i2sEnable );
+		result = setI2SEnable ( inState->fcr.i2sEnable );
+		FailIf ( kIOReturnSuccess != result, Exit );
+	}
+	if ( inState->fcr.i2sClockEnable != getI2SClockEnable () ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setI2SClockEnable ( %lX )\n", inState->fcr.i2sClockEnable );
+		result = setI2SClockEnable ( inState->fcr.i2sClockEnable );
+		FailIf ( kIOReturnSuccess != result, Exit );
+	}
+	if ( inState->fcr.i2sCellEnable != getI2SCellEnable () ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setI2SCellEnable ( %lX )\n", inState->fcr.i2sCellEnable );
+		result = setI2SCellEnable ( inState->fcr.i2sCellEnable );
+		FailIf ( kIOReturnSuccess != result, Exit );
+	}
 	if ( kGPIO_Unknown != inState->gpio.gpio_AnalogCodecReset ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setCodecReset ( kCODEC_RESET_Analog, %lX )\n", inState->gpio.gpio_AnalogCodecReset );
 		result = setCodecReset ( kCODEC_RESET_Analog, inState->gpio.gpio_AnalogCodecReset );
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 	if ( kGPIO_Unknown != inState->gpio.gpio_ClockMux ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setClockMux ( %lX )\n", inState->gpio.gpio_ClockMux );
 		result = setClockMux ( inState->gpio.gpio_ClockMux );
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 	if ( kGPIO_Unknown != inState->gpio.gpio_DigitalCodecReset ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setCodecReset ( kCODEC_RESET_Digital, %lX )\n", inState->gpio.gpio_DigitalCodecReset );
 		result = setCodecReset ( kCODEC_RESET_Digital, inState->gpio.gpio_DigitalCodecReset );
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 	if ( kGPIO_Unknown != inState->gpio.gpio_HeadphoneMute ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setHeadphoneMuteState ( %lX )\n", inState->gpio.gpio_HeadphoneMute );
 		result = setHeadphoneMuteState ( inState->gpio.gpio_HeadphoneMute );
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 	if ( kGPIO_Unknown != inState->gpio.gpio_InputDataMux ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setInputDataMux ( %lX )\n", inState->gpio.gpio_InputDataMux );
 		result = setInputDataMux ( inState->gpio.gpio_InputDataMux );
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 	if ( kGPIO_Unknown != inState->gpio.gpio_LineOutMute ) {
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setLineOutMuteState ( %lX )\n", inState->gpio.gpio_LineOutMute );
 		result = setLineOutMuteState ( inState->gpio.gpio_LineOutMute );
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 	if ( kGPIO_Unknown != inState->gpio.gpio_SpeakerMute ) {
-		IOLog ( "K2Platform::setPlatformState sets inState->gpio.gpio_SpeakerMute %d\n", inState->gpio.gpio_SpeakerMute );
+		debug2IOLog ( "KeyLargoPlatform::setPlatformState setSpeakerMuteState ( %lX )\n", inState->gpio.gpio_SpeakerMute );
 		result = setSpeakerMuteState ( inState->gpio.gpio_SpeakerMute );
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 Exit:
+	debug3IOLog ( "- UC KeyLargoPlatform::setPlatformState ( %p ) returns %X\n", inState, result );
 	debug3IOLog ( "- UC KeyLargoPlatform::setPlatformState ( %p ) returns %X\n", inState, result );
 	return result;
 }

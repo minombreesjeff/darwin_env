@@ -251,42 +251,18 @@ private:
         return newValue ;
     } 
     
-    inline UInt8 setBitsGCFGShadowReg(UInt8 value, UInt8 mask) 
+    inline UInt8 setBitsGCFGShadowReg(UInt8 bitMaskOn, UInt8 bitMaskOff) 
     {
-#if 0	//	{
-        // NOTE: this does not write the shadow reg to the part, it just
-        // updates the shadow reg to the requested value.  You need to 
-        // write this to the DACA part when you are done.
-        
-        // turns on the bits specified by value only if they are in the mask,
-        // leaving the rest of the contents of the register unaffected.
-        UInt8	newValue ;
-        
-        // place contents of reg into temp value
-//        newValue = configurationReg;
-        newValue = configurationReg | (value & 0x000000FF);
-        
-        // zero values specified by the mask, leaving the rest of the register intact
-//        newValue &= ~mask;
-        
-        // or in the bits passed in newvalue
-//        newValue |= (value & mask);
-        newValue |= (value & ~(mask & 0x000000FF));	// new code
-
-        // set the value of the shadow register
-        configurationReg = newValue ;
-#else	//	}{
 		UInt8	newValue;
-		newValue = configurationReg & ~mask;
-		newValue |= ( value & mask );
-		configurationReg = newValue;
-#endif
-        return newValue ;
-    } 
-    
-    
-   
-} ;
+		UInt8	bitsOn, bitsOff;
+
+		bitsOn = bitMaskOn & 0x000000FF;
+		bitsOff = bitMaskOff & 0x000000FF;
+		newValue = configurationReg | bitsOn;
+		newValue &= ~bitsOff;
+        return newValue;
+    }
+};
 
 
 #endif

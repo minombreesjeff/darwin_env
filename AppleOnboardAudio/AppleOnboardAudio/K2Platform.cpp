@@ -186,48 +186,12 @@ bool K2Platform::init (IOService* device, AppleOnboardAudio* provider, UInt32 in
 	result = findAndAttachI2C();
 	if ( !result ) { debugIOLog ( "K2Platform::init COULD NOT FIND I2C\n" ); }
 	FailIf ( !result, Exit );
-#ifndef kBUILD_FOR_DIRECT_I2S_HW_ACCESS	
+
 	debugIOLog ( "about to findAndAttachI2S\n" );
 	result = findAndAttachI2S();
 	if ( !result ) { debugIOLog ( "K2Platform::init COULD NOT FIND I2S\n" ); }
 	FailIf ( !result, Exit );
-#endif
-	IOMemoryMap *				map;
-	IOMemoryDescriptor *		theDescriptor;
 
-	theDescriptor = IOMemoryDescriptor::withPhysicalAddress ( (IOPhysicalAddress)kAUDIO_MAC_IO_BASE_ADDRESS, kAUDIO_MAC_IO_SIZE, kIODirectionOutIn );
-	FailIf ( NULL == theDescriptor, Exit );
-	map = theDescriptor->map ();
-	FailIf ( NULL == map, Exit );
-	mHwPtr = (UInt8*)map->getVirtualAddress();
-	FailIf ( NULL == mHwPtr, Exit );
-	
-	theDescriptor = IOMemoryDescriptor::withPhysicalAddress ( (IOPhysicalAddress)kAUDIO_I2S_BASE_ADDRESS, kAUDIO_I2S_SIZE, kIODirectionOutIn );
-	FailIf ( NULL == theDescriptor, Exit );
-	map = theDescriptor->map ();
-	FailIf ( NULL == map, Exit );
-	mHwI2SPtr = (UInt8*)map->getVirtualAddress();
-	FailIf ( NULL == mHwI2SPtr, Exit );
-	
-	mFcr1						= (UInt32*)&mHwPtr[kAUDIO_MAC_IO_FCR1];
-	mFcr3						= (UInt32*)&mHwPtr[kAUDIO_MAC_IO_FCR3];
-	mSerialFormat				= (UInt32*)&mHwI2SPtr[kAUDIO_I2S_SERIAL_FORMAT];
-	mI2SIntCtrl					= (UInt32*)&mHwI2SPtr[kAUDIO_I2S_INTERRUPT_CONTROL];
-	mDataWordSize				= (UInt32*)&mHwI2SPtr[kAUDIO_I2S_DATA_WORD_SIZES];
-	mFrameCounter				= (UInt32*)&mHwI2SPtr[kAUDIO_I2S_FRAME_COUNTER];
-	mGPIO_inputDataMuxSelect	= (UInt8*)&mHwPtr[kAUDIO_GPIO_INPUT_DATA_MUX_SELECT];
-	mGPIO_lineInSense			= (UInt8*)&mHwPtr[kAUDIO_GPIO_LINE_IN_SENSE];
-	mGPIO_digitalCodecErrorIrq	= (UInt8*)&mHwPtr[kAUDIO_GPIO_CODEC_ERROR_IRQ];
-	mGPIO_digitalCodecReset		= (UInt8*)&mHwPtr[kAUDIO_GPIO_DIGITAL_CODEC_RESET];
-	mGPIO_lineOutSense			= (UInt8*)&mHwPtr[kAUDIO_GPIO_LINE_OUT_SENSE];
-	mGPIO_headphoneSense		= (UInt8*)&mHwPtr[kAUDIO_GPIO_HEADPHONE_SENSE];
-	mGPIO_digitalCodecIrq		= (UInt8*)&mHwPtr[kAUDIO_GPIO_CODEC_IRQ];
-	mGPIO_headphoneMute			= (UInt8*)&mHwPtr[kAUDIO_GPIO_HEADPHONE_MUTE];
-	mGPIO_analogCodecReset		= (UInt8*)&mHwPtr[kAUDIO_GPIO_ANALOG_CODEC_RESET];
-	mGPIO_lineOutMute			= (UInt8*)&mHwPtr[kAUDIO_GPIO_LINE_OUT_MUTE];
-	mGPIO_mclkMuxSelect			= (UInt8*)&mHwPtr[kAUDIO_GPIO_CLOCK_MUX_SELECT];
-	mGPIO_speakerMute			= (UInt8*)&mHwPtr[kAUDIO_GPIO_AMPLIFIER_MUTE];
-	
 Exit:
 
 	debug2IOLog ( "- K2Platform::init returns %d\n", result );
@@ -366,12 +330,24 @@ IOReturn K2Platform::setCodecReset ( CODEC_RESET target, GpioAttributes reset ) 
 	debug3IrqIOLog ( "K2Platform::setCodecReset ( %d, %d )\n", (unsigned int)target, (unsigned int)reset );
 #endif
 	switch ( target ) {
-		case kCODEC_RESET_Analog:	result = writeGpioState ( kGPIO_Selector_AnalogCodecReset, reset );		break;
-		case kCODEC_RESET_Digital:	result = writeGpioState ( kGPIO_Selector_DigitalCodecReset, reset );	break;
+		case kCODEC_RESET_Analog:	
+			result = writeGpioState ( kGPIO_Selector_AnalogCodecReset, reset );		
+#ifdef kVERBOSE_LOG
+			debug2IOLog ( "setCodecReset() for kGPIO_Selector_AnalogCodecReset returns %X after reset\n", getCodecReset(target) );
+#endif
+			break;
+		case kCODEC_RESET_Digital:	
+			result = writeGpioState ( kGPIO_Selector_DigitalCodecReset, reset );	
+#ifdef kVERBOSE_LOG
+			debug2IOLog ( "setCodecReset() for kGPIO_Selector_DigitalCodecReset returns %X after reset\n", getCodecReset(target) );
+#endif
+			break;
 		default:					result = kIOReturnBadArgument;											break;
 	}
 	if ( kIOReturnSuccess != result ) {
+#ifdef kVERBOSE_LOG
 		debug4IrqIOLog ( "- K2Platform::setCodecReset ( %d, %d ) returns %X\n", (unsigned int)target, (unsigned int)reset, (unsigned int)result );
+#endif
 	}
 	return result;
 }
@@ -396,33 +372,13 @@ GpioAttributes K2Platform::getCodecReset ( CODEC_RESET target ) {
 //	--------------------------------------------------------------------------------
 IOReturn K2Platform::setI2SEnable (bool enable) {
 	IOReturn				result;
-#ifndef kBUILD_FOR_DIRECT_I2SEnable_HW_ACCESS
 	const OSSymbol*			funcSymbolName = NULL;
-#endif
 
 #ifdef kVERBOSE_LOG
 	debug2IrqIOLog( "+ K2Platform::setI2SEnable enable=%d\n", enable );
 #endif
 
 	result = kIOReturnError;
-#ifdef kBUILD_FOR_DIRECT_I2SEnable_HW_ACCESS
-	UInt32			data;
-	
-	if ( mFcr1 ) {
-		if ( enable ) {
-			debugIrqIOLog ( "K2Platform::setI2SEnable to 1\n" );
-			data = (unsigned int)OSReadSwapInt32 ( mFcr1, 0 );
-			data |= ( 1 << 13 );
-			OSWriteSwapInt32 ( mFcr1, 0, data );
-		} else {
-			debugIrqIOLog ( "K2Platform::setI2SEnable to 0\n" );
-			data = (unsigned int)OSReadSwapInt32 ( mFcr1, 0 );
-			data &= ~( 1 << 13 );
-			OSWriteSwapInt32 ( mFcr1, 0, data );
-		}
-		result = kIOReturnSuccess;
-	}
-#else
 	if ( mK2Service ) {
 		if ( enable ) {
 			debugIrqIOLog ( "K2Platform::setI2SEnable to 1\n" );
@@ -439,10 +395,8 @@ IOReturn K2Platform::setI2SEnable (bool enable) {
 			funcSymbolName->release ();	// [3324205]
 			FailIf ( kIOReturnSuccess != result, Exit );
 		}
-		LogFCR ();
 	}
 Exit:
-#endif
 #ifdef kVERBOSE_LOG
 	debug3IrqIOLog( "- K2Platform::setI2SEnable enable=%d returns %d\n", enable, result );
 #endif
@@ -451,17 +405,10 @@ Exit:
 
 //	--------------------------------------------------------------------------------
 bool K2Platform::getI2SEnable () {
-#ifndef kBUILD_FOR_DIRECT_I2SEnable_HW_ACCESS
 	const OSSymbol*			funcSymbolName = NULL;
 	IOReturn				result;
-#endif
 	UInt32					value = 0;
 
-#ifdef kBUILD_FOR_DIRECT_I2SEnable_HW_ACCESS
-	if ( NULL != mFcr1 ) {
-		value = ( (unsigned int)OSReadSwapInt32 ( mFcr1, 0 ) >> 13 ) & 0x00000001;
-	}
-#else
 	if ( mK2Service ) {
 		funcSymbolName = makeFunctionSymbolName( kAppleI2S_GetEnable, mI2SPHandle );
 		FailIf ( NULL == funcSymbolName, Exit );
@@ -470,40 +417,19 @@ bool K2Platform::getI2SEnable () {
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 Exit:
-#endif
 	return ( 0 != value );
 }
 
 //	--------------------------------------------------------------------------------
 IOReturn K2Platform::setI2SClockEnable (bool enable) {
 	IOReturn				result;
-#ifndef kBUILD_FOR_DIRECT_I2SClockEnable_HW_ACCESS
 	const OSSymbol*			funcSymbolName = NULL;
-#endif
 
 #ifdef kVERBOSE_LOG
 	debug2IrqIOLog( "+ K2Platform::setI2SClockEnable enable=%d\n", enable );
 #endif
 
 	result = kIOReturnError;
-#ifdef kBUILD_FOR_DIRECT_I2SClockEnable_HW_ACCESS
-	UInt32			data;
-	
-	if ( mFcr1 ) {
-		if ( enable ) {
-			debugIrqIOLog ( "K2Platform::setI2SClockEnable to 1\n" );
-			data = (unsigned int)OSReadSwapInt32 ( mFcr1, 0 );
-			data |= ( 1 << 12 );
-			OSWriteSwapInt32 ( mFcr1, 0, data );
-		} else {
-			debugIrqIOLog ( "K2Platform::setI2SClockEnable to 0\n" );
-			data = (unsigned int)OSReadSwapInt32 ( mFcr1, 0 );
-			data &= ~( 1 << 12 );
-			OSWriteSwapInt32 ( mFcr1, 0, data );
-		}
-		result = kIOReturnSuccess;
-	}
-#else
 	if ( mK2Service ) {
 		if ( enable ) {
 			debugIrqIOLog ( "K2Platform::setI2SClockEnable to 1\n" );
@@ -520,11 +446,9 @@ IOReturn K2Platform::setI2SClockEnable (bool enable) {
 			funcSymbolName->release ();	// [3324205]
 			FailIf ( kIOReturnSuccess != result, Exit );
 		}
-		LogFCR ();
 		if ( kIOReturnSuccess == result ) mAppleI2S_ClockEnable = enable;
 	}
 Exit:
-#endif
 #ifdef kVERBOSE_LOG
 	debug3IrqIOLog( "- K2Platform::setI2SClockEnable enable=%d returns %d\n", enable, result );
 #endif
@@ -533,17 +457,10 @@ Exit:
 
 //	--------------------------------------------------------------------------------
 bool K2Platform::getI2SClockEnable () {
-#ifndef kBUILD_FOR_DIRECT_I2SClockEnable_HW_ACCESS
 	const OSSymbol*			funcSymbolName = NULL;
 	IOReturn				result;
-#endif
 	UInt32					value = 0;
 
-#ifdef kBUILD_FOR_DIRECT_I2SClockEnable_HW_ACCESS
-	if ( NULL != mFcr1 ) {
-		value = ( (unsigned int)OSReadSwapInt32 ( mFcr1, 0 ) >> 12 ) & 0x00000001;
-	}
-#else
 	if ( mK2Service ) {
 		funcSymbolName = makeFunctionSymbolName( kAppleI2S_GetClockEnable, mI2SPHandle );
 		FailIf ( NULL == funcSymbolName, Exit );
@@ -552,39 +469,18 @@ bool K2Platform::getI2SClockEnable () {
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 Exit:
-#endif
 	return ( 0 != value );
 }
 
 //	--------------------------------------------------------------------------------
 IOReturn K2Platform::setI2SCellEnable (bool enable) {
 	IOReturn				result;
-#ifndef kBUILD_FOR_DIRECT_I2SCellEnable_HW_ACCESS
 	const OSSymbol*			funcSymbolName = NULL;
-#endif
 	
 #ifdef kVERBOSE_LOG
 	debug2IrqIOLog("+ K2Platform::setI2SCellEnable enable=%d\n",enable);
 #endif
 	
-#ifdef kBUILD_FOR_DIRECT_I2SCellEnable_HW_ACCESS
-	UInt32			data;
-	
-	if ( mFcr1 ) {
-		if ( enable ) {
-			debugIrqIOLog ( "K2Platform::setI2SCellEnable to 1\n" );
-			data = (unsigned int)OSReadSwapInt32 ( mFcr1, 0 );
-			data |= ( 1 << 10 );
-			OSWriteSwapInt32 ( mFcr1, 0, data );
-		} else {
-			debugIrqIOLog ( "K2Platform::setI2SCellEnable to 0\n" );
-			data = (unsigned int)OSReadSwapInt32 ( mFcr1, 0 );
-			data &= ~( 1 << 10 );
-			OSWriteSwapInt32 ( mFcr1, 0, data );
-		}
-		result = kIOReturnSuccess;
-	}
-#else
 	result = kIOReturnError;
 	if ( mK2Service ) {
 		if ( enable ) {
@@ -602,11 +498,9 @@ IOReturn K2Platform::setI2SCellEnable (bool enable) {
 			funcSymbolName->release ();	// [3324205]
 			FailIf ( kIOReturnSuccess != result, Exit );
 		}
-		LogFCR ();
 		if ( kIOReturnSuccess == result ) mAppleI2S_CellEnable = enable;
 	}
 Exit:
-#endif
 #ifdef kVERBOSE_LOG
 	debug2IrqIOLog("- K2Platform::setI2SCellEnable result = %x\n",result);
 #endif
@@ -615,17 +509,10 @@ Exit:
 
 //	--------------------------------------------------------------------------------
 bool K2Platform::getI2SCellEnable () {
-#ifndef kBUILD_FOR_DIRECT_I2SCellEnable_HW_ACCESS
 	const OSSymbol*			funcSymbolName;
 	IOReturn				result;
-#endif
 	UInt32					value = 0;
 
-#ifdef kBUILD_FOR_DIRECT_I2SCellEnable_HW_ACCESS
-	if ( NULL != mFcr1 ) {
-		value = ( (unsigned int)OSReadSwapInt32 ( mFcr1, 0 ) >> 10 ) & 0x00000001;
-	}
-#else
 	if ( mK2Service ) {
 		funcSymbolName = makeFunctionSymbolName( kAppleI2S_GetCellEnable, mI2SPHandle );
 		FailIf ( NULL == funcSymbolName, Exit );
@@ -634,39 +521,18 @@ bool K2Platform::getI2SCellEnable () {
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 Exit:
-#endif
 	return ( 0 != value );
 }
 
 //	--------------------------------------------------------------------------------
 IOReturn K2Platform::setI2SSWReset(bool enable) {
 	IOReturn				result;
-#ifndef kBUILD_FOR_DIRECT_I2SswReset_HW_ACCESS
 	const OSSymbol*			funcSymbolName = NULL;
-#endif
 	
 #ifdef kVERBOSE_LOG
 	debug2IrqIOLog("+ K2Platform::setI2SSWReset enable=%d\n",enable);
 #endif
 	
-#ifdef kBUILD_FOR_DIRECT_I2SswReset_HW_ACCESS
-	UInt32			data;
-	
-	if ( mFcr1 ) {
-		if ( enable ) {
-			debugIrqIOLog ( "K2Platform::setI2SSWReset to 1\n" );
-			data = (unsigned int)OSReadSwapInt32 ( mFcr1, 0 );
-			data |= ( 1 << 11 );
-			OSWriteSwapInt32 ( mFcr1, 0, data );
-		} else {
-			debugIrqIOLog ( "K2Platform::setI2SSWReset to 0\n" );
-			data = (unsigned int)OSReadSwapInt32 ( mFcr1, 0 );
-			data &= ~( 1 << 11 );
-			OSWriteSwapInt32 ( mFcr1, 0, data );
-		}
-		result = kIOReturnSuccess;
-	}
-#else
 	result = kIOReturnError;
 	if ( mK2Service ) {
 		if ( enable ) {
@@ -682,11 +548,9 @@ IOReturn K2Platform::setI2SSWReset(bool enable) {
 			funcSymbolName->release ();	// [3324205]
 			FailIf ( kIOReturnSuccess != result, Exit );
 		}
-		LogFCR ();
 		if ( kIOReturnSuccess == result ) mAppleI2S_CellEnable = enable;
 	}
 Exit:
-#endif
 #ifdef kVERBOSE_LOG
 	debug2IrqIOLog("- K2Platform::setI2SSWReset result = %x\n",result);
 #endif
@@ -697,17 +561,10 @@ Exit:
 
 //	--------------------------------------------------------------------------------
 bool K2Platform::getI2SSWReset() {
-#ifndef kBUILD_FOR_DIRECT_I2SswReset_HW_ACCESS
 	const OSSymbol*			funcSymbolName = NULL;
 	IOReturn				result;
-#endif
 	UInt32					value = 0;
 
-#ifdef kBUILD_FOR_DIRECT_I2SswReset_HW_ACCESS
-	if ( NULL != mFcr1 ) {
-		value = ( (unsigned int)OSReadSwapInt32 ( mFcr1, 0 ) >> 11 ) & 0x00000001;
-	}
-#else
 	if ( mK2Service ) {
 		funcSymbolName = makeFunctionSymbolName( kAppleI2S_GetReset, mI2SPHandle );
 		FailIf ( NULL == funcSymbolName, Exit );
@@ -716,7 +573,6 @@ bool K2Platform::getI2SSWReset() {
 		FailIf ( kIOReturnSuccess != result, Exit );
 	}
 Exit:
-#endif
 	return ( 0 != value );
 }
 
@@ -724,12 +580,6 @@ Exit:
 IOReturn K2Platform::setSerialFormatRegister (UInt32 serialFormat) {
 	IOReturn				result = kIOReturnError;
 
-#ifdef kBUILD_FOR_DIRECT_I2S_HW_ACCESS
-	if ( mSerialFormat ) {
-		OSWriteSwapInt32 ( mSerialFormat, 0, serialFormat );
-		result = kIOReturnSuccess;
-	}
-#else
 	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	result = kIOReturnError;
@@ -740,17 +590,12 @@ IOReturn K2Platform::setSerialFormatRegister (UInt32 serialFormat) {
 		funcSymbolName->release ();															//	[3323977]	release OSSymbol references
 	}
 Exit:
-#endif
 	return result;
 }
 
 //	--------------------------------------------------------------------------------
 UInt32 K2Platform::getSerialFormatRegister () {
 	UInt32					serialFormat = 0;
-
-#ifdef kBUILD_FOR_DIRECT_I2S_HW_ACCESS
-	if ( NULL != mSerialFormat ) serialFormat = (unsigned int)OSReadSwapInt32 ( mSerialFormat, 0 );
-#else
 	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	if ( mI2SInterface ) {
@@ -760,7 +605,6 @@ UInt32 K2Platform::getSerialFormatRegister () {
 		funcSymbolName->release ();															//	[3323977]	release OSSymbol references
 	}
 Exit:
-#endif
 	return serialFormat;
 }
 
@@ -769,12 +613,6 @@ IOReturn K2Platform::setDataWordSizes (UInt32 dataWordSizes) {
 	IOReturn				result;
 
 	result = kIOReturnError;
-#ifdef kBUILD_FOR_DIRECT_I2S_HW_ACCESS
-	if ( mDataWordSize ) {
-		OSWriteSwapInt32 ( mDataWordSize, 0, dataWordSizes );
-		result = kIOReturnSuccess;
-	}
-#else
 	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	if ( mI2SInterface ) {
@@ -784,17 +622,12 @@ IOReturn K2Platform::setDataWordSizes (UInt32 dataWordSizes) {
 		funcSymbolName->release ();															//	[3323977]	release OSSymbol references
 	}
 Exit:
-#endif
 	return result;
 }
 
 //	--------------------------------------------------------------------------------
 UInt32 K2Platform::getDataWordSizes () {
 	UInt32					dataWordSizes = 0;
-
-#ifdef kBUILD_FOR_DIRECT_I2S_HW_ACCESS
-	if ( NULL != mDataWordSize ) dataWordSizes = (unsigned int)OSReadSwapInt32 ( mDataWordSize, 0 );
-#else
 	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	if ( mI2SInterface ) {
@@ -804,7 +637,6 @@ UInt32 K2Platform::getDataWordSizes () {
 		funcSymbolName->release ();																//	[3323977]	release OSSymbol references
 	}
 Exit:
-#endif
 	return dataWordSizes;
 }
 
@@ -813,12 +645,6 @@ IOReturn K2Platform::setI2SIOMIntControl (UInt32 intCntrl) {
 	IOReturn				result;
 
 	result = kIOReturnError;
-#ifdef kBUILD_FOR_DIRECT_I2S_HW_ACCESS
-	if ( mI2SIntCtrl ) {
-		OSWriteSwapInt32 ( mI2SIntCtrl, 0, intCntrl );
-		result = kIOReturnSuccess;
-	}
-#else
 	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	if ( mI2SInterface ) {
@@ -828,17 +654,12 @@ IOReturn K2Platform::setI2SIOMIntControl (UInt32 intCntrl) {
 		funcSymbolName->release ();															//	[3323977]	release OSSymbol references
 	}
 Exit:
-#endif
 	return result;
 }
 
 //	--------------------------------------------------------------------------------
 UInt32 K2Platform::getI2SIOMIntControl () {
 	UInt32					i2sIntCntrl = 0;
-
-#ifdef kBUILD_FOR_DIRECT_I2S_HW_ACCESS
-	if ( NULL != mI2SIntCtrl ) i2sIntCntrl = (unsigned int)OSReadSwapInt32 ( mI2SIntCtrl, 0 );
-#else
 	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	if ( mI2SInterface ) {
@@ -848,7 +669,6 @@ UInt32 K2Platform::getI2SIOMIntControl () {
 		funcSymbolName->release ();															//	[3323977]	release OSSymbol references
 	}
 Exit:
-#endif
 	return i2sIntCntrl;
 }
 
@@ -861,12 +681,6 @@ IOReturn K2Platform::setFrameCount (UInt32 value) {
 	//	<<<<<<<<<< WARNING >>>>>>>>>>
 	
 	result = kIOReturnError;
-#ifdef kBUILD_FOR_DIRECT_I2S_HW_ACCESS
-	if ( mFrameCounter ) {
-		OSWriteSwapInt32 ( mFrameCounter, 0, value );
-		result = kIOReturnSuccess;
-	}
-#else
 	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	if ( mI2SInterface ) {
@@ -876,7 +690,6 @@ IOReturn K2Platform::setFrameCount (UInt32 value) {
 		funcSymbolName->release ();															//	[3323977]	release OSSymbol references
 	}
 Exit:
-#endif
 	return result;
 }
 
@@ -884,9 +697,6 @@ Exit:
 UInt32 K2Platform::getFrameCount () {
 	UInt32					frameCount = 0;
 
-#ifdef kBUILD_FOR_DIRECT_I2S_HW_ACCESS
-	if ( NULL != mFrameCounter ) frameCount = (unsigned int)OSReadSwapInt32 ( mFrameCounter, 0 );
-#else
 	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
 	if ( mI2SInterface ) {
@@ -896,7 +706,6 @@ UInt32 K2Platform::getFrameCount () {
 		funcSymbolName->release ();															//	[3323977]	release OSSymbol references
 	}
 Exit:
-#endif
 	return frameCount;
 }
 
@@ -978,10 +787,6 @@ Exit:
 
 //	--------------------------------------------------------------------------------
 IOReturn K2Platform::disableInterrupt ( PlatformInterruptSource source ) {
-#ifdef kBUILD_FOR_DIRECT_GPIO_HW_ACCESS
-#pragma unused ( theDevice, interruptHandler, source )
-	IOReturn				result = kIOReturnError;
-#else
 	const OSSymbol * 		selector = OSSymbol::withCString ( kIOPFInterruptRegister );
 	const OSSymbol *		enFuncSymbolName = NULL;
 	void *					interruptHandler = NULL;
@@ -1029,7 +834,6 @@ IOReturn K2Platform::disableInterrupt ( PlatformInterruptSource source ) {
 			FailIf ( kIOReturnSuccess != result, Exit );
 		}
 	}
-#endif
 Exit:
 	if ( kIOReturnSuccess == result ) {
 		switch ( source ) {
@@ -1051,10 +855,6 @@ Exit:
 
 //	--------------------------------------------------------------------------------
 IOReturn K2Platform::enableInterrupt ( PlatformInterruptSource source ) {
-#ifdef kBUILD_FOR_DIRECT_GPIO_HW_ACCESS
-#pragma unused ( theDevice, interruptHandler, source )
-	IOReturn				result = kIOReturnError;
-#else
 	const OSSymbol * 		selector = OSSymbol::withCString ( kIOPFInterruptRegister );
 	const OSSymbol *		enFuncSymbolName = NULL;
 	void *					interruptHandler = NULL;
@@ -1102,7 +902,6 @@ IOReturn K2Platform::enableInterrupt ( PlatformInterruptSource source ) {
 			FailIf ( kIOReturnSuccess != result, Exit );
 		}
 	}
-#endif
 Exit:
 	if ( kIOReturnSuccess == result ) {
 		switch ( source ) {
@@ -1210,10 +1009,6 @@ bool K2Platform::interruptUsesTimerPolling( PlatformInterruptSource source ) {
 
 //	--------------------------------------------------------------------------------
 IOReturn K2Platform::registerInterruptHandler ( IOService * theDevice, void * interruptHandler, PlatformInterruptSource source ) {
-#ifdef kBUILD_FOR_DIRECT_GPIO_HW_ACCESS
-#pragma unused ( theDevice, interruptHandler, source )
-	IOReturn				result = kIOReturnError;
-#else
 	const OSSymbol * 		selector = OSSymbol::withCString ( kIOPFInterruptRegister );
 	const OSSymbol *		funcSymbolName = NULL;
 	IOReturn				result;
@@ -1244,7 +1039,6 @@ IOReturn K2Platform::registerInterruptHandler ( IOService * theDevice, void * in
 			FailIf ( kIOReturnSuccess != result, Exit );
 		}
 	}
-#endif
 Exit:
 	if ( kIOReturnSuccess == result ) {
 		//	Keep a copy of a pointer to the interrupt service routine in this object so that the enable
@@ -1269,10 +1063,6 @@ Exit:
 
 //	--------------------------------------------------------------------------------
 IOReturn K2Platform::unregisterInterruptHandler ( IOService * theDevice, void * interruptHandler, PlatformInterruptSource source ) {
-#ifdef kBUILD_FOR_DIRECT_GPIO_HW_ACCESS
-#pragma unused ( theDevice, interruptHandler, source )
-	IOReturn				result = kIOReturnError;
-#else
 	const OSSymbol * 		selector = OSSymbol::withCString ( kIOPFInterruptUnRegister );
 	const OSSymbol *		funcSymbolName = NULL;
 	IOReturn				result;
@@ -1304,7 +1094,6 @@ IOReturn K2Platform::unregisterInterruptHandler ( IOService * theDevice, void * 
 	}
 
 Exit:
-#endif
 	return result;
 }
 
@@ -1437,6 +1226,7 @@ bool K2Platform::findAndAttachI2C()
 	// Searches the i2c:
 	i2cDriverName = OSSymbol::withCStringNoCopy ( "PPCI2CInterface.i2c-mac-io" );
 	i2cServiceDictionary = IOService::resourceMatching ( i2cDriverName );
+	iterator = NULL;
 	FailIf ( NULL == i2cServiceDictionary, Exit );
 	
 #ifdef kVERBOSE_LOG
@@ -1476,10 +1266,6 @@ bool K2Platform::findAndAttachI2C()
 	mI2CInterface->retain();
 	result = true;
 Exit:
-	if (iterator) iterator->release ();
-//	if (i2cCandidate) i2cCandidate->release ();
-	if (i2cDriverName) i2cDriverName->release ();
-//	if (i2cServiceDictionary) i2cServiceDictionary->release ();
 	return result;
 }
 
@@ -1526,6 +1312,7 @@ bool K2Platform::findAndAttachI2S()
 	bool			result = false;
 	mach_timespec_t	timeout	= {5,0};
 
+	i2sCandidate = NULL;
 	i2sDriverName = OSSymbol::withCStringNoCopy ( "AppleI2S" );
 	i2sServiceDictionary = IOService::resourceMatching ( i2sDriverName );
 	FailIf ( NULL == i2sServiceDictionary, Exit );
@@ -1643,24 +1430,6 @@ GpioAttributes K2Platform::readGpioState ( GPIOSelector selector ) {
 	GpioAttributes		result;
 	
 	result = kGPIO_Unknown;
-#ifdef kBUILD_FOR_DIRECT_GPIO_HW_ACCESS		//	{
-	switch ( selector ) {
-		case kGPIO_Selector_AnalogCodecReset:			result = 0 == ( *mGPIO_analogCodecReset & 0x02 ) ? kGPIO_Reset : kGPIO_Run ;											break;
-		case kGPIO_Selector_ClockMux:					result = 0 == ( *mGPIO_mclkMuxSelect & 0x02 ) ? kGPIO_MuxSelectDefault : kGPIO_MuxSelectAlternate ;						break;
-		case kGPIO_Selector_CodecInterrupt:				result = 0 == ( *mGPIO_digitalCodecIrq & 0x02 ) ? kGPIO_CodecInterruptInactive : kGPIO_CodecInterruptActive ;			break;
-		case kGPIO_Selector_CodecErrorInterrupt:		result = 0 == ( *mGPIO_digitalCodecErrorIrq & 0x02 ) ? kGPIO_CodecInterruptInactive : kGPIO_CodecInterruptActive ;		break;
-		case kGPIO_Selector_DigitalCodecReset:			result = 0 == ( *mGPIO_digitalCodecReset & 0x02 ) ? kGPIO_Reset : kGPIO_Run ;											break;
-		case kGPIO_Selector_HeadphoneDetect:			result = 0 == ( *mGPIO_headphoneSense & 0x02 ) ? kGPIO_Connected : kGPIO_Disconnected ;									break;
-		case kGPIO_Selector_HeadphoneMute:				result = 0 == ( *mGPIO_headphoneMute & 0x02 ) ? kGPIO_Muted : kGPIO_Unmuted ;											break;
-		case kGPIO_Selector_InputDataMux:				result = 0 == ( *mGPIO_inputDataMuxSelect & 0x02 ) ? kGPIO_MuxSelectDefault : kGPIO_MuxSelectAlternate ;				break;
-		case kGPIO_Selector_InternalSpeakerID:			result = 0 == ( *mGPIO_internalSpeakerID & 0x02 ) ? kGPIO_Disconnected : kGPIO_Connected ;								break;
-		case kGPIO_Selector_LineInDetect:				result = 0 == ( *mGPIO_lineInSense & 0x02 ) ? kGPIO_Connected : kGPIO_Disconnected ;									break;
-		case kGPIO_Selector_LineOutDetect:				result = 0 == ( *mGPIO_lineOutSense & 0x02 ) ? kGPIO_Connected : kGPIO_Disconnected ;									break;
-		case kGPIO_Selector_LineOutMute:				result = 0 == ( *mGPIO_lineOutMute & 0x02 ) ? kGPIO_Muted : kGPIO_Unmuted ;												break;
-		case kGPIO_Selector_SpeakerMute:				result = 0 == ( *mGPIO_speakerMute & 0x02 ) ? kGPIO_Unmuted : kGPIO_Muted ;												break;
-		default:										goto Exit;																												break;
-	}
-#else	//	} else {
 	UInt32				value;
 	const OSSymbol*		funcSymbolName;
 	IOReturn			err;
@@ -1689,7 +1458,18 @@ GpioAttributes K2Platform::readGpioState ( GPIOSelector selector ) {
 			default:										FailIf ( true, Exit );																								break;
 		}
 		if ( NULL != funcSymbolName ) {
+			//	This callPlatformFunction with a 'waitForFunction' argument of TRUE was implemented
+			//	because the AppleGPIO driver had not loaded when AppleOnboardAudio loaded so the
+			//	initialization method, which performs GPIO discovery through this method, would not
+			//	perform the required initialization tasks.  A dependency on the AppleGPIO driver 
+			//	may not have been put in because only the K2 platform interface object has this
+			//	dependency while systems using the Keylargo platform interface object do not have
+			//	this dependency and should not expect an AppleGPIO driver to be loaded. (rbm)
+#if 0
 			waitForFunction = kGPIO_Selector_HeadphoneDetect == selector ? true : false ;
+#else
+			waitForFunction = false;
+#endif
 			err = mK2Service->callPlatformFunction ( funcSymbolName , waitForFunction, (void*)&value, (void*)0, (void*)0, (void*)0 );
 			funcSymbolName->release ();	// [3324205]
 			if ( kIOReturnSuccess != err ) {
@@ -1789,7 +1569,6 @@ GpioAttributes K2Platform::readGpioState ( GPIOSelector selector ) {
 			result = GetCachedAttribute ( selector, result );
 		}
 	}
-#endif	//	}
 Exit:
 	return result;
 }
@@ -1798,46 +1577,10 @@ Exit:
 IOReturn K2Platform::writeGpioState ( GPIOSelector selector, GpioAttributes gpioState ) {
 	UInt32				value;
 	IOReturn			result;
-#ifndef kBUILD_FOR_DIRECT_GPIO_HW_ACCESS
 	const OSSymbol*		funcSymbolName;
-#endif
 
 	result = kIOReturnError;
 	value = 0;
-#ifdef kBUILD_FOR_DIRECT_GPIO_HW_ACCESS	//	{
-	switch ( selector ) {
-		case kGPIO_Selector_AnalogCodecReset:		FailIf ( kIOReturnSuccess != translateGpioAttributeToGpioState ( kGPIO_Type_Reset, gpioState, &value ), Exit );		break;
-		case kGPIO_Selector_ClockMux:				FailIf ( kIOReturnSuccess != translateGpioAttributeToGpioState ( kGPIO_Type_Mux, gpioState, &value ), Exit );		break;
-		case kGPIO_Selector_DigitalCodecReset:		FailIf ( kIOReturnSuccess != translateGpioAttributeToGpioState ( kGPIO_Type_Reset, gpioState, &value ), Exit );		break;
-		case kGPIO_Selector_HeadphoneMute:			FailIf ( kIOReturnSuccess != translateGpioAttributeToGpioState ( kGPIO_Type_MuteH, gpioState, &value ), Exit );		break;
-		case kGPIO_Selector_InputDataMux:			FailIf ( kIOReturnSuccess != translateGpioAttributeToGpioState ( kGPIO_Type_Mux, gpioState, &value ), Exit );		break;
-		case kGPIO_Selector_LineOutMute:			FailIf ( kIOReturnSuccess != translateGpioAttributeToGpioState ( kGPIO_Type_MuteH, gpioState, &value ), Exit );		break;
-		case kGPIO_Selector_SpeakerMute:			FailIf ( kIOReturnSuccess != translateGpioAttributeToGpioState ( kGPIO_Type_MuteL, gpioState, &value ), Exit );		break;
-		default:									FailIf ( true, Exit );																								break;
-	}
-	switch ( selector ) {
-		case kGPIO_Selector_AnalogCodecReset:		*mGPIO_analogCodecReset = value ? kGPIO_DATA_WR_PIN_LEVEL_H : kGPIO_DATA_WR_PIN_LEVEL_L ;							break;
-		case kGPIO_Selector_ClockMux:				*mGPIO_mclkMuxSelect = value ? kGPIO_DATA_WR_PIN_LEVEL_H : kGPIO_DATA_WR_PIN_LEVEL_L ;								break;
-		case kGPIO_Selector_DigitalCodecReset:		*mGPIO_digitalCodecReset = value ? kGPIO_DATA_WR_PIN_LEVEL_H : kGPIO_DATA_WR_PIN_LEVEL_L ;							break;
-		case kGPIO_Selector_HeadphoneMute:			*mGPIO_headphoneMute = value ? kGPIO_DATA_WR_PIN_LEVEL_H : kGPIO_DATA_WR_PIN_LEVEL_L ;								break;
-		case kGPIO_Selector_InputDataMux:			*mGPIO_inputDataMuxSelect = value ? kGPIO_DATA_WR_PIN_LEVEL_H : kGPIO_DATA_WR_PIN_LEVEL_L ;							break;
-		case kGPIO_Selector_LineOutMute:			*mGPIO_lineOutMute = value ? kGPIO_DATA_WR_PIN_LEVEL_H : kGPIO_DATA_WR_PIN_LEVEL_L ;								break;
-		case kGPIO_Selector_SpeakerMute:			*mGPIO_speakerMute = value ? kGPIO_DATA_WR_PIN_LEVEL_H : kGPIO_DATA_WR_PIN_LEVEL_L ;								break;
-		default:									FailIf ( true, Exit );																								break;
-	}
-	//	Update the gpio cache so that read accessors return correct data...
-	switch ( selector ) {
-		case kGPIO_Selector_AnalogCodecReset:		mAppleGPIO_AnalogCodecReset = gpioState;						break;
-		case kGPIO_Selector_ClockMux:				mAppleGPIO_CodecClockMux = gpioState;							break;
-		case kGPIO_Selector_DigitalCodecReset:		mAppleGPIO_DigitalCodecReset = gpioState;						break;
-		case kGPIO_Selector_HeadphoneMute:			mAppleGPIO_HeadphoneMute = gpioState;							break;
-		case kGPIO_Selector_InputDataMux:			mAppleGPIO_CodecInputDataMux = gpioState;						break;
-		case kGPIO_Selector_LineOutMute:			mAppleGPIO_LineOutMute = gpioState;								break;
-		case kGPIO_Selector_SpeakerMute:			mAppleGPIO_AmpMute = gpioState;									break;
-		default:									FailIf ( true, Exit );											break;
-	}
-	result = kIOReturnSuccess;
-#else	//	} else {
 	if ( mK2Service ) {
 		//	Translate GPIO attribute to gpio state
 		switch ( selector ) {
@@ -1858,7 +1601,8 @@ IOReturn K2Platform::writeGpioState ( GPIOSelector selector, GpioAttributes gpio
 			case kGPIO_Selector_InputDataMux:			funcSymbolName = makeFunctionSymbolName( kAppleGPIO_SetCodecInputDataMux, mI2SPHandle );			break;
 			case kGPIO_Selector_LineOutMute:			funcSymbolName = makeFunctionSymbolName( kAppleGPIO_SetLineOutMute, mI2SPHandle );					break;
 			case kGPIO_Selector_SpeakerMute:			funcSymbolName = makeFunctionSymbolName( kAppleGPIO_SetAmpMute, mI2SPHandle );						break;
-			default:																																		break;
+			default:												funcSymbolName = NULL;
+				break;
 		}
 		if ( NULL != funcSymbolName ) {
 			result = mK2Service->callPlatformFunction ( funcSymbolName, false, (void*)value, (void*)0, (void*)0, (void*)0 );
@@ -1889,7 +1633,6 @@ IOReturn K2Platform::writeGpioState ( GPIOSelector selector, GpioAttributes gpio
 #endif	//	}
 		}
 	}
-#endif	//	}
 Exit:
 	return result;
 }
@@ -1899,8 +1642,6 @@ Exit:
 IOReturn K2Platform::translateGpioAttributeToGpioState ( GPIOType gpioType, GpioAttributes gpioAttribute, UInt32 * valuePtr ) {
 	IOReturn		result;
 	
-//	debug4IOLog ( "K2Platform::translateGpioAttributeToGpioState ( %d, %d, %p )\n", (unsigned int)gpioType, (unsigned int)gpioAttribute, valuePtr );
-#ifndef kBUILD_FOR_DIRECT_GPIO_HW_ACCESS	
 	result = kIOReturnBadArgument;
 	if ( NULL != valuePtr ) {
 		result = kIOReturnSuccess;
@@ -1946,80 +1687,7 @@ IOReturn K2Platform::translateGpioAttributeToGpioState ( GPIOType gpioType, Gpio
 				break;
 		}
 	}
-#else	// use this for direct hardware access (takes into account active high/low of gpio's)
-	if ( NULL != valuePtr ) {
-		result = kIOReturnSuccess;
-		switch ( gpioType ) {
-			case kGPIO_Type_ConnectorType:
-				if ( kGPIO_TypeIsDigital == gpioAttribute ) {
-					*valuePtr = 1;
-				} else if ( kGPIO_TypeIsAnalog == gpioAttribute ) {
-					*valuePtr = 0;
-				} else {
-					result = kIOReturnBadArgument;
-				}
-				break;
-			case kGPIO_Type_Detect:
-				if ( kGPIO_Disconnected == gpioAttribute ) {
-					*valuePtr = 0;
-				} else if ( kGPIO_Connected == gpioAttribute ) {
-					*valuePtr = 1;
-				} else {
-					result = kIOReturnBadArgument;
-				}
-				break;
-			case kGPIO_Type_Irq:
-				if ( kGPIO_CodecInterruptActive == gpioAttribute ) {
-					*valuePtr = 1;
-				} else if ( kGPIO_CodecInterruptInactive == gpioAttribute ) {
-					*valuePtr = 0;
-				} else {
-					result = kIOReturnBadArgument;
-				}
-				break;
-			case kGPIO_Type_MuteL:
-				if ( kGPIO_Muted == gpioAttribute ) {
-					*valuePtr = 1;
-				} else if ( kGPIO_Unmuted == gpioAttribute ) {
-					*valuePtr = 0;
-				} else {
-					result = kIOReturnBadArgument;
-				}
-				break;
-			case kGPIO_Type_MuteH:
-				if ( kGPIO_Muted == gpioAttribute ) {
-					*valuePtr = 1;
-				} else if ( kGPIO_Unmuted == gpioAttribute ) {
-					*valuePtr = 0;
-				} else {
-					result = kIOReturnBadArgument;
-				}
-				break;
-			case kGPIO_Type_Mux:
-				if ( kGPIO_MuxSelectAlternate == gpioAttribute ) {
-					*valuePtr = 1;
-				} else if ( kGPIO_MuxSelectDefault == gpioAttribute ) {
-					*valuePtr = 0;
-				} else {
-					result = kIOReturnBadArgument;
-				}
-				break;
-			case kGPIO_Type_Reset:
-				if ( kGPIO_Run == gpioAttribute ) {
-					*valuePtr = 0;
-				} else if ( kGPIO_Reset == gpioAttribute ) {
-					*valuePtr = 1;
-				} else {
-					result = kIOReturnBadArgument;
-				}
-				break;
-			default:
-				result = kIOReturnBadArgument;
-				break;
-		}
-	}
-#endif
-#ifdef kVERBOSE_Log
+#ifdef kVERBOSE_LOG
 	if ( kIOReturnSuccess != result ) { 
 		switch ( gpioType ) {
 			case kGPIO_Type_ConnectorType:	debug2IOLog ( "FAIL: K2Platform::translateGpioAttributeToGpioState ( kGPIO_Type_ConnectorType, %p )\n", valuePtr ); 	break;
@@ -2092,103 +1760,6 @@ Exit:
 }
 
 #pragma mark ---------------------------
-#pragma mark DEBUGGING UTILITIES
-#pragma mark ---------------------------
-
-//	--------------------------------------------------------------------------------
-void K2Platform::LogFCR ( void ) {
-	UInt32			data;
-	
-//#ifdef kVERBOSE_LOG
-	data = (unsigned int)OSReadSwapInt32 ( mHwPtr, kAUDIO_MAC_IO_FCR1 );
-	debug7IOLog ( "[#] FCR1: %X -> %lX ::: %s %s %s %s\n", 
-						kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_MAC_IO_FCR1, 
-						data,
-						0 == ( data & ( 1 << 13 ) ) ? "i2s0_enable_h" : "I2S0_ENABLE_H" ,
-						0 == ( data & ( 1 << 12 ) ) ? "i2s0_clkenbit_h" : "I2S0_CLKENBIT_H" ,
-						0 == ( data & ( 1 << 11 ) ) ? "i2s0_swreset_h" : "I2S0_SWRESET_H" ,
-						0 == ( data & ( 1 << 10 ) ) ? "i2s0_cell_en_h" : "I2S0_CELL_EN_H"
-					);
-	data = (unsigned int)OSReadSwapInt32 ( mHwPtr, kAUDIO_MAC_IO_FCR3 );
-	debug8IOLog ( "[#] FCR3: %X -> %lX ::: %s %s %s %s %s\n", 
-						kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_MAC_IO_FCR3, 
-						data,
-						0 == ( data & ( 1 << 14 ) ) ? "i2s0_clk18_en_h" : "I2S_CLK18_EN_H" ,
-						0 == ( data & ( 1 << 10 ) ) ? "clk45_en_h" : "CLK45_EN_H" ,
-						0 == ( data & ( 1 << 9 ) ) ? "clk49_en_h" : "CLK49_EN_H" ,
-						0 == ( data & ( 1 << 5 ) ) ? "enablepll2shutdown_h" : "ENABLEPLL2SHUTDOWN_H",
-						0 == ( data & ( 1 << 5 ) ) ? "enablepll3shutdown_h" : "ENABLEPLL3SHUTDOWN_H"
-					);
-	IOSleep ( 10 );
-//#endif
-	return;
-}
-
-//	--------------------------------------------------------------------------------
-void K2Platform::LogI2S ( void ) {
-//#ifdef kVERBOSE_LOG
-	debug3IOLog ( "[*] I2S Serial Format:     %X -> %X\n", kAUDIO_I2S_BASE_ADDRESS + kAUDIO_I2S_SERIAL_FORMAT, (unsigned int)OSReadSwapInt32 ( mHwI2SPtr, kAUDIO_I2S_SERIAL_FORMAT ) );
-	debug3IOLog ( "[*] I2S Data Word Size:    %X -> %X\n", kAUDIO_I2S_BASE_ADDRESS + kAUDIO_I2S_DATA_WORD_SIZES, (unsigned int)OSReadSwapInt32 ( mHwI2SPtr, kAUDIO_I2S_DATA_WORD_SIZES ) );
-	debug3IOLog ( "[*] I2S Frame Count:       %X -> %X\n", kAUDIO_I2S_BASE_ADDRESS + kAUDIO_I2S_FRAME_COUNTER, (unsigned int)OSReadSwapInt32 ( mHwI2SPtr, kAUDIO_I2S_FRAME_COUNTER ) );
-	debug3IOLog ( "[*] I2S Interrupt Control: %X -> %X\n", kAUDIO_I2S_BASE_ADDRESS + kAUDIO_I2S_INTERRUPT_CONTROL, (unsigned int)OSReadSwapInt32 ( mHwI2SPtr, kAUDIO_I2S_INTERRUPT_CONTROL ) );
-//#endif
-	return;
-}
-
-//	--------------------------------------------------------------------------------
-void K2Platform::LogInterruptGPIO ( void ) {
-#ifdef kVERBOSE_LOG
-	IOLog ( "### CodecErrorIRQ %X, CodecIRQ %X, HeadphoneDet %X, LineInDet %X, LineOutDet %X\n",
-		(unsigned int)mHwPtr[kAUDIO_GPIO_CODEC_ERROR_IRQ], 
-		(unsigned int)mHwPtr[kAUDIO_GPIO_CODEC_IRQ], 
-		(unsigned int)mHwPtr[kAUDIO_GPIO_HEADPHONE_SENSE], 
-		(unsigned int)mHwPtr[kAUDIO_GPIO_LINE_IN_SENSE], 
-		(unsigned int)mHwPtr[kAUDIO_GPIO_LINE_OUT_SENSE] 
-	);
-#endif
-	return;
-}
-	
-//	--------------------------------------------------------------------------------
-void K2Platform::LogGPIO ( void ) {
-#ifdef kVERBOSE_LOG
-	debug3IOLog ( "GPIO28 AnalogReset:         %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_ANALOG_CODEC_RESET, (unsigned int)mHwPtr[kAUDIO_GPIO_ANALOG_CODEC_RESET] );
-	debug3IOLog ( "GPIO30 ClockMuxSelect:      %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_CLOCK_MUX_SELECT, (unsigned int)mHwPtr[kAUDIO_GPIO_CLOCK_MUX_SELECT] );
-	debug3IOLog ( "GPIO5  CodecErrorInterrupt: %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_CODEC_ERROR_IRQ, (unsigned int)mHwPtr[kAUDIO_GPIO_CODEC_ERROR_IRQ] );
-	debug3IOLog ( "GPIO16 CodecInterrupt:      %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_CODEC_IRQ, (unsigned int)mHwPtr[kAUDIO_GPIO_CODEC_IRQ] );
-	debug3IOLog ( "GPIO12 DigitalCodecReset:   %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_DIGITAL_CODEC_RESET, (unsigned int)mHwPtr[kAUDIO_GPIO_DIGITAL_CODEC_RESET] );
-	debug3IOLog ( "GPIO15 HeadphoneDetect:     %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_HEADPHONE_SENSE, (unsigned int)mHwPtr[kAUDIO_GPIO_HEADPHONE_SENSE] );
-	debug3IOLog ( "GPIO23 HeadphoneMute:       %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_HEADPHONE_MUTE, (unsigned int)mHwPtr[kAUDIO_GPIO_HEADPHONE_MUTE] );
-	debug3IOLog ( "GPIO3  InputDataMuxSelect:  %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_INPUT_DATA_MUX_SELECT, (unsigned int)mHwPtr[kAUDIO_GPIO_INPUT_DATA_MUX_SELECT] );
-	debug3IOLog ( "GPIO4  LineInDetect:        %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_LINE_IN_SENSE, (unsigned int)mHwPtr[kAUDIO_GPIO_LINE_IN_SENSE] );
-	debug3IOLog ( "GPIO14 LineOutDetect:       %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_LINE_OUT_SENSE, (unsigned int)mHwPtr[kAUDIO_GPIO_LINE_OUT_SENSE] );
-	debug3IOLog ( "GPIO29 LineOutMute:         %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_LINE_OUT_MUTE, (unsigned int)mHwPtr[kAUDIO_GPIO_LINE_OUT_MUTE] );
-	debug3IOLog ( "GPIO24 SpeakerMute:         %X -> %X\n", kAUDIO_MAC_IO_BASE_ADDRESS + kAUDIO_GPIO_AMPLIFIER_MUTE, (unsigned int)mHwPtr[kAUDIO_GPIO_AMPLIFIER_MUTE] );
-#endif
-	return;
-}
-	
-//	--------------------------------------------------------------------------------
-void K2Platform::LogDBDMAChannelRegisters ( void ) {
-#ifdef kVERBOSE_LOG
-	debug2IOLog ( "Output ChannelControl:  %lX\n", mIOBaseDMAOutput->channelControl );
-	debug2IOLog ( "Output channelStatus:   %lX\n", mIOBaseDMAOutput->channelStatus );
-	debug2IOLog ( "Output commandPtrHi:    %lX\n", mIOBaseDMAOutput->commandPtrHi );
-	debug2IOLog ( "Output commandPtrLo:    %lX\n", mIOBaseDMAOutput->commandPtrLo );
-	debug2IOLog ( "Output interruptSelect: %lX\n", mIOBaseDMAOutput->interruptSelect );
-	debug2IOLog ( "Output branchSelect:    %lX\n", mIOBaseDMAOutput->branchSelect );
-	debug2IOLog ( "Output waitSelect:      %lX\n", mIOBaseDMAOutput->waitSelect );
-	debug2IOLog ( "Output transferModes:   %lX\n", mIOBaseDMAOutput->transferModes );
-	debug2IOLog ( "Output data2PtrHi:      %lX\n", mIOBaseDMAOutput->data2PtrHi );
-	debug2IOLog ( "Output data2PtrLo:      %lX\n", mIOBaseDMAOutput->data2PtrLo );
-	debug2IOLog ( "Output reserved1:       %lX\n", mIOBaseDMAOutput->reserved1 );
-	debug2IOLog ( "Output addressHi:       %lX\n", mIOBaseDMAOutput->addressHi );
-#endif
-	return;
-}
-
-
-#pragma mark ---------------------------
 #pragma mark USER CLIENT SUPPORT
 #pragma mark ---------------------------
 
@@ -2220,7 +1791,6 @@ IOReturn	K2Platform::getPlatformState ( PlatformStateStructPtr outState ) {
 	outState->fcr.pll45mHzShutdown = 0;
 	outState->fcr.pll49mHzShutdown = 0;
 	
-	LogGPIO();
 	outState->gpio.gpio_AnalogCodecReset = getCodecReset ( kCODEC_RESET_Analog );
 	outState->gpio.gpio_ClockMux = getClockMux ();
 	outState->gpio.gpio_CodecInterrupt = getCodecInterrupt ();

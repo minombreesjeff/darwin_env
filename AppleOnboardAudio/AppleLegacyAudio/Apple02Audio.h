@@ -76,7 +76,7 @@ protected:
     IOAudioToggleControl *		playthruToggle;
 	IOAudioToggleControl *		headphoneConnection;
 	IOAudioToggleControl *		inputConnection;
-	IOAudioLevelControl *		pramVol;
+//	IOAudioLevelControl *		pramVol;
 	IOAudioLevelControl *		outVolMaster;
     IOAudioLevelControl *		outVolLeft;
     IOAudioLevelControl *		outVolRight;
@@ -139,8 +139,6 @@ public:
     virtual IOService* probe(IOService *provider, SInt32*);
 	virtual void stop (IOService *provider);
 
-    bool     getMuteState();
-    void     setMuteState(bool newMuteState);
 	// Useful getter
     virtual OSArray *getDetectArray();
 	// IOAudioDevice subclass

@@ -10,12 +10,10 @@
 #pragma mark еее Processing Routines
 #pragma mark ------------------------ 
 
-float gOldSample = 0.0f;
-
 // ------------------------------------------------------------------------
 // Delay right channel audio data one sample, used to fix TAS 3004 phase problem
 // ------------------------------------------------------------------------
-void delayRightChannel(float* inFloatBufferPtr, UInt32 numSamples) 
+void delayRightChannel(float* inFloatBufferPtr, UInt32 numSamples, float * inLastSample) 
 {
     register float* inPtr;
     register float* outPtr;
@@ -27,7 +25,11 @@ void delayRightChannel(float* inFloatBufferPtr, UInt32 numSamples)
 	inPtr = inFloatBufferPtr;
 	inPtr++;
 	outPtr = inPtr;
-	oldSample = gOldSample;
+	if (inLastSample) {
+		oldSample = *inLastSample;
+	} else {
+		oldSample = 0.0f;
+	}
 	
 	for (i = 0; i < numFrames; i++) 
     {
@@ -38,7 +40,92 @@ void delayRightChannel(float* inFloatBufferPtr, UInt32 numSamples)
 		oldSample = inSampleR;
 	}
 	
-	gOldSample = oldSample;
+	if (inLastSample) {
+		*inLastSample = oldSample;
+	}
+}
+
+
+// ------------------------------------------------------------------------
+// Apply stereo gain, needed on machines like Q27 to compensate for
+// different speaker output due to enclosure differences.
+// ------------------------------------------------------------------------
+void balanceAdjust(float* inFloatBufferPtr, UInt32 numSamples, float* leftSoftVolume, float* rightSoftVolume) 
+{
+	register UInt32 i;
+	register UInt32 numFrames;
+	register UInt32 leftOver;
+    register float* inPtr;
+    register float* outPtr;
+	register float leftGain;
+	register float rightGain;
+	register float inL0;
+	register float inR0;
+	register float inL1;
+	register float inR1;
+	register float inL2;
+	register float inR2;
+	register float inL3;
+	register float inR3;
+	
+	inPtr = inFloatBufferPtr;
+	outPtr = inFloatBufferPtr;  
+	
+	leftGain = *leftSoftVolume;
+	rightGain = *rightSoftVolume;
+	
+	numFrames = numSamples >> 1;
+	leftOver = numFrames % 4;
+	numSamples = numFrames >> 2;
+	
+    for (i = 0; i < numSamples; i++ ) 
+    {
+		inL0 = *(inPtr++);					
+
+		inR0 = *(inPtr++);			
+
+		inL1 = *(inPtr++);			
+		inL0 *= leftGain;
+
+		inR1 = *(inPtr++);		
+		inR0 *= rightGain;
+
+		inL2 = *(inPtr++);					
+		inL1 *= leftGain;
+		*(outPtr++) = inL0;			
+
+		inR2 = *(inPtr++);			
+		inR1 *= rightGain;
+		*(outPtr++) = inR0;		
+
+		inL3 = *(inPtr++);			
+		inL2 *= leftGain;
+		*(outPtr++) = inL1;		
+
+		inR3 = *(inPtr++);		
+		inR2 *= rightGain;
+		*(outPtr++) = inR1;		
+
+		inL3 *= leftGain;
+		*(outPtr++) = inL2;			
+
+		inR3 *= rightGain;
+		*(outPtr++) = inR2;				
+
+		*(outPtr++) = inL3;
+
+		*(outPtr++) = inR3;		
+	}
+
+    for (i = 0; i < leftOver; i ++ ) 
+    {
+		inL0 = *(inPtr++);
+		inR0 = *(inPtr++);
+		inL0 *= leftGain;
+		inR0 *= rightGain;
+		*(outPtr++) = inL0;			
+		*(outPtr++) = inR0;		
+	}
 }
 
 // ------------------------------------------------------------------------
@@ -1424,6 +1511,170 @@ void NativeInt16ToFloat32Gain( signed short *src, float *dest, unsigned int coun
 		((long*) dest)[0] = value;
 		dest[0] -= bias;
 		dest[0] *= gainL;
+	}
+}
+
+// [3306493]
+// bitDepth may be less than 16, e.g. for low-aligned 12 bit samples
+void NativeInt16ToFloat32CopyLeftToRight( signed short *src, float *dest, unsigned int count, int bitDepth )
+{
+	register float bias;
+	register long exponentMask = ((0x97UL - bitDepth) << 23) | 0x8000;	//FP exponent + bias for sign
+	register long int0, int1, int2, int3;
+	register float float0, float1, float2, float3;
+	register unsigned long loopCount;
+	union
+	{
+		float	f;
+		long	i;
+	} exponent;
+
+	exponent.i = exponentMask;
+	bias = exponent.f;
+
+	src--;
+	if( count >= 8 )
+	{
+		//Software Cycle 1
+		int0 = (++src)[0];		// left 1
+
+		//Software Cycle 2
+		int1 = (src++)[0];		// reuse left 1, skip right 1
+		int0 += exponentMask;
+
+		//Software Cycle 3
+		int2 = (++src)[0];		// left 2
+		int1 += exponentMask;
+		((long*) dest)[0] = int0;
+
+		//Software Cycle 4
+		int3 = (src++)[0];		// reuse left 2, skip right 2
+		int2 += exponentMask;
+		((long*) dest)[1] = int1;
+		//delay one loop for the store to complete
+
+		//Software Cycle 5
+		int0 = (++src)[0];		// left 3
+		int3 += exponentMask;
+		((long*) dest)[2] = int2;
+		float0 = dest[0];
+
+		//Software Cycle 6
+		int1 = (src++)[0];		// reuse left 3, skip right 3
+		int0 += exponentMask;
+		((long*) dest)[3] = int3;
+		float1 = dest[1];
+		float0 -= bias;
+
+		//Software Cycle 7
+		int2 = (++src)[0];		// left 4
+		int1 += exponentMask;
+		((long*) dest)[4] = int0;
+		float2 = dest[2];
+		float1 -= bias;
+
+		dest--;
+		//Software Cycle 8
+		int3 = (src++)[0];		// reuse left 4, skip right 4
+		int2 += exponentMask;
+		((long*) dest)[6] = int1;
+		float3 = dest[4];
+		float2 -= bias;
+		(++dest)[0] = float0;
+
+		count -= 8;
+		loopCount = count / 4;
+		count &= 3;
+		while( loopCount-- )
+		{
+
+			//Software Cycle A
+			int0 = (++src)[0];
+			int3 += exponentMask;
+			((long*) dest)[6] = int2;
+			float0 = dest[4];
+			float3 -= bias;
+			(++dest)[0] = float1;
+
+			//Software Cycle B
+			int1 = (src++)[0];
+			int0 += exponentMask;
+			((long*) dest)[6] = int3;
+			float1 = dest[4];
+			float0 -= bias;
+			(++dest)[0] = float2;
+
+			//Software Cycle C
+			int2 = (++src)[0];
+			int1 += exponentMask;
+			((long*) dest)[6] = int0;
+			float2 = dest[4];
+			float1 -= bias;
+			(++dest)[0] = float3;
+
+			//Software Cycle D
+			int3 = (src++)[0];
+			int2 += exponentMask;
+			((long*) dest)[6] = int1;
+			float3 = dest[4];
+			float2 -= bias;
+			(++dest)[0] = float0;
+		}
+
+		//Software Cycle 7
+		int3 += exponentMask;
+		((long*) dest)[6] = int2;
+		float0 = dest[4];
+		float3 -= bias;
+		(++dest)[0] = float1;
+
+		//Software Cycle 6
+		((long*) dest)[6] = int3;
+		float1 = dest[4];
+		float0 -= bias;
+		(++dest)[0] = float2;
+
+		//Software Cycle 5
+		float2 = dest[4];
+		float1 -= bias;
+		(++dest)[0] = float3;
+
+		//Software Cycle 4
+		float3 = dest[4];
+		float2 -= bias;
+		(++dest)[0] = float0;
+
+		//Software Cycle 3
+		float3 -= bias;
+		(++dest)[0] = float1;
+
+		//Software Cycle 2
+		(++dest)[0] = float2;
+
+		//Software Cycle 1
+		(++dest)[0] = float3;
+
+		dest++;
+	}
+
+	loopCount = count/2;
+	while( loopCount-- )
+	{
+		register long value = (++src)[0];
+		value += exponentMask;
+		((long*) dest)[0] = value;
+		dest[0] -= bias;
+		dest++;
+		++src;
+		((long*) dest)[0] = value;
+		dest[0] -= bias;
+		dest++;
+	}
+	if (count % 2) {
+		register long value = (++src)[0];
+		value += exponentMask;
+		((long*) dest)[0] = value;
+		dest[0] -= bias;
 	}
 }
 
@@ -3653,7 +3904,7 @@ void dBfixed2float(UInt32 indBfixed, float* ioGainPtr) {
 void inputGainConverter(UInt32 inGainIndex, float* ioGainPtr) {
     float out = 1.0f;
     // check bounds		
-    if (inGainIndex > (2*kInputGaindBConvTableOffset)) {
+    if (inGainIndex > (UInt32)(2*kInputGaindBConvTableOffset)) {
         inGainIndex = 2*kInputGaindBConvTableOffset;
     }
 

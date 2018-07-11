@@ -138,6 +138,7 @@ typedef struct AOAStateUserClientStruct {
 #define kSoftwareDSP					"SoftwareDSP"
 #define kMaxVolumeOffset				"maxVolumeOffset"
 #define kSpeakerID						"SpeakerID"
+#define kMicrophoneID					"MicrophoneID"
 #define kPluginRecoveryOrder			"RecoveryOrder"
 #define kClipRoutines					"ClipRoutines"
 #define kEncoding						"Encoding"
@@ -263,6 +264,7 @@ protected:
 	UInt32								mLayoutID;
 	UInt32								mDetectCollection;
 	UInt32								mSpeakerID;
+	UInt32								mMicrophoneID;
 	bool								mCurrentPluginHasSoftwareInputGain;
 	UInt32								mAmpRecoveryMuteDuration;
 	
@@ -278,6 +280,7 @@ protected:
 
     OSArray	*							AudioSoftDSPFeatures;
 	OSString *							mCurrentProcessingOutputString;
+	OSString *							mCurrentProcessingInputString;
 
 	// Dynamic variable that handle the connected devices
     sndHWDeviceSpec						currentDevices;
@@ -423,6 +426,7 @@ protected:
 	GpioAttributes		getInputDataMuxForConnection (const char * entry);
 
 	void				setSoftwareOutputDSP (const char * inSelectedOutput);
+	void				setSoftwareInputDSP (const char * inSelectedInput);
 
 	UInt32				getMaxVolumeOffsetForOutput (const UInt32 inCode);
 	UInt32				getMaxVolumeOffsetForOutput (const char * inSelectedOutput);
@@ -454,7 +458,7 @@ protected:
 	void				initializeDetectCollection ( void );
 	UInt32				parseOutputDetectCollection (void);
 	UInt32				parseInputDetectCollection (void);
-	void				selectOutput (const UInt32 inSelection, const bool inUpdateAll = TRUE);
+	void				selectOutput (const UInt32 inSelection, const bool inMuteState, const bool inUpdateAll = TRUE);
 	void				muteAnalogOuts ();
 	void				setAnalogCodecMute (UInt32 inValue);
 

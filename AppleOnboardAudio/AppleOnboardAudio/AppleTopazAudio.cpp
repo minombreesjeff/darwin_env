@@ -45,6 +45,7 @@ bool AppleTopazAudio::start (IOService * provider) {
 
 	debug3IOLog ("+AppleTopazAudio[%p]::start(%p)\n", this, provider);
 
+	result = FALSE;
 	FailIf (!provider, Exit);
 	mAudioDeviceProvider = (AppleOnboardAudio *)provider;
 
@@ -283,7 +284,7 @@ IOReturn AppleTopazAudio::performDeviceWake () {
 
 	//	[3333215]	Codec operation may not be restored after wake from
 	//	sleep so start state machine to recover codec operation.
-	//	[3344893]	Recovery is only implemented if running on the internal 
+	//	[3344893,3352595]	Recovery is only implemented if running on the internal 
 	//	clock source since failure is associated with the sample rate converter 
 	//	and the sample rate converter is not in use when running on the external 
 	//	clock source.
@@ -921,6 +922,7 @@ IOReturn AppleTopazAudio::CODEC_IsControlRegister ( UInt8 regAddr ) {
 			switch ( mCodecID ) {
 				case kCS8406_CODEC:					result = kIOReturnError;			break;
 				case kCS8420_CODEC:					result = kIOReturnSuccess;			break;
+				default:							result = kIOReturnError;
 			};
 			break;
 		case map_MISC_CNTRL_1:
@@ -970,6 +972,8 @@ IOReturn AppleTopazAudio::CODEC_IsControlRegister ( UInt8 regAddr ) {
 IOReturn 	AppleTopazAudio::CODEC_IsStatusRegister ( UInt8 regAddr ) {
 	IOReturn	result;
 	
+	result = kIOReturnError;
+	
 	switch ( regAddr ) {
 		case map_IRQ1_STATUS:
 		case map_IRQ2_STATUS:
@@ -1010,9 +1014,10 @@ IOReturn 	AppleTopazAudio::CODEC_ReadRegister ( UInt8 regAddr, UInt8 * registerD
 	UInt32			index;
 	UInt32			codecRegSize;
 
+	result = kIOReturnError;
+	success = false;
 	FailIf ( NULL == mPlatformInterface, Exit );
 	result = kIOReturnSuccess;
-	success = false;
 	if ( 1 < size ) { regAddr |= (UInt8)kMAP_AUTO_INCREMENT_ENABLE; }
 	
 	if ( kIOReturnSuccess == CODEC_GetRegSize ( regAddr, &codecRegSize ) ) {
@@ -1142,8 +1147,8 @@ IOReturn 	AppleTopazAudio::CODEC_WriteRegister ( UInt8 regAddr, UInt8 registerDa
 	Boolean			updateRequired;
 	bool			success = true;
 
-	FailIf ( NULL == mPlatformInterface, Exit );
 	result = kIOReturnError;
+	FailIf ( NULL == mPlatformInterface, Exit );
 	updateRequired = false;
 
 #ifdef kVERBOSE_LOG

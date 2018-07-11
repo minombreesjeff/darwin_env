@@ -157,7 +157,6 @@ protected:
 	IONotifier *			dallasDriverNotifier;
 	IOTimerEventSource *	dallasHandlerTimer;
 	IOTimerEventSource *	notifierHandlerTimer;
-	Boolean					doneWaiting;
 	UInt64					savedNanos; 
 	Boolean					speakerConnectFailed;
     UInt32					activeOutput;								//	[2855519]
@@ -168,6 +167,7 @@ protected:
 	Boolean					hasANDedReset;								//	[2855519]
 	UInt32					gPowerState;
 	Boolean					powerStateChangeInProcess;
+	Boolean					codecResetFlag;
 
 	// information specific to the chip
 	Boolean					gModemSoundActive;
@@ -278,6 +278,7 @@ protected:
 	static IOReturn	DeviceInterruptServiceAction (OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4);
 	void		DeviceInterruptService (void);
 	IOReturn	GetCustomEQCoefficients (UInt32 layoutID, UInt32 deviceID, UInt32 speakerID, EQPrefsElementPtr *filterSettings);
+	Boolean		usesDigitalPlaythrough ( void );
 	UInt32		GetDeviceMatch (void);
 	IOReturn	SndHWSetOutputBiquad( UInt32 streamID, UInt32 biquadRefNum, FourDotTwenty *biquadCoefficients );
 	IOReturn	SndHWSetOutputBiquadGroup( UInt32 biquadFilterCount, FourDotTwenty *biquadCoefficients );

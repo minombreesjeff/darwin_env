@@ -191,7 +191,8 @@ enum {
 	layoutQ54					=	40,
 	layoutQ59					=	41,
 	layoutNeoBorg_Analog		=	42,
-	layoutNeoBorg_Digital		=	43
+	layoutNeoBorg_Digital		=	43,
+	layoutP73D					=	44
 };
 
 // Hardware type 
@@ -347,7 +348,7 @@ enum speakerIDBitAddresses {
 enum{
     kMaximumPRAMVolume 	= 7,
     kMinimumPRAMVolume	= 0,
-    KNumPramVolumeSteps	= (kMaximumPRAMVolume - kMinimumPRAMVolume + 1),
+    KNumPramVolumeSteps	= (kMaximumPRAMVolume- kMinimumPRAMVolume+1),
     kPRamVolumeAddr		= 8,
     
     kDefaultVolume		= 0x006E006E,

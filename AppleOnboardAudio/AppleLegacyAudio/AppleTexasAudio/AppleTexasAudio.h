@@ -147,7 +147,6 @@ protected:
 	IOTimerEventSource *	deferDallasHandlerTimer;					//	[3103075]
 	IOTimerEventSource *	dallasHandlerTimer;
 	IOTimerEventSource *	notifierHandlerTimer;
-	Boolean					doneWaiting;
 	UInt64					savedNanos; 
 	Boolean					speakerConnectFailed;
 	IOAudioDevicePowerState previousPowerState;

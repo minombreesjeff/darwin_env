@@ -152,6 +152,7 @@ typedef struct SetSoftProcUserClientStruct_t {
 
 	UInt32  	numBands;										// crossover params
 	float		frequency[kMaxNumCrossoverBands];
+	UInt32		processInput;
 } SetSoftProcUserClientStruct, *SetSoftProcUserClientStructPtr;
 
 typedef struct UCIODBDMAChannelCommands {
@@ -185,9 +186,11 @@ public:
 	virtual void 		setSampleLatencies (UInt32 outputLatency, UInt32 inputLatency); 
 	virtual void 		stop(IOService *provider);
 	virtual bool		willTerminate (IOService * provider, IOOptionBits options);
+	static void 		requestiSubClose (IOAudioEngine * audioEngine);
 	virtual bool 		requestTerminate ( IOService * provider, IOOptionBits options );
 
 	virtual void		detach(IOService *provider);
+	virtual	OSString *	getGlobalUniqueID();
 
 	virtual IOReturn 	clipOutputSamples(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream);
     virtual IOReturn 	convertInputSamples(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream);
@@ -211,6 +214,7 @@ public:
     void		 		setUseSoftwareInputGain(bool inUseSoftwareInputGain);
     void	 			setInputGainL(UInt32 inGainL); 
     void		 		setInputGainR(UInt32 inGainR); 
+    void		 		setRightChanDelayInput(bool inUseSoftwareInputGain);// [3173869]
 
     void	 			setLeftSoftVolume(float* inVolume); 
     void	 			setRightSoftVolume(float* inVolume); 
@@ -220,11 +224,14 @@ public:
 	void				initializeSoftwareCrossover ();
 
 	void				disableSoftwareEQ ();
+	void				disableSoftwareInputEQ ();
 	void				disableSoftwareLimiter ();
 	void				enableSoftwareEQ ();
+	void				enableSoftwareInputEQ ();
 	void				enableSoftwareLimiter ();
 	
 	void				setEqualizationFromDictionary (OSDictionary * inDictionary);
+	void				setInputEqualizationFromDictionary (OSDictionary * inDictionary);
 	void				setLimiterFromDictionary (OSDictionary * inDictionary);
 	void				setCrossoverFromDictionary (OSDictionary * inDictionary);
 	
@@ -318,6 +325,7 @@ protected:
     bool 							mUseSoftwareInputGain;
     float *							mInputGainLPtr;				
     float *							mInputGainRPtr;				
+	bool							fNeedsRightChanDelayInput;// [3173869]
 
 	EQStruct						mEQStructA;
 	LimiterStruct					mLimiterStructA;
@@ -331,6 +339,12 @@ protected:
 	LimiterStructPtr				mCurrentLimiterStructPtr;
 	CrossoverStructPtr				mCurrentCrossoverStructPtr;
 
+	// [3306305]
+	EQStruct						mInputEQStructA;
+	EQStruct						mInputEQStructB;
+	EQStructPtr						mCurrentInputEQStructPtr;
+	EQParamStruct					mInputEQParams[kMaxNumFilters];
+
 	EQParamStruct					mEQParams[kMaxNumFilters];
 	LimiterParamStruct				mLimiterParams[kMaxNumLimiters];
 	CrossoverParamStruct			mCrossoverParams;
@@ -340,6 +354,9 @@ protected:
 	IOAudioStreamFormat				mDBDMAInputFormat;		//	mpc changed to allow for different formats of input and output dma
 
     IOAudioStreamDirection			direction;
+
+	float							mLastInputSample;
+	float							mLastOutputSample;
 
     virtual bool					filterInterrupt(int index);
 
@@ -378,7 +395,7 @@ protected:
 #pragma mark ---------------------------------------- 
 #pragma mark еее Output Conversion Routines
 #pragma mark ---------------------------------------- 
-	inline void dspProcessing (float* inFloatBufferPtr, UInt32 inNumSamples);
+	inline void outputProcessing (float* inFloatBufferPtr, UInt32 inNumSamples);
 
 	IOReturn clipMemCopyToOutputStream (const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleDBDMAToOutputStream16(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
@@ -410,13 +427,16 @@ protected:
 #pragma mark ---------------------------------------- 
 #pragma mark еее Input Conversion Routines
 #pragma mark ---------------------------------------- 
+	inline void inputProcessing (float* inFloatBufferPtr, UInt32 inNumSamples);
 	
 	IOReturn convertAppleDBDMAFromInputStream16(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn convertAppleDBDMAFromInputStream16CopyR2L(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn convertAppleDBDMAFromInputStream16WithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn convertAppleDBDMAFromInputStream16DelayRightWithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	
 	IOReturn convertAppleDBDMAFromInputStream32(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn convertAppleDBDMAFromInputStream32WithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn convertAppleDBDMAFromInputStream32DelayRightWithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 
 };
 

@@ -81,7 +81,7 @@ public:
 	// GPIO Methods
 	//
 
-	virtual void					initAudioGpioPtr ( const IORegistryEntry * start, const char * gpioName, GpioPtr* gpioH, GpioActiveState* gpioActiveStatePtr );
+	virtual void					initAudioGpioPtr ( const IORegistryEntry * start, const char * gpioName, GpioPtr* gpioH, GpioActiveState* gpioActiveStatePtr, IOService ** intProvider );
 	virtual IOReturn				getGpioPtrAndActiveState ( GPIOSelector theGpio, GpioPtr * gpioPtrPtr, GpioActiveState * activeStatePtr ) ;
 	virtual GpioAttributes			getGpioAttributes ( GPIOSelector theGpio );
 	virtual IOReturn				setGpioAttributes ( GPIOSelector theGpio, GpioAttributes attributes );
@@ -211,14 +211,14 @@ private:
 
 	volatile UInt8 *		mHwPtr;								//	remove after burning real rom on real hardware
 
-	IOService *				mHeadphoneDetectIntProvider;
-	IOService *				mSpeakerDetectIntProvider;
-	IOService *				mLineOutDetectIntProvider;								
-	IOService *				mLineInDetectIntProvider;								
-	IOService *				mDigitalOutDetectIntProvider;								
-	IOService *				mDigitalInDetectIntProvider;								
 	IOService *				mCodecIntProvider;								
 	IOService *				mCodecErrorIntProvider;								
+	IOService *				mDigitalInDetectIntProvider;								
+	IOService *				mDigitalOutDetectIntProvider;								
+	IOService *				mHeadphoneDetectIntProvider;
+	IOService *				mLineInDetectIntProvider;								
+	IOService *				mLineOutDetectIntProvider;								
+	IOService *				mSpeakerDetectIntProvider;
 
 	IOInterruptEventSource *mHeadphoneDetectIntEventSource;
 	IOInterruptEventSource *mSpeakerDetectIntEventSource;
@@ -374,6 +374,8 @@ private:
 
 	static const char*	kAmpMuteEntry;
 	static const char*  kAnalogHWResetEntry;
+	static const char*	kCodecErrorIrqTypeEntry;
+	static const char*	kCodecIrqTypeEntry;
 	static const char*  kComboInJackTypeEntry;
 	static const char*  kComboOutJackTypeEntry;
 	static const char*  kDigitalHWResetEntry;

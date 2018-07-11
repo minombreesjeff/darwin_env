@@ -26,26 +26,26 @@ extern "C" {
 // second parameter.  You must use the literal name of the superclass.
 OSDefineMetaClassAndStructors(AppleDallasDriver, IOService)
 
-//================================================================================
-//	The bus master (this driver) asserts a reset pulse.  The target device
-//	responds with a "Presence" pulse prior to expiration of tPDH max.
-//
-//			                   >|         tRSTH              |<
-//	Vpullup	_____                 _______              _______
-//	Vih MIN	     \               /       \            /       \
-//			      \             /         \          /         \
-//	Vil MAX	       \           /           \        /           \
-//	0v		        \_________/             \______/             \
-//			                    >| tPDH  |<
-//			                 >|tR|<      |
-//			       >|  tRSTL  |<        >|  tPDL  |<
-//
-//	Where:	15 µS ² tPDH < 60 µS
-//			60 µS ² tPDL < 240 µS
-//			480 µS ² tRSTH
-//			480 µS ² tRSTL < °
-//			tRSTL + tR + tRSTH < 960 µS
-//
+/*================================================================================
+	The bus master (this driver) asserts a reset pulse.  The target device
+	responds with a "Presence" pulse prior to expiration of tPDH max.
+
+			                   >|         tRSTH              |<
+	Vpullup	_____                 _______              _______
+	Vih MIN	     \               /       \            /       \
+			      \             /         \          /         \
+	Vil MAX	       \           /           \        /           \
+	0v		        \_________/             \______/             \
+			                    >| tPDH  |<
+			                 >|tR|<      |
+			       >|  tRSTL  |<        >|  tPDL  |<
+
+	Where:	15 µS ² tPDH < 60 µS
+			60 µS ² tPDL < 240 µS
+			480 µS ² tRSTH
+			480 µS ² tRSTL < °
+			tRSTL + tR + tRSTH < 960 µS
+*/
 bool ROMReset (UInt8 *gpioPtr)
 {
     AbsoluteTime start, now, finish;
@@ -160,49 +160,50 @@ exit:
     return res;
 }
 
-//================================================================================
-//	Write-1 Time Slot:
-//	Vpullup	_____                 ____________________________
-//	Vih MIN	     \               /                            \
-//			      \             /                              \
-//	Vil MAX	       \           /                                \
-//	0v		        \_________/                                  \
-//
-//			       >|   tLOW1    |<
-//			       >|           tLOW0            |<  >| tREC |<
-//			       >|            tSLOT                |<
-//
-//	Where:	1 µS ² tLOW1 < 15 µS
-//			60 µS ² tSLOT ² 120 µS
-//			1 µS ² tREC < °
-//
-//	Write-0 Time Slot:
-//	Vpullup	_____                                      _______
-//	Vih MIN	     \                                    /       \
-//			      \                                  /         \
-//	Vil MAX	       \                                /           \
-//	0v		        \______________________________/             \
-//
-//			       >|   tLOW1    |<
-//			       >|           tLOW0            |<  >| tREC |<
-//			       >|            tSLOT                |<
-//
-//	Where:	60 µS ² tLOW0 < 120 µS
-//			60 µS ² tSLOT ² 120 µS
-//			1 µS ² tREC < °
-//
-//	Data is transacted lsb first.  Returns TRUE if failed!
-//
-//	Althought the tLOW1 is specified as 1µS minimum, it is unlikely that our hardware
-//	will propagate such a short duration pulse so the pulse is done at half the maximum.
-//	EMI filtering on the speaker jack can impact the timing such that an RC charge curve
-//	occurs as the signal is driven low and released high.  This curve causes the actual
-//	time period that the signal is below the minimum input voltage (i.e. Vil MAX) to be
-//	reduced and may result in timing less than the minimum allowed for the one-wire-bus
-//	protocol.  Using longer timing, which does not violate the maximum timing, allows 
-//	the charge curve to progress deeper toward the desired bus state and will result
-//	in timing that does not violate the minimum timing for the signal assertion.  This
-//	rule has been applied throughout this driver.  rbm 16 Oct 2002	[3053696]
+/*================================================================================
+	Write-1 Time Slot:
+	Vpullup	_____                 ____________________________
+	Vih MIN	     \               /                            \
+			      \             /                              \
+	Vil MAX	       \           /                                \
+	0v		        \_________/                                  \
+
+			       >|   tLOW1    |<
+			       >|           tLOW0            |<  >| tREC |<
+			       >|            tSLOT                |<
+
+	Where:	1 µS ² tLOW1 < 15 µS
+			60 µS ² tSLOT ² 120 µS
+			1 µS ² tREC < °
+
+	Write-0 Time Slot:
+	Vpullup	_____                                      _______
+	Vih MIN	     \                                    /       \
+			      \                                  /         \
+	Vil MAX	       \                                /           \
+	0v		        \______________________________/             \
+
+			       >|   tLOW1    |<
+			       >|           tLOW0            |<  >| tREC |<
+			       >|            tSLOT                |<
+
+	Where:	60 µS ² tLOW0 < 120 µS
+			60 µS ² tSLOT ² 120 µS
+			1 µS ² tREC < °
+
+	Data is transacted lsb first.  Returns TRUE if failed!
+
+	Althought the tLOW1 is specified as 1µS minimum, it is unlikely that our hardware
+	will propagate such a short duration pulse so the pulse is done at half the maximum.
+	EMI filtering on the speaker jack can impact the timing such that an RC charge curve
+	occurs as the signal is driven low and released high.  This curve causes the actual
+	time period that the signal is below the minimum input voltage (i.e. Vil MAX) to be
+	reduced and may result in timing less than the minimum allowed for the one-wire-bus
+	protocol.  Using longer timing, which does not violate the maximum timing, allows 
+	the charge curve to progress deeper toward the desired bus state and will result
+	in timing that does not violate the minimum timing for the signal assertion.  This
+	rule has been applied throughout this driver.  rbm 16 Oct 2002	[3053696]
+*/
 bool ROMSendByte ( UInt8 *gpioPtr, UInt8 theByte, UInt8 msgRefCon )
 {
     AbsoluteTime	start, now, finish, tLOW;
@@ -297,25 +298,26 @@ bool ROMSendByte ( UInt8 *gpioPtr, UInt8 theByte, UInt8 msgRefCon )
     return res;
 }
 
-//================================================================================
-//	Read Data Time Slot:
-//	Vpullup	_____                 ____________________________
-//	Vih MIN	     \               /                    /       \
-//			      \             /                    /         \
-//	Vil MAX	       \           /                    /           \
-//	0v		        \_________/___________________ /             \
-//
-//			       >|            tSLOT                |<
-//			       >|   tLOWR    |<    >| tRELEASE |<
-//			       >|        tRDV       |<           >| tREC |<
-//
-//	Where:	1 µS ² tLOWR < 15 µS
-//			60 µS ² tSLOT ² 120 µS
-//			1 µS ² tRELEASE ² 45 µS
-//			15 µS = tRDV
-//			1 µS ² tREC < °
-//
-//	Data is transacted lsb first.
+/*================================================================================
+	Read Data Time Slot:
+	Vpullup	_____                 ____________________________
+	Vih MIN	     \               /                    /       \
+			      \             /                    /         \
+	Vil MAX	       \           /                    /           \
+	0v		        \_________/___________________ /             \
+
+			       >|            tSLOT                |<
+			       >|   tLOWR    |<    >| tRELEASE |<
+			       >|        tRDV       |<           >| tREC |<
+
+	Where:	1 µS ² tLOWR < 15 µS
+			60 µS ² tSLOT ² 120 µS
+			1 µS ² tRELEASE ² 45 µS
+			15 µS = tRDV
+			1 µS ² tREC < °
+
+	Data is transacted lsb first.
+*/
 bool ROMReadByte (UInt8 *gpioPtr, UInt8* theByte)
 {
     AbsoluteTime	start, finish, tRdv, after;
@@ -601,6 +603,7 @@ bool AppleDallasDriver::readDataROM (UInt8 *bEEPROM,int dallasAddress, int size)
 	
 	stateMachine = kSTATE_RESET_READ_MEMORY;
 	retryCount = kRetryCountSeed;
+	index = 0;
 	while( ( kSTATE_COMPLETED != stateMachine ) && ( 0 != retryCount ) ) {
 		switch ( stateMachine ) {
 			case kSTATE_RESET_READ_MEMORY:

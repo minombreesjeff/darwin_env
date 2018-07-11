@@ -594,7 +594,7 @@ IOReturn   AppleDACAAudio::sndHWSetActiveOutputExclusive(UInt32 outputPort )
 
         case kSndHWOutput1:		// mono internal speaker
             fHeadphonesInserted = false ;   
-            tmpConfigReg = setBitsGCFGShadowReg(kInvertRightAmpGCFG, kInvertRightAmpGCFG) ;
+            tmpConfigReg = setBitsGCFGShadowReg(kInvertRightAmpGCFG, kNoChangeMask) ;
             myReturn = sndHWSetRegister(i2cBusSubaddrGCFG, tmpConfigReg);
 			if (NULL != driverDMAEngine) {
 				useMasterVolumeControl = TRUE;
@@ -602,7 +602,7 @@ IOReturn   AppleDACAAudio::sndHWSetActiveOutputExclusive(UInt32 outputPort )
             break;
         case kSndHWOutput2:		// stereo headphones
             fHeadphonesInserted = true ;                        
-            tmpConfigReg = setBitsGCFGShadowReg(!kInvertRightAmpGCFG, kInvertRightAmpGCFG) ;
+            tmpConfigReg = setBitsGCFGShadowReg(kNoChangeMask, kInvertRightAmpGCFG) ;
             myReturn = sndHWSetRegister(i2cBusSubaddrGCFG, tmpConfigReg);
 			if (NULL != driverDMAEngine) {
 				useMasterVolumeControl = FALSE;

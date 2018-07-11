@@ -30,7 +30,10 @@
  *
  */
 
+#define kSoundEntry					"sound"
+
 #define kBurgundySampleLatency				32
+#define kDeviceID					"device-id"
 
 #define kSoundCtlReg						0x00
 #define kSoundCtlReg_InSubFrame_Mask		0x0000000F	/*All of the input subframe bits*/
@@ -1683,3 +1686,9 @@ enum{
 	kBurgundyInSense2				=	0x00000002,		// in sense bit 2
 	kBurgundyInSense3				=	0x00000001,		// in sense bit 3
 };
+
+#define	kBURGUNDY_MIN_VOLUME				( ( -22 << 16 ) | ( 0x8000 ) )
+#define	kBURGUNDY_MAX_VOLUME				( (   0 << 16 ) | ( 0x0000 ) )
+#define	kBURGUNDY_MINIMUM_HW_VOLUME			0
+#define	kBURGUNDY_OUT_OF_BOUNDS_HW_VOLUME	( 1 << 4 )
+#define	kBURGUNDY_MAXIMUM_HW_VOLUME			(kBURGUNDY_OUT_OF_BOUNDS_HW_VOLUME)

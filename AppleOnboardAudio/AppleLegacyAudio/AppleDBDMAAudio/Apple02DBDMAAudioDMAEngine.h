@@ -61,8 +61,9 @@ public:
     IOReturn     		restartDMA();
 	virtual void 		setSampleLatencies (UInt32 outputLatency, UInt32 inputLatency); 
 	virtual void 		stop(IOService *provider);
+	static void 		requestiSubClose (IOAudioEngine * audioEngine);
 	virtual bool		willTerminate (IOService * provider, IOOptionBits options);
-
+	virtual	OSString *	getGlobalUniqueID();
 
 	virtual IOReturn 	clipOutputSamples(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream);
     virtual IOReturn 	convertInputSamples(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream);
@@ -87,6 +88,11 @@ public:
     void		 		setUseSoftwareInputGain(bool inUseSoftwareInputGain);
     void	 			setInputGainL(UInt32 inGainL); 
     void		 		setInputGainR(UInt32 inGainR); 
+	void  				setRightChanDelayInput(const bool needsRightChanDelay);
+
+	void 				setBalanceAdjust(const bool needsBalanceAdjust);  
+	void 				setLeftBalanceAdjust(UInt32 inVolume);
+	void 				setRightBalanceAdjust(UInt32 inVolume); 
 
  	virtual void 		resetClipPosition (IOAudioStream *audioStream, UInt32 clipSampleFrame);
 
@@ -143,7 +149,15 @@ protected:
     bool							fNeedsPhaseInversion;
 	bool							fNeedsRightChanMixed;
 	bool							fNeedsRightChanDelay;
+	bool							fNeedsRightChanDelayInput;
+	bool							fNeedsBalanceAdjust;
 	
+	float							mLastInputSample;
+	float							mLastOutputSample;
+
+    UInt32							mLeftBalanceAdjust;				
+    UInt32							mRightBalanceAdjust;				
+
 	DualMonoModeType				mInputDualMonoMode;
 
     bool 							mUseSoftwareInputGain;
@@ -186,13 +200,16 @@ protected:
 #pragma mark еее Output Conversion Routines
 #pragma mark ---------------------------------------- 
 
+	IOReturn clipLegacyMemCopyToOutputStream(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream16(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream16DelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn clipAppleLegacyDBDMAToOutputStream16DelayRightChannelBalance(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream16MixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream16InvertRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	
 	IOReturn clipAppleLegacyDBDMAToOutputStream32(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream32DelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn clipAppleLegacyDBDMAToOutputStream32DelayRightChannelBalance(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream32MixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	
 #pragma mark ---------------------------------------- 
@@ -201,11 +218,13 @@ protected:
 	
 	IOReturn clipAppleLegacyDBDMAToOutputStream16iSub(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream16iSubDelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn clipAppleLegacyDBDMAToOutputStream16iSubDelayRightChannelBalance(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream16iSubMixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream16iSubInvertRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	
 	IOReturn clipAppleLegacyDBDMAToOutputStream32iSub(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream32iSubDelayRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn clipAppleLegacyDBDMAToOutputStream32iSubDelayRightChannelBalance(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn clipAppleLegacyDBDMAToOutputStream32iSubMixRightChannel(const void *mixBuf, void *sampleBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	
 #pragma mark ---------------------------------------- 
@@ -214,10 +233,13 @@ protected:
 	
 	IOReturn convertAppleLegacyDBDMAFromInputStream16(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn convertAppleLegacyDBDMAFromInputStream16CopyR2L(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn convertAppleLegacyDBDMAFromInputStream16CopyL2R(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);	// [3306493]
 	IOReturn convertAppleLegacyDBDMAFromInputStream16WithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn convertAppleLegacyDBDMAFromInputStream16DelayRightWithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	
 	IOReturn convertAppleLegacyDBDMAFromInputStream32(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 	IOReturn convertAppleLegacyDBDMAFromInputStream32WithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
+	IOReturn convertAppleLegacyDBDMAFromInputStream32DelayRightWithGain(const void *sampleBuf, void *destBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat);
 
 };
 

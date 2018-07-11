@@ -133,7 +133,6 @@ IOReturn AudioProj10PowerObject::setHardwarePowerOn(){
     if(audioPluginRef) {
         audioPluginRef->sndHWSetPowerState(kIOAudioDeviceActive);
         audioPluginRef->setDeviceDetectionActive();
-//        audioPluginRef->setMuteState(singleMuteState);
     }
     DEBUG_IOLOG("- AudioProj10PowerObject::setHardwarePowerOn\n");
     return result;
@@ -144,13 +143,7 @@ IOReturn AudioProj10PowerObject::setHardwarePowerOff(){
     UInt32 progOut;
     IOService *keyLargo = 0;
     DEBUG_IOLOG("+ AudioProj10PowerObject::setHardwarePowerOff\n");
-    
-	// generic code
-    if(audioPluginRef) {
-//         singleMuteState = audioPluginRef->getMuteState();
-//         audioPluginRef->setMuteState(false);
-    }
-    
+        
 	// specific
     progOut = audioPluginRef->sndHWGetProgOutput();
     progOut |= kSndHWProgOutput0;  // this turns the boomer off
@@ -228,11 +221,6 @@ IOReturn AudioProj6PowerObject::setHardwarePowerOff(){
      
     DEBUG_IOLOG("+ AudioProj6PowerObject::setHardwarePowerOff\n");
 
-	// generic
-    if(audioPluginRef) {
-//         singleMuteState = audioPluginRef->getMuteState();
-//         audioPluginRef->setMuteState(false);
-    }
     audioPluginRef->sndHWSetPowerState(kIOAudioDeviceSleep);
     audioPluginRef->setDeviceDetectionInActive();
     
@@ -272,7 +260,6 @@ IOReturn AudioProj6PowerObject::setHardwarePowerOn(){
     if(audioPluginRef) {
         audioPluginRef->sndHWSetPowerState(kIOAudioDeviceActive);
         audioPluginRef->setDeviceDetectionActive();
-//        audioPluginRef->setMuteState(singleMuteState);
     }
 
     DEBUG2_IOLOG("- AudioProj6PowerObject::setHardwarePowerOn, %d\n", kIOReturnSuccess == result);
@@ -359,10 +346,6 @@ IOReturn AudioProj8PowerObject::setHardwarePowerOff()
     // note the difference between this and some of the other setHardwarePowerOff methods
     // it may be necessary to check for the existance and availability of i2c services before 
     // asking the driver to execute a state change.  So far this seems to work.
-    if(audioPluginRef) {
-//         singleMuteState = audioPluginRef->getMuteState();
-//         audioPluginRef->setMuteState(false);
-    }
     
     progOut = audioPluginRef->sndHWGetProgOutput();
     progOut &= ~kSndHWProgOutput0;
@@ -391,7 +374,6 @@ IOReturn AudioProj8PowerObject::setHardwarePowerOn()
     if(audioPluginRef) {
         audioPluginRef->sndHWSetPowerState(kIOAudioDeviceActive);
         audioPluginRef->setDeviceDetectionActive();
-//        audioPluginRef->setMuteState(singleMuteState);
     }
     debugIOLog("- AudioProj8PowerObject::setHardwarePowerOn\n");
     return result;
@@ -429,11 +411,6 @@ IOReturn AudioProj7PowerObject::setHardwarePowerOff(){
     UInt32 progOut;
     IOService *keyLargo = 0;
     DEBUG_IOLOG("+ AudioProj7PowerObject::setHardwarePowerOff\n");
-    
-    if(audioPluginRef) {
-//         singleMuteState = audioPluginRef->getMuteState();
-//         audioPluginRef->setMuteState(false);
-    }
     
     progOut = audioPluginRef->sndHWGetProgOutput();
     progOut &= ~kSndHWProgOutput0;
@@ -497,7 +474,6 @@ IOReturn AudioProj7PowerObject::setHardwarePowerOn(){
     if(audioPluginRef) {
         audioPluginRef->sndHWSetPowerState(kIOAudioDeviceActive);
         audioPluginRef->setDeviceDetectionActive();
-//        audioPluginRef->setMuteState(singleMuteState);
     }
     DEBUG_IOLOG("- AudioProj7PowerObject::setHardwarePowerOn\n");
     return result;

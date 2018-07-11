@@ -356,9 +356,24 @@ void AppleBurgundyAudio::checkStatus(bool force)
         if(AudioDetects) {
             for(i = 0; i < AudioDetects->getCount(); i++) {
                 theDetect = OSDynamicCast(AudioHardwareDetect, AudioDetects->getObject(i));
-                if (theDetect) mextdev |= theDetect->refreshDevices(curInsense);
+                if ( theDetect ) {
+					mextdev |= theDetect->refreshDevices(curInsense);
+				}
             }
             super::setCurrentDevices(mextdev);
+
+			//	Opportunity to omit Balance controls if on the internal mono speaker...	[3042660]	begin {
+			useMasterVolumeControl = FALSE;
+			if (NULL != driverDMAEngine) {
+				if ( layoutYosemite == mLayoutID  ) {
+					//	The master control should be used when headphones are NOT present.
+					if ( kSndHWCPUHeadphone != ( mextdev & kSndHWCPUHeadphone ) ) {
+						useMasterVolumeControl = TRUE;
+					}
+				}
+			}
+			debug2IOLog ( "... useMasterVolumeControl %d\n", useMasterVolumeControl );
+			AdjustControls ();					//	rbm	30 Sept 2002					[3042660]	} end
         }
     }
 }
@@ -372,12 +387,19 @@ void AppleBurgundyAudio::sndHWInitialize(IOService *provider){
     UInt32 idx, tmpReg;
         
     DEBUG_IOLOG("+ AppleBurgundyAudio::sndHWInitialize\n");
+
+	ourProvider = provider;
     map = provider->mapDeviceMemoryWithIndex(Apple02DBDMAAudioDMAEngine::kDBDMADeviceIndex);
     ioBaseBurgundy = (UInt8 *)map->getVirtualAddress();
     
     if(!ioBaseBurgundy) debugIOLog("We have no mermory map !!!\n");
     curInsense = 0xFFFF;
         
+	mLayoutID = GetDeviceID ();
+	
+	minVolume = kBURGUNDY_MINIMUM_HW_VOLUME;
+	maxVolume = kBURGUNDY_MAXIMUM_HW_VOLUME;
+
 	// update local variables for the settling time 
     for( idx = kBurgundyPhysOutputPort13-kBurgundyPhysOutputPort13; idx <= kBurgundyPhysOutputPort17-kBurgundyPhysOutputPort13; idx++ ){
 		localSettlingTime[idx] = 0;  //this is an array of 5 stuff
@@ -762,6 +784,157 @@ IOReturn   AppleBurgundyAudio::sndHWSetActiveInputExclusive(UInt32 input ){
     return(result);
 }
 
+// --------------------------------------------------------------------------
+// You either have only a master volume control, or you have both volume controls.
+IOReturn AppleBurgundyAudio::AdjustControls (void) {
+	IOFixed							mindBVol;
+	IOFixed							maxdBVol;
+	Boolean							mustUpdate;
+
+	debugIOLog ("+ AdjustControls()\n");
+	FailIf (NULL == driverDMAEngine, Exit);
+	mustUpdate = FALSE;
+
+	mindBVol = kBURGUNDY_MIN_VOLUME;
+	maxdBVol = kBURGUNDY_MAX_VOLUME;
+
+	//	Must update if any of the following conditions exist:
+	//	1.	No master volume control exists AND the master volume is the target
+	//	2.	The master volume control exists AND the master volume is not the target
+	//	3.	the minimum or maximum dB volume setting for the left volume control changes
+	//	4.	the minimum or maximum dB volume setting for the right volume control changes
+	
+	if ((NULL == outVolMaster && TRUE == useMasterVolumeControl) ||
+		(NULL != outVolMaster && FALSE == useMasterVolumeControl) ||
+		(NULL != outVolLeft && outVolLeft->getMinValue () != minVolume) ||
+		(NULL != outVolLeft && outVolLeft->getMaxValue () != maxVolume) ||
+		(NULL != outVolRight && outVolRight->getMinValue () != minVolume) ||
+		(NULL != outVolRight && outVolRight->getMaxValue () != maxVolume)) {
+		mustUpdate = TRUE;
+	}
+	if (TRUE == mustUpdate) {
+		debug5IOLog ("AdjustControls: mindBVol = %d.0x%x, maxdBVol = %d.0x%x\n", 
+			(unsigned int)( 0 != mindBVol & 0x80000000 ? ( mindBVol >> 16 ) | 0xFFFF0000 : mindBVol >> 16 ), 
+			(unsigned int)( mindBVol << 16 ), 
+			(unsigned int)( 0 != maxdBVol & 0x80000000 ? ( maxdBVol >> 16 ) | 0xFFFF0000 : maxdBVol >> 16 ), 
+			(unsigned int)( maxdBVol << 16 ) );
+	
+		driverDMAEngine->pauseAudioEngine ();
+		driverDMAEngine->beginConfigurationChange ();
+	
+		if (TRUE == useMasterVolumeControl) {
+			// We have only the master volume control (possibly not created yet) and have to remove the other volume controls (possibly don't exist)
+			if (NULL == outVolMaster) {
+				debugIOLog ("AdjustControls: deleteing descrete channel controls and creating master control\n");
+				// remove the existing left and right volume controls
+				if (NULL != outVolLeft) {
+					lastLeftVol = outVolLeft->getIntValue ();
+					driverDMAEngine->removeDefaultAudioControl (outVolLeft);
+					outVolLeft = NULL;
+				} 
+		
+				if (NULL != outVolRight) {
+					lastRightVol = outVolRight->getIntValue ();
+					driverDMAEngine->removeDefaultAudioControl (outVolRight);
+					outVolRight = NULL;
+				}
+	
+				// Create the master control
+				outVolMaster = IOAudioLevelControl::createVolumeControl((lastLeftVol + lastRightVol) / 2, minVolume, maxVolume, mindBVol, maxdBVol,
+													kIOAudioControlChannelIDAll,
+													kIOAudioControlChannelNameAll,
+													kOutVolMaster, 
+													kIOAudioControlUsageOutput);
+	
+				if (NULL != outVolMaster) {
+					driverDMAEngine->addDefaultAudioControl(outVolMaster);
+					outVolMaster->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)outputControlChangeHandler, this);
+					outVolMaster->flushValue ();
+				}
+			}
+		} else {
+			// or we have both controls (possibly not created yet) and we have to remove the master volume control (possibly doesn't exist)
+			if (NULL == outVolLeft) {
+				debugIOLog ("AdjustControls: deleteing master control and creating descrete channel controls\n");
+				// Have to create the control again...
+				if (lastLeftVol > kBURGUNDY_MAXIMUM_HW_VOLUME && NULL != outVolMaster) {
+					lastLeftVol = outVolMaster->getIntValue ();
+				}
+				outVolLeft = IOAudioLevelControl::createVolumeControl (lastLeftVol, kBURGUNDY_MINIMUM_HW_VOLUME, kBURGUNDY_MAXIMUM_HW_VOLUME, mindBVol, maxdBVol,
+													kIOAudioControlChannelIDDefaultLeft,
+													kIOAudioControlChannelNameLeft,
+													kOutVolLeft,
+													kIOAudioControlUsageOutput);
+				if (NULL != outVolLeft) {
+					driverDMAEngine->addDefaultAudioControl (outVolLeft);
+					outVolLeft->setValueChangeHandler ((IOAudioControl::IntValueChangeHandler)outputControlChangeHandler, this);
+				}
+			}
+			
+			if (NULL == outVolRight) {
+				// Have to create the control again...
+				if (lastRightVol > kBURGUNDY_MAXIMUM_HW_VOLUME && NULL != outVolMaster) {
+					lastRightVol = outVolMaster->getIntValue ();
+				}
+				outVolRight = IOAudioLevelControl::createVolumeControl (lastRightVol, kBURGUNDY_MINIMUM_HW_VOLUME, kBURGUNDY_MAXIMUM_HW_VOLUME, mindBVol, maxdBVol,
+													kIOAudioControlChannelIDDefaultRight,
+													kIOAudioControlChannelNameRight,
+													kOutVolRight,
+													kIOAudioControlUsageOutput);
+				if (NULL != outVolRight) {
+					driverDMAEngine->addDefaultAudioControl (outVolRight);
+					outVolRight->setValueChangeHandler ((IOAudioControl::IntValueChangeHandler)outputControlChangeHandler, this);
+				}
+			}
+	
+			if (NULL != outVolMaster) {
+				driverDMAEngine->removeDefaultAudioControl (outVolMaster);
+				outVolMaster = NULL;
+			}
+		}
+	
+		if (NULL != outVolMaster) {
+			outVolMaster->setMinValue (minVolume);
+			outVolMaster->setMinDB (mindBVol);
+			outVolMaster->setMaxValue (maxVolume);
+			outVolMaster->setMaxDB (maxdBVol);
+			if (outVolMaster->getIntValue () > maxVolume) {
+				outVolMaster->setValue (maxVolume);
+			}
+			outVolMaster->flushValue ();
+		}
+	
+		if (NULL != outVolLeft) {
+			outVolLeft->setMinValue (minVolume);
+			outVolLeft->setMinDB (mindBVol);
+			outVolLeft->setMaxValue (maxVolume);
+			outVolLeft->setMaxDB (maxdBVol);
+			if (outVolLeft->getIntValue () > maxVolume) {
+				outVolLeft->setValue (maxVolume);
+			}
+			outVolLeft->flushValue ();
+		}
+	
+		if (NULL != outVolRight) {
+			outVolRight->setMinValue (minVolume);
+			outVolRight->setMinDB (mindBVol);
+			outVolRight->setMaxValue (maxVolume);
+			outVolRight->setMaxDB (maxdBVol);
+			if (outVolRight->getIntValue () > maxVolume) {
+				outVolRight->setValue (maxVolume);
+			}
+			outVolRight->flushValue ();
+		}
+	
+		driverDMAEngine->completeConfigurationChange ();
+		driverDMAEngine->resumeAudioEngine ();
+	}
+
+Exit:
+	debugIOLog ("- AdjustControls()\n");
+	return kIOReturnSuccess;
+}
+
 UInt32 	AppleBurgundyAudio::sndHWGetProgOutput(){
     UInt32 result = 0, outputConfigPins;
 
@@ -1041,6 +1214,32 @@ UInt32	AppleBurgundyAudio::sndHWGetManufacturer( void ){
     }
     DEBUG_IOLOG("- AppleBurgundyAudio::sndHWGetManufacturer\n");
     return(result);
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+UInt32 AppleBurgundyAudio::GetDeviceID (void) {
+	IORegistryEntry			*sound;
+	OSData					*tmpData;
+	UInt32					*deviceID;
+	UInt32					theDeviceID;
+
+	debugIOLog ( "+ AppleBurgundyAudio::GetDeviceID\n" );
+	theDeviceID = 0;
+
+	FailIf ( NULL == ourProvider, Exit );
+	sound = ourProvider->childFromPath (kSoundEntry, gIODTPlane);
+	FailIf (!sound, Exit);
+
+	tmpData = OSDynamicCast (OSData, sound->getProperty (kDeviceID));
+	FailIf (!tmpData, Exit);
+	deviceID = (UInt32*)tmpData->getBytesNoCopy ();
+	if (NULL != deviceID) {
+		theDeviceID = *deviceID;
+	}
+
+Exit:
+	debug2IOLog ( "- AppleBurgundyAudio::GetDeviceID returns %d\n", (unsigned int)theDeviceID );
+	return theDeviceID;
 }
 
 #pragma mark -- BURGUNDY SPECIFIC --

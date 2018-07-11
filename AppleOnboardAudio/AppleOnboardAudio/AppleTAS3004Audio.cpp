@@ -78,6 +78,7 @@ bool AppleTAS3004Audio::start (IOService * provider) {
 
 	debug3IOLog ("+ AppleTAS3004Audio[%p]::start(%p)\n", this, provider);
 
+	result = FALSE;
 	FailIf (!provider, Exit);
 	mAudioDeviceProvider = (AppleOnboardAudio *)provider;
 	
@@ -283,7 +284,8 @@ bool AppleTAS3004Audio::preDMAEngineInit()
 	data[0] = ( kADMNormal << kADM ) | ( kDeEmphasisOFF << kADM ) | ( kPowerDownAnalog << kAPD );
 	CODEC_WriteRegister( kTAS3004AnalogControlReg, data, kUPDATE_SHADOW );
 	
-	data[0] = ( kAllPassFilter << kAP ) | ( kNormalBassTreble << kDL );
+	// [3173869], filters are used for phase correction, so can't use all pass mode on initialization (kNormalFilter mode was kAllPassFilter)
+	data[0] = ( kNormalFilter << kAP ) | ( kNormalBassTreble << kDL );
 	CODEC_WriteRegister( kTAS3004MainCtrl2Reg, data, kUPDATE_SHADOW );
 
 
@@ -1462,40 +1464,6 @@ void AppleTAS3004Audio::copyFilter (EQStructPtr source, EQStructPtr dest, UInt32
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-IOReturn AppleTAS3004Audio::prepareForOutputChange (void) {
-	IOReturn				err;
-    
-	err = SetMixerState ( kMix0dB );
-    if ( kIOReturnSuccess == err ) {
-        err = SetAnalogPowerDownMode ( kPowerNormalAnalog );
-	}
-	
-	return err;
-}
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-//	[2855519]	Leave the headphone amplifier unmuted until the speaker
-//	amplifier has been unmuted to avoid applying a Codec RESET.
-IOReturn AppleTAS3004Audio::SetMixerState ( UInt32 mixerState )
-{
-    IOReturn	err;
-    UInt8		mixerData[kTAS3004MIXERGAINwidth];
-    
-    err = CODEC_ReadRegister( kTAS3004MixerLeftGainReg, mixerData );
-    if ( kIOReturnSuccess == err ) {
-		switch ( mixerState ) {
-			case kMix0dB:			mixerData[0] = 0x10;		break;
-			case kMixMute:			mixerData[0] = 0x00;		break;
-		}
-		err = CODEC_WriteRegister ( kTAS3004MixerLeftGainReg, mixerData, kUPDATE_ALL );
-		if ( kIOReturnSuccess == err ) {
-			err = CODEC_WriteRegister ( kTAS3004MixerRightGainReg, mixerData, kUPDATE_ALL );
-		}
-    }
-    return err;
-}
-
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //	This routine will only restore unity gain all pass coefficients to the
 //	biquad registers.  All other coefficients to be passed through exported
 //	functions via the sound hardware plug-in manager libaray.  Radar 3280002
@@ -1799,6 +1767,7 @@ IOReturn AppleTAS3004Audio::SetOutputBiquadCoefficients( UInt32 streamID, UInt32
 		//			delayed unity all pass filter coefficient set.  The right channel is always delayed
 		//			by one sample while the left channel is not delayed.
 		case kBiquadRefNum_6:
+#if 1	// hardware phase correction
 			for( index = 0; index < sizeof ( data ); index++ ) { data[index] = 0x00; }
 			data[3] = 0x10;
 			switch( streamID )
@@ -1808,6 +1777,16 @@ IOReturn AppleTAS3004Audio::SetOutputBiquadCoefficients( UInt32 streamID, UInt32
 				case kStreamStereo:		err = CODEC_WriteRegister( kTAS3004LeftBiquad6CtrlReg, &data[3], kUPDATE_ALL );
 										err = CODEC_WriteRegister( kTAS3004RightBiquad6CtrlReg, &data[0], kUPDATE_ALL );	break;
 			}
+			break;
+#else
+			switch( streamID )
+			{
+				case kStreamFrontLeft:	err = CODEC_WriteRegister( kTAS3004LeftBiquad6CtrlReg, biquadCoefficients, kUPDATE_ALL );	break;
+				case kStreamFrontRight:	err = CODEC_WriteRegister( kTAS3004RightBiquad6CtrlReg, biquadCoefficients, kUPDATE_ALL );	break;
+				case kStreamStereo:		err = CODEC_WriteRegister( kTAS3004LeftBiquad6CtrlReg, biquadCoefficients, kUPDATE_ALL );
+										err = CODEC_WriteRegister( kTAS3004RightBiquad6CtrlReg, biquadCoefficients, kUPDATE_ALL );	break;
+			}
+#endif
 			break;
 	}
 

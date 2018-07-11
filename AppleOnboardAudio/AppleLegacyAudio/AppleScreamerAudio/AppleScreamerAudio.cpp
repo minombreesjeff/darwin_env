@@ -290,6 +290,8 @@ void AppleScreamerAudio::sndHWPostDMAEngineInit (IOService *provider) {
 		driverDMAEngine->setSampleLatencies (kScreamerSampleLatency, kScreamerSampleLatency);
 	}
 
+	mInternalMicDualMonoMode = e_Mode_CopyLeftToRight;	// [3306493]	
+
 	//	rbm	30 Sept 2002					[3042658]	begin {
 	if (NULL == outVolRight && NULL != outVolLeft) {
 		// If they are running mono at boot time, set the right channel's last value to an illegal value
@@ -1005,6 +1007,7 @@ IOReturn	AppleScreamerAudio::performDeviceSleep () {
 	IOReturn	myReturn;
 	
     debugIOLog("+ AppleScreamerAudio::performDeviceSleep\n");
+	myReturn = kIOReturnError;
 	if ( kIOAudioDeviceSleep != gPowerState ) {
 		myReturn = setCodecPowerState ( kIOAudioDeviceSleep );	
 		if ( kIOReturnSuccess == myReturn ) {
@@ -1068,11 +1071,15 @@ UInt32 AppleScreamerAudio::sndHWGetManufacturer(void) {
 }
 
 IOReturn AppleScreamerAudio::sndHWSetSystemInputGain(UInt32 leftGain, UInt32 rightGain){
-    IOReturn myReturn = kIOReturnSuccess; 
-    UInt32 gainReg;
-    UInt8 galeft, garight;
+    IOReturn 	myReturn = kIOReturnSuccess; 
+    UInt32 		gainReg;
+    UInt8 		galeft, garight;
 
-    DEBUG3_IOLOG("+ AppleScreamerAudio::sndHWSetSystemInputGain (%ld, %ld)\n", leftGain, rightGain);
+	UInt32		preAmpReg, preAmpRegNum;
+	UInt32		preAmpBit;
+	Boolean		doPreAmp;
+
+    debug3IOLog ("+ AppleScreamerAudio::sndHWSetSystemInputGain (%ld, %ld)\n", leftGain, rightGain);
     galeft = (UInt8) leftGain;
     garight = (UInt8) rightGain;
 	
@@ -1081,8 +1088,36 @@ IOReturn AppleScreamerAudio::sndHWSetSystemInputGain(UInt32 leftGain, UInt32 rig
     gainReg |= ((galeft << kAWACsGainLeftShift) & kAWACsGainLeft);
     gainReg |= (garight & kAWACsGainRight);
     sndHWSetRegister(kAWACsGainReg, gainReg);
-    
-    DEBUG_IOLOG("- AppleScreamerAudio::sndHWSetSystemInputGain\n");
+
+	// [3099044]
+	switch (sndHWGetActiveInputExclusive ())
+	{
+		case kSndHWInput1:
+			preAmpRegNum = kAWACsPreampAReg;
+			preAmpBit = kAWACsPreampA;
+			doPreAmp = true;
+			break;
+		case kSndHWInput2:
+			preAmpRegNum = kAWACsPreampBReg;
+			preAmpBit = kAWACsPreampB;
+			doPreAmp = true;
+			break;
+		default:
+			doPreAmp = false;
+			break;
+	}
+	
+	if (doPreAmp)
+	{
+		preAmpReg = sndHWGetRegister(preAmpRegNum) & ~preAmpBit;		// get and clear pre amp setting
+		if ((galeft > (UInt8)kAWACsMaxHardwareGain) || (garight > (UInt8)kAWACsMaxHardwareGain)) {	// If either are greater, turn on preamp.
+			preAmpReg |= preAmpBit;
+		}	
+		sndHWSetRegister(preAmpRegNum, preAmpReg);
+	}
+	// end [3099044]
+	      
+    debugIOLog ("- AppleScreamerAudio::sndHWSetSystemInputGain\n");
     return(myReturn);
 }
 

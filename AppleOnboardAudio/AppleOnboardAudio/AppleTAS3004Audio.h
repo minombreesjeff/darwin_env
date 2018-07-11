@@ -88,7 +88,6 @@ public:
     virtual IOReturn	setActiveOutput (UInt32 outputPort);
     virtual UInt32		getActiveInput (void);
     virtual IOReturn	setActiveInput (UInt32 input);
-	virtual IOReturn 	prepareForOutputChange (void);
    
     // control function
     virtual bool		getMute (void);
@@ -139,7 +138,6 @@ private:
 	// activation functions
 	IOReturn			SetVolumeCoefficients (UInt32 left, UInt32 right);
 	IOReturn			SetAmplifierMuteState (UInt32 ampID, Boolean muteState);
-    IOReturn			SetMixerState ( UInt32 mixerState );								
 	IOReturn			InitEQSerialMode (UInt32 mode, Boolean restoreOnNormal);
 	IOReturn 			GetShadowRegisterInfo( TAS3004_ShadowReg * shadowRegsPtr, UInt8 regAddr, UInt8 ** shadowPtr, UInt8* registerSize );
 

@@ -21,7 +21,8 @@ extern "C" {
 #pragma mark еее Processing Functions
 #pragma mark ----------------------------- 
 
-void delayRightChannel(float* inFloatBufferPtr, UInt32 numSamples) ;
+void delayRightChannel(float* inFloatBufferPtr, UInt32 numSamples, float * inLastSample) ;
+void balanceAdjust(float* inFloatBufferPtr, UInt32 numSamples, float* leftSoftVolume, float* rightSoftVolume);
 void invertRightChannel(float* inFloatBufferPtr, UInt32 numSamples) ;
 void mixAndMuteRightChannel(float* inFloatBufferPtr, UInt32 numSamples); 
 
@@ -45,7 +46,7 @@ void NativeInt32ToFloat32( long *src, float *dest, unsigned int count, int bitDe
 
 void NativeInt16ToFloat32Gain( signed short *src, float *dest, unsigned int count, int bitDepth, float* inGainLPtr, float* inGainRPtr );
 void NativeInt16ToFloat32CopyRightToLeft( signed short *src, float *dest, unsigned int count, int bitDepth );
-
+void NativeInt16ToFloat32CopyLeftToRight( signed short *src, float *dest, unsigned int count, int bitDepth ); // [3306493]
 void NativeInt32ToFloat32Gain( signed long *src, float *dest, unsigned int count, int bitDepth, float* inGainLPtr, float* inGainRPtr );
 
 void SwapInt16ToFloat32( signed short *src, float *dest, unsigned int count, int bitDepth );

@@ -1,11 +1,12 @@
 /*
- *  K2Platform.h
+ *  K2PlatformHW.h
  *  
  *
  *  Created by Aram Lindahl on Mon Mar 10 2003.
  *  Copyright (c) 2003 AppleComputer. All rights reserved.
  *
  */
+#include "K2Platform.h"
 #include "PlatformInterface.h"
 #include "AudioHardwareCommon.h"
 #include "AppleOnboardAudioUserClient.h"
@@ -129,20 +130,43 @@ class AppleI2S : public IOService
 #endif /* ! _APPLEI2S_H */
 
 
-#ifndef __K2_PLATFORM
-#define	__K2_PLATFORM
+#ifndef __K2HW_PLATFORM
+#define	__K2HW_PLATFORM
 
 #define	kIODMAInputOffset			0x00000100					/*	offset from I2S 0 Tx DMA channel registers to Rx DMA channel registers	*/
 	
-typedef enum {
-	kK2I2SClockSource_45MHz					= 0,			//	compatible with K2 driver
-	kK2I2SClockSource_49MHz					= 1,			//	compatible with K2 driver
-	kK2I2SClockSource_18MHz 				= 2			//	compatible with K2 driver
-} K2I2SClockSource;
+#define	kGPIO_DATA_WR_PIN_LEVEL_H			0x07
+#define	kGPIO_DATA_WR_PIN_LEVEL_L			0x04
 
-class K2Platform : public PlatformInterface {
+#define	kAUDIO_MAC_IO_BASE_ADDRESS			0x80000000
+#define	kAUDIO_MAC_IO_SIZE					256
+#define	kAUDIO_I2S_BASE_ADDRESS				0x80010000
+#define	kAUDIO_I2S_SIZE						4096
 
-    OSDeclareDefaultStructors(K2Platform);
+#define kAUDIO_MAC_IO_FCR1					0x0000003C
+#define kAUDIO_MAC_IO_FCR3					0x00000044
+
+#define kAUDIO_I2S_SERIAL_FORMAT			0x00000010
+#define kAUDIO_I2S_INTERRUPT_CONTROL		0x00000000
+#define kAUDIO_I2S_DATA_WORD_SIZES			0x00000060
+#define kAUDIO_I2S_FRAME_COUNTER			0x00000040
+
+#define	kAUDIO_GPIO_INPUT_DATA_MUX_SELECT	0x0000005B
+#define	kAUDIO_GPIO_LINE_IN_SENSE			0x0000005C
+#define	kAUDIO_GPIO_CODEC_ERROR_IRQ			0x0000005D
+#define	kAUDIO_GPIO_DIGITAL_CODEC_RESET		0x00000064
+#define	kAUDIO_GPIO_LINE_OUT_SENSE			0x00000066
+#define	kAUDIO_GPIO_HEADPHONE_SENSE			0x00000067
+#define	kAUDIO_GPIO_CODEC_IRQ				0x00000068
+#define	kAUDIO_GPIO_HEADPHONE_MUTE			0x0000006F
+#define	kAUDIO_GPIO_AMPLIFIER_MUTE			0x00000070
+#define	kAUDIO_GPIO_ANALOG_CODEC_RESET		0x00000074
+#define	kAUDIO_GPIO_LINE_OUT_MUTE			0x00000075
+#define	kAUDIO_GPIO_CLOCK_MUX_SELECT		0x00000076
+
+class K2HWPlatform : public K2Platform {
+
+    OSDeclareDefaultStructors(K2HWPlatform);
 
 public:
 
@@ -232,6 +256,7 @@ public:
 	//
 	virtual	IODBDMAChannelRegisters *	GetInputChannelRegistersVirtualAddress ( IOService * dbdmaProvider );
 	virtual	IODBDMAChannelRegisters *	GetOutputChannelRegistersVirtualAddress ( IOService * dbdmaProvider );
+	virtual void						LogDBDMAChannelRegisters ( void );
 
 	//	
 	//	User Client Support
@@ -434,9 +459,12 @@ private:
 	volatile UInt8 *		mHwPtr;
 	volatile UInt8 *		mHwI2SPtr;
 	IOReturn				setupI2SClockSource( UInt32 cell, bool requestClock, UInt32 clockSource );
-
+public:
+	void					LogFCR ( void );
+	void					LogI2S ( void );
+	void					LogGPIO ( void );
+	void					LogInterruptGPIO ( void );
 private:
-
 	volatile UInt32 *				mFcr1;
 	
 	volatile UInt32 *				mFcr3;
@@ -448,6 +476,20 @@ private:
 	
 	IOTimerEventSource *			mGpioPollTimer;
 
+	volatile UInt8 *				mGPIO_analogCodecReset;
+	volatile UInt8 *				mGPIO_mclkMuxSelect;
+	volatile UInt8 *				mGPIO_digitalCodecErrorIrq;
+	volatile UInt8 *				mGPIO_digitalCodecReset;
+	volatile UInt8 *				mGPIO_digitalCodecIrq;
+	volatile UInt8 *				mGPIO_headphoneSense;
+	volatile UInt8 *				mGPIO_headphoneMute;
+	volatile UInt8 *				mGPIO_inputDataMuxSelect;
+	volatile UInt8 *				mGPIO_internalSpeakerID;
+	volatile UInt8 *				mGPIO_lineInSense;
+	volatile UInt8 *				mGPIO_lineOutSense;
+	volatile UInt8 *				mGPIO_lineOutMute;
+	volatile UInt8 *				mGPIO_speakerMute;
+	
 	void *							mCodecInterruptHandler;
 	void *							mCodecErrorInterruptHandler;
 	void *							mDigitalInDetectInterruptHandler;

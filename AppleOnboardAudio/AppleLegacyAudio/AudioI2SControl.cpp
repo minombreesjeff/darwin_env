@@ -249,6 +249,8 @@ void AudioI2SControl::setSerialFormatRegister(ClockSource clockSource, UInt32 mc
 	IOReturn				err;
 	const OSSymbol*			funcSymbolName = NULL;											//	[3323977]
 
+	err = kIOReturnError;
+
     switch ((int)clockSource) {
         case kClock18MHz:			regValue = kClockSource18MHz;														break;
         case kClock45MHz:			regValue = kClockSource45MHz;														break;
@@ -298,6 +300,7 @@ void AudioI2SControl::setSerialFormatRegister(ClockSource clockSource, UInt32 mc
 			IOLog ( "keyLargo->callPlatformFunction FAIL\n" );
 		}
 	}
+
 	// 2] Setup the serial format register & data format register
 	SetSerialFormatReg ( regValue );
 	dataFormat = newDataFormat;				//	[3060321]	save this to verify value that was used to init!
@@ -454,51 +457,61 @@ UInt32 AudioI2SControl::GetCounterReg(void )
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 UInt32 AudioI2SControl::FCR1GetReg( void )
 {
-	return KLGetRegister(kFCR1Offset);
+	return KLGetRegister (kFCR1Offset);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void AudioI2SControl::Fcr1SetReg(UInt32 value)
 {
-	KLSetRegister(kFCR1Offset, value);
+	KLSetRegister (kFCR1Offset, value);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 UInt32 AudioI2SControl::FCR3GetReg( void )
 {
-	return KLGetRegister(kFCR3Offset);
+	return KLGetRegister (kFCR3Offset);
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void AudioI2SControl::Fcr3SetReg(UInt32 value)
 {
-	KLSetRegister(kFCR3Offset, value);
+	KLSetRegister (kFCR3Offset, value);
 }
 
 // Access to Keylargo registers:
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-void AudioI2SControl::KLSetRegister(UInt32 klRegister, UInt32 value)
+//	[3110829] register accesses need to translate endian format.
+void AudioI2SControl::KLSetRegister(UInt32 klRegisterOffset, UInt32 value)
 {
     IOService *				keyLargoService = NULL;
 	UInt32					mask = kAudioFCR1Mask;
-
+	const OSSymbol *		theSymbol;
+	
+	theSymbol = OSSymbol::withCString ("keyLargo_safeWriteRegUInt32");
+	
     keyLargoService = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
 
-    if (keyLargoService) {
-        keyLargoService->callPlatformFunction (OSSymbol::withCString ("keyLargo_safeWriteRegUInt32"), false, (void *)klRegister, (void *)mask, (void *) value, 0);
+    if (keyLargoService && theSymbol) {
+        keyLargoService->callPlatformFunction (theSymbol, false, (void *)klRegisterOffset, (void *)mask, (void *) value, 0);
+		theSymbol->release ();
     } 
 }
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-UInt32 AudioI2SControl::KLGetRegister(UInt32 klRegister)
+//	[3110829] register accesses need to translate endian format.
+UInt32 AudioI2SControl::KLGetRegister(UInt32 klRegisterOffset)
 {
 	UInt32					value = 0;
     IOService *				keyLargoService = NULL;
+	const OSSymbol *		theSymbol;
+	
+	theSymbol = OSSymbol::withCString ("keyLargo_safeReadRegUInt32");
 
     keyLargoService = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
 
-    if (keyLargoService) {
-        keyLargoService->callPlatformFunction (OSSymbol::withCString ("keyLargo_safeReadRegUInt32"), false, (void *)klRegister, &value, 0, 0);
+    if (keyLargoService && theSymbol) {
+        keyLargoService->callPlatformFunction (theSymbol, false, (void *)klRegisterOffset, &value, 0, 0);
+		theSymbol->release ();
     } 
 
 	return value;
@@ -513,10 +526,10 @@ bool AudioI2SControl::clockRun(bool start)
     if (start) {
 		switch ( i2SInterfaceNumber ) {
 			case kUseI2SCell0:
-				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S0ClockEnable);
+				KLSetRegister (kFCR1Offset, KLGetRegister (kFCR1Offset) | kI2S0ClockEnable);
 				break;
 			case kUseI2SCell1:
-				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S1ClockEnable);
+				KLSetRegister (kFCR1Offset, KLGetRegister (kFCR1Offset) | kI2S1ClockEnable);
 				break;
 			default:
 				IOLog ("\n\n\n!!!!Wrong I2S interface number!!!!\n\n\n");
@@ -525,14 +538,14 @@ bool AudioI2SControl::clockRun(bool start)
         UInt16 loop = 50;
 		switch ( i2SInterfaceNumber ) {
 			case kUseI2SCell0:
-				KLSetRegister( kFCR1Offset, KLGetRegister(  kFCR1Offset ) | kI2S0InterfaceEnable);
-				KLSetRegister( kFCR1Offset, KLGetRegister(  kFCR1Offset ) | kI2S0CellEnable);
-				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) & ~kI2S0ClockEnable);
+				KLSetRegister (kFCR1Offset, KLGetRegister (kFCR1Offset) | kI2S0InterfaceEnable);
+				KLSetRegister (kFCR1Offset, KLGetRegister (kFCR1Offset) | kI2S0CellEnable);
+				KLSetRegister (kFCR1Offset, KLGetRegister (kFCR1Offset) & ~kI2S0ClockEnable);
 				break;
 			case kUseI2SCell1:
-				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S1InterfaceEnable);
-				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) | kI2S1CellEnable);
-				KLSetRegister( kFCR1Offset, KLGetRegister( kFCR1Offset ) & ~kI2S1ClockEnable);
+				KLSetRegister (kFCR1Offset, KLGetRegister (kFCR1Offset) | kI2S1InterfaceEnable);
+				KLSetRegister (kFCR1Offset, KLGetRegister (kFCR1Offset) | kI2S1CellEnable);
+				KLSetRegister (kFCR1Offset, KLGetRegister (kFCR1Offset) & ~kI2S1ClockEnable);
 				break;
 			default:
 				IOLog ("\n\n\n!!!!Wrong I2S interface number!!!!\n\n\n");

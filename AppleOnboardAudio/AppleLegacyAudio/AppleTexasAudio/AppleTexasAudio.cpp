@@ -53,7 +53,6 @@ OSDefineMetaClassAndStructors(AppleTexasAudio, Apple02Audio)
 
 // Globals in this file
 EQPrefsPtr		gEQPrefs = &theEQPrefs;
-extern uid_t	console_user;
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
@@ -1130,6 +1129,8 @@ IOReturn AppleTexasAudio::performDeviceIdleWake () {
 
 	debugIOLog ("+ AppleTexasAudio::performDeviceIdleWake\n");
 
+	err = kIOReturnError;
+
 	keyLargo = NULL;
     keyLargo = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
     
@@ -1246,6 +1247,8 @@ IOReturn AppleTexasAudio::performDeviceWake () {
 
 	debugIOLog ("+ AppleTexasAudio::performDeviceWake\n");
 
+	err = kIOReturnError;
+
 	// Mute the amps to avoid pops and clicks...
 	SetActiveOutput (kSndHWOutputNone, kBiquadUntouched);
 
@@ -1253,6 +1256,7 @@ IOReturn AppleTexasAudio::performDeviceWake () {
 	GpioWrite (hwResetGpio, ASSERT_GPIO (hwResetActiveState));
 
 	keyLargo = NULL;
+	err = kIOReturnError;
     keyLargo = IOService::waitForService (IOService::serviceMatching ("KeyLargo"));
     
     if (NULL != keyLargo) {
@@ -1556,54 +1560,49 @@ void AppleTexasAudio::DisplaySpeakersNotFullyConnected (OSObject *owner, IOTimer
 	UInt32					deviceID;
 	UInt8					bEEPROM[32];
 	Boolean					result;
+	IOReturn				error;
 
 	debugIOLog ("+ DisplaySpeakersNotFullyConnected\n");
 
 	appleTexasAudio = OSDynamicCast (AppleTexasAudio, owner);
 	FailIf (!appleTexasAudio, Exit);
 
-	if (0 == console_user) {
-		appleTexasAudio->notifierHandlerTimer->setTimeoutMS (kNotifyTimerDelay);	// No one logged in yet (except maybe root) reset the timer to fire later. 
-	} else {
-		if (appleTexasAudio->doneWaiting == FALSE) { 
-			// The next time this function is called we'll check the state and display the dialog as needed
-			appleTexasAudio->notifierHandlerTimer->setTimeoutMS (kUserLoginDelay);	// Someone has logged in. Delay the notifier so it does not apear behind the login screen.
-			appleTexasAudio->doneWaiting = TRUE;
-		} else {
-			deviceID = appleTexasAudio->GetDeviceMatch ();
-			if (kExternalSpeakersActive == deviceID) {
-				if (NULL != appleTexasAudio->dallasDriver) {
-					appleTexasAudio->dallasIntEventSource->disable ();
-					result = appleTexasAudio->dallasDriver->getSpeakerID (bEEPROM);
-					appleTexasAudio->dallasIntEventSource->enable ();
-					clock_get_uptime (&currTime);
-					absolutetime_to_nanoseconds (currTime, &appleTexasAudio->savedNanos);
+	deviceID = appleTexasAudio->GetDeviceMatch ();
+	if (kExternalSpeakersActive == deviceID) {
+		if (NULL != appleTexasAudio->dallasDriver) {
+			appleTexasAudio->dallasIntEventSource->disable ();
+			result = appleTexasAudio->dallasDriver->getSpeakerID (bEEPROM);
+			appleTexasAudio->dallasIntEventSource->enable ();
+			clock_get_uptime (&currTime);
+			absolutetime_to_nanoseconds (currTime, &appleTexasAudio->savedNanos);
 
-					if (FALSE == result && TRUE == appleTexasAudio->IsSpeakerConnected() ) {	// FALSE == failure for DallasDriver	[3103075]	rbm	12/2/2002
-						KUNCUserNotificationDisplayNotice (
-						0,		// Timeout in seconds
-						0,		// Flags (for later usage)
-						"",		// iconPath (not supported yet)
-						"",		// soundPath (not supported yet)
-						"/System/Library/Extensions/Apple02Audio.kext",		// localizationPath
-						"HeaderOfDallasPartialInsert",		// the header
-						"StringOfDallasPartialInsert",
-						"ButtonOfDallasPartialInsert"); 
-	
-						IOLog ("The device plugged into the Apple speaker mini-jack cannot be recognized.\n");
-						IOLog ("Remove the plug from the jack. Then plug it back in and make sure it is fully inserted.\n");
-					} else {
-						// Speakers are fully plugged in now, so load the proper EQ for them
-						appleTexasAudio->dallasIntEventSource->disable ();
-						cg = appleTexasAudio->getCommandGate ();
-						if (NULL != cg) {
-							cg->runAction (DeviceInterruptServiceAction);
-						}
-						appleTexasAudio->dallasIntEventSource->enable ();
-						clock_get_uptime (&currTime);
-						absolutetime_to_nanoseconds (currTime, &appleTexasAudio->savedNanos);
-					}
+			if (FALSE == result && TRUE == appleTexasAudio->IsSpeakerConnected() ) {	// FALSE == failure for DallasDriver	[3103075]	rbm	12/2/2002
+				error = KUNCUserNotificationDisplayNotice (
+				0,		// Timeout in seconds
+				0,		// Flags (for later usage)
+				"",		// iconPath (not supported yet)
+				"",		// soundPath (not supported yet)
+				"/System/Library/Extensions/Apple02Audio.kext",		// localizationPath
+				"HeaderOfDallasPartialInsert",		// the header
+				"StringOfDallasPartialInsert",
+				"ButtonOfDallasPartialInsert"); 
+
+				if (kIOReturnSuccess != error) {
+					appleTexasAudio->notifierHandlerTimer->setTimeoutMS (kNotifyTimerDelay);
+				} else {
+					IOLog ("The device plugged into the Apple speaker mini-jack cannot be recognized.\n");
+					IOLog ("Remove the plug from the jack. Then plug it back in and make sure it is fully inserted.\n");
 				}
+			} else {
+				// Speakers are fully plugged in now, so load the proper EQ for them
+				appleTexasAudio->dallasIntEventSource->disable ();
+				cg = appleTexasAudio->getCommandGate ();
+				if (NULL != cg) {
+					cg->runAction (DeviceInterruptServiceAction);
+				}
+				appleTexasAudio->dallasIntEventSource->enable ();
+				clock_get_uptime (&currTime);
+				absolutetime_to_nanoseconds (currTime, &appleTexasAudio->savedNanos);
 			}
 		}
 	}

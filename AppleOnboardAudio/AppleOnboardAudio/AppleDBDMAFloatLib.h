@@ -21,7 +21,7 @@ extern "C" {
 #pragma mark ••• Processing Functions
 #pragma mark ----------------------------- 
 
-void delayRightChannel(float* inFloatBufferPtr, UInt32 numSamples);
+void delayRightChannel(float* inFloatBufferPtr, UInt32 numSamples, float * inLastSample);// [3173869], added last sample parameter
 void balanceAdjust(float* inFloatBufferPtr, UInt32 numSamples, EQStructPtr inEQ);
 void invertRightChannel(float* inFloatBufferPtr, UInt32 numSamples);
 void mixAndMuteRightChannel(float* inFloatBufferPtr, UInt32 numSamples); 

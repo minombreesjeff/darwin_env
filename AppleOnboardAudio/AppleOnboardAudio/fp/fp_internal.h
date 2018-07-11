@@ -833,7 +833,7 @@ long double  nextafterl(long double x, long double y);
 *                   negative.  This includes, NaNs, infinities and zeros.       *
 *                                                                               *
 ********************************************************************************/
-#define      fpclassify(x)    ( ( sizeof ( x ) == sizeof(double) ) ?           \
+/* #define      fpclassify(x)    ( ( sizeof ( x ) == sizeof(double) ) ?           \
                               __fpclassifyd  ( x ) :                           \
                                 ( sizeof ( x ) == sizeof(float) ) ?            \
                               __fpclassifyf ( x ) :                            \
@@ -853,12 +853,12 @@ long double  nextafterl(long double x, long double y);
                                 ( sizeof ( x ) == sizeof(float) ) ?            \
                               __isnanf ( x ) :                                 \
                               __isnan  ( x ) )
-//#define      signbit(x)       ( ( sizeof ( x ) == sizeof(double) ) ?           \
-//                              __signbitd ( x ) :                               \
-//                                ( sizeof ( x ) == sizeof(float) ) ?            \
-//                              __signbitf ( x ) :                               \
-//                              __signbit  ( x ) )
-
+#define      signbit(x)       ( ( sizeof ( x ) == sizeof(double) ) ?           \
+                              __signbitd ( x ) :                               \
+                                ( sizeof ( x ) == sizeof(float) ) ?            \
+                              __signbitf ( x ) :                               \
+                              __signbit  ( x ) )
+*/
 
 
 /********************************************************************************

@@ -45,7 +45,6 @@ public:
 	virtual IOReturn		setActiveOutput (UInt32 outputPort) {return kIOReturnError;}
 	virtual UInt32			getActiveInput (void) {return 0;}
 	virtual IOReturn		setActiveInput (UInt32 input) {return kIOReturnError;}
-	virtual IOReturn		prepareForOutputChange (void) {return kIOReturnError;}
 
 	virtual bool			getMute () {return false;}
 	virtual IOReturn		setMute (bool muteState) {return 0;}
