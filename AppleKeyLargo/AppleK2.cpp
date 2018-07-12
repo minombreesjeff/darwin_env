@@ -899,6 +899,7 @@ bool AppleK2::performFunction(IOPlatformFunction *func, void *pfParam1,
 				return false;   		        	    
 		}
 	}
+    iter->release();
 	return true;
 }
 
