@@ -95,7 +95,7 @@ bool BMacEnet::start(IOService * provider)
 
 	transmitQueue = OSDynamicCast(IOGatedOutputQueue, getOutputQueue());
 	if (!transmitQueue) {
-		IOLog("BMac: output queue initialization failed\n");
+		IOLog( "BMacEnet::start: output queue initialization failed\n" );
 		return false;
 	}
 	transmitQueue->retain();
@@ -118,7 +118,7 @@ bool BMacEnet::start(IOService * provider)
 
 	mbufCursor = IOMbufBigMemoryCursor::withSpecification(NETWORK_BUFSIZE, 2);
 	if (!mbufCursor) {
-		IOLog("Ethernet(BMac): IOMbufBigMemoryCursor allocation failure\n");
+		IOLog( "BMacEnet::start: IOMbufBigMemoryCursor allocation failure\n" );
 		return false;
 	}
 
@@ -276,11 +276,12 @@ bool BMacEnet::start(IOService * provider)
 		return false;
 	}
 
-	MGETHDR(txDebuggerPkt, M_DONTWAIT, MT_DATA);
-	if (!txDebuggerPkt) {
-		IOLog("Ethernet(BMac): Couldn't allocate KDB buffer\n");
+	txDebuggerPkt = allocatePacket( NETWORK_BUFSIZE );
+	if ( !txDebuggerPkt )
+	{	IOLog( "BMacEnet::start: Couldn't allocate KDB buffer\n" );
 		return false;
 	}
+	txDebuggerPkt->m_next = 0;
 
 #if 0
 	// Enable the interrupt event sources. The hardware interrupts
@@ -379,7 +380,7 @@ void BMacEnet::free()
     	if (rxMbuf[i]) freePacket(rxMbuf[i]);
 
     for (i = 0; i < txMaxCommand; i++)
-    	if (txMbuf[i]) freePacket(txMbuf[i]);
+    	if ( txMbuf[i] && (txMbuf[i] != txDebuggerPkt) ) freePacket(txMbuf[i]);
 
 	for (i = 0; i < MEMORY_MAP_COUNT; i++)
 		if (maps[i]) maps[i]->release();
@@ -661,7 +662,7 @@ bool BMacEnet::configureInterface( IONetworkInterface * netif )
 
     if ( !nd || !(netStats = (IONetworkStats *) nd->getBuffer()) )
     {
-        IOLog("EtherNet(BMac): invalid network statistics\n");
+        IOLog( "BMacEnet::start: invalid network statistics\n" );
         return false;
     }
 
@@ -682,7 +683,7 @@ IOReturn BMacEnet::enable(IONetworkInterface * netif)
 	//
 	if ( netifEnabled )
     {
-		IOLog("EtherNet(BMac): already enabled\n");
+		IOLog( "BMacEnet::enable: already enabled\n" );
 		return kIOReturnSuccess;
 	}
 
@@ -805,7 +806,7 @@ void BMacEnet::handleTimerPop()
         return;
     }
 
-	// IOLog("Ethernet(BMac): watchdog timer\n");
+	// IOLog( "BMacEnet::handleTimerPop: watchdog timer\n" );
 
 	reserveDebuggerLock();
 	
@@ -816,10 +817,10 @@ void BMacEnet::handleTimerPop()
     if ( !(dmaStatus & kdbdmaActive) )
     {
 #if 0
-		IOLog( "Ethernet(BMac): Timeout check - RxHead = %d RxTail = %d\n", 
-			rxCommandHead, rxCommandTail);
+		IOLog( "BMacEnet::handleTimerPop: Timeout check - RxHead = %d RxTail = %d\n", 
+			rxCommandHead, rxCommandTail );
 
-      IOLog( "Ethernet(BMac): Rx Commands = %08x(p) Rx DMA Ptr = %08x(p)\n\r", rxDMACommandsPhys, IOGetDBDMACommandPtr(ioBaseEnetRxDMA) ); 
+      IOLog( "BMacEnet::handleTimerPop: Rx Commands = %08x(p) Rx DMA Ptr = %08x(p)\n", rxDMACommandsPhys, IOGetDBDMACommandPtr(ioBaseEnetRxDMA) ); 
       [self _dumpDesc:(void *)rxDMACommands Size:rxMaxCommand * sizeof(enet_dma_cmd_t)];
 #endif
 
@@ -842,7 +843,7 @@ void BMacEnet::handleTimerPop()
 				if (_transmitInterruptOccurred() == false)
 				{
 #if 0
-					IOLog( "Ethernet(BMac): Timeout check - TxHead = %d TxTail = %d\n", 
+					IOLog( "BMacEnet::handleTimerPop: Timeout check - TxHead = %d TxTail = %d\n", 
 						txCommandHead, txCommandTail);
 #endif
 					_restartTransmitter();
@@ -1033,10 +1034,10 @@ void BMacEnet::monitorLinkStatus( bool firstPoll )
         setLinkStatus( linkStatus, medium, linkSpeed * 1000000 );
         
         if ( linkStatus & kIONetworkLinkActive )
-            IOLog( "Ethernet(BMac): Link up at %ld Mbps - %s Duplex\n",
+            IOLog( "BMacEnet::monitorLinkStatus: Link up at %ld Mbps - %s Duplex\n",
                    linkSpeed, (fullDuplex) ? "Full" : "Half" );
         else
-            IOLog( "Ethernet(BMac): Link down\n" );
+            IOLog( "BMacEnet::monitorLinkStatus: Link down\n" );
     }
 }
 
@@ -1229,7 +1230,7 @@ IOReturn BMacEnet::setPowerState( unsigned long powerStateOrdinal,
 {
     IOReturn ret = IOPMAckImplied;
 
-    // kprintf("Ethernet(BMac): setPowerState %d\n", powerStateOrdinal);
+    // kprintf( "BMacEnet::setPowerState: setPowerState %d\n", powerStateOrdinal );
 
     if ( currentPowerState == powerStateOrdinal )
         return IOPMAckImplied;
@@ -1237,12 +1238,12 @@ IOReturn BMacEnet::setPowerState( unsigned long powerStateOrdinal,
     switch ( powerStateOrdinal )
     {
         case 0:
-            kprintf("Ethernet(BMac): powering off\n");
+            kprintf( "BMacEnet::setPowerState: powering off\n" );
             currentPowerState = powerStateOrdinal;
             break;
 
         case 1:
-            kprintf("Ethernet(BMac): powering on\n");
+            kprintf( "BMacEnet::setPowerState: powering on\n" );
             currentPowerState = powerStateOrdinal;
             break;
 

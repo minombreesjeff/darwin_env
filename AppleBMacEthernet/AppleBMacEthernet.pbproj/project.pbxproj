@@ -179,12 +179,12 @@
 				BUILD_SETTING = "";
 				FRAMEWORK_SEARCH_PATHS = "";
 				HEADER_SEARCH_PATHS = "";
-				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions";
+				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/IONetworkingFamily.kext/Contents/PlugIns";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleBMacEthernet;
-				MODULE_VERSION = "\U00011.1.2f1";
+				MODULE_VERSION = "\U00011.1.3f1";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -198,7 +198,7 @@
 			);
 			isa = PBXBundleTarget;
 			name = AppleBMacEthernet;
-			productInstallPath = "$(SYSTEM_LIBRARY_DIR)/Extensions";
+			productInstallPath = "$(SYSTEM_LIBRARY_DIR)/Extensions/IONetworkingFamily.kext/Contents/PlugIns";
 			productName = AppleBMacEthernet;
 			productReference = 01EE1BD3FFC9F1AA11CA2B4D;
 			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
@@ -222,7 +222,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.1.2f1</string>
+	<string>1.1.3f1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>Name Matching</key>
