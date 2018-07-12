@@ -427,14 +427,11 @@ void AppleUSBCDCECMData::dataReadComplete(void *obj, void *param, IOReturn rc, U
         XTRACE(me, 0, rc, "dataReadComplete - Read completion io err");
         if (rc != kIOReturnAborted)
         {
-			me->fDeferredClear = true;
-#if 0
             rc = me->clearPipeStall(me->fInPipe);
             if (rc != kIOReturnSuccess)
             {
                 XTRACE(me, 0, rc, "dataReadComplete - clear stall failed (trying to continue)");
             }
-#endif
         }
     }
     
@@ -506,9 +503,9 @@ void AppleUSBCDCECMData::dataWriteComplete(void *obj, void *param, IOReturn rc, 
             if ((pktLen % me->fOutPacketSize) == 0)			// If it was a multiple of max packet size then we need to do a zero length write
             {
                 XTRACE(me, rc, pktLen, "dataWriteComplete - writing zero length packet");
-//                me->fPipeOutBuff[poolIndx].pipeOutMDP->setLength(0);
+                me->fPipeOutBuff[poolIndx].pipeOutMDP->setLength(0);
                 me->fPipeOutBuff[poolIndx].writeCompletionInfo.parameter = (void *)poolIndx;
-                me->fOutPipe->Write(me->fPipeOutBuff[poolIndx].pipeOutMDP, 2000, 5000, 0, &me->fPipeOutBuff[poolIndx].writeCompletionInfo);
+                me->fOutPipe->Write(me->fPipeOutBuff[poolIndx].pipeOutMDP, &me->fPipeOutBuff[poolIndx].writeCompletionInfo);
             } else {
                 me->fPipeOutBuff[poolIndx].avail = true;
             }
@@ -524,16 +521,13 @@ void AppleUSBCDCECMData::dataWriteComplete(void *obj, void *param, IOReturn rc, 
             me->fPipeOutBuff[poolIndx].m = NULL;
             me->fPipeOutBuff[poolIndx].avail = true;
         }
-        if ((rc != kIOReturnAborted) || (rc != kIOUSBTransactionReturned))
+        if (rc != kIOReturnAborted)
         {
-			me->fDeferredClear = true;
-#if 0
-			rc = me->clearPipeStall(me->fOutPipe);
+            rc = me->clearPipeStall(me->fOutPipe);
             if (rc != kIOReturnSuccess)
             {
                 XTRACE(me, 0, rc, "dataWriteComplete - clear stall failed (trying to continue)");
             }
-#endif
         }
     }
     
@@ -572,7 +566,6 @@ bool AppleUSBCDCECMData::init(OSDictionary *properties)
 	
 	fResetState = kResetNormal;
 	fSleeping = false;
-	fDeferredClear = false;
 	
     for (i=0; i<kMaxOutBufPool; i++)
     {
@@ -1127,15 +1120,12 @@ IOReturn AppleUSBCDCECMData::disable(IONetworkInterface *netif)
         // Disable our IOOutputQueue object. This will prevent the
         // outputPacket() method from being called
         
-	if (fTransmitQueue)
-	{
-		fTransmitQueue->stop();
+    fTransmitQueue->stop();
 
-			// Flush all packets currently in the output queue
+        // Flush all packets currently in the output queue
 
-		fTransmitQueue->setCapacity(0);
-		fTransmitQueue->flush();
-	}
+    fTransmitQueue->setCapacity(0);
+    fTransmitQueue->flush();
 
     putToSleep();
 
@@ -1660,7 +1650,7 @@ bool AppleUSBCDCECMData::wakeUp()
 
     XTRACE(this, 0, 0, "wakeUp");
 	
-	if ((fSleeping) && (fDataInterface))
+	if (fSleeping)
 	{
 		fDataInterface->GetDevice()->ReEnumerateDevice(0);
 		return false;
@@ -1841,20 +1831,6 @@ bool AppleUSBCDCECMData::allocateResources()
     UInt32				i;
 
     XTRACE(this, 0, 0, "allocateResources.");
-	
-		// Check things are still around (waking from sleep)
-	
-	if (!fDataInterface)
-	{
-		XTRACE(this, 0, 0, "allocateResources - No data interface");
-		return false;
-	}
-	
-	if (!fControlDriver)
-	{
-		XTRACE(this, 0, 0, "allocateResources - No control driver");
-		return false;
-	}
 
         // Open all the end points
 
@@ -2089,17 +2065,7 @@ IOReturn AppleUSBCDCECMData::USBTransmitPacket(mbuf_t packet)
     UInt32		indx;
 	UInt16		bufTries = 0;
 	
-    XTRACE(this, 0, packet, "USBTransmitPacket - with timeout");
-	
-	if (fDeferredClear)
-	{
-		ior = clearPipeStall(fOutPipe);
-		if (ior != kIOReturnSuccess)
-		{
-			XTRACE(this, 0, ior, "USBTransmitPacket - clear stall failed (trying to continue)");
-		}
-		fDeferredClear = false;
-	}
+    XTRACE(this, 0, packet, "USBTransmitPacket");
 			
 		// Count the number of mbufs in this packet
 		
@@ -2124,6 +2090,17 @@ IOReturn AppleUSBCDCECMData::USBTransmitPacket(mbuf_t packet)
 		freePacket(packet);
         return kIOReturnOutputDropped;
     }
+
+#if 0	
+	if (!getOutputBuffer(&indx))
+	{
+		ALERT(fOutBufPool, fOutPoolIndex, "USBTransmitPacket - Output buffer unavailable");
+		if (fControlDriver->fOutputErrsOK)
+			fpNetStats->outputErrors++;
+		freePacket(packet);
+		return kIOReturnOutputDropped;
+	}
+#endif
 	
 	while (1)
 	{
@@ -2165,18 +2142,15 @@ IOReturn AppleUSBCDCECMData::USBTransmitPacket(mbuf_t packet)
 	
     fPipeOutBuff[indx].m = packet;
     fPipeOutBuff[indx].writeCompletionInfo.parameter = (void *)indx;
-//    fPipeOutBuff[indx].pipeOutMDP->setLength(rTotal);
-//    ior = fOutPipe->Write(fPipeOutBuff[indx].pipeOutMDP, &fPipeOutBuff[indx].writeCompletionInfo);
-	ior = fOutPipe->Write(fPipeOutBuff[indx].pipeOutMDP, 2000, 5000, rTotal, &fPipeOutBuff[indx].writeCompletionInfo);
+    fPipeOutBuff[indx].pipeOutMDP->setLength(rTotal);
+    ior = fOutPipe->Write(fPipeOutBuff[indx].pipeOutMDP, &fPipeOutBuff[indx].writeCompletionInfo);
     if (ior != kIOReturnSuccess)
     {
         XTRACE(this, 0, ior, "USBTransmitPacket - Write failed");
         if (ior == kIOUSBPipeStalled)
         {
-			XTRACE(this, 0, 0, "USBTransmitPacket - Pipe stalled, retrying...");
             fOutPipe->Reset();
-//            ior = fOutPipe->Write(fPipeOutBuff[indx].pipeOutMDP, &fPipeOutBuff[indx].writeCompletionInfo);
-			ior = fOutPipe->Write(fPipeOutBuff[indx].pipeOutMDP, 2000, 5000, rTotal, &fPipeOutBuff[indx].writeCompletionInfo);
+            ior = fOutPipe->Write(fPipeOutBuff[indx].pipeOutMDP, &fPipeOutBuff[indx].writeCompletionInfo);
             if (ior != kIOReturnSuccess)
             {
                 XTRACE(this, 0, ior, "USBTransmitPacket - Write really failed");
@@ -2193,20 +2167,7 @@ IOReturn AppleUSBCDCECMData::USBTransmitPacket(mbuf_t packet)
 				}
                 return ior;
             }
-        } else {
-			if (fControlDriver->fOutputErrsOK)
-				fpNetStats->outputErrors++;
-			if (fBufferPoolLock)
-			{
-				IOLockLock(fBufferPoolLock);
-			}
-			fPipeOutBuff[indx].avail = true;
-			if (fBufferPoolLock)
-			{
-				IOLockUnlock(fBufferPoolLock);
-			}
-			return ior;
-		}
+        }
     }
     if (fControlDriver->fOutputPktsOK)		
         fpNetStats->outputPackets++;
@@ -2233,9 +2194,9 @@ IOReturn AppleUSBCDCECMData::clearPipeStall(IOUSBPipe *thePipe)
     
     XTRACE(this, 0, thePipe, "clearPipeStall");
     
-//    rtn = thePipe->GetPipeStatus();
-//    if (rtn == kIOUSBPipeStalled)
-//    {
+    rtn = thePipe->GetPipeStatus();
+    if (rtn == kIOUSBPipeStalled)
+    {
         rtn = thePipe->ClearPipeStall(true);
         if (rtn == kIOReturnSuccess)
         {
@@ -2243,9 +2204,9 @@ IOReturn AppleUSBCDCECMData::clearPipeStall(IOUSBPipe *thePipe)
         } else {
             XTRACE(this, 0, rtn, "clearPipeStall - Failed");
         }
-//    } else {
-//        XTRACE(this, 0, 0, "clearPipeStall - Pipe not stalled");
-//    }
+    } else {
+        XTRACE(this, 0, 0, "clearPipeStall - Pipe not stalled");
+    }
     
     return rtn;
 
@@ -2393,8 +2354,7 @@ IOReturn AppleUSBCDCECMData::message(UInt32 type, IOService *provider, void *arg
             if (fReady)
             {
                 if (!fTerminate)		// Check if we're already being terminated
-                {
-#if 0
+                { 
 		    // NOTE! This call below depends on the hard coded path of this KEXT. Make sure
 		    // that if the KEXT moves, this path is changed!
 		    KUNCUserNotificationDisplayNotice(
@@ -2405,8 +2365,7 @@ IOReturn AppleUSBCDCECMData::message(UInt32 type, IOService *provider, void *arg
 			"/System/Library/Extensions/IOUSBFamily.kext/Contents/PlugIns/AppleUSBCDCECMData.kext",	// localizationPath
 			"Unplug Header",		// the header
 			"Unplug Notice",		// the notice - look in Localizable.strings
-			"OK");
-#endif
+			"OK"); 
                 }
             }
 			

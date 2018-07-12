@@ -332,17 +332,11 @@ bool AppleUSBCDC::initDevice(UInt8 numConfigs)
 		registerService();			// Better register before we kick off the interface drivers
 		IOSleep(500);				// Let it happen...
 		
-		if (fpDevice)
+		ior = fpDevice->SetConfiguration(this, fConfig);
+		if (ior != kIOReturnSuccess)
 		{
-			ior = fpDevice->SetConfiguration(this, fConfig);
-			if (ior != kIOReturnSuccess)
-			{
-				XTRACE(this, 0, ior, "initDevice - SetConfiguration error");
-				configOK = false;			
-			}
-		} else {
-			XTRACE(this, 0, 0, "initDevice - The device has gone");
-			configOK = false;
+			XTRACE(this, 0, ior, "initDevice - SetConfiguration error");
+			configOK = false;			
 		}
 	} else {
 		XTRACE(this, 0, configOK, "initDevice - No valid configuration");
