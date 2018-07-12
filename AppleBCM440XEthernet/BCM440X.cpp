@@ -275,7 +275,8 @@ bool BCM440X::initDriverObjects( IOService * provider )
     // Attach an interrupt event source to our work loop
 
     fInterruptSrc = IOInterruptEventSource::interruptEventSource( this,
-                    (IOInterruptEventAction) &BCM440X::interruptOccurred,
+                    OSMemberFunctionCast(IOInterruptEventAction, this,
+                        &BCM440X::interruptOccurred),
                     provider);
     if (!fInterruptSrc ||
         (workLoop->addEventSource(fInterruptSrc) != kIOReturnSuccess))
