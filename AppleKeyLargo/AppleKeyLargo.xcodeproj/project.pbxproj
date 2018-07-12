@@ -599,7 +599,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleKeyLargo;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -629,7 +629,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleKeyLargo;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -658,7 +658,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleKeyLargo;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -688,7 +688,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleK2;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -718,7 +718,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleK2;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -747,7 +747,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleK2;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -777,7 +777,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOKeyLargo;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -807,7 +807,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOKeyLargo;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -836,7 +836,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.iokit.IOKeyLargo;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -865,7 +865,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleK2Driver;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -894,7 +894,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleK2Driver;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -922,7 +922,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleK2Driver;
-				MODULE_VERSION = 1.7.1f1;
+				MODULE_VERSION = 1.7.1f2;
 				OTHER_CFLAGS = "-mno-string";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";

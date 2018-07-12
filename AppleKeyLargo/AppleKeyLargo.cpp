@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1998-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- * Copyright (c) 1998-2002 Apple Computer, Inc.  All rights reserved.
+ * Copyright (c) 1998-2007 Apple Inc.  All rights reserved.
  *
  *  DRI: Dave Radcliffe
  *
@@ -138,7 +138,7 @@ bool AppleKeyLargo::start(IOService *provider)
     
 		if (usbBus[i] != NULL) {
 			if ( usbBus[i]->init() && usbBus[i]->attach(this))
-				usbBus[i]->initForBus(fBaseUSBID+i, keyLargoDeviceId);                 
+				usbBus[i]->initForBus(fBaseUSBID+i, keyLargoDeviceId, false);                 
 			else
 				usbBus[i]->release();
 		}
@@ -970,7 +970,7 @@ void AppleKeyLargo::saveKeyLargoState(void)
         SavedMPICReg->baseCountRegister = *(MPICRegPtr + 0x4);
         SavedMPICReg->vectorPriorityRegister = *(MPICRegPtr + 0x8);
         SavedMPICReg->destinationRegister = *(MPICRegPtr + 0xc);
- #if 1
+ #if 0
 	kprintf("&KeyLargoMPICTimerBase0:                %p    data: 0x%08lx  0x%08lx  0x%08lx  0x%08lx\n",
 			MPICRegPtr, *(MPICRegPtr + 0), *(MPICRegPtr + 4), *(MPICRegPtr + 8), *(MPICRegPtr + 12));
 			
@@ -1810,6 +1810,7 @@ IOService * AppleKeyLargo::createNub( IORegistryEntry * from )
 bool AppleKeyLargo::performFunction(IOPlatformFunction *func, void *pfParam1,
 			void *pfParam2, void *pfParam3, void *pfParam4)
 {
+	static IOLock				*pfLock;
 	IOPlatformFunctionIterator 	*iter;
 	UInt32 						cmd, cmdLen, result, param1, param2, param3, param4, param5, 
 									param6, param7, param8, param9, param10;
@@ -1817,13 +1818,28 @@ bool AppleKeyLargo::performFunction(IOPlatformFunction *func, void *pfParam1,
 	if (!func)
 		return false;
 	
-	if (!(iter = func->getCommandIterator()))
+	if (!pfLock)
+		// Use a static lock here as there is only ever one instance of AppleKeyLargo
+		pfLock = IOLockAlloc();
+	
+	if (pfLock)
+		IOLockLock (pfLock);
+
+	if (!(iter = func->getCommandIterator())) {
+		if (pfLock)
+			IOLockUnlock (pfLock);
+
 		return false;
+	}
 	
 	while (iter->getNextCommand (&cmd, &cmdLen, &param1, &param2, &param3, &param4, 
 		&param5, &param6, &param7, &param8, &param9, &param10, &result)) {
 		if (result != kIOPFNoError) {
 			iter->release();
+			
+			if (pfLock)
+				IOLockUnlock (pfLock);
+
 			return false;
 		}
 
@@ -1862,10 +1878,18 @@ bool AppleKeyLargo::performFunction(IOPlatformFunction *func, void *pfParam1,
                 
 			default:
 				kprintf ("AppleKeyLargo::performFunction - bad command %ld\n", cmd);
+
+				if (pfLock)
+					IOLockUnlock (pfLock);
+
 				return false;   		        	    
 		}
 	}
     iter->release();
+
+	if (pfLock)
+		IOLockUnlock (pfLock);
+
 	return true;
 }
 
