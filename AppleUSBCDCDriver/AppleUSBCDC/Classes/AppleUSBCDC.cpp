@@ -288,7 +288,15 @@ bool AppleUSBCDC::initDevice(UInt8 numConfigs)
 									
 									if ((fpDevice->GetVendorID() == 0xA5C) && (fpDevice->GetProductID() == 0x6300))
 									{
-										XTRACE(this, 0, 0, "initDevice - Ignoring the ACM configuration...");
+										XTRACE(this, 0, 0, "initDevice - Ignoring the ACM interface...");
+										cdc = false;
+									}
+									
+										// Check for vendor specific protocol and ignore the interface
+									
+									if (intf->bInterfaceProtocol == 0xFF)
+									{
+										XTRACE(this, 0, 0, "initDevice - Ignoring the ACM interface with vendor specific protocol...");
 										cdc = false;
 									}
 								}
@@ -324,11 +332,17 @@ bool AppleUSBCDC::initDevice(UInt8 numConfigs)
 		registerService();			// Better register before we kick off the interface drivers
 		IOSleep(500);				// Let it happen...
 		
-		ior = fpDevice->SetConfiguration(this, fConfig);
-		if (ior != kIOReturnSuccess)
+		if (fpDevice)
 		{
-			XTRACE(this, 0, ior, "initDevice - SetConfiguration error");
-			configOK = false;			
+			ior = fpDevice->SetConfiguration(this, fConfig);
+			if (ior != kIOReturnSuccess)
+			{
+				XTRACE(this, 0, ior, "initDevice - SetConfiguration error");
+				configOK = false;			
+			}
+		} else {
+			XTRACE(this, 0, 0, "initDevice - The device has gone");
+			configOK = false;
 		}
 	} else {
 		XTRACE(this, 0, configOK, "initDevice - No valid configuration");
@@ -636,10 +650,9 @@ bool AppleUSBCDC::confirmDriver(UInt8 subClass, UInt8 dataInterface)
         return false;
     }
 
-	controlInterfaceNumber = Comm->GetInterfaceNumber();
-
     while (Comm)
     {
+		controlInterfaceNumber = Comm->GetInterfaceNumber();
         intSubClass = Comm->GetInterfaceSubClass();
         if (intSubClass == subClass)					// Just to make sure...
         {
