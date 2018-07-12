@@ -1810,7 +1810,7 @@ bool AppleUSBIrDADriver::configureDevice( UInt8 numConfigs )
     
 	// Get the QoS Functional Descriptor (it's the only one)
     
-    (IOUSBDescriptorHeader*)qos = fpInterface->FindNextAssociatedDescriptor(NULL, USBIrDAClassDescriptor);
+    qos = (USBIrDAQoS *)fpInterface->FindNextAssociatedDescriptor(NULL, USBIrDAClassDescriptor);
     if (!qos)
     {
 	ELG( 0, 0, 'OSF-', "configureDevice - No QOS descriptor" );
@@ -3579,7 +3579,7 @@ IOReturn AppleUSBIrDADriver::privateWatchState( PortInfo_t *port, UInt32 *state,
 	assert_wait( &port->WatchStateMask, true ); /* assert event */
 
 	IOLockUnlock( port->serialRequestLock );
-	rtn = thread_block( (void(*)(void))0 );         /* block ourselves */
+	rtn = thread_block( 0 );         /* block ourselves */
 	IOLockLock( port->serialRequestLock );
 
 	if ( rtn == THREAD_RESTART )

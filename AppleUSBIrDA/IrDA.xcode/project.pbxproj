@@ -141,7 +141,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleUSBIrDA;
-				MODULE_VERSION = 1.3.4b2;
+				MODULE_VERSION = 1.3.5b2;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "-twolevel_namespace";
 				OTHER_REZFLAGS = "";
@@ -166,7 +166,7 @@
 	<key>CFBundleExecutable</key>
 	<string>AppleUSBIrDA</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IrDA version 1.3.4b2, Copyright 2001-2004, Apple Computer, Inc.</string>
+	<string>IrDA version 1.3.5b2, Copyright 2001-2004, Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -178,11 +178,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.4</string>
+	<string>1.3.5</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3.4b2</string>
+	<string>1.3.5b2</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>AppleUSBIrDA</key>
@@ -1093,7 +1093,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleSCCIrDA;
-				MODULE_VERSION = "\U00011.3.4b2";
+				MODULE_VERSION = "\U00011.3.5b2";
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "-twolevel_namespace";
 				OTHER_REZFLAGS = "";
@@ -1118,7 +1118,7 @@
 	<key>CFBundleExecutable</key>
 	<string>AppleSCCIrDA</string>
 	<key>CFBundleGetInfoString</key>
-	<string>IrDA version 1.3.4b2, Copyright 2001-2004, Apple Computer, Inc.</string>
+	<string>IrDA version 1.3.5b2, Copyright 2001-2004, Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -1130,11 +1130,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.4</string>
+	<string>1.3.5</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3.4b2</string>
+	<string>1.3.5b2</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>AppleSCCIrDA</key>
