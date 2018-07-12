@@ -247,7 +247,7 @@ IOService * AppleK2::createNub( IORegistryEntry * from )
 void AppleK2::turnOffK2IO(bool restart)
 {
 	UInt32				regTemp;
-	IOInterruptState	intState;
+	IOInterruptState	intState = NULL;
 	
 	/*
 	 * When we are called, PMU has already been signalled to initiate sleep and only
@@ -438,7 +438,7 @@ void AppleK2::restoreRegisterState(void)
 
 void AppleK2::safeWriteRegUInt32(unsigned long offset, UInt32 mask, UInt32 data)
 {
-	IOInterruptState intState;
+	IOInterruptState intState= NULL;
 
 	if ( mutex  != NULL )
 		intState = IOSimpleLockLockDisableInterrupt(mutex);
@@ -1079,7 +1079,7 @@ IOReturn AppleK2::callPlatformFunction(const OSSymbol *functionName,
 void AppleK2::EnableSCC(bool state, UInt8 device, bool type)
 {
     UInt32 bitsToSet, bitsToClear, currentReg, currentReg3, currentReg5;
-    IOInterruptState intState;
+    IOInterruptState intState= NULL;
 		
 	bitsToSet = bitsToClear = currentReg = currentReg3 = currentReg5 = 0;
 	
@@ -1202,9 +1202,10 @@ void AppleK2::PowerModem(bool state)
     }
     prop = (OSData *) fProvider->getProperty( "platform-modem-power" );
     if(prop && fPHandle) {
-        char callName[255];
+        char callName[32];
 		IOReturn res;
-        sprintf(callName,"%s-%8lx", "platform-modem-power", fPHandle);
+		// "platform-modem-power" = 20 chars + "-%8lx" is a max of 9 chars, yielding a max of 29+1 (EOS) or 30 chars
+        snprintf(callName, sizeof(callName), "%s-%8lx", "platform-modem-power", fPHandle);
         res = IOService::callPlatformFunction(callName, false, (void*) state, 0, 0, 0  );
     }
     else {
@@ -1224,9 +1225,10 @@ void AppleK2::ModemResetLow()
     OSData *prop;
     prop = (OSData *) fProvider->getProperty( "platform-modem-reset" );
     if(prop && fPHandle) {
-        char callName[255];
+        char callName[32];
 		IOReturn res;
-        sprintf(callName,"%s-%8lx", "platform-modem-reset", fPHandle);
+		// "platform-modem-reset" = 20 chars + "-%8lx" is a max of 9 chars, yielding a max of 29+1 (EOS) or 30 chars
+        snprintf(callName, sizeof( callName ), "%s-%8lx", "platform-modem-reset", fPHandle);
         res = IOService::callPlatformFunction(callName, false, (void*) false, 0, 0, 0  );
     }
     else {
@@ -1243,9 +1245,10 @@ void AppleK2::ModemResetHigh()
     OSData *prop;
     prop = (OSData *) fProvider->getProperty( "platform-modem-reset" );
     if(prop && fPHandle) {
-        char callName[255];
+        char callName[32];
 		IOReturn res;
-        sprintf(callName,"%s-%8lx", "platform-modem-reset", fPHandle);
+		// "platform-modem-reset" = 20 chars + "-%8lx" is a max of 9 chars, yielding a max of 29+1 (EOS) or 30 chars
+        snprintf(callName, sizeof( callName ), "%s-%8lx", "platform-modem-reset", fPHandle);
         res = IOService::callPlatformFunction(callName, false, (void*)true, 0, 0, 0  );
     }
     else {

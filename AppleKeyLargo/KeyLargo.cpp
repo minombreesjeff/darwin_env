@@ -180,7 +180,7 @@ void KeyLargo::writeRegUInt8(unsigned long offset, UInt8 data)
 
 void KeyLargo::safeWriteRegUInt8(unsigned long offset, UInt8 mask, UInt8 data)
 {
-	IOInterruptState intState;
+	IOInterruptState intState = NULL;
 
 	if ( mutex  != NULL )
 		intState = IOSimpleLockLockDisableInterrupt(mutex);
@@ -197,7 +197,7 @@ void KeyLargo::safeWriteRegUInt8(unsigned long offset, UInt8 mask, UInt8 data)
 
 UInt8 KeyLargo::safeReadRegUInt8(unsigned long offset)
 {
-	IOInterruptState intState;
+	IOInterruptState intState = NULL;
 
 	if ( mutex  != NULL )
 		intState = IOSimpleLockLockDisableInterrupt(mutex);
@@ -225,7 +225,7 @@ void KeyLargo::writeRegUInt32(unsigned long offset, UInt32 data)
 
 UInt32 KeyLargo::safeReadRegUInt32(unsigned long offset)
 {
-	IOInterruptState intState;
+	IOInterruptState intState = NULL;
 
 	if ( mutex  != NULL )
 		intState = IOSimpleLockLockDisableInterrupt(mutex);
@@ -302,7 +302,7 @@ void KeyLargo::restoreVIAState(UInt8* savedK2ViaState)
  */
 void KeyLargo::AdjustBusSpeeds ( void )
   {
-	IOInterruptState 	is;
+	IOInterruptState 	is = NULL;
 	IOSimpleLock		*intLock;
 	UInt32				ticks;
 	UInt64				systemBusHz;
