@@ -2,7 +2,7 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * Copyright (c) 1998-2003 Apple Computer, Inc.  All Rights Reserved.
+ * Copyright (c) 1998-2004 Apple Computer, Inc.  All Rights Reserved.
  * 
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
@@ -22,15 +22,72 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#ifndef __APPLEUSBCDCWMCData__
-#define __APPLEUSBCDCWMCData__
+#ifndef __APPLEUSBCDCDMM__
+#define __APPLEUSBCDCDMM__
 
 #include "AppleUSBCDCCommon.h"
 #include "AppleUSBCDC.h"
-#include "AppleUSBCDCWMCControl.h"
 
-#define baseName		"usbdevice"
-#define defaultName		"USB Device"
+    // Common Defintions
+
+#define LDEBUG		0			// for debugging
+#define USE_ELG		0			// to Event LoG (via XTrace) - LDEBUG must also be set
+#define USE_IOL		0			// to IOLog - LDEBUG must also be set
+#define	LOG_DATA	0			// logs data to the appropriate log - LDEBUG must also be set
+#define DUMPALL		0			// Dumps all the data to the log - LOG_DATA must also be set
+
+#define Sleep_Time	20
+
+#if LDEBUG
+    #if USE_ELG
+        #include "XTrace.h"
+        #define XTRACE(id, x, y, msg)                    								\
+        do														\
+        {														\
+            if (gXTrace)												\
+            {														\
+                static char *__xtrace = 0;              								\
+                if (__xtrace)												\
+                    gXTrace->LogAdd((UInt32)id, (UInt32)(x), (UInt32)(y), __xtrace);    				\
+                else													\
+                    __xtrace = gXTrace->LogAdd((UInt32)id, (UInt32)(x), (UInt32)(y), " " DEBUG_NAME ": " msg, false);	\
+            }														\
+        } while(0)
+        #define XTRACE2(id, x, y, msg) XTRACE_HELPER(gXTrace, (UInt32)id, x, y, " " DEBUG_NAME": "  msg)
+    #else /* not USE_ELG */
+        #if USE_IOL
+            #define XTRACE(ID,A,B,STRING) {IOLog("%8x %8x %8x %8x " DEBUG_NAME ": " STRING "\n",(unsigned int)(ID),(unsigned int)(A),(unsigned int)(B), (unsigned int)IOThreadSelf()); IOSleep(Sleep_Time);}
+        #else
+            #define XTRACE(id, x, y, msg)
+        #endif /* USE_IOL */
+    #endif /* USE_ELG */
+    #if LOG_DATA
+        #define LogData(D, C, b)	USBLogData((UInt8)D, (UInt32)C, (char *)b)
+        #define meLogData(D, C, b)	me->USBLogData((UInt8)D, (UInt32)C, (char *)b)
+    #else /* not LOG_DATA */
+        #define LogData(D, C, b)
+        #define meLogData(D, C, b)
+    #endif /* LOG_DATA */
+#else /* not LDEBUG */
+    #define XTRACE(id, x, y, msg)
+    #define LogData(D, C, b)
+    #define meLogData(D, C, b)
+    #undef USE_ELG
+    #undef USE_IOL
+    #undef LOG_DATA
+#endif /* LDEBUG */
+
+#define ALERT(A,B,STRING)	IOLog("%8x %8x " DEBUG_NAME ": " STRING "\n", (unsigned int)(A), (unsigned int)(B))
+
+enum
+{
+    kDataIn 		= 0,
+    kDataOut,
+    kDataOther
+};
+
+#define baseName		"dmmcontrol"
+#define defaultName		"USB Modem"
 #define productNameLength	32						// Arbitrary length
 #define propertyTag		"Product Name"
 
@@ -38,16 +95,36 @@
 #define kMaxBaudRate		230400
 #define kMaxCirBufferSize	4096
 
-    // Default and Maximum buffer pool values
+    // USB CDC DMM Defintions
+	
+#define kUSBbRxCarrier			0x01			// Carrier Detect
+#define kUSBDCD				kUSBbRxCarrier
+#define kUSBbTxCarrier			0x02			// Data Set Ready
+#define kUSBDSR				kUSBbTxCarrier
+#define kUSBbBreak			0x04
+#define kUSBbRingSignal			0x08
+#define kUSBbFraming			0x10
+#define kUSBbParity			0x20
+#define kUSBbOverRun			0x40
 
-#define kInBufPool		4
-#define kOutBufPool		2
+#define kDTROff				0
+#define kRTSOff				0
+#define kDTROn				1
+#define kRTSOn				2
+	
+typedef struct
+{	
+    UInt32	dwDTERate;
+    UInt8	bCharFormat;
+    UInt8	bParityType;
+    UInt8	bDataBits;
+} LineCoding;
+	
+#define dwDTERateOffset	0
 
-#define kMaxInBufPool		kInBufPool*16
-#define kMaxOutBufPool		kOutBufPool*8
-
-#define	inputTag		"InputBuffers"
-#define	outputTag		"OutputBuffers"
+#define wValueOffset	2
+#define wIndexOffset	4
+#define wLengthOffset	6
 
     // SccQueuePrimatives.h
 
@@ -92,9 +169,7 @@ typedef enum QueueStatus
 #define NEEDS_XON  		 2
 #define SENT_XON  		-2
 
-#define MAX_BLOCK_SIZE	PAGE_SIZE
-#define COMM_BUFF_SIZE	16
-#define DATA_BUFF_SIZE	64
+#define INT_BUFF_SIZE	16
 
 typedef struct
 {
@@ -113,15 +188,6 @@ typedef struct BufferMarks
     unsigned long	LowWater;
     bool		OverRun;
 } BufferMarks;
-
-typedef struct 
-{
-    IOBufferMemoryDescriptor	*pipeMDP;
-    UInt8			*pipeBuffer;
-    SInt32			count;
-    bool			avail;
-    IOUSBCompletion		completionInfo;
-} pipeBuffers;
 
 typedef struct
 {
@@ -165,19 +231,9 @@ typedef struct
     mach_timespec	DataLatInterval;
     mach_timespec	CharLatInterval;
 	
-    bool		AreTransmitting;
-	
         // extensions for USB Driver
     
-    IOUSBPipe		*InPipe;
-    IOUSBPipe		*OutPipe;
-    
-    pipeBuffers		inPool[kMaxInBufPool];
-    pipeBuffers		outPool[kMaxOutBufPool];
-    UInt16		outPoolIndex;
-    
-    UInt8		CommInterfaceNumber;
-    UInt8		DataInterfaceNumber;
+    UInt8		InterfaceNumber;
 
     UInt32		OutPacketSize;
     UInt32		InPacketSize;
@@ -189,36 +245,46 @@ typedef struct
 
 } PortInfo_t;
 
-class AppleUSBCDC;
-class AppleUSBCDCWMCControl;
+	/* AppleUSBCDCDMM.h - This file contains the class definition for the		*/
+	/* USB Communication Device Class (CDC) DMM Interface driver.			*/
 
-	/* AppleUSBCDCWMCData.h - This file contains the class definition for the	*/
-	/* USB Communication Device Class (CDC) Data Interface driver - WMC.		*/
-
-class AppleUSBCDCWMCData : public IOSerialDriverSync
+class AppleUSBCDCDMM : public IOSerialDriverSync
 {
-    OSDeclareDefaultStructors(AppleUSBCDCWMCData);			// Constructor & Destructor stuff
+    OSDeclareDefaultStructors(AppleUSBCDCDMM);			// Constructor & Destructor stuff
 
 private:
-    UInt16			fSessions;				// Number of active sessions
-    bool			fTerminate;				// Are we being terminated (ie the device was unplugged)
-    bool			fStopping;				// Are we being "stopped"
-    UInt8			fPowerState;				// Ordinal for power management
-    UInt8			fConfig;				// Configuration number
-    UInt8			fProductName[productNameLength];	// Product String from the Device
+    UInt16				fSessions;				// Number of active sessions
+    bool				fTerminate;				// Are we being terminated (ie the device was unplugged)
+    bool				fStopping;				// Are we being "stopped"
+    UInt8				fProductName[productNameLength];	// Product String from the Device
+	
+	bool				fReadDead;				// Is the interrupt pipe read dead
+    IOUSBPipe			*fIntPipe;				// The interrupt pipe
+    IOBufferMemoryDescriptor	*fIntPipeMDP;		// Interrupt pipe memory descriptor
+    UInt8				*fIntPipeBuffer;			// Interrupt pipe buffer
+	UInt16				fIntBufferSize;				// Size of the interrupt buffer
+    IOUSBCompletion		fIntCompletionInfo;			// Interrupt completion routine
+    IOUSBCompletion		fMERCompletionInfo;			// MER completion routine
+	IOUSBCompletion		fRspCompletionInfo;			// Response completion routine
+	UInt8				fInterfaceNumber;			// My interface number
+	
+	UInt8			*fInBuffer;
+	UInt8			*fOutBuffer;
     
-    static void			dataReadComplete(void *obj, void *param, IOReturn ior, UInt32 remaining);
-    static void			dataWriteComplete(void *obj, void *param, IOReturn ior, UInt32 remaining);
+	static void		intReadComplete(void *obj, void *param, IOReturn rc, UInt32 remaining);
+    static void		merWriteComplete(void *obj, void *param, IOReturn rc, UInt32 remaining);
+	static void		rspComplete(void *obj, void *param, IOReturn rc, UInt32 remaining);
 
 public:
 
-    IOUSBInterface		*fDataInterface;
+    IOUSBInterface		*fInterface;
     IOWorkLoop			*fWorkLoop;
     IOCommandGate		*fCommandGate;
     PortInfo_t 			fPort;					// Port structure
+	
+	UInt16			fMax_Command;				// maximum command size
     
-    UInt16			fInBufPool;
-    UInt16			fOutBufPool;
+//    UInt8			fConfigAttributes;			// Configuration descriptor attributes
 
         // IOKit methods:
 		
@@ -266,23 +332,26 @@ public:
     virtual	IOReturn	enqueueDataGated(UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep);
     virtual	IOReturn	dequeueDataGated(UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min);
 												
-        // CDC Data Driver Methods
+        // DMM Driver Methods
 	
+    void			USBLogData(UInt8 Dir, UInt32 Count, char *buf);
+	bool			configureDMM(void);
+	bool			getFunctionalDescriptors(void);
     bool 			createSuffix(unsigned char *sufKey);
     bool			createSerialStream(void);
     bool 			setUpTransmit(void);
     void 			startTransmission(void);
+	IOReturn		sendMERRequest(UInt8 request, UInt16 val, UInt16 len, UInt8 *buff, IOUSBCompletion *Comp);
     void 			setLineCoding(void);
     void 			setControlLineState(bool RTS, bool DTR);
     void 			sendBreak(bool sBreak);
-    IOReturn			checkPipe(IOUSBPipe *thePipe, bool devReq);
+    IOReturn		checkPipe(IOUSBPipe *thePipe, bool devReq);
     void 			initStructure(void);
     void 			setStructureDefaults(void);
     bool 			allocateResources(void);
     void			releaseResources(void);
     void 			freeRingBuffer(CirQueue *Queue);
     bool 			allocateRingBuffer(CirQueue *Queue, size_t BufferSize);
-    bool			WakeonRing(void);
 
 private:
 
@@ -298,7 +367,8 @@ private:
     size_t 			UsedSpaceinQueue(CirQueue *Queue);
     size_t 			GetQueueSize(CirQueue *Queue);
     QueueStatus 		GetQueueStatus(CirQueue *Queue);
+	UInt16			isCRinQueue(CirQueue *Queue);
     void 			CheckQueues(void);
     
-}; /* end class AppleUSBCDCWMCData */
+}; /* end class AppleUSBCDCDMM */
 #endif

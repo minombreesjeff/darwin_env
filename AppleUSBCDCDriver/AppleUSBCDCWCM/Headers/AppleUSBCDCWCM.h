@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 1998-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,8 +20,8 @@
  * @APPLE_LICENSE_HEADER_END@
  */
  
-#ifndef __APPLEUSBCDCWMC__
-#define __APPLEUSBCDCWMC__
+#ifndef __APPLEUSBCDCWCM__
+#define __APPLEUSBCDCWCM__
 
 #include "AppleUSBCDCCommon.h"
 
@@ -30,8 +30,6 @@
 #define LDEBUG		0			// for debugging
 #define USE_ELG		0			// to Event LoG (via XTrace) - LDEBUG must also be set
 #define USE_IOL		0			// to IOLog - LDEBUG must also be set
-#define	LOG_DATA	0			// logs data to the appropriate log - LDEBUG must also be set
-#define DUMPALL		0			// Dumps all the data to the log - LOG_DATA must also be set
 
 #define Sleep_Time	20
 
@@ -58,57 +56,66 @@
             #define XTRACE(id, x, y, msg)
         #endif /* USE_IOL */
     #endif /* USE_ELG */
-    #if LOG_DATA
-        #define LogData(D, C, b)	USBLogData((UInt8)D, (UInt32)C, (char *)b)
-    #else /* not LOG_DATA */
-        #define LogData(D, C, b)
-    #endif /* LOG_DATA */
 #else /* not LDEBUG */
     #define XTRACE(id, x, y, msg)
-    #define LogData(D, C, b)
     #undef USE_ELG
     #undef USE_IOL
-    #undef LOG_DATA
 #endif /* LDEBUG */
 
 #define ALERT(A,B,STRING)	IOLog("%8x %8x " DEBUG_NAME ": " STRING "\n", (unsigned int)(A), (unsigned int)(B))
 
+    // Miscellaneous
+
+#define kDeviceSelfPowered	1
+    
 enum
 {
-    kDataIn 			= 0,
-    kDataOut,
-    kDataOther
+    kCDCPowerOffState	= 0,
+    kCDCPowerOnState	= 1,
+    kNumCDCStates	= 2
 };
 
-    // USB CDC ACM Defintions (we're including these for now)
-	
-#define kUSBbRxCarrier			0x01			// Carrier Detect
-#define kUSBDCD				kUSBbRxCarrier
-#define kUSBbTxCarrier			0x02			// Data Set Ready
-#define kUSBDSR				kUSBbTxCarrier
-#define kUSBbBreak			0x04
-#define kUSBbRingSignal			0x08
-#define kUSBbFraming			0x10
-#define kUSBbParity			0x20
-#define kUSBbOverRun			0x40
+	/* AppleUSBCDCWCM.h - This file contains the class definition for the		*/
+	/* USB Communication Device Class (CDC) WMC driver. 				*/
 
-#define kDTROff				0
-#define kRTSOff				0
-#define kDTROn				1
-#define kRTSOn				2
-	
-typedef struct
-{	
-    UInt32	dwDTERate;
-    UInt8	bCharFormat;
-    UInt8	bParityType;
-    UInt8	bDataBits;
-} LineCoding;
-	
-#define dwDTERateOffset	0
+class AppleUSBCDCWCM : public IOService
+{
+    OSDeclareDefaultStructors(AppleUSBCDCWCM);			// Constructor & Destructor stuff
 
-#define wValueOffset	2
-#define wIndexOffset	4
-#define wLengthOffset	6
+private:
+    bool			fTerminate;				// Are we being terminated (ie the device was unplugged)
+    bool			fStopping;				// Are we being "stopped"
+    UInt8			fPowerState;				// Ordinal for power management
+    UInt8			fSubClass;				// Interface subclass
+    UInt8			fInterfaceNumber;			// My interface number
+	UInt16			fControlLen;			// Subordinate interface length
+	UInt8			*fControlMap;			// Subordinate interface numbers
 
+public:
+
+    IOUSBInterface		*fInterface;
+
+        // IOKit methods:
+		
+	virtual IOService   *probe(IOService *provider, SInt32 *score);
+    virtual bool		start(IOService *provider);
+    virtual void		stop(IOService *provider);
+    virtual IOReturn 		message(UInt32 type, IOService *provider, void *argument = 0);
+												
+        // CDC WMC Control Driver Methods
+	
+    bool			configureWHCM(void);
+    bool 			configureDevice(void);
+    bool			getFunctionalDescriptors(void);
+    bool 			allocateResources(void);
+    void			releaseResources(void);
+    void                        resetLogicalHandset(void);
+    
+        // Power Manager Methods
+        
+    bool			initForPM(IOService *provider);
+    unsigned long		initialPowerStateForDomainState(IOPMPowerFlags flags);
+    IOReturn			setPowerState(unsigned long powerStateOrdinal, IOService *whatDevice);
+
+}; /* end class AppleUSBCDCWCM */
 #endif

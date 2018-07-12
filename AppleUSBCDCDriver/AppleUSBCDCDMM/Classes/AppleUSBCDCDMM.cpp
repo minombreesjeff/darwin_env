@@ -1,29 +1,29 @@
 /*
- * Copyright (c) 1998-2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.2 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1998-2004 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  
- * Please see the License for the specific language governing rights and 
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
 
-    /* AppleUSBCDCWMCData.cpp - MacOSX implementation of	*/
-    /* USB Communication Device Class (CDC) Driver.		*/
-    /* Wireless Mobile Communication (WMC) Device.		*/
-    /* Data Interface.						*/
+    /* AppleUSBCDCDMM.cpp - MacOSX implementation of		*/
+    /* USB Communication Device Class (CDC) Driver, DMM Interface.	*/
 
 #include <machine/limits.h>			/* UINT_MAX */
 #include <libkern/OSByteOrder.h>
@@ -51,10 +51,9 @@
 
 #include <UserNotification/KUNCUserNotifications.h>
 
-#define DEBUG_NAME "AppleUSBCDCWMCData"
+#define DEBUG_NAME "AppleUSBCDCDMM"
 
-#include "AppleUSBCDCWMC.h"
-#include "AppleUSBCDCWMCData.h"
+#include "AppleUSBCDCDMM.h"
 
 #define MIN_BAUD (50 << 1)
 
@@ -64,16 +63,14 @@
     com_apple_iokit_XTrace	*gXTrace = 0;
 #endif
 
-AppleUSBCDCWMCControl		*gControlDriver = NULL;			// Our Control driver
-
 #define super IOSerialDriverSync
 
-OSDefineMetaClassAndStructors(AppleUSBCDCWMCData, IOSerialDriverSync);
+OSDefineMetaClassAndStructors(AppleUSBCDCDMM, IOSerialDriverSync);
 
 #if USE_ELG
 /****************************************************************************************************/
 //
-//		Function:	findKernelLogger
+//		Function:	findKernelLoggerDM
 //
 //		Inputs:		
 //
@@ -83,7 +80,7 @@ OSDefineMetaClassAndStructors(AppleUSBCDCWMCData, IOSerialDriverSync);
 //
 /****************************************************************************************************/
 
-IOReturn findKernelLogger()
+IOReturn findKernelLoggerDM()
 {
     OSIterator		*iterator = NULL;
     OSDictionary	*matchingDictionary = NULL;
@@ -95,7 +92,7 @@ IOReturn findKernelLogger()
     if (!matchingDictionary)
     {
         error = kIOReturnError;
-        IOLog(DEBUG_NAME "[FindKernelLogger] Couldn't create a matching dictionary.\n");
+        IOLog(DEBUG_NAME "[findKernelLoggerDM] Couldn't create a matching dictionary.\n");
         goto exit;
     }
 	
@@ -105,17 +102,17 @@ IOReturn findKernelLogger()
     if (!iterator)
     {
         error = kIOReturnError;
-        IOLog(DEBUG_NAME "[FindKernelLogger] No XTrace logger found.\n");
+        IOLog(DEBUG_NAME "[findKernelLoggerDM] No XTrace logger found.\n");
         goto exit;
     }
 	
-	// User iterator to find each com_apple_iokit_XTrace instance. There should be only one, so we
+	// Use iterator to find each com_apple_iokit_XTrace instance. There should be only one, so we
 	// won't iterate
 	
     gXTrace = (com_apple_iokit_XTrace*)iterator->getNextObject();
     if (gXTrace)
     {
-        IOLog(DEBUG_NAME "[FindKernelLogger] Found XTrace logger at %p.\n", gXTrace);
+        IOLog(DEBUG_NAME "[findKernelLoggerDM] Found XTrace logger at %p.\n", gXTrace);
     }
 	
 exit:
@@ -123,7 +120,7 @@ exit:
     if (error != kIOReturnSuccess)
     {
         gXTrace = NULL;
-        IOLog(DEBUG_NAME "[FindKernelLogger] Could not find a logger instance. Error = %X.\n", error);
+        IOLog(DEBUG_NAME "[findKernelLoggerDM] Could not find a logger instance. Error = %X.\n", error);
     }
 	
     if (matchingDictionary)
@@ -134,7 +131,7 @@ exit:
 		
     return error;
     
-}/* end findKernelLogger */
+}/* end findKernelLoggerDM */
 #endif
 
 #if LOG_DATA
@@ -157,7 +154,7 @@ exit:
 //
 /****************************************************************************************************/
 
-void USBLogData(UInt8 Dir, UInt32 Count, char *buf)
+void AppleUSBCDCDMM::USBLogData(UInt8 Dir, UInt32 Count, char *buf)
 {    
     SInt32	wlen;
 #if USE_ELG
@@ -176,21 +173,21 @@ void USBLogData(UInt8 Dir, UInt32 Count, char *buf)
 #if USE_ELG
             XTRACE2(this, buf, Count, "USBLogData - Read Complete, address, size");
 #else
-            IOLog( "AppleUSBCDCWMCData: USBLogData - Read Complete, address = %8x, size = %8d\n", (UInt)buf, (UInt)Count );
+            IOLog( "AppleUSBCDCDMM: USBLogData - Read Complete, address = %8x, size = %8d\n", (UInt)buf, (UInt)Count );
 #endif
             break;
         case kDataOut:
 #if USE_ELG
             XTRACE2(this, buf, Count, "USBLogData - Write, address, size");
 #else
-            IOLog( "AppleUSBCDCWMCData: USBLogData - Write, address = %8x, size = %8d\n", (UInt)buf, (UInt)Count );
+            IOLog( "AppleUSBCDCDMM: USBLogData - Write, address = %8x, size = %8d\n", (UInt)buf, (UInt)Count );
 #endif
             break;
         case kDataOther:
 #if USE_ELG
             XTRACE2(this, buf, Count, "USBLogData - Other, address, size");
 #else
-            IOLog( "AppleUSBCDCWMCData: USBLogData - Other, address = %8x, size = %8d\n", (UInt)buf, (UInt)Count );
+            IOLog( "AppleUSBCDCDMM: USBLogData - Other, address = %8x, size = %8d\n", (UInt)buf, (UInt)Count );
 #endif
             break;
     }
@@ -211,7 +208,7 @@ void USBLogData(UInt8 Dir, UInt32 Count, char *buf)
 #if USE_ELG
         XTRACE2(this, 0, Count, "USBLogData - No data, Count=0");
 #else
-        IOLog( "AppleUSBCDCWMCData: USBLogData - No data, Count=0\n" );
+        IOLog( "AppleUSBCDCDMM: USBLogData - No data, Count=0\n" );
 #endif
         return;
     }
@@ -285,135 +282,6 @@ void USBLogData(UInt8 Dir, UInt32 Count, char *buf)
 
 /****************************************************************************************************/
 //
-//		Function:	findCDCDriver
-//
-//		Inputs:		me - my address
-//				dataInterfaceNum - the data interface number
-//
-//		Outputs:	
-//
-//		Desc:		Finds the initiating CDC driver and confirms the interface number
-//
-/****************************************************************************************************/
-
-IOReturn findCDCDriver(void *me, UInt8 dataInterfaceNum)
-{
-    AppleUSBCDC		*CDCDriver = NULL;
-    bool		driverOK = false;
-    OSIterator		*iterator = NULL;
-    OSDictionary	*matchingDictionary = NULL;
-    
-    XTRACE(me, 0, 0, "findCDCDriver");
-        
-        // Get matching dictionary
-       	
-    matchingDictionary = IOService::serviceMatching("AppleUSBCDC");
-    if (!matchingDictionary)
-    {
-        XTRACE(me, 0, 0, "findCDCDriver - Couldn't create a matching dictionary");
-        return kIOReturnError;
-    }
-    
-	// Get an iterator
-	
-    iterator = IOService::getMatchingServices(matchingDictionary);
-    if (!iterator)
-    {
-        XTRACE(me, 0, 0, "findCDCDriver - No AppleUSBCDC driver found!");
-        matchingDictionary->release();
-        return kIOReturnError;
-    }
-    
-	// Use iterator to find driver (there's only one so we won't bother to iterate)
-                
-    CDCDriver = (AppleUSBCDC *)iterator->getNextObject();
-    if (CDCDriver)
-    {
-        driverOK = CDCDriver->confirmDriver(kUSBWirelessHandsetControlModel, dataInterfaceNum);
-    }
-
-    matchingDictionary->release();
-    iterator->release();
-   
-    if (!driverOK)
-    {
-        XTRACE(me, kUSBAbstractControlModel, dataInterfaceNum, "findCDCDriver - Not my interface");
-        return kIOReturnError;
-    }
-
-    return kIOReturnSuccess;
-    
-}/* end findCDCDriver */
-
-/****************************************************************************************************/
-//
-//		Function:	findControlDriver
-//
-//		Inputs:		me - my address
-//
-//		Outputs:	
-//
-//		Desc:		Finds our matching control driver
-//
-/****************************************************************************************************/
-
-IOReturn findControlDriver(void *me)
-{
-    AppleUSBCDCWMCControl	*tempDriver = NULL;
-    OSIterator			*iterator = NULL;
-    OSDictionary		*matchingDictionary = NULL;
-    
-    XTRACE(me, 0, 0, "findControlDriver");
-    
-        // Get matching dictionary
-       	
-    matchingDictionary = IOService::serviceMatching("AppleUSBCDCWMCControl");
-    if (!matchingDictionary)
-    {
-        XTRACE(me, 0, 0, "findControlDriver - Couldn't create a matching dictionary");
-        return kIOReturnError;
-    }
-    
-	// Get an iterator
-	
-    iterator = IOService::getMatchingServices(matchingDictionary);
-    if (!iterator)
-    {
-        XTRACE(me, 0, 0, "findControlDriver - No AppleUSBCDCWMCControl drivers found (iterator)");
-        matchingDictionary->release();
-        return kIOReturnError;
-    }
-    
-	// Iterate until we find our matching driver
-                
-    tempDriver = (AppleUSBCDCWMCControl *)iterator->getNextObject();
-    while (tempDriver)
-    {
-        XTRACE(me, 0, tempDriver, "findControlDriver - Control driver candidate");
-        if (tempDriver->checkInterfaceNumber((AppleUSBCDCWMCData *)me))
-        {
-            XTRACE(me, 0, tempDriver, "findControlDriver - Found our control driver");
-            gControlDriver = tempDriver;
-            break;
-        }
-        tempDriver = (AppleUSBCDCWMCControl *)iterator->getNextObject();
-    }
-
-    matchingDictionary->release();
-    iterator->release();
-   
-    if (!gControlDriver)
-    {
-        XTRACE(me, 0, 0, "findControlDriver - Failed");
-        return kIOReturnError;
-    }
-
-    return kIOReturnSuccess;
-    
-}/* end findControlDriver */
-
-/****************************************************************************************************/
-//
 //		Method:		AddBytetoQueue
 //
 //		Inputs:		Queue - the queue to be added to
@@ -428,7 +296,7 @@ IOReturn findControlDriver(void *me)
 //
 /****************************************************************************************************/
 
-QueueStatus AppleUSBCDCWMCData::AddBytetoQueue(CirQueue *Queue, char Value)
+QueueStatus AppleUSBCDCDMM::AddBytetoQueue(CirQueue *Queue, char Value)
 {
     
     if ((Queue->NextChar == Queue->LastChar) && Queue->InQueue)
@@ -461,7 +329,7 @@ QueueStatus AppleUSBCDCWMCData::AddBytetoQueue(CirQueue *Queue, char Value)
 //
 /****************************************************************************************************/
 
-QueueStatus AppleUSBCDCWMCData::GetBytetoQueue(CirQueue *Queue, UInt8 *Value)
+QueueStatus AppleUSBCDCDMM::GetBytetoQueue(CirQueue *Queue, UInt8 *Value)
 {
     
     if ((Queue->NextChar == Queue->LastChar) && !Queue->InQueue)
@@ -495,7 +363,7 @@ QueueStatus AppleUSBCDCWMCData::GetBytetoQueue(CirQueue *Queue, UInt8 *Value)
 //
 /****************************************************************************************************/
 
-QueueStatus AppleUSBCDCWMCData::InitQueue(CirQueue *Queue, UInt8 *Buffer, size_t Size)
+QueueStatus AppleUSBCDCDMM::InitQueue(CirQueue *Queue, UInt8 *Buffer, size_t Size)
 {
     Queue->Start	= Buffer;
     Queue->End		= (UInt8*)((size_t)Buffer + Size);
@@ -522,7 +390,7 @@ QueueStatus AppleUSBCDCWMCData::InitQueue(CirQueue *Queue, UInt8 *Buffer, size_t
 //
 /****************************************************************************************************/
 
-QueueStatus AppleUSBCDCWMCData::CloseQueue(CirQueue *Queue)
+QueueStatus AppleUSBCDCDMM::CloseQueue(CirQueue *Queue)
 {
 
     Queue->Start	= 0;
@@ -549,7 +417,7 @@ QueueStatus AppleUSBCDCWMCData::CloseQueue(CirQueue *Queue)
 //
 /****************************************************************************************************/
 
-size_t AppleUSBCDCWMCData::AddtoQueue(CirQueue *Queue, UInt8 *Buffer, size_t Size)
+size_t AppleUSBCDCDMM::AddtoQueue(CirQueue *Queue, UInt8 *Buffer, size_t Size)
 {
     size_t	BytesWritten = 0;
 
@@ -577,7 +445,7 @@ size_t AppleUSBCDCWMCData::AddtoQueue(CirQueue *Queue, UInt8 *Buffer, size_t Siz
 //
 /****************************************************************************************************/
 
-size_t AppleUSBCDCWMCData::RemovefromQueue(CirQueue *Queue, UInt8 *Buffer, size_t MaxSize)
+size_t AppleUSBCDCDMM::RemovefromQueue(CirQueue *Queue, UInt8 *Buffer, size_t MaxSize)
 {
     size_t	BytesReceived = 0;
     UInt8	Value;
@@ -605,7 +473,7 @@ size_t AppleUSBCDCWMCData::RemovefromQueue(CirQueue *Queue, UInt8 *Buffer, size_
 //
 /****************************************************************************************************/
 
-size_t AppleUSBCDCWMCData::FreeSpaceinQueue(CirQueue *Queue)
+size_t AppleUSBCDCDMM::FreeSpaceinQueue(CirQueue *Queue)
 {
     size_t	retVal = 0;
     
@@ -627,7 +495,7 @@ size_t AppleUSBCDCWMCData::FreeSpaceinQueue(CirQueue *Queue)
 //
 /****************************************************************************************************/
 
-size_t AppleUSBCDCWMCData::UsedSpaceinQueue(CirQueue *Queue)
+size_t AppleUSBCDCDMM::UsedSpaceinQueue(CirQueue *Queue)
 {
     return Queue->InQueue;
 	
@@ -645,7 +513,7 @@ size_t AppleUSBCDCWMCData::UsedSpaceinQueue(CirQueue *Queue)
 //
 /****************************************************************************************************/
 
-size_t AppleUSBCDCWMCData::GetQueueSize(CirQueue *Queue)
+size_t AppleUSBCDCDMM::GetQueueSize(CirQueue *Queue)
 {
     return Queue->Size;
 	
@@ -663,7 +531,7 @@ size_t AppleUSBCDCWMCData::GetQueueSize(CirQueue *Queue)
 //
 /****************************************************************************************************/
 
-QueueStatus AppleUSBCDCWMCData::GetQueueStatus(CirQueue *Queue)
+QueueStatus AppleUSBCDCDMM::GetQueueStatus(CirQueue *Queue)
 {
     if ((Queue->NextChar == Queue->LastChar) && Queue->InQueue)
         return queueFull;
@@ -673,6 +541,55 @@ QueueStatus AppleUSBCDCWMCData::GetQueueStatus(CirQueue *Queue)
     return queueNoError ;
 	
 }/* end GetQueueStatus */
+
+/****************************************************************************************************/
+//
+//		Method:		isCRinQueue
+//
+//		Inputs:		Queue - the queue to be looked at
+//
+//		Outputs:	return code - number of bytes
+//
+//		Desc:		Is there a cr in the queue.
+//
+/****************************************************************************************************/
+
+UInt16 AppleUSBCDCDMM::isCRinQueue(CirQueue *Queue)
+{
+    UInt8	*last;
+	bool	done = false;
+	UInt16  i = 1;
+	
+	if ((Queue->NextChar == Queue->LastChar) && !Queue->InQueue)
+    {
+        return 0;
+    }
+	
+	last = Queue->LastChar;
+	
+	while (!done)
+	{
+		if (*last == 0x0D)
+		{
+			done = true;
+		} else {
+			last++;
+			i++;
+			if (last >= Queue->End)
+			{
+				last = Queue->Start;
+			}
+			if (last == Queue->NextChar)
+			{
+				i = 0;
+				done = true;
+			}
+		}
+	}
+
+    return i;
+	
+}/* end isCRinQueue */
 
 /****************************************************************************************************/
 //
@@ -687,7 +604,7 @@ QueueStatus AppleUSBCDCWMCData::GetQueueStatus(CirQueue *Queue)
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::CheckQueues()
+void AppleUSBCDCDMM::CheckQueues()
 {
     unsigned long	Used;
     unsigned long	Free;
@@ -768,176 +685,180 @@ void AppleUSBCDCWMCData::CheckQueues()
 	
 }/* end CheckQueues */
 
-
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::dataReadComplete
+//		Method:		AppleUSBCDCDMM::intReadComplete
 //
 //		Inputs:		obj - me
-//				param - the buffer pool pointer
 //				rc - return code
 //				remaining - what's left
 //
 //		Outputs:	None
 //
-//		Desc:		BulkIn pipe read completion routine
+//		Desc:		Interrupt pipe (DMM interface) read completion routine
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::dataReadComplete(void *obj, void *param, IOReturn rc, UInt32 remaining)
+void AppleUSBCDCDMM::intReadComplete(void *obj, void *param, IOReturn rc, UInt32 remaining)
 {
-    AppleUSBCDCWMCData	*me = (AppleUSBCDCWMCData *)obj;
-    pipeBuffers		*buffs = (pipeBuffers *)param;
-    IOReturn		ior;
-    size_t		length;
+    AppleUSBCDCDMM	*me = (AppleUSBCDCDMM*)obj;
+    IOReturn			ior;
+    UInt32			dLen;
     
-    XTRACE(me, rc, 0, "dataReadComplete");
+    XTRACE(me, rc, 0, "intReadComplete");
     
     if (me->fStopping)
         return;
 
-    if (rc == kIOReturnSuccess)				// If operation returned ok
+    if (rc == kIOReturnSuccess)					// If operation returned ok
     {
-        length = DATA_BUFF_SIZE - remaining;
-        XTRACE(me, me->fPort.State, length, "dataReadComplete - data length");
+        dLen = me->fIntBufferSize - remaining;
+        XTRACE(me, me->fIntPipeBuffer[1], dLen, "intReadComplete - Notification and length");
 		
-        LogData(kDataIn, length, buffs->pipeBuffer);
-	
-            // Move the incoming bytes to the ring buffer
-            
-        me->AddtoQueue(&me->fPort.RX, buffs->pipeBuffer, length);
-        
-        me->CheckQueues();
-        
-    } else {
-        XTRACE(me, 0, rc, "dataReadComplete - error");
-        if (rc != kIOReturnAborted)
+            // Now look at the notification
+		
+        if (me->fIntPipeBuffer[1] == kUSBRESPONSE_AVAILABLE)
         {
-            rc = me->checkPipe(me->fPort.InPipe, false);
-            if (rc != kIOReturnSuccess)
-            {
-                XTRACE(me, 0, rc, "dataReadComplete - clear stall failed (trying to continue)");
-            }
-        }
-    }
+			rc = me->sendMERRequest(kUSBGET_ENCAPSULATED_RESPONSE, 0, me->fMax_Command, me->fInBuffer, &me->fRspCompletionInfo);
+			if (rc != kIOReturnSuccess)
+			{
+				XTRACE(me, 0, rc, "intReadComplete - sendMERRequest failed");
+			}
+		}
+    } else {
+        XTRACE(me, 0, rc, "intReadComplete - error");
+	}
     
         // Queue the next read only if not aborted
 	
     if (rc != kIOReturnAborted)
     {
-        ior = me->fPort.InPipe->Read(buffs->pipeMDP, &buffs->completionInfo, NULL);
+        ior = me->fIntPipe->Read(me->fIntPipeMDP, &me->fIntCompletionInfo, NULL);
         if (ior != kIOReturnSuccess)
         {
-            XTRACE(me, 0, rc, "dataReadComplete - Read io err");
+            XTRACE(me, 0, rc, "intReadComplete - Read io error");
+			me->fReadDead = true;
         }
-    }
+    } else {
+		me->fReadDead = true;
+	}
 	
-}/* end dataReadComplete */
+}/* end intReadComplete */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::dataWriteComplete
+//		Method:		AppleUSBCDCDMM::merWriteComplete
 //
 //		Inputs:		obj - me
-//				param - the buffer pool pointer
+//				param - MER 
 //				rc - return code
 //				remaining - what's left
 //
 //		Outputs:	None
 //
-//		Desc:		BulkOut pipe write completion routine
+//		Desc:		Management Element Request write completion routine
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::dataWriteComplete(void *obj, void *param, IOReturn rc, UInt32 remaining)
+void AppleUSBCDCDMM::merWriteComplete(void *obj, void *param, IOReturn rc, UInt32 remaining)
 {
-    AppleUSBCDCWMCData	*me = (AppleUSBCDCWMCData *)obj;
-    pipeBuffers		*buffs = (pipeBuffers *)param;
-    SInt32		dLen;
-    UInt16		i;
-    bool		busy = false;
+//	AppleUSBCDCDMM	*me = (AppleUSBCDCDMM*)obj;
+    IOUSBDevRequest		*MER = (IOUSBDevRequest *)param;
+    UInt16			dataLen;
     
-    XTRACE(me, rc, 0, "dataWriteComplete");
-    
-    if (me->fStopping)
-        return;
-
-    if (rc == kIOReturnSuccess)
-    {	
-        dLen = buffs->count - remaining;
-        XTRACE(me, 0, dLen, "dataWriteComplete - data length");
-        if (dLen > 0)						// Check if it was a zero length write
+    XTRACE(0, 0, remaining, "merWriteComplete");
+        
+    if (MER)
+    {
+        if (rc == kIOReturnSuccess)
         {
-            if ((dLen % me->fPort.OutPacketSize) == 0)		// If it was a multiple of max packet size then we need to do a zero length write
-            {
-                XTRACE(me, rc, dLen, "dataWriteComplete - writing zero length packet");
-                buffs->count = 0;
-                buffs->pipeMDP->setLength(0);
-                
-                me->fPort.OutPipe->Write(buffs->pipeMDP, &buffs->completionInfo);
-                return;
-            } else {
-                buffs->avail = true;
-            }
+            XTRACE(me, MER->bRequest, remaining, "merWriteComplete - request");
         } else {
-            buffs->avail = true;
+            XTRACE(me, MER->bRequest, rc, "merWriteComplete - io err");
         }
-
-        me->CheckQueues();
-
-             // If any of the buffers are unavailable then we're still busy
-
-        for (i=0; i<me->fOutBufPool; i++)
+		
+        dataLen = MER->wLength;
+        XTRACE(me, 0, dataLen, "merWriteComplete - data length");
+        if ((dataLen != 0) && (MER->pData))
         {
-            if (!me->fPort.outPool[i].avail)
-            {
-                busy = true;
-                break;
-            }
+            IOFree(MER->pData, dataLen);
         }
-
-        if (!busy)
-        {
-            me->setStateGated(0, PD_S_TX_BUSY);
-        }
-
-        me->setUpTransmit();						// just to keep it going??
-
+        IOFree(MER, sizeof(IOUSBDevRequest));
+		
     } else {
-        XTRACE(me, 0, rc, "dataWriteComplete - io error");
-        if (rc != kIOReturnAborted)
+        if (rc == kIOReturnSuccess)
         {
-            rc = me->checkPipe(me->fPort.OutPipe, false);
-            if (rc != kIOReturnSuccess)
-            {
-                XTRACE(me, 0, rc, "dataWriteComplete - clear stall failed (trying to continue)");
-            }
-        }
-        
-        buffs->avail = true;
-        
-             // If any of the buffers are unavailable then we're still busy
-
-        for (i=0; i<me->fOutBufPool; i++)
-        {
-            if (!me->fPort.outPool[i].avail)
-            {
-                busy = true;
-                break;
-            }
-        }
-
-        if (!busy)
-        {
-            me->setStateGated(0, PD_S_TX_BUSY);
+            XTRACE(me, 0, remaining, "merWriteComplete (request unknown)");
+        } else {
+            XTRACE(me, 0, rc, "merWriteComplete (request unknown) - io err");
         }
     }
 	
-}/* end dataWriteComplete */
+}/* end merWriteComplete */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::probe
+//		Method:		AppleUSBCDCDMM::rspComplete
+//
+//		Inputs:		obj - me
+//				param - MER 
+//				rc - return code
+//				remaining - what's left
+//
+//		Outputs:	None
+//
+//		Desc:		Encapsulated response (MER) completion routine
+//
+/****************************************************************************************************/
+
+void AppleUSBCDCDMM::rspComplete(void *obj, void *param, IOReturn rc, UInt32 remaining)
+{
+	AppleUSBCDCDMM  *me = (AppleUSBCDCDMM*)obj;
+    IOUSBDevRequest *MER = (IOUSBDevRequest *)param;
+    UInt16			dataLen;
+    
+    XTRACE(me, 0, remaining, "rspComplete");
+        
+    if (MER)
+    {
+		dataLen = MER->wLength;
+        if (rc == kIOReturnSuccess)
+        {
+			XTRACE(me, MER->bRequest, dataLen, "rspComplete - request and data length");
+			if ((MER->bRequest == kUSBGET_ENCAPSULATED_RESPONSE) && (dataLen > 0))
+			{
+				meLogData(kDataIn, dataLen, MER->pData);
+	
+					// Move the incoming bytes to the ring buffer
+            
+				me->AddtoQueue(&me->fPort.RX, (UInt8 *)MER->pData, dataLen);
+        
+				me->CheckQueues();
+			}
+        } else {
+            XTRACE(me, MER->bRequest, rc, "rspComplete - io err");
+        }
+		
+        if ((dataLen != 0) && (MER->pData))
+        {
+            IOFree(MER->pData, dataLen);
+        }
+        IOFree(MER, sizeof(IOUSBDevRequest));
+		
+    } else {
+        if (rc == kIOReturnSuccess)
+        {
+            XTRACE(me, 0, remaining, "rspComplete (request unknown)");
+        } else {
+            XTRACE(me, 0, rc, "rspComplete (request unknown) - io err");
+        }
+    }
+	
+}/* end rspComplete */
+
+/****************************************************************************************************/
+//
+//		Method:		AppleUSBCDCDMM::probe
 //
 //		Inputs:		provider - my provider
 //
@@ -947,7 +868,7 @@ void AppleUSBCDCWMCData::dataWriteComplete(void *obj, void *param, IOReturn rc, 
 //
 /****************************************************************************************************/
 
-IOService* AppleUSBCDCWMCData::probe( IOService *provider, SInt32 *score )
+IOService* AppleUSBCDCDMM::probe( IOService *provider, SInt32 *score )
 { 
     IOService   *res;
 	
@@ -957,61 +878,57 @@ IOService* AppleUSBCDCWMCData::probe( IOService *provider, SInt32 *score )
     OSBoolean *boolObj = OSDynamicCast(OSBoolean, provider->getProperty("kDoNotClassMatchThisInterface"));
     if (boolObj && boolObj->isTrue())
     {
-        ALERT(0, 0, "probe - provider doesn't want us to match");
+        XTRACE(this, 0, 0, "probe - provider doesn't want us to match");
         return NULL;
     }
 
     res = super::probe(provider, score);
     
-//    return res;
-	return NULL;
+    return res;
     
 }/* end probe */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::start
+//		Method:		AppleUSBCDCDMM::start
 //
 //		Inputs:		provider - my provider
 //
 //		Outputs:	Return code - true (it's me), false (sorry it probably was me, but I can't configure it)
 //
-//		Desc:		This is called once it has beed determined I'm probably the best 
+//		Desc:		This is called once it has been determined I'm probably the best 
 //				driver for this device.
 //
 /****************************************************************************************************/
 
-bool AppleUSBCDCWMCData::start(IOService *provider)
+bool AppleUSBCDCDMM::start(IOService *provider)
 {
-    OSNumber	*bufNumber = NULL;
-    UInt16	bufValue = 0;
-    
-    XTRACE(this, 0, provider, "start - provider.");
-    
-    return false;
-    
-    gControlDriver = NULL;
     
     fSessions = 0;
     fTerminate = false;
     fStopping = false;
+    fWorkLoop = NULL;
+	fMax_Command = 256;
+	fIntBufferSize = INT_BUFF_SIZE;
     
     initStructure();
     
 #if USE_ELG
     XTraceLogInfo	*logInfo;
     
-    findKernelLogger();
+    findKernelLoggerDM();
     if (gXTrace)
     {
         gXTrace->retain();		// don't let it unload ...
         XTRACE(this, 0, 0xbeefbeef, "Hello from start");
         logInfo = gXTrace->LogGetInfo();
-        IOLog("AppleUSBCDCWMCData: start - Log is at %x\n", (unsigned int)logInfo);
+        IOLog("AppleUSBCDCDMM: start - Log is at %x\n", (unsigned int)logInfo);
     } else {
         return false;
     }
 #endif
+
+    XTRACE(this, 0, provider, "start - provider.");
     
     if(!super::start(provider))
     {
@@ -1021,21 +938,13 @@ bool AppleUSBCDCWMCData::start(IOService *provider)
 
 	// Get my USB provider - the interface
 
-    fDataInterface = OSDynamicCast(IOUSBInterface, provider);
-    if(!fDataInterface)
+    fInterface = OSDynamicCast(IOUSBInterface, provider);
+    if(!fInterface)
     {
         ALERT(0, 0, "start - provider invalid");
         return false;
     }
-
-    fPort.DataInterfaceNumber = fDataInterface->GetInterfaceNumber();
-    
-    if (findCDCDriver(this, fPort.DataInterfaceNumber) != kIOReturnSuccess)
-    {
-        XTRACE(this, 0, 0, "start - Find CDC driver failed");
-        return false;
-    }
-    
+	
         // get workloop
         
     fWorkLoop = getWorkLoop();
@@ -1057,47 +966,10 @@ bool AppleUSBCDCWMCData::start(IOService *provider)
         ALERT(0, 0, "start - addEventSource(commandGate) failed");
         return false;
     }
-    
-         // Set up the values for the input buffer pool
-    
-    bufNumber = (OSNumber *)getProperty(inputTag);
-    if (bufNumber)
+	
+	if (!configureDMM())
     {
-        bufValue = bufNumber->unsigned16BitValue();
-        XTRACE(this, 0, bufValue, "start - Number of input buffers requested");
-        if (bufValue <= kMaxInBufPool)
-        {
-            fInBufPool = bufValue;
-        } else {
-            fInBufPool = kMaxInBufPool;
-        }
-    } else {
-        fInBufPool = kInBufPool;
-    }
-    
-        // Set up the values for the output buffer pool
-    
-    bufNumber = NULL;
-    bufNumber = (OSNumber *)getProperty(outputTag);
-    if (bufNumber)
-    {
-        bufValue = bufNumber->unsigned16BitValue();
-        XTRACE(this, 0, bufValue, "start - Number of output buffers requested");
-        if (bufValue <= kMaxOutBufPool)
-        {
-            fOutBufPool = bufValue;
-        } else {
-            fOutBufPool = kMaxOutBufPool;
-        }
-    } else {
-        fOutBufPool = kOutBufPool;
-    }
-    
-    XTRACE(this, fInBufPool, fOutBufPool, "start - Buffer pools (input, output)");
-
-    if (!createSerialStream())					// Publish SerialStream services
-    {
-        ALERT(0, 0, "start - createSerialStream failed");
+        ALERT(0, 0, "start - configureDMM failed");
         return false;
     }
     
@@ -1106,14 +978,21 @@ bool AppleUSBCDCWMCData::start(IOService *provider)
         ALERT(0, 0, "start - allocateResources failed");
         return false;
     }
-        
+	
+	if (!createSerialStream())					// Publish SerialStream services
+    {
+        ALERT(0, 0, "start - createSerialStream failed");
+        return false;
+    }
+            
         // Looks like we're ok
     
-    fDataInterface->retain();
+    fInterface->retain();
     fWorkLoop->retain();
     fCommandGate->enable();
-        
+
     XTRACE(this, 0, 0, "start - successful and IOModemSerialStreamSync created");
+	IOLog(DEBUG_NAME ": Version number - %s\n", VersionNumber);
     
     return true;
     	
@@ -1121,7 +1000,7 @@ bool AppleUSBCDCWMCData::start(IOService *provider)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::stop
+//		Method:		AppleUSBCDCDMM::stop
 //
 //		Inputs:		provider - my provider
 //
@@ -1131,7 +1010,7 @@ bool AppleUSBCDCWMCData::start(IOService *provider)
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::stop(IOService *provider)
+void AppleUSBCDCDMM::stop(IOService *provider)
 {
     IOReturn	ret;
     
@@ -1151,16 +1030,16 @@ void AppleUSBCDCWMCData::stop(IOService *provider)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::stopAction
+//		Method:		AppleUSBCDCDMM::stopAction
 //
 //		Desc:		Dummy pass through for stopGated.
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::stopAction(OSObject *owner, void *, void *, void *, void *)
+IOReturn AppleUSBCDCDMM::stopAction(OSObject *owner, void *, void *, void *, void *)
 {
 
-    ((AppleUSBCDCWMCData *)owner)->stopGated();
+    ((AppleUSBCDCDMM *)owner)->stopGated();
     
     return kIOReturnSuccess;
     
@@ -1168,7 +1047,7 @@ IOReturn AppleUSBCDCWMCData::stopAction(OSObject *owner, void *, void *, void *,
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::stopGated
+//		Method:		AppleUSBCDCDMM::stopGated
 //
 //		Inputs:		
 //
@@ -1178,7 +1057,7 @@ IOReturn AppleUSBCDCWMCData::stopAction(OSObject *owner, void *, void *, void *,
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::stopGated()
+void AppleUSBCDCDMM::stopGated()
 {
     
     XTRACE(this, 0, 0, "stopGated");
@@ -1189,7 +1068,103 @@ void AppleUSBCDCWMCData::stopGated()
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::createSuffix
+//		Method:		AppleUSBCDCDMM::configureDMM
+//
+//		Inputs:		
+//
+//		Outputs:	return Code - true (configured), false (not configured)
+//
+//		Desc:		Configures the Device Management Model interface etc.
+//
+/****************************************************************************************************/
+
+bool AppleUSBCDCDMM::configureDMM()
+{
+    
+    XTRACE(this, 0, 0, "configureDMM");
+    
+    fInterfaceNumber = fInterface->GetInterfaceNumber();
+    XTRACE(this, 0, fInterfaceNumber, "configureDMM - Interface number.");
+    	
+    if (!getFunctionalDescriptors())
+    {
+        XTRACE(this, 0, 0, "configureDMM - getFunctionalDescriptors failed");
+        return false;
+    }
+    
+    return true;
+
+}/* end configureDMM */
+
+/****************************************************************************************************/
+//
+//		Method:		AppleUSBCDCDMM::getFunctionalDescriptors
+//
+//		Inputs:		
+//
+//		Outputs:	return - true (descriptors ok), false (somethings not right or not supported)	
+//
+//		Desc:		Finds all the functional descriptors for the specific interface
+//
+/****************************************************************************************************/
+
+bool AppleUSBCDCDMM::getFunctionalDescriptors()
+{
+    bool				gotDescriptors = false;
+    UInt16				vers;
+    UInt16				*hdrVers;
+    const FunctionalDescriptorHeader 	*funcDesc = NULL;
+    HDRFunctionalDescriptor		*HDRFDesc;		// hearder functional descriptor
+    DMMFunctionalDescriptor		*DMMFDesc;		// device management functional descriptor
+       
+    XTRACE(this, 0, 0, "getFunctionalDescriptors");
+    
+        // Get the associated functional descriptors
+
+    do
+    {
+        (IOUSBDescriptorHeader*)funcDesc = fInterface->FindNextAssociatedDescriptor((void*)funcDesc, CS_INTERFACE);
+        if (!funcDesc)
+        {
+            gotDescriptors = true;				// We're done
+        } else {
+            switch (funcDesc->bDescriptorSubtype)
+            {
+                case Header_FunctionalDescriptor:
+                    (const FunctionalDescriptorHeader*)HDRFDesc = funcDesc;
+                    XTRACE(this, funcDesc->bDescriptorType, funcDesc->bDescriptorSubtype, "getFunctionalDescriptors - Header Functional Descriptor");
+                    hdrVers = (UInt16 *)&HDRFDesc->bcdCDC1;
+                    vers = USBToHostWord(*hdrVers);
+                    if (vers > kUSBRel11)
+                    {
+                        XTRACE(this, vers, kUSBRel11, "getFunctionalDescriptors - Header descriptor version number is incorrect");
+                    }
+                    break;
+				case DMM_FunctionalDescriptor:
+                    (const FunctionalDescriptorHeader*)DMMFDesc = funcDesc;
+                    XTRACE(this, funcDesc->bDescriptorType, funcDesc->bDescriptorSubtype, "getFunctionalDescriptors - ACM Functional Descriptor");
+                    fMax_Command = USBToHostWord(DMMFDesc->wMaxCommand);
+                    break;
+                case Union_FunctionalDescriptor:
+                    XTRACE(this, funcDesc->bDescriptorType, funcDesc->bDescriptorSubtype, "getFunctionalDescriptors - Union Functional Descriptor");
+					break;
+                case CS_FunctionalDescriptor:
+                    XTRACE(this, funcDesc->bDescriptorType, funcDesc->bDescriptorSubtype, "getFunctionalDescriptors - CS Functional Descriptor");
+                    break;
+                default:
+                    XTRACE(this, funcDesc->bDescriptorType, funcDesc->bDescriptorSubtype, "getFunctionalDescriptors - unknown Functional Descriptor");
+                    break;
+            }
+        }
+    } while (!gotDescriptors);
+    
+    return true;
+    
+}/* end getFunctionalDescriptors */
+
+/****************************************************************************************************/
+//
+//		Method:		AppleUSBCDCDMM::createSuffix
 //
 //		Inputs:		
 //
@@ -1207,7 +1182,7 @@ void AppleUSBCDCWMCData::stopGated()
 //
 /****************************************************************************************************/
 
-bool AppleUSBCDCWMCData::createSuffix(unsigned char *sufKey)
+bool AppleUSBCDCDMM::createSuffix(unsigned char *sufKey)
 {
     
     IOReturn	rc;
@@ -1221,12 +1196,12 @@ bool AppleUSBCDCWMCData::createSuffix(unsigned char *sufKey)
 	
     XTRACE(this, 0, 0, "createSuffix");
 	
-    indx = fDataInterface->GetDevice()->GetSerialNumberStringIndex();	
+    indx = fInterface->GetDevice()->GetSerialNumberStringIndex();	
     if (indx != 0)
     {	
             // Generate suffix key based on the serial number string (if reasonable <= 8 and > 0)	
 
-        rc = fDataInterface->GetDevice()->GetStringDescriptor(indx, (char *)&serBuf, sizeof(serBuf));
+        rc = fInterface->GetDevice()->GetStringDescriptor(indx, (char *)&serBuf, sizeof(serBuf));
         if (!rc)
         {
             if ((strlen((char *)&serBuf) < 9) && (strlen((char *)&serBuf) > 0))
@@ -1244,7 +1219,7 @@ bool AppleUSBCDCWMCData::createSuffix(unsigned char *sufKey)
     {
             // Generate suffix key based on the location property tag
 	
-        location = (OSNumber *)fDataInterface->GetDevice()->getProperty(kUSBDevicePropertyLocationID);
+        location = (OSNumber *)fInterface->GetDevice()->getProperty(kUSBDevicePropertyLocationID);
         if (location)
         {
             locVal = location->unsigned32BitValue();		
@@ -1263,14 +1238,14 @@ bool AppleUSBCDCWMCData::createSuffix(unsigned char *sufKey)
         }
     }
     
-        // Make it unique just in case there's more than one CDC configuration on this device
+        // Make it unique just in case there's more than one configuration on this device
     
     if (keyOK)
     {
-        sufKey[sig] = Asciify((UInt8)fPort.DataInterfaceNumber >> 4);
+        sufKey[sig] = Asciify((UInt8)fPort.InterfaceNumber >> 4);
         if (sufKey[sig] != '0')
             sig++;
-        sufKey[sig] = Asciify((UInt8)fPort.DataInterfaceNumber);
+        sufKey[sig] = Asciify((UInt8)fPort.InterfaceNumber);
         if (sufKey[sig] != '0')
             sig++;			
         sufKey[sig] = 0x00;
@@ -1282,7 +1257,7 @@ bool AppleUSBCDCWMCData::createSuffix(unsigned char *sufKey)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::createSerialStream
+//		Method:		AppleUSBCDCDMM::createSerialStream
 //
 //		Inputs:		
 //
@@ -1292,12 +1267,10 @@ bool AppleUSBCDCWMCData::createSuffix(unsigned char *sufKey)
 //
 /****************************************************************************************************/
 
-bool AppleUSBCDCWMCData::createSerialStream()
+bool AppleUSBCDCDMM::createSerialStream()
 {
     IOModemSerialStreamSync	*pNub = new IOModemSerialStreamSync;
     bool			ret;
-    UInt8			indx;
-    IOReturn			rc;
     unsigned char		rname[20];
     const char			*suffix = (const char *)&rname;
 	
@@ -1332,22 +1305,6 @@ bool AppleUSBCDCWMCData::createSerialStream()
     }
 
     pNub->registerService();
-	
-	// Save the Product String (at least the first productNameLength's worth).
-
-    indx = fDataInterface->GetDevice()->GetProductStringIndex();	
-    if (indx != 0)
-    {	
-        rc = fDataInterface->GetDevice()->GetStringDescriptor(indx, (char *)&fProductName, sizeof(fProductName));
-        if (!rc)
-        {
-            if (strlen((char *)fProductName) == 0)		// Believe it or not this sometimes happens - null string with an index defined???
-            {
-                strcpy((char *)fProductName, defaultName);
-            }
-            pNub->setProperty((const char *)propertyTag, (const char *)fProductName);
-        }
-    }
 
     return true;
 	
@@ -1355,7 +1312,7 @@ bool AppleUSBCDCWMCData::createSerialStream()
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::acquirePort
+//		Method:		AppleUSBCDCDMM::acquirePort
 //
 //		Inputs:		sleep - true (wait for it), false (don't)
 //				refCon - unused
@@ -1366,22 +1323,28 @@ bool AppleUSBCDCWMCData::createSerialStream()
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::acquirePort(bool sleep, void *refCon)
+IOReturn AppleUSBCDCDMM::acquirePort(bool sleep, void *refCon)
 {
-    IOReturn	ret;
+    IOReturn                ret;
     
     XTRACE(this, refCon, sleep, "acquirePort");
-    
-        // Find the matching control driver first (if we don't already have it)
-        
-    if (!gControlDriver)
+	
+		// Check for being acquired after stop has been issued and before start
+		
+	if (fTerminate || fStopping)
+	{
+		XTRACE(this, 0, 0, "acquirePort - Offline");
+		return kIOReturnOffline;
+	}
+	
+		// Make sure we have a valid workloop
+	
+	if (!fWorkLoop)
     {
-        if (findControlDriver(this) != kIOReturnSuccess)
-        {
-            XTRACE(this, 0, 0, "acquirePort - Cannot find control driver, trying to continue...");
-        }
+        XTRACE(this, 0, 0, "acquirePort - No workLoop");
+        return kIOReturnOffline;
     }
-      
+
     retain();
     ret = fCommandGate->runAction(acquirePortAction, (void *)sleep);
     release();
@@ -1392,22 +1355,22 @@ IOReturn AppleUSBCDCWMCData::acquirePort(bool sleep, void *refCon)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::acquirePortAction
+//		Method:		AppleUSBCDCDMM::acquirePortAction
 //
 //		Desc:		Dummy pass through for acquirePortGated.
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::acquirePortAction(OSObject *owner, void *arg0, void *, void *, void *)
+IOReturn AppleUSBCDCDMM::acquirePortAction(OSObject *owner, void *arg0, void *, void *, void *)
 {
 
-    return ((AppleUSBCDCWMCData *)owner)->acquirePortGated((bool)arg0);
+    return ((AppleUSBCDCDMM *)owner)->acquirePortGated((bool)arg0);
     
 }/* end acquirePortAction */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::acquirePortGated
+//		Method:		AppleUSBCDCDMM::acquirePortGated
 //
 //		Inputs:		sleep - true (wait for it), false (don't)
 //
@@ -1421,11 +1384,10 @@ IOReturn AppleUSBCDCWMCData::acquirePortAction(OSObject *owner, void *arg0, void
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::acquirePortGated(bool sleep)
+IOReturn AppleUSBCDCDMM::acquirePortGated(bool sleep)
 {
     UInt32 	busyState = 0;
     IOReturn 	rtn = kIOReturnSuccess;
-    UInt16	i;
 
     XTRACE(this, 0, sleep, "acquirePortGated");
 
@@ -1460,75 +1422,18 @@ IOReturn AppleUSBCDCWMCData::acquirePortGated(bool sleep)
         }
     }
     
-    do
-    {    	
-        setStructureDefaults();				// Set the default values
-	
-             // Set up and read the data-in bulk pipe
+    setStructureDefaults();				// Set the default values
         
-        for (i=0; i<fInBufPool; i++)
-        {
-            if (fPort.inPool[i].pipeMDP)
-            {
-                fPort.inPool[i].completionInfo.target = this;
-                fPort.inPool[i].completionInfo.action = dataReadComplete;
-                fPort.inPool[i].completionInfo.parameter = (void *)&fPort.inPool[i];
-                rtn = fPort.InPipe->Read(fPort.inPool[i].pipeMDP, &fPort.inPool[i].completionInfo, NULL);
-                if (rtn != kIOReturnSuccess)
-                {
-                    XTRACE(this, i, rtn, "acquirePortGated - Read for bulk-in pipe failed");
-                    break;
-                }
-            }
-        }
-        if (rtn == kIOReturnSuccess)
-        {
+    fSessions++;					// Bump number of active sessions and turn on clear to send
+    setStateGated(PD_RS232_S_CTS, PD_RS232_S_CTS);
         
-                // Set up the data-out bulk pipe
-		
-            for (i=0; i<fOutBufPool; i++)
-            {
-                if (fPort.outPool[i].pipeMDP)
-                {
-                    fPort.outPool[i].completionInfo.target = this;
-                    fPort.outPool[i].completionInfo.action = dataWriteComplete;
-                    fPort.outPool[i].completionInfo.parameter = (void *)&fPort.outPool[i];
-                }
-            }
-        } else {
-            break;
-        }
+    return kIOReturnSuccess;
         
-        fSessions++;					// Bump number of active sessions and turn on clear to send
-        setStateGated(PD_RS232_S_CTS, PD_RS232_S_CTS);
-        
-            // Tell the Control driver we're good to go
-        
-        if (gControlDriver)
-        {
-            if (!gControlDriver->dataAcquired())
-            {
-                XTRACE(this, 0, 0, "acquirePortGated - dataAcquired to Control failed");
-                break;
-            }
-        }
-        
-        return kIOReturnSuccess;
-        
-    } while (0);
-
-    	// We failed for some reason
-
-    setStateGated(0, STATE_ALL);			// Clear the entire state word
-    release();
-    
-    return rtn;
-	
 }/* end acquirePortGated */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::releasePort
+//		Method:		AppleUSBCDCDMM::releasePort
 //
 //		Inputs:		refCon - unused
 //
@@ -1538,7 +1443,7 @@ IOReturn AppleUSBCDCWMCData::acquirePortGated(bool sleep)
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::releasePort(void *refCon)
+IOReturn AppleUSBCDCDMM::releasePort(void *refCon)
 {
     IOReturn	ret = kIOReturnSuccess;
     
@@ -1548,39 +1453,28 @@ IOReturn AppleUSBCDCWMCData::releasePort(void *refCon)
     ret = fCommandGate->runAction(releasePortAction);
     release();
         
-        // Check the pipes before we leave (only if we're not terminated)
-   
-    if (!fTerminate)
-    {
-        if (fPort.InPipe)
-            checkPipe(fPort.InPipe, true);
-    
-        if (fPort.OutPipe)
-            checkPipe(fPort.OutPipe, true);
-    }
-        
     return ret;
 
 }/* end releasePort */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::releasePortAction
+//		Method:		AppleUSBCDCDMM::releasePortAction
 //
 //		Desc:		Dummy pass through for releasePortGated.
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::releasePortAction(OSObject *owner, void *, void *, void *, void *)
+IOReturn AppleUSBCDCDMM::releasePortAction(OSObject *owner, void *, void *, void *, void *)
 {
 
-    return ((AppleUSBCDCWMCData *)owner)->releasePortGated();
+    return ((AppleUSBCDCDMM *)owner)->releasePortGated();
     
 }/* end releasePortAction */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::releasePortGated
+//		Method:		AppleUSBCDCDMM::releasePortGated
 //
 //		Inputs:		
 //
@@ -1590,7 +1484,7 @@ IOReturn AppleUSBCDCWMCData::releasePortAction(OSObject *owner, void *, void *, 
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::releasePortGated()
+IOReturn AppleUSBCDCDMM::releasePortGated()
 {
     UInt32 	busyState;
 
@@ -1613,21 +1507,7 @@ IOReturn AppleUSBCDCWMCData::releasePortGated()
         setControlLineState(false, false);		// clear RTS and clear DTR only if not terminated
 	
     setStateGated(0, (UInt32)STATE_ALL);		// Clear the entire state word - which also deactivates the port
-    
-        // Abort any outstanding I/O
-        
-    if (fPort.InPipe)
-        fPort.InPipe->Abort();
-    if (fPort.OutPipe)
-        fPort.OutPipe->Abort();
-        
-        // Tell the Control driver the port's been released
-        
-    if (gControlDriver)
-    {
-        gControlDriver->dataReleased();
-    }
-    
+            
     fSessions--;					// reduce number of active sessions
             
     release(); 						// Dispose of the self-reference we took in acquirePortGated()
@@ -1640,7 +1520,7 @@ IOReturn AppleUSBCDCWMCData::releasePortGated()
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::getState
+//		Method:		AppleUSBCDCDMM::getState
 //
 //		Inputs:		refCon - unused
 //
@@ -1650,7 +1530,7 @@ IOReturn AppleUSBCDCWMCData::releasePortGated()
 //
 /****************************************************************************************************/
 
-UInt32 AppleUSBCDCWMCData::getState(void *refCon)
+UInt32 AppleUSBCDCDMM::getState(void *refCon)
 {
     UInt32	currState;
     
@@ -1672,17 +1552,17 @@ UInt32 AppleUSBCDCWMCData::getState(void *refCon)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::getStateAction
+//		Method:		AppleUSBCDCDMM::getStateAction
 //
 //		Desc:		Dummy pass through for getStateGated.
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::getStateAction(OSObject *owner, void *, void *, void *, void *)
+IOReturn AppleUSBCDCDMM::getStateAction(OSObject *owner, void *, void *, void *, void *)
 {
     UInt32	newState;
 
-    newState = ((AppleUSBCDCWMCData *)owner)->getStateGated();
+    newState = ((AppleUSBCDCDMM *)owner)->getStateGated();
     
     return newState;
     
@@ -1690,7 +1570,7 @@ IOReturn AppleUSBCDCWMCData::getStateAction(OSObject *owner, void *, void *, voi
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::getStateGated
+//		Method:		AppleUSBCDCDMM::getStateGated
 //
 //		Inputs:		port - unused
 //
@@ -1700,7 +1580,7 @@ IOReturn AppleUSBCDCWMCData::getStateAction(OSObject *owner, void *, void *, voi
 //
 /****************************************************************************************************/
 
-UInt32 AppleUSBCDCWMCData::getStateGated()
+UInt32 AppleUSBCDCDMM::getStateGated()
 {
     UInt32 	state;
 	
@@ -1721,7 +1601,7 @@ UInt32 AppleUSBCDCWMCData::getStateGated()
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::setState
+//		Method:		AppleUSBCDCDMM::setState
 //
 //		Inputs:		state - the state
 //				mask - the mask
@@ -1733,7 +1613,7 @@ UInt32 AppleUSBCDCWMCData::getStateGated()
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::setState(UInt32 state, UInt32 mask, void *refCon)
+IOReturn AppleUSBCDCDMM::setState(UInt32 state, UInt32 mask, void *refCon)
 {
     IOReturn	ret = kIOReturnSuccess;
     
@@ -1769,22 +1649,22 @@ IOReturn AppleUSBCDCWMCData::setState(UInt32 state, UInt32 mask, void *refCon)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::setStateAction
+//		Method:		AppleUSBCDCDMM::setStateAction
 //
 //		Desc:		Dummy pass through for setStateGated.
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::setStateAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
+IOReturn AppleUSBCDCDMM::setStateAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
 {
 
-    return ((AppleUSBCDCWMCData *)owner)->setStateGated((UInt32)arg0, (UInt32)arg1);
+    return ((AppleUSBCDCDMM *)owner)->setStateGated((UInt32)arg0, (UInt32)arg1);
     
 }/* end setStateAction */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::setStateGated
+//		Method:		AppleUSBCDCDMM::setStateGated
 //
 //		Inputs:		state - state to set
 //				mask - state mask
@@ -1802,7 +1682,7 @@ IOReturn AppleUSBCDCWMCData::setStateAction(OSObject *owner, void *arg0, void *a
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::setStateGated(UInt32 state, UInt32 mask)
+IOReturn AppleUSBCDCDMM::setStateGated(UInt32 state, UInt32 mask)
 {
     UInt32	delta;
 	
@@ -1856,7 +1736,7 @@ IOReturn AppleUSBCDCWMCData::setStateGated(UInt32 state, UInt32 mask)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::watchState
+//		Method:		AppleUSBCDCDMM::watchState
 //
 //		Inputs:		state - state to watch for
 //				mask - state mask bits
@@ -1868,7 +1748,7 @@ IOReturn AppleUSBCDCWMCData::setStateGated(UInt32 state, UInt32 mask)
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::watchState(UInt32 *state, UInt32 mask, void *refCon)
+IOReturn AppleUSBCDCDMM::watchState(UInt32 *state, UInt32 mask, void *refCon)
 {
     IOReturn 	ret;
 
@@ -1896,22 +1776,22 @@ IOReturn AppleUSBCDCWMCData::watchState(UInt32 *state, UInt32 mask, void *refCon
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::watchStateAction
+//		Method:		AppleUSBCDCDMM::watchStateAction
 //
 //		Desc:		Dummy pass through for watchStateGated.
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::watchStateAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
+IOReturn AppleUSBCDCDMM::watchStateAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
 {
 
-    return ((AppleUSBCDCWMCData *)owner)->watchStateGated((UInt32 *)arg0, (UInt32)arg1);
+    return ((AppleUSBCDCDMM *)owner)->watchStateGated((UInt32 *)arg0, (UInt32)arg1);
     
 }/* end watchStateAction */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::watchStateGated
+//		Method:		AppleUSBCDCDMM::watchStateGated
 //
 //		Inputs:		state - state to watch for
 //				mask - state mask bits
@@ -1927,7 +1807,7 @@ IOReturn AppleUSBCDCWMCData::watchStateAction(OSObject *owner, void *arg0, void 
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::watchStateGated(UInt32 *state, UInt32 mask)
+IOReturn AppleUSBCDCDMM::watchStateGated(UInt32 *state, UInt32 mask)
 {
     unsigned 	watchState, foundStates;
     bool 	autoActiveBit = false;
@@ -2021,7 +1901,7 @@ IOReturn AppleUSBCDCWMCData::watchStateGated(UInt32 *state, UInt32 mask)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::nextEvent
+//		Method:		AppleUSBCDCDMM::nextEvent
 //
 //		Inputs:		refCon - unused
 //
@@ -2031,7 +1911,7 @@ IOReturn AppleUSBCDCWMCData::watchStateGated(UInt32 *state, UInt32 mask)
 //
 /****************************************************************************************************/
 
-UInt32 AppleUSBCDCWMCData::nextEvent(void *refCon)
+UInt32 AppleUSBCDCDMM::nextEvent(void *refCon)
 {
 
     XTRACE(this, 0, 0, "nextEvent");
@@ -2050,7 +1930,7 @@ UInt32 AppleUSBCDCWMCData::nextEvent(void *refCon)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::executeEvent
+//		Method:		AppleUSBCDCDMM::executeEvent
 //
 //		Inputs:		event - The event
 //				data - any data associated with the event
@@ -2062,7 +1942,7 @@ UInt32 AppleUSBCDCWMCData::nextEvent(void *refCon)
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::executeEvent(UInt32 event, UInt32 data, void *refCon)
+IOReturn AppleUSBCDCDMM::executeEvent(UInt32 event, UInt32 data, void *refCon)
 {
     IOReturn 	ret;
     
@@ -2084,22 +1964,22 @@ IOReturn AppleUSBCDCWMCData::executeEvent(UInt32 event, UInt32 data, void *refCo
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::executeEventAction
+//		Method:		AppleUSBCDCDMM::executeEventAction
 //
 //		Desc:		Dummy pass through for executeEventGated.
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::executeEventAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
+IOReturn AppleUSBCDCDMM::executeEventAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
 {
 
-    return ((AppleUSBCDCWMCData *)owner)->executeEventGated((UInt32)arg0, (UInt32)arg1);
+    return ((AppleUSBCDCDMM *)owner)->executeEventGated((UInt32)arg0, (UInt32)arg1);
     
 }/* end executeEventAction */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::executeEventGated
+//		Method:		AppleUSBCDCDMM::executeEventGated
 //
 //		Inputs:		event - The event
 //				data - any data associated with the event
@@ -2111,7 +1991,7 @@ IOReturn AppleUSBCDCWMCData::executeEventAction(OSObject *owner, void *arg0, voi
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::executeEventGated(UInt32 event, UInt32 data)
+IOReturn AppleUSBCDCDMM::executeEventGated(UInt32 event, UInt32 data)
 {
     IOReturn	ret = kIOReturnSuccess;
     UInt32 	state, delta;
@@ -2306,7 +2186,7 @@ IOReturn AppleUSBCDCWMCData::executeEventGated(UInt32 event, UInt32 data)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::requestEvent
+//		Method:		AppleUSBCDCDMM::requestEvent
 //
 //		Inputs:		event - The event
 //				refCon - unused
@@ -2321,7 +2201,7 @@ IOReturn AppleUSBCDCWMCData::executeEventGated(UInt32 event, UInt32 data)
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::requestEvent(UInt32 event, UInt32 *data, void *refCon)
+IOReturn AppleUSBCDCDMM::requestEvent(UInt32 event, UInt32 *data, void *refCon)
 {
     IOReturn	returnValue = kIOReturnSuccess;
 
@@ -2453,7 +2333,7 @@ IOReturn AppleUSBCDCWMCData::requestEvent(UInt32 event, UInt32 *data, void *refC
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::enqueueEvent
+//		Method:		AppleUSBCDCDMM::enqueueEvent
 //
 //		Inputs:		event - The event
 //				data - any data associated with the event, 
@@ -2467,7 +2347,7 @@ IOReturn AppleUSBCDCWMCData::requestEvent(UInt32 event, UInt32 *data, void *refC
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::enqueueEvent(UInt32 event, UInt32 data, bool sleep, void *refCon)
+IOReturn AppleUSBCDCDMM::enqueueEvent(UInt32 event, UInt32 data, bool sleep, void *refCon)
 {
     IOReturn 	ret;
     
@@ -2489,7 +2369,7 @@ IOReturn AppleUSBCDCWMCData::enqueueEvent(UInt32 event, UInt32 data, bool sleep,
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::dequeueEvent
+//		Method:		AppleUSBCDCDMM::dequeueEvent
 //
 //		Inputs:		sleep - true (wait for it), false (don't)
 //				refCon - unused
@@ -2500,7 +2380,7 @@ IOReturn AppleUSBCDCWMCData::enqueueEvent(UInt32 event, UInt32 data, bool sleep,
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::dequeueEvent(UInt32 *event, UInt32 *data, bool sleep, void *refCon)
+IOReturn AppleUSBCDCDMM::dequeueEvent(UInt32 *event, UInt32 *data, bool sleep, void *refCon)
 {
 	
     XTRACE(this, 0, 0, "dequeueEvent");
@@ -2525,7 +2405,7 @@ IOReturn AppleUSBCDCWMCData::dequeueEvent(UInt32 *event, UInt32 *data, bool slee
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::enqueueData
+//		Method:		AppleUSBCDCDMM::enqueueData
 //
 //		Inputs:		buffer - the data
 //				size - number of bytes
@@ -2539,7 +2419,7 @@ IOReturn AppleUSBCDCWMCData::dequeueEvent(UInt32 *event, UInt32 *data, bool slee
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::enqueueData(UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep, void *refCon)
+IOReturn AppleUSBCDCDMM::enqueueData(UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep, void *refCon)
 {
     IOReturn 	ret;
     
@@ -2564,22 +2444,22 @@ IOReturn AppleUSBCDCWMCData::enqueueData(UInt8 *buffer, UInt32 size, UInt32 *cou
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::enqueueDatatAction
+//		Method:		AppleUSBCDCDMM::enqueueDatatAction
 //
 //		Desc:		Dummy pass through for enqueueDataGated.
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::enqueueDataAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *arg3)
+IOReturn AppleUSBCDCDMM::enqueueDataAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *arg3)
 {
 
-    return ((AppleUSBCDCWMCData *)owner)->enqueueDataGated((UInt8 *)arg0, (UInt32)arg1, (UInt32 *)arg2, (bool)arg3);
+    return ((AppleUSBCDCDMM *)owner)->enqueueDataGated((UInt8 *)arg0, (UInt32)arg1, (UInt32 *)arg2, (bool)arg3);
     
 }/* end enqueueDataAction */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::enqueueDataGated
+//		Method:		AppleUSBCDCDMM::enqueueDataGated
 //
 //		Inputs:		buffer - the data
 //				size - number of bytes
@@ -2603,7 +2483,7 @@ IOReturn AppleUSBCDCWMCData::enqueueDataAction(OSObject *owner, void *arg0, void
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::enqueueDataGated(UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep)
+IOReturn AppleUSBCDCDMM::enqueueDataGated(UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep)
 {
     UInt32 	state = PD_S_TXQ_LOW_WATER;
     IOReturn 	rtn = kIOReturnSuccess;
@@ -2659,7 +2539,7 @@ IOReturn AppleUSBCDCWMCData::enqueueDataGated(UInt8 *buffer, UInt32 size, UInt32
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::dequeueData
+//		Method:		AppleUSBCDCDMM::dequeueData
 //
 //		Inputs:		size - buffer size
 //				min - minimum bytes required
@@ -2673,7 +2553,7 @@ IOReturn AppleUSBCDCWMCData::enqueueDataGated(UInt8 *buffer, UInt32 size, UInt32
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::dequeueData(UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min, void *refCon)
+IOReturn AppleUSBCDCDMM::dequeueData(UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min, void *refCon)
 {
     IOReturn 	ret;
     
@@ -2698,22 +2578,22 @@ IOReturn AppleUSBCDCWMCData::dequeueData(UInt8 *buffer, UInt32 size, UInt32 *cou
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::dequeueDatatAction
+//		Method:		AppleUSBCDCDMM::dequeueDatatAction
 //
 //		Desc:		Dummy pass through for dequeueDataGated.
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::dequeueDataAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *arg3)
+IOReturn AppleUSBCDCDMM::dequeueDataAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *arg3)
 {
 
-    return ((AppleUSBCDCWMCData *)owner)->dequeueDataGated((UInt8 *)arg0, (UInt32)arg1, (UInt32 *)arg2, (UInt32)arg3);
+    return ((AppleUSBCDCDMM *)owner)->dequeueDataGated((UInt8 *)arg0, (UInt32)arg1, (UInt32 *)arg2, (UInt32)arg3);
     
 }/* end dequeueDataAction */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::dequeueDataGated
+//		Method:		AppleUSBCDCDMM::dequeueDataGated
 //
 //		Inputs:		size - buffer size
 //				min - minimum bytes required
@@ -2740,7 +2620,7 @@ IOReturn AppleUSBCDCWMCData::dequeueDataAction(OSObject *owner, void *arg0, void
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::dequeueDataGated(UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min)
+IOReturn AppleUSBCDCDMM::dequeueDataGated(UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min)
 {
     IOReturn 	rtn = kIOReturnSuccess;
     UInt32 	state = 0;
@@ -2802,7 +2682,7 @@ IOReturn AppleUSBCDCWMCData::dequeueDataGated(UInt8 *buffer, UInt32 size, UInt32
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::setUpTransmit
+//		Method:		AppleUSBCDCDMM::setUpTransmit
 //
 //		Inputs:		
 //
@@ -2812,7 +2692,7 @@ IOReturn AppleUSBCDCWMCData::dequeueDataGated(UInt8 *buffer, UInt32 size, UInt32
 //
 /****************************************************************************************************/
 
-bool AppleUSBCDCWMCData::setUpTransmit()
+bool AppleUSBCDCDMM::setUpTransmit()
 {
 
     XTRACE(this, 0, 0, "setUpTransmit");
@@ -2836,7 +2716,7 @@ bool AppleUSBCDCWMCData::setUpTransmit()
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::startTransmission
+//		Method:		AppleUSBCDCDMM::startTransmission
 //
 //		Inputs:		
 //
@@ -2847,55 +2727,38 @@ bool AppleUSBCDCWMCData::setUpTransmit()
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::startTransmission()
+void AppleUSBCDCDMM::startTransmission()
 {
     size_t	count;
     IOReturn	ior;
-    UInt16	indx;
     
-     XTRACE(this, 0, 0, "startTransmission");
-
-        // Fill up a buffer with data from the queue
-        
-    indx = fPort.outPoolIndex++;
-    if (fPort.outPoolIndex >= fOutBufPool)
+    XTRACE(this, 0, 0, "startTransmission");
+	
+		// Check if we have a cr, if not just exit
+	
+	count = isCRinQueue(&fPort.TX);
+	
+	if (count <= 0)
     {
-        fPort.outPoolIndex = 0;
-    }
-    if (!fPort.outPool[indx].avail)
-    {
-        XTRACE(this, fOutBufPool, indx, "startTransmission - Output buffer unavailable");
+            // Updates all the status flags
+			
+        CheckQueues();
         return;
     }
 
         // Fill up the buffer with characters from the queue
 		
-    count = RemovefromQueue(&fPort.TX, fPort.outPool[indx].pipeBuffer, MAX_BLOCK_SIZE);
-
-        // If there are no bytes to send just exit:
-		
-    if (count <= 0)
-    {
-            // Updates all the status flags:
-			
-        CheckQueues();
-        return;
-    }
+    count = RemovefromQueue(&fPort.TX, fOutBuffer, count);
     
     setStateGated(PD_S_TX_BUSY, PD_S_TX_BUSY);
     
     XTRACE(this, fPort.State, count, "startTransmission - Bytes to write");
-    LogData(kDataOut, count, fPort.outPool[indx].pipeBuffer);
-    	
-    fPort.outPool[indx].count = count;
-    fPort.outPool[indx].avail = false;
-    fPort.outPool[indx].completionInfo.parameter = (void *)&fPort.outPool[indx];
-    fPort.outPool[indx].pipeMDP->setLength(count);
+    LogData(kDataOut, count, fOutBuffer);
     
-    ior = fPort.OutPipe->Write(fPort.outPool[indx].pipeMDP, &fPort.outPool[indx].completionInfo);
+    ior = sendMERRequest(kUSBSEND_ENCAPSULATED_COMMAND, 0, count, fOutBuffer, &fMERCompletionInfo);
     if (ior != kIOReturnSuccess)
     {
-        XTRACE(this, 0, ior, "startTransmission - Write failed");
+        XTRACE(this, 0, ior, "startTransmission - sendMERRequest failed");
     } 
 
         // We just removed a bunch of stuff from the
@@ -2908,7 +2771,64 @@ void AppleUSBCDCWMCData::startTransmission()
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::setLineCoding
+//		Method:		AppleUSBCDCDMM::sendMERRequest
+//
+//		Inputs:		
+//
+//		Outputs:	
+//
+//		Desc:		Set up and send a Management Element Request(MER).
+//
+/****************************************************************************************************/
+
+IOReturn AppleUSBCDCDMM::sendMERRequest(UInt8 request, UInt16 val, UInt16 len, UInt8 *buff, IOUSBCompletion *Comp)
+{
+	IOUSBDevRequest	*MER;
+    IOReturn		rc = kIOReturnSuccess;
+
+    XTRACE(this, 0, 0, "sendMERRequest");
+
+	MER = (IOUSBDevRequest*)IOMalloc(sizeof(IOUSBDevRequest));
+    if (!MER)
+    {
+        XTRACE(this, 0, 0, "sendMERRequest - allocate MER failed");
+        return kIOReturnError;
+    }
+    bzero(MER, sizeof(IOUSBDevRequest));
+	
+        // now build the Management Element Request
+		
+    MER->bmRequestType = USBmakebmRequestType(kUSBOut, kUSBClass, kUSBInterface);
+    MER->bRequest = request;
+    MER->wValue = val;
+    MER->wIndex = fInterfaceNumber;
+	if (len > 0)
+	{
+		MER->wLength = len;
+		MER->pData = buff;
+	} else {
+		MER->wLength = 0;
+		MER->pData = NULL;
+	}
+    
+    Comp->parameter = MER;
+	
+    rc = fInterface->GetDevice()->DeviceRequest(MER, Comp);
+    if (rc != kIOReturnSuccess)
+    {
+        XTRACE(this, MER->bRequest, rc, "sendMERRequest - error issueing DeviceRequest");
+        IOFree(MER, sizeof(IOUSBDevRequest));
+    }
+	
+	return rc;
+	
+}
+	
+/* end sendMERRequest */
+
+/****************************************************************************************************/
+//
+//		Method:		AppleUSBCDCDMM::setLineCoding
 //
 //		Inputs:		
 //
@@ -2918,11 +2838,16 @@ void AppleUSBCDCWMCData::startTransmission()
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::setLineCoding()
+void AppleUSBCDCDMM::setLineCoding()
 {
+	IOReturn	ior;
+	LineCoding  *lineParms;
+    UInt16		lcLen = sizeof(LineCoding)-1;
 
     XTRACE(this, 0, 0, "setLineCoding");
-    
+	
+	return;
+
     	// Check for changes and only do it if something's changed
 	
     if ((fPort.BaudRate == fPort.LastBaudRate) && (fPort.StopBits == fPort.LastStopBits) && 
@@ -2930,19 +2855,36 @@ void AppleUSBCDCWMCData::setLineCoding()
     {
         return;
     }
-
-	// Now send it to the control driver
-    
-    if (gControlDriver)
+	
+	lineParms = (LineCoding *)IOMalloc(lcLen);
+    if (!lineParms)
     {
-        
+        XTRACE(this, 0, 0, "setLineCoding - allocate lineParms failed");
+        return;
     }
-        
+    bzero(lineParms, lcLen); 
+	
+        // Convert BaudRate - intel format doubleword (32 bits) 
+		
+    OSWriteLittleInt32(lineParms, dwDTERateOffset, fPort.BaudRate);
+    lineParms->bCharFormat = fPort.StopBits - 2;
+    lineParms->bParityType = fPort.TX_Parity - 1;
+    lineParms->bDataBits = fPort.CharLength;
+
+        // Now send it
+		
+	ior = sendMERRequest(kUSBSET_LINE_CODING, 0, lcLen, (UInt8 *)lineParms, &fMERCompletionInfo);
+	if (ior != kIOReturnSuccess)
+	{
+		XTRACE(this, 0, ior, "setLineCoding - sendMERRequest failed");
+		IOFree(lineParms, lcLen);
+	}
+	
 }/* end setLineCoding */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::setControlLineState
+//		Method:		AppleUSBCDCDMM::setControlLineState
 //
 //		Inputs:		RTS - true(set RTS), false(clear RTS)
 //				DTR - true(set DTR), false(clear DTR)
@@ -2953,21 +2895,33 @@ void AppleUSBCDCWMCData::setLineCoding()
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::setControlLineState(bool RTS, bool DTR)
+void AppleUSBCDCDMM::setControlLineState(bool RTS, bool DTR)
 {
+	IOReturn	ior;
+    UInt16		CSBitmap = 0;
 	
     XTRACE(this, 0, 0, "setControlLineState");
-    
-    if (gControlDriver)
-    {
-        
-    }
 	
+	return;
+	
+	if (RTS)
+        CSBitmap |= kRTSOn;
+    if (DTR)
+        CSBitmap |= kDTROn;
+    
+		// Now send it
+		
+	ior = sendMERRequest(kUSBSET_CONTROL_LINE_STATE, CSBitmap, 0, NULL, &fMERCompletionInfo);
+	if (ior != kIOReturnSuccess)
+	{
+		XTRACE(this, 0, ior, "setControlLineState - sendMERRequest failed");
+	}
+		
 }/* end setControlLineState */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::sendBreak
+//		Method:		AppleUSBCDCDMM::sendBreak
 //
 //		Inputs:		sBreak - true(set Break), false(clear Break)
 //
@@ -2977,64 +2931,33 @@ void AppleUSBCDCWMCData::setControlLineState(bool RTS, bool DTR)
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::sendBreak(bool sBreak)
+void AppleUSBCDCDMM::sendBreak(bool sBreak)
 {
+	IOReturn	ior;
+    UInt16		breakVal = 0;
 	
     XTRACE(this, 0, 0, "sendBreak");
-    
-    if (gControlDriver)
-    {
-        
-    }
 	
+	return;
+	
+	if (sBreak)
+    {
+        breakVal = 0xFFFF;
+    }
+
+		// Now send it
+		
+	ior = sendMERRequest(kUSBSEND_BREAK, breakVal, 0, NULL, &fMERCompletionInfo);
+	if (ior != kIOReturnSuccess)
+	{
+		XTRACE(this, 0, ior, "sendBreak - sendMERRequest failed");
+	}
+			
 }/* end sendBreak */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::checkPipe
-//
-//		Inputs:		thePipe - the pipe
-//				devReq - true(send CLEAR_FEATURE), false(only if status returns stalled)
-//
-//		Outputs:	
-//
-//		Desc:		Clear a stall on the specified pipe. If ClearPipeStall is issued
-//				all outstanding I/O is returned with kIOUSBTransactionReturned and
-//				a CLEAR_FEATURE Endpoint stall is sent.
-//
-/****************************************************************************************************/
-
-IOReturn AppleUSBCDCWMCData::checkPipe(IOUSBPipe *thePipe, bool devReq)
-{
-    IOReturn 	rtn = kIOReturnSuccess;
-    
-    XTRACE(this, 0, thePipe, "checkPipe");
-    
-    if (!devReq)
-    {
-        rtn = thePipe->GetPipeStatus();
-        if (rtn != kIOUSBPipeStalled)
-        {
-            XTRACE(this, 0, 0, "checkPipe - Pipe not stalled");
-            return rtn;
-        }
-    }
-    
-    rtn = thePipe->ClearPipeStall(true);
-    if (rtn == kIOReturnSuccess)
-    {
-        XTRACE(this, 0, 0, "checkPipe - ClearPipeStall Successful");
-    } else {
-        XTRACE(this, 0, rtn, "checkPipe - ClearPipeStall Failed");
-    }
-    
-    return rtn;
-
-}/* end checkPipe */
-
-/****************************************************************************************************/
-//
-//		Method:		AppleUSBCDCWMCData::initStructure
+//		Method:		AppleUSBCDCDMM::initStructure
 //
 //		Inputs:		
 //
@@ -3044,9 +2967,8 @@ IOReturn AppleUSBCDCWMCData::checkPipe(IOUSBPipe *thePipe, bool devReq)
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::initStructure()
+void AppleUSBCDCDMM::initStructure()
 {
-    UInt16	i;
 	
     XTRACE(this, 0, 0, "initStructure");
 
@@ -3057,29 +2979,12 @@ void AppleUSBCDCWMCData::initStructure()
 
     fPort.State = (PD_S_TXQ_EMPTY | PD_S_TXQ_LOW_WATER | PD_S_RXQ_EMPTY | PD_S_RXQ_LOW_WATER);
     fPort.WatchStateMask = 0x00000000;
-    fPort.InPipe = NULL;
-    fPort.OutPipe = NULL;
-    for (i=0; i<kMaxInBufPool; i++)
-    {
-        fPort.inPool[i].pipeMDP = NULL;
-        fPort.inPool[i].pipeBuffer = NULL;
-        fPort.inPool[i].count = -1;
-        fPort.inPool[i].avail = false;
-    }
-    for (i=0; i<kMaxOutBufPool; i++)
-    {
-        fPort.outPool[i].pipeMDP = NULL;
-        fPort.outPool[i].pipeBuffer = NULL;
-        fPort.outPool[i].count = -1;
-        fPort.outPool[i].avail = false;
-    }
-    fPort.outPoolIndex = 0;
     
 }/* end initStructure */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::setStructureDefaults
+//		Method:		AppleUSBCDCDMM::setStructureDefaults
 //
 //		Inputs:		
 //
@@ -3089,7 +2994,7 @@ void AppleUSBCDCWMCData::initStructure()
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::setStructureDefaults()
+void AppleUSBCDCDMM::setStructureDefaults()
 {
     UInt32	tmp;
 	
@@ -3121,8 +3026,6 @@ void AppleUSBCDCWMCData::setStructureDefaults()
 
     fPort.FlowControl = (DEFAULT_AUTO | DEFAULT_NOTIFY);
 
-    fPort.AreTransmitting = FALSE;
-
     for (tmp=0; tmp < (256 >> SPECIAL_SHIFT); tmp++)
         fPort.SWspecial[ tmp ] = 0;
 	
@@ -3130,7 +3033,7 @@ void AppleUSBCDCWMCData::setStructureDefaults()
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::allocateResources
+//		Method:		AppleUSBCDCDMM::allocateResources
 //
 //		Inputs:		
 //
@@ -3140,79 +3043,65 @@ void AppleUSBCDCWMCData::setStructureDefaults()
 //
 /****************************************************************************************************/
 
-bool AppleUSBCDCWMCData::allocateResources()
+bool AppleUSBCDCDMM::allocateResources()
 {
     IOUSBFindEndpointRequest	epReq;
-    UInt16			i;
+	IOReturn					rtn;
 
     XTRACE(this, 0, 0, "allocateResources.");
 
         // Open all the end points and get the buffers
 
-    if (!fDataInterface->open(this))
+    if (!fInterface->open(this))
     {
         XTRACE(this, 0, 0, "allocateResources - open data interface failed.");
         return false;
     }
 
-        // Bulk In pipe
+           // Interrupt pipe
 
-    epReq.type = kUSBBulk;
+    epReq.type = kUSBInterrupt;
     epReq.direction = kUSBIn;
-    epReq.maxPacketSize	= 0;
-    epReq.interval = 0;
-    fPort.InPipe = fDataInterface->FindNextPipe(0, &epReq);
-    if (!fPort.InPipe)
+    fIntPipe = fInterface->FindNextPipe(0, &epReq);
+    if (!fIntPipe)
     {
-        XTRACE(this, 0, 0, "allocateResources - no bulk input pipe.");
+        XTRACE(this, 0, 0, "allocateResources - no interrrupt pipe.");
         return false;
     }
-    fPort.InPacketSize = epReq.maxPacketSize;
-    XTRACE(this, epReq.maxPacketSize << 16 |epReq.interval, fPort.InPipe, "allocateResources - bulk input pipe.");
-    
-        // Allocate Memory Descriptor Pointer with memory for the bulk in pipe
+    XTRACE(this, epReq.maxPacketSize << 16 |epReq.interval, fIntPipe, "allocateResources - interrupt pipe.");
+	fIntBufferSize = epReq.maxPacketSize;
 
-    for (i=0; i<fInBufPool; i++)
-    {
-        fPort.inPool[i].pipeMDP = IOBufferMemoryDescriptor::withCapacity(DATA_BUFF_SIZE, kIODirectionIn);
-        if (!fPort.inPool[i].pipeMDP)
-        {
-            XTRACE(this, 0, i, "allocateResources - Allocate input MDP failed");
-            return false;
-        }
-        fPort.inPool[i].pipeBuffer = (UInt8*)fPort.inPool[i].pipeMDP->getBytesNoCopy();
-        XTRACE(this, fPort.inPool[i].pipeMDP, fPort.inPool[i].pipeBuffer, "allocateResources - input buffer");
-        fPort.inPool[i].avail = true;
-    }
-    
-        // Bulk Out pipe
+        // Allocate Memory Descriptor Pointer with memory for the Interrupt pipe:
 
-    epReq.direction = kUSBOut;
-    fPort.OutPipe = fDataInterface->FindNextPipe(0, &epReq);
-    if (!fPort.OutPipe)
+    fIntPipeMDP = IOBufferMemoryDescriptor::withCapacity(fIntBufferSize, kIODirectionIn);
+    if (!fIntPipeMDP)
     {
-        XTRACE(this, 0, 0, "allocateResources - no bulk output pipe.");
+        XTRACE(this, 0, 0, "allocateResources - Couldn't allocate MDP for interrupt pipe");
         return false;
     }
-    fPort.OutPacketSize = epReq.maxPacketSize;
-    XTRACE(this, epReq.maxPacketSize << 16 |epReq.interval, fPort.OutPipe, "allocateResources - bulk output pipe.");
-    
-        // Allocate Memory Descriptor Pointer with memory for the bulk out pipe:
 
-    for (i=0; i<fOutBufPool; i++)
+    fIntPipeBuffer = (UInt8*)fIntPipeMDP->getBytesNoCopy();
+    XTRACE(this, 0, fIntPipeBuffer, "allocateResources - comm buffer");
+	
+		// Now the input and output buffers
+	
+	fInBuffer = (UInt8 *)IOMalloc(fMax_Command);
+    if (!fInBuffer)
     {
-        fPort.outPool[i].pipeMDP = IOBufferMemoryDescriptor::withCapacity(MAX_BLOCK_SIZE, kIODirectionOut);
-        if (!fPort.outPool[i].pipeMDP)
-        {
-            XTRACE(this, 0, i, "allocateResources - Allocate output MDP failed");
-            return false;
-        }
-        fPort.outPool[i].pipeBuffer = (UInt8*)fPort.outPool[i].pipeMDP->getBytesNoCopy();
-        XTRACE(this, fPort.outPool[i].pipeMDP, fPort.outPool[i].pipeBuffer, "allocateResources - output buffer");
-        fPort.outPool[i].avail = true;
+        XTRACE(this, 0, 0, "allocateResources - allocate input buffer failed");
+        return false;
     }
-        
-        // Now the ring buffers
+    bzero(fInBuffer, fMax_Command);
+	
+	fOutBuffer = (UInt8 *)IOMalloc(fMax_Command);
+    if (!fOutBuffer)
+    {
+        XTRACE(this, 0, 0, "allocateResources - allocate output buffer failed");
+        return false;
+    }
+    bzero(fOutBuffer, fMax_Command);
+	
+		// Now the ring buffers
         
     if (!allocateRingBuffer(&fPort.TX, fPort.TXStats.BufferSize))
     {
@@ -3230,13 +3119,38 @@ bool AppleUSBCDCWMCData::allocateResources()
     
     XTRACE(this, 0, fPort.RX.Start, "allocateResources - RX ring buffer");
 
+		// Read the interrupt pipe
+		
+    fIntCompletionInfo.target = this;
+    fIntCompletionInfo.action = intReadComplete;
+    fIntCompletionInfo.parameter = NULL;
+		
+    rtn = fIntPipe->Read(fIntPipeMDP, &fIntCompletionInfo, NULL);
+    if (rtn != kIOReturnSuccess)
+    {
+		XTRACE(this, rtn, 0, "allocateResources - Read for interrupt pipe failed");
+		return false;
+	}
+	
+		// Set up the MER completion routine
+		
+    fMERCompletionInfo.target = this;
+    fMERCompletionInfo.action = merWriteComplete;
+    fMERCompletionInfo.parameter = NULL;
+	
+		// Set up the response completion routine
+		
+    fRspCompletionInfo.target = this;
+    fRspCompletionInfo.action = rspComplete;
+    fRspCompletionInfo.parameter = NULL;
+    
     return true;
 	
 }/* end allocateResources */
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::releaseResources
+//		Method:		AppleUSBCDCDMM::releaseResources
 //
 //		Inputs:		
 //
@@ -3246,42 +3160,31 @@ bool AppleUSBCDCWMCData::allocateResources()
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::releaseResources()
+void AppleUSBCDCDMM::releaseResources()
 {
-    UInt16	i;
     
     XTRACE(this, 0, 0, "releaseResources");
+	
+	if (fIntPipe)
+	{
+		fIntPipe->Abort();
+	}
+	
+	if (fInterface)	
+    { 
+        fInterface->close(this);
+        fInterface->release();
+        fInterface = NULL;
+    }
     
-    for (i=0; i<fInBufPool; i++)
-    {
-        if (fPort.inPool[i].pipeMDP)	
-        { 
-            fPort.inPool[i].pipeMDP->release();	
-            fPort.inPool[i].pipeMDP = NULL;
-            fPort.inPool[i].count = -1;
-            fPort.inPool[i].avail = false;
-        }
+    if (fIntPipeMDP)	
+    { 
+        fIntPipeMDP->release();	
+        fIntPipeMDP = 0; 
     }
 	
-    for (i=0; i<fOutBufPool; i++)
-    {
-        if (fPort.outPool[i].pipeMDP)	
-        { 
-            fPort.outPool[i].pipeMDP->release();	
-            fPort.outPool[i].pipeMDP = NULL;
-            fPort.outPool[i].count = -1;
-            fPort.outPool[i].avail = false;
-        }
-    }
-    fPort.outPoolIndex = 0;
-
-    if (fDataInterface)	
-    { 
-        fDataInterface->close(this);
-        fDataInterface->release();
-        fDataInterface = NULL;
-    }
-    
+	IOFree(fInBuffer, fMax_Command);
+	    
     if (fWorkLoop)
     {
         fWorkLoop->release();
@@ -3295,7 +3198,7 @@ void AppleUSBCDCWMCData::releaseResources()
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::freeRingBuffer
+//		Method:		AppleUSBCDCDMM::freeRingBuffer
 //
 //		Inputs:		Queue - the specified queue to free
 //
@@ -3306,7 +3209,7 @@ void AppleUSBCDCWMCData::releaseResources()
 //
 /****************************************************************************************************/
 
-void AppleUSBCDCWMCData::freeRingBuffer(CirQueue *Queue)
+void AppleUSBCDCDMM::freeRingBuffer(CirQueue *Queue)
 {
     XTRACE(this, 0, Queue, "freeRingBuffer");
 
@@ -3323,7 +3226,7 @@ void AppleUSBCDCWMCData::freeRingBuffer(CirQueue *Queue)
 
 /****************************************************************************************************/
 //
-//		Method:		AppleUSBCDCWMCData::allocateRingBuffer
+//		Method:		AppleUSBCDCDMM::allocateRingBuffer
 //
 //		Inputs:		Queue - the specified queue to allocate
 //				BufferSize - size to allocate
@@ -3334,7 +3237,7 @@ void AppleUSBCDCWMCData::freeRingBuffer(CirQueue *Queue)
 //
 /****************************************************************************************************/
 
-bool AppleUSBCDCWMCData::allocateRingBuffer(CirQueue *Queue, size_t BufferSize)
+bool AppleUSBCDCDMM::allocateRingBuffer(CirQueue *Queue, size_t BufferSize)
 {
     UInt8	*Buffer;
 
@@ -3354,48 +3257,7 @@ bool AppleUSBCDCWMCData::allocateRingBuffer(CirQueue *Queue, size_t BufferSize)
 
 /****************************************************************************************************/
 //
-//		Function:	AppleUSBCDCWMCData::WakeonRing
-//
-//		Inputs:		none
-//
-//		Outputs:	return code - true(Wake-on-Ring enabled), false(disabled)	
-//
-//		Desc:		Find the PMU entry and checks the wake-on-ring flag
-//
-/****************************************************************************************************/
-
-bool AppleUSBCDCWMCData::WakeonRing(void)
-{
-    mach_timespec_t	t;
-    IOService 		*pmu;
-    bool		WoR = false;
-
-    XTRACE(this, 0, 0, "WakeonRing");
-        
-    t.tv_sec = 1;
-    t.tv_nsec = 0;
-    
-    pmu = waitForService(IOService::serviceMatching("ApplePMU"), &t);
-    if (pmu)
-    {
-        if (kOSBooleanTrue == pmu->getProperty("WakeOnRing"))
-        {
-            XTRACE(this, 0, 0, "WakeonRing - Enabled");
-            WoR = true;
-        } else {
-            XTRACE(this, 0, 0, "WakeonRing - Disabled");
-        }
-    } else {
-        XTRACE(this, 0, 0, "WakeonRing - serviceMatching ApplePMU failed");
-    }
-    
-    return WoR;
-    
-}/* end WakeonRing */
-
-/****************************************************************************************************/
-//
-//		Method:		AppleUSBCDCWMCData::message
+//		Method:		AppleUSBCDCDMM::message
 //
 //		Inputs:		type - message type
 //				provider - my provider
@@ -3407,8 +3269,9 @@ bool AppleUSBCDCWMCData::WakeonRing(void)
 //
 /****************************************************************************************************/
 
-IOReturn AppleUSBCDCWMCData::message(UInt32 type, IOService *provider, void *argument)
-{	
+IOReturn AppleUSBCDCDMM::message(UInt32 type, IOService *provider, void *argument)
+{
+	IOReturn	rtn;
     
     XTRACE(this, 0, type, "message");
 	
@@ -3416,25 +3279,6 @@ IOReturn AppleUSBCDCWMCData::message(UInt32 type, IOService *provider, void *arg
     {
         case kIOMessageServiceIsTerminated:
             XTRACE(this, fSessions, type, "message - kIOMessageServiceIsTerminated");
-			
-            if (fSessions)
-            {
-                if (!fTerminate)		// Check if we're already being terminated
-                { 
-		    // NOTE! This call below depends on the hard coded path of this KEXT. Make sure
-		    // that if the KEXT moves, this path is changed!
-		    KUNCUserNotificationDisplayNotice(
-			0,		// Timeout in seconds
-			0,		// Flags (for later usage)
-			"",		// iconPath (not supported yet)
-			"",		// soundPath (not supported yet)
-			"/System/Library/Extensions/IOUSBFamily.kext/Contents/PlugIns/AppleUSBCDCWMCData.kext",		// localizationPath
-			"Unplug Header",		// the header
-			"Unplug Notice",		// the notice - look in Localizable.strings
-			"OK"); 
-                }
-            }
-            			
             fTerminate = true;		// We're being terminated (unplugged)
             releaseResources();
             return kIOReturnSuccess;			
@@ -3455,9 +3299,32 @@ IOReturn AppleUSBCDCWMCData::message(UInt32 type, IOService *provider, void *arg
             break;
         case kIOUSBMessagePortHasBeenResumed: 	
             XTRACE(this, 0, type, "message - kIOUSBMessagePortHasBeenResumed");
+            if (fReadDead)
+			{
+				rtn = fIntPipe->Read(fIntPipeMDP, &fIntCompletionInfo, NULL);
+				if (rtn != kIOReturnSuccess)
+				{
+					XTRACE(this, 0, rtn, "message - Read for interrupt-in pipe failed, still dead");
+				} else {
+					fReadDead = false;
+				}
+			}
             break;
         case kIOUSBMessageHubResumePort:
             XTRACE(this, 0, type, "message - kIOUSBMessageHubResumePort");
+            break;
+        case kIOUSBMessagePortHasBeenReset:
+            XTRACE(this, 0, type, "message - kIOUSBMessagePortHasBeenReset");
+			if (fReadDead)
+			{
+				rtn = fIntPipe->Read(fIntPipeMDP, &fIntCompletionInfo, NULL);
+				if (rtn != kIOReturnSuccess)
+				{
+					XTRACE(this, 0, rtn, "message - Read for interrupt-in pipe failed, still dead");
+				} else {
+					fReadDead = false;
+				}
+			}
             break;
         default:
             XTRACE(this, 0, type, "message - unknown message"); 
