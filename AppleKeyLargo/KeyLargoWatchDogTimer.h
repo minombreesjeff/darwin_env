@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2001-2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,31 +20,34 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- * Copyright (c) 1999-2002 Apple Computer, Inc.  All rights reserved.
+ * Copyright (c) 2001-2002 Apple Computer, Inc.  All rights reserved.
+ *
+ *  DRI: Dave Radcliffe
  *
  */
 
-#ifndef _IOKIT_USBKEYLARGO_H
-#define _IOKIT_USBKEYLARGO_H
+#ifndef _IOKIT_KEYLARGOWATCHDOGTIMER_H
+#define _IOKIT_KEYLARGOWATCHDOGTIMER_H
 
+#include <IOKit/system_management/IOWatchDogTimer.h>
+
+#ifndef _IOKIT_KEYLARGO_H
 #include "KeyLargo.h"
+#endif
 
-class USBKeyLargo : public IOService
+class KeyLargo; 			// forward declaration
+
+class KeyLargoWatchDogTimer : public IOWatchDogTimer
 {
-  OSDeclareDefaultStructors(USBKeyLargo);
+	OSDeclareDefaultStructors(KeyLargoWatchDogTimer);
   
 private:
-    virtual void      turnOffUSB(UInt32 busNumber);
-    virtual void      turnOnUSB(UInt32 busNumber);
-    
+	KeyLargo *keyLargo;
+  
 public:
-  // Inits each bus:
-  virtual bool      initForBus(UInt32 busNumber);
-
-  // Power handling methods:
-  void initForPM (IOService *provider);
-  IOReturn setPowerState(unsigned long powerStateOrdinal, IOService* whatDevice);
-  unsigned long maxCapabilityForDomainState ( IOPMPowerFlags );
+	static KeyLargoWatchDogTimer *withKeyLargo(KeyLargo *keyLargo);
+	virtual bool start(IOService *provider);
+	virtual void setWatchDogTimer(UInt32 timeOut);
 };
 
-#endif /* ! _IOKIT_USBKEYLARGO_H */
+#endif // _IOKIT_KEYLARGOWATCHDOGTIMER_H
