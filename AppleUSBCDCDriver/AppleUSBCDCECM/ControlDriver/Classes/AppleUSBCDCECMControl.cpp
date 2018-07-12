@@ -221,22 +221,28 @@ void AppleUSBCDCECMControl::commReadComplete(void *obj, void *param, IOReturn rc
     AppleUSBCDCECMControl	*me = (AppleUSBCDCECMControl*)obj;
     IOReturn			ior;
     UInt32			dLen;
-    UInt8			notif;
+	Notification	*notif;
+	ConnectionSpeedChange	*speedChange;
 
     if (rc == kIOReturnSuccess)	// If operation returned ok
     {
         dLen = COMM_BUFF_SIZE - remaining;
         XTRACE(me, rc, dLen, "commReadComplete");
 		
-            // Now look at the state stuff
-        
-        notif = me->fCommPipeBuffer[1];
+            // Now look at what we received
+			
+        notif = (Notification *)me->fCommPipeBuffer;
         if (dLen > 7)
         {
-            switch(notif)
+            switch(notif->bNotification)
             {
                 case kUSBNETWORK_CONNECTION:
-                    me->fLinkStatus = me->fCommPipeBuffer[2];
+					if (notif->wValue == 0)
+					{
+						me->fLinkStatus = kLinkDown;
+					} else {
+						me->fLinkStatus = kLinkUp;
+					}
                     XTRACE(me, 0, me->fLinkStatus, "commReadComplete - kNetwork_Connection");
 					if (me->fDataDriver)
 					{
@@ -244,8 +250,9 @@ void AppleUSBCDCECMControl::commReadComplete(void *obj, void *param, IOReturn rc
 					}
                     break;
                 case kUSBCONNECTION_SPEED_CHANGE:
-                    me->fUpSpeed = USBToHostLong((UInt32)me->fCommPipeBuffer[8]);
-                    me->fDownSpeed = USBToHostLong((UInt32)me->fCommPipeBuffer[13]);
+					speedChange = (ConnectionSpeedChange *)me->fCommPipeBuffer;
+					me->fUpSpeed = USBToHostLong(speedChange->USBitRate);
+					me->fDownSpeed = USBToHostLong(speedChange->DSBitRate);
                     XTRACE(me, me->fUpSpeed, me->fDownSpeed, "commReadComplete - kConnection_Speed_Change");
 					if (me->fDataDriver)
 					{
@@ -253,11 +260,11 @@ void AppleUSBCDCECMControl::commReadComplete(void *obj, void *param, IOReturn rc
 					}
                     break;
                 default:
-                    XTRACE(me, 0, notif, "commReadComplete - Unknown notification");
+                    XTRACE(me, 0, notif->bNotification, "commReadComplete - Unsupported notification");
                     break;
             }
         } else {
-            XTRACE(me, 0, notif, "commReadComplete - Invalid notification");
+            XTRACE(me, 0, notif->bNotification, "commReadComplete - Invalid notification");
         }
     } else {
         XTRACE(me, 0, rc, "commReadComplete - IO error");
@@ -818,7 +825,12 @@ bool AppleUSBCDCECMControl::dataAcquired(IONetworkStats *netStats, IOEthernetSta
     if (fCommPipe)
     {
         rtn = fCommPipe->Read(fCommPipeMDP, &fCommCompletionInfo, NULL);
-    }
+    } else {
+		if (fDataDriver)
+		{
+			fDataDriver->fLinkStatus = fLinkStatus;
+		}
+	}
     if (rtn == kIOReturnSuccess)
     {
 
