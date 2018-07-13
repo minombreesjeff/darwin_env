@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,28 +22,39 @@
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
-#ifndef _IOKIT_USBMACRISC2DOMAIN_H
-#define _IOKIT_USBMACRISC2DOMAIN_H
+/*
+ * Copyright (c) 2003 Apple Computer, Inc.  All rights reserved.
+ *
+ */
 
+#ifndef _IOPLATFORMFUNCTIONDRIVER_H
+#define _IOPLATFORMFUNCTIONDRIVER_H
+
+#include <IOKit/IOLib.h>
 #include <IOKit/IOService.h>
-#include <IOKit/pwr_mgt/IOPM.h>
 
-class IOPMUSBMacRISC2: public IOService
+#include "IOPlatformFunction.h"
+
+/*!
+    @class IOPlatformFunctionDriver
+ */
+class IOPlatformFunctionDriver : public IOService
 {
-    OSDeclareDefaultStructors(IOPMUSBMacRISC2)
+    OSDeclareDefaultStructors(IOPlatformFunctionDriver)	
+
+private:
+	const OSSymbol *instantiateFunctionSymbol;
+
+protected:
+	IOReturn instantiatePlatformFunctions (IOService *nub, OSArray **pfArray);
 
 public:
 
-    virtual  bool start( IOService * provider );
+    virtual bool start(IOService *nub);
+    virtual IOReturn callPlatformFunction(const OSSymbol *functionName,
+					bool waitForFunction,
+                                        void *param1, void *param2,
+                                        void *param3, void *param4);
 
-
-private:
-
-    virtual  IOReturn setPowerState ( long, IOService* );
-    virtual  unsigned long maxCapabilityForDomainState ( IOPMPowerFlags );
-    virtual  unsigned long powerStateForDomainState ( IOPMPowerFlags );
-    unsigned long initialPowerStateForDomainState ( IOPMPowerFlags);
-    
 };
-
-#endif /*  _IOKIT_USBMACRISC2DOMAIN_H */
+#endif 	// _IOPLATFORMFUNCTIONDRIVER_H

@@ -28,7 +28,8 @@
  */
  
 #include "IOPlatformMonitor.h"
-
+#include "MacRISC2.h"
+class MacRISC2PE;
 
 enum {
 	// Sensor states
@@ -59,10 +60,17 @@ enum {
 	kMaxSensors				= kClamshellSensor + 1,		// 3
 	kCPUController			= kMaxSensors,				// 3
 	kGPUController			= kCPUController + 1,		// 4
-	kMaxConSensors			= kGPUController + 1,		// 5
+	kSlewController			= kGPUController + 1,		// 5
+	kMaxConSensors			= kSlewController + 1,		// 6
 	
 	// sensor-index(s) - assigned by Open Firmware, and unique system wide
-	kMaxSensorIndex			= 5					// See subSensorArray
+	kMaxSensorIndex			= 6					// See subSensorArray
+};
+
+enum {
+    kPB52MachineType = 1,
+    kPB53MachineType = 3,
+    kMaxMachineTypes
 };
 
 // IOPMon status keys and values
@@ -71,6 +79,7 @@ enum {
 #define kIOPMonClamshellStateKey 	"IOPMonClamshellState"
 #define kIOPMonCPUActionKey 		"IOPMonCPUAction"
 #define kIOPMonGPUActionKey 		"IOPMonGPUAction"
+#define kIOPMonSlewActionKey 		"target-value"
 
 #define kIOPMonState0				"State0"
 #define kIOPMonState1				"State1"
@@ -82,13 +91,17 @@ enum {
 #define kIOPMonSlow					"SlowSpeed"
 
 
-class PB6_1_PlatformMonitor : public IOPlatformMonitor
+
+
+class Portable2003_PlatformMonitor : public IOPlatformMonitor
 {
-    OSDeclareDefaultStructors(PB6_1_PlatformMonitor)
+    OSDeclareDefaultStructors(Portable2003_PlatformMonitor)
 
 private:
 	OSDictionary			*dictPowerLow, *dictPowerHigh;
 	OSDictionary			*dictClamshellOpen, *dictClamshellClosed;
+        MacRISC2PE			*macRISC2PE;
+        int				machineType;
 
 protected:
 
@@ -96,6 +109,7 @@ protected:
 
 	virtual bool initPowerState ();
 	virtual void savePowerState ();
+
 	virtual bool restorePowerState ();
 	
 	virtual bool initThermalState ();
@@ -111,6 +125,7 @@ protected:
 	virtual bool handlePowerEvent (IOPMonEventData *eventData);
 	virtual bool handleThermalEvent (IOPMonEventData *eventData);
 	virtual bool handleClamshellEvent (IOPMonEventData *eventData);
+        //virtual bool setBusSlew (UInt32 newLevel); 
 
 public:
 
@@ -118,6 +133,8 @@ public:
     virtual IOReturn powerStateWillChangeTo (IOPMPowerFlags, unsigned long, IOService*);
     virtual IOReturn powerStateDidChangeTo (IOPMPowerFlags, unsigned long, IOService*);
     virtual IOReturn setAggressiveness(unsigned long selector, unsigned long newLevel);
+    virtual IOReturn message( UInt32 type, IOService * provider, void * argument = 0 );
+        virtual void setBusSlew (UInt32 newLevel);
 
 	virtual bool initPlatformState ();
 	virtual void savePlatformState ();
