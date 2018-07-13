@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2005 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -22,23 +22,36 @@
 /*
  * Copyright (c) 2004-2005 Apple Computer, Inc.  All rights reserved.
  *
- *  File: $Id: PowerMac9_1_ThermalProfile.cpp,v 1.4 2005/09/11 22:40:11 raddog Exp $
+ *  File: $Id: PowerMac12_1_ThermalProfile.cpp,v 1.4 2005/09/13 02:29:34 larson Exp $
  */
 
 
 #include "IOPlatformPluginSymbols.h"
-#include "PowerMac9_1_ThermalProfile.h"
+#include "SMU_Neo2_PlatformPlugin.h"
 
-OSDefineMetaClassAndStructors( PowerMac9_1_ThermalProfile, IOPlatformPluginThermalProfile )
+#include "PowerMac12_1_ThermalProfile.h"
 
+OSDefineMetaClassAndStructors( PowerMac12_1_ThermalProfile, IOPlatformPluginThermalProfile )
 
-UInt8 PowerMac9_1_ThermalProfile::getThermalConfig( void )
+UInt8 PowerMac12_1_ThermalProfile::getThermalConfig( void )
 	{
-	return( 0 );
+	SMU_Neo2_PlatformPlugin*			smuPlatformPlugin;
+	UInt8								platformThermalModelID = 0;
+
+	smuPlatformPlugin = OSDynamicCast( SMU_Neo2_PlatformPlugin, platformPlugin );
+
+	if ( ( smuPlatformPlugin == NULL ) || !smuPlatformPlugin->getSDBPartitionData( kSensorTreePartID, 4, 1, &platformThermalModelID ) )
+		{
+		// If platformThermalModelID cannot be found, then default to an EVT Q45A.
+
+		platformThermalModelID = 0;
+		}
+
+	return( platformThermalModelID );
 	}
 
 
-void PowerMac9_1_ThermalProfile::adjustThermalProfile( void )
+void PowerMac12_1_ThermalProfile::adjustThermalProfile( void )
 	{
 	const OSNumber*						sensorID;
 	OSArray*							sensorInfoDicts;
@@ -53,12 +66,12 @@ void PowerMac9_1_ThermalProfile::adjustThermalProfile( void )
 	sensorID = OSNumber::withNumber( kCPUPowerSensorID, 32 );
 
 	if ( ( powerSensor = platformPlugin->lookupSensorByID( sensorID ) ) != NULL )
-	{
+		{
 		sensorInfoDicts->setObject( powerSensor->getInfoDict() );
 
 		// Publish a copy of sensorInfoDicts in the registry
 		platformPlugin->setSensorInfoDicts (sensorInfoDicts);
-	}
+		}
 
 	sensorID->release();
 
