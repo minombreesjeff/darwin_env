@@ -86,8 +86,9 @@ enum {
     kSMBTypeMemoryDevice         = 17,
 
     /* Apple Specific Structures */
-    kSMBFirmwareVolume           = 128,
-	kSMBTypeMemorySPD            = 130		
+    kSMBTypeFirmwareVolume       = 128,
+    kSMBTypeMemorySPD            = 130,		
+    kSMBTypeOemProcessorType     = 131
 };
 
 //
@@ -302,8 +303,6 @@ struct SMBMemorySPD {
 	SMBWord           Data[];
 };
 
-
-
 static const char *
 SMBMemoryDeviceTypes[] =
 {
@@ -344,6 +343,15 @@ SMBMemoryDeviceDetailTypes[] =
     "Non-volatile", NULL, NULL, NULL
 };
 #endif /* NOT_YET */
+
+//
+// OEM Processor Type (Apple Specific - Type 131)
+//
+
+struct SMBOemProcessorType {
+	SMB_STRUCT_HEADER
+	SMBWord    ProcessorType;
+};
 
 #ifdef SUPPORT_LEGACY_BIOS_PIRQ 
 /*

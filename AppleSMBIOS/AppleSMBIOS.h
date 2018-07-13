@@ -134,6 +134,10 @@ protected:
 								const SMBMemorySPD *			spd,
 								SMBPackedStrings *              strings );
 
+    void                    processSMBIOSStructure(
+                                const SMBOemProcessorType *     cpu,
+                                SMBPackedStrings *              strings );
+
     void                    updateDeviceTree( void );
 
 public:

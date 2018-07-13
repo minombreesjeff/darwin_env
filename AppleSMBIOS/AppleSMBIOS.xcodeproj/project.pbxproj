@@ -40,7 +40,7 @@
 	<key>CFBundleExecutable</key>
 	<string>AppleSMBIOS</string>
 	<key>CFBundleGetInfoString</key>
-	<string>1.0.11, Copyright Apple Computer, Inc. 2005-2006</string>
+	<string>1.0.12, Copyright Apple Computer, Inc. 2005-2006</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -52,11 +52,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.11</string>
+	<string>1.0.12</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.11</string>
+	<string>1.0.12</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>Platform BIOS Match</key>
@@ -236,7 +236,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleSMBIOS;
-				MODULE_VERSION = 1.0.9;
+				MODULE_VERSION = 1.0.12;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -265,7 +265,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleSMBIOS;
-				MODULE_VERSION = 1.0.9;
+				MODULE_VERSION = 1.0.12;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -292,7 +292,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleSMBIOS;
-				MODULE_VERSION = 1.0.9;
+				MODULE_VERSION = 1.0.12;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";

@@ -555,7 +555,8 @@ decodeSMBIOSStructure( const SMBStructHeader * structureHeader,
         SMBMemoryModule         memoryModule;
         SMBSystemSlot           slot;
 		SMBFirmwareVolume       fv;
-		SMBMemorySPD			spd;
+		SMBMemorySPD            spd;
+        SMBOemProcessorType     oemCpu;
     } * u = (const SMBStructUnion *) structureHeader;
 
     SMBPackedStrings strings = SMBPackedStrings( structureHeader,
@@ -591,12 +592,16 @@ decodeSMBIOSStructure( const SMBStructHeader * structureHeader,
             processSMBIOSStructure( &u->slot, &strings );
             break;
 
-        case kSMBFirmwareVolume:
+        case kSMBTypeFirmwareVolume:
 			processSMBIOSStructure( &u->fv, &strings );
 			break;
 		
 		case kSMBTypeMemorySPD:
 			processSMBIOSStructure( &u->spd, &strings );
+			break;
+
+        case kSMBTypeOemProcessorType:
+			processSMBIOSStructure( &u->oemCpu, &strings );
 			break;
     }
 }
@@ -1038,6 +1043,40 @@ processSMBIOSStructure( const SMBMemorySPD *       spd,
 	dataSize = (spd->Size + spd->Offset) > 128 ? 128 - spd->Offset : spd->Size;
 	memInfoData->appendBytes(spd->Data, dataSize);
 
+}
+
+//---------------------------------------------------------------------------
+
+#pragma mark Type 131 - kSMBTypeOemProcessorType
+
+void AppleSMBIOS::
+processSMBIOSStructure(
+    const SMBOemProcessorType *     cpu,
+    SMBPackedStrings *              strings )
+{
+	IORegistryEntry *		cpus;
+	IORegistryEntry *		child;
+	IORegistryIterator *	iter;
+
+	if (cpu->header.length < sizeof(SMBOemProcessorType))
+		return;
+
+	cpus = IORegistryEntry::fromPath("/cpus", gIODTPlane);
+	if (cpus)
+	{
+		iter = IORegistryIterator::iterateOver( cpus, gIODTPlane );
+		if (iter)
+		{
+			while ((child = iter->getNextObject()))
+			{
+				child->setProperty(
+					"cpu-type", (void *) &cpu->ProcessorType,
+					sizeof(cpu->ProcessorType));
+			}
+			iter->release();
+		}
+		cpus->release();
+	}
 }
 
 //---------------------------------------------------------------------------
