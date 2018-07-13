@@ -21,7 +21,7 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>3.4.0d2</string>
+	<string>3.4.0d3</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>MacIOAppleI2C</key>

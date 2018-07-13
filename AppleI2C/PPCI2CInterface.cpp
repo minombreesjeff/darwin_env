@@ -1280,7 +1280,7 @@ PPCI2CInterface::writeI2CBus(UInt8 address, UInt8 subAddress, UInt8 *newData, UI
             // Waits until the transfer is finished (look in the interrupt driver where this
             // gets the signal).
             //semaphore_wait(mySync);
-			timeout.tv_sec = waitTime;  // 15 second timeout
+			timeout.tv_sec = waitTime/1000;  // 15 second timeout
 			timeout.tv_nsec = 0;
 
             if (0 != semaphore_timedwait( mySync, timeout ))  {
@@ -1379,7 +1379,7 @@ PPCI2CInterface::readI2CBus(UInt8 address, UInt8 subAddress, UInt8 *newData, UIn
             // Waits until the transfer is finished (look in the interrupt driver where this
             // gets the signal).
             //semaphore_wait(mySync);
-			timeout.tv_sec = waitTime;  // 15 second timeout
+			timeout.tv_sec = waitTime/1000;  // 15 second timeout
 			timeout.tv_nsec = 0;
 
             if (0 != semaphore_timedwait( mySync, timeout ))  {
