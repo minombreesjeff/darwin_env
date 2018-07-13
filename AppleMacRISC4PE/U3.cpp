@@ -3,19 +3,22 @@
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
- * The contents of this file constitute Original Code as defined in and
- * are subject to the Apple Public Source License Version 1.1 (the
- * "License").  You may not use this file except in compliance with the
- * License.  Please obtain a copy of the License at
- * http://www.apple.com/publicsource and read it before using this file.
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
  * 
- * This Original Code and all software distributed under the License are
- * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
- * License for the specific language governing rights and limitations
- * under the License.
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
  * 
  * @APPLE_LICENSE_HEADER_END@
  */
@@ -26,6 +29,9 @@
  *
  */
 //		$Log: U3.cpp,v $
+//		Revision 1.11.8.1  2003/09/09 20:23:37  raddog
+//		[3398022] Update sleep code for case where golem isn't present (Q37A)
+//		
 //		Revision 1.11  2003/07/24 21:15:56  raddog
 //		[3336924]Do not reset MPIC across sleep - fixes DVD playback after sleep
 //		
@@ -379,6 +385,8 @@ void AppleU3::safeWriteRegUInt32(UInt32 offset, UInt32 mask, UInt32 data)
 // **********************************************************************************
 void AppleU3::uniNSetPowerState (UInt32 state)
 {
+	UInt32 data;
+
 	if (state == kUniNNormal) {		// start and wake
 		// Set MPIC interrupt enable bits in U3 toggle register, but only if MPIC is present
 		if (mpicRegEntry)
@@ -402,31 +410,34 @@ void AppleU3::uniNSetPowerState (UInt32 state)
 			safeWriteRegUInt32(kU3ToggleRegister, kU3MPICEnableOutputs, 0);
 		
 		// Set HyperTransport back to default state
-		if (k2 && golem) {
-			UInt32 data;
+		setHTLinkFrequency (0);		// Set U3 end link frequency to 200 MHz
 
-			setHTLinkFrequency (0);		// Set U3 end link frequency to 200 MHz
-
-			// golem hack!
+		// golem hack!
+		if (golem) {
+			// Configure golem for 200MHz
 			data = golem->configRead32 (0xcc);
 			data = (data & 0xFFFFF0FF);
 			golem->configWrite32 (0xcc, data);
 			data = golem->configRead32 (0xd0);
 			data = (data & 0xFFFFF0FF);
 			golem->configWrite32 (0xd0, data);
+		}
 			
 			// Set K2 end link frequency to 200MHz
+		if (k2)
 			k2->callPlatformFunction (symSetHTLinkFrequency, false, (void *)0, (void *)0, (void *)0, (void *)0);
 			
-			setHTLinkWidth (0, 0);		// Set U3 end link width 8-bit
-			// Set K2 end link width 8-bit - not required as K2 only runs 8 bit
-			//k2->callPlatformFunction (symSetHTLinkWidth, false, (void *)0, (void *)0, (void *)0, (void *)0);
+		setHTLinkWidth (0, 0);		// Set U3 end link width 8-bit
+		
+		// Set K2 end link width 8-bit - not required as K2 only runs 8 bit
+		// if (k2) k2->callPlatformFunction (symSetHTLinkWidth, false, (void *)0, (void *)0, (void *)0, (void *)0);
 
-			// golem hack!
+		// golem hack!
+		if (golem) {
+			// Configure golem for 8-bit
 			data = golem->configRead32 (0xc4);
 			data = (data & 0x88FFFFFF);
 			golem->configWrite32 (0xc4, data);
-
 		}
 	}
 	
@@ -590,21 +601,36 @@ IOPCIDevice* AppleU3::findNubForPHandle( UInt32 pHandleValue )
 void AppleU3::prepareForSleep ( void )
 {
 	IOService *service;
+	static bool noGolem;
 	
+	// Find the K2 driver
 	if (!k2)
 		k2 = waitForService(serviceMatching("KeyLargo"));
 	
+	// Find the SPU driver
 	if (!spu) {
 		service = waitForService(resourceMatching("AppleSPU"));
 		if (service) 
 			spu = OSDynamicCast (IOService, service->getProperty("AppleSPU"));
 	}
 	
+	// Find the PMU device
 	if (!pmu) 
 		pmu = waitForService(serviceMatching("ApplePMU"));	
 	
-	if (!golem)
+	// Find golem, if present
+	if (!(golem || noGolem)) {
 		golem = OSDynamicCast (IOPCIDevice, provider->fromPath("/ht@0,F2000000/pci@1", gIODTPlane));
+		if (golem) {
+			// Check that it's pci-x compatible
+			if (!(IODTMatchNubWithKeys(golem, "pci-x"))) {
+				noGolem = true;		// Set noGolem true so we don't keep looking for it
+				golem = NULL;		// Zero out the reference to it so we won't use it
+			}
+
+		} else
+			noGolem = true;			// Set noGolem true so we don't keep looking for it
+	}
 
 	return;
 }

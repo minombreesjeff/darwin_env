@@ -65,6 +65,7 @@
 				06AA1265FFB2107B11CA28AA,
 				06AA1266FFB2107B11CA28AA,
 			);
+			hasScannedForEncodings = 1;
 			isa = PBXProject;
 			mainGroup = 089C166AFE841209C02AAC07;
 			projectDirPath = "";
@@ -105,7 +106,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleMacRISC4PE;
-				MODULE_VERSION = 1.0.1b3;
+				MODULE_VERSION = 1.0.2b1;
 				OTHER_CFLAGS = "-fpermissive -D_BIG_ENDIAN";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -132,7 +133,7 @@
 	<key>CFBundleExecutable</key>
 	<string>AppleMacRISC4PE</string>
 	<key>CFBundleGetInfoString</key>
-	<string>AppleMacRISC2PE version 1.0.1, Copyright 2003 Apple Computer, Inc.</string>
+	<string>AppleMacRISC2PE version 1.0.2, Copyright 2003 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -144,11 +145,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.1</string>
+	<string>1.0.2</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.1b3</string>
+	<string>1.0.2b1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>MacRISC4CPU</key>
@@ -623,7 +624,6 @@
 </dict>
 </plist>
 ";
-			shouldUseHeadermap = 0;
 		};
 		089C1674FE841209C02AAC07 = {
 			buildActionMask = 2147483647;
@@ -1059,7 +1059,6 @@
 </dict>
 </plist>
 ";
-			shouldUseHeadermap = 0;
 		};
 		B0ED8C9F03BA371E05A80123 = {
 			isa = PBXBundleReference;
@@ -1690,7 +1689,7 @@
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.PowerMac7_2_PlatformPlugin;
-				MODULE_VERSION = 1.0.1b3;
+				MODULE_VERSION = 1.0.2b1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -1715,7 +1714,7 @@
 	<key>CFBundleExecutable</key>
 	<string>PowerMac7_2_PlatformPlugin</string>
 	<key>CFBundleGetInfoString</key>
-	<string>PowerMac7_2_PlatformPlugin version 1.0.1, Copyright 2003 Apple Computer, Inc.</string>
+	<string>PowerMac7_2_PlatformPlugin version 1.0.2, Copyright 2003 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -1727,11 +1726,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.1</string>
+	<string>1.0.2</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.1b3</string>
+	<string>1.0.2b1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>PowerMac7_2_PlatformPlugin</key>
@@ -2837,7 +2836,6 @@
 </dict>
 </plist>
 ";
-			shouldUseHeadermap = 0;
 		};
 		B4D5938E0458832300CE0E5B = {
 			isa = PBXBundleReference;
