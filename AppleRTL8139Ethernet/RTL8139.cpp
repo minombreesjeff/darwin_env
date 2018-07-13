@@ -182,7 +182,8 @@ bool RTL8139::initEventSources( IOService * provider )
 	// Create an interrupt event source to handle hardware interrupts.
 
 	interruptSrc = IOInterruptEventSource::interruptEventSource(this,
-                   (IOInterruptEventAction) &RTL8139::interruptOccurred,
+                   OSMemberFunctionCast(IOInterruptEventAction, this,
+                       &RTL8139::interruptOccurred),
                    provider);
 
 	if ( !interruptSrc ||
@@ -200,7 +201,8 @@ bool RTL8139::initEventSources( IOService * provider )
 	// Register a timer event source used as a watchdog timer.
 
 	timerSrc = IOTimerEventSource::timerEventSource( this,
-               (IOTimerEventSource::Action) &RTL8139::timeoutOccurred );
+               OSMemberFunctionCast(IOTimerEventSource::Action, this,
+                   &RTL8139::timeoutOccurred ));
 
 	if ( !timerSrc || (wl->addEventSource(timerSrc) != kIOReturnSuccess) )
 		return false;
