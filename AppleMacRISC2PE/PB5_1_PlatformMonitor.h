@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -26,10 +26,6 @@
  
 #include "IOPlatformMonitor.h"
 
-// DEBUG = 1 turns on debugging comments (IOLog)
-// DEBUG = 0 turns them off
-#define DEBUG 0
-
 enum {
 	// Sensor states
 	kPowerState0			= 0,						// Fast/high
@@ -41,7 +37,7 @@ enum {
 	kThermalState3			= 3,						// Very hot (thermal emergency)/high
 	kMaxThermalStates		= kThermalState3 + 1,
 	kClamshellStateOpen		= 0,						// Open/normal/high
-	kClamshellStateClosed	= 1,						// Closed/low
+	kClamshellStateClosed		= 1,						// Closed/low
 	kNumClamshellStates		= kClamshellStateClosed + 1,
 	
 	// Controller states
@@ -53,16 +49,16 @@ enum {
 	kGPUPowerState2			= 2,
 	
 	// sensors always numbered 0 through n
-	kPowerSensor			= 0,						// 0
-	kThermalSensor			= kPowerSensor + 1,			// 1
+	kPowerSensor			= 0,				// 0
+	kThermalSensor			= kPowerSensor + 1,		// 1
 	kClamshellSensor		= kThermalSensor + 1,		// 2
-	kMaxSensors				= kClamshellSensor + 1,		// 3
-	kCPUController			= kMaxSensors,				// 3
+	kMaxSensors			= kClamshellSensor + 1,		// 3
+	kCPUController			= kMaxSensors,			// 3
 	kGPUController			= kCPUController + 1,		// 4
 	kMaxConSensors			= kGPUController + 1,		// 5
 	
 	// sensor-index(s) - assigned by Open Firmware, and unique system wide
-	kMaxSensorIndex			= 5					// See subSensorArray
+	kMaxSensorIndex			= 5				// See subSensorArray
 };
 
 // IOPMon status keys and values
@@ -72,25 +68,18 @@ enum {
 #define kIOPMonCPUActionKey 		"IOPMonCPUAction"
 #define kIOPMonGPUActionKey 		"IOPMonGPUAction"
 
-#define kIOPMonState0				"State0"
-#define kIOPMonState1				"State1"
-#define kIOPMonState2				"State2"
-#define kIOPMonState3				"State3"
+#define kIOPMonState0			"State0"
+#define kIOPMonState1			"State1"
+#define kIOPMonState2			"State2"
+#define kIOPMonState3			"State3"
 
-#define kIOPMonFull					"FullSpeed"
-#define kIOPMonReduced				"ReducedSpeed"
-#define kIOPMonSlow					"SlowSpeed"
+#define kIOPMonFull			"FullSpeed"
+#define kIOPMonReduced			"ReducedSpeed"
+#define kIOPMonSlow			"SlowSpeed"
 
-#if DEBUG
-	#define debug_msg( msg ) IOLog(msg)
-#else
-	#define debug_msg( msg )
-#endif
-
-
-class PB6_1_PlatformMonitor : public IOPlatformMonitor
+class PB5_1_PlatformMonitor : public IOPlatformMonitor
 {
-    OSDeclareDefaultStructors(PB6_1_PlatformMonitor)
+    OSDeclareDefaultStructors(PB5_1_PlatformMonitor)
 
 private:
 	OSDictionary			*dictPowerLow, *dictPowerHigh;
@@ -120,9 +109,9 @@ protected:
 
 public:
 
-    virtual bool start(IOService *provider);
-    virtual IOReturn powerStateWillChangeTo (IOPMPowerFlags, unsigned long, IOService*);
-    virtual IOReturn setAggressiveness(unsigned long selector, unsigned long newLevel);
+        virtual bool start(IOService *provider);
+        virtual IOReturn powerStateWillChangeTo (IOPMPowerFlags, unsigned long, IOService*);
+        virtual IOReturn setAggressiveness(unsigned long selector, unsigned long newLevel);
 
 	virtual bool initPlatformState ();
 	virtual void savePlatformState ();

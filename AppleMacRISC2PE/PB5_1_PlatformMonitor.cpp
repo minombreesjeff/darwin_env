@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -24,7 +24,7 @@
  *
  */
 
-#include "PB6_1_PlatformMonitor.h"
+#include "PB5_1_PlatformMonitor.h"
 
 static const OSSymbol 			*gIOPMonPowerStateKey;
 static const OSSymbol 			*gIOPMonThermalStateKey;
@@ -40,7 +40,7 @@ static const OSSymbol			*gIOPMonFull;
 static const OSSymbol			*gIOPMonReduced;
 static const OSSymbol			*gIOPMonSlow;
 
-static 	IOService				*provider;
+static 	IOService			*provider;
 
 // Possible platform actions
 static bool actionFullPower ();
@@ -61,23 +61,21 @@ static bool actionPower1GPU2 ();
 static IOPlatformMonitorAction platformActionGrid[kMaxPowerStates][kMaxThermalStates][kNumClamshellStates] =
 	{
 		{
-                        /* bug 3163342: ramping down the GPU doesn't lower thermals or save power, so we're switching from actionPower1GPUx to actionPower1 */
-
 			{
 				actionFullPower,		// kPowerState0 / kThermalState0 / kClamShellStateOpen
-				actionFullPower//actionPower1			// kPowerState0 / kThermalState0 / kClamShellStateClosed
+				actionPower1			// kPowerState0 / kThermalState0 / kClamShellStateClosed
 			},
 			{
 				actionPower1,			// kPowerState0 / kThermalState1 / kClamShellStateOpen
 				actionPower1			// kPowerState0 / kThermalState1 / kClamShellStateClosed
 			},
 			{
-				actionPower1,		// kPowerState0 / kThermalState2 / kClamShellStateOpen
-				actionPower1		// kPowerState0 / kThermalState2 / kClamShellStateClosed
+				actionPower1GPU1,		// kPowerState0 / kThermalState2 / kClamShellStateOpen
+				actionPower1GPU1		// kPowerState0 / kThermalState2 / kClamShellStateClosed
 			},
 			{
-				actionPower1,		// kPowerState0 / kThermalState3 / kClamShellStateOpen
-				actionPower1		// kPowerState0 / kThermalState3 / kClamShellStateClosed
+				actionPower1GPU2,		// kPowerState0 / kThermalState3 / kClamShellStateOpen
+				actionPower1GPU2		// kPowerState0 / kThermalState3 / kClamShellStateClosed
 			},
 		},
 		{
@@ -90,12 +88,12 @@ static IOPlatformMonitorAction platformActionGrid[kMaxPowerStates][kMaxThermalSt
 				actionPower1			// kPowerState1 / kThermalState1 / kClamShellStateClosed
 			},
 			{
-				actionPower1,		// kPowerState1 / kThermalState2 / kClamShellStateOpen
-				actionPower1		// kPowerState1 / kThermalState2 / kClamShellStateClosed
+				actionPower1GPU1,		// kPowerState1 / kThermalState2 / kClamShellStateOpen
+				actionPower1GPU1		// kPowerState1 / kThermalState2 / kClamShellStateClosed
 			},
 			{
-				actionPower1,		// kPowerState1 / kThermalState3 / kClamShellStateOpen
-				actionPower1		// kPowerState1 / kThermalState3 / kClamShellStateClosed
+				actionPower1GPU2,		// kPowerState1 / kThermalState3 / kClamShellStateOpen
+				actionPower1GPU2		// kPowerState1 / kThermalState3 / kClamShellStateClosed
 			},
 		}
 	};
@@ -129,15 +127,15 @@ static ThresholdInfo	thermalThresholdInfoArray[kMaxSensorIndex][kNumClamshellSta
 	{	// Sensor 0
 		{	// Clamshell open
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState1 },	// kThermalState0 
+			{	 TEMP_SENSOR_FMT(95),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
 		{	// Clamshell closed
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState1 },	// kThermalState0 
+			{	 TEMP_SENSOR_FMT(95),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
@@ -145,15 +143,15 @@ static ThresholdInfo	thermalThresholdInfoArray[kMaxSensorIndex][kNumClamshellSta
 	{	// Sensor 1
 		{	// Clamshell open
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState1 },	// kThermalState0 
+			{	 TEMP_SENSOR_FMT(95),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
 		{	// Clamshell closed
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState1 },	// kThermalState0 
+			{	 TEMP_SENSOR_FMT(95),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
@@ -162,14 +160,14 @@ static ThresholdInfo	thermalThresholdInfoArray[kMaxSensorIndex][kNumClamshellSta
 		{	// Clamshell open
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
 			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
 		{	// Clamshell closed
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
 			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
@@ -177,15 +175,15 @@ static ThresholdInfo	thermalThresholdInfoArray[kMaxSensorIndex][kNumClamshellSta
 	{	// Sensor 3
 		{	// Clamshell open
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState1 },	// kThermalState0 
+			{	 TEMP_SENSOR_FMT(95),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
 		{	// Clamshell closed
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState1 },	// kThermalState0 
+			{	 TEMP_SENSOR_FMT(95),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
@@ -193,15 +191,15 @@ static ThresholdInfo	thermalThresholdInfoArray[kMaxSensorIndex][kNumClamshellSta
 	{	// Sensor 4
 		{	// Clamshell open
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState1 },	// kThermalState0 
+			{	 TEMP_SENSOR_FMT(95),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
 		{	// Clamshell closed
 			//	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-			{	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
+			{	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState1 },	// kThermalState0 
+			{	 TEMP_SENSOR_FMT(95),	kThermalState0, 	TEMP_SENSOR_FMT(100), 	kThermalState2 },	// kThermalState1 
 			{	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
 			{	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
 		},
@@ -216,7 +214,7 @@ static ThresholdInfo	thermalThresholdInfoArray[kMaxSensorIndex][kNumClamshellSta
 #endif
 
 #define super IOPlatformMonitor
-OSDefineMetaClassAndStructors(PB6_1_PlatformMonitor, IOPlatformMonitor)
+OSDefineMetaClassAndStructors(PB5_1_PlatformMonitor, IOPlatformMonitor)
 
 // **********************************************************************************
 // actionFullPower
@@ -230,7 +228,7 @@ static bool actionFullPower ()
 	if ((conSensorArray[kCPUController].state != kCPUPowerState0) && 
 		(serv = conSensorArray[kCPUController].conSensor)) {
 		conSensorArray[kCPUController].state = kCPUPowerState0;
-		debug_msg ("IOPMon::actionFullPower - sending CPU aggressiveness 2\n");
+		IOLog ("IOPMon::actionFullPower - sending CPU aggressiveness 2\n");
 		serv->setAggressiveness (kPMSetProcessorSpeed, 2);
 		provider->setProperty (gIOPMonCPUActionKey, (OSObject *)gIOPMonFull);
 	}
@@ -239,7 +237,7 @@ static bool actionFullPower ()
 	if ((conSensorArray[kGPUController].state != kGPUPowerState0) &&
 		(serv = conSensorArray[kGPUController].conSensor)) {
 		conSensorArray[kGPUController].state = kGPUPowerState0;
-		debug_msg ("IOPMon::actionFullPower - sending GPU aggressiveness 0\n");
+		IOLog ("IOPMon::actionFullPower - sending GPU aggressiveness 0\n");
 		serv->setAggressiveness (kIOFBLowPowerAggressiveness, 0);
 		provider->setProperty (gIOPMonGPUActionKey, (OSObject *)gIOPMonFull);
 	}
@@ -260,7 +258,7 @@ static bool actionPower1 ()
 	if ((conSensorArray[kCPUController].state != kCPUPowerState1) && 
 		(serv = conSensorArray[kCPUController].conSensor)) {
 		conSensorArray[kCPUController].state = kCPUPowerState1;
-		debug_msg ("IOPMon::actionPower1 - sending CPU aggressiveness 3\n");
+		IOLog ("IOPMon::actionPower1 - sending CPU aggressiveness 3\n");
 		serv->setAggressiveness (kPMSetProcessorSpeed, 3);
 		provider->setProperty (gIOPMonCPUActionKey, (OSObject *)gIOPMonReduced);
 	}
@@ -269,7 +267,7 @@ static bool actionPower1 ()
 	if ((conSensorArray[kGPUController].state != kGPUPowerState0) &&
 		(serv = conSensorArray[kGPUController].conSensor)) {
 		conSensorArray[kGPUController].state = kGPUPowerState0;
-		debug_msg ("IOPMon::actionPower1 - sending GPU aggressiveness 0\n");
+		IOLog ("IOPMon::actionPower1 - sending GPU aggressiveness 0\n");
 		serv->setAggressiveness (kIOFBLowPowerAggressiveness, 0);
 		provider->setProperty (gIOPMonGPUActionKey, (OSObject *)gIOPMonFull);
 	}
@@ -289,17 +287,16 @@ static bool actionPower1GPU1 ()
 	if ((conSensorArray[kCPUController].state != kCPUPowerState1) && 
 		(serv = conSensorArray[kCPUController].conSensor)) {
 		conSensorArray[kCPUController].state = kCPUPowerState1;
-		debug_msg ("IOPMon::actionPower1GPU1 - CPU sending aggressiveness 3\n");
+		IOLog ("IOPMon::actionPower1GPU1 - CPU sending aggressiveness 3\n");
 		serv->setAggressiveness (kPMSetProcessorSpeed, 3);
 		provider->setProperty (gIOPMonCPUActionKey, (OSObject *)gIOPMonReduced);
 	}
 	
 	// GPU to reduced power
-        
 	if ((conSensorArray[kGPUController].state != kGPUPowerState1) &&
 		(serv = conSensorArray[kGPUController].conSensor)) {
 		conSensorArray[kGPUController].state = kGPUPowerState1;
-		debug_msg ("IOPMon::actionPower1GPU1 - sending GPU aggressiveness 1\n");
+		IOLog ("IOPMon::actionPower1GPU1 - sending GPU aggressiveness 1\n");
 		serv->setAggressiveness (kIOFBLowPowerAggressiveness, 1);
 		provider->setProperty (gIOPMonGPUActionKey, (OSObject *)gIOPMonReduced);
 	}
@@ -319,17 +316,16 @@ static bool actionPower1GPU2 ()
 	if ((conSensorArray[kCPUController].state != kCPUPowerState1) && 
 		(serv = conSensorArray[kCPUController].conSensor)) {
 		conSensorArray[kCPUController].state = kCPUPowerState1;
-		debug_msg ("IOPMon::actionPower1GPU2 - CPU sending aggressiveness 3\n");
+		IOLog ("IOPMon::actionPower1GPU2 - CPU sending aggressiveness 3\n");
 		serv->setAggressiveness (kPMSetProcessorSpeed, 3);
 		provider->setProperty (gIOPMonCPUActionKey, (OSObject *)gIOPMonReduced);
 	}
 	
 	// GPU to lowest power
-        
 	if ((conSensorArray[kGPUController].state != kGPUPowerState2) &&
 		(serv = conSensorArray[kGPUController].conSensor)) {
 		conSensorArray[kGPUController].state = kGPUPowerState2;
-		debug_msg ("IOPMon::actionPower1GPU2 - sending GPU aggressiveness 2\n");
+		IOLog ("IOPMon::actionPower1GPU2 - sending GPU aggressiveness 2\n");
 		serv->setAggressiveness (kIOFBLowPowerAggressiveness, 2);
 		provider->setProperty (gIOPMonGPUActionKey, (OSObject *)gIOPMonSlow);
 	}
@@ -341,7 +337,7 @@ static bool actionPower1GPU2 ()
 // start
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::start ( IOService * nub )
+bool PB5_1_PlatformMonitor::start ( IOService * nub )
 {
 	UInt32 i;
 	
@@ -357,17 +353,17 @@ bool PB6_1_PlatformMonitor::start ( IOService * nub )
 	
 	// Initialize our controller/sensor types (platform-dependent)
 	// Primary sensors
-	conSensorArray[kPowerSensor].conSensorType = kIOPMonPowerSensor;				// platform power monitor
-	conSensorArray[kPowerSensor].conSensor = this;									// platform power monitor
+	conSensorArray[kPowerSensor].conSensorType = kIOPMonPowerSensor;			// platform power monitor
+	conSensorArray[kPowerSensor].conSensor = this;						// platform power monitor
 	conSensorArray[kPowerSensor].numStates = kMaxPowerStates;
 	conSensorArray[kPowerSensor].sensorValid = true;
-	conSensorArray[kPowerSensor].registered = true;									// built-in
+	conSensorArray[kPowerSensor].registered = true;						// built-in
 	
 	conSensorArray[kThermalSensor].conSensorType = kIOPMonThermalSensor;			// primary thermal sensor
 	conSensorArray[kThermalSensor].conSensor = this;
 	conSensorArray[kThermalSensor].numStates = kMaxThermalStates;
 	conSensorArray[kThermalSensor].sensorValid = true;
-	conSensorArray[kThermalSensor].registered = true;								// built-in aggregate sensor
+	conSensorArray[kThermalSensor].registered = true;					// built-in aggregate sensor
 	
 	conSensorArray[kClamshellSensor].conSensorType = kIOPMonClamshellSensor;		// pmu clamshell sensor
 	conSensorArray[kClamshellSensor].numStates = kNumClamshellStates;
@@ -380,12 +376,12 @@ bool PB6_1_PlatformMonitor::start ( IOService * nub )
 
 	conSensorArray[kGPUController].conSensorType = kIOPMonGPUController;			// gpu controller
 	conSensorArray[kGPUController].state = kGPUPowerState0;
-	conSensorArray[kGPUController].registered = true;								// built-in
+	conSensorArray[kGPUController].registered = true;					// built-in
 	
 	// Subsensors (all are thermal sensors)
 	for (i = 0; i < kMaxSensorIndex; i++) {
 		subSensorArray[i].conSensorType = kIOPMonThermalSensor;
-		subSensorArray[i].conSensorParent = kThermalSensor;			// Index into primary array of our parent
+		subSensorArray[i].conSensorParent = kThermalSensor;				// Index into primary array of our parent
 		subSensorArray[i].numStates = kMaxThermalStates;
 		// If a sensor is not to be used, set sensorValid false;
 		subSensorArray[i].sensorValid = true;
@@ -473,15 +469,15 @@ bool PB6_1_PlatformMonitor::start ( IOService * nub )
 // powerStateWillChangeTo
 //
 // **********************************************************************************
-IOReturn PB6_1_PlatformMonitor::powerStateWillChangeTo (IOPMPowerFlags theFlags, unsigned long, IOService*)
+IOReturn PB5_1_PlatformMonitor::powerStateWillChangeTo (IOPMPowerFlags theFlags, unsigned long, IOService*)
 {	
     if ( ! (theFlags & IOPMPowerOn) ) {
         // Sleep sequence:
-		IOLog ("PB6_1_PlatformMonitor::powerStateWillChangeTo - sleep\n");
+		IOLog ("PB5_1_PlatformMonitor::powerStateWillChangeTo - sleep\n");
 		savePlatformState();
    } else {
         // Wake sequence:
-		IOLog ("PB6_1_PlatformMonitor::powerStateWillChangeTo - wake\n");
+		IOLog ("PB5_1_PlatformMonitor::powerStateWillChangeTo - wake\n");
 		restorePlatformState();
     }
 	
@@ -500,7 +496,7 @@ IOReturn PB6_1_PlatformMonitor::powerStateWillChangeTo (IOPMPowerFlags theFlags,
 // PM calls us here we have already altered the condition and there is nothing to do.
 //
 // **********************************************************************************
-IOReturn PB6_1_PlatformMonitor::setAggressiveness(unsigned long selector, unsigned long newLevel)
+IOReturn PB5_1_PlatformMonitor::setAggressiveness(unsigned long selector, unsigned long newLevel)
 {
 	IOPMonEventData 	event;
 	IOReturn			result;
@@ -508,7 +504,7 @@ IOReturn PB6_1_PlatformMonitor::setAggressiveness(unsigned long selector, unsign
     result = super::setAggressiveness(selector, newLevel);
 
 	if (selector == kPMSetProcessorSpeed) {
-		IOLog ("PB6_1_PlatformMonitor::setAggressiveness - newLevel %ld\n", newLevel);
+		IOLog ("PB5_1_PlatformMonitor::setAggressiveness - newLevel %ld\n", newLevel);
 		if (newLevel != currentPowerState) {	// This only works if we have two power states
 			// create and transmit internal event
 			event.event = kIOPMonMessageStateChanged;
@@ -527,9 +523,9 @@ IOReturn PB6_1_PlatformMonitor::setAggressiveness(unsigned long selector, unsign
 // initPowerState
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::initPowerState ()
+bool PB5_1_PlatformMonitor::initPowerState ()
 {
-	currentPowerState = kPowerState1;			// We will have booted slow
+	currentPowerState = kPowerState0;			// We will have booted fast
 	return true;
 }
 
@@ -537,7 +533,7 @@ bool PB6_1_PlatformMonitor::initPowerState ()
 // savePowerState
 //
 // **********************************************************************************
-void PB6_1_PlatformMonitor::savePowerState ()
+void PB5_1_PlatformMonitor::savePowerState ()
 {
 	return;			// Currently nothing to do
 }
@@ -546,19 +542,29 @@ void PB6_1_PlatformMonitor::savePowerState ()
 // restorePowerState
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::restorePowerState ()
+bool PB5_1_PlatformMonitor::restorePowerState ()
 {
-	// This platform is always slow coming out of sleep, so if our current power
-	// state is fast (kPowerState0) return true to force an update.
-	conSensorArray[kCPUController].state = kCPUPowerState1;	// Set controller state
-	return (currentPowerState == kPowerState0);	
+	IOService *serv;
+
+	// This platform is always fast coming out of sleep, so if our current power
+	// state is slow (kPowerState1) return true to force an update.
+	conSensorArray[kCPUController].state = kCPUPowerState0;	// Set controller state
+        
+        // This ensures that the CPU speed and L3 are in sync, its possible that the L3 was disabled
+        // previously which means when we wake it will still be disabled which would not be in sync
+        // with the CPU speed (fast on wake)
+        serv = conSensorArray[kCPUController].conSensor;
+        IOLog ("IOPMon::actionFullPower - sending CPU aggressiveness 2\n");
+        serv->setAggressiveness (kPMSetProcessorSpeed, 2);
+        
+	return (currentPowerState == kPowerState1);	
 }
 	
 // **********************************************************************************
 // initThermalState
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::initThermalState ()
+bool PB5_1_PlatformMonitor::initThermalState ()
 {
 	currentThermalState = kThermalState0;
 	return true;
@@ -568,7 +574,7 @@ bool PB6_1_PlatformMonitor::initThermalState ()
 // saveThermalState
 //
 // **********************************************************************************
-void PB6_1_PlatformMonitor::saveThermalState ()
+void PB5_1_PlatformMonitor::saveThermalState ()
 {
 	return;	// Nothing to do
 }
@@ -577,7 +583,7 @@ void PB6_1_PlatformMonitor::saveThermalState ()
 // restoreThermalState
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::restoreThermalState ()
+bool PB5_1_PlatformMonitor::restoreThermalState ()
 {
 	OSNumber			*threshLow, *threshHigh;
 	UInt32				i;
@@ -609,7 +615,7 @@ bool PB6_1_PlatformMonitor::restoreThermalState ()
 // initClamshellState
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::initClamshellState ()
+bool PB5_1_PlatformMonitor::initClamshellState ()
 {
 	currentClamshellState = kClamshellStateOpen;
 	
@@ -620,7 +626,7 @@ bool PB6_1_PlatformMonitor::initClamshellState ()
 // saveClamshellState
 //
 // **********************************************************************************
-void PB6_1_PlatformMonitor::saveClamshellState ()
+void PB5_1_PlatformMonitor::saveClamshellState ()
 {
 	return;				// Nothing to do
 }
@@ -629,7 +635,7 @@ void PB6_1_PlatformMonitor::saveClamshellState ()
 // restoreClamshellState
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::restoreClamshellState ()
+bool PB5_1_PlatformMonitor::restoreClamshellState ()
 {
 	// Currently nothing to do.  
 	// We'll get the right state next time monitor power is called
@@ -640,65 +646,30 @@ bool PB6_1_PlatformMonitor::restoreClamshellState ()
 // monitorPower
 //
 // **********************************************************************************
-IOReturn PB6_1_PlatformMonitor::monitorPower (OSDictionary *dict, IOService *provider)
+IOReturn PB5_1_PlatformMonitor::monitorPower (OSDictionary *dict, IOService *provider)
 {
 	UInt32 				type, index, subIndex, value;
 	OSNumber			*num;
-	IOPMonEventData 	event;
 	    
 	if (lookupConSensorInfo (dict, provider, &type, &index, &subIndex)) {
 		// See if any low power conditions exist.
 		if (num = OSDynamicCast (OSNumber, dict->getObject (gIOPMonCurrentValueKey))) {
 			value = num->unsigned32BitValue();
 			value &= ~kIOPMForceLowSpeed;  		// Clear low speed bit
-			if ((value & (kIOPMACInstalled | kIOPMACnoChargeCapability)) == (kIOPMACInstalled | kIOPMACnoChargeCapability))
-				value |= kIOPMForceLowSpeed;
-			else if ((value & (kIOPMRawLowBattery | kIOPMBatteryDepleted)) != 0)
-				value |= kIOPMForceLowSpeed;
-			else if ((value & kIOPMBatteryInstalled) == 0)
-				value |= kIOPMForceLowSpeed;
-			// Clamshell is a little different than P58, which only used it to control L3 cache
-                        // we don't want to force low speed on closed clamshell on P99 anymore.
-                       //else if ((value & kIOPMClosedClamshell) != 0)
-                               //value |= kIOPMForceLowSpeed;
+                        
+                        // Check if we have the correct adapter plugged in. The high byte of "value" contains the wattage of the adapter
+                        // Set the "I have the wrong adapter plugged in" bit if we have less than a 65 Watt adapter plugged in.
 
-#if 0
-			if ((value & (kIOPMACInstalled | kIOPMACnoChargeCapability)) == (kIOPMACInstalled | kIOPMACnoChargeCapability))
-				IOLog ("(kIOPMACInstalled | kIOPMACnoChargeCapability) - 0x%lx & (0x%lx)\n", value, (kIOPMACInstalled | kIOPMACnoChargeCapability));
-			else if ((value & (kIOPMRawLowBattery | kIOPMBatteryDepleted)) != 0)
-				IOLog ("(kIOPMRawLowBattery | kIOPMBatteryDepleted) - 0x%lx & (0x%lx)\n", value, (kIOPMRawLowBattery | kIOPMBatteryDepleted));
-			else if ((value & kIOPMBatteryInstalled) == 0)
-				IOLog ("kIOPMBatteryInstalled - 0x%lx & (0x%lx)\n", value, kIOPMBatteryInstalled);
-			// Clamshell is a little different than P58, which only used it to control L3 cache
-			else if ((value & kIOPMClosedClamshell) != 0)
-				IOLog ("kIOPMClosedClamshell - 0x%lx & (0x%lx)\n", value, kIOPMClosedClamshell);
-#endif
+// Setting this bit causes the battery monitor to put a dialog indicating to the user that they have inserted the 
+// wrong adapter.  Marketing has decided they no longer like this dialog, so I'm commenting out this code because
+// I'm sure someone somewhere will change they're mind and want this back....
+//                        if ((((value & 0xFF000000) >> 24) > 0) && (((value & 0xFF000000) >> 24) < 0x41))
+//                            value |= 1<<11;
+//                        else
+//                            value &= ~(1<<11);
 			
 			num->setValue((long long)value);		// Send updated value back
-			
-			/*
-			 * Strictly speaking, most of the above situations aren't closed clamshell conditions but
-			 * for the purposes of the state machine it's OK to treat them that way.  That may not be true
-			 * on all platforms.
-			 */
-			if (((value & kIOPMForceLowSpeed) && (currentClamshellState == kClamshellStateOpen)) ||
-				((!(value & kIOPMForceLowSpeed)) && (currentClamshellState == kClamshellStateClosed))) {
-
-				IOLog ("monitorPower: sending clamshell %s event based on flags 0x%lx\n", 
-					(currentClamshellState == kClamshellStateOpen) ? "closed" : "open",  value);
-
-				// create and transmit internal event
-				event.event = kIOPMonMessageStateChanged;
-				event.conSensor = this;
-				event.eventDict = (currentClamshellState == kClamshellStateOpen) ? 
-					dictClamshellClosed : dictClamshellOpen;
-		
-				// send it
-				handleEvent (&event);
-	
-				return kIOReturnSuccess;
-			}
-		}
+                }
 	}
 	return kIOReturnBadArgument;
 }
@@ -707,7 +678,7 @@ IOReturn PB6_1_PlatformMonitor::monitorPower (OSDictionary *dict, IOService *pro
 // updateIOPMonStateInfo
 //
 // **********************************************************************************
-void PB6_1_PlatformMonitor::updateIOPMonStateInfo (UInt32 type, UInt32 state)
+void PB5_1_PlatformMonitor::updateIOPMonStateInfo (UInt32 type, UInt32 state)
 {
 	const OSSymbol		*stateKey, *stateValue;
 	
@@ -740,7 +711,7 @@ void PB6_1_PlatformMonitor::updateIOPMonStateInfo (UInt32 type, UInt32 state)
 // initPlatformState
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::initPlatformState ()
+bool PB5_1_PlatformMonitor::initPlatformState ()
 {
 	if (initPowerState() &&
 		initThermalState() &&
@@ -756,7 +727,7 @@ bool PB6_1_PlatformMonitor::initPlatformState ()
 //		-- protected by CommandGate - call via IOPlatformMonitor::savePlatformState
 //
 // **********************************************************************************
-void PB6_1_PlatformMonitor::savePlatformState ()
+void PB5_1_PlatformMonitor::savePlatformState ()
 {
 	savePowerState();
 	saveThermalState();
@@ -771,7 +742,7 @@ void PB6_1_PlatformMonitor::savePlatformState ()
 //		-- protected by CommandGate - call via IOPlatformMonitor::restorePlatformState
 //
 // **********************************************************************************
-void PB6_1_PlatformMonitor::restorePlatformState ()
+void PB5_1_PlatformMonitor::restorePlatformState ()
 {
 	bool doAdjust;
 	
@@ -802,12 +773,12 @@ void PB6_1_PlatformMonitor::restorePlatformState ()
 // we do something.
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::adjustPlatformState ()
+bool PB5_1_PlatformMonitor::adjustPlatformState ()
 {
 	IOPlatformMonitorAction		actionToTake;
 	bool						result = true;
 	
-	IOLog ("PB6_1_PlatformMonitor::adjustPlatformState - entered, cps %ld, cts %ld, ccs %ld\n",
+	IOLog ("PB5_1_PlatformMonitor::adjustPlatformState - entered, cps %ld, cts %ld, ccs %ld\n",
 		currentPowerState, currentThermalState, currentClamshellState);
 	// Look up action to take for current state
 	actionToTake = platformActionGrid[currentPowerState][currentThermalState][currentClamshellState];
@@ -818,6 +789,7 @@ bool PB6_1_PlatformMonitor::adjustPlatformState ()
 		updateIOPMonStateInfo(kIOPMonPowerSensor, currentPowerState);
 	}
 	if (lastThermalState != currentThermalState) {
+                lastAction = 0;
 		lastThermalState = currentThermalState;
 		updateIOPMonStateInfo(kIOPMonThermalSensor, currentThermalState);
 	}
@@ -840,7 +812,7 @@ bool PB6_1_PlatformMonitor::adjustPlatformState ()
 // registerConSensor
 //
 // **********************************************************************************
-IOReturn PB6_1_PlatformMonitor::registerConSensor (OSDictionary *dict, IOService *conSensor)
+IOReturn PB5_1_PlatformMonitor::registerConSensor (OSDictionary *dict, IOService *conSensor)
 {
 	UInt32 				csi, subsi, type, initialState, initialValue;
 	ThermalValue		initialThermalValue;
@@ -849,7 +821,7 @@ IOReturn PB6_1_PlatformMonitor::registerConSensor (OSDictionary *dict, IOService
 	if (!lookupConSensorInfo (dict, conSensor, &type, &csi, &subsi))
 		return kIOReturnBadArgument;
 		
-	IOLog ("PB6_1_PlatformMonitor::registerConSensor - type %ld, csi %ld, subsi %ld\n", type, csi, subsi);
+	IOLog ("PB5_1_PlatformMonitor::registerConSensor - type %ld, csi %ld, subsi %ld\n", type, csi, subsi);
 	
 	if (subsi < kMaxSensorIndex)	// Is subsensor index valid? If so use subSensorArray
 		csInfo = &subSensorArray[subsi];
@@ -900,7 +872,7 @@ IOReturn PB6_1_PlatformMonitor::registerConSensor (OSDictionary *dict, IOService
 			break;
 		
 		case kIOPMonPowerSensor:
-			initialState = kPowerState1;			// Booted slow - PM should call and change if neccessary
+			initialState = kPowerState0;			// Booted fast
 			break;
 		
 		case kIOPMonClamshellSensor:
@@ -911,7 +883,7 @@ IOReturn PB6_1_PlatformMonitor::registerConSensor (OSDictionary *dict, IOService
 			break;
 		
 		case kIOPMonCPUController:
-			initialState = kCPUPowerState1;			// Booted slow - PM should call and change if neccessary
+			initialState = kCPUPowerState0;			// Booted fast
 			csInfo->registered = true;
 			break;
 		
@@ -933,7 +905,7 @@ IOReturn PB6_1_PlatformMonitor::registerConSensor (OSDictionary *dict, IOService
 // unregisterSensor
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::unregisterSensor (UInt32 sensorID)
+bool PB5_1_PlatformMonitor::unregisterSensor (UInt32 sensorID)
 {
 	if (sensorID >= kMaxSensors)
 		return false;
@@ -946,7 +918,7 @@ bool PB6_1_PlatformMonitor::unregisterSensor (UInt32 sensorID)
 // lookupConSensorInfo
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::lookupConSensorInfo (OSDictionary *dict, IOService *conSensor, 
+bool PB5_1_PlatformMonitor::lookupConSensorInfo (OSDictionary *dict, IOService *conSensor, 
 	UInt32 *type, UInt32 *index, UInt32 *subIndex)
 {
 	OSSymbol	*typeString;
@@ -1006,7 +978,7 @@ bool PB6_1_PlatformMonitor::lookupConSensorInfo (OSDictionary *dict, IOService *
 // lookupThermalStateFromValue
 //
 // **********************************************************************************
-UInt32 PB6_1_PlatformMonitor::lookupThermalStateFromValue (UInt32 sensorIndex, ThermalValue value)
+UInt32 PB5_1_PlatformMonitor::lookupThermalStateFromValue (UInt32 sensorIndex, ThermalValue value)
 {
 	UInt32 i;
 	
@@ -1017,7 +989,7 @@ UInt32 PB6_1_PlatformMonitor::lookupThermalStateFromValue (UInt32 sensorIndex, T
 					return i;
 
 		// This is bad as sensor's already over the limit - need to figure right response
-		IOLog ("PB6_1_PlatformMonitor::lookupStateFromValue - sensor %ld over limit\n", sensorIndex);
+		IOLog ("PB5_1_PlatformMonitor::lookupStateFromValue - sensor %ld over limit\n", sensorIndex);
 		return kMaxSensorIndex;
 	}
 	
@@ -1031,7 +1003,7 @@ UInt32 PB6_1_PlatformMonitor::lookupThermalStateFromValue (UInt32 sensorIndex, T
 //		-- protected by CommandGate - call through handleEvent
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::handlePowerEvent (IOPMonEventData *eventData)
+bool PB5_1_PlatformMonitor::handlePowerEvent (IOPMonEventData *eventData)
 {
 	UInt32		nextPowerState;
 	bool		result;
@@ -1054,7 +1026,7 @@ bool PB6_1_PlatformMonitor::handlePowerEvent (IOPMonEventData *eventData)
 //		-- protected by CommandGate - call through handleEvent
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::handleThermalEvent (IOPMonEventData *eventData)
+bool PB5_1_PlatformMonitor::handleThermalEvent (IOPMonEventData *eventData)
 {
 	UInt32					type, csi, subsi, myThermalState;
 	ThermalValue			value;
@@ -1078,7 +1050,7 @@ bool PB6_1_PlatformMonitor::handleThermalEvent (IOPMonEventData *eventData)
 			break;
 				
 		default:
-			IOLog ("PB6_1_PlatformMonitor::handleThermalEvent - event %ld not handled\n", 
+			IOLog ("PB5_1_PlatformMonitor::handleThermalEvent - event %ld not handled\n", 
 				eventData->event);
 			result = false;
 			break;
@@ -1125,7 +1097,7 @@ bool PB6_1_PlatformMonitor::handleThermalEvent (IOPMonEventData *eventData)
 //		-- protected by CommandGate - call through handleEvent
 //
 // **********************************************************************************
-bool PB6_1_PlatformMonitor::handleClamshellEvent (IOPMonEventData *eventData)
+bool PB5_1_PlatformMonitor::handleClamshellEvent (IOPMonEventData *eventData)
 {
 	UInt32		nextClamshellState;
 	bool		result;
@@ -1149,9 +1121,9 @@ bool PB6_1_PlatformMonitor::handleClamshellEvent (IOPMonEventData *eventData)
 //
 // **********************************************************************************
 //static
-IOReturn PB6_1_PlatformMonitor::iopmonCommandGateCaller(OSObject *object, void *arg0, void *arg1, void *arg2, void *arg3)
+IOReturn PB5_1_PlatformMonitor::iopmonCommandGateCaller(OSObject *object, void *arg0, void *arg1, void *arg2, void *arg3)
 {
-	PB6_1_PlatformMonitor	*me;
+	PB5_1_PlatformMonitor	*me;
 	IOPMonCommandThreadSet	*commandSet;
 	UInt32					type, conSensorID, subSensorID;
 	bool					result;
@@ -1159,7 +1131,7 @@ IOReturn PB6_1_PlatformMonitor::iopmonCommandGateCaller(OSObject *object, void *
 	// Pull our event data and, since we're a static function, a reference to our object
 	// out of the parameters
 	if (((commandSet = (IOPMonCommandThreadSet *)arg0) == NULL) ||
-		((me = OSDynamicCast(PB6_1_PlatformMonitor, commandSet->me)) == NULL))
+		((me = OSDynamicCast(PB5_1_PlatformMonitor, commandSet->me)) == NULL))
 		return kIOReturnError;
 	
 	result = true; 
@@ -1167,16 +1139,16 @@ IOReturn PB6_1_PlatformMonitor::iopmonCommandGateCaller(OSObject *object, void *
 	switch (commandSet->command) {
 		case kIOPMonCommandHandleEvent:
 			if (!(commandSet->eventData.eventDict)) {
-				IOLog ("PB6_1_PlatformMonitor::iopmonCommandGateCaller - bad dictionary\n");
+				IOLog ("PB5_1_PlatformMonitor::iopmonCommandGateCaller - bad dictionary\n");
 				return kIOReturnBadArgument;
 			}
 			if (!(commandSet->eventData.conSensor)) {
-				IOLog ("PB6_1_PlatformMonitor::iopmonCommandGateCaller - bad conSensor\n");
+				IOLog ("PB5_1_PlatformMonitor::iopmonCommandGateCaller - bad conSensor\n");
 				return kIOReturnBadArgument;
 			}
 			if (!me->lookupConSensorInfo (commandSet->eventData.eventDict, commandSet->eventData.conSensor, 
 				&type, &conSensorID, &subSensorID)) {
-				IOLog ("PB6_1_PlatformMonitor::iopmonCommandGateCaller - bad sensor info lookup\n");
+				IOLog ("PB5_1_PlatformMonitor::iopmonCommandGateCaller - bad sensor info lookup\n");
 				return kIOReturnBadArgument;
 			}
 			
@@ -1192,7 +1164,7 @@ IOReturn PB6_1_PlatformMonitor::iopmonCommandGateCaller(OSObject *object, void *
 					break;
 				
 				default:
-					IOLog ("PB6_1_PlatformMonitor::iopmonCommandGateCaller -  bad sensorType(%ld), sensorID(%ld), subsi(%ld)\n", 
+					IOLog ("PB5_1_PlatformMonitor::iopmonCommandGateCaller -  bad sensorType(%ld), sensorID(%ld), subsi(%ld)\n", 
 						type, conSensorID, subSensorID);
 					result = false;
 					break;
@@ -1208,7 +1180,7 @@ IOReturn PB6_1_PlatformMonitor::iopmonCommandGateCaller(OSObject *object, void *
 			break;
 		
 		default:
-			IOLog ("PB6_1_PlatformMonitor::iopmonCommandGateCaller - bad command %ld\n", 
+			IOLog ("PB5_1_PlatformMonitor::iopmonCommandGateCaller - bad command %ld\n", 
 				commandSet->command);
 			result = false;
 			break;
