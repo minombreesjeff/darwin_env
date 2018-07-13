@@ -37,7 +37,6 @@
 #include "IOPMSlotsMacRISC4.h"
 #include "IOPMUSBMacRISC4.h"
 #include "U3.h"
-#include "IOPlatformPlugin.h"
 
 enum
 {

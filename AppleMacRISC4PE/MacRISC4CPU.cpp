@@ -97,7 +97,6 @@ static bool								gI2CTransactionComplete;
 static IOService						*gI2CDriver,
 										*gTBDriver;
 static const OSSymbol					*gTBFunctionNameSym;
-static const OSSymbol					*gTBReadFunctionNameSym;		// XXX Temp!!!
 static const cpu_timebase_params_t		*gTimeBaseParams;
 static UInt32 							*gPHibernateState;
 
@@ -191,13 +190,6 @@ bool MacRISC4CPU::start(IOService *provider)
 				//MYLOG ("4CPU: got tb function '%s'\n", functionName);
 				gTBFunctionNameSym = OSSymbol::withCString(functionName);
 
-				// XXX - This is temporary for Waveland bringup
-				if (cpusRegEntry->getProperty ("platform-read-cpu-timebase")) {
-					sprintf(functionName, "%s-%08lx", "platform-read-cpu-timebase", 
-						*((UInt32 *)pHandle->getBytesNoCopy()));
-					//MYLOG ("4CPU: got tb read function '%s'\n", functionName);
-					gTBReadFunctionNameSym = OSSymbol::withCString(functionName);
-				}
 			}
 		} else {
 			/*
@@ -782,36 +774,11 @@ void MacRISC4CPU::enableCPUTimeBase(bool enable)
 		UInt32		gpioValue;
 		UInt32 		count = 0;
 		
-		// XXX - temp for Waveland bringup - for Waveland we always drive the GPIO low
-		// SMU will set it high when it is done which is how we know it is complete - see
-		// the poll loop below.
-		// For normal systems, the GPIO itself drives the timebase signal so we just have
-		// to set it high or low to control it.
-		if (gTBReadFunctionNameSym) 
-			gpioValue = 0;
-		else
-			gpioValue = enable ? 1 : 0;
+		gpioValue = enable ? 1 : 0;
 		
 		// GPIO driver can handle it
 		gTBDriver->callPlatformFunction (gTBFunctionNameSym, false, (void *)gpioValue, 0, 0, 0);
 		
-		// XXX - temp for Waveland bringup
-		if (gTBReadFunctionNameSym) {
-			UInt32 gpioState;
-				
-			do {
-								
-				count++;
-				// Wait for SMU to restore GPIO state
-				gTBDriver->callPlatformFunction (gTBReadFunctionNameSym, false, (void *)&gpioState, 0, 0, 0);
-				//getCPUTimebase (&tbu, &tbl);
-				//kprintf ("4CPU::tb read tb gpio got value %d, current tb values %d, %ud\n", gpioState, tbu, tbl);
-			} while ((gpioState == 0) && (count < 15));
-			
-			//getCPUTimebase (&tbu, &tbl);
-		
-			kprintf ("MacRISC4CPU::enableCPUTimeBase(%s) complete\n", enable ? "enable" : "disable");
-		}
 	} else {
 		// Do it messy I2C way 
 		UInt8 sevenBitAddr, buf, tmp;
