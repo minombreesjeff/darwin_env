@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2004 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2007 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,7 +20,7 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- * Copyright (c) 2002-2004 Apple Computer, Inc.  All rights reserved.
+ * Copyright (c) 2002-2007 Apple Inc.  All rights reserved.
  *
  *  DRI: Dave Radcliffe
  *
@@ -61,6 +61,7 @@ private:
     class IOPMSlotsMacRISC4	*slotsMacRISC4;
     IOLock					*pmmutex;
 	bool					isPortable,
+							u3IsHostMPIC,
 							cannotSleep;
 	IOService				*ioPPluginNub;
 	IOService				*plFuncNub;
