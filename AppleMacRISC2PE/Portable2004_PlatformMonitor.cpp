@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,22 +20,16 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- * Copyright (c) 2002 Apple Computer, Inc.  All rights reserved.
+ * Copyright (c) 2003 Apple Computer, Inc.  All rights reserved.
  *
  */
 
-/*  IMPORTANT NOTE: Clamshell State is better thought of as Environmental State.  If the computer should be forced slow for environmental reasons, like clamshell closed, low battery, etc (not thermals), then the bool you're looking for is kClamshellStateC
+/*  IMPORTANT NOTE: Clamshell State is better thought of as Environmental State.  If the computer should be 		*/
+/*  forced slow for environmental reasons, like clamshell closed, low battery, etc (not thermals), then the bool	*/
+/*  you're looking for is kClamshellStateClosed.  If the machine does not need to be forced slow, it is			*/
+/*  kClamshellStateOpen. 												*/
 
-
-
-
-
-
-
-losed.  If the machine does not need to be forced slow, it is kClamshellStateOpen. */
-
-
-#include "Portable2003_PlatformMonitor.h"
+#include "Portable2004_PlatformMonitor.h"
 
 static const OSSymbol 			*gIOPMonPowerStateKey;
 static const OSSymbol 			*gIOPMonThermalStateKey;
@@ -51,15 +45,19 @@ static const OSSymbol			*gIOPMonFull;
 static const OSSymbol			*gIOPMonReduced;
 static const OSSymbol			*gIOPMonSlow;
 
-static	Portable2003_PlatformMonitor	*gIOPMon;
+static	Portable2004_PlatformMonitor	*gIOPMon;
 
 static 	IOService			*provider;
 
+static	bool				gUseBusSlewing;
+
 // Possible platform actions
-static bool actionFullPower ();
-static bool actionPower1 ();
-static bool actionPower1GPU1 ();
-static bool actionPower1GPU2 ();
+
+static bool actionFullPower ( );
+static bool actionPower1 ( );
+
+//static bool actionPower1GPU1 ( );  	Currently not used
+//static bool actionPower1GPU2 ( );  	Currently not used
 
 /*
  * The platformActionGrid, which is platform-dependent, is an n-dimension array, where n corresponds
@@ -78,19 +76,19 @@ static IOPlatformMonitorAction platformActionGrid[kMaxPowerStates][kMaxThermalSt
 
 			{
 				actionFullPower,		// kPowerState0 / kThermalState0 / kClamShellStateOpen
-				actionPower1			// kPowerState0 / kThermalState0 / kClamShellStateClosed
+				actionFullPower			// kPowerState0 / kThermalState0 / kClamShellStateClosed
 			},
 			{
 				actionPower1,			// kPowerState0 / kThermalState1 / kClamShellStateOpen
 				actionPower1			// kPowerState0 / kThermalState1 / kClamShellStateClosed
 			},
 			{
-				actionPower1,		// kPowerState0 / kThermalState2 / kClamShellStateOpen
-				actionPower1		// kPowerState0 / kThermalState2 / kClamShellStateClosed
+				actionPower1,			// kPowerState0 / kThermalState2 / kClamShellStateOpen
+				actionPower1			// kPowerState0 / kThermalState2 / kClamShellStateClosed
 			},
 			{
-				actionPower1,		// kPowerState0 / kThermalState3 / kClamShellStateOpen
-				actionPower1		// kPowerState0 / kThermalState3 / kClamShellStateClosed
+				actionPower1,			// kPowerState0 / kThermalState3 / kClamShellStateOpen
+				actionPower1			// kPowerState0 / kThermalState3 / kClamShellStateClosed
 			},
 		},
 		{
@@ -103,12 +101,12 @@ static IOPlatformMonitorAction platformActionGrid[kMaxPowerStates][kMaxThermalSt
 				actionPower1			// kPowerState1 / kThermalState1 / kClamShellStateClosed
 			},
 			{
-				actionPower1,		// kPowerState1 / kThermalState2 / kClamShellStateOpen
-				actionPower1		// kPowerState1 / kThermalState2 / kClamShellStateClosed
+				actionPower1,			// kPowerState1 / kThermalState2 / kClamShellStateOpen
+				actionPower1			// kPowerState1 / kThermalState2 / kClamShellStateClosed
 			},
 			{
-				actionPower1,		// kPowerState1 / kThermalState3 / kClamShellStateOpen
-				actionPower1		// kPowerState1 / kThermalState3 / kClamShellStateClosed
+				actionPower1,			// kPowerState1 / kThermalState3 / kClamShellStateOpen
+				actionPower1			// kPowerState1 / kThermalState3 / kClamShellStateClosed
 			},
 		}
 	};
@@ -133,337 +131,337 @@ static ConSensorInfo conSensorArray[kMaxConSensors];
 static ConSensorInfo subSensorArray[kMaxSensorIndex];
 
 /*
- * The thermalThresholdInfoArray is another n-dimensional array detailing threshold and state information
+ * The thermalThresholdInfoArray is another 4-dimensional array detailing threshold and state information
  * for each sensor.  For this platform, an additional factor is clamshell state, so that is one of the
  * dimensions here.
  */
-static ThresholdInfo	thermalThresholdInfoArray[kMaxMachineTypes][kMaxSensorIndex][kNumClamshellStates][kMaxThermalStates] =
+static NewThresholdInfo	thermalThresholdInfoArray[kMaxMachineTypes][kMaxSensorIndex][kNumClamshellStates][kMaxThermalStates] =
 {
-    {	// PowerBook6,2 values
+    {
             {	// Sensor 0
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(53), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(51),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(54)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(52),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(53), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(51),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(59)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(57),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 1
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(79), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(75),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(79)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(75),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(79), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(75),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(79)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(75),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 2
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(103), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(99),	kThermalState0, 	TEMP_SENSOR_FMT(105), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(101),	kThermalState1, 	TEMP_SENSOR_FMT(107), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(103),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(103)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(99),		TEMP_SENSOR_FMT(105)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(101),		TEMP_SENSOR_FMT(107)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(103),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(103), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(99),	kThermalState0, 	TEMP_SENSOR_FMT(105), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(101),	kThermalState1, 	TEMP_SENSOR_FMT(107), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(103),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(103)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(99),		TEMP_SENSOR_FMT(105)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(101),		TEMP_SENSOR_FMT(107)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(103),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 3
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(42)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(40),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(42)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(40),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 4
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(73)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(73)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
     },
-    {	// PowerBook5,2 values
+    {
             {	// Sensor 0
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(76), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(74),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(63)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(62),		TEMP_SENSOR_FMT(105)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(100),		TEMP_SENSOR_FMT(110)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(105),		TEMP_SENSOR_FMT(115)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(76), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(74),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(63)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(62),		TEMP_SENSOR_FMT(105)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(100),		TEMP_SENSOR_FMT(110)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(105),		TEMP_SENSOR_FMT(115)	},	// kThermalState3 
                     },
             },
             {	// Sensor 1
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(75), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(73),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(83)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(82),		TEMP_SENSOR_FMT(105)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(100),		TEMP_SENSOR_FMT(110)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(105),		TEMP_SENSOR_FMT(115)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(75), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(73),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(83)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(82),		TEMP_SENSOR_FMT(105)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(100),		TEMP_SENSOR_FMT(110)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(105),		TEMP_SENSOR_FMT(115)	},	// kThermalState3 
                     },
             },
             {	// Sensor 2
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(82), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(80),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(92)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(91),		TEMP_SENSOR_FMT(105)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(100),		TEMP_SENSOR_FMT(110)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(105),		TEMP_SENSOR_FMT(115)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(82), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(80),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(92)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(91),		TEMP_SENSOR_FMT(105)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(100),		TEMP_SENSOR_FMT(110)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(105),		TEMP_SENSOR_FMT(115)	},	// kThermalState3 
                     },
             },
             {	// Sensor 3
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(50), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(45),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(73)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(50), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(45),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(73)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 4
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(73)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(73)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(83)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
     },
-    {	// PowerBook6,3 values
+    {	// PowerBook5,4 values
             {	// Sensor 0
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(63), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(62),	kThermalState0, 	TEMP_SENSOR_FMT(105), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(100),	kThermalState1, 	TEMP_SENSOR_FMT(110), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(105),	kThermalState2, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(76)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(74),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(63), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(62),	kThermalState0, 	TEMP_SENSOR_FMT(105), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(100),	kThermalState1, 	TEMP_SENSOR_FMT(110), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(105),	kThermalState2, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(76)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(74),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 1
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(82),	kThermalState0, 	TEMP_SENSOR_FMT(105), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(100),	kThermalState1, 	TEMP_SENSOR_FMT(110), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(105),	kThermalState2, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(75)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(73),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(82),	kThermalState0, 	TEMP_SENSOR_FMT(105), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(100),	kThermalState1, 	TEMP_SENSOR_FMT(110), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(105),	kThermalState2, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(75)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(73),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 2
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(92), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(91),	kThermalState0, 	TEMP_SENSOR_FMT(105), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(100),	kThermalState1, 	TEMP_SENSOR_FMT(110), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(105),	kThermalState2, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(82)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(80),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(92), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(91),	kThermalState0, 	TEMP_SENSOR_FMT(105), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(100),	kThermalState1, 	TEMP_SENSOR_FMT(110), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(105),	kThermalState2, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(82)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(80),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 3
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(42)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(37),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(42)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(37),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 4
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(110)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(73), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(83), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(110)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
     },
-    {	// PowerBook5,3 values
+    {	// PowerBook5,5 values
             {	// Sensor 0
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(68), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(66),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(68)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(66),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(68), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(66),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(68)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(66),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 1
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(68), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(66),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(68)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(66),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(68), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(66),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(68)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(66),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 2
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(68), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(66),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(68)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(66),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(68), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(66),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(68)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(66),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 3
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(50), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(45),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(50)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(45),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(50), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(45),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(108),	kThermalState1, 	TEMP_SENSOR_FMT(115), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(113),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(50)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(45),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(108),		TEMP_SENSOR_FMT(115)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(113),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
             {	// Sensor 4
                     {	// Clamshell open
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(110)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
                     {	// Clamshell closed
-                            //	thresholdLow,			nextStateLow,		thresholdHigh,			nextStateHigh		// currentState
-                            {	 TEMP_SENSOR_FMT(0),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState1 },	// kThermalState0 
-                            {	 TEMP_SENSOR_FMT(68),	kThermalState0, 	TEMP_SENSOR_FMT(110), 	kThermalState2 },	// kThermalState1 
-                            {	 TEMP_SENSOR_FMT(78),	kThermalState1, 	TEMP_SENSOR_FMT(93), 	kThermalState3 },	// kThermalState2 
-                            {	 TEMP_SENSOR_FMT(88),	kThermalState2, 	TEMP_SENSOR_FMT(117), 	kThermalState3 },	// kThermalState3 
+                            //	 thresholdLow,			thresholdHigh,			// currentState
+                            {	 TEMP_SENSOR_FMT(0),		TEMP_SENSOR_FMT(110)	},	// kThermalState0 
+                            {	 TEMP_SENSOR_FMT(68),		TEMP_SENSOR_FMT(110)	},	// kThermalState1 
+                            {	 TEMP_SENSOR_FMT(78),		TEMP_SENSOR_FMT(93)	},	// kThermalState2 
+                            {	 TEMP_SENSOR_FMT(88),		TEMP_SENSOR_FMT(117)	},	// kThermalState3 
                     },
             },
     }
@@ -477,27 +475,42 @@ static ThresholdInfo	thermalThresholdInfoArray[kMaxMachineTypes][kMaxSensorIndex
 #endif
 
 #define super IOPlatformMonitor
-OSDefineMetaClassAndStructors(Portable2003_PlatformMonitor, IOPlatformMonitor)
+OSDefineMetaClassAndStructors(Portable2004_PlatformMonitor, IOPlatformMonitor)
 
 // **********************************************************************************
 // actionFullPower
 //
 // **********************************************************************************
-static bool actionFullPower ()
+static bool actionFullPower ( )
 {
-	IOService *serv;
+	IOService 			*serv;
+        
 	debug_msg("IOPMon::actionFullPower - starting\n");
 	// CPU at full power if not already there
-	serv = conSensorArray[kSlewController].conSensor;
-	if ((conSensorArray[kSlewController].state != kCPUPowerState0) && 
-		(serv = conSensorArray[kSlewController].conSensor)) {
-		debug_msg ("IOPMon::actionFullPower - slewing fast\n");
-                if (conSensorArray[kSlewController].registered) {
-                    conSensorArray[kSlewController].state = kCPUPowerState0;
-                    gIOPMon->setBusSlew ((UInt32) 0);
+
+        if (gUseBusSlewing)
+        {
+            serv = conSensorArray[kSlewController].conSensor;
+            if ((conSensorArray[kSlewController].state != kCPUPowerState0) && 
+                    (serv = conSensorArray[kSlewController].conSensor)) {
+                    debug_msg ("IOPMon::actionFullPower - slewing fast\n");
+                    if (conSensorArray[kSlewController].registered) {
+                        conSensorArray[kSlewController].state = kCPUPowerState0;
+                        gIOPMon->setBusSlew ((UInt32) 0);
+                        provider->setProperty (gIOPMonCPUActionKey, (OSObject *)gIOPMonFull);
+                    }
+            }
+        }
+        else
+        {
+            if ((conSensorArray[kCPUController].state != kCPUPowerState0) && 
+                    (serv = conSensorArray[kCPUController].conSensor)) {
+                    conSensorArray[kCPUController].state = kCPUPowerState0;
+                    debug_msg ("IOPMon::actionFullPower - sending CPU aggressiveness 2\n");
+                    serv->setAggressiveness (kPMSetProcessorSpeed, 2);
                     provider->setProperty (gIOPMonCPUActionKey, (OSObject *)gIOPMonFull);
-                }
-	}
+            }
+        }
         
 	// GPU at full power if not already there
 	if ((conSensorArray[kGPUController].state != kGPUPowerState0) &&
@@ -515,20 +528,35 @@ static bool actionFullPower ()
 // actionPower1
 //
 // **********************************************************************************
-static bool actionPower1 ()
+static bool actionPower1 ( )
 {	
 	IOService *serv;
+        
 	debug_msg("IOPMon::actionPower1 - starting\n");
 	// Step down CPU if not already slow
-	if ((conSensorArray[kSlewController].state != kCPUPowerState1) && 
-		(serv = conSensorArray[kSlewController].conSensor)) {
-		debug_msg ("IOPMon::actionPower1 - slewing slow\n");
-                if (conSensorArray[kSlewController].registered) {
-                    conSensorArray[kSlewController].state = kCPUPowerState1;
-                    gIOPMon->setBusSlew ((UInt32) 1);
+
+        if (gUseBusSlewing)
+        {
+            if ((conSensorArray[kSlewController].state != kCPUPowerState1) && 
+                    (serv = conSensorArray[kSlewController].conSensor)) {
+                    debug_msg ("IOPMon::actionPower1 - slewing slow\n");
+                    if (conSensorArray[kSlewController].registered) {
+                        conSensorArray[kSlewController].state = kCPUPowerState1;
+                        gIOPMon->setBusSlew ((UInt32) 1);
+                        provider->setProperty (gIOPMonCPUActionKey, (OSObject *)gIOPMonReduced);
+                    } 
+            }
+        }
+        else
+        {
+            if ((conSensorArray[kCPUController].state != kCPUPowerState1) && 
+                    (serv = conSensorArray[kCPUController].conSensor)) {
+                    conSensorArray[kCPUController].state = kCPUPowerState1;
+                    debug_msg ("IOPMon::actionPower1 - sending CPU aggressiveness 3\n");
+                    serv->setAggressiveness (kPMSetProcessorSpeed, 3);
                     provider->setProperty (gIOPMonCPUActionKey, (OSObject *)gIOPMonReduced);
-                } 
-	}
+            }
+        }
 	
 	// GPU is still at full power
 	if ((conSensorArray[kGPUController].state != kGPUPowerState0) &&
@@ -542,11 +570,14 @@ static bool actionPower1 ()
 	return true;
 }
 
+// Commenting out routines that are not actively being used.
+
 // **********************************************************************************
 // actionPower1GPU1
 //
 // **********************************************************************************
-static bool actionPower1GPU1 ()
+/*
+static bool actionPower1GPU1 ( )
 {	
 	IOService *serv;
         
@@ -571,12 +602,14 @@ static bool actionPower1GPU1 ()
 
 	return true;
 }
+*/
 
 // **********************************************************************************
 // actionPower1GPU2
 //
 // **********************************************************************************
-static bool actionPower1GPU2 ()
+/*
+static bool actionPower1GPU2 ( )
 {	
 	IOService *serv;
 
@@ -601,12 +634,13 @@ static bool actionPower1GPU2 ()
 
 	return true;
 }
+*/
 
 // **********************************************************************************
 // start
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::start ( IOService * nub )
+bool Portable2004_PlatformMonitor::start ( IOService * nub )
 {
 	UInt32 i;
         const char *platform_name;
@@ -622,26 +656,33 @@ bool Portable2003_PlatformMonitor::start ( IOService * nub )
 		return false;
 	
 	provider = nub;
-        debug_msg("Portable2003_PlatformMonitor::start - starting\n");
+        debug_msg("Portable2004_PlatformMonitor::start - starting\n");
         macRISC2PE = OSDynamicCast(MacRISC2PE, getPlatform());
         
         // Set up flag that tells us when the Platform monitor is about to go to sleep to false
         // ...this flag is used to tell when to ignore all setaggressiveness calls...
         goingToSleep = false;
         
-        // this platform can do a bus-slew-based speed change *and* a PMU-based speed change, so set flags accordingly
-        macRISC2PE->processorSpeedChangeFlags |= kBusSlewBasedSpeedChange | kPMUBasedSpeedChange;
+        if (macRISC2PE->processorSpeedChangeFlags & kBusSlewBasedSpeedChange)
+        {
+            // platform expert assumes that dynamic power stepping means that it's a processor-based
+            //speed change, but here it's not, so fix flags
+           macRISC2PE->processorSpeedChangeFlags &= ~kProcessorBasedSpeedChange;
+           
+           gUseBusSlewing = true;
+        }
+        else
+            gUseBusSlewing = false;
         
-        // platform expert assumes that dynamic power stepping means that it's a processor-based speed change, but here it's not, so fix flags
-        macRISC2PE->processorSpeedChangeFlags &= ~kProcessorBasedSpeedChange;
-
+        // For now, these machines lack PMU based Speed changing as well.
+	// macRISC2PE->processorSpeedChangeFlags |= kPMUBasedSpeedChange;
+        
         platform_name = macRISC2PE->getParentEntry(gIOServicePlane)->getName();
 
-        //IOLog("Portable2003_PlatformMonitor::start - machine type %s\n", platform_name);
-        if 	(!strcmp(platform_name, "PowerBook6,2")) machineType = kPB62MachineType;
-        else if	(!strcmp(platform_name, "PowerBook5,2")) machineType = kPB52MachineType;
-        else if	(!strcmp(platform_name, "PowerBook6,3")) machineType = kPB63MachineType;
-        else if	(!strcmp(platform_name, "PowerBook5,3")) machineType = kPB53MachineType;
+        if 	(!strcmp(platform_name, "PowerBook6,4")) machineType = kPB64MachineType;
+        else if	(!strcmp(platform_name, "PowerBook6,5")) machineType = kPB65MachineType;
+        else if	(!strcmp(platform_name, "PowerBook5,4")) machineType = kPB54MachineType;
+        else if	(!strcmp(platform_name, "PowerBook5,5")) machineType = kPB55MachineType;
 	
 	commandGateCaller = &iopmonCommandGateCaller;	// Inform superclass about our caller
 	
@@ -656,7 +697,7 @@ bool Portable2003_PlatformMonitor::start ( IOService * nub )
                         if (cpuSpeedData) {
                             newCPUSpeed = *(UInt32 *) cpuSpeedData->getBytesNoCopy();
                             if (newCPUSpeed != gPEClockFrequencyInfo.cpu_clock_rate_hz) {
-                                IOLog("Portable2003_PlatformMonitor::start - use max-clock-frequency to set new CPU speed\n");
+                               //  IOLog("Portable2004_PlatformMonitor::start - use max-clock-frequency to set new CPU speed\n");
                                newNum = newCPUSpeed / (gPEClockFrequencyInfo.cpu_clock_rate_hz /
                                                                                 gPEClockFrequencyInfo.bus_to_cpu_rate_num);
                                 gPEClockFrequencyInfo.bus_to_cpu_rate_num = newNum;		// Set new numerator
@@ -671,17 +712,17 @@ bool Portable2003_PlatformMonitor::start ( IOService * nub )
 
 	// Initialize our controller/sensor types (platform-dependent)
 	// Primary sensors
-	conSensorArray[kPowerSensor].conSensorType = kIOPMonPowerSensor;				// platform power monitor
-	conSensorArray[kPowerSensor].conSensor = this;									// platform power monitor
+	conSensorArray[kPowerSensor].conSensorType = kIOPMonPowerSensor;			// platform power monitor
+	conSensorArray[kPowerSensor].conSensor = this;						// platform power monitor
 	conSensorArray[kPowerSensor].numStates = kMaxPowerStates;
 	conSensorArray[kPowerSensor].sensorValid = true;
-	conSensorArray[kPowerSensor].registered = true;									// built-in
+	conSensorArray[kPowerSensor].registered = true;						// built-in
 	
 	conSensorArray[kThermalSensor].conSensorType = kIOPMonThermalSensor;			// primary thermal sensor
 	conSensorArray[kThermalSensor].conSensor = this;
 	conSensorArray[kThermalSensor].numStates = kMaxThermalStates;
 	conSensorArray[kThermalSensor].sensorValid = true;
-	conSensorArray[kThermalSensor].registered = true;								// built-in aggregate sensor
+	conSensorArray[kThermalSensor].registered = true;					// built-in aggregate sensor
 	
 	conSensorArray[kClamshellSensor].conSensorType = kIOPMonClamshellSensor;		// pmu clamshell sensor
 	conSensorArray[kClamshellSensor].numStates = kNumClamshellStates;
@@ -694,7 +735,7 @@ bool Portable2003_PlatformMonitor::start ( IOService * nub )
 
 	conSensorArray[kGPUController].conSensorType = kIOPMonGPUController;			// gpu controller
 	conSensorArray[kGPUController].state = kGPUPowerState0;
-	conSensorArray[kGPUController].registered = true;								// built-in
+	conSensorArray[kGPUController].registered = true;					// built-in
 
 	conSensorArray[kSlewController].conSensorType = kIOPMonSlewController;			// slew controller
 	conSensorArray[kSlewController].registered = false;
@@ -750,20 +791,20 @@ bool Portable2003_PlatformMonitor::start ( IOService * nub )
 		gIOPMonGPUActionKey 				= OSSymbol::withCString (kIOPMonGPUActionKey);
 
 	if (!gIOPMonState0)
-		gIOPMonState0 						= OSSymbol::withCString (kIOPMonState0);
+		gIOPMonState0 					= OSSymbol::withCString (kIOPMonState0);
 	if (!gIOPMonState1)
-		gIOPMonState1 						= OSSymbol::withCString (kIOPMonState1);
+		gIOPMonState1 					= OSSymbol::withCString (kIOPMonState1);
 	if (!gIOPMonState2)
-		gIOPMonState2 						= OSSymbol::withCString (kIOPMonState2);
+		gIOPMonState2 					= OSSymbol::withCString (kIOPMonState2);
 	if (!gIOPMonState3)
-		gIOPMonState3 						= OSSymbol::withCString (kIOPMonState3);
+		gIOPMonState3 					= OSSymbol::withCString (kIOPMonState3);
 
 	if (!gIOPMonFull)
-		gIOPMonFull 						= OSSymbol::withCString (kIOPMonFull);
+		gIOPMonFull 					= OSSymbol::withCString (kIOPMonFull);
 	if (!gIOPMonReduced)
-		gIOPMonReduced 						= OSSymbol::withCString (kIOPMonReduced);
+		gIOPMonReduced 					= OSSymbol::withCString (kIOPMonReduced);
 	if (!gIOPMonSlow)
-		gIOPMonSlow 						= OSSymbol::withCString (kIOPMonSlow);
+		gIOPMonSlow 					= OSSymbol::withCString (kIOPMonSlow);
 
 	lastPowerState = kMaxPowerStates;
 	lastThermalState = kMaxThermalStates;
@@ -792,17 +833,26 @@ bool Portable2003_PlatformMonitor::start ( IOService * nub )
 // powerStateWillChangeTo
 //
 // **********************************************************************************
-IOReturn Portable2003_PlatformMonitor::powerStateWillChangeTo (IOPMPowerFlags theFlags, unsigned long, IOService*)
+IOReturn Portable2004_PlatformMonitor::powerStateWillChangeTo (IOPMPowerFlags theFlags, unsigned long, IOService*)
 {	
     if ( ! (theFlags & IOPMPowerOn) ) {
         // Sleep sequence:
-		debug_msg ("Portable2003_PlatformMonitor::powerStateWillChangeTo - sleep\n");
+		debug_msg ("Portable2004_PlatformMonitor::powerStateWillChangeTo - sleep\n");
 		savePlatformState();
-                if (conSensorArray[kSlewController].registered) {
-                    conSensorArray[kSlewController].state = kCPUPowerState0;
-                    gIOPMon->setBusSlew ((UInt32) 0);
+                
+                if ( macRISC2PE->processorSpeedChangeFlags & kBusSlewBasedSpeedChange )
+                {
+                    if (conSensorArray[kSlewController].registered) {
+                        conSensorArray[kSlewController].state = kCPUPowerState0;
+                        gIOPMon->setBusSlew ((UInt32) 0);
+                        goingToSleep = true;
+                        debug_msg ("Portable2004_PlatformMonitor::bus slew fast - sleep\n");
+                    }
+                }
+                else
+                {
+                    actionFullPower();
                     goingToSleep = true;
-                    debug_msg ("Portable2003_PlatformMonitor::bus slew fast - sleep\n");
                 }
     }
     
@@ -813,12 +863,12 @@ IOReturn Portable2003_PlatformMonitor::powerStateWillChangeTo (IOPMPowerFlags th
 // powerStateDidChangeTo
 //
 // **********************************************************************************
-IOReturn Portable2003_PlatformMonitor::powerStateDidChangeTo (IOPMPowerFlags theFlags, unsigned long, IOService*)
+IOReturn Portable2004_PlatformMonitor::powerStateDidChangeTo (IOPMPowerFlags theFlags, unsigned long, IOService*)
 {	
     if (theFlags & IOPMPowerOn) {
         // Wake sequence:
                 goingToSleep = false;
-		debug_msg ("Portable2003_PlatformMonitor::powerStateDidChangeTo - wake\n");
+		debug_msg ("Portable2004_PlatformMonitor::powerStateDidChangeTo - wake\n");
                 // we don't want to remember any prior actions and start "fresh" after a wake from sleep
 		restorePlatformState();
     }
@@ -838,7 +888,7 @@ IOReturn Portable2003_PlatformMonitor::powerStateDidChangeTo (IOPMPowerFlags the
 // PM calls us here we have already altered the condition and there is nothing to do.
 //
 // **********************************************************************************
-IOReturn Portable2003_PlatformMonitor::setAggressiveness(unsigned long selector, unsigned long newLevel)
+IOReturn Portable2004_PlatformMonitor::setAggressiveness(unsigned long selector, unsigned long newLevel)
 {
 	IOPMonEventData 	event;
 	IOReturn		result;
@@ -849,7 +899,7 @@ IOReturn Portable2003_PlatformMonitor::setAggressiveness(unsigned long selector,
         result = super::setAggressiveness(selector, newLevel);
 
 	if (selector == kPMSetProcessorSpeed) {
-            // IOLog ("Portable2003_PlatformMonitor::setAggressiveness - newLevel %ld, currentPowerState %ld\n", newLevel, currentPowerState);
+            // IOLog ("Portable2004_PlatformMonitor::setAggressiveness - newLevel %ld, currentPowerState %ld\n", newLevel, currentPowerState);
             if ((newLevel != currentPowerState) && (newLevel < 2)){	// This only works if we have two power states
                 // create and transmit internal event
                 event.event = kIOPMonMessageStateChanged;
@@ -868,7 +918,7 @@ IOReturn Portable2003_PlatformMonitor::setAggressiveness(unsigned long selector,
 // setBusSlew
 //
 // **********************************************************************************
-void Portable2003_PlatformMonitor::setBusSlew (UInt32 newLevel)
+void Portable2004_PlatformMonitor::setBusSlew (UInt32 newLevel)
 {
         OSDictionary 		*dict;
         const OSObject		*target_value[1];
@@ -881,11 +931,11 @@ void Portable2003_PlatformMonitor::setBusSlew (UInt32 newLevel)
             if (newLevel == 0) { // set bus speed high
                 target_value[0] = OSNumber::withNumber((unsigned long long) 0, 32);
                 dict = OSDictionary::withObjects(target_value, key, (unsigned int) 1, (unsigned int) 0);
-                //IOLog ("Portable2003_PlatformMonitor::setBusSlew - slew high, newlevel = %d\n", newLevel);
+                //IOLog ("Portable2004_PlatformMonitor::setBusSlew - slew high, newlevel = %d\n", newLevel);
             } else {
                 target_value[0] = OSNumber::withNumber((unsigned long long) 1, 32);
                 dict = OSDictionary::withObjects(target_value, key, 1, 0);
-                //IOLog ("Portable2003_PlatformMonitor::setBusSlew - slew low, newlevel = %d\n", newLevel);
+                //IOLog ("Portable2004_PlatformMonitor::setBusSlew - slew low, newlevel = %d\n", newLevel);
             }
             conSensorArray[kSlewController].conSensor->setProperties(dict);
         }
@@ -901,9 +951,9 @@ void Portable2003_PlatformMonitor::setBusSlew (UInt32 newLevel)
 // initPowerState
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::initPowerState ()
+bool Portable2004_PlatformMonitor::initPowerState ()
 {	
-	currentPowerState = kPowerState1;			// We will have booted slow
+	currentPowerState = kPowerState1;		// We will have booted slow
 	return true;
 }
 
@@ -911,28 +961,28 @@ bool Portable2003_PlatformMonitor::initPowerState ()
 // savePowerState
 //
 // **********************************************************************************
-void Portable2003_PlatformMonitor::savePowerState ()
+void Portable2004_PlatformMonitor::savePowerState ()
 {
-	return;			// Currently nothing to do
+	return;						// Currently nothing to do
 }
 
 // **********************************************************************************
 // restorePowerState
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::restorePowerState ()
+bool Portable2004_PlatformMonitor::restorePowerState ()
 {
 	// This platform is always fast coming out of sleep, so if our current power
 	// state is slow (kPowerState1) return true to force an update.
-	//conSensorArray[kSlewController].state = kCPUPowerState0;	// Set controller state
-	return (currentPowerState == kPowerState1);	
+                    
+        return (currentPowerState == kPowerState1);	
 }
 	
 // **********************************************************************************
 // initThermalState
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::initThermalState ()
+bool Portable2004_PlatformMonitor::initThermalState ()
 {
 	currentThermalState = kThermalState0;
 	return true;
@@ -942,7 +992,7 @@ bool Portable2003_PlatformMonitor::initThermalState ()
 // saveThermalState
 //
 // **********************************************************************************
-void Portable2003_PlatformMonitor::saveThermalState ()
+void Portable2004_PlatformMonitor::saveThermalState ()
 {
 	return;	// Nothing to do
 }
@@ -951,7 +1001,7 @@ void Portable2003_PlatformMonitor::saveThermalState ()
 // restoreThermalState
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::restoreThermalState ()
+bool Portable2004_PlatformMonitor::restoreThermalState ()
 {
 	OSNumber			*threshLow, *threshHigh;
 	UInt32				i;
@@ -986,7 +1036,7 @@ bool Portable2003_PlatformMonitor::restoreThermalState ()
 // initClamshellState
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::initClamshellState ()
+bool Portable2004_PlatformMonitor::initClamshellState ()
 {
 	currentClamshellState = kClamshellStateOpen;
 	
@@ -997,7 +1047,7 @@ bool Portable2003_PlatformMonitor::initClamshellState ()
 // saveClamshellState
 //
 // **********************************************************************************
-void Portable2003_PlatformMonitor::saveClamshellState ()
+void Portable2004_PlatformMonitor::saveClamshellState ()
 {
 	return;				// Nothing to do
 }
@@ -1006,7 +1056,7 @@ void Portable2003_PlatformMonitor::saveClamshellState ()
 // restoreClamshellState
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::restoreClamshellState ()
+bool Portable2004_PlatformMonitor::restoreClamshellState ()
 {
 	// Currently nothing to do.  
 	// We'll get the right state next time monitor power is called
@@ -1017,22 +1067,21 @@ bool Portable2003_PlatformMonitor::restoreClamshellState ()
 // monitorPower
 //
 // **********************************************************************************
-IOReturn Portable2003_PlatformMonitor::monitorPower (OSDictionary *dict, IOService *provider)
+IOReturn Portable2004_PlatformMonitor::monitorPower (OSDictionary *dict, IOService *provider)
 {
-	UInt32 				type, index, subIndex, value;
-	OSNumber			*num;
+	UInt32 			type, index, subIndex, value;
+	OSNumber		*num;
 	IOPMonEventData 	event;
+        bool			clamshellChanged;
 	    
 	if (lookupConSensorInfo (dict, provider, &type, &index, &subIndex)) {
 		// See if any low power conditions exist.
 		if (num = OSDynamicCast (OSNumber, dict->getObject (gIOPMonCurrentValueKey))) {
 			value = num->unsigned32BitValue();
 			value &= ~kIOPMForceLowSpeed;  		// Clear low speed bit
-                        
-                        // if we're a Q16 or Q41 with a 65W adapter plugged in (actually anything >= 65W), 
-                        // or an airline adapter plugged in,
-                        // then don't enforce force-reduced-speed conditions....
-                        if (!(((machineType == kPB52MachineType) || (machineType == kPB53MachineType)) && 
+                      
+                        // don't enforce force-reduced-speed conditions.
+                        if (!(((machineType == kPB54MachineType) || (machineType == kPB55MachineType)) && 
                              (((((value & 0xFF000000) >> 24) > 0) && (((value & 0xFF000000) >> 24) >= 0x41)) ||
                              ((((value & 0xFF000000) >> 24) == 0) && ((value & (kIOPMACInstalled | kIOPMACnoChargeCapability)) == (kIOPMACInstalled | kIOPMACnoChargeCapability)))))) 
                         {
@@ -1060,12 +1109,46 @@ IOReturn Portable2003_PlatformMonitor::monitorPower (OSDictionary *dict, IOServi
 #endif
 			
                         num->setValue((long long)value);		// Send updated value back
+
+                        if ((value & kIOPMClosedClamshell) != 0)
+                            clamshellChanged = (currentClamshellState == kClamshellStateOpen);
+                        else
+                            clamshellChanged = (currentClamshellState != kClamshellStateOpen);
+                            
+                        if (clamshellChanged)
+                        {
+                            event.event = kIOPMonMessageStateChanged;
+                            event.conSensor = this;
+                            event.eventDict = (currentClamshellState == kClamshellStateOpen) ? 
+                                    dictClamshellClosed : dictClamshellOpen;
+
+                            // send it
+                            handleEvent (&event);
+    
+                            return kIOReturnSuccess;
+                        }
+
+/*
+			if ((value & (kIOPMACInstalled | kIOPMACnoChargeCapability)) == (kIOPMACInstalled | kIOPMACnoChargeCapability))
+				kprintf ("(kIOPMACInstalled | kIOPMACnoChargeCapability) - 0x%lx & (0x%lx)\n", value, (kIOPMACInstalled | kIOPMACnoChargeCapability));
+			else if ((value & (kIOPMRawLowBattery | kIOPMBatteryDepleted)) != 0)
+				kprintf ("(kIOPMRawLowBattery | kIOPMBatteryDepleted) - 0x%lx & (0x%lx)\n", value, (kIOPMRawLowBattery | kIOPMBatteryDepleted));
+			else if ((value & kIOPMBatteryInstalled) == 0)
+				kprintf ("kIOPMBatteryInstalled - 0x%lx & (0x%lx)\n", value, kIOPMBatteryInstalled);
+			// Clamshell is a little different than P58, which only used it to control L3 cache
+			else if ((value & kIOPMClosedClamshell) != 0)
+				kprintf ("kIOPMClosedClamshell - 0x%lx & (0x%lx)\n", value, kIOPMClosedClamshell);
+*/
+
+			
                         
                         /*
                         * Strictly speaking, most of the above situations aren't closed clamshell conditions but
                         * for the purposes of the state machine it's OK to treat them that way.  That may not be true
                         * on all platforms.
                         */
+                        
+                        /*
                         if (((value & kIOPMForceLowSpeed) && (currentClamshellState == kClamshellStateOpen)) ||
                                 ((!(value & kIOPMForceLowSpeed)) && (currentClamshellState == kClamshellStateClosed))) {
 
@@ -1083,6 +1166,7 @@ IOReturn Portable2003_PlatformMonitor::monitorPower (OSDictionary *dict, IOServi
         
                                 return kIOReturnSuccess;
                         }
+                        */
 		}
 	}
 	return kIOReturnBadArgument;
@@ -1092,7 +1176,7 @@ IOReturn Portable2003_PlatformMonitor::monitorPower (OSDictionary *dict, IOServi
 // updateIOPMonStateInfo
 //
 // **********************************************************************************
-void Portable2003_PlatformMonitor::updateIOPMonStateInfo (UInt32 type, UInt32 state)
+void Portable2004_PlatformMonitor::updateIOPMonStateInfo (UInt32 type, UInt32 state)
 {
 	const OSSymbol		*stateKey, *stateValue;
 	
@@ -1125,7 +1209,7 @@ void Portable2003_PlatformMonitor::updateIOPMonStateInfo (UInt32 type, UInt32 st
 // initPlatformState
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::initPlatformState ()
+bool Portable2004_PlatformMonitor::initPlatformState ()
 {
 	if (initPowerState() &&
 		initThermalState() &&
@@ -1141,7 +1225,7 @@ bool Portable2003_PlatformMonitor::initPlatformState ()
 //		-- protected by CommandGate - call via IOPlatformMonitor::savePlatformState
 //
 // **********************************************************************************
-void Portable2003_PlatformMonitor::savePlatformState ()
+void Portable2004_PlatformMonitor::savePlatformState ()
 {
 	savePowerState();
 	saveThermalState();
@@ -1156,7 +1240,7 @@ void Portable2003_PlatformMonitor::savePlatformState ()
 //		-- protected by CommandGate - call via IOPlatformMonitor::restorePlatformState
 //
 // **********************************************************************************
-void Portable2003_PlatformMonitor::restorePlatformState ()
+void Portable2004_PlatformMonitor::restorePlatformState ()
 {
 	bool doAdjust;
 	
@@ -1187,12 +1271,13 @@ void Portable2003_PlatformMonitor::restorePlatformState ()
 // we do something.
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::adjustPlatformState ()
+bool Portable2004_PlatformMonitor::adjustPlatformState ()
 {
 	IOPlatformMonitorAction		actionToTake;
-	bool						result = true;
+	bool				result = true;
+        bool				reevaluateThermalLevels = false;
 	
-	//IOLog ("Portable2003_PlatformMonitor::adjustPlatformState - entered, cps %ld, cts %ld, ccs %ld\n",
+	//IOLog ("Portable2004_PlatformMonitor::adjustPlatformState - entered, cps %ld, cts %ld, ccs %ld\n",
 	//	currentPowerState, currentThermalState, currentClamshellState);
 	// Look up action to take for current state
 	actionToTake = platformActionGrid[currentPowerState][currentThermalState][currentClamshellState];
@@ -1210,6 +1295,7 @@ bool Portable2003_PlatformMonitor::adjustPlatformState ()
 	if (lastClamshellState != currentClamshellState) {
 		lastClamshellState = currentClamshellState;
 		updateIOPMonStateInfo(kIOPMonClamshellSensor, currentClamshellState);
+		reevaluateThermalLevels = true;
 	}
 	
 	if (actionToTake != lastAction) {
@@ -1217,8 +1303,29 @@ bool Portable2003_PlatformMonitor::adjustPlatformState ()
 		lastAction = actionToTake;		// Remember what it was we did
 	}
 	
+        // Since the platform state changed, we really should re-evaluate all our threshold settings...
+        
+        if ( reevaluateThermalLevels )
+        {
+            UInt32 		i;
+            OSNumber		*threshLow, *threshHigh;
+            
+            for (i = 0; i < kMaxSensorIndex; i++) {
+                    if (subSensorArray[i].registered) { // Is sensor registered?
+                            subSensorArray[i].state = kMaxThermalStates;	//Set indeterminate state
+                            
+                            // Set low thresholds - this will cause sensor to update info
+                            threshLow = (OSNumber *)subSensorArray[i].threshDict->getObject (gIOPMonLowThresholdKey);
+                            threshLow->setValue((long long)0);
+                            threshHigh = (OSNumber *)subSensorArray[i].threshDict->getObject (gIOPMonHighThresholdKey);
+                            threshHigh->setValue((long long)0);
+                            // Send thresholds to sensor
+                            subSensorArray[i].conSensor->setProperties (subSensorArray[i].threshDict);
+                    }
+            }
+        }
+        
 	return result;
-	
 }
 
 
@@ -1226,7 +1333,7 @@ bool Portable2003_PlatformMonitor::adjustPlatformState ()
 // registerConSensor
 //
 // **********************************************************************************
-IOReturn Portable2003_PlatformMonitor::registerConSensor (OSDictionary *dict, IOService *conSensor)
+IOReturn Portable2004_PlatformMonitor::registerConSensor (OSDictionary *dict, IOService *conSensor)
 {
 	UInt32 			csi, subsi, type, initialState, initialValue;
 	ConSensorInfo		*csInfo;
@@ -1235,7 +1342,7 @@ IOReturn Portable2003_PlatformMonitor::registerConSensor (OSDictionary *dict, IO
 	if (!lookupConSensorInfo (dict, conSensor, &type, &csi, &subsi))
 		return kIOReturnBadArgument;
 		
-	//IOLog ("Portable2003_PlatformMonitor::registerConSensor - type %ld, csi %ld, subsi %ld\n", type, csi, subsi);
+	//IOLog ("Portable2004_PlatformMonitor::registerConSensor - type %ld, csi %ld, subsi %ld\n", type, csi, subsi);
 	
 	if (subsi < kMaxSensorIndex)	// Is subsensor index valid? If so use subSensorArray
 		csInfo = &subSensorArray[subsi];
@@ -1291,7 +1398,7 @@ IOReturn Portable2003_PlatformMonitor::registerConSensor (OSDictionary *dict, IO
 			break;
 		
 		case kIOPMonCPUController:
-			initialState = kCPUPowerState0;			// Booted fast - meaning the CPU multiplier should be set to "fast"
+			initialState = kCPUPowerState1;			// Booted slow - meaning DFS should be set to "slow"
 			csInfo->registered = true;
                         // set the PMU multiplier to be fast
                         //csInfo->conSensor->setAggressiveness (kPMSetProcessorSpeed, 2);        
@@ -1323,7 +1430,7 @@ IOReturn Portable2003_PlatformMonitor::registerConSensor (OSDictionary *dict, IO
 // unregisterSensor
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::unregisterSensor (UInt32 sensorID)
+bool Portable2004_PlatformMonitor::unregisterSensor (UInt32 sensorID)
 {
 	if (sensorID >= kMaxSensors)
 		return false;
@@ -1336,7 +1443,7 @@ bool Portable2003_PlatformMonitor::unregisterSensor (UInt32 sensorID)
 // lookupConSensorInfo
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::lookupConSensorInfo (OSDictionary *dict, IOService *conSensor, 
+bool Portable2004_PlatformMonitor::lookupConSensorInfo (OSDictionary *dict, IOService *conSensor, 
 	UInt32 *type, UInt32 *index, UInt32 *subIndex)
 {
 	OSSymbol	*typeString;
@@ -1397,10 +1504,23 @@ bool Portable2003_PlatformMonitor::lookupConSensorInfo (OSDictionary *dict, IOSe
 // lookupThermalStateFromValue
 //
 // **********************************************************************************
-UInt32 Portable2003_PlatformMonitor::lookupThermalStateFromValue (UInt32 sensorIndex, ThermalValue value)
+UInt32 Portable2004_PlatformMonitor::lookupThermalStateFromValue (UInt32 sensorIndex, ThermalValue value)
 {
-	UInt32 i;
-	
+	UInt32	i;
+        UInt32	curSensorState;
+        
+        // First, lets see if we are at our current know sensor state...
+        
+        curSensorState = subSensorArray[sensorIndex].state;
+        if (curSensorState != kMaxThermalStates)
+        {
+            if (value > thermalThresholdInfoArray[machineType][sensorIndex][currentClamshellState][curSensorState].thresholdLow &&
+                                    value < thermalThresholdInfoArray[machineType][sensorIndex][currentClamshellState][curSensorState].thresholdHigh)
+                return curSensorState;
+	}
+        
+        // If not, lets see what state we are at...
+        
 	if (value > thermalThresholdInfoArray[machineType][sensorIndex][currentClamshellState][0].thresholdLow) {
 		for (i = 0 ; i < subSensorArray[sensorIndex].numStates; i++)
 			if (value > thermalThresholdInfoArray[machineType][sensorIndex][currentClamshellState][i].thresholdLow &&
@@ -1408,8 +1528,8 @@ UInt32 Portable2003_PlatformMonitor::lookupThermalStateFromValue (UInt32 sensorI
 					return i;
 
 		// This is bad as sensor's already over the limit - need to figure right response
-		IOLog ("Portable2003_PlatformMonitor::lookupStateFromValue - sensor %ld over limit\n", sensorIndex);
-		return kMaxSensorIndex;
+		IOLog ("Portable2004_PlatformMonitor::lookupStateFromValue - sensor %ld over limit\n", sensorIndex);
+		return kMaxThermalStates;
 	}
 	
 	// Safely below the lowest threshold
@@ -1422,12 +1542,12 @@ UInt32 Portable2003_PlatformMonitor::lookupThermalStateFromValue (UInt32 sensorI
 //		-- protected by CommandGate - call through handleEvent
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::handlePowerEvent (IOPMonEventData *eventData)
+bool Portable2004_PlatformMonitor::handlePowerEvent (IOPMonEventData *eventData)
 {
 	UInt32		nextPowerState;
 	bool		result;
         
-        debug_msg("Portable2003_PlatformMonitor::handlePowerEvent - started\n");
+        debug_msg("Portable2004_PlatformMonitor::handlePowerEvent - started\n");
 	if (!(retrieveCurrentValue (eventData->eventDict, &nextPowerState)))
 		return false;
 		
@@ -1446,14 +1566,14 @@ bool Portable2003_PlatformMonitor::handlePowerEvent (IOPMonEventData *eventData)
 //		-- protected by CommandGate - call through handleEvent
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::handleThermalEvent (IOPMonEventData *eventData)
+bool Portable2004_PlatformMonitor::handleThermalEvent (IOPMonEventData *eventData)
 {
 	UInt32					type, csi, subsi, myThermalState;
 	ThermalValue			value;
 	OSNumber				*threshLow, *threshHigh;
 	bool					result;
 
-        debug_msg("Portable2003_PlatformMonitor::handleThermalEvent - started\n");
+        debug_msg("Portable2004_PlatformMonitor::handleThermalEvent - started\n");
 	result = true; 
 	if (!(retrieveCurrentValue (eventData->eventDict, &value)))
 		return false;
@@ -1471,7 +1591,7 @@ bool Portable2003_PlatformMonitor::handleThermalEvent (IOPMonEventData *eventDat
 			break;
 				
 		default:
-			IOLog ("Portable2003_PlatformMonitor::handleThermalEvent - event %ld not handled\n", 
+			IOLog ("Portable2004_PlatformMonitor::handleThermalEvent - event %ld not handled\n", 
 				eventData->event);
 			result = false;
 			break;
@@ -1502,10 +1622,16 @@ bool Portable2003_PlatformMonitor::handleThermalEvent (IOPMonEventData *eventDat
 					maxState = (maxState > subSensorArray[i].state) ? maxState : subSensorArray[i].state;
 			
 			// If new max state is different than current, update platform state
-			if (currentThermalState != maxState) {
-				currentThermalState = maxState;
-				result = adjustPlatformState ();
-			}
+                        if (currentThermalState != maxState)
+                        {
+                            if (maxState < kMaxThermalStates)	// Don't want to set a thermal state too high
+                            {
+                                kprintf("*** Portable2004_PlatformMonitor::handleThermalEvent,  maxState = %d, currentThermalState = %d ***\n", maxState, currentThermalState);
+                                
+                                currentThermalState = maxState;
+                                result = adjustPlatformState ();
+                            }
+                        }
 		}
 	}
 	
@@ -1518,12 +1644,12 @@ bool Portable2003_PlatformMonitor::handleThermalEvent (IOPMonEventData *eventDat
 //		-- protected by CommandGate - call through handleEvent
 //
 // **********************************************************************************
-bool Portable2003_PlatformMonitor::handleClamshellEvent (IOPMonEventData *eventData)
+bool Portable2004_PlatformMonitor::handleClamshellEvent (IOPMonEventData *eventData)
 {
 	UInt32		nextClamshellState;
 	bool		result;
 
-        debug_msg("Portable2003_PlatformMonitor::handleClamshellEvent - started\n");
+        debug_msg("Portable2004_PlatformMonitor::handleClamshellEvent - started\n");
 	if (!(retrieveCurrentValue (eventData->eventDict, &nextClamshellState)))
 		return false;
 		
@@ -1543,9 +1669,9 @@ bool Portable2003_PlatformMonitor::handleClamshellEvent (IOPMonEventData *eventD
 //
 // **********************************************************************************
 //static
-IOReturn Portable2003_PlatformMonitor::iopmonCommandGateCaller(OSObject *object, void *arg0, void *arg1, void *arg2, void *arg3)
+IOReturn Portable2004_PlatformMonitor::iopmonCommandGateCaller(OSObject *object, void *arg0, void *arg1, void *arg2, void *arg3)
 {
-	Portable2003_PlatformMonitor	*me;
+	Portable2004_PlatformMonitor	*me;
 	IOPMonCommandThreadSet	*commandSet;
 	UInt32					type, conSensorID, subSensorID;
 	bool					result;
@@ -1553,7 +1679,7 @@ IOReturn Portable2003_PlatformMonitor::iopmonCommandGateCaller(OSObject *object,
 	// Pull our event data and, since we're a static function, a reference to our object
 	// out of the parameters
 	if (((commandSet = (IOPMonCommandThreadSet *)arg0) == NULL) ||
-		((me = OSDynamicCast(Portable2003_PlatformMonitor, commandSet->me)) == NULL))
+		((me = OSDynamicCast(Portable2004_PlatformMonitor, commandSet->me)) == NULL))
 		return kIOReturnError;
 	
 	result = true; 
@@ -1561,16 +1687,16 @@ IOReturn Portable2003_PlatformMonitor::iopmonCommandGateCaller(OSObject *object,
 	switch (commandSet->command) {
 		case kIOPMonCommandHandleEvent:
 			if (!(commandSet->eventData.eventDict)) {
-				IOLog ("Portable2003_PlatformMonitor::iopmonCommandGateCaller - bad dictionary\n");
+				IOLog ("Portable2004_PlatformMonitor::iopmonCommandGateCaller - bad dictionary\n");
 				return kIOReturnBadArgument;
 			}
 			if (!(commandSet->eventData.conSensor)) {
-				IOLog ("Portable2003_PlatformMonitor::iopmonCommandGateCaller - bad conSensor\n");
+				IOLog ("Portable2004_PlatformMonitor::iopmonCommandGateCaller - bad conSensor\n");
 				return kIOReturnBadArgument;
 			}
 			if (!me->lookupConSensorInfo (commandSet->eventData.eventDict, commandSet->eventData.conSensor, 
 				&type, &conSensorID, &subSensorID)) {
-				IOLog ("Portable2003_PlatformMonitor::iopmonCommandGateCaller - bad sensor info lookup\n");
+				IOLog ("Portable2004_PlatformMonitor::iopmonCommandGateCaller - bad sensor info lookup\n");
 				return kIOReturnBadArgument;
 			}
 			
@@ -1586,7 +1712,7 @@ IOReturn Portable2003_PlatformMonitor::iopmonCommandGateCaller(OSObject *object,
 					break;
 				
 				default:
-					IOLog ("Portable2003_PlatformMonitor::iopmonCommandGateCaller -  bad sensorType(%ld), sensorID(%ld), subsi(%ld)\n", 
+					IOLog ("Portable2004_PlatformMonitor::iopmonCommandGateCaller -  bad sensorType(%ld), sensorID(%ld), subsi(%ld)\n", 
 						type, conSensorID, subSensorID);
 					result = false;
 					break;
@@ -1602,7 +1728,7 @@ IOReturn Portable2003_PlatformMonitor::iopmonCommandGateCaller(OSObject *object,
 			break;
 		
 		default:
-			IOLog ("Portable2003_PlatformMonitor::iopmonCommandGateCaller - bad command %ld\n", 
+			IOLog ("Portable2004_PlatformMonitor::iopmonCommandGateCaller - bad command %ld\n", 
 				commandSet->command);
 			result = false;
 			break;
