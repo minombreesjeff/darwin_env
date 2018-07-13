@@ -24,34 +24,37 @@
  *
  */
 
-#ifndef _IOPLATFORMFUNCTIONDRIVER_H
-#define _IOPLATFORMFUNCTIONDRIVER_H
+#ifndef _PORTABLE2004CLIENT_H
+#define _PORTABLE2004CLIENT_H
 
-#include <IOKit/IOLib.h>
 #include <IOKit/IOService.h>
+#include <IOKit/IOUserClient.h>
+#include "UserClient.h"
 
-#include "IOPlatformFunction.h"
-
-/*!
-    @class IOPlatformFunctionDriver
- */
-class IOPlatformFunctionDriver : public IOService
+class Portable2004Client : public IOUserClient
 {
-    OSDeclareDefaultStructors(IOPlatformFunctionDriver)	
-
-private:
-	const OSSymbol *instantiateFunctionSymbol;
-
+    OSDeclareDefaultStructors(Portable2004Client)
+    
 protected:
-	IOReturn instantiatePlatformFunctions (IOService *nub, OSArray **pfArray);
 
+    IOService *		fProvider;
+    task_t			fTask;
+    bool			fDead;
+      
 public:
+       
+    // IOUserClient methods
+    virtual IOReturn  open(void);
+    virtual IOReturn  close(void);
+    
+    virtual void stop(IOService * provider);
+    virtual bool start(IOService * provider);
+    
+    virtual bool initWithTask(task_t owningTask, void * security_id, UInt32 type);
 
-    virtual bool start(IOService *nub);
-    virtual IOReturn callPlatformFunction(const OSSymbol *functionName,
-					bool waitForFunction,
-                                        void *param1, void *param2,
-                                        void *param3, void *param4);
-
+    virtual IOExternalMethod * getTargetAndMethodForIndex(IOService ** target, UInt32 index);
+    virtual IOReturn clientClose(void);
+    virtual IOReturn clientDied(void);
 };
-#endif 	// _IOPLATFORMFUNCTIONDRIVER_H
+
+#endif

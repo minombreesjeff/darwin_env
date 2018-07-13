@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2003-2004 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  * 
@@ -20,27 +20,30 @@
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
- * Copyright (c) 2002 Apple Computer, Inc.  All rights reserved.
+ * Copyright (c) 2003-2004 Apple Computer, Inc.  All rights reserved.
  *
  */
  
 #include "IOPlatformMonitor.h"
-
+#include "MacRISC2.h"
+class MacRISC2PE;
 
 enum {
 	// Sensor states
 	kPowerState0			= 0,						// Fast/high
 	kPowerState1			= 1,						// Slow/low
 	kMaxPowerStates			= kPowerState1 + 1,
-	kThermalState0			= 0,						// Cool/low
-	kThermalState1			= 1,						// Warm
-	kThermalState2			= 2,						// Hot
-	kThermalState3			= 3,						// Very hot (thermal emergency)/high
-	kMaxThermalStates		= kThermalState3 + 1,
+    
+	kThermalState0			= 0,						// Low
+	kThermalState1			= 1,						// Overtemp
+	kMaxThermalStates		= kThermalState1 + 1,
+    
 	kClamshellStateOpen		= 0,						// Open/normal/high
 	kClamshellStateClosed	= 1,						// Closed/low
 	kNumClamshellStates		= kClamshellStateClosed + 1,
 	
+    kNewMaxThermalStates	= 2,						// Either over or under, will do cleaner as time goes on
+    
 	// Controller states
 	kCPUPowerState0			= 0,
 	kCPUPowerState1			= 1,
@@ -56,10 +59,12 @@ enum {
 	kMaxSensors				= kClamshellSensor + 1,		// 3
 	kCPUController			= kMaxSensors,				// 3
 	kGPUController			= kCPUController + 1,		// 4
-	kMaxConSensors			= kGPUController + 1,		// 5
+	kSlewController			= kGPUController + 1,		// 5
+	kMaxConSensors			= kSlewController + 1,		// 6
 	
 	// sensor-index(s) - assigned by Open Firmware, and unique system wide
-	kMaxSensorIndex			= 5					// See subSensorArray
+	kMaxSensorIndex			= 6					// See subSensorArray
+
 };
 
 // IOPMon status keys and values
@@ -68,53 +73,71 @@ enum {
 #define kIOPMonClamshellStateKey 	"IOPMonClamshellState"
 #define kIOPMonCPUActionKey 		"IOPMonCPUAction"
 #define kIOPMonGPUActionKey 		"IOPMonGPUAction"
+#define kIOPMonSlewActionKey 		"target-value"
 
 #define kIOPMonState0				"State0"
 #define kIOPMonState1				"State1"
 #define kIOPMonState2				"State2"
 #define kIOPMonState3				"State3"
 
+#define kIOClamshellStateOpen		"Open"
+#define kIOClamshellStateClosed		"Closed"
+
 #define kIOPMonFull					"FullSpeed"
 #define kIOPMonReduced				"ReducedSpeed"
 #define kIOPMonSlow					"SlowSpeed"
 
-
-class PB6_1_PlatformMonitor : public IOPlatformMonitor
+class Portable_PlatformMonitor : public IOPlatformMonitor
 {
-    OSDeclareDefaultStructors(PB6_1_PlatformMonitor)
+    OSDeclareDefaultStructors(Portable_PlatformMonitor)
 
 private:
-	OSDictionary			*dictPowerLow, *dictPowerHigh;
-	OSDictionary			*dictClamshellOpen, *dictClamshellClosed;
+	OSDictionary		*dictPowerLow, *dictPowerHigh;
+	OSDictionary		*dictClamshellOpen, *dictClamshellClosed;
+    MacRISC2PE			*macRISC2PE;
+    int					machineModel;
+    bool				goingToSleep;
+    
+    UInt32				initialPowerState;
+    UInt32				initialCPUPowerState;
+    UInt32				wakingPowerState;
+    
+	bool				useBusSlewing;
+    bool				machineUtilizes65W;
+    bool				machineReducesOnNoBattery;
+    UInt32				whichCPUSpeedController;
 
 protected:
 
     static IOReturn iopmonCommandGateCaller(OSObject *object, void *arg0, void *arg1, void *arg2, void *arg3);
 
-	virtual bool initPowerState ();
-	virtual void savePowerState ();
-	virtual bool restorePowerState ();
-	
-	virtual bool initThermalState ();
-	virtual void saveThermalState ();
-	virtual bool restoreThermalState ();
-
-	virtual bool initClamshellState ();
-	virtual void saveClamshellState ();
-	virtual bool restoreClamshellState ();
 	virtual IOReturn monitorPower (OSDictionary *dict, IOService *provider);
 	virtual void updateIOPMonStateInfo (UInt32 type, UInt32 state);
+    
+    virtual void applyPowerSettings(UInt32	actionToTake);
+
+    virtual void slewBusSpeed(UInt32 newLevel);
+    virtual bool setCPUSpeed(bool setPowerHigh);
+    virtual bool setGPUSpeed(UInt32 newGPUSpeed);  
+    
+    virtual void createThermalThresholdArray(LimitsInfo	*curThermalLimits);
+
+    virtual void setSensorThermalThresholds(UInt32 sensorID, ThermalValue lowTemp, ThermalValue highTemp);
+    virtual void resetThermalSensorThresholds(void);
 
 	virtual bool handlePowerEvent (IOPMonEventData *eventData);
 	virtual bool handleThermalEvent (IOPMonEventData *eventData);
 	virtual bool handleClamshellEvent (IOPMonEventData *eventData);
-
+    
+	virtual UInt32 lookupThermalStateFromValue (UInt32 sensorIndex, ThermalValue value);
+        
 public:
 
-    virtual bool start(IOService *provider);
-    virtual IOReturn powerStateWillChangeTo (IOPMPowerFlags, unsigned long, IOService*);
-    virtual IOReturn powerStateDidChangeTo (IOPMPowerFlags, unsigned long, IOService*);
-    virtual IOReturn setAggressiveness(unsigned long selector, unsigned long newLevel);
+	virtual bool start(IOService *provider);
+	virtual IOReturn powerStateWillChangeTo (IOPMPowerFlags, unsigned long, IOService*);
+	virtual IOReturn powerStateDidChangeTo (IOPMPowerFlags, unsigned long, IOService*);
+	virtual IOReturn setAggressiveness(unsigned long selector, unsigned long newLevel);
+	virtual IOReturn message( UInt32 type, IOService * provider, void * argument = 0 );
 
 	virtual bool initPlatformState ();
 	virtual void savePlatformState ();
@@ -125,6 +148,4 @@ public:
 	virtual bool unregisterSensor (UInt32 sensorID);
 	virtual bool lookupConSensorInfo (OSDictionary *dict, IOService *conSensor, 
 		UInt32 *type, UInt32 *index, UInt32 *subIndex);
-	virtual UInt32 lookupThermalStateFromValue (UInt32 sensorIndex, ThermalValue value);
-	
 };
