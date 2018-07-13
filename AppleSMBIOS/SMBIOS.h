@@ -86,7 +86,8 @@ enum {
     kSMBTypeMemoryDevice         = 17,
 
     /* Apple Specific Structures */
-    kSMBFirmwareVolume           = 128
+    kSMBFirmwareVolume           = 128,
+	kSMBTypeMemorySPD            = 130		
 };
 
 //
@@ -288,6 +289,20 @@ struct SMBFirmwareVolume {
     SMBByte           RegionType[ NUM_FLASHMAP_ENTRIES ];
     FW_REGION_INFO    FlashMap[   NUM_FLASHMAP_ENTRIES ];
 };
+
+//
+// Memory SPD Data   (Apple Specific - Type 130)
+//
+
+struct SMBMemorySPD {
+	SMB_STRUCT_HEADER               // Type 130
+	SMBWord           Type17Handle;
+	SMBWord           Offset;
+	SMBWord           Size;
+	SMBWord           Data[];
+};
+
+
 
 static const char *
 SMBMemoryDeviceTypes[] =

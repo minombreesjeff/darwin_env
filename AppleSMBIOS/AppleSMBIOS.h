@@ -54,6 +54,9 @@ protected:
     OSData *                memSpeedData;
     OSData *                memInfoData;
     UInt64                  memSizeTotal;
+	
+	void *					SMBIOSTable;
+	UInt16					SMBIOSTableLength;
 
     enum { kMemDataSize = 64 };
 
@@ -63,6 +66,8 @@ protected:
         kMemoryModuleInfo,
         kMemoryDeviceInfo
     }                       memInfoSource;
+	
+	const SMBStructHeader *	getSMBIOSRecord( SMBWord record );
 
     static bool             serializeSMBIOS(
                                 void *                  target,
@@ -124,6 +129,10 @@ protected:
     void                    processSMBIOSStructure(
                                 const SMBFirmwareVolume *       fv,
                                 SMBPackedStrings *              strings );
+								
+	void					processSMBIOSStructure(
+								const SMBMemorySPD *			spd,
+								SMBPackedStrings *              strings );
 
     void                    updateDeviceTree( void );
 
