@@ -2484,7 +2484,8 @@ IOReturn AppleSCCSerial::watchState(PortInfo_t *port, UInt32 *state, UInt32 mask
         IOLockUnlock(port->WatchLock);          /* release the lock */
 //        IOSimpleLockUnlockEnableInterrupt(port->serialRequestLock, previousInterruptState);
         IORecursiveLockUnlock(port->serialRequestLock);
-        rtn = thread_block((void (*)(void)) 0);                       /* block ourselves */
+//        rtn = thread_block((void (*)(void)) 0);                       /* block ourselves */
+        rtn = thread_block(THREAD_CONTINUE_NULL);                       /* block ourselves */
 //rs!        previousInterruptState = IOSimpleLockLockDisableInterrupt(port->serialRequestLock);
         IORecursiveLockLock(port->serialRequestLock);
 

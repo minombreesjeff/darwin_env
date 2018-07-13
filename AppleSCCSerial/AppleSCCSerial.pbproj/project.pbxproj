@@ -260,13 +260,14 @@
 			);
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = "";
+				GCC_VERSION = 4.0;
 				HEADER_SEARCH_PATHS = "";
 				INSTALL_PATH = "$(SYSTEM_LIBRARY_DIR)/Extensions/IOSerialFamily.kext/Contents/PlugIns/";
 				KERNEL_MODULE = YES;
 				LIBRARY_SEARCH_PATHS = "";
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.apple.driver.AppleSCCSerial;
-				MODULE_VERSION = 1.3.0;
+				MODULE_VERSION = 1.3.1;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_REZFLAGS = "";
@@ -291,7 +292,7 @@
 	<key>CFBundleExecutable</key>
 	<string>AppleSCCSerial</string>
 	<key>CFBundleGetInfoString</key>
-	<string>Apple SCC Serial Port Driver version 1.2.9, Copyright 2000-2004 Apple Computer, Inc.</string>
+	<string>Apple SCC Serial Port Driver version 1.3.1, Copyright 2000-2004 Apple Computer, Inc.</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>
@@ -303,11 +304,11 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.3.0</string>
+	<string>1.3.1</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>1.3.0</string>
+	<string>1.3.1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
 		<key>AppleSCCModem</key>
