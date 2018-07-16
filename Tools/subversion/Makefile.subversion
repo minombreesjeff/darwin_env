@@ -1,3 +1,10 @@
+ifndef DEVELOPER_DIR
+DEVELOPER_DIR = /Developer
+endif
+
+Install_Prefix = $(DEVELOPER_DIR)/usr
+Install_Man = $(DEVELOPER_DIR)/usr/share/man
+
 GnuAfterInstall       = post-install install-plist
 Extra_Configure_Flags = --disable-shared --enable-static \
                         --without-berkeley-db \
@@ -16,10 +23,10 @@ Install_Flags   = DESTDIR=$(DSTROOT)
 # Post-install cleanup
 post-install:
 	[ -n "$(DSTROOT)" ] || exit 1
-	rm -rf $(DSTROOT)/usr/lib
-	rm -rf $(DSTROOT)/usr/include
+	rm -rf $(DSTROOT)$(Install_Prefix)/lib
+	rm -rf $(DSTROOT)$(Install_Prefix)/include
 	@for binary in svn svnadmin svndumpfilter svnlook svnserve svnsync svnversion; do \
-		file=$(DSTROOT)/usr/bin/$${binary}; \
+		file=$(DSTROOT)$(Install_Prefix)/bin/$${binary}; \
 		echo $(CP) $${file} $(SYMROOT); \
 		$(CP) $${file} $(SYMROOT); \
 		echo $(STRIP) -x $${file}; \
